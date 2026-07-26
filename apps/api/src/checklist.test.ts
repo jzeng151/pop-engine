@@ -930,7 +930,8 @@ describe.runIf(databaseUrl.length > 0)("F-202 compliance checklist", () => {
 
     describe("the moved-filing-date notice", () => {
       const REAPPLY =
-        "This requirement's filing date moved when your plan changed. You will need to reapply.";
+        "This requirement's filing date moved when your plan changed. " +
+        "Confirm with the agency whether your existing application needs amending.";
       const SOUND = "NYPD-SOUND-001";
 
       /** A checklist with one row advanced to `status`, then the event date moved and replanned. */
@@ -1073,17 +1074,108 @@ describe.runIf(databaseUrl.length > 0)("F-202 compliance checklist", () => {
         expect(worked?.reapplyNotice).toBeNull();
       });
 
-      it("says what happened and claims nothing about the agency's position", async () => {
-        // F-206's at-risk buffer model: state the fact, attribute it, stop. The wording is asserted
-        // because each omission is deliberate - the product does not know whether an agency will
-        // honour an application already filed.
+      it("shows it when the organizer filed while a regeneration was still uncommitted", async () => {
+        // The race no timestamp can resolve. `permit_plans.generated_at` defaults to
+        // `current_timestamp`, which is the transaction's START time, while the plan appears only
+        // at COMMIT. So a PATCH landing inside a generation transaction stamps an `updated_at`
+        // LATER than a plan the organizer's screen could not possibly have shown. Deriving "what
+        // they were working against" from that ordering picks the invisible plan and stays silent
+        // (#117 review round 2). Recording the date the PATCH could actually see is what fixes it,
+        // and only a persisted value can: this test fails with any timestamp derivation.
+        const { eventId, body } = await checklistFor("A");
+        const api = appWith(fakeStorage());
+        const before = body.items.find((item) => item.ruleIds[0] === SOUND);
+        const showing = before?.latestApplyDate;
+        expect(showing).not.toBeNull();
+
+        // A regeneration that has written its plan and items and has NOT committed. Held open on
+        // its own connection, exactly as `createPlanService.generate` holds it.
+        const generation = await pool.connect();
+        let committed = false;
+        try {
+          await generation.query("BEGIN");
+          const hiddenPlanId = randomUUID();
+          await generation.query(
+            `INSERT INTO permit_plans (id, event_id, event_revision, ruleset_version, verdict,
+                                       verdict_detail, intake_snapshot)
+             VALUES ($1, $2, 1, $3, 'conditional', $4::jsonb, '{}'::jsonb)`,
+            [
+              hiddenPlanId,
+              eventId,
+              ruleset.rulesetVersion,
+              JSON.stringify({
+                finding_renderings: [
+                  {
+                    rule_ids: [SOUND],
+                    notes: [],
+                    note_text: null,
+                    conflict_text: null,
+                    deadline_display: null,
+                    slack_days: null,
+                    deadline_unknown_fields: [],
+                    timeline_unresolved_reason: null,
+                    portal_instructions: null,
+                  },
+                ],
+              }),
+            ],
+          );
+          await generation.query(
+            `INSERT INTO permit_plan_items
+               (id, plan_id, rule_ids, triggered_by, sources, kind, disposition, deadline_status,
+                verification_status, permit_name, latest_apply_date)
+             VALUES ($1, $2, $3, '[]'::jsonb, '[]'::jsonb, 'permit', 'required', 'not_applicable',
+                     'SOURCE_CONFIRMED', $4, '2026-11-30')`,
+            [randomUUID(), hiddenPlanId, [SOUND], publishedName(SOUND)],
+          );
+
+          // The organizer files, seeing the only plan that exists for them: the committed one.
+          const patched = await request(api)
+            .patch(`/api/checklist-items/${before?.id}`)
+            .send({ status: "submitted" });
+          expect(patched.status).toBe(200);
+
+          await generation.query("COMMIT");
+          committed = true;
+        } finally {
+          if (!committed) await generation.query("ROLLBACK").catch(() => undefined);
+          generation.release();
+        }
+
+        // What they filed against is still what they were shown, so the moved date is real.
+        const { rows } = await pool.query<{ worked_against_date: string | null }>(
+          "SELECT to_char(worked_against_date, 'YYYY-MM-DD') AS worked_against_date FROM checklist_items WHERE id = $1",
+          [before?.id],
+        );
+        expect(rows[0]?.worked_against_date).toBe(showing);
+
+        const read = await request(api).get(`/api/events/${eventId}/checklist`);
+        const after = (read.body.items as ChecklistItemView[]).find(
+          (item) => item.ruleIds[0] === SOUND,
+        );
+        expect(after?.latestApplyDate).toBe("2026-11-30");
+        expect(after?.reapplyNotice).toBe(REAPPLY);
+      });
+
+      it("says what happened and directs the organizer to the agency, claiming nothing further", async () => {
+        // F-206's at-risk buffer model: state the fact, attribute it, stop. Each omission is
+        // asserted because each is deliberate. "Reapply" is named specifically: it was the earlier
+        // wording, it has no approved source, and it is the materially expensive direction, since
+        // SAPO publishes an amendment procedure for a date change on a filed application or a
+        // granted permit while withdrawing carries a share of the processing cost plus a new
+        // filing fee. That procedure is a per-agency published fact and belongs in the ruleset with
+        // a verification status, not in this string, which is why the copy points at the agency.
         const { after } = await afterMovingTheDate("submitted");
         const notice = after?.reapplyNotice ?? "";
 
         expect(notice).toBe(REAPPLY);
+        expect(notice).toMatch(/confirm with the agency/i);
+        expect(notice).not.toMatch(/reapply|re-apply|apply again/i);
         expect(notice).not.toMatch(/must/i);
         expect(notice).not.toMatch(/void|invalid|cancelled|rejected/i);
         expect(notice).not.toMatch(/we |PopEngine (will|files|submits)/i);
+        // No agency's procedure is asserted here; naming one would be a ruleset fact.
+        expect(notice).not.toMatch(/SAPO|DOHMH|NYPD|Parks|DOB|FDNY|RCNY/);
       });
     });
 

@@ -163,6 +163,8 @@ type ChecklistRow = PlanItemRow & {
   status: ChecklistStatus;
   notes: string | null;
   updated_at: Date;
+  /** The filing date this row was showing when it was last worked; null if never recorded (008). */
+  worked_against_date: Date | string | null;
 };
 
 type DocumentRow = {
@@ -181,121 +183,81 @@ const isoDate = (value: Date | string | null): string | null =>
  * Shown on a row whose published filing date has moved since the organizer last worked it.
  *
  * Two sentences, on F-206's at-risk model: state the fact, attribute it, claim nothing further.
- * What it deliberately does not say is as load-bearing as what it does. Not "must", because the
- * product does not know the agency's position on an application already filed. Not that the
- * earlier application is void, for the same reason. Nothing that implies PopEngine files anything.
- * And it attributes the move to the plan changing rather than to the organizer changing their
- * event date: a regeneration moves filing dates for any intake edit that shifts a deadline, and
- * which field the organizer touched is not something this code can witness.
+ * The first sentence is sourced by the two dates the response already carries. The second directs
+ * the organizer to the agency and stops there, which is the only honest thing this product can say
+ * about an application already filed.
+ *
+ * It used to say "You will need to reapply", and that was wrong twice over. It asserted a
+ * regulatory direction no approved artifact supports, which is what review round 1 caught, and the
+ * direction was materially the expensive one: SAPO publishes an AMENDMENT procedure for a change of
+ * date on a filed application or a granted permit, and withdrawing instead carries a percentage of
+ * the City's processing cost plus a fresh filing fee. That procedure is a published, citable,
+ * per-agency fact, so it belongs in the ruleset with a verification status and a
+ * VERIFICATION-SOURCES entry, not in this string and not in this file. Only SAPO has been
+ * confirmed; DOHMH, NYPD, Parks, DOB and FDNY each have their own and none is verified. Hence
+ * "confirm with the agency": it points at the body that knows, and asserts nothing about what the
+ * answer will be.
+ *
+ * What it still deliberately does not say: no "must"; nothing claiming the earlier application is
+ * void; nothing implying PopEngine files anything. And it attributes the move to the plan changing
+ * rather than to the organizer changing their event date, because a regeneration moves filing dates
+ * for any intake edit that shifts a deadline, and which field they touched is not something this
+ * code can witness.
  */
 export const REAPPLY_NOTICE =
-  "This requirement's filing date moved when your plan changed. You will need to reapply.";
+  "This requirement's filing date moved when your plan changed. " +
+  "Confirm with the agency whether your existing application needs amending.";
 
 /**
- * The statuses the notice is worth showing on, derived from what "reapply" presupposes rather than
+ * The statuses the notice is worth showing on, derived from what the copy presupposes rather than
  * from how much work a status represents.
  *
  * F-202 AC 2 fixes the vocabulary (not_started → in_progress → submitted → approved / rejected, any
- * transition allowed) and says nothing about a notice, so this is a reading of the copy against it:
+ * transition allowed) and says nothing about a notice, so this is a reading of the copy against it.
+ * The copy changed in review round 2 and the set was re-read against the new wording rather than
+ * carried over. The premise moved from "what reapplying presupposes" to "what an EXISTING
+ * APPLICATION presupposes", and it lands on the same two, for reasons that fit better than before:
  *
  *  - `submitted` is the sharpest case and the reason this exists: an application is with the agency,
  *    filed against a date that no longer applies.
- *  - `approved` holds a decision made against that same date, so the moved date reaches it too.
- *  - `in_progress` is excluded. Work is invested, but nothing has been filed, so "reapply" would be
- *    false on its face, and the row already displays the new date, which is what that organizer
- *    needs.
+ *  - `approved` holds a decision made against that same date. The amendment procedure that prompted
+ *    the rewording covers a granted permit explicitly, so this is if anything a better fit for the
+ *    new copy than for the old.
+ *  - `in_progress` is excluded. Work is invested, but nothing has been filed, so there is no
+ *    existing application to amend, and the row already displays the new date, which is what that
+ *    organizer needs. The old wording excluded it because "reapply" would have been false; the new
+ *    wording excludes it because its subject does not exist.
  *  - `not_started` is excluded: nothing was invested.
- *  - `rejected` is excluded, which is the one that is not obvious. They did apply, so "reapply" is
- *    grammatical, but there is no live application the moved date disturbs, and whether to file
- *    again was already open because of the rejection. Showing it here would attribute that decision
- *    to the date change, which is not its cause.
+ *  - `rejected` is excluded, which is the one that is not obvious. They did apply, but nothing is
+ *    live to amend, and whether to file again was already open because of the rejection. Telling
+ *    them to ask about amending would point at a thing that is not there.
  */
 const REAPPLY_NOTICE_STATUSES: ReadonlySet<ChecklistStatus> = new Set<ChecklistStatus>([
   "submitted",
   "approved",
 ]);
 
-/** One plan of an event, with the filing date it published for each requirement. */
-type PlanSnapshot = {
-  generatedAt: Date;
-  dateByRequirement: Map<string, string | null>;
-};
-
-/**
- * Every plan of the event, oldest first, so a row can be read against the plan that was current
- * when the organizer last worked it.
- *
- * No column records the date they were working to, and none is added, because nothing needs one:
- * plans are immutable and never deleted (AD-7), so the whole history of published filing dates is
- * already in `permit_plans` and `permit_plan_items`. Keyed by requirement rather than by plan item
- * id, because a regeneration writes new item rows and the requirement is what persists across them.
- */
-async function planHistory(database: Queryable, eventId: string): Promise<PlanSnapshot[]> {
-  const { rows } = await database.query<{
-    id: string;
-    generated_at: Date;
-    rule_ids: string[];
-    latest_apply_date: Date | string | null;
-  }>(
-    `SELECT plan.id, plan.generated_at, item.rule_ids, item.latest_apply_date
-       FROM permit_plans AS plan
-       JOIN permit_plan_items AS item ON item.plan_id = plan.id
-      WHERE plan.event_id = $1
-      ORDER BY plan.generated_at, plan.id`,
-    [eventId],
-  );
-  const byPlan = new Map<string, PlanSnapshot>();
-  for (const row of rows) {
-    let snapshot = byPlan.get(row.id);
-    if (snapshot === undefined) {
-      snapshot = { generatedAt: row.generated_at, dateByRequirement: new Map() };
-      byPlan.set(row.id, snapshot);
-    }
-    snapshot.dateByRequirement.set(requirementKey(row.rule_ids), isoDate(row.latest_apply_date));
-  }
-  return [...byPlan.values()];
-}
-
-/**
- * The filing date this row was showing the last time the organizer worked it.
- *
- * This is the comparison the notice needs, and the row's own plan item is NOT it. That item is
- * whichever plan last raised the requirement before a re-materialize re-pointed it, which is only
- * the date they worked against if they last worked the row before any regeneration. Comparing it
- * against the newest plan instead resurrects the notice: once any later plan exists, a guard on
- * "did they work this before the current plan" is true again while the row still points at the
- * original date, so a regeneration that moved nothing since they filed asks them to act on nothing
- * (#117 review round 1).
- *
- * So the plan is chosen the way the view chose it at that moment: the latest plan generated at or
- * before they last worked the row, and within it the item for this requirement. A plan that did not
- * raise the requirement falls back to the row's own item, which is exactly what the view rendered
- * then (`current ?? item`).
- */
-function dateWhenLastWorked(
-  history: readonly PlanSnapshot[],
-  row: ChecklistRow,
-  lastWorked: Date,
-): string | null {
-  for (let index = history.length - 1; index >= 0; index -= 1) {
-    const snapshot = history[index] as PlanSnapshot;
-    if (snapshot.generatedAt.getTime() > lastWorked.getTime()) continue;
-    const published = snapshot.dateByRequirement.get(requirementKey(row.rule_ids));
-    return published === undefined ? isoDate(row.latest_apply_date) : published;
-  }
-  return isoDate(row.latest_apply_date);
-}
-
 /**
  * Whether the filing date moved since the organizer last worked the row.
  *
- * Both dates must exist. A requirement whose deadline became RESEARCH_REQUIRED has no date to have
- * moved, and "you will need to reapply" is not what that change means.
+ * `workedAgainst` is read, never derived. It is the date the row was showing when the organizer
+ * last touched it, captured by the PATCH that touched it (migration 008). An earlier revision
+ * reconstructed it from `updated_at` against `permit_plans.generated_at`, which cannot be made
+ * correct: `generated_at` defaults to `current_timestamp`, the transaction's START time, while the
+ * plan appears at COMMIT, so a PATCH overlapping a regeneration stamps a later `updated_at` than a
+ * plan the organizer could not have seen and the comparison then reads that plan as what they
+ * worked against. Timestamps do not distinguish committed from uncommitted (#117 review round 2).
+ *
+ * Null means the date was never recorded, which is not the same as "did not move" but is the only
+ * honest answer for it: a row nobody has worked, or one worked before the column existed. Silence.
+ *
+ * Both dates must exist for a move. A requirement whose deadline became RESEARCH_REQUIRED has no
+ * date to have moved, and confirming an amendment is not what that change means.
  *
  * An organizer who works the row after a regeneration was looking at the new date as they did it,
  * so from that point the two are equal and the notice stops on its own. The cost is that any edit,
- * a note included, reads as having seen the current date. That direction is the safe one: this copy
- * asks someone to file again, so not claiming is better than claiming wrongly.
+ * a note included, records the current date. That direction is the safe one: this copy asks
+ * someone to go to their agency, so not claiming is better than claiming wrongly.
  */
 const filingDateMoved = (workedAgainst: string | null, now: string | null): boolean =>
   workedAgainst !== null && now !== null && workedAgainst !== now;
@@ -493,7 +455,7 @@ async function taskCreatedByRequirement(
 async function checklistRows(database: Queryable, eventId: string): Promise<ChecklistRow[]> {
   const { rows } = await database.query<ChecklistRow>(
     `SELECT checklist.id AS checklist_item_id, checklist.plan_item_id, checklist.status,
-            checklist.notes, checklist.updated_at,
+            checklist.notes, checklist.updated_at, checklist.worked_against_date,
             ${PLAN_ITEM_COLUMNS.split(",")
               .map((column) => `item.${column.trim()}`)
               .join(", ")},
@@ -566,9 +528,6 @@ async function checklistView(database: Queryable, eventId: string, plan: LatestP
       (taskCreated.get(requirementKey(right.rule_ids)) ?? 0),
   );
   const latestItems = await planItems(database, plan.id);
-  // Read once for the whole view: the notice below needs the date each row was showing when it was
-  // last worked, which is a question about the event's plan history rather than about any one plan.
-  const history = await planHistory(database, eventId);
   const documents = await documentsFor(
     database,
     items.map((item) => item.checklist_item_id),
@@ -602,10 +561,7 @@ async function checklistView(database: Queryable, eventId: string, plan: LatestP
       reapplyNotice:
         current !== undefined &&
         REAPPLY_NOTICE_STATUSES.has(item.status) &&
-        filingDateMoved(
-          dateWhenLastWorked(history, item, item.updated_at),
-          isoDate(current.latest_apply_date),
-        )
+        filingDateMoved(isoDate(item.worked_against_date), isoDate(current.latest_apply_date))
           ? REAPPLY_NOTICE
           : null,
       ...planContext(source, renderingOrFail(renderings, source)),
@@ -974,10 +930,42 @@ export function createChecklistRouter(dependencies: ChecklistDependencies): Rout
         notes: string | null;
         updated_at: Date;
       }>(
-        `UPDATE checklist_items
+        // `worked_against_date` is recorded here and only here, because this is the moment the
+        // organizer worked the row and the only moment at which what they were being shown is
+        // knowable. The subqueries read the same committed data the request that rendered their
+        // screen read, which is what makes this a record rather than a reconstruction: an
+        // uncommitted regeneration is invisible to them and invisible here (migration 008).
+        //
+        // The requirement is matched by its sorted rule ids, the identity `requirementKey` uses,
+        // rather than by plan item id, since a regeneration writes new item rows. `COALESCE` falls
+        // back to the row's own item for a requirement the latest plan no longer raises, which is
+        // exactly what the view renders for it (`current ?? item`).
+        `WITH worked AS (
+           SELECT own.rule_ids AS rule_ids, plan.event_id AS event_id,
+                  own.latest_apply_date AS own_date
+             FROM checklist_items AS checklist
+             JOIN permit_plan_items AS own ON own.id = checklist.plan_item_id
+             JOIN permit_plans AS plan ON plan.id = own.plan_id
+            WHERE checklist.id = $1
+         ),
+         shown AS (
+           SELECT item.latest_apply_date AS date
+             FROM permit_plan_items AS item
+             JOIN permit_plans AS plan ON plan.id = item.plan_id
+             JOIN worked ON worked.event_id = plan.event_id
+            WHERE (SELECT array_agg(id ORDER BY id) FROM unnest(item.rule_ids) AS id)
+                = (SELECT array_agg(id ORDER BY id) FROM unnest(worked.rule_ids) AS id)
+            ORDER BY plan.generated_at DESC, plan.id DESC
+            LIMIT 1
+         )
+         UPDATE checklist_items
             SET status = COALESCE($2, status),
                 notes = CASE WHEN $3::boolean THEN $4 ELSE notes END,
-                updated_at = current_timestamp
+                updated_at = current_timestamp,
+                worked_against_date = COALESCE(
+                  (SELECT date FROM shown),
+                  (SELECT own_date FROM worked)
+                )
           WHERE id = $1
           RETURNING id, plan_item_id, status, notes, updated_at`,
         [id, status ?? null, notes !== undefined, notes ?? null],
