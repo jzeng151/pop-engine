@@ -178,6 +178,75 @@ const isoDate = (value: Date | string | null): string | null =>
   value === null ? null : calendarDateFrom(value);
 
 /**
+ * Shown on a row whose published filing date has moved since the organizer last worked it.
+ *
+ * Two sentences, on F-206's at-risk model: state the fact, attribute it, claim nothing further.
+ * What it deliberately does not say is as load-bearing as what it does. Not "must", because the
+ * product does not know the agency's position on an application already filed. Not that the
+ * earlier application is void, for the same reason. Nothing that implies PopEngine files anything.
+ * And it attributes the move to the plan changing rather than to the organizer changing their
+ * event date: a regeneration moves filing dates for any intake edit that shifts a deadline, and
+ * which field the organizer touched is not something this code can witness.
+ */
+export const REAPPLY_NOTICE =
+  "This requirement's filing date moved when your plan changed. You will need to reapply.";
+
+/**
+ * The statuses the notice is worth showing on, derived from what "reapply" presupposes rather than
+ * from how much work a status represents.
+ *
+ * F-202 AC 2 fixes the vocabulary (not_started → in_progress → submitted → approved / rejected, any
+ * transition allowed) and says nothing about a notice, so this is a reading of the copy against it:
+ *
+ *  - `submitted` is the sharpest case and the reason this exists: an application is with the agency,
+ *    filed against a date that no longer applies.
+ *  - `approved` holds a decision made against that same date, so the moved date reaches it too.
+ *  - `in_progress` is excluded. Work is invested, but nothing has been filed, so "reapply" would be
+ *    false on its face, and the row already displays the new date, which is what that organizer
+ *    needs.
+ *  - `not_started` is excluded: nothing was invested.
+ *  - `rejected` is excluded, which is the one that is not obvious. They did apply, so "reapply" is
+ *    grammatical, but there is no live application the moved date disturbs, and whether to file
+ *    again was already open because of the rejection. Showing it here would attribute that decision
+ *    to the date change, which is not its cause.
+ */
+const REAPPLY_NOTICE_STATUSES: ReadonlySet<ChecklistStatus> = new Set<ChecklistStatus>([
+  "submitted",
+  "approved",
+]);
+
+/**
+ * Whether the filing date this row was worked against differs from the one it now renders.
+ *
+ * No column records the date the organizer was working to, and none is added: the row's own
+ * `plan_item_id` still points at the plan that raised it until a re-materialize re-points it, so
+ * the date they were working against is already persisted, and the latest plan's item carries the
+ * recalculated one. The comparison is between those two.
+ *
+ * `lastWorked` before `planGeneratedAt` is the discriminator, not decoration. Between a
+ * regeneration and the organizer reviewing it, the row still points at the old plan while the view
+ * already renders the new date, so an organizer who submits in that window filed against the new
+ * date, and the two dates differing would otherwise tell them to redo work that is current. The
+ * cost is that any edit to the row after a regeneration, a note included, reads as having seen the
+ * new date and suppresses the notice. That direction is the safe one: this copy asks someone to
+ * file again, so not claiming is better than claiming wrongly.
+ *
+ * Both dates must exist. A requirement whose deadline became RESEARCH_REQUIRED has no date to have
+ * moved, and "you will need to reapply" is not what that change means.
+ */
+function filingDateMoved(
+  worked: PlanItemRow,
+  latest: PlanItemRow,
+  lastWorked: Date,
+  planGeneratedAt: Date,
+): boolean {
+  const before = isoDate(worked.latest_apply_date);
+  const after = isoDate(latest.latest_apply_date);
+  if (before === null || after === null || before === after) return false;
+  return lastWorked.getTime() < planGeneratedAt.getTime();
+}
+
+/**
  * The plan context a checklist row renders: deadline, agency, portal, verification badge — and
  * every published qualification that goes with them.
  *
@@ -227,6 +296,8 @@ type LatestPlan = {
   id: string;
   rulesetVersion: string;
   snapshotDate: string | null;
+  /** When this plan was generated, which dates the moved-filing-date notice against a row's work. */
+  generatedAt: Date;
   /** The `events.revision_counter` this plan evaluated (AD-13). */
   eventRevision: number;
   /** The event's revision now. Higher than `eventRevision` means the plan is stale. */
@@ -238,11 +309,12 @@ async function latestPlan(database: Queryable, eventId: string): Promise<LatestP
     id: string;
     ruleset_version: string;
     snapshot_date: Date | string | null;
+    generated_at: Date;
     event_revision: number;
     revision_counter: number;
   }>(
-    `SELECT plan.id, plan.ruleset_version, plan.snapshot_date, plan.event_revision,
-            event.revision_counter
+    `SELECT plan.id, plan.ruleset_version, plan.snapshot_date, plan.generated_at,
+            plan.event_revision, event.revision_counter
        FROM permit_plans AS plan
        JOIN events AS event ON event.id = plan.event_id
       WHERE plan.event_id = $1
@@ -255,6 +327,7 @@ async function latestPlan(database: Queryable, eventId: string): Promise<LatestP
     id: row.id,
     rulesetVersion: row.ruleset_version,
     snapshotDate: isoDate(row.snapshot_date),
+    generatedAt: row.generated_at,
     eventRevision: row.event_revision,
     currentRevision: row.revision_counter,
   };
@@ -468,6 +541,17 @@ async function checklistView(database: Queryable, eventId: string, plan: LatestP
       updatedAt: item.updated_at.toISOString(),
       // A requirement the latest plan no longer raises is struck through, never deleted (AC 6).
       inLatestPlan: current !== undefined,
+      // Rendering a recalculated date is not the same as telling the organizer what it means for
+      // work they already did, and until now nothing did the second. A notice, not a status and
+      // not a gate: every action available before is still available, and the row is unchanged
+      // apart from carrying this string. Only for a requirement the latest plan still raises,
+      // since a dropped one is struck through and has no filing to redo.
+      reapplyNotice:
+        current !== undefined &&
+        REAPPLY_NOTICE_STATUSES.has(item.status) &&
+        filingDateMoved(item, current, item.updated_at, plan.generatedAt)
+          ? REAPPLY_NOTICE
+          : null,
       ...planContext(source, renderingOrFail(renderings, source)),
       documents: (documents.get(item.checklist_item_id) ?? []).map(documentView),
     };

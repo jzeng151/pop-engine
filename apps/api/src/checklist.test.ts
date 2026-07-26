@@ -113,6 +113,7 @@ type ChecklistItemView = {
   deadlineDisplay: string | null;
   sources: { ruleId: string; citation: string; urls: string[] }[];
   sourcePlan: { rulesetVersion: string; snapshotDate: string | null };
+  reapplyNotice: string | null;
   documents: { id: string; filename: string; contentType: string; sizeBytes: number }[];
 };
 
@@ -925,6 +926,126 @@ describe.runIf(databaseUrl.length > 0)("F-202 compliance checklist", () => {
       expect(after?.id).toBe(before?.id);
       expect(after?.latestApplyDate).not.toBe(before?.latestApplyDate);
       expect(after?.inLatestPlan).toBe(true);
+    });
+
+    describe("the moved-filing-date notice", () => {
+      const REAPPLY =
+        "This requirement's filing date moved when your plan changed. You will need to reapply.";
+      const SOUND = "NYPD-SOUND-001";
+
+      /** A checklist with one row advanced to `status`, then the event date moved and replanned. */
+      const afterMovingTheDate = async (status: string | null) => {
+        const { eventId, body } = await checklistFor("A");
+        const api = appWith(fakeStorage());
+        const before = body.items.find((item) => item.ruleIds[0] === SOUND);
+        if (status !== null) {
+          await request(api).patch(`/api/checklist-items/${before?.id}`).send({ status });
+        }
+        await request(api).patch(`/api/events/${eventId}`).send({ event_date: "2026-09-30" });
+        await generatePlan(eventId);
+        const read = await request(api).get(`/api/events/${eventId}/checklist`);
+        const rows = read.body.items as ChecklistItemView[];
+        return { eventId, api, before, after: rows.find((item) => item.ruleIds[0] === SOUND), rows };
+      };
+
+      it("tells an organizer who has filed that the date they filed against moved", async () => {
+        const { before, after } = await afterMovingTheDate("submitted");
+
+        // The row is unchanged in every other way: same task, still required, still submitted,
+        // and now rendering the recalculated date. The notice is the only thing added.
+        expect(after?.id).toBe(before?.id);
+        expect(after?.status).toBe("submitted");
+        expect(after?.inLatestPlan).toBe(true);
+        expect(after?.latestApplyDate).not.toBe(before?.latestApplyDate);
+        expect(after?.reapplyNotice).toBe(REAPPLY);
+      });
+
+      it("shows it on an approved row, whose decision was made against the old date", async () => {
+        const { after } = await afterMovingTheDate("approved");
+        expect(after?.reapplyNotice).toBe(REAPPLY);
+      });
+
+      it.each(["not_started", "in_progress", "rejected"])(
+        "stays silent on a %s row, where reapplying is not what the moved date means",
+        async (status) => {
+          // not_started: nothing was invested. in_progress: work was, but nothing has been filed,
+          // so "reapply" would be false and the row already shows the new date. rejected: they did
+          // apply, but there is no live application the moved date disturbs and filing again was
+          // already open, so attributing that to the date change would be wrong.
+          const { after } = await afterMovingTheDate(status);
+          expect(after?.latestApplyDate).not.toBeNull();
+          expect(after?.reapplyNotice).toBeNull();
+        },
+      );
+
+      it("stays silent when the plan was regenerated but this date did not move", async () => {
+        // The discriminator is the date, not the regeneration: a rescope that leaves this
+        // requirement's filing date alone changes nothing the organizer has to redo.
+        const { eventId, body } = await checklistFor("A");
+        const api = appWith(fakeStorage());
+        const before = body.items.find((item) => item.ruleIds[0] === SOUND);
+        await request(api).patch(`/api/checklist-items/${before?.id}`).send({ status: "submitted" });
+        await generatePlan(eventId);
+
+        const read = await request(api).get(`/api/events/${eventId}/checklist`);
+        const after = (read.body.items as ChecklistItemView[]).find(
+          (item) => item.ruleIds[0] === SOUND,
+        );
+        expect(after?.latestApplyDate).toBe(before?.latestApplyDate);
+        expect(after?.reapplyNotice).toBeNull();
+      });
+
+      it("stays silent when the organizer filed after the new date was already showing", async () => {
+        // Between a regeneration and the review, the row already renders the new date, so an
+        // organizer who submits in that window filed against the current date and has nothing to
+        // redo. Without this the two dates still differ and the notice would tell them otherwise.
+        const { eventId, body } = await checklistFor("A");
+        const api = appWith(fakeStorage());
+        const before = body.items.find((item) => item.ruleIds[0] === SOUND);
+
+        await request(api).patch(`/api/events/${eventId}`).send({ event_date: "2026-09-30" });
+        await generatePlan(eventId);
+        // Filed now, seeing the recalculated date, and without re-materializing.
+        await request(api).patch(`/api/checklist-items/${before?.id}`).send({ status: "submitted" });
+
+        const read = await request(api).get(`/api/events/${eventId}/checklist`);
+        const after = (read.body.items as ChecklistItemView[]).find(
+          (item) => item.ruleIds[0] === SOUND,
+        );
+        expect(after?.status).toBe("submitted");
+        expect(after?.latestApplyDate).not.toBe(before?.latestApplyDate);
+        expect(after?.reapplyNotice).toBeNull();
+      });
+
+      it("clears once the organizer reviews the changed plan", async () => {
+        // Re-materializing is the organizer reviewing the change (AC 6), which re-points the row
+        // at the current plan. The notice has been delivered and the row is no longer working to
+        // a superseded date, so it stops.
+        const { eventId, api, after } = await afterMovingTheDate("submitted");
+        expect(after?.reapplyNotice).toBe(REAPPLY);
+
+        await request(api).post(`/api/events/${eventId}/checklist`);
+
+        const read = await request(api).get(`/api/events/${eventId}/checklist`);
+        const reviewed = (read.body.items as ChecklistItemView[]).find(
+          (item) => item.ruleIds[0] === SOUND,
+        );
+        expect(reviewed?.status).toBe("submitted");
+        expect(reviewed?.reapplyNotice).toBeNull();
+      });
+
+      it("says what happened and claims nothing about the agency's position", async () => {
+        // F-206's at-risk buffer model: state the fact, attribute it, stop. The wording is asserted
+        // because each omission is deliberate - the product does not know whether an agency will
+        // honour an application already filed.
+        const { after } = await afterMovingTheDate("submitted");
+        const notice = after?.reapplyNotice ?? "";
+
+        expect(notice).toBe(REAPPLY);
+        expect(notice).not.toMatch(/must/i);
+        expect(notice).not.toMatch(/void|invalid|cancelled|rejected/i);
+        expect(notice).not.toMatch(/we |PopEngine (will|files|submits)/i);
+      });
     });
 
     it("flags a plan change before the new items are materialized", async () => {
