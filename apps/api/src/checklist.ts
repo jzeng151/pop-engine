@@ -215,36 +215,90 @@ const REAPPLY_NOTICE_STATUSES: ReadonlySet<ChecklistStatus> = new Set<ChecklistS
   "approved",
 ]);
 
+/** One plan of an event, with the filing date it published for each requirement. */
+type PlanSnapshot = {
+  generatedAt: Date;
+  dateByRequirement: Map<string, string | null>;
+};
+
 /**
- * Whether the filing date this row was worked against differs from the one it now renders.
+ * Every plan of the event, oldest first, so a row can be read against the plan that was current
+ * when the organizer last worked it.
  *
- * No column records the date the organizer was working to, and none is added: the row's own
- * `plan_item_id` still points at the plan that raised it until a re-materialize re-points it, so
- * the date they were working against is already persisted, and the latest plan's item carries the
- * recalculated one. The comparison is between those two.
+ * No column records the date they were working to, and none is added, because nothing needs one:
+ * plans are immutable and never deleted (AD-7), so the whole history of published filing dates is
+ * already in `permit_plans` and `permit_plan_items`. Keyed by requirement rather than by plan item
+ * id, because a regeneration writes new item rows and the requirement is what persists across them.
+ */
+async function planHistory(database: Queryable, eventId: string): Promise<PlanSnapshot[]> {
+  const { rows } = await database.query<{
+    id: string;
+    generated_at: Date;
+    rule_ids: string[];
+    latest_apply_date: Date | string | null;
+  }>(
+    `SELECT plan.id, plan.generated_at, item.rule_ids, item.latest_apply_date
+       FROM permit_plans AS plan
+       JOIN permit_plan_items AS item ON item.plan_id = plan.id
+      WHERE plan.event_id = $1
+      ORDER BY plan.generated_at, plan.id`,
+    [eventId],
+  );
+  const byPlan = new Map<string, PlanSnapshot>();
+  for (const row of rows) {
+    let snapshot = byPlan.get(row.id);
+    if (snapshot === undefined) {
+      snapshot = { generatedAt: row.generated_at, dateByRequirement: new Map() };
+      byPlan.set(row.id, snapshot);
+    }
+    snapshot.dateByRequirement.set(requirementKey(row.rule_ids), isoDate(row.latest_apply_date));
+  }
+  return [...byPlan.values()];
+}
+
+/**
+ * The filing date this row was showing the last time the organizer worked it.
  *
- * `lastWorked` before `planGeneratedAt` is the discriminator, not decoration. Between a
- * regeneration and the organizer reviewing it, the row still points at the old plan while the view
- * already renders the new date, so an organizer who submits in that window filed against the new
- * date, and the two dates differing would otherwise tell them to redo work that is current. The
- * cost is that any edit to the row after a regeneration, a note included, reads as having seen the
- * new date and suppresses the notice. That direction is the safe one: this copy asks someone to
- * file again, so not claiming is better than claiming wrongly.
+ * This is the comparison the notice needs, and the row's own plan item is NOT it. That item is
+ * whichever plan last raised the requirement before a re-materialize re-pointed it, which is only
+ * the date they worked against if they last worked the row before any regeneration. Comparing it
+ * against the newest plan instead resurrects the notice: once any later plan exists, a guard on
+ * "did they work this before the current plan" is true again while the row still points at the
+ * original date, so a regeneration that moved nothing since they filed asks them to act on nothing
+ * (#117 review round 1).
+ *
+ * So the plan is chosen the way the view chose it at that moment: the latest plan generated at or
+ * before they last worked the row, and within it the item for this requirement. A plan that did not
+ * raise the requirement falls back to the row's own item, which is exactly what the view rendered
+ * then (`current ?? item`).
+ */
+function dateWhenLastWorked(
+  history: readonly PlanSnapshot[],
+  row: ChecklistRow,
+  lastWorked: Date,
+): string | null {
+  for (let index = history.length - 1; index >= 0; index -= 1) {
+    const snapshot = history[index] as PlanSnapshot;
+    if (snapshot.generatedAt.getTime() > lastWorked.getTime()) continue;
+    const published = snapshot.dateByRequirement.get(requirementKey(row.rule_ids));
+    return published === undefined ? isoDate(row.latest_apply_date) : published;
+  }
+  return isoDate(row.latest_apply_date);
+}
+
+/**
+ * Whether the filing date moved since the organizer last worked the row.
  *
  * Both dates must exist. A requirement whose deadline became RESEARCH_REQUIRED has no date to have
  * moved, and "you will need to reapply" is not what that change means.
+ *
+ * An organizer who works the row after a regeneration was looking at the new date as they did it,
+ * so from that point the two are equal and the notice stops on its own. The cost is that any edit,
+ * a note included, reads as having seen the current date. That direction is the safe one: this copy
+ * asks someone to file again, so not claiming is better than claiming wrongly.
  */
-function filingDateMoved(
-  worked: PlanItemRow,
-  latest: PlanItemRow,
-  lastWorked: Date,
-  planGeneratedAt: Date,
-): boolean {
-  const before = isoDate(worked.latest_apply_date);
-  const after = isoDate(latest.latest_apply_date);
-  if (before === null || after === null || before === after) return false;
-  return lastWorked.getTime() < planGeneratedAt.getTime();
-}
+const filingDateMoved = (workedAgainst: string | null, now: string | null): boolean =>
+  workedAgainst !== null && now !== null && workedAgainst !== now;
 
 /**
  * The plan context a checklist row renders: deadline, agency, portal, verification badge — and
@@ -296,8 +350,6 @@ type LatestPlan = {
   id: string;
   rulesetVersion: string;
   snapshotDate: string | null;
-  /** When this plan was generated, which dates the moved-filing-date notice against a row's work. */
-  generatedAt: Date;
   /** The `events.revision_counter` this plan evaluated (AD-13). */
   eventRevision: number;
   /** The event's revision now. Higher than `eventRevision` means the plan is stale. */
@@ -309,12 +361,11 @@ async function latestPlan(database: Queryable, eventId: string): Promise<LatestP
     id: string;
     ruleset_version: string;
     snapshot_date: Date | string | null;
-    generated_at: Date;
     event_revision: number;
     revision_counter: number;
   }>(
-    `SELECT plan.id, plan.ruleset_version, plan.snapshot_date, plan.generated_at,
-            plan.event_revision, event.revision_counter
+    `SELECT plan.id, plan.ruleset_version, plan.snapshot_date, plan.event_revision,
+            event.revision_counter
        FROM permit_plans AS plan
        JOIN events AS event ON event.id = plan.event_id
       WHERE plan.event_id = $1
@@ -327,7 +378,6 @@ async function latestPlan(database: Queryable, eventId: string): Promise<LatestP
     id: row.id,
     rulesetVersion: row.ruleset_version,
     snapshotDate: isoDate(row.snapshot_date),
-    generatedAt: row.generated_at,
     eventRevision: row.event_revision,
     currentRevision: row.revision_counter,
   };
@@ -516,6 +566,9 @@ async function checklistView(database: Queryable, eventId: string, plan: LatestP
       (taskCreated.get(requirementKey(right.rule_ids)) ?? 0),
   );
   const latestItems = await planItems(database, plan.id);
+  // Read once for the whole view: the notice below needs the date each row was showing when it was
+  // last worked, which is a question about the event's plan history rather than about any one plan.
+  const history = await planHistory(database, eventId);
   const documents = await documentsFor(
     database,
     items.map((item) => item.checklist_item_id),
@@ -549,7 +602,10 @@ async function checklistView(database: Queryable, eventId: string, plan: LatestP
       reapplyNotice:
         current !== undefined &&
         REAPPLY_NOTICE_STATUSES.has(item.status) &&
-        filingDateMoved(item, current, item.updated_at, plan.generatedAt)
+        filingDateMoved(
+          dateWhenLastWorked(history, item, item.updated_at),
+          isoDate(current.latest_apply_date),
+        )
           ? REAPPLY_NOTICE
           : null,
       ...planContext(source, renderingOrFail(renderings, source)),
