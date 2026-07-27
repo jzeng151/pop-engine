@@ -1,10 +1,10 @@
 # PopEngine — Event and Event Revision Contract
 
-**Status:** PROPOSED (2026-07-26) — the product owner approved this decision package; it is not implementable until the remaining three lane owners approve the ratification PR and this file plus `docs/BASELINE.md` are promoted to `APPROVED`.
+**Status:** APPROVED (2026-07-26)
 
-**Decision owner:** `@jzeng151`
+**Decision and approval owner:** `@jzeng151`
 
-**Required reviewers:** `@brovaset`, `@bofrompursuit`, `@naquanm621`
+**Approval record:** after the other lane owners were unavailable, `@jzeng151` explicitly approved this bounded package on behalf of all four lanes. This is a product-owner governance exception for PR #137; it does not attribute reviews to `@brovaset`, `@bofrompursuit`, or `@naquanm621`, and it does not relax future shared-contract approval requirements.
 
 ## 1. Purpose and Scope
 
@@ -13,7 +13,7 @@ This contract does two things:
 1. ratifies the cumulative Phase 1 `events` shape produced by migrations `001`, `005`, and `006` at migration head `007`; and
 2. fixes the logical Event Revision contract that Phase 2 features must express in reviewed OpenAPI, JSON Schema, and forward migrations.
 
-It resolves `OPEN-QUESTIONS` B-3 only after all four owners have approved the ratification PR. It does not activate Phase 2, approve F-107, create an endpoint or table, amend a merged migration, or change a regulatory rule, fixture, verdict, deadline, or finding.
+It resolves `OPEN-QUESTIONS` B-3 under the approval record above. It does not activate Phase 2, approve F-107, create an endpoint or table, amend a merged migration, or change a regulatory rule, fixture, verdict, deadline, or finding.
 
 ## 2. Decisions
 
@@ -55,7 +55,7 @@ The logical `event_revisions` record contains:
 
 - `id`, `event_id`, and a strictly increasing `revision_number`;
 - `input_schema_version` and `jurisdiction_code`;
-- the complete saved answer set in `answers_json`, which may still be partial for an incomplete draft;
+- the complete snapshot of answers saved in `answers_json`; an `incomplete` revision may omit unanswered keys, while `complete_unsubmitted` and `submitted` revisions contain a complete validated answer set;
 - `revision_state`: `incomplete`, `complete_unsubmitted`, or `submitted`;
 - validation/conflict results recorded at save time;
 - `created_by`, `created_at`, and `supersedes_revision_id`.
@@ -149,11 +149,8 @@ The full existing fixture and boundary suite must remain green. This contract ch
 
 ## 5. Approval and Activation
 
-Product-owner approval of the package is recorded on 2026-07-26. B-3 remains open until:
+On 2026-07-26, `@jzeng151` approved this package on behalf of all four lanes after the other lane owners were unavailable. No approval is attributed to their GitHub accounts. This one-time exception also supersedes the normal teammate-review requirement for PR #137 only; future changes remain governed by `docs/DOCUMENTATION-GOVERNANCE.md` §6.
 
-1. `@brovaset`, `@bofrompursuit`, and `@naquanm621` each submit an explicit approving review;
-2. this file and its `docs/BASELINE.md` row are promoted to `APPROVED`;
-3. `docs/OPEN-QUESTIONS.md` records B-3 as resolved; and
-4. issue #2 is closed with a link to the ratification merge.
+B-3 is resolved by this approval record. Issue #2 closes when PR #137 merges.
 
 Approval fixes the shared logical contract. Implementation remains blocked on the consuming F-id, OpenAPI/JSON Schema, forward migration, and the F-701–F-703 production gate.

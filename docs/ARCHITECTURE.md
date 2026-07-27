@@ -59,9 +59,9 @@ One **Event** row is the single source of truth. Four stage-scoped module views 
 - **MARKET (F-301/F-302, stretch):** event page + RSVP read the same row (title, date, venue, headcount).
 - **OPERATE (F-401/F-402, stretch):** check-in writes back against the same event.
 
-## PostgreSQL Schema (proposed)
+## PostgreSQL Schema (ratified)
 
-> ⚠️ **SINGLE INTEGRATION POINT — the `events` table is the contract between all four lanes. Nobody starts coding until all four devs approve this schema (Phase 0, day 1). Every column change after day 1 is a team decision, not a lane decision.**
+> **RATIFIED 2026-07-26 — the `events` table is the contract between all four lanes.** The cumulative Phase 1 shape and the logical Event Revision contract were approved through PR #137; see `docs/EVENT-REVISION-CONTRACT.md`. Every later shared/core-table change remains a team decision, not a lane decision.
 
 ### events
 
@@ -320,6 +320,6 @@ Error principle: rule-evaluation failures return an explicit error; the API neve
 
 - **CORS:** api allows the web origin only.
 - **Shared types:** `packages/engine` exports the intake/plan/verdict types; both apps import from it.
-- **Migrations:** plain SQL or a light tool (node-pg-migrate); the `events` migration is PR #1 and requires all-hands approval (Phase 0).
+- **Migrations:** node-pg-migrate; the cumulative Phase 1 `events` shape is ratified through PR #137. Future shared/core-table changes require the approvals in `DOCUMENTATION-GOVERNANCE.md` §6.
 - **Rules loading:** api boots by validating `rules/nyc-rules.v2.10.json` (schema check; 42 rules + 4 advisories present; every trigger field declared in the file's `intake_fields` registry) and syncing `permit_rules`; a validation failure aborts boot loudly.
 - **Observability (MVP-appropriate):** structured request logs + an engine-evaluation trace (rule → tri-state result) attached to each plan row in `verdict_detail`; nothing fancier until Phase 2.
