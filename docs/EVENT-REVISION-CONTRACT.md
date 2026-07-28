@@ -90,23 +90,59 @@ The exact HTTP request and error schemas belong in the reviewed OpenAPI contract
 - Plans, findings, traces, and their regulatory snapshots remain immutable.
 - A plan is stale when its revision differs from `events.current_revision_id`.
 - Generating a candidate does not move `current_plan_id`.
-- Accepting a candidate moves `current_plan_id` transactionally; workflow reconciliation and message cancellation remain governed by their consuming specs.
+- Accepting a candidate locks the Event and rechecks that the candidate belongs to it and that
+  `candidate.event_revision_id === events.current_revision_id`. Only then may the same transaction
+  move `current_plan_id`. A mismatch is rejected as a conflict without moving the pointer or
+  reconciling workflow/messages. A later edit may make an accepted plan stale, but an already-stale
+  candidate is never accepted.
+- For a backfilled plan, its canonical `intake_snapshot` must equal the engine-input projection of
+  the revision it references under the plan's mapped schema. Questionnaire answers the engine did
+  not consume may remain in that revision without being copied into the historical plan snapshot.
 - Existing numeric `permit_plans.event_revision` and `intake_snapshot` remain historical migration inputs, not the authority for new writes after cutover.
 
 ### 2.6 Backfill without guessing or deleting history
 
-The F-107 forward migration must:
+Before mutation, F-107's approved compatibility package must define:
 
-1. group existing plans by `(event_id, event_revision)`;
-2. canonicalize the snapshots and abort if one event/revision pair has more than one distinct answer set;
-3. resolve `input_schema_version` through an explicit F-107 compatibility map keyed by each historical plan's `ruleset_version`; no match or multiple matches aborts rather than defaulting to the newest schema;
-4. validate every plan-backed snapshot against that mapped Event Input schema, create it as `complete` when validation passes, and abort instead of inventing a state when validation fails;
-5. create the current event revision from the Phase 1 intake columns when that revision is not already represented by a plan, using the schema version F-107 explicitly assigns to current-only legacy rows and setting it to `complete` when full validation passes or `incomplete` only when the F-107 partial-save validator accepts it;
-6. compare the current row with an existing revision at the same number and abort on a mismatch;
-7. set `events.current_revision_id` and each plan's `event_revision_id`; and
-8. preserve all existing plans and synthetic history.
+- one unambiguous mapping from every historical `ruleset_version` to the Event Input schema that
+  produced its plan snapshot;
+- validation and a lossless canonical comparison transform for every mapped schema. Omission,
+  legacy unanswered/`NULL`, explicit `unknown`, `false`, and other concrete values remain distinct
+  unless recorded source data makes a conversion lossless; and
+- one exhaustive Phase 1 row mapping. It assigns every existing column either to the stable Event,
+  the current revision's questionnaire answers, or a named non-questionnaire compatibility
+  projection. A value cannot be dropped merely because `ruleset.intakeFields` did not consume it.
 
-The compatibility map may point historical plans to a legacy replay schema containing only the engine-relevant fields their `intake_snapshot` actually stored. Current-only Phase 1 columns must not be copied backward into older plan-backed revisions.
+No match, multiple matches, an unhandled column, or a missing/ambiguous transform aborts before any
+row is mutated. The compatibility package may use a legacy replay schema containing only the
+engine-relevant fields a historical `intake_snapshot` actually stored.
+
+The F-107 forward migration must then:
+
+1. resolve and validate each plan snapshot under its mapped schema before comparing snapshots;
+2. canonicalize snapshots only through that schema's lossless transform. More than one canonical
+   answer set for the same `(event_id, event_revision, input_schema_version)` aborts, but different
+   schema versions at the same legacy revision do not;
+3. create one `complete` legacy revision for each distinct
+   `(event_id, event_revision, input_schema_version, canonical answer set)` and bind every matching
+   plan to it. Plans generated before and after a schema change therefore retain exact, separate
+   inputs even when the old numeric `event_revision` did not change;
+4. assign those backfilled revisions a deterministic, strictly increasing order defined and tested
+   by F-107. It must not infer schema order from version-string sorting or migration execution time;
+5. always build the current Event/current revision from the Phase 1 row, even when a plan has the
+   same legacy revision number. Stable values such as the Event name and questionnaire values such
+   as `location_name` and `capacity` must survive through the exhaustive row mapping;
+6. set that current revision to `complete` when full validation passes, or to `incomplete` only when
+   F-107's partial-save validator accepts it;
+7. compare same-number plans with the current row only after projecting both through their resolved
+   schemas. A plan may reference the current revision only when the compatibility package can
+   losslessly replay that revision under the plan's mapped schema, its canonical engine inputs
+   match, and the revision is `complete`; otherwise the plan remains bound to its separate legacy
+   revision and is stale; and
+8. set `events.current_revision_id`, preserve every existing plan and synthetic history, and abort
+   the transaction rather than partially mutating on any failure.
+
+Current-only Phase 1 values must not be copied backward into older plan-backed revisions.
 
 Legacy rows may have no user actor; `created_by = NULL` is reserved for deterministic legacy backfill. New revisions require the authenticated actor after the F-701–F-703 gate.
 
@@ -119,7 +155,7 @@ During compatibility rollout, a successful revision transaction may update old `
   - `added` when its key appears only in the candidate;
   - `removed` when its key appears only in the accepted base; or
   - `changed` when the same key has a different canonical regulatory rendering.
-- Canonical comparison includes kind, disposition, rule provenance, trigger trace, sources, verification state/date, name, agency, the complete published and computed deadline state (`deadline`, `deadline_display`, `latest_apply_date`, `apply_after_date`, `deadline_status`, `slack_days`, `deadline_unknown_fields`, and `timeline_unresolved_reason`), fee, required documents, portal name/URL/instructions, notes, conflict text, and regulatory payload.
+- Canonical comparison includes kind, disposition, rule provenance, trigger trace, sources, verification state/date, name, agency, the complete published and computed deadline state (`deadline`, `deadline_display`, `latest_apply_date`, `apply_after_date`, `deadline_status`, `slack_days`, `deadline_unknown_fields`, and `timeline_unresolved_reason`), fee, required documents, portal name/URL/instructions, `notes`, `note_text`, and conflict text.
 - Database IDs, plan IDs, timestamps, row order, and workflow status do not make a regulatory finding changed.
 - Diff output is deterministic and derived from immutable plans. No `plan_diffs` table is authorized until a consuming approved feature requires stored diffs.
 - This future candidate-plan diff is not F-202 Acceptance Criterion 9's narrower current-checklist notice; that criterion deliberately excludes clock-only movement among countdown statuses.
@@ -141,12 +177,16 @@ No feature may bundle another row's work merely because this contract names the 
 Before activation, the consuming implementation must prove:
 
 - migration and deterministic backfill on empty, current, and historical-plan databases;
+- lossless backfill across an input-schema change that did not increment the legacy revision;
+- preservation of current Phase 1 questionnaire values absent from historical plan snapshots;
 - mismatch abort with no partial mutation;
 - revision immutability;
 - two concurrent saves produce one success and one `revision_conflict`;
 - no-op save creates no revision;
 - missing and explicit `unknown` remain distinct;
 - plans reference exact revisions and staleness is server-derived;
+- accepting a candidate races safely with a revision save and rejects the stale candidate;
+- a `note_text`-only finding change is reported as `changed`;
 - diff identity and output are byte-stable; and
 - cross-workspace reads and writes fail after tenancy activation.
 
