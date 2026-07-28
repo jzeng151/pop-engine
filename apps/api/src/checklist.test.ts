@@ -566,6 +566,105 @@ describe.runIf(databaseUrl.length > 0)("F-202 compliance checklist", () => {
       });
     });
 
+    it("serves an explicit read-only permit-status binder without inventing missing records", async () => {
+      const eventId = await createEvent(scenario("A"));
+      const api = appWith(fakeStorage());
+      await generatePlan(eventId);
+
+      const beforeChecklist = await request(api).get(`/api/events/${eventId}/permit-status-binder`);
+
+      expect(beforeChecklist.status).toBe(200);
+      expect(beforeChecklist.body.event).toMatchObject({
+        id: eventId,
+        name: "Bushwick Street Activation",
+        date: "2026-08-26",
+        revision: 1,
+      });
+      expect(beforeChecklist.body.source.plan).toMatchObject({
+        id: expect.any(String),
+        eventRevision: 1,
+        rulesetVersion: ruleset.rulesetVersion,
+        snapshotDate: ruleset.snapshotDate,
+        generatedAt: expect.any(String),
+      });
+      expect(beforeChecklist.body.permitStatuses).toEqual([]);
+      expect(beforeChecklist.body.recordCompleteness).toMatchObject({
+        incomplete: true,
+        missingPlan: false,
+        missingChecklist: true,
+        planReviewPending: false,
+        stalePlan: false,
+      });
+      expect(beforeChecklist.body.operationalRecords).toEqual({
+        applicationReferences: { supportedByStoredRecords: false, records: [] },
+        loadInTasks: { supportedByStoredRecords: false, records: [] },
+        contacts: { supportedByStoredRecords: false, records: [] },
+        staffAssignments: { supportedByStoredRecords: false, records: [] },
+      });
+      expect(beforeChecklist.body.readinessClaim).toBeNull();
+
+      const reviewed = await review(api, eventId);
+      const blocking = (reviewed.body.items as ChecklistItemView[])[0] as ChecklistItemView;
+      await request(api)
+        .patch(`/api/checklist-items/${blocking.id}`)
+        .send({ status: "approved", notes: "Organizer-recorded status only." });
+
+      const binder = await request(api).get(`/api/events/${eventId}/permit-status-binder`);
+      const statuses = binder.body.permitStatuses as {
+        id: string;
+        planItemId: string;
+        status: string;
+        notes: string | null;
+        deadlineStatus: string;
+        verificationStatus: string;
+      }[];
+
+      expect(binder.status).toBe(200);
+      expect(statuses).toHaveLength(3);
+      expect(statuses.find((item) => item.id === blocking.id)).toMatchObject({
+        status: "approved",
+        notes: "Organizer-recorded status only.",
+        verificationStatus: "SOURCE_CONFIRMED",
+      });
+      const undated = statuses.find((item) => item.deadlineStatus === "not_calculable");
+      expect(undated).toBeDefined();
+      expect(binder.body.recordCompleteness).toMatchObject({
+        incomplete: true,
+        missingChecklist: false,
+      });
+      expect(binder.body.recordCompleteness.unresolvedRegulatoryChecklistItemIds).toContain(
+        undated?.id,
+      );
+      expect(binder.body.recordCompleteness.unresolvedRegulatoryChecklistItemIds).toContain(
+        blocking.id,
+      );
+    });
+
+    it("returns explicit missing-plan state and normal id errors for the binder", async () => {
+      const eventId = await createEvent(scenario("A"));
+      const api = appWith(fakeStorage());
+
+      const noPlan = await request(api).get(`/api/events/${eventId}/permit-status-binder`);
+      expect(noPlan.status).toBe(200);
+      expect(noPlan.body).toMatchObject({
+        source: { plan: null },
+        permitStatuses: [],
+        historicalPermitStatuses: [],
+        recordCompleteness: {
+          incomplete: true,
+          missingPlan: true,
+          missingChecklist: true,
+        },
+        readinessClaim: null,
+      });
+
+      const malformed = await request(api).get("/api/events/not-a-uuid/permit-status-binder");
+      expect(malformed.status).toBe(400);
+
+      const missing = await request(api).get(`/api/events/${randomUUID()}/permit-status-binder`);
+      expect(missing.status).toBe(404);
+    });
+
     it("offers an empty checklist for a plan with no permit or insurance line", async () => {
       // No approved scenario currently produces a plan without a permit line (SPEC-CONFLICT #92
       // covers the spec's stale claim that Scenario B does), so the case is built directly from
@@ -788,6 +887,14 @@ describe.runIf(databaseUrl.length > 0)("F-202 compliance checklist", () => {
       expect(activePermit.id).not.toBe(endedPermit.id);
       expect(new Set(items.map((item) => item.planItemId)).size).toBe(3);
       expect(returned.body.statusRollup).toMatchObject({ approved: 0, not_started: 1 });
+
+      const binder = await request(api).get(`/api/events/${eventId}/permit-status-binder`);
+      expect(binder.body.permitStatuses.map((item: ChecklistItemView) => item.id)).toEqual([
+        activePermit.id,
+      ]);
+      expect(
+        binder.body.historicalPermitStatuses.map((item: ChecklistItemView) => item.id),
+      ).toEqual([endedPermit.id]);
 
       const { rows: alerts } = await pool.query<{
         checklist_item_id: string;

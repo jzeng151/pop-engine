@@ -294,6 +294,7 @@ type LatestPlan = {
   id: string;
   rulesetVersion: string;
   snapshotDate: string | null;
+  generatedAt: string;
   /** The `events.revision_counter` this plan evaluated (AD-13). */
   eventRevision: number;
   /** The event's revision now. Higher than `eventRevision` means the plan is stale. */
@@ -305,10 +306,11 @@ async function latestPlan(database: Queryable, eventId: string): Promise<LatestP
     id: string;
     ruleset_version: string;
     snapshot_date: Date | string | null;
+    generated_at: Date;
     event_revision: number;
     revision_counter: number;
   }>(
-    `SELECT plan.id, plan.ruleset_version, plan.snapshot_date, plan.event_revision,
+    `SELECT plan.id, plan.ruleset_version, plan.snapshot_date, plan.generated_at, plan.event_revision,
             event.revision_counter
        FROM permit_plans AS plan
        JOIN events AS event ON event.id = plan.event_id
@@ -322,6 +324,7 @@ async function latestPlan(database: Queryable, eventId: string): Promise<LatestP
     id: row.id,
     rulesetVersion: row.ruleset_version,
     snapshotDate: isoDate(row.snapshot_date),
+    generatedAt: row.generated_at.toISOString(),
     eventRevision: row.event_revision,
     currentRevision: row.revision_counter,
   };
@@ -625,6 +628,122 @@ async function checklistView(database: Queryable, eventId: string, plan: LatestP
     contextItems: latestItems
       .filter((item) => !TRACKABLE_FINDING_KINDS.has(item.kind))
       .map((item) => planContext(item, renderingOrFail(renderings, item))),
+  };
+}
+
+type BinderEventRow = {
+  id: string;
+  name: string;
+  event_date: Date | string;
+  location_name: string | null;
+  location_type: string;
+  revision_counter: number;
+  updated_at: Date;
+};
+
+async function binderEvent(database: Queryable, eventId: string): Promise<BinderEventRow | null> {
+  const { rows } = await database.query<BinderEventRow>(
+    `SELECT id, name, event_date, location_name, location_type, revision_counter, updated_at
+       FROM events WHERE id = $1`,
+    [eventId],
+  );
+  return rows[0] ?? null;
+}
+
+const hasUnresolvedRegulatoryState = (item: {
+  verificationStatus: VerificationStatus;
+  deadlineStatus: DeadlineStatus;
+}): boolean =>
+  item.deadlineStatus === "not_calculable" ||
+  item.deadlineStatus === "published_deadline_missed" ||
+  item.verificationStatus === "OFFICIAL_CONFLICT" ||
+  item.verificationStatus === "RESEARCH_REQUIRED" ||
+  item.verificationStatus === "COVERAGE_GAP";
+
+/**
+ * One read-only, event-scoped status binder assembled only from stored event, plan and checklist
+ * rows. There is no structured application-number, load-in, operational-contact or staff store in
+ * the current schema, so those sections stay explicitly unavailable rather than being inferred
+ * from organizer notes, alert destinations or uploaded filenames.
+ */
+async function permitStatusBinderView(database: Queryable, event: BinderEventRow) {
+  const plan = await latestPlan(database, event.id);
+  const eventView = {
+    id: event.id,
+    name: event.name,
+    date: calendarDateFrom(event.event_date),
+    locationName: event.location_name,
+    locationType: event.location_type,
+    revision: event.revision_counter,
+    updatedAt: event.updated_at.toISOString(),
+  };
+  const unsupportedOperationalRecords = {
+    applicationReferences: { supportedByStoredRecords: false, records: [] },
+    loadInTasks: { supportedByStoredRecords: false, records: [] },
+    contacts: { supportedByStoredRecords: false, records: [] },
+    staffAssignments: { supportedByStoredRecords: false, records: [] },
+  };
+
+  if (plan === null) {
+    return {
+      event: eventView,
+      source: { plan: null },
+      permitStatuses: [],
+      historicalPermitStatuses: [],
+      recordCompleteness: {
+        incomplete: true,
+        missingPlan: true,
+        missingChecklist: true,
+        planReviewPending: false,
+        stalePlan: false,
+        nonApprovedChecklistItemIds: [],
+        unresolvedRegulatoryChecklistItemIds: [],
+      },
+      operationalRecords: unsupportedOperationalRecords,
+      readinessClaim: null,
+    };
+  }
+
+  const checklist = await checklistView(database, event.id, plan);
+  const permitStatuses = checklist.items.filter(
+    (item) => !item.struckThrough && item.kind === "permit",
+  );
+  const historicalPermitStatuses = checklist.items.filter(
+    (item) => item.struckThrough && item.kind === "permit",
+  );
+  const nonApprovedChecklistItemIds = permitStatuses
+    .filter((item) => item.status !== "approved")
+    .map((item) => item.id);
+  const unresolvedRegulatoryChecklistItemIds = permitStatuses
+    .filter(hasUnresolvedRegulatoryState)
+    .map((item) => item.id);
+
+  return {
+    event: eventView,
+    source: {
+      plan: {
+        id: plan.id,
+        eventRevision: plan.eventRevision,
+        rulesetVersion: plan.rulesetVersion,
+        snapshotDate: plan.snapshotDate,
+        generatedAt: plan.generatedAt,
+      },
+    },
+    permitStatuses,
+    historicalPermitStatuses,
+    recordCompleteness: {
+      // Structured application references and operational records do not exist in the current
+      // schema, so this view cannot honestly claim to be a complete day-of readiness binder.
+      incomplete: true,
+      missingPlan: false,
+      missingChecklist: !checklist.created,
+      planReviewPending: checklist.planChanged,
+      stalePlan: checklist.planStale,
+      nonApprovedChecklistItemIds,
+      unresolvedRegulatoryChecklistItemIds,
+    },
+    operationalRecords: unsupportedOperationalRecords,
+    readinessClaim: null,
   };
 }
 
@@ -988,6 +1107,20 @@ export function createChecklistRouter(dependencies: ChecklistDependencies): Rout
         return;
       }
       res.json(await checklistView(database, eventId, plan));
+    }),
+  );
+
+  router.get(
+    "/events/:id/permit-status-binder",
+    handle(async (req, res) => {
+      const eventId = req.params.id ?? "";
+      if (rejectMalformedId(eventId, res, "event id")) return;
+      const event = await binderEvent(database, eventId);
+      if (event === null) {
+        notFound(res, `event ${eventId} not found`);
+        return;
+      }
+      res.json(await permitStatusBinderView(database, event));
     }),
   );
 
