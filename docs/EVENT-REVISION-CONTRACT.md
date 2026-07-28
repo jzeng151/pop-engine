@@ -69,6 +69,9 @@ Required invariants:
 - An explicit `unknown` value means the user answered unknown.
 - Completeness is validation state, not an organizer-visible submission workflow. Explicit `unknown` counts as answered where the schema permits it.
 - SQL `NULL` never means unknown.
+- Organizer-created revisions have non-null `created_by` and `created_at`. Deterministic legacy
+  backfill sets both to `NULL`; a null `created_at` means the source recorded no revision-creation
+  time and is never replaced with a plan, Event, or migration timestamp.
 - Derived authority or classification output is not accepted from the browser as regulatory truth.
 
 ### 2.4 Reject stale writes; do not merge them silently
@@ -98,9 +101,14 @@ The exact HTTP request and error schemas belong in the reviewed OpenAPI contract
 - Accepting a candidate locks the Event and rechecks that the candidate belongs to it, that
   `candidate.event_revision_id === events.current_revision_id`, and that
   `base_plan_id === events.current_plan_id`. Only then may the same transaction move
-  `current_plan_id`. A mismatch is rejected as a conflict without moving the pointer or reconciling
-  workflow/messages. A later edit may make an accepted plan stale, but an already-stale candidate
-  or a candidate based on a superseded accepted plan is never accepted.
+  `current_plan_id`, apply the approved deterministic workflow reconciliation, and persist obsolete
+  message-job cancellations plus any required replacement job/outbox rows. A mismatch or failure
+  rolls back all of those changes. External delivery occurs only after commit. A later edit may make
+  an accepted plan stale, but an already-stale candidate or a candidate based on a superseded
+  accepted plan is never accepted.
+- The migration that introduces `current_plan_id` sets it from the same-event
+  `checklist_acknowledgements.plan_id` when an acknowledgement exists and to `NULL` otherwise. It
+  never treats the latest generated plan as accepted.
 - For a backfilled plan, its canonical `intake_snapshot` must equal the engine-input projection of
   the revision it references under the plan's mapped schema. Questionnaire answers the engine did
   not consume may remain in that revision without being copied into the historical plan snapshot.
@@ -151,13 +159,21 @@ The F-107 forward migration must then:
 Current-only Phase 1 values must not be copied backward into older plan-backed revisions.
 
 F-107 is not authorized to activate before the joint F-701–F-703 gate. `created_by = NULL` is
-reserved for deterministic legacy backfill; this contract defines no demo or system actor. Every
-organizer-created revision requires the authenticated actor.
+reserved for deterministic legacy backfill together with `created_at = NULL`; this contract defines
+no demo or system actor. Every organizer-created revision requires the authenticated actor and
+server-recorded creation time.
 
 During compatibility rollout, every successful revision transaction must update old `events`
 projections in the same transaction while any deployed Phase 1 reader still uses them. Projection
 updates may stop only after every reader has atomically cut over to Event Revisions. Event Revision
 remains the only write authority.
+
+The backfill and writer-authority cutover must leave no window in which a Phase 1 writer can commit
+an Event edit that is absent from the resulting current revision. A legacy write committed before
+the snapshot is included in that revision; after cutover, every write uses the revision transaction.
+F-107 must enforce that boundary by quiescing or locking legacy writers, or by deploying a
+transactional dual-write path before the snapshot. If it cannot prove the boundary, migration
+aborts.
 
 ### 2.7 Compare findings and plan outcomes deterministically
 
@@ -177,8 +193,12 @@ remains the only write authority.
   `missingFacts` (including each fact's `field`, `thresholds`, and complete `branches`),
   `unresolvedTimelines`, and `rescopeSuggestions` (including `change`, `reevaluatedVerdict`, and
   `droppedRuleIds`).
-- Database IDs, plan IDs, timestamps, row order, workflow status, and the debugging-only evaluation
-  `trace` do not make a regulatory finding or plan outcome changed.
+- The diff separately reports changed plan provenance when any persisted ruleset, rules-schema,
+  Event Input schema, engine, or calendar version/checksum differs, or when `snapshot_date` differs.
+  This applies even when every finding and plan outcome matches.
+- Database IDs, plan IDs, created/generated/updated timestamps, row order, workflow status, and the
+  debugging-only evaluation `trace` do not make a regulatory finding, plan outcome, or provenance
+  changed.
 - Diff output is deterministic and derived from immutable plans. No `plan_diffs` table is authorized until a consuming approved feature requires stored diffs.
 - This future candidate-plan diff is not F-202 Acceptance Criterion 9's narrower current-checklist notice; that criterion deliberately excludes clock-only movement among countdown statuses.
 
@@ -188,7 +208,7 @@ remains the only write authority.
 | ---------------------------------------------------------------------------------------- | --------------------------------------------------------------- |
 | `workspace_id` and legacy workspace backfill                                             | F-702                                                           |
 | `event_revisions`, `current_revision_id`, append/conflict behavior, and plan revision FK | F-107                                                           |
-| `current_plan_id` and explicit plan acceptance                                           | Approved plan-acceptance contract                               |
+| `current_plan_id`, acknowledgement backfill, acceptance, and workflow reconciliation     | Approved plan-acceptance contract                               |
 | Finding diff API or stored diff                                                          | First approved consumer, such as F-103 or F-503                 |
 | OpenAPI/JSON Schema and generated-type handoff                                           | Architecture decision gate; separate from this logical approval |
 
@@ -202,6 +222,10 @@ Before activation, the consuming implementation must prove:
 - lossless backfill across an input-schema change that did not increment the legacy revision;
 - preservation of current Phase 1 questionnaire values absent from historical plan snapshots;
 - mismatch abort with no partial mutation;
+- every legacy backfilled revision has null actor/time sentinels, while every organizer-created
+  revision records both;
+- a legacy write racing the backfill is either included in the resulting current revision or
+  committed through the revision transaction, never lost between authorities;
 - revision immutability;
 - two concurrent saves produce one success and one `revision_conflict`;
 - a save with matching schema, jurisdiction, and answers creates no revision, while changing only
@@ -212,9 +236,13 @@ Before activation, the consuming implementation must prove:
   authenticated actor;
 - missing and explicit `unknown` remain distinct;
 - plans reference exact revisions and staleness is server-derived;
+- `current_plan_id` backfills from the same-event checklist acknowledgement, or remains null when
+  none exists, regardless of newer generated plans;
 - accepting a candidate races safely with a revision save and rejects the stale candidate;
 - two candidates accepted concurrently from the same accepted base produce one success and one
   conflict;
+- an acceptance reconciliation or job/outbox failure leaves the plan pointer, workflow, and jobs
+  unchanged;
 - while a Phase 1 reader remains, a revision save and subsequent plan generation cannot observe
   different questionnaire answers;
 - a `note_text`-only finding change is reported as `changed`;
@@ -223,6 +251,7 @@ Before activation, the consuming implementation must prove:
   rendering matches;
 - a verdict or user-visible `verdictDetail`-only change, including a `rescopeSuggestions`-only
   change, is reported when every finding rendering matches;
+- a plan-provenance-only change is reported when every finding and plan outcome matches;
 - diff identity and output are byte-stable; and
 - cross-workspace reads and writes fail after tenancy activation.
 
