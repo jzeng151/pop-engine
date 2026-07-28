@@ -93,19 +93,26 @@ The exact HTTP request and error schemas belong in the reviewed OpenAPI contract
 
 - Every new plan references one `event_revision_id`.
 - The database must reject a plan whose `event_id` and revision belong to different events.
+- Before evaluation and persistence, the selected published ruleset's jurisdiction must exactly
+  equal the referenced revision's `jurisdiction_code`. Generation and persistence reject a
+  mismatch.
 - Plans, findings, traces, and their regulatory snapshots remain immutable.
 - A plan is stale when its revision differs from `events.current_revision_id`.
 - Generating a candidate does not move `current_plan_id`.
+- Every candidate records the exact `today` engine input used to evaluate it.
 - An acceptance request names the accepted `base_plan_id` against which the candidate was presented;
   `null` is valid only when the Event has no accepted plan.
 - Accepting a candidate locks the Event and rechecks that the candidate belongs to it, that
   `candidate.event_revision_id === events.current_revision_id`, and that
-  `base_plan_id === events.current_plan_id`. Only then may the same transaction move
-  `current_plan_id`, apply the approved deterministic workflow reconciliation, and persist obsolete
-  message-job cancellations plus any required replacement job/outbox rows. A mismatch or failure
-  rolls back all of those changes. External delivery occurs only after commit. A later edit may make
-  an accepted plan stale, but an already-stale candidate or a candidate based on a superseded
-  accepted plan is never accepted.
+  `base_plan_id === events.current_plan_id`. While holding that lock, acceptance also derives the
+  current calendar date in the candidate's jurisdiction timezone and requires it to equal the
+  candidate's recorded `today`; otherwise it rejects the candidate and requires regeneration. Only
+  then may the same transaction move `current_plan_id`, apply the approved deterministic workflow
+  reconciliation, and persist obsolete message-job cancellations plus any required replacement
+  job/outbox rows. A mismatch or failure rolls back all of those changes. External delivery occurs
+  only after commit. A later edit may make an accepted plan stale, but an already-stale candidate, a
+  candidate evaluated on an obsolete local date, or a candidate based on a superseded accepted plan
+  is never accepted.
 - The migration that introduces `current_plan_id` sets it from the same-event
   `checklist_acknowledgements.plan_id` when an acknowledgement exists and to `NULL` otherwise. It
   never treats the latest generated plan as accepted.
@@ -120,6 +127,9 @@ Before mutation, F-107's approved compatibility package must define:
 
 - one unambiguous mapping from every historical `ruleset_version` to the Event Input schema that
   produced its plan snapshot;
+- one exact `input_schema_version` and `jurisdiction_code` for the Phase 1 Event row at cutover,
+  including an Event with no historical plan. This mapping is explicit and does not derive either
+  value from a latest plan, display text, or migration time;
 - validation and a lossless canonical comparison transform for every mapped schema. Omission,
   legacy unanswered/`NULL`, explicit `unknown`, `false`, and other concrete values remain distinct
   unless recorded source data makes a conversion lossless; and
@@ -143,7 +153,8 @@ The F-107 forward migration must then:
    inputs even when the old numeric `event_revision` did not change;
 4. assign those backfilled revisions a deterministic, strictly increasing order defined and tested
    by F-107. It must not infer schema order from version-string sorting or migration execution time;
-5. always build the current Event/current revision from the Phase 1 row, even when a plan has the
+5. always build the current Event/current revision from the Phase 1 row under the compatibility
+   package's exact cutover `input_schema_version` and `jurisdiction_code`, even when a plan has the
    same legacy revision number. Stable values such as the Event name and questionnaire values such
    as `location_name` and `capacity` must survive through the exhaustive row mapping;
 6. set that current revision to `complete` when full validation passes, or to `incomplete` only when
@@ -183,10 +194,12 @@ aborts.
   - `removed` when its key appears only in the accepted base; or
   - `changed` when the same key has a different canonical regulatory rendering.
 - Canonical comparison includes kind, disposition, rule provenance, trigger trace, sources,
-  verification state/date/qualification, name, agency, the complete published and computed deadline
-  state (`deadline`, `deadline_display`, `latest_apply_date`, `apply_after_date`, `deadline_status`,
-  `slack_days`, `deadline_unknown_fields`, and `timeline_unresolved_reason`), fee, required documents,
-  portal name/URL/instructions, `notes`, `note_text`, and conflict text.
+  overall verification state/date/qualification, the separate scope, deadline, fee, required
+  documents, and portal verification statuses, name, agency, the complete published and computed
+  deadline state (`deadline`, `deadline_display`, `latest_apply_date`, `apply_after_date`,
+  `deadline_status`, `slack_days`, `deadline_unknown_fields`, and
+  `timeline_unresolved_reason`), fee, required documents, portal name/URL/instructions, `notes`,
+  `note_text`, and conflict text.
 - The diff separately reports a changed plan outcome when result completeness or its complete reasons,
   `verdict`, or canonical user-visible `verdictDetail` differs, even if every finding rendering is
   unchanged. That detail consists of `blockingFinding`, `missedRuleIds`, `minSlackDays`,
@@ -236,9 +249,14 @@ Before activation, the consuming implementation must prove:
   authenticated actor;
 - missing and explicit `unknown` remain distinct;
 - plans reference exact revisions and staleness is server-derived;
+- plan generation and persistence reject a ruleset/revision jurisdiction mismatch;
 - `current_plan_id` backfills from the same-event checklist acknowledgement, or remains null when
   none exists, regardless of newer generated plans;
+- an Event with no historical plan backfills its current revision under the exact cutover Event
+  Input schema and jurisdiction named by the compatibility package;
 - accepting a candidate races safely with a revision save and rejects the stale candidate;
+- accepting a candidate after its jurisdiction-local evaluation date has passed rejects it and
+  requires regeneration;
 - two candidates accepted concurrently from the same accepted base produce one success and one
   conflict;
 - an acceptance reconciliation or job/outbox failure leaves the plan pointer, workflow, and jobs
@@ -247,6 +265,8 @@ Before activation, the consuming implementation must prove:
   different questionnaire answers;
 - a `note_text`-only finding change is reported as `changed`;
 - a `verification.qualification`-only finding change is reported as `changed`;
+- a change to only one of the scope, deadline, fee, required-documents, or portal verification
+  statuses is reported as `changed`;
 - a result-completeness or result-completeness-reason-only change is reported when every finding
   rendering matches;
 - a verdict or user-visible `verdictDetail`-only change, including a `rescopeSuggestions`-only
