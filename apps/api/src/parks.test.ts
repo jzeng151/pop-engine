@@ -124,4 +124,19 @@ describe("NYC Parks discovery", () => {
       });
     }
   });
+
+  it("passes a five-second abort signal without waiting in real time", async () => {
+    const signal = new AbortController().signal;
+    const timeout = vi.spyOn(AbortSignal, "timeout").mockReturnValue(signal);
+    const fetchParks = vi.fn<ParksFetch>(async () => Response.json([]));
+
+    const response = await request(createTestApp(fetchParks)).get(
+      "/api/permits/nyc/discover?borough=R",
+    );
+
+    expect(response.status).toBe(200);
+    expect(timeout).toHaveBeenCalledWith(5_000);
+    expect(fetchParks).toHaveBeenCalledWith(expect.any(String), { signal });
+    timeout.mockRestore();
+  });
 });

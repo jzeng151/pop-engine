@@ -4,8 +4,9 @@ const PARKS_ENDPOINT = "https://data.cityofnewyork.us/resource/c5vm-g2dk.json";
 const BOROUGHS = new Set(["M", "B", "Q", "X", "R"]);
 const DEFAULT_LIMIT = 10;
 const MAX_LIMIT = 50;
+const PARKS_TIMEOUT_MS = 5_000;
 
-export type ParksFetch = (input: string | URL) => Promise<Response>;
+export type ParksFetch = (input: string | URL, init?: RequestInit) => Promise<Response>;
 
 type ParkRow = {
   system?: unknown;
@@ -61,7 +62,9 @@ export function createParksRouter(fetchParks: ParksFetch = fetch): Router {
         return;
       }
 
-      const response = await fetchParks(parksUrl(borough, limit));
+      const response = await fetchParks(parksUrl(borough, limit), {
+        signal: AbortSignal.timeout(PARKS_TIMEOUT_MS),
+      });
       if (!response.ok) throw new Error("NYC Open Data request failed");
 
       const body: unknown = await response.json();
