@@ -627,8 +627,15 @@ const humanizeToken = (token: string): string => token.replace(/_/g, " ");
 const verificationLine = (subject: string, status: VerificationStatus): string =>
   `Verification of your ${subject}: ${humanizeToken(status)}`;
 
-const confirmationLine = (subject: string, status: VerificationStatus): string | null =>
-  status === "RESEARCH_REQUIRED" ? `${subject}: ${CONFIRM_WITH_AGENCY}` : null;
+const confirmationLine = (
+  subject: string,
+  status: VerificationStatus,
+  rendered: readonly (string | null | undefined)[] = [],
+): string | null =>
+  status === "RESEARCH_REQUIRED" &&
+  !rendered.some((line) => line?.includes(CONFIRM_WITH_AGENCY))
+    ? `${subject}: ${CONFIRM_WITH_AGENCY}`
+    : null;
 
 function reminderCopy(
   row: PlanAlertRow,
@@ -659,7 +666,11 @@ function reminderCopy(
     // SOURCE_CONFIRMED and wrong for the rest. The checklist row already shows the same token
     // (`checklist-item.tsx`), humanised the same way, so the two surfaces agree.
     `Verification: ${humanizeToken(row.verification_status)}`,
-    confirmationLine(withAgency(row), row.verification_status),
+    confirmationLine(withAgency(row), row.verification_status, [
+      rendering?.deadline_display,
+      ...(rendering?.notes ?? []),
+      rendering?.conflict_text,
+    ]),
     // EVERY PUBLISHED NOTE, because the qualification IS one of them and nothing here can tell
     // which. `findings.ts` builds this array as the rule's own notes, then the DEADLINE's and
     // VERIFICATION's qualifications, all flattened, with no marker separating the caveat about a
@@ -765,7 +776,9 @@ function dependencyCopy(
         `${humanizeToken(dependency.verification_status)}`,
     dependency === undefined
       ? null
-      : confirmationLine("Sequencing between them", dependency.verification_status),
+      : confirmationLine("Sequencing between them", dependency.verification_status, [
+          dependencyNote,
+        ]),
     ...filingRoute(gated, gatedRendering),
     dependencyNote,
   ].filter((line): line is string => line !== null);
@@ -890,7 +903,10 @@ const slackWarningCopy = (
     // ruleset's call, not this file's.
     ...controllingFindings.flatMap((finding) => [
       verificationLine(finding.subject, finding.verificationStatus),
-      confirmationLine(finding.subject, finding.verificationStatus),
+      confirmationLine(finding.subject, finding.verificationStatus, [
+        ...finding.notes,
+        finding.conflictText,
+      ]),
       ...finding.notes,
       finding.conflictText,
     ]),

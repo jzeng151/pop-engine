@@ -12,8 +12,17 @@ import { readFile } from "node:fs/promises";
 import { Pool } from "pg";
 import request from "supertest";
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
-import { parseEngineRuleset, parseIntakeContract } from "@pop-engine/engine";
-import type { EngineRuleset, HolidayCalendar, IntakeContract } from "@pop-engine/engine";
+import {
+  CONFIRM_WITH_AGENCY,
+  parseEngineRuleset,
+  parseIntakeContract,
+} from "@pop-engine/engine";
+import type {
+  Deadline,
+  EngineRuleset,
+  HolidayCalendar,
+  IntakeContract,
+} from "@pop-engine/engine";
 import {
   FIXTURE_TODAY,
   SCENARIO_INTAKE_FIXTURES,
@@ -255,12 +264,14 @@ describe.skipIf(databaseUrl === "")("F-203 deadline alerts", () => {
     eventId: string,
     options: {
       latestApplyDate?: string | null;
+      deadline?: Deadline | null;
       planToday?: string;
       applyAfterDate?: string | null;
       disposition?: string;
       verdict?: string;
       minSlackDays?: number | null;
       conflictText?: string | null;
+      deadlineDisplay?: string;
       /**
        * Re-point this existing task at the new plan's item instead of creating another, which is
        * what `materialize` does on a regeneration. A test about identity ACROSS plans has to do
@@ -277,12 +288,14 @@ describe.skipIf(databaseUrl === "")("F-203 deadline alerts", () => {
   ): Promise<{ planId: string; checklistItemId: string }> => {
     const {
       latestApplyDate = dayFromToday(0),
+      deadline = null,
       planToday = todayInJurisdiction("US-NY-NYC"),
       applyAfterDate = null,
       disposition = "required",
       verdict = "feasible",
       minSlackDays = null,
       conflictText = null,
+      deadlineDisplay = "file at least 5 days before use",
       reuseChecklistItemId,
       laterDated,
     } = options;
@@ -307,7 +320,7 @@ describe.skipIf(databaseUrl === "")("F-203 deadline alerts", () => {
               notes: [],
               note_text: null,
               conflict_text: conflictText,
-              deadline_display: "file at least 5 days before use",
+              deadline_display: deadlineDisplay,
               // The engine's own per-finding slack, which is what identifies the requirement the
               // plan's minSlackDays came from. Null here would make the fixture incoherent: a
               // verdict quoting a number no finding claims.
@@ -408,11 +421,18 @@ describe.skipIf(databaseUrl === "")("F-203 deadline alerts", () => {
     }
     await pool.query(
       `INSERT INTO permit_plan_items (id, plan_id, rule_ids, triggered_by, permit_name, agency,
-                                      latest_apply_date, apply_after_date, sources, kind,
+                                      latest_apply_date, deadline, apply_after_date, sources, kind,
                                       disposition, deadline_status, verification_status)
-       VALUES ($1, $2, ARRAY['NYPD-SOUND-001'], '[]'::jsonb, 'Sound Device Permit', 'NYPD', $3, $4,
-               '[]'::jsonb, 'permit', $5, 'on_track', 'SOURCE_CONFIRMED')`,
-      [itemId, planId, latestApplyDate, applyAfterDate, disposition],
+       VALUES ($1, $2, ARRAY['NYPD-SOUND-001'], '[]'::jsonb, 'Sound Device Permit', 'NYPD', $3,
+               $4::jsonb, $5, '[]'::jsonb, 'permit', $6, 'on_track', 'SOURCE_CONFIRMED')`,
+      [
+        itemId,
+        planId,
+        latestApplyDate,
+        deadline === null ? null : JSON.stringify(deadline),
+        applyAfterDate,
+        disposition,
+      ],
     );
     await pool.query(
       // The re-point `materialize` performs on a regeneration: the task survives, and only the
@@ -796,6 +816,7 @@ describe.skipIf(databaseUrl === "")("F-203 deadline alerts", () => {
       expect(body).toContain("Verification of your Sound Device Permit (NYPD): SOURCE CONFIRMED");
       expect(body).toContain("Verification of your Special Event Permit (NYC Parks): RESEARCH REQUIRED");
       expect(body).toContain("Special Event Permit (NYC Parks): confirm with agency");
+      expect(body.split(CONFIRM_WITH_AGENCY)).toHaveLength(2);
     });
 
     it("keeps a tied gated controller in the copy after its own window has shut", async () => {
@@ -993,7 +1014,17 @@ describe.skipIf(databaseUrl === "")("F-203 deadline alerts", () => {
 
     it("tells a dated research-required reminder to confirm with the agency", async () => {
       const eventId = await createEvent(scenario("C"));
-      const { planId } = await insertDuePlan(eventId, { latestApplyDate: dayFromToday(7) });
+      const { planId } = await insertDuePlan(eventId, {
+        latestApplyDate: dayFromToday(7),
+        deadline: {
+          type: "published_minimum",
+          calendarDays: 5,
+          display: CONFIRM_WITH_AGENCY,
+          qualification: null,
+          boundary: "inclusive",
+        },
+        deadlineDisplay: CONFIRM_WITH_AGENCY,
+      });
       await pool.query(
         `UPDATE permit_plan_items SET verification_status = 'RESEARCH_REQUIRED'
           WHERE plan_id = $1 AND rule_ids = ARRAY['NYPD-SOUND-001']`,
@@ -1013,9 +1044,8 @@ describe.skipIf(databaseUrl === "")("F-203 deadline alerts", () => {
         (row) => row.alert_type === "deadline_reminder",
       );
       expect(reminder?.payload.body).toContain("Verification: RESEARCH REQUIRED");
-      expect(reminder?.payload.body).toContain(
-        "Sound Device Permit (NYPD): confirm with agency",
-      );
+      expect(reminder?.payload.body).toContain(`Published deadline: ${CONFIRM_WITH_AGENCY}`);
+      expect(reminder?.payload.body?.split(CONFIRM_WITH_AGENCY)).toHaveLength(2);
     });
 
     it("carries the published qualification beside the date it qualifies", async () => {
@@ -2184,6 +2214,7 @@ describe.skipIf(databaseUrl === "")("F-203 deadline alerts", () => {
       );
       expect(body).toContain("Verification of the sequencing between them: RESEARCH REQUIRED");
       expect(body).toContain("Sequencing between them: confirm with agency");
+      expect(body.split(CONFIRM_WITH_AGENCY)).toHaveLength(2);
     });
 
     it("does not announce a second unlock when regeneration recomputes the same gate", async () => {
