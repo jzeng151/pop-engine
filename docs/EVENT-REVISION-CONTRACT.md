@@ -76,7 +76,9 @@ Required invariants:
 - A save names the `base_revision_id` it was edited from. `null` is valid only when the event has no revision.
 - In one transaction, the server locks the Event, compares `base_revision_id` with `current_revision_id`, validates the proposed answers, appends the revision, and advances the pointer.
 - A changed save appends exactly one revision.
-- A no-op save returns the current revision and appends nothing.
+- A save is a no-op only when its `input_schema_version`, `jurisdiction_code`, and
+  schema-canonical `answers_json` match the current revision. It returns that revision and appends
+  nothing; changing any member of that tuple appends a revision.
 - A stale base returns HTTP `409` with stable code `revision_conflict` and the current revision identifier.
 - The server never performs an automatic field merge. The user reloads and explicitly reconciles.
 - Plans evaluate `complete` revisions only. F-107 may save `incomplete` revisions but does not add a separate submission transition.
@@ -144,7 +146,9 @@ The F-107 forward migration must then:
 
 Current-only Phase 1 values must not be copied backward into older plan-backed revisions.
 
-Legacy rows may have no user actor; `created_by = NULL` is reserved for deterministic legacy backfill. New revisions require the authenticated actor after the F-701–F-703 gate.
+F-107 is not authorized to activate before the joint F-701–F-703 gate. `created_by = NULL` is
+reserved for deterministic legacy backfill; this contract defines no demo or system actor. Every
+organizer-created revision requires the authenticated actor.
 
 During compatibility rollout, a successful revision transaction may update old `events` projections for Phase 1 readers. Event Revision remains the only write authority.
 
@@ -182,7 +186,10 @@ Before activation, the consuming implementation must prove:
 - mismatch abort with no partial mutation;
 - revision immutability;
 - two concurrent saves produce one success and one `revision_conflict`;
-- no-op save creates no revision;
+- a save with matching schema, jurisdiction, and answers creates no revision, while changing only
+  the schema or jurisdiction creates one;
+- legacy backfill is the only path to `created_by = NULL`; organizer saves reject a missing
+  authenticated actor;
 - missing and explicit `unknown` remain distinct;
 - plans reference exact revisions and staleness is server-derived;
 - accepting a candidate races safely with a revision save and rejects the stale candidate;
