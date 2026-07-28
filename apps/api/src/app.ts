@@ -4,6 +4,7 @@ import { createAlertsRouter, type AlertsDependencies } from "./alerts";
 import { createCheckinsRouter } from "./checkins";
 import { createChecklistRouter, type ChecklistDependencies } from "./checklist";
 import { createEventsRouter, type EventsDependencies } from "./events";
+import { createObtainedPermitsRouter } from "./obtained-permits";
 import { EventNotFoundError, PlanIntegrityError, type PlanService } from "./plan";
 import { createPublicPageRouter } from "./public-page";
 import { createRsvpsRouter } from "./rsvps";
@@ -78,6 +79,12 @@ export function createApp(dependencies: AppDependencies): Express {
   // F-301: registers GET /e/:eventId at the app root (ARCHITECTURE) plus organizer
   // /api/events/:id/public-page routes on the same router.
   app.use(createPublicPageRouter({ database: dependencies.database }));
+  // DEMO SCOPE, not F-208: reads the checklist rows the organizer already set to `approved` and
+  // records what they typed off the permit. Needs only pool and clock, like the check-in routes.
+  app.use(
+    "/api",
+    createObtainedPermitsRouter({ database: dependencies.database, today: dependencies.today }),
+  );
   if (dependencies.planService !== undefined) registerPlanRoutes(app, dependencies.planService);
   if (dependencies.checklist !== undefined) {
     app.use("/api", createChecklistRouter(dependencies.checklist));
