@@ -795,6 +795,7 @@ describe.skipIf(databaseUrl === "")("F-203 deadline alerts", () => {
       );
       expect(body).toContain("Verification of your Sound Device Permit (NYPD): SOURCE CONFIRMED");
       expect(body).toContain("Verification of your Special Event Permit (NYC Parks): RESEARCH REQUIRED");
+      expect(body).toContain("Special Event Permit (NYC Parks): confirm with agency");
     });
 
     it("keeps a tied gated controller in the copy after its own window has shut", async () => {
@@ -988,6 +989,33 @@ describe.skipIf(databaseUrl === "")("F-203 deadline alerts", () => {
       expect(
         reminders.some((row) => row.payload.body?.includes("Verification: SOURCE CONFIRMED")),
       ).toBe(true);
+    });
+
+    it("tells a dated research-required reminder to confirm with the agency", async () => {
+      const eventId = await createEvent(scenario("C"));
+      const { planId } = await insertDuePlan(eventId, { latestApplyDate: dayFromToday(7) });
+      await pool.query(
+        `UPDATE permit_plan_items SET verification_status = 'RESEARCH_REQUIRED'
+          WHERE plan_id = $1 AND rule_ids = ARRAY['NYPD-SOUND-001']`,
+        [planId],
+      );
+      const client = await pool.connect();
+      try {
+        await schedulerWith()(client, eventId, planId, {
+          email: "organizer@example.test",
+          phone: null,
+        });
+      } finally {
+        client.release();
+      }
+
+      const reminder = (await alertsOf(eventId)).find(
+        (row) => row.alert_type === "deadline_reminder",
+      );
+      expect(reminder?.payload.body).toContain("Verification: RESEARCH REQUIRED");
+      expect(reminder?.payload.body).toContain(
+        "Sound Device Permit (NYPD): confirm with agency",
+      );
     });
 
     it("carries the published qualification beside the date it qualifies", async () => {
@@ -2155,6 +2183,7 @@ describe.skipIf(databaseUrl === "")("F-203 deadline alerts", () => {
         "Verification of your Special Event Permit (NYC Parks): SOURCE CONFIRMED",
       );
       expect(body).toContain("Verification of the sequencing between them: RESEARCH REQUIRED");
+      expect(body).toContain("Sequencing between them: confirm with agency");
     });
 
     it("does not announce a second unlock when regeneration recomputes the same gate", async () => {

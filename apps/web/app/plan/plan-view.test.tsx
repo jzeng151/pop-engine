@@ -340,6 +340,20 @@ describe("per-line citations and status (AC 2, AC 3)", () => {
     expect(line.getByText("RESEARCH REQUIRED")).toBeDefined();
   });
 
+  it("renders one confirmation when a research-required deadline supplies the same treatment", async () => {
+    const line = await lineFor(
+      finding({
+        verificationStatus: "RESEARCH_REQUIRED",
+        deadline: { type: "research_required", display: null, qualification: null },
+        deadlineDisplay: CONFIRM_WITH_AGENCY,
+        deadlineStatus: "not_calculable",
+      }),
+    );
+
+    expect(line.getAllByText(CONFIRM_WITH_AGENCY)).toHaveLength(1);
+    expect(line.getByText("RESEARCH REQUIRED")).toBeDefined();
+  });
+
   it("renders both readings of an official conflict with every source behind them", async () => {
     const conflict = finding({
       ruleIds: [CONFLICT_RULE.id],

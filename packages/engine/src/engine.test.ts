@@ -153,6 +153,20 @@ describe("provenance (AC 1)", () => {
     );
     expect(incomplete.findings[0]?.lastVerifiedDate).toBeNull();
   });
+
+  it("rejects mixed verification statuses within one dedupe group", () => {
+    expect(() =>
+      syntheticRuleset([
+        dedupeRule("RULE-A", "citation A"),
+        {
+          ...dedupeRule("RULE-B", "citation B"),
+          verification: { status: "RESEARCH_REQUIRED" },
+        },
+      ]),
+    ).toThrow(
+      /dedupe key "dob-structure" mixes verification statuses "SOURCE_CONFIRMED" and "RESEARCH_REQUIRED"/,
+    );
+  });
 });
 
 describe("verification treatments", () => {

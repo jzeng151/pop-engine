@@ -7,6 +7,7 @@ import ChecklistPage from "../events/[id]/checklist/page";
 import PlanPage from "../events/[id]/plan/page";
 import { ChecklistView } from "./checklist-view";
 import { NOT_COVERED_BY_RULESET } from "../verification-copy";
+import { CONFIRM_WITH_AGENCY } from "@pop-engine/engine";
 import {
   ALCOHOL_ADVISORY,
   checklistBody,
@@ -829,6 +830,27 @@ describe("AC 5 · deadline context lives where the work happens", () => {
     expect(within(row).getByText(noteTextOf(SOUND_DEPENDENCY) as string)).toBeDefined();
     // A line with no located primary source says so on the row, not in a tooltip.
     expect(within(row).getByRole("note").textContent).toContain("agency");
+  });
+
+  it("renders one confirmation when a research-required deadline supplies the same treatment", async () => {
+    stubApi({
+      [GET_CHECKLIST]: checklistOf({
+        created: true,
+        items: [
+          trackedItem(SOUND_DEPENDENCY, {
+            verificationStatus: "RESEARCH_REQUIRED",
+            deadline: { type: "research_required", display: null, qualification: null },
+            deadlineDisplay: CONFIRM_WITH_AGENCY,
+            deadlineStatus: "not_calculable",
+          }),
+        ],
+      }),
+    });
+    await renderView();
+
+    const row = rowFor(SOUND_DEPENDENCY);
+    expect(within(row).getAllByText(CONFIRM_WITH_AGENCY)).toHaveLength(1);
+    expect(within(row).getByText("RESEARCH REQUIRED")).toBeDefined();
   });
 
   it("renders a portal with no published URL as text rather than a dead link", async () => {

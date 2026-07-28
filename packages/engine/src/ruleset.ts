@@ -588,6 +588,7 @@ export function parseEngineRuleset(value: unknown): EngineRuleset {
         fail(`rule ${rule.id} references undeclared field "${field}"`);
     }
   }
+  rejectMixedDedupeVerificationStatuses(published);
   rejectUnconsumedFields(intakeFields, published);
 
   return {
@@ -599,6 +600,21 @@ export function parseEngineRuleset(value: unknown): EngineRuleset {
     intakeFields,
     rules: [...rules, ...advisories],
   };
+}
+
+function rejectMixedDedupeVerificationStatuses(published: readonly EngineRule[]): void {
+  const statusByDedupeKey = new Map<string, VerificationStatus>();
+  for (const rule of published) {
+    if (rule.dedupeKey === null) continue;
+    const status = statusByDedupeKey.get(rule.dedupeKey);
+    if (status !== undefined && status !== rule.verificationStatus) {
+      fail(
+        `dedupe key "${rule.dedupeKey}" mixes verification statuses ` +
+          `"${status}" and "${rule.verificationStatus}"`,
+      );
+    }
+    statusByDedupeKey.set(rule.dedupeKey, rule.verificationStatus);
+  }
 }
 
 /**

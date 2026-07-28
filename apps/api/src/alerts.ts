@@ -20,7 +20,7 @@
 import { createHash, randomUUID } from "node:crypto";
 import { Router, type NextFunction, type Request, type Response } from "express";
 import type { Pool, PoolClient, QueryResult, QueryResultRow } from "pg";
-import { DEPENDENCY_SEQUENCING_BINDINGS } from "@pop-engine/engine";
+import { CONFIRM_WITH_AGENCY, DEPENDENCY_SEQUENCING_BINDINGS } from "@pop-engine/engine";
 import type { Deadline, Disposition, VerificationStatus } from "@pop-engine/engine";
 import {
   ALERT_CHANNELS,
@@ -627,6 +627,9 @@ const humanizeToken = (token: string): string => token.replace(/_/g, " ");
 const verificationLine = (subject: string, status: VerificationStatus): string =>
   `Verification of your ${subject}: ${humanizeToken(status)}`;
 
+const confirmationLine = (subject: string, status: VerificationStatus): string | null =>
+  status === "RESEARCH_REQUIRED" ? `${subject}: ${CONFIRM_WITH_AGENCY}` : null;
+
 function reminderCopy(
   row: PlanAlertRow,
   rendering: FindingRendering | undefined,
@@ -656,11 +659,12 @@ function reminderCopy(
     // SOURCE_CONFIRMED and wrong for the rest. The checklist row already shows the same token
     // (`checklist-item.tsx`), humanised the same way, so the two surfaces agree.
     `Verification: ${humanizeToken(row.verification_status)}`,
+    confirmationLine(withAgency(row), row.verification_status),
     // EVERY PUBLISHED NOTE, because the qualification IS one of them and nothing here can tell
-    // which. `findings.ts` builds this array as the rule's own notes, then the DEADLINE's
-    // `qualification`, then the VERIFICATION's, then "confirm with agency" where it applies — all
-    // flattened, with no marker separating the caveat about a date from a note about anything
-    // else. Reading only `deadline_display` therefore dropped the caveat silently, and dropped it
+    // which. `findings.ts` builds this array as the rule's own notes, then the DEADLINE's and
+    // VERIFICATION's qualifications, all flattened, with no marker separating the caveat about a
+    // date from a note about anything else. Reading only `deadline_display` therefore dropped the
+    // caveat silently, and dropped it
     // hardest exactly where it matters most: DOB-ASSEMBLY-001 publishes no display string at all,
     // so its reminder stated a computed calendar date with no hint that the published lead may be
     // ten BUSINESS days and that the wording is unpinned. A date presented without the doubt the
@@ -752,11 +756,16 @@ function dependencyCopy(
     // agencies agree on, and without this line the unconfirmed part of the claim is the part the
     // organizer cannot see. Every token is read off the plan item, never named here.
     verificationLine(withAgency(gated), gated.verification_status),
+    confirmationLine(withAgency(gated), gated.verification_status),
     verificationLine(withAgency(upstream), upstream.verification_status),
+    confirmationLine(withAgency(upstream), upstream.verification_status),
     dependency === undefined
       ? null
       : `Verification of the sequencing between them: ` +
         `${humanizeToken(dependency.verification_status)}`,
+    dependency === undefined
+      ? null
+      : confirmationLine("Sequencing between them", dependency.verification_status),
     ...filingRoute(gated, gatedRendering),
     dependencyNote,
   ].filter((line): line is string => line !== null);
@@ -881,6 +890,7 @@ const slackWarningCopy = (
     // ruleset's call, not this file's.
     ...controllingFindings.flatMap((finding) => [
       verificationLine(finding.subject, finding.verificationStatus),
+      confirmationLine(finding.subject, finding.verificationStatus),
       ...finding.notes,
       finding.conflictText,
     ]),
