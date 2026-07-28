@@ -640,6 +640,20 @@ describe("the fixture suite and the published ruleset agree", () => {
     expect(FIXTURE_TODAY).toBe(clock);
   });
 
+  it("Scenario F documents exactly the material facts that branch its verdict", () => {
+    const documented = [
+      ...(sectionFor("F").match(/material branch facts: ([^.]+)\./)?.[1] ?? "").matchAll(
+        /`([^`]+)`/g,
+      ),
+    ].map((match) => match[1]);
+    expect(documented).toHaveLength(2);
+    expect(
+      planFor("F")
+        .verdictDetail.missingFacts.map((fact) => fact.field)
+        .sort(),
+    ).toEqual(documented.sort());
+  });
+
   it("reads a rule id out of every scenario's expected findings", () => {
     // Guards the scrape itself: a reformat of the key that stopped matching would otherwise turn
     // this whole file into a no-op that still reports green.
