@@ -152,7 +152,7 @@ organizer-created revision requires the authenticated actor.
 
 During compatibility rollout, a successful revision transaction may update old `events` projections for Phase 1 readers. Event Revision remains the only write authority.
 
-### 2.7 Use collision-free finding identity for deterministic diffs
+### 2.7 Compare findings and plan outcomes deterministically
 
 - Finding identity is the sorted `rule_ids` array. When a scalar map key is needed, use its canonical JSON serialization (for example, `JSON.stringify([...ruleIds].sort())`), never delimiter joining.
 - A finding is:
@@ -160,7 +160,13 @@ During compatibility rollout, a successful revision transaction may update old `
   - `removed` when its key appears only in the accepted base; or
   - `changed` when the same key has a different canonical regulatory rendering.
 - Canonical comparison includes kind, disposition, rule provenance, trigger trace, sources, verification state/date, name, agency, the complete published and computed deadline state (`deadline`, `deadline_display`, `latest_apply_date`, `apply_after_date`, `deadline_status`, `slack_days`, `deadline_unknown_fields`, and `timeline_unresolved_reason`), fee, required documents, portal name/URL/instructions, `notes`, `note_text`, and conflict text.
-- Database IDs, plan IDs, timestamps, row order, and workflow status do not make a regulatory finding changed.
+- The diff separately reports a changed plan outcome when `verdict` or canonical user-visible
+  `verdictDetail` differs, even if every finding rendering is unchanged. That detail consists of
+  `blockingFinding`, `missedRuleIds`, `minSlackDays`, `missingFacts` (including each fact's `field`,
+  `thresholds`, and complete `branches`), `unresolvedTimelines`, and `rescopeSuggestions` (including
+  `change`, `reevaluatedVerdict`, and `droppedRuleIds`).
+- Database IDs, plan IDs, timestamps, row order, workflow status, and the debugging-only evaluation
+  `trace` do not make a regulatory finding or plan outcome changed.
 - Diff output is deterministic and derived from immutable plans. No `plan_diffs` table is authorized until a consuming approved feature requires stored diffs.
 - This future candidate-plan diff is not F-202 Acceptance Criterion 9's narrower current-checklist notice; that criterion deliberately excludes clock-only movement among countdown statuses.
 
@@ -194,6 +200,8 @@ Before activation, the consuming implementation must prove:
 - plans reference exact revisions and staleness is server-derived;
 - accepting a candidate races safely with a revision save and rejects the stale candidate;
 - a `note_text`-only finding change is reported as `changed`;
+- a verdict or user-visible `verdictDetail`-only change, including a `rescopeSuggestions`-only
+  change, is reported when every finding rendering matches;
 - diff identity and output are byte-stable; and
 - cross-workspace reads and writes fail after tenancy activation.
 
