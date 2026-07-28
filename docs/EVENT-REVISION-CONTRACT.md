@@ -75,7 +75,8 @@ Required invariants:
 
 - A save names the `base_revision_id` it was edited from. `null` is valid only when the event has no revision.
 - In one transaction, the server locks the Event, compares `base_revision_id` with `current_revision_id`, validates the proposed answers, appends the revision, and advances the pointer.
-- A changed save appends exactly one revision.
+- A changed save appends exactly one revision. Its `supersedes_revision_id` equals the validated
+  `base_revision_id`; only the first revision has `supersedes_revision_id = NULL`.
 - A save is a no-op only when its `input_schema_version`, `jurisdiction_code`, and
   schema-canonical `answers_json` match the current revision. It returns that revision and appends
   nothing; changing any member of that tuple appends a revision.
@@ -92,11 +93,14 @@ The exact HTTP request and error schemas belong in the reviewed OpenAPI contract
 - Plans, findings, traces, and their regulatory snapshots remain immutable.
 - A plan is stale when its revision differs from `events.current_revision_id`.
 - Generating a candidate does not move `current_plan_id`.
-- Accepting a candidate locks the Event and rechecks that the candidate belongs to it and that
-  `candidate.event_revision_id === events.current_revision_id`. Only then may the same transaction
-  move `current_plan_id`. A mismatch is rejected as a conflict without moving the pointer or
-  reconciling workflow/messages. A later edit may make an accepted plan stale, but an already-stale
-  candidate is never accepted.
+- An acceptance request names the accepted `base_plan_id` against which the candidate was presented;
+  `null` is valid only when the Event has no accepted plan.
+- Accepting a candidate locks the Event and rechecks that the candidate belongs to it, that
+  `candidate.event_revision_id === events.current_revision_id`, and that
+  `base_plan_id === events.current_plan_id`. Only then may the same transaction move
+  `current_plan_id`. A mismatch is rejected as a conflict without moving the pointer or reconciling
+  workflow/messages. A later edit may make an accepted plan stale, but an already-stale candidate
+  or a candidate based on a superseded accepted plan is never accepted.
 - For a backfilled plan, its canonical `intake_snapshot` must equal the engine-input projection of
   the revision it references under the plan's mapped schema. Questionnaire answers the engine did
   not consume may remain in that revision without being copied into the historical plan snapshot.
@@ -150,7 +154,10 @@ F-107 is not authorized to activate before the joint F-701–F-703 gate. `create
 reserved for deterministic legacy backfill; this contract defines no demo or system actor. Every
 organizer-created revision requires the authenticated actor.
 
-During compatibility rollout, a successful revision transaction may update old `events` projections for Phase 1 readers. Event Revision remains the only write authority.
+During compatibility rollout, every successful revision transaction must update old `events`
+projections in the same transaction while any deployed Phase 1 reader still uses them. Projection
+updates may stop only after every reader has atomically cut over to Event Revisions. Event Revision
+remains the only write authority.
 
 ### 2.7 Compare findings and plan outcomes deterministically
 
@@ -159,12 +166,17 @@ During compatibility rollout, a successful revision transaction may update old `
   - `added` when its key appears only in the candidate;
   - `removed` when its key appears only in the accepted base; or
   - `changed` when the same key has a different canonical regulatory rendering.
-- Canonical comparison includes kind, disposition, rule provenance, trigger trace, sources, verification state/date, name, agency, the complete published and computed deadline state (`deadline`, `deadline_display`, `latest_apply_date`, `apply_after_date`, `deadline_status`, `slack_days`, `deadline_unknown_fields`, and `timeline_unresolved_reason`), fee, required documents, portal name/URL/instructions, `notes`, `note_text`, and conflict text.
-- The diff separately reports a changed plan outcome when `verdict` or canonical user-visible
-  `verdictDetail` differs, even if every finding rendering is unchanged. That detail consists of
-  `blockingFinding`, `missedRuleIds`, `minSlackDays`, `missingFacts` (including each fact's `field`,
-  `thresholds`, and complete `branches`), `unresolvedTimelines`, and `rescopeSuggestions` (including
-  `change`, `reevaluatedVerdict`, and `droppedRuleIds`).
+- Canonical comparison includes kind, disposition, rule provenance, trigger trace, sources,
+  verification state/date/qualification, name, agency, the complete published and computed deadline
+  state (`deadline`, `deadline_display`, `latest_apply_date`, `apply_after_date`, `deadline_status`,
+  `slack_days`, `deadline_unknown_fields`, and `timeline_unresolved_reason`), fee, required documents,
+  portal name/URL/instructions, `notes`, `note_text`, and conflict text.
+- The diff separately reports a changed plan outcome when result completeness or its complete reasons,
+  `verdict`, or canonical user-visible `verdictDetail` differs, even if every finding rendering is
+  unchanged. That detail consists of `blockingFinding`, `missedRuleIds`, `minSlackDays`,
+  `missingFacts` (including each fact's `field`, `thresholds`, and complete `branches`),
+  `unresolvedTimelines`, and `rescopeSuggestions` (including `change`, `reevaluatedVerdict`, and
+  `droppedRuleIds`).
 - Database IDs, plan IDs, timestamps, row order, workflow status, and the debugging-only evaluation
   `trace` do not make a regulatory finding or plan outcome changed.
 - Diff output is deterministic and derived from immutable plans. No `plan_diffs` table is authorized until a consuming approved feature requires stored diffs.
@@ -194,12 +206,21 @@ Before activation, the consuming implementation must prove:
 - two concurrent saves produce one success and one `revision_conflict`;
 - a save with matching schema, jurisdiction, and answers creates no revision, while changing only
   the schema or jurisdiction creates one;
+- every changed non-initial save links the appended revision to its validated base, while the first
+  revision has no predecessor;
 - legacy backfill is the only path to `created_by = NULL`; organizer saves reject a missing
   authenticated actor;
 - missing and explicit `unknown` remain distinct;
 - plans reference exact revisions and staleness is server-derived;
 - accepting a candidate races safely with a revision save and rejects the stale candidate;
+- two candidates accepted concurrently from the same accepted base produce one success and one
+  conflict;
+- while a Phase 1 reader remains, a revision save and subsequent plan generation cannot observe
+  different questionnaire answers;
 - a `note_text`-only finding change is reported as `changed`;
+- a `verification.qualification`-only finding change is reported as `changed`;
+- a result-completeness or result-completeness-reason-only change is reported when every finding
+  rendering matches;
 - a verdict or user-visible `verdictDetail`-only change, including a `rescopeSuggestions`-only
   change, is reported when every finding rendering matches;
 - diff identity and output are byte-stable; and
