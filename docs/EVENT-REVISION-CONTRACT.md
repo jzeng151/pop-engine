@@ -1,16 +1,16 @@
 # PopEngine — Event and Event Revision Contract
 
-**Status:** APPROVED (2026-07-26)
+**Status:** APPROVED (2026-07-27; access-gated synthetic-data demo authority. Strict production ratification remains required before F-701–F-703 activation.)
 
-**Decision and approval owner:** `@jzeng151`
+**Decision owner:** `@jzeng151`
 
-**Approval record:** after the other lane owners were unavailable, `@jzeng151` explicitly approved this bounded package on behalf of all four lanes. This is a product-owner governance exception for PR #137; it does not attribute reviews to `@brovaset`, `@bofrompursuit`, or `@naquanm621`, and it does not relax future shared-contract approval requirements.
+**Approval record:** after the other lane owners were unavailable, `@jzeng151` explicitly invoked a one-time product-owner overwrite for PR #137 and the access-gated synthetic-data demo. This is one person's decision, not approval by `@brovaset`, `@bofrompursuit`, or `@naquanm621`. It does not authorize production activation or relax approval requirements for later shared-contract changes.
 
 ## 1. Purpose and Scope
 
 This contract does two things:
 
-1. ratifies the cumulative Phase 1 `events` shape produced by migrations `001`, `005`, and `006` at migration head `007`; and
+1. ratifies the cumulative Phase 1 `events` shape produced by migrations `001`, `005`, and `006`, independent of the later migration head; and
 2. fixes the logical Event Revision contract that Phase 2 features must express in reviewed OpenAPI, JSON Schema, and forward migrations.
 
 It resolves `OPEN-QUESTIONS` B-3 under the approval record above. It does not activate Phase 2, approve F-107, create an endpoint or table, amend a merged migration, or change a regulatory rule, fixture, verdict, deadline, or finding.
@@ -23,7 +23,7 @@ It resolves `OPEN-QUESTIONS` B-3 under the approval record above. It does not ac
   - `apps/api/migrations/001_initial_schema.ts`;
   - `apps/api/migrations/005_event_public_page_fields.ts`; and
   - `apps/api/migrations/006_events_battery_present.ts`.
-- Migration `007` is the current migration head at ratification time and does not alter `events`.
+- Later migrations do not change which migrations define this ratified `events` shape.
 - These merged migrations are immutable. Corrections or future fields use new ordered migrations.
 - Through Phase 1.5, the `events` row remains the authoritative intake record and `revision_counter` remains the plan-staleness mechanism.
 - Ratification does not approve another column. Every later shared/core-table change still requires the approvals in `docs/DOCUMENTATION-GOVERNANCE.md` §6.
@@ -55,8 +55,8 @@ The logical `event_revisions` record contains:
 
 - `id`, `event_id`, and a strictly increasing `revision_number`;
 - `input_schema_version` and `jurisdiction_code`;
-- the complete snapshot of answers saved in `answers_json`; an `incomplete` revision may omit unanswered keys, while `complete_unsubmitted` and `submitted` revisions contain a complete validated answer set;
-- `revision_state`: `incomplete`, `complete_unsubmitted`, or `submitted`;
+- the full snapshot of answers supplied in `answers_json`; an `incomplete` revision may omit unanswered keys, while a `complete` revision passes the validation required for plan generation;
+- `revision_state`: `incomplete` or `complete`;
 - validation/conflict results recorded at save time;
 - `created_by`, `created_at`, and `supersedes_revision_id`.
 
@@ -67,6 +67,7 @@ Required invariants:
 - A stored revision is never updated or deleted. A correction appends another revision.
 - An omitted answer key means unanswered in that schema version.
 - An explicit `unknown` value means the user answered unknown.
+- Completeness is validation state, not an organizer-visible submission workflow. Explicit `unknown` counts as answered where the schema permits it.
 - SQL `NULL` never means unknown.
 - Derived authority or classification output is not accepted from the browser as regulatory truth.
 
@@ -78,7 +79,7 @@ Required invariants:
 - A no-op save returns the current revision and appends nothing.
 - A stale base returns HTTP `409` with stable code `revision_conflict` and the current revision identifier.
 - The server never performs an automatic field merge. The user reloads and explicitly reconciles.
-- Submitting changes `revision_state` by appending a submitted revision. Plans evaluate submitted revisions only.
+- Plans evaluate `complete` revisions only. F-107 may save `incomplete` revisions but does not add a separate submission transition.
 
 The exact HTTP request and error schemas belong in the reviewed OpenAPI contract.
 
@@ -98,26 +99,30 @@ The F-107 forward migration must:
 
 1. group existing plans by `(event_id, event_revision)`;
 2. canonicalize the snapshots and abort if one event/revision pair has more than one distinct answer set;
-3. create one revision for each valid event/revision pair;
-4. create the current event revision from the Phase 1 intake columns when that revision is not already represented by a plan;
-5. compare the current row with an existing revision at the same number and abort on a mismatch;
-6. set `events.current_revision_id` and each plan's `event_revision_id`; and
-7. preserve all existing plans and synthetic history.
+3. resolve `input_schema_version` through an explicit F-107 compatibility map keyed by each historical plan's `ruleset_version`; no match or multiple matches aborts rather than defaulting to the newest schema;
+4. validate every plan-backed snapshot against that mapped Event Input schema, create it as `complete` when validation passes, and abort instead of inventing a state when validation fails;
+5. create the current event revision from the Phase 1 intake columns when that revision is not already represented by a plan, using the schema version F-107 explicitly assigns to current-only legacy rows and setting it to `complete` when full validation passes or `incomplete` only when the F-107 partial-save validator accepts it;
+6. compare the current row with an existing revision at the same number and abort on a mismatch;
+7. set `events.current_revision_id` and each plan's `event_revision_id`; and
+8. preserve all existing plans and synthetic history.
+
+The compatibility map may point historical plans to a legacy replay schema containing only the engine-relevant fields their `intake_snapshot` actually stored. Current-only Phase 1 columns must not be copied backward into older plan-backed revisions.
 
 Legacy rows may have no user actor; `created_by = NULL` is reserved for deterministic legacy backfill. New revisions require the authenticated actor after the F-701–F-703 gate.
 
 During compatibility rollout, a successful revision transaction may update old `events` projections for Phase 1 readers. Event Revision remains the only write authority.
 
-### 2.7 Use the existing finding identity for deterministic diffs
+### 2.7 Use collision-free finding identity for deterministic diffs
 
-- Finding identity is the current checklist key: `rule_ids` sorted and joined with `,`.
+- Finding identity is the sorted `rule_ids` array. When a scalar map key is needed, use its canonical JSON serialization (for example, `JSON.stringify([...ruleIds].sort())`), never delimiter joining.
 - A finding is:
   - `added` when its key appears only in the candidate;
   - `removed` when its key appears only in the accepted base; or
   - `changed` when the same key has a different canonical regulatory rendering.
-- Canonical comparison includes kind, disposition, rule provenance, trigger trace, sources, verification state/date, name, agency, deadline and computed dates, fee, required documents, portal, and regulatory payload.
+- Canonical comparison includes kind, disposition, rule provenance, trigger trace, sources, verification state/date, name, agency, the complete published and computed deadline state (`deadline`, `deadline_display`, `latest_apply_date`, `apply_after_date`, `deadline_status`, `slack_days`, `deadline_unknown_fields`, and `timeline_unresolved_reason`), fee, required documents, portal name/URL/instructions, notes, conflict text, and regulatory payload.
 - Database IDs, plan IDs, timestamps, row order, and workflow status do not make a regulatory finding changed.
 - Diff output is deterministic and derived from immutable plans. No `plan_diffs` table is authorized until a consuming approved feature requires stored diffs.
+- This future candidate-plan diff is not F-202 Acceptance Criterion 9's narrower current-checklist notice; that criterion deliberately excludes clock-only movement among countdown statuses.
 
 ## 3. Implementation Ownership
 
@@ -149,8 +154,8 @@ The full existing fixture and boundary suite must remain green. This contract ch
 
 ## 5. Approval and Activation
 
-On 2026-07-26, `@jzeng151` approved this package on behalf of all four lanes after the other lane owners were unavailable. No approval is attributed to their GitHub accounts. This one-time exception also supersedes the normal teammate-review requirement for PR #137 only; future changes remain governed by `docs/DOCUMENTATION-GOVERNANCE.md` §6.
+On 2026-07-27, `@jzeng151` explicitly invoked the one-time access-gated-demo overwrite recorded in `docs/DOCUMENTATION-GOVERNANCE.md` §6. It supersedes the all-lane and teammate-review requirements for PR #137 only. No approval is attributed to another account.
 
-B-3 is resolved by this approval record. Issue #2 closes when PR #137 merges.
+B-3 is resolved for the access-gated synthetic-data demo by this record. Issue #2 closes when PR #137 merges. Strict all-lane and architecture-owner ratification remains B-4 and must land before production activation.
 
-Approval fixes the shared logical contract. Implementation remains blocked on the consuming F-id, OpenAPI/JSON Schema, forward migration, and the F-701–F-703 production gate.
+Approval fixes the shared logical contract for demo implementation. Each implementation still needs its consuming approved F-id, OpenAPI/JSON Schema, and forward migration. Production additionally remains blocked on B-4 and the F-701–F-703 gate.

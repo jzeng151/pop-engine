@@ -7,20 +7,20 @@
 
 Authority is assigned by concern:
 
-| Concern | Authoritative artifact |
-|---|---|
-| Product problem, user, value, goals, non-goals | `docs/PRD.md` |
-| Feature ID, name, priority, and phase | `docs/ROADMAP.md` |
-| Scheduled feature behavior and acceptance | Approved `specs/F-xxx-*.md` |
-| Technical boundaries and invariants | `docs/ARCHITECTURE.md` plus approved ADRs |
-| Team lanes, gates, and demo sequence | `docs/DESIGN.md` |
-| Regulatory fact | Approved primary source, then published immutable rule |
-| Executable regulatory expectation | Approved fixture associated with a published rule |
-| HTTP shape | `contracts/openapi.yaml` |
-| Event/rules data shape | Versioned JSON Schemas |
-| Database shape | Merged ordered migrations |
-| Current approved versions | `docs/BASELINE.md` |
-| Unresolved matter | `docs/OPEN-QUESTIONS.md`; never authority for implementation |
+| Concern                                        | Authoritative artifact                                       |
+| ---------------------------------------------- | ------------------------------------------------------------ |
+| Product problem, user, value, goals, non-goals | `docs/PRD.md`                                                |
+| Feature ID, name, priority, and phase          | `docs/ROADMAP.md`                                            |
+| Scheduled feature behavior and acceptance      | Approved `specs/F-xxx-*.md`                                  |
+| Technical boundaries and invariants            | `docs/ARCHITECTURE.md` plus approved ADRs                    |
+| Team lanes, gates, and demo sequence           | `docs/DESIGN.md`                                             |
+| Regulatory fact                                | Approved primary source, then published immutable rule       |
+| Executable regulatory expectation              | Approved fixture associated with a published rule            |
+| HTTP shape                                     | `contracts/openapi.yaml`                                     |
+| Event/rules data shape                         | Versioned JSON Schemas                                       |
+| Database shape                                 | Merged ordered migrations                                    |
+| Current approved versions                      | `docs/BASELINE.md`                                           |
+| Unresolved matter                              | `docs/OPEN-QUESTIONS.md`; never authority for implementation |
 
 Prose cannot override a machine contract within that contract's concern. A machine contract cannot create product scope that the PRD/roadmap/spec did not approve.
 
@@ -50,18 +50,18 @@ Every controlled document begins with exactly one status:
 
 `docs/BASELINE.md` lists, at minimum:
 
-| Artifact | Version/path | Status | Approved by | Approval date | Checksum/commit |
-|---|---|---|---|---|---|
-| PRD | | | | | |
-| Roadmap | | | | | |
-| Delivery design | | | | | |
-| Architecture | | | | | |
-| Rules schema | | | | | |
-| Current NYC ruleset | | | | | |
-| Event Input schema | | | | | |
-| Regulatory fixture suite | | | | | |
-| OpenAPI | | | | | |
-| Database schema/migration head | | | | | |
+| Artifact                       | Version/path | Status | Approved by | Approval date | Checksum/commit |
+| ------------------------------ | ------------ | ------ | ----------- | ------------- | --------------- |
+| PRD                            |              |        |             |               |                 |
+| Roadmap                        |              |        |             |               |                 |
+| Delivery design                |              |        |             |               |                 |
+| Architecture                   |              |        |             |               |                 |
+| Rules schema                   |              |        |             |               |                 |
+| Current NYC ruleset            |              |        |             |               |                 |
+| Event Input schema             |              |        |             |               |                 |
+| Regulatory fixture suite       |              |        |             |               |                 |
+| OpenAPI                        |              |        |             |               |                 |
+| Database schema/migration head |              |        |             |               |                 |
 
 Old copies are moved beneath an `archive/` directory or removed from the active branch. Filenames such as `PRD(6).md` must not exist in the repository.
 
@@ -88,15 +88,17 @@ Contributors must not:
 
 ## 6. Change classes and approvals
 
-| Change | Required approval |
-|---|---|
-| Regulatory source/status/content | Verification owner plus rules reviewer |
-| Rule trigger, dedupe, branch, deadline, or formula semantics | Verification owner plus engine owner |
-| Event Input, rules schema, OpenAPI, shared enum | All affected lane owners and architecture owner |
-| Database migration touching shared/core tables | Database owner plus all affected lane owners |
-| Product scope, feature meaning, phase | Product owner/team decision |
-| Durable architecture decision or dependency | Architecture ADR approval |
-| UI copy only | Feature owner, unless it makes a regulatory claim |
+| Change                                                       | Required approval                                 |
+| ------------------------------------------------------------ | ------------------------------------------------- |
+| Regulatory source/status/content                             | Verification owner plus rules reviewer            |
+| Rule trigger, dedupe, branch, deadline, or formula semantics | Verification owner plus engine owner              |
+| Event Input, rules schema, OpenAPI, shared enum              | All affected lane owners and architecture owner   |
+| Database migration touching shared/core tables               | Database owner plus all affected lane owners      |
+| Product scope, feature meaning, phase                        | Product owner/team decision                       |
+| Durable architecture decision or dependency                  | Architecture ADR approval                         |
+| UI copy only                                                 | Feature owner, unless it makes a regulatory claim |
+
+**Recorded demo overwrite — PR #137 only (2026-07-27).** After the other lane owners were unavailable, `@jzeng151` explicitly invoked a one-time product-owner overwrite of the all-lane and teammate-review requirements for the initial Event and Event Revision ratification. It authorizes access-gated synthetic-data demo implementation against that bounded contract. It attributes no approval to another account, creates no precedent for later contract or migration changes, and does not authorize production activation. Strict ratification by all affected lane owners and the architecture owner remains due before the F-701–F-703 production gate can open.
 
 No person approves their own regulatory publication alone. The author and source reviewer should be distinct whenever the team size permits.
 
