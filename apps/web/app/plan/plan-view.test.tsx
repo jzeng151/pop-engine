@@ -340,19 +340,24 @@ describe("per-line citations and status (AC 2, AC 3)", () => {
     expect(line.getByText("RESEARCH REQUIRED")).toBeDefined();
   });
 
-  it("renders one confirmation when a research-required deadline supplies the same treatment", async () => {
-    const line = await lineFor(
-      finding({
-        verificationStatus: "RESEARCH_REQUIRED",
-        deadline: { type: "research_required", display: null, qualification: null },
-        deadlineDisplay: CONFIRM_WITH_AGENCY,
-        deadlineStatus: "not_calculable",
-      }),
-    );
+  it.each([CONFIRM_WITH_AGENCY, `14–60 days depending on level; ${CONFIRM_WITH_AGENCY}`])(
+    "renders one confirmation when the deadline displays %s",
+    async (deadlineDisplay) => {
+      const line = await lineFor(
+        finding({
+          verificationStatus: "RESEARCH_REQUIRED",
+          deadline: { type: "research_required", display: null, qualification: null },
+          deadlineDisplay,
+          deadlineStatus: "not_calculable",
+        }),
+      );
 
-    expect(line.getAllByText(CONFIRM_WITH_AGENCY)).toHaveLength(1);
-    expect(line.getByText("RESEARCH REQUIRED")).toBeDefined();
-  });
+      expect(
+        (screen.getByRole("article").textContent ?? "").split(CONFIRM_WITH_AGENCY),
+      ).toHaveLength(2);
+      expect(line.getByText("RESEARCH REQUIRED")).toBeDefined();
+    },
+  );
 
   it("renders both readings of an official conflict with every source behind them", async () => {
     const conflict = finding({

@@ -2,7 +2,7 @@ import { useEffect } from "react";
 import { CONFIRM_WITH_AGENCY, type FindingSource } from "@pop-engine/engine";
 import { Disclosure } from "../disclosure";
 import { PortalBlock } from "../portal-block";
-import { NOT_COVERED_BY_RULESET } from "../verification-copy";
+import { includesAgencyConfirmation, NOT_COVERED_BY_RULESET } from "../verification-copy";
 import type { ConsumedFinding } from "./plan-api";
 
 // F-206 AC 2 and AC 3: every plan line carries its citation and its verification status, both
@@ -133,7 +133,7 @@ export function PlanLine({ finding }: { finding: ConsumedFinding }) {
   const ruleIds = finding.ruleIds.join(", ");
   const isResearchRequired = finding.verificationStatus === "RESEARCH_REQUIRED";
   const deadlineShowsResearchTreatment =
-    isResearchRequired && finding.deadlineDisplay === CONFIRM_WITH_AGENCY;
+    isResearchRequired && includesAgencyConfirmation(finding.deadlineDisplay);
   const name = finding.name ?? ruleIds;
   const [primarySource, ...furtherSources] = finding.sources;
 

@@ -5,7 +5,7 @@ import { CHECKLIST_STATUSES, CONFIRM_WITH_AGENCY, type ChecklistStatus } from "@
 import { Disclosure } from "../disclosure";
 import { PortalBlock } from "../portal-block";
 import { formatSnapshotDate } from "../plan/snapshot-banner";
-import { NOT_COVERED_BY_RULESET } from "../verification-copy";
+import { includesAgencyConfirmation, NOT_COVERED_BY_RULESET } from "../verification-copy";
 import {
   ACCEPTED_DOCUMENT_TYPES,
   documentRejection,
@@ -113,7 +113,7 @@ export function PlanContextBody({
   const [primarySource, ...furtherSources] = context.sources;
   const deadlineShowsResearchTreatment =
     context.verificationStatus === "RESEARCH_REQUIRED" &&
-    context.deadlineDisplay === CONFIRM_WITH_AGENCY;
+    includesAgencyConfirmation(context.deadlineDisplay);
 
   return (
     <>

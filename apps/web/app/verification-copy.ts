@@ -14,5 +14,10 @@
 // the checklist item, and two copies of a mandated string is how this defect arose in the first
 // place. `verification-copy.test.ts` holds it apart from RESEARCH_REQUIRED's rendering so the two
 // cannot silently converge again.
+import { CONFIRM_WITH_AGENCY } from "@pop-engine/engine";
+
 export const NOT_COVERED_BY_RULESET =
   "Not covered by this ruleset version. This plan may be incomplete for your event.";
+
+export const includesAgencyConfirmation = (text: string | null): boolean =>
+  text?.includes(CONFIRM_WITH_AGENCY) === true;

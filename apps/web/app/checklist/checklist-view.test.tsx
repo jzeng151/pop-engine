@@ -832,26 +832,29 @@ describe("AC 5 · deadline context lives where the work happens", () => {
     expect(within(row).getByRole("note").textContent).toContain("agency");
   });
 
-  it("renders one confirmation when a research-required deadline supplies the same treatment", async () => {
-    stubApi({
-      [GET_CHECKLIST]: checklistOf({
-        created: true,
-        items: [
-          trackedItem(SOUND_DEPENDENCY, {
-            verificationStatus: "RESEARCH_REQUIRED",
-            deadline: { type: "research_required", display: null, qualification: null },
-            deadlineDisplay: CONFIRM_WITH_AGENCY,
-            deadlineStatus: "not_calculable",
-          }),
-        ],
-      }),
-    });
-    await renderView();
+  it.each([CONFIRM_WITH_AGENCY, `14–60 days depending on level; ${CONFIRM_WITH_AGENCY}`])(
+    "renders one confirmation when the deadline displays %s",
+    async (deadlineDisplay) => {
+      stubApi({
+        [GET_CHECKLIST]: checklistOf({
+          created: true,
+          items: [
+            trackedItem(SOUND_DEPENDENCY, {
+              verificationStatus: "RESEARCH_REQUIRED",
+              deadline: { type: "research_required", display: null, qualification: null },
+              deadlineDisplay,
+              deadlineStatus: "not_calculable",
+            }),
+          ],
+        }),
+      });
+      await renderView();
 
-    const row = rowFor(SOUND_DEPENDENCY);
-    expect(within(row).getAllByText(CONFIRM_WITH_AGENCY)).toHaveLength(1);
-    expect(within(row).getByText("RESEARCH REQUIRED")).toBeDefined();
-  });
+      const row = rowFor(SOUND_DEPENDENCY);
+      expect(row.textContent?.split(CONFIRM_WITH_AGENCY)).toHaveLength(2);
+      expect(within(row).getByText("RESEARCH REQUIRED")).toBeDefined();
+    },
+  );
 
   it("renders a portal with no published URL as text rather than a dead link", async () => {
     stubApi({ [GET_CHECKLIST]: checklistOf({ created: true, items: [trackedItem(SOUND)] }) });
