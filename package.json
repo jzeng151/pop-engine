@@ -1,31 +1,23 @@
 {
-  "name": "pop-engine",
-  "private": true,
-  "packageManager": "pnpm@11.5.3",
-  "engines": {
-    "node": ">=22"
-  },
+  "name": "popengine-backend",
+  "version": "1.0.0",
+  "main": "index.js",
   "scripts": {
-    "typecheck": "pnpm -r typecheck",
-    "lint": "eslint .",
-    "build": "pnpm --filter web build",
-    "format": "prettier --write .",
-    "format:check": "prettier --check .",
-    "check:baseline": "node scripts/check-baseline-drift.mjs",
-    "test": "vitest run",
-    "test:watch": "vitest",
-    "test:coverage": "vitest run --coverage"
+    "test": "echo \"Error: no test specified\" && exit 1"
   },
-  "devDependencies": {
-    "@eslint/js": "^9.17.0",
-    "@types/node": "^22.10.5",
-    "@vitest/coverage-v8": "^3.0.5",
-    "eslint": "^9.17.0",
-    "eslint-config-prettier": "^9.1.0",
-    "jsdom": "^29.1.1",
-    "prettier": "^3.4.2",
-    "typescript": "^5.7.3",
-    "typescript-eslint": "^8.19.1",
-    "vitest": "^3.0.5"
-  }
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "description": "",
+  "dependencies": {
+    "dotenv": "^17.4.2",
+    "express": "^5.2.1",
+    "ioredis": "^5.11.1",
+    "mapbox-gl": "^3.27.0",
+    "node-fetch": "^3.3.2",
+    "pg": "^8.22.0",
+    "playwright": "^1.61.1",
+    "react-map-gl": "^8.1.1"
+  },
+  "type": "module"
 }
