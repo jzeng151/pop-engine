@@ -18,9 +18,7 @@ import {
 import type { EventIntake, HolidayCalendar, PermitPlan, PublishedHolidayCalendar } from "./types";
 
 const TODAY = "2026-07-22";
-const rawRuleset: Record<string, unknown> = JSON.parse(
-  readFileSync(PUBLISHED_RULES_FILE, "utf8"),
-);
+const rawRuleset: Record<string, unknown> = JSON.parse(readFileSync(PUBLISHED_RULES_FILE, "utf8"));
 const ruleset = parseEngineRuleset(rawRuleset);
 const calendar: PublishedHolidayCalendar = { id: ruleset.calendarId, holidays: [] };
 
@@ -154,6 +152,34 @@ describe("provenance (AC 1)", () => {
       { id: "test-calendar@2026", holidays: [] },
     );
     expect(incomplete.findings[0]?.lastVerifiedDate).toBeNull();
+  });
+});
+
+describe("verification treatments", () => {
+  it("leaves RESEARCH_REQUIRED confirmation to the renderer instead of duplicating it in notes", () => {
+    const plan = evaluate(
+      { event_date: "2026-12-04", headcount: 50 },
+      syntheticRuleset([
+        {
+          id: "RESEARCH-001",
+          kind: "permit",
+          trigger: { all: [{ field: "headcount", op: "gte", value: 10 }] },
+          output: {
+            permit_name: "Research permit",
+            agency: "DOB",
+            notes: ["Published note."],
+          },
+          verification: { status: "RESEARCH_REQUIRED" },
+        },
+      ]),
+      TODAY,
+      { id: "test-calendar@2026", holidays: [] },
+    );
+
+    expect(plan.findings[0]).toMatchObject({
+      verificationStatus: "RESEARCH_REQUIRED",
+      notes: ["Published note."],
+    });
   });
 });
 
