@@ -1599,6 +1599,7 @@ const f203Artifacts = [
 ];
 const f203Capabilities =
   /\b(?:alert )?escalations,\s+digests,\s+team reminders,\s+and per-user preferences\b/i;
+const f203ListOwner = /^\s*(?:[-*+]|\d+\.)\s+(?:\*\*)?F-203\b(?:(?!\bF-\d+\b)[^—])*—/i;
 const f203ListScope = new RegExp(
   `—\\s+${f203Capabilities.source};\\s+planned,\\s+(?:not scheduled|unscheduled)\\.?$`,
   "i",
@@ -1695,7 +1696,7 @@ for (const relative of f203Artifacts) {
         if (relative === "docs/PRD.md" && f203PrdDecision.test(raw)) {
           return lower.includes("f-203");
         }
-        const ownsF203 = /^\s*(?:[-*+]|\d+\.)\s+(?:\*\*)?F-203\b/i.test(raw);
+        const ownsF203 = f203ListOwner.test(raw);
         const isRoadmapCore =
           relative === "docs/ROADMAP.md" &&
           /^\s*[-*+]\s+\*\*F-203\s+·\s+Deadline Alerts\*\*/i.test(raw);
@@ -1729,9 +1730,7 @@ for (const relative of f203Artifacts) {
     if (!f203Capabilities.test(normalized) || !f203Planning.test(normalized)) return true;
     if (f203Negation.test(normalized)) return true;
     if (relative === "docs/ROADMAP.md" || relative === "docs/PRD.md") {
-      return (
-        !/^\s*(?:[-*+]|\d+\.)\s+(?:\*\*)?F-203\b/i.test(raw) || !f203ListScope.test(normalized)
-      );
+      return !f203ListOwner.test(raw) || !f203ListScope.test(normalized);
     }
     if (relative === "docs/BASELINE.md") {
       return !f203BaselineScope.test(normalized);

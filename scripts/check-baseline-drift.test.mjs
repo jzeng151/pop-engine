@@ -2046,6 +2046,21 @@ describe.concurrent("F-203 Phase 2 scope agreement (SPEC-CONFLICT #127 item 1)",
     expect(output).toContain("docs/ROADMAP.md must affirmatively assign");
   });
 
+  it.each(["docs/ROADMAP.md", "docs/PRD.md"])(
+    "rejects an additional owner on the F-203 assignment in %s",
+    async (relative) => {
+      const { status, output } = await runOn({
+        [relative]: SQUARE_RECONCILED[relative].replace(
+          "**F-203 (full)**",
+          "**F-203 / F-999 (full)**",
+        ),
+      });
+
+      expect(status).toBe(1);
+      expect(output).toContain(`${relative} must affirmatively assign`);
+    },
+  );
+
   it("rejects a conflicting partial F-203 assignment", async () => {
     const { status, output } = await runOn({
       "docs/ROADMAP.md":
