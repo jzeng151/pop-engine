@@ -1847,6 +1847,21 @@ describe.concurrent("F-203 Phase 2 scope agreement (SPEC-CONFLICT #127 item 1)",
     expect(output).toContain("specs/F-203-deadline-alerts.md must affirmatively assign");
   });
 
+  it.each(["docs/BASELINE.md", "docs/ROADMAP.md", "docs/PRD.md"])(
+    "rejects a scheduling conflict appended to the %s decision",
+    async (relative) => {
+      const { status, output } = await runOn({
+        [relative]: SQUARE_RECONCILED[relative].replace(
+          "unscheduled Phase 2 depth.",
+          "unscheduled Phase 2 depth, but implementation is now scheduled.",
+        ),
+      });
+
+      expect(status).toBe(1);
+      expect(output).toContain(`${relative} must affirmatively assign`);
+    },
+  );
+
   it("rejects Phase 2 acceptance criteria while the scope remains unscheduled", async () => {
     const { status, output } = await runOn({
       "specs/F-203-deadline-alerts.md":
@@ -1858,6 +1873,36 @@ describe.concurrent("F-203 Phase 2 scope agreement (SPEC-CONFLICT #127 item 1)",
     expect(output).toContain(
       "specs/F-203-deadline-alerts.md must not define Phase 2 acceptance criteria",
     );
+  });
+
+  it("rejects an unscheduled capability under generic acceptance criteria", async () => {
+    const { status, output } = await runOn({
+      "specs/F-203-deadline-alerts.md":
+        SQUARE_RECONCILED["specs/F-203-deadline-alerts.md"] +
+        "\n## Acceptance Criteria\n\n1. Existing behavior.\n2. Send a weekly digest.\n",
+    });
+
+    expect(status).toBe(1);
+    expect(output).toContain(
+      "specs/F-203-deadline-alerts.md must not define Phase 2 acceptance criteria",
+    );
+  });
+
+  it.each([
+    ["docs/BASELINE.md", "alert escalations"],
+    ["docs/ROADMAP.md", "alert escalations"],
+    ["docs/PRD.md", "alert escalations"],
+    ["specs/F-203-deadline-alerts.md", "Escalations"],
+  ])("accepts the same capability set in a different order in %s", async (relative, first) => {
+    const { status, output } = await runOn({
+      [relative]: SQUARE_RECONCILED[relative].replaceAll(
+        `${first}, digests, team reminders, and per-user preferences`,
+        "digests, alert escalations, team reminders, and per-user preferences",
+      ),
+    });
+
+    expect(status).toBe(0);
+    expect(output).toContain("F-203 scope check passed");
   });
 
   it.each([

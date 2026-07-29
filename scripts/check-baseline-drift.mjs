@@ -1597,8 +1597,11 @@ const f203Artifacts = [
   "docs/PRD.md",
   "specs/F-203-deadline-alerts.md",
 ];
-const f203Capabilities =
-  /\b(?:alert )?escalations,\s+digests,\s+team reminders,\s+and per-user preferences\b/i;
+const f203Capability = "(?:(?:alert )?escalations|digests|team reminders|per-user preferences)";
+const f203Capabilities = new RegExp(
+  `\\b${f203Capability}(?:,\\s+${f203Capability}){2},?\\s+and\\s+${f203Capability}\\b`,
+  "i",
+);
 const f203ListOwner = /^\s*(?:[-*+]|\d+\.)\s+(?:\*\*)?F-203\b(?:(?!\bF-\d+\b)[^—])*—/i;
 const f203ListScope = new RegExp(
   `—\\s+${f203Capabilities.source};\\s+planned,\\s+(?:not scheduled|unscheduled)\\.?$`,
@@ -1617,6 +1620,10 @@ const f203RetainedScope = new RegExp(
 );
 const f203SpecScope = new RegExp(`${f203Capabilities.source}\\s+remain\\b`, "i");
 const f203CapabilityNames = ["escalations", "digests", "team reminders", "per-user preferences"];
+const hasAllF203Capabilities = (text) =>
+  f203CapabilityNames.every((capability) => text.toLowerCase().includes(capability));
+const f203CapabilityMention =
+  /\b(?:escalations?|digests?|team reminders?|per-user preferences?)\b/i;
 const f203DecisionScope =
   /\b(?:scope|depth|phase\s+\d+|planned|unplanned|scheduled|unscheduled|scheduling|acceptance criteria)\b/i;
 const f203Planning = /\bplanned,\s+(?:not scheduled|unscheduled)\b/i;
@@ -1664,16 +1671,27 @@ for (const relative of f203Artifacts) {
   }
 
   const contents = activeMarkdown(readFileSync(full, "utf8"));
-  if (
-    relative === "specs/F-203-deadline-alerts.md" &&
-    /^#{1,6}\s+(?:Phase 2\b.*\bAcceptance Criteria|Acceptance Criteria\b.*\bPhase 2)\b/im.test(
-      contents,
-    )
-  ) {
-    f203Failures.push(
-      "specs/F-203-deadline-alerts.md must not define Phase 2 acceptance criteria while " +
-        "its Phase 2 scope is planned but unscheduled",
-    );
+  if (relative === "specs/F-203-deadline-alerts.md") {
+    const acceptanceCriteria =
+      /(?:^|\n)## Acceptance Criteria\s*\r?\n([\s\S]*?)(?=\r?\n#{1,2}\s|$)/i.exec(contents)?.[1] ??
+      "";
+    const addsUnscheduledCriterion = acceptanceCriteria
+      .split(/\r?\n(?=\s*(?:[-*+]|\d+\.)\s+)/)
+      .some(
+        (criterion) =>
+          /^\s*(?:[-*+]|\d+\.)\s+/.test(criterion) && f203CapabilityMention.test(criterion),
+      );
+    if (
+      addsUnscheduledCriterion ||
+      /^#{1,6}\s+(?:Phase 2\b.*\bAcceptance Criteria|Acceptance Criteria\b.*\bPhase 2)\b/im.test(
+        contents,
+      )
+    ) {
+      f203Failures.push(
+        "specs/F-203-deadline-alerts.md must not define Phase 2 acceptance criteria while " +
+          "its Phase 2 scope is planned but unscheduled",
+      );
+    }
   }
   let nextStatementOffset = 0;
   const scopeStatements = contents
@@ -1722,13 +1740,23 @@ for (const relative of f203Artifacts) {
       (relative === "docs/ROADMAP.md" && f203RoadmapDecision.test(raw)) ||
       (relative === "docs/PRD.md" && f203PrdDecision.test(raw));
     if (isScopeDecision) {
-      return !f203RetainedScope.test(normalized);
+      return (
+        !f203RetainedScope.test(normalized) ||
+        !hasAllF203Capabilities(normalized) ||
+        f203SchedulingConflict.test(normalized)
+      );
     }
     if (relative === "specs/F-203-deadline-alerts.md" && f203SpecDecision.test(raw)) {
       return f203SchedulingConflict.test(normalized);
     }
-    if (!f203Capabilities.test(normalized) || !f203Planning.test(normalized)) return true;
-    if (f203Negation.test(normalized)) return true;
+    if (
+      !f203Capabilities.test(normalized) ||
+      !hasAllF203Capabilities(normalized) ||
+      !f203Planning.test(normalized)
+    ) {
+      return true;
+    }
+    if (f203Negation.test(normalized) || f203SchedulingConflict.test(normalized)) return true;
     if (relative === "docs/ROADMAP.md" || relative === "docs/PRD.md") {
       return !f203ListOwner.test(raw) || !f203ListScope.test(normalized);
     }
