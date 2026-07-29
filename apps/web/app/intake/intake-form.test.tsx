@@ -45,16 +45,20 @@ const echoSavedEvent = (
 
 /** The questions on screen, by their legend label, in the order they are asked. */
 const questionsOnScreen = (): string[] =>
-  screen.getAllByRole("group").map(
-    (group) =>
-      group.querySelector("legend .intake__label")?.textContent ??
-      group.querySelector("legend")?.textContent ??
-      "",
-  );
+  screen
+    .getAllByRole("group")
+    .map(
+      (group) =>
+        group.querySelector("legend .intake__label")?.textContent ??
+        group.querySelector("legend")?.textContent ??
+        "",
+    );
 
-const renderForm = (eventId?: string) => {
+const renderForm = (eventId?: string, activeContract = contract) => {
   const user = userEvent.setup();
-  render(<IntakeForm contract={contract} apiBaseUrl="https://api.example.com" eventId={eventId} />);
+  render(
+    <IntakeForm contract={activeContract} apiBaseUrl="https://api.example.com" eventId={eventId} />,
+  );
   return user;
 };
 
@@ -194,6 +198,61 @@ describe("conditional reveal follows the registry (spec #2)", () => {
     expect(
       document.querySelector('input[name="food_affinity_private_exception_claimed"]'),
     ).toBeNull();
+  });
+
+  it("renders PACO evidence guidance from the active registry instead of web copy", async () => {
+    const alternateGuidance = [
+      "Alternate published introduction.",
+      "- First active-contract check.",
+      "- Second active-contract check.",
+      "Alternate published fold guidance.",
+    ].join("\n");
+    const activeContract = {
+      ...contract,
+      fields: contract.fields.map((field) =>
+        field.field === "venue_paco_covers_exact_event"
+          ? { ...field, note: alternateGuidance }
+          : field,
+      ),
+    };
+    const user = renderForm(undefined, activeContract);
+    await chooseOption(user, "location_type", "private_venue");
+    await fillField(user, "headcount", "75");
+
+    expect(screen.getByText("Alternate published introduction.").tagName).toBe("P");
+    expect(screen.getByText("Alternate published fold guidance.").tagName).toBe("P");
+    const list = screen.getByRole("list");
+    expect(
+      within(list)
+        .getAllByRole("listitem")
+        .map((item) => item.textContent),
+    ).toEqual(["First active-contract check.", "Second active-contract check."]);
+    expect(screen.queryByText(/The documents identify the exact event space/)).toBeNull();
+  });
+
+  it("renders all published PACO checks and tri-state fold instructions", async () => {
+    const user = renderForm();
+    await chooseOption(user, "location_type", "private_venue");
+    await fillField(user, "headcount", "75");
+
+    const question = screen.getByRole("group", { name: "Venue paco covers exact event" });
+    expect(
+      within(question)
+        .getAllByRole("listitem")
+        .map((item) => item.textContent),
+    ).toEqual([
+      "Identifies the exact event space.",
+      "Authorizes the event use and assembly classification.",
+      "Allows the event's maximum occupant load.",
+      "Matches the event's seating, furnishings, and layout.",
+    ]);
+    for (const instruction of [
+      "Answer No if any checklist item has a proved mismatch.",
+      "Answer Yes if all checklist items are proved.",
+      "Answer I don't know otherwise.",
+    ]) {
+      expect(within(question).getByText(instruction).tagName).toBe("P");
+    }
   });
 
   it("renders the registry's published note as the question's help text", async () => {
