@@ -323,7 +323,7 @@ const RESCOPE_CHECKS: FieldChecks<ConsumedRescopeSuggestion> = {
   reevaluatedVerdict: isToken(VERDICTS),
   droppedRuleIds: arrayOf(isString),
   // Pre-enrichment stored plans omit these; accept absence and normalize below.
-  introducedRuleIds: (value: unknown): value is readonly string[] | undefined =>
+  introducedRuleIds: (value: unknown): value is readonly string[] =>
     value === undefined || arrayOf(isString)(value),
   minSlackDays: optionalNullNumber,
   atRiskFindingName: optionalNullString,
