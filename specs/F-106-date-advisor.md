@@ -30,7 +30,7 @@ Given a complete event scope and target month, an organizer can see the earliest
 
 ## Inputs, Outputs, State, Validation, and Errors
 
-- Inputs are a complete non-date scope, target month, explicit `today`, ruleset, and holiday calendar; output is a deterministic candidate-date result set.
+- Inputs are an exact complete non-date scope revision, the target draft version to which a selected date may be applied, target month, explicit `today`, ruleset, and holiday calendar; output is a deterministic candidate-date result set pinned to both versions.
 - Each candidate is a full evaluation. Evaluation errors are failed candidates, never no-requirement or feasible results.
 - Unknown/conflict/research-required inputs propagate through each verdict and remain visible in the result explanation.
 - Missing or unresolved material data stays visibly unset, unknown, pending, or failed as appropriate; it never becomes a successful or complete result.
@@ -60,7 +60,7 @@ Exact HTTP, JSON Schema, migration, job, and provider shapes belong in their rev
 2. **F106-AC-02:** The earliest result in each shown verdict class is chronologically correct within the requested month; a month with no remaining candidate dates returns an explicit unavailable result.
 3. **F106-AC-03:** Business-day, hard-floor, dependency-gated, unknown, and official-conflict behavior matches F-102 for the same date.
 4. **F106-AC-04:** An evaluation error is labeled failed and cannot be returned as feasible or silently skipped.
-5. **F106-AC-05:** Applying a suggested date creates a normal revision and plan; the advisor result itself is not authoritative plan output.
+5. **F106-AC-05:** Applying a suggested date compare-and-swaps both the exact non-date scope revision evaluated by the advisor and the target draft version the organizer reviewed. A mismatch rejects the whole apply without creating a revision or plan and requires rebuilt advice; success creates one normal revision and plan, while the advisor result itself is never authoritative plan output.
 
 ## Fixtures and Verification
 

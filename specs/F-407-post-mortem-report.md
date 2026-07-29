@@ -31,7 +31,7 @@ An organizer can freeze a source-linked post-event report covering attendance ve
 ## Inputs, Outputs, State, Validation, and Errors
 
 - Inputs are exact source versions; output is a draft then confirmed metric snapshot.
-- State is draft → stale when source changes → confirmed; confirmed snapshots remain immutable and later corrections create a new version.
+- State is draft → stale when source changes → confirmed; confirmed snapshots remain immutable, later corrections create a strictly increasing event-local version with predecessor provenance, and F-407's per-event current confirmed outcome-snapshot pointer advances atomically on confirmation.
 - Unavailable, partial, unknown, or incomparable data is labeled and excluded from denominators according to each approved metric definition.
 - Missing or unresolved material data stays visibly unset, unknown, pending, or failed as appropriate; it never becomes a successful or complete result.
 - Invalid input produces a field or action-specific error without partial mutation. Retriable external failures preserve the user's confirmed state and expose a safe retry.
@@ -59,7 +59,7 @@ Exact HTTP, JSON Schema, migration, job, and provider shapes belong in their rev
 1. **F407-AC-01:** Attendance versus RSVP, consent-aware leads, P&L, and permit-timeline adherence each appear with the approved formula, exact source versions, and coverage, or an explicit unavailable state.
 2. **F407-AC-02:** Attendance-versus-RSVP never becomes occupancy unless F-410 both-direction data is the selected source.
 3. **F407-AC-03:** Missing/partial data remains labeled and cannot silently change a denominator or appear as zero.
-4. **F407-AC-04:** Confirmation atomically compares the complete source-version set and rejects any mismatch; the organizer must rebuild the draft before confirmation. A successful confirmation freezes the report, and later source changes require a new report version.
+4. **F407-AC-04:** Confirmation atomically compares the complete source-version set and expected current confirmed outcome-snapshot version and rejects any mismatch; the organizer must rebuild the draft before confirmation. A successful confirmation freezes the report, records its strictly increasing event-local version and predecessor, and atomically advances F-407's per-event current confirmed outcome-snapshot pointer. Later source changes require a new report version.
 5. **F407-AC-05:** F-502 consumes only confirmed snapshots and cannot mutate them; F-407 may present eligible same-currency cost lines as organizer-confirmable proposals in F-104's existing user-line shape with exact snapshot/line provenance, without making F-407 an F-104 prerequisite.
 
 ## Fixtures and Verification

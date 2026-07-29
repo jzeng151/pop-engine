@@ -31,7 +31,7 @@ An organizer can compare permit burden, cost, preparation time, and attendance a
 
 ## Inputs, Outputs, State, Validation, and Errors
 
-- Inputs are organizer-selected workspace events; output is a derived comparison keyed to exact metric/source versions.
+- Inputs are organizer-selected workspace events and, for each event, either F-407's exact per-event current confirmed outcome-snapshot pointer or an explicitly selected historical confirmed snapshot version; output is a derived comparison pinned to those exact snapshot, metric, and source versions.
 - Comparison is available only for compatible metric versions/units; missing or incompatible values remain explicit.
 - Historical permit findings stay pinned to their original ruleset; the feature does not re-evaluate them.
 - Missing or unresolved material data stays visibly unset, unknown, pending, or failed as appropriate; it never becomes a successful or complete result.
@@ -62,6 +62,7 @@ Exact HTTP, JSON Schema, migration, job, and provider shapes belong in their rev
 3. **F502-AC-03:** Missing, partial, incompatible-version, or incompatible-currency values display as unavailable rather than zero or a coerced comparison.
 4. **F502-AC-04:** Historical regulatory results remain pinned to their original artifact and are never recomputed for this report.
 5. **F502-AC-05:** Reordering selected events changes presentation only and leaves metric values unchanged.
+6. **F502-AC-06:** The default comparison captures F-407's per-event current confirmed outcome-snapshot pointer with the exact snapshot it reads and rejects/rebuilds if that pointer changes before the comparison is returned. An organizer may instead select an exact older confirmed version, which remains visibly labeled historical; F-502 never chooses an arbitrary confirmed snapshot or presents a superseded snapshot as current.
 
 ## Fixtures and Verification
 
