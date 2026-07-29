@@ -116,6 +116,12 @@ The exact HTTP request and error schemas belong in the reviewed OpenAPI contract
 - The migration that introduces `current_plan_id` sets it from the same-event
   `checklist_acknowledgements.plan_id` when an acknowledgement exists and to `NULL` otherwise. It
   never treats the latest generated plan as accepted.
+- Until every deployed acceptance path uses `current_plan_id`, the legacy checklist-review path and
+  the new acceptance path must perform acceptance through the same Event-lock transaction and
+  update both `checklist_acknowledgements.plan_id` and `events.current_plan_id` to the same plan.
+  Alternatively, deployment must atomically disable the legacy acceptance writer before enabling
+  the new one. There is no rollout state in which both writers are active without that transactional
+  dual-write, and `current_plan_id` becomes the sole authority only after the legacy writer is gone.
 - For a backfilled plan, its canonical `intake_snapshot` must equal the engine-input projection of
   the revision it references under the plan's mapped schema. Questionnaire answers the engine did
   not consume may remain in that revision without being copied into the historical plan snapshot.
@@ -178,6 +184,12 @@ During compatibility rollout, every successful revision transaction must update 
 projections in the same transaction while any deployed Phase 1 reader still uses them. Projection
 updates may stop only after every reader has atomically cut over to Event Revisions. Event Revision
 remains the only write authority.
+
+While any Phase 1 reader uses those projections, a revision save succeeds only when the revision can
+be projected losslessly and satisfies every legacy column constraint. The server rejects an
+incomplete save that omits a legacy-required value; it never retains the previous value, substitutes
+a default, or writes `NULL` to make that save appear compatible. Incomplete saves that cannot meet
+that rule activate only after the last legacy reader atomically cuts over.
 
 The backfill and writer-authority cutover must leave no window in which a Phase 1 writer can commit
 an Event edit that is absent from the resulting current revision. A legacy write committed before
@@ -252,6 +264,8 @@ Before activation, the consuming implementation must prove:
 - plan generation and persistence reject a ruleset/revision jurisdiction mismatch;
 - `current_plan_id` backfills from the same-event checklist acknowledgement, or remains null when
   none exists, regardless of newer generated plans;
+- while legacy and new acceptance paths coexist, accepting through either path atomically leaves
+  `checklist_acknowledgements.plan_id` and `events.current_plan_id` naming the same plan;
 - an Event with no historical plan backfills its current revision under the exact cutover Event
   Input schema and jurisdiction named by the compatibility package;
 - accepting a candidate races safely with a revision save and rejects the stale candidate;
@@ -263,6 +277,8 @@ Before activation, the consuming implementation must prove:
   unchanged;
 - while a Phase 1 reader remains, a revision save and subsequent plan generation cannot observe
   different questionnaire answers;
+- while a Phase 1 reader remains, an incomplete save that omits a legacy-required projected value
+  is rejected without appending a revision or changing any projection;
 - a `note_text`-only finding change is reported as `changed`;
 - a `verification.qualification`-only finding change is reported as `changed`;
 - a change to only one of the scope, deadline, fee, required-documents, or portal verification
