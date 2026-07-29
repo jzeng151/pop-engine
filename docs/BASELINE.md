@@ -42,6 +42,11 @@ does not define a second lifecycle. The product owner currently holds the archit
 F-206 lanes, so this records one person's explicit approval in those capacities and does not imply
 independent lane approvals.
 
+**Verification-gate correction 2026-07-28, product-owner approved (#184):** already-approved
+nyc.v2.8 not flipped again; Dev 4 sign-off is primary-source browser checks followed by per-fact
+SOURCE_CONFIRMED to VERIFIED promotion; no verification status, regulatory fact, feature behavior,
+or ownership change.
+
 **Provider baseline (Phase 0, resolved 2026-07-23, issue #1; closes OPEN-QUESTIONS T-2 and T-3):**
 
 | Concern             | Choice                                   | Notes                                                                       |
