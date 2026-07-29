@@ -1,3 +1,5 @@
+import { ThemeToggle } from "./theme-toggle";
+
 export default function Home() {
   return (
     <main className="home riso-cover">
@@ -5,7 +7,10 @@ export default function Home() {
         <a className="riso-cover__mark" href="/">
           PE
         </a>
-        <a href="/auth">Sign in</a>
+        <div className="riso-cover__controls">
+          <ThemeToggle />
+          <a href="/auth">Sign in</a>
+        </div>
       </header>
 
       <section className="riso-cover__hero">

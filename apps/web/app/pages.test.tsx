@@ -33,6 +33,7 @@ describe("the app shell", () => {
     const shell = RootLayout({ children: <p>content</p> });
     expect(shell.type).toBe("html");
     expect(shell.props.lang).toBe("en");
+    expect(shell.props["data-theme"]).toBe("light");
   });
 
   it("links the landing page to the questionnaire", () => {
@@ -40,6 +41,7 @@ describe("the app shell", () => {
     expect(screen.getByRole("link", { name: "Describe your event" }).getAttribute("href")).toBe(
       "/intake",
     );
+    expect(screen.getByRole("button", { name: "Switch to dark theme" })).toBeDefined();
   });
 });
 
