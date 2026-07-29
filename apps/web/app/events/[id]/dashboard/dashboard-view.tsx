@@ -2,11 +2,9 @@
 
 import { useEffect, useRef, useState, type CSSProperties } from "react";
 import {
-  loadEventDoorContext,
   loadEventStats,
   STATS_FETCH_TIMEOUT_MS,
   STATS_POLL_MS,
-  type EventDoorContext,
   type EventStats,
 } from "./dashboard-api";
 
@@ -68,14 +66,6 @@ function prefersReducedMotion(): boolean {
   return window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 }
 
-function contextLine(context: EventDoorContext): string {
-  const venue =
-    context.location_name !== null && context.location_name.length > 0
-      ? ` · ${context.location_name}`
-      : "";
-  return `${context.event_date}${venue}`;
-}
-
 export function DashboardView({
   eventId,
   apiBaseUrl,
@@ -84,7 +74,6 @@ export function DashboardView({
   fetchTimeoutMs = STATS_FETCH_TIMEOUT_MS,
 }: DashboardViewProps) {
   const [stats, setStats] = useState<EventStats | null>(null);
-  const [context, setContext] = useState<EventDoorContext | null>(null);
   const [failure, setFailure] = useState<string | null>(null);
   const [lastSuccessAt, setLastSuccessAt] = useState<number | null>(null);
   const [staleTick, setStaleTick] = useState(0);
@@ -92,25 +81,6 @@ export function DashboardView({
   const nowRef = useRef(now);
   nowRef.current = now;
   const previousTotal = useRef<number | null>(null);
-
-  // Intake identity once per event — name/date/venue from F-101, not re-polled with stats.
-  useEffect(() => {
-    setContext(null);
-    if (!UUID.test(eventId)) return;
-
-    let alive = true;
-    const abort = new AbortController();
-    void loadEventDoorContext(apiBaseUrl, eventId, { signal: abort.signal }).then((result) => {
-      if (!alive) return;
-      if (result.ok) {
-        setContext(result.context);
-      }
-    });
-    return () => {
-      alive = false;
-      abort.abort();
-    };
-  }, [apiBaseUrl, eventId]);
 
   useEffect(() => {
     // Drop the previous event's totals immediately so a slow/failed fetch cannot leave them up.
@@ -222,12 +192,7 @@ export function DashboardView({
   return (
     <div className="ops">
       <p className="pe-eyebrow">Door</p>
-      <h1>{context?.name ?? "Live ops"}</h1>
-      {context !== null && (
-        <p className="ops__event" data-testid="event-context">
-          {contextLine(context)}
-        </p>
-      )}
+      <h1>Live ops</h1>
       <p className="ops__lede">
         Arrivals only — labeled check-ins, not how many people are still on site. Capacity is the
         confirmed value from intake when you set one.

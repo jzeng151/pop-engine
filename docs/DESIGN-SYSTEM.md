@@ -29,8 +29,8 @@ This document describes the Warm & Authentic CSS foundation in `apps/web/app/glo
 * **Rules and borders:** `#d2b48c` (`--pe-rule`).
 
 ### Actions and Status
-* **Primary action / focus:** Burnt orange `#cc5500` (`--pe-amber`).
-* **Clear state:** Forest green `#228b22` (`--pe-clear`).
+* **Primary action / focus:** Burnt orange `#b34a00` (`--pe-amber`) — chosen for ≥4.5:1 contrast with cream action labels.
+* **Clear state / primary hover:** Forest green `#1c7a1c` (`--pe-clear`) — same contrast floor with cream labels.
 * **Error state:** Rose `#9b2d1f` (`--pe-rose`).
 * **Supporting warm accent:** Saddle brown `#8b4513` (`--pe-neon`).
 

@@ -14,20 +14,21 @@
   --pe-surface: #fffef5;
   --pe-card: #fffef8;
 
-  /* Burnt orange as primary action/accent (legacy cyan/amber/neon slots) */
-  --pe-cyan: #cc5500;
-  --pe-cyan-wash: rgba(204, 85, 0, 0.1);
-  --pe-glow: rgba(204, 85, 0, 0.2);
-  --pe-amber: #cc5500;
-  --pe-amber-deep: #a34400;
+  /* Burnt orange as primary action/accent (legacy cyan/amber/neon slots).
+     Primary and clear hover meet WCAG AA normal-text contrast (≥4.5:1) against cream labels. */
+  --pe-cyan: #b34a00;
+  --pe-cyan-wash: rgba(179, 74, 0, 0.1);
+  --pe-glow: rgba(179, 74, 0, 0.2);
+  --pe-amber: #b34a00;
+  --pe-amber-deep: #8f3a00;
   --pe-amber-wash: #f8e4d4;
-  --pe-amber-soft: rgba(204, 85, 0, 0.16);
+  --pe-amber-soft: rgba(179, 74, 0, 0.16);
   --pe-neon: #8b4513;
   --pe-neon-wash: #f0e4d4;
 
   /* Forest green for cleared / trustworthy states */
-  --pe-clear: #228b22;
-  --pe-clear-bright: #2ea02e;
+  --pe-clear: #1c7a1c;
+  --pe-clear-bright: #228b22;
   --pe-rose: #9b2d1f;
   --pe-cream-text: #fffef5;
   --pe-divider: rgba(139, 69, 19, 0.14);

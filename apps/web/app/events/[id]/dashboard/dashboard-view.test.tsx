@@ -39,37 +39,16 @@ const stats = (overrides: Partial<EventStats> = {}): EventStats => ({
   ...overrides,
 });
 
-const doorEvent = (overrides: Record<string, unknown> = {}) => ({
-  event: {
-    id: EVENT_ID,
-    name: "Demo Door Night",
-    event_date: "2026-08-15",
-    location_name: "Synthetic Venue",
-    ...overrides,
-  },
-});
-
-/**
- * Route dashboard fetches: intake identity is GET /api/events/:id; stats is …/stats.
- * A single mockResolvedValue would feed the wrong shape to whichever effect races first.
- */
+/** Stats-only stub — F-402 polls `/stats`; no intake identity fetch on this page. */
 const stubDashboardFetch = (options: {
   stats?: EventStats | (() => Promise<Response>);
-  event?: unknown;
   onStatsUrl?: (url: string) => void;
 } = {}) => {
-  const eventBody = options.event ?? doorEvent();
-  const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+  const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
     const url = String(input);
-    if (url.includes("/stats")) {
-      options.onStatsUrl?.(url);
-      if (typeof options.stats === "function") return options.stats();
-      return jsonResponse(200, options.stats ?? stats());
-    }
-    if (init?.signal?.aborted) {
-      throw new DOMException("Aborted", "AbortError");
-    }
-    return jsonResponse(200, eventBody);
+    options.onStatsUrl?.(url);
+    if (typeof options.stats === "function") return options.stats();
+    return jsonResponse(200, options.stats ?? stats());
   });
   vi.stubGlobal("fetch", fetchMock);
   return fetchMock;
@@ -118,16 +97,15 @@ describe("DashboardView", () => {
     );
   });
 
-  it("shows the intake event name and date on the live door view", async () => {
-    stubDashboardFetch({
+  it("renders Live ops without pulling intake identity onto the door page", async () => {
+    const fetchMock = stubDashboardFetch({
       stats: stats({ checkins_total: 1, capacity: 50 }),
-      event: doorEvent({ name: "Brooklyn Block Party", event_date: "2026-09-01" }),
     });
     render(<DashboardView eventId={EVENT_ID} apiBaseUrl="https://api.example.com" pollMs={60_000} />);
 
-    expect(await screen.findByRole("heading", { name: "Brooklyn Block Party" })).toBeDefined();
-    expect((await screen.findByTestId("event-context")).textContent).toContain("2026-09-01");
-    expect(screen.getByTestId("event-context").textContent).toContain("Synthetic Venue");
+    expect(await screen.findByRole("heading", { name: "Live ops" })).toBeDefined();
+    expect(screen.queryByTestId("event-context")).toBeNull();
+    expect(fetchMock.mock.calls.every((call) => String(call[0]).includes("/stats"))).toBe(true);
   });
 
   it("shows capacity percentage, over-capacity warning, and the registered/walk-in split", async () => {
@@ -221,11 +199,7 @@ describe("DashboardView", () => {
 
   it("expires a hung poll so the next interval can recover", async () => {
     let statsCalls = 0;
-    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
-      const url = String(input);
-      if (!url.includes("/stats")) {
-        return jsonResponse(200, doorEvent());
-      }
+    const fetchMock = vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) => {
       statsCalls += 1;
       if (statsCalls === 1) {
         return new Promise<Response>((_resolve, reject) => {
@@ -259,13 +233,6 @@ describe("DashboardView", () => {
     let statsForSecond = 0;
     const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
       const url = String(input);
-      if (!url.includes("/stats")) {
-        const id = url.includes(OTHER_EVENT_ID) ? OTHER_EVENT_ID : EVENT_ID;
-        return jsonResponse(
-          200,
-          doorEvent({ id, name: id === OTHER_EVENT_ID ? "Other" : "Demo Door Night" }),
-        );
-      }
       if (url.includes(OTHER_EVENT_ID)) {
         statsForSecond += 1;
         if (statsForSecond === 1) return second;
@@ -308,10 +275,6 @@ describe("DashboardView", () => {
     let firstStatsStarted = false;
     const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
       const url = String(input);
-      if (!url.includes("/stats")) {
-        const id = url.includes(OTHER_EVENT_ID) ? OTHER_EVENT_ID : EVENT_ID;
-        return jsonResponse(200, doorEvent({ id }));
-      }
       if (url.includes(EVENT_ID) && !firstStatsStarted) {
         firstStatsStarted = true;
         return first;
