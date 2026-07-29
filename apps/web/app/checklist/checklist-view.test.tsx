@@ -2205,4 +2205,55 @@ describe("F-202 AC 9 · moved-deadline notice", () => {
     ).toBe("https://example.gov/a");
     expect(notice.textContent).toContain("https://example.gov/a");
   });
+
+  it("states an unresolved-deadline delta when the status remains not calculable", async () => {
+    stubApi({
+      [GET_CHECKLIST]: checklistOf({
+        created: true,
+        planChanged: true,
+        items: [
+          trackedItem(STREET_MEDIUM, {
+            deadlineNotice: {
+              dateChange: null,
+              stateChange: {
+                previous: {
+                  deadlineStatus: "not_calculable",
+                  deadlineDisplay: "published filing window",
+                  timelineUnresolvedReason: "holiday calendar was unavailable",
+                  deadlineUnknownFields: [],
+                  gated: false,
+                },
+                current: {
+                  deadlineStatus: "not_calculable",
+                  deadlineDisplay: "published filing window",
+                  timelineUnresolvedReason: "processing time is unavailable",
+                  deadlineUnknownFields: [],
+                  gated: false,
+                },
+              },
+              previousProvenance: {
+                verificationStatus: "SOURCE_CONFIRMED",
+                lastVerifiedDate: null,
+                sources: [],
+                sourceUrl: null,
+                conflictText: null,
+                rulesetVersion: "test.v1",
+                snapshotDate: "2026-07-20",
+              },
+              rulesetVersionsDiffer: false,
+              previousRulesetVersion: "test.v1",
+              currentRulesetVersion: "test.v1",
+            },
+          }),
+        ],
+      }),
+    });
+    await renderView();
+
+    const notice = await screen.findByTestId("moved-deadline-notice");
+    expect(notice.textContent).toContain(
+      "Timeline unresolved reason: previous holiday calendar was unavailable; current processing time is unavailable.",
+    );
+    expect(notice.textContent).not.toContain("previous not calculable; current not calculable");
+  });
 });

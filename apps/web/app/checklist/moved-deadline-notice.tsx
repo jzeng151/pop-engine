@@ -36,15 +36,47 @@ function dateChangeCopy(notice: MovedDeadlineNotice): string | null {
 function stateChangeCopy(notice: MovedDeadlineNotice): string | null {
   const change = notice.stateChange;
   if (change === null) return null;
-  const previous = humanize(change.previous.deadlineStatus);
-  const current = humanize(change.current.deadlineStatus);
-  const gate =
-    change.previous.gated !== change.current.gated
-      ? change.current.gated
-        ? " It is now gated on another permit decision."
-        : " It is no longer gated on another permit decision."
-      : "";
-  return `What applied before about this deadline: ${previous}. What applies now: ${current}.${gate}`;
+  const changes: string[] = [];
+  const previous = change.previous;
+  const current = change.current;
+
+  if (previous.deadlineStatus !== current.deadlineStatus) {
+    changes.push(
+      `Deadline state: previous ${humanize(previous.deadlineStatus)}; current ${humanize(
+        current.deadlineStatus,
+      )}.`,
+    );
+  }
+  if (previous.deadlineDisplay !== null || current.deadlineDisplay !== null) {
+    changes.push(
+      `Published deadline details: previous ${previous.deadlineDisplay ?? "none"}; current ${
+        current.deadlineDisplay ?? "none"
+      }.`,
+    );
+  }
+  if (previous.timelineUnresolvedReason !== current.timelineUnresolvedReason) {
+    changes.push(
+      `Timeline unresolved reason: previous ${previous.timelineUnresolvedReason ?? "none"}; current ${
+        current.timelineUnresolvedReason ?? "none"
+      }.`,
+    );
+  }
+  if (previous.deadlineUnknownFields.join(",") !== current.deadlineUnknownFields.join(",")) {
+    changes.push(
+      `Unknown fields: previous ${previous.deadlineUnknownFields.join(", ") || "none"}; current ${
+        current.deadlineUnknownFields.join(", ") || "none"
+      }.`,
+    );
+  }
+  if (previous.gated !== current.gated) {
+    changes.push(
+      current.gated
+        ? "This requirement is now gated on another permit decision."
+        : "This requirement is no longer gated on another permit decision.",
+    );
+  }
+
+  return changes.join(" ");
 }
 
 /**
