@@ -55,7 +55,15 @@ const ruleset = (version) => ["nyc", `rules.v${version}.json`].join("-");
  */
 const SQUARE_RECONCILED = {
   "docs/BASELINE.md":
-    "# Baseline\n\n**Decision (SPEC-CONFLICT #127 item 1):** F-203 keeps alert escalations, " +
+    "# Baseline\n\n" +
+    "| Concern | Status |\n| --- | --- |\n" +
+    "| Product requirements | F-203 retains alert escalations, digests, team reminders, and " +
+    "per-user preferences as planned, unscheduled Phase 2 depth. |\n" +
+    "| Feature registry + phasing | F-203 retains alert escalations, digests, team reminders, " +
+    "and per-user preferences as planned, unscheduled Phase 2 depth. |\n" +
+    "| Phase 1–1.5 specs | F-203 retains alert escalations, digests, team reminders, and " +
+    "per-user preferences as planned, unscheduled Phase 2 depth. |\n\n" +
+    "**Decision (SPEC-CONFLICT #127 item 1):** F-203 keeps alert escalations, " +
     "digests, team reminders, and per-user preferences as its planned, unscheduled Phase 2 depth. " +
     "This adds no Phase 2 acceptance criteria.\n",
   "docs/ROADMAP.md":
@@ -2038,6 +2046,19 @@ describe.concurrent("F-203 Phase 2 scope agreement (SPEC-CONFLICT #127 item 1)",
     );
   });
 
+  it("rejects an unscheduled capability under a Setext acceptance-criteria heading", async () => {
+    const { status, output } = await runOn({
+      "specs/F-203-deadline-alerts.md":
+        SQUARE_RECONCILED["specs/F-203-deadline-alerts.md"] +
+        "\nAcceptance Criteria\n===================\n\n1. Send a weekly digest.\n",
+    });
+
+    expect(status).toBe(1);
+    expect(output).toContain(
+      "specs/F-203-deadline-alerts.md must not define Phase 2 acceptance criteria",
+    );
+  });
+
   it("rejects an unscheduled capability in prose acceptance criteria", async () => {
     const { status, output } = await runOn({
       "specs/F-203-deadline-alerts.md":
@@ -2372,6 +2393,19 @@ describe.concurrent("F-203 Phase 2 scope agreement (SPEC-CONFLICT #127 item 1)",
     expect(output).toContain("docs/ROADMAP.md must affirmatively assign");
   });
 
+  it("requires four distinct capabilities after the F-203 owner marker", async () => {
+    const { status, output } = await runOn({
+      "docs/ROADMAP.md": SQUARE_RECONCILED["docs/ROADMAP.md"].replace(
+        "**F-203 (full)** — alert escalations, digests, team reminders, and per-user preferences",
+        "**F-203 per-user preferences (full)** — alert escalations, digests, team reminders, " +
+          "and team reminders",
+      ),
+    });
+
+    expect(status).toBe(1);
+    expect(output).toContain("docs/ROADMAP.md must affirmatively assign");
+  });
+
   it("rejects an incidental F-203 reference under another owning id", async () => {
     const { status, output } = await runOn({
       "docs/ROADMAP.md": SQUARE_RECONCILED["docs/ROADMAP.md"].replace(
@@ -2396,6 +2430,33 @@ describe.concurrent("F-203 Phase 2 scope agreement (SPEC-CONFLICT #127 item 1)",
       expect(output).toContain("F-203 scope check passed");
     },
   );
+
+  it.each(["Product requirements", "Feature registry + phasing", "Phase 1–1.5 specs"])(
+    "rejects conflicting F-203 scope in the %s baseline manifest row",
+    async (concern) => {
+      const { status, output } = await runOn({
+        "docs/BASELINE.md": SQUARE_RECONCILED["docs/BASELINE.md"].replace(
+          new RegExp(`(\\| ${concern.replace("+", "\\+")} \\|)[^\\n]+`),
+          "$1 F-203 is now unplanned and assigned to Phase 3. |",
+        ),
+      });
+
+      expect(status).toBe(1);
+      expect(output).toContain("docs/BASELINE.md must affirmatively assign");
+    },
+  );
+
+  it("rejects a missing F-203 baseline manifest row", async () => {
+    const { status, output } = await runOn({
+      "docs/BASELINE.md": SQUARE_RECONCILED["docs/BASELINE.md"].replace(
+        /^\| Product requirements \|.*\n/m,
+        "",
+      ),
+    });
+
+    expect(status).toBe(1);
+    expect(output).toContain("docs/BASELINE.md must affirmatively assign");
+  });
 
   it.each(["docs/ROADMAP.md", "docs/PRD.md"])(
     "rejects an added F-203 prose assignment in %s",
