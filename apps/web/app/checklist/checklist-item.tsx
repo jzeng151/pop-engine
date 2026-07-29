@@ -6,6 +6,7 @@ import { Disclosure } from "../disclosure";
 import { PortalBlock } from "../portal-block";
 import { formatSnapshotDate } from "../plan/snapshot-banner";
 import { includesAgencyConfirmation, NOT_COVERED_BY_RULESET } from "../verification-copy";
+import { MovedDeadlineNoticeBlock } from "./moved-deadline-notice";
 import {
   ACCEPTED_DOCUMENT_TYPES,
   documentRejection,
@@ -397,6 +398,8 @@ export function ChecklistItemCard({
           been deleted.
         </p>
       )}
+
+      {item.deadlineNotice !== null && <MovedDeadlineNoticeBlock notice={item.deadlineNotice} />}
 
       <PlanContextBody context={item} currentPlan={currentPlan} />
 

@@ -37,6 +37,7 @@ import {
   simulatedDeliveries,
   type AlertScheduler,
 } from "./alerts";
+import { movedDeadlineNotice, type NoticePlanItem } from "./moved-deadline-notice";
 import { calendarDateFrom, renderingKey, PlanIntegrityError, type FindingRendering } from "./plan";
 import { DocumentStorageError, type DocumentStorage } from "./storage";
 
@@ -288,6 +289,19 @@ const planContext = (item: PlanItemRow, rendering: FindingRendering) => ({
     rulesetVersion: item.source_ruleset_version,
     snapshotDate: isoDate(item.source_snapshot_date),
   },
+});
+
+const noticeItemFrom = (item: PlanItemRow): NoticePlanItem => ({
+  deadline: item.deadline,
+  latest_apply_date: isoDate(item.latest_apply_date),
+  apply_after_date: isoDate(item.apply_after_date),
+  deadline_status: item.deadline_status,
+  verification_status: item.verification_status,
+  last_verified_date: isoDate(item.last_verified_date),
+  sources: item.sources,
+  source_url: item.source_url,
+  source_ruleset_version: item.source_ruleset_version,
+  source_snapshot_date: isoDate(item.source_snapshot_date),
 });
 
 type LatestPlan = {
@@ -562,6 +576,15 @@ async function checklistView(database: Queryable, eventId: string, plan: LatestP
       updatedAt: item.updated_at.toISOString(),
       struckThrough,
       ...planContext(source, renderingOrFail(renderings, source)),
+      deadlineNotice:
+        !struckThrough && current !== undefined && current.id !== item.id
+          ? movedDeadlineNotice(
+              noticeItemFrom(item),
+              renderingOrFail(renderings, item),
+              noticeItemFrom(current),
+              renderingOrFail(renderings, current),
+            )
+          : null,
       documents: (documents.get(item.checklist_item_id) ?? []).map(documentView),
     };
   });

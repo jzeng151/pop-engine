@@ -269,3 +269,27 @@
   font-size: 0.9375rem;
   font-weight: 600;
 }
+
+.check-item__deadline-notice {
+  margin: 0.65rem 0 0;
+  padding: 0.65rem 0.8rem;
+  background: var(--warning-bg);
+  border: 1.5px solid var(--warning-line);
+  border-radius: 0.5rem;
+  font-size: 0.9375rem;
+}
+
+.check-item__deadline-notice p {
+  margin: 0 0 0.45rem;
+}
+
+.check-item__deadline-notice p:last-child {
+  margin-bottom: 0;
+}
+
+.check-item__deadline-notice-provenance,
+.check-item__deadline-notice-rulesets,
+.check-item__deadline-notice-limit {
+  color: var(--muted);
+  font-size: 0.875rem;
+}

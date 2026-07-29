@@ -52,7 +52,7 @@ describe("api scaffold", () => {
     // (F-202); a header the allowlist omits fails the browser's preflight before any route runs,
     // and a dropped upload key silently turns every repeat back into a second document.
     expect(res.headers["access-control-allow-headers"]).toBe(
-      "Content-Type, X-Filename, X-Upload-Key",
+      "Authorization, Content-Type, X-Filename, X-Upload-Key",
     );
   });
 });

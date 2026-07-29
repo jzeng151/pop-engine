@@ -10,6 +10,9 @@ export default function Home() {
       <a className="intake__submit" href="/intake">
         Describe your event
       </a>
+      <p>
+        <a href="/auth">Authentication foundation</a>
+      </p>
     </main>
   );
 }

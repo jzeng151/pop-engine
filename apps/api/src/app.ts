@@ -9,6 +9,7 @@ import { createParksRouter } from "./parks";
 import { createPublicPageRouter } from "./public-page";
 import { createRsvpsRouter } from "./rsvps";
 import { createStatsRouter } from "./stats";
+import { requireSupabaseAuth, type VerifyAccessToken } from "./auth";
 
 /**
  * What the loaded rules file says about itself (F-206). `snapshotDate` is the date the ruleset
@@ -26,6 +27,8 @@ export type AppDependencies = EventsDependencies & {
   alerts?: AlertsDependencies;
   /** Absent in the scaffold's own tests; the rules-meta route registers only when it is supplied. */
   rulesMeta?: RulesMeta;
+  /** F-701 foundation only: verifies identity; it does not infer workspace or role authorization. */
+  verifyAccessToken?: VerifyAccessToken;
 };
 
 // The Express app factory. Kept separate from the server bootstrap (index.ts) so tests
@@ -48,7 +51,10 @@ export function createApp(dependencies: AppDependencies): Express {
       // X-Filename carries a document upload's display name (F-202). A preflight that lists a
       // header this allowlist omits fails in the browser before the route is ever reached, and
       // web and api are separately hosted, so that is the normal path rather than an edge case.
-      res.setHeader("Access-Control-Allow-Headers", "Content-Type, X-Filename, X-Upload-Key");
+      res.setHeader(
+        "Access-Control-Allow-Headers",
+        "Authorization, Content-Type, X-Filename, X-Upload-Key",
+      );
       res.sendStatus(204);
       return;
     }
@@ -62,6 +68,16 @@ export function createApp(dependencies: AppDependencies): Express {
   app.get("/health", (_req, res) => {
     res.json({ status: "ok", service: "pop-engine-api", engine: describeEngine() });
   });
+
+  if (dependencies.verifyAccessToken === undefined) {
+    app.get("/api/session", (_req, res) => {
+      res.status(503).json({ error: "Supabase authentication is not configured." });
+    });
+  } else {
+    app.get("/api/session", requireSupabaseAuth(dependencies.verifyAccessToken), (_req, res) => {
+      res.json({ actor: res.locals.actor as { id: string; email?: string } });
+    });
+  }
 
   app.use("/api", createEventsRouter(dependencies));
   // F-401 / F-302: only need pool (+ today for RSVP date checks) already on AppDependencies —
