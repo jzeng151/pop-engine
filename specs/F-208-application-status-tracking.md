@@ -61,7 +61,7 @@ Exact HTTP, JSON Schema, migration, job, and provider shapes belong in their rev
 3. **F208-AC-03:** A correction preserves the previous value and actor; no edit rewrites plan evidence.
 4. **F208-AC-04:** Unknown or conflicting agency state remains visible and cannot auto-complete the checklist requirement.
 5. **F208-AC-05:** Cross-workspace access and unauthorized role mutations fail without disclosing record existence.
-6. **F208-AC-06:** Application creation and every history mutation bind a stable request identity to the original result; replay returns that result without duplicating history, projection changes, deadline generations, or downstream work.
+6. **F208-AC-06:** Application creation and every history mutation bind a stable request identity to the original result; replay returns that result without duplicating history, projection changes, deadline generations, or downstream work. Every history mutation also compare-and-swaps the expected application/projection version; a mismatch rejects the whole mutation before appending history or advancing any downstream generation.
 
 ## Fixtures and Verification
 

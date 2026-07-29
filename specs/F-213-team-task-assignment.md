@@ -20,6 +20,7 @@ An authorized organizer can assign a requirement or operational task to an activ
 
 - A general project-management suite, subtasks, dependencies, time tracking, external assignees, or automatic escalation.
 - Changing a requirement's regulatory status when a task is completed.
+- Replacing F-405's Phase 2 runbook-only assignee-label/duty records; those records carry no F-213 task, membership-assignment, or task-status semantics.
 
 ## Dependencies and Baseline
 

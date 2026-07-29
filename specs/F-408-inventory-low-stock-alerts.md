@@ -57,7 +57,7 @@ Exact HTTP, JSON Schema, migration, job, and provider shapes belong in their rev
 ## Acceptance Criteria
 
 1. **F408-AC-01:** Manual integer adjustments bind a stable operation identity to actor/time/reason/source history, deterministically derive current count, and return the original result without reapplying on replay.
-2. **F408-AC-02:** A count or threshold edit that changes a known item from above threshold to at/below creates one low-stock transition/alert; the reverse change records one recovery transition. Notification jobs pin the item generation, deliver in generation order after rechecking it, and suppress a stale low-stock alert after recovery; retries/repeated reads do not duplicate either transition or notification.
+2. **F408-AC-02:** Creating an item with a known count at/below its threshold, first resolving an unknown/stale count to known at/below, or changing a known item from above threshold to at/below creates one low-stock transition/alert; the reverse known-low to known-above change records one recovery transition. Initialization above threshold creates no transition. Notification jobs pin the item generation, deliver in generation order after rechecking it, and suppress a stale low-stock alert after recovery; retries/repeated reads do not duplicate either transition or notification.
 3. **F408-AC-03:** Unknown or stale count is labeled and cannot appear in-stock.
 4. **F408-AC-04:** Invalid, replayed, duplicate, out-of-scope, or unverified Square events cannot change inventory.
 5. **F408-AC-05:** The provider connection requests no payment capability and no feature surface performs POS, purchasing, or forecasting.

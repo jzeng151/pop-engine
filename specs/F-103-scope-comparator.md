@@ -33,8 +33,16 @@ An organizer can compare two event configurations using two complete engine eval
 - Inputs are two complete revision snapshots, one organizer-selected shared target month, and identical evaluation context; outputs are two immutable plans and a derived comparison.
 - Comparison state is unevaluated → evaluating → comparable, conditional, or failed; one failed evaluation never becomes a favorable comparison.
 - Unknown/conflict/research-required findings remain visible on their respective side and in the difference summary.
+- Permit burden uses the shared `permit-burden/v1` breakdown below; it is never a scalar score or winner ranking.
 - Missing or unresolved material data stays visibly unset, unknown, pending, or failed as appropriate; it never becomes a successful or complete result.
 - Invalid input produces a field or action-specific error without partial mutation. Retriable external failures preserve the user's confirmed state and expose a safe retry.
+
+### Shared permit-burden/v1 definition
+
+- Consider each final engine finding whose kind is `permit`, `insurance`, `notification`, `registration`, `eligibility`, `prohibition`, or `dependency` and whose disposition is `required`, `may_be_required`, or `prohibited_or_ineligible`. Findings of kind `advisory` or `note`, and findings with disposition `advisory` or `no_new_requirement`, do not enter permit burden.
+- Count each final deduplicated finding once by the canonical JSON serialization of its sorted `rule_ids`; contributing rule IDs, sources, and facets never add extra units.
+- The value is the versioned breakdown `{ definite, unresolved }`. A considered `required` or `prohibited_or_ineligible` finding with verification `SOURCE_CONFIRMED` or `VERIFIED` contributes one `definite`. A considered `may_be_required` finding, or any considered finding with verification `OFFICIAL_CONFLICT`, `RESEARCH_REQUIRED`, or `COVERAGE_GAP`, contributes one `unresolved`; unresolved wins when both rules apply.
+- A material unknown that can change the finding set makes the breakdown unavailable rather than assigning a favorable count; the underlying typed findings and missing facts remain visible. A required finding with a `not_calculable` deadline remains definite, while evaluation failure also makes the breakdown unavailable. The UI shows both counts and the underlying typed findings/statuses when available; it never sums them, ranks configurations, or treats unresolved work as absent.
 
 ## UI and Accessibility
 
@@ -58,7 +66,7 @@ Exact HTTP, JSON Schema, migration, job, and provider shapes belong in their rev
 
 1. **F103-AC-01:** Both configurations evaluate with byte-identical engine version/checksum, ruleset, calendar, and `today` inputs, producing normal immutable plans; otherwise they are incomparable.
 2. **F103-AC-02:** The comparison identifies each added, removed, and materially changed finding without hiding deduplicated source facets.
-3. **F103-AC-03:** Permit burden is unavailable until SPEC-CONFLICT #208 approves the exact included finding kinds/dispositions, deduplication/source-facet rule, and unknown/conflict treatment; the comparison then derives it only from typed plan output. Earliest feasible dates come only from F-106 candidate-date evaluations for the same explicit shared target month and engine context; neither value comes from prose parsing or a second rules implementation.
+3. **F103-AC-03:** Permit burden derives only from typed plan output using the exact shared `permit-burden/v1` kind/disposition filters, final-finding identity, deduplication rule, and definite/unresolved treatment above. Earliest feasible dates come only from F-106 candidate-date evaluations for the same explicit shared target month and engine context; neither value comes from prose parsing or a second rules implementation.
 4. **F103-AC-04:** Unknown, conflict, research-required, or evaluation failure remains visible and cannot make a configuration appear better by omission.
 5. **F103-AC-05:** Swapping left and right preserves each plan and reverses only directional comparison labels.
 
@@ -66,6 +74,10 @@ Exact HTTP, JSON Schema, migration, job, and provider shapes belong in their rev
 
 - Planned automated fixture IDs are the acceptance IDs above; each must map one-to-one to a runnable test before approval can claim implementation readiness.
 - Regulatory fixtures: Pair approved scenarios A–F and the approved boundary fixtures; expected plan output remains owned by F-201/F-102.
+- `F103-BURDEN-01`: two contributing rule IDs merged into one final finding contribute one unit, not two.
+- `F103-BURDEN-02`: Scenario B's required `not_calculable` DOHMH finding contributes one definite unit; its advisory and named-confirmation findings contribute none.
+- `F103-BURDEN-03`: the Parks exactly-20 `OFFICIAL_CONFLICT` finding contributes one unresolved unit, while a material unknown that can change the finding set makes the breakdown unavailable rather than favorable.
+- `F103-BURDEN-04`: swapping the same two plans preserves each breakdown and reverses only directional finding labels.
 - Security-sensitive and cross-workspace paths require negative authorization tests; provider paths require success, duplicate-delivery, retry, invalid-signature, and permanent-failure tests where applicable.
 
 ## Allowed Footprint and Coordination
@@ -82,6 +94,5 @@ Exact HTTP, JSON Schema, migration, job, and provider shapes belong in their rev
 
 ## Approval Blockers
 
-- Resolve SPEC-CONFLICT #208 and approve its exact permit-burden derivation and paired-plan fixtures before exposing the value.
 - Approve Event Revision, finding-identity, plan-diff, and F-106 earliest-feasible-date contracts.
 - Assign the owner and independent reviewer, approve this spec, and add it to `docs/BASELINE.md`.
