@@ -1,6 +1,8 @@
 # PopEngine — Deployment Runbook (Phase 0)
 
-Provider baseline (`docs/BASELINE.md`): **Railway** (host) · **Supabase** (Postgres + S3-compatible storage) · **Resend** (email) · **Twilio** (SMS) · **Cloudflare Access** (demo gate, AD-12). Synthetic data only until the joint F-701/F-702/F-703 production gate ships.
+Provider baseline (`docs/BASELINE.md`): **Railway** (host) · **Supabase** (Postgres,
+S3-compatible storage, and Auth) · **Resend** (email) · **Twilio** (SMS) · **Cloudflare Access**
+(demo gate, AD-12). Synthetic data only until the joint F-701/F-702/F-703 production gate ships.
 
 The scaffold builds and tests locally with no cloud accounts. This runbook provisions the gated demo environment. Every step needs your own account and secrets; nothing here is automated.
 
@@ -15,9 +17,11 @@ The scaffold builds and tests locally with no cloud accounts. This runbook provi
 2. Storage, create a private bucket `pop-engine-documents`.
 3. Project Settings, Storage, S3 access keys, generate a keypair. Fill `S3_ENDPOINT` (`https://<project-ref>.supabase.co/storage/v1/s3`), `S3_REGION`, `S3_ACCESS_KEY_ID`, `S3_SECRET_ACCESS_KEY`, `S3_BUCKET`. The api signs standard SigV4 URLs, so F-202 storage code stays vendor-neutral.
 
-Authentication is an F-701 technical foundation under SPEC-CONFLICT #196. It establishes only a
-Supabase actor and cookie session; it does not replace the Cloudflare demo gate and is not
-production-ready until approved F-701/F-702/F-703 contracts and enforcement ship.
+Authentication is the approved F-701 foundation (`specs/F-701-authentication.md`, AD-16):
+Supabase Auth is the single identity/session provider, with email/password and Google OAuth as its
+two authentication methods. It establishes only a Supabase actor and cookie session; it does not
+replace the Cloudflare demo gate and is not production-ready until F-702/F-703 tenancy and role
+contracts and enforcement are separately approved and ship.
 
 4. Project Settings, API: copy the project URL and publishable key into the web service as
    `NEXT_PUBLIC_SUPABASE_URL` / `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY`, and into the API service as
