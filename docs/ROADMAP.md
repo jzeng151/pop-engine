@@ -1,6 +1,6 @@
 # PopEngine — Roadmap (Canonical)
 
-**Status:** APPROVED (2026-07-22; F-109 retitled "Scope-Support Classification" and its concept renamed from "coverage states" to "scope support states" 2026-07-26, product-owner approved, resolving a three-way overload of "coverage"; the five state values are unchanged; see `docs/BASELINE.md`).
+**Status:** APPROVED (2026-07-22; F-109 retitled "Scope-Support Classification" and its concept renamed from "coverage states" to "scope support states" 2026-07-26, product-owner approved, resolving a three-way overload of "coverage"; the five state values are unchanged; standalone `Square/POS integrations` entry dropped from Phase 4 on 2026-07-28, product-owner approved, resolving SPEC-CONFLICT #127 item 2 by the narrowing branch, no F-id's meaning changed; see `docs/BASELINE.md`).
 **Companion docs:** `PRD.md` (requirements) · `DESIGN.md` (lifecycle model, lanes, gates, demo plan, dependency graph) · `test-scenario-answer-key.md` (MVP ground truth).
 **Feature IDs:** F-xxx IDs are permanent shared vocabulary; once assigned, an ID's meaning never changes. Full ID policy in `DESIGN.md`.
 
@@ -100,4 +100,14 @@ Worked separately from the core per `DESIGN.md` Decision 10; doubles as the fall
 - **F-713 · Ruleset Version Comparison** — diff two ruleset versions.
 - **F-714 · Publish & Rollback** — atomic ruleset publication; restore prior version.
 - **F-715 · Reported-Issue Queue** — users flag wrong/missing/outdated requirements.
-- Square/POS integrations.
+
+**Dropped 2026-07-28, product-owner approved (SPEC-CONFLICT #127 item 2, narrowing branch):** a
+standalone `Square/POS integrations` entry sat here with no F-id and no spec, contradicting
+`PRD.md:226`, which assigns the Square capability to F-408 and scopes it to the inventory low-stock
+webhook. `ARCHITECTURE-FUTURE.md` §9.3 is not a second source for that scope: its row places F-408
+in the generic External integrations module beside F-108, F-212 and F-308 and lists generic
+integration entities, naming neither Square, nor inventory, nor a webhook. The broader standalone POS capability is DROPPED, not deferred
+and not absorbed: F-408 keeps exactly its established meaning, Inventory Low-Stock Alerts, because
+widening it would change an assigned ID's meaning against the policy above. Reintroducing the
+broader capability is a new ID and a new product decision, not a restoration. Recorded here so the
+absence reads as a decision rather than an omission.

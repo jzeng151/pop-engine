@@ -25,7 +25,7 @@ const scenario = (id: string): Record<string, unknown> => {
   return fixtureSubmission(fixture);
 };
 
-// Every scenario is entered exactly as answer key v4 writes it — it states the values the
+// Every scenario is entered exactly as answer key v6 writes it — it states the values the
 // fixtures were already running on (SPEC-CONFLICT #88 and #106, both closed). The provenance
 // branch stays so a future inferred value cannot be reported as "as written".
 const SCENARIO_CASES = SCENARIO_INTAKE_FIXTURES.map((fixture) => ({

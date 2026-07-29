@@ -6,14 +6,14 @@
 //
 // Plans are immutable snapshots (AD-7), so a rescope produces a NEW plan rather than editing the
 // old one. Supersession is therefore a relationship between two plans, not a flag on either, and
-// this file returns it as explicit fields (`planChanged`, `inLatestPlan`, `planStale`) so a client
+// this file returns it as explicit fields (`planChanged`, `struckThrough`, `planStale`) so a client
 // renders rather than re-derives it. Nothing is ever deleted or rewritten (spec AC 6).
 //
-// The two are answered from different places, deliberately. `inLatestPlan` is per row, so it is a
-// comparison against the latest plan's items. `planChanged` is about the plan as a whole and is
-// answered from `checklist_acknowledgements` — which plan the organizer last converted — because
-// the checklist's own rows cannot answer it: a regeneration that removes every trackable
-// requirement leaves nothing to compare, and that is the case the prompt most needs to fire in.
+// The two are answered from different places, deliberately. `struckThrough` is terminal per row,
+// derived from immutable plan history. `planChanged` is about the plan as a whole and is answered
+// from `checklist_acknowledgements` — which plan the organizer last converted — because the
+// checklist's own rows cannot answer it: a regeneration that removes every trackable requirement
+// leaves nothing to compare, and that is the case the prompt most needs to fire in.
 
 import { createHash, randomUUID } from "node:crypto";
 import { Readable } from "node:stream";
@@ -221,16 +221,18 @@ const PLAN_ITEM_ORDER = `latest_apply_date NULLS LAST, permit_name, rule_ids`;
  * 007), so the checklist still leads with the soonest deadline without re-reading a date that a
  * later plan moved.
  *
- * `rule_ids` last is what makes the order total, and is what rows predating migration 007 fall
- * through to: `materialize` keeps one row per requirement, so no two rows can share it.
+ * `rule_ids` and the checklist id make the order total. The id matters after a terminal identity
+ * returns: the old and new tasks deliberately carry the same rule ids and kind.
  */
-const CHECKLIST_COHORT_ORDER = `checklist.cohort_position, item.rule_ids`;
+const CHECKLIST_COHORT_ORDER =
+  "checklist.created_at, checklist.cohort_position, item.rule_ids, checklist.id";
 
 type ChecklistRow = PlanItemRow & {
   checklist_item_id: string;
   plan_item_id: string;
   status: ChecklistStatus;
   notes: string | null;
+  created_at: Date;
   updated_at: Date;
 };
 
@@ -443,8 +445,6 @@ async function taskCreatedByRequirement(
 
 /**
  * Every checklist row of the event, in the order rows created together are displayed in.
- * `checklistView` then stably re-groups them by when each requirement first appeared, which is the
- * display order.
  *
  * Deliberately says nothing about the plan each row currently points at, nor about anything that
  * plan recomputed. The plan a row points at is not a property of the task, it is a property of the
@@ -457,7 +457,7 @@ async function taskCreatedByRequirement(
 async function checklistRows(database: Queryable, eventId: string): Promise<ChecklistRow[]> {
   const { rows } = await database.query<ChecklistRow>(
     `SELECT checklist.id AS checklist_item_id, checklist.plan_item_id, checklist.status,
-            checklist.notes, checklist.updated_at,
+            checklist.notes, checklist.created_at, checklist.updated_at,
             ${PLAN_ITEM_COLUMNS.split(",")
               .map((column) => `item.${column.trim()}`)
               .join(", ")},
@@ -471,6 +471,69 @@ async function checklistRows(database: Queryable, eventId: string): Promise<Chec
     [eventId],
   );
   return rows;
+}
+
+/**
+ * A row is terminal once any later immutable plan omits its complete rule-id-set-and-kind identity.
+ * The latest plan may raise that identity again; the missing intervening plan is the durable fact
+ * that keeps the old task struck and makes the return a new task (F-202 AC 9).
+ */
+async function struckChecklistItemIds(
+  database: Queryable,
+  eventId: string,
+  latestPlanId: string,
+  items: readonly ChecklistRow[],
+): Promise<Set<string>> {
+  if (items.length === 0) return new Set();
+
+  const { rows } = await database.query<{
+    plan_id: string;
+    rule_ids: string[] | null;
+    kind: FindingKind | null;
+  }>(
+    `SELECT plan.id AS plan_id, item.rule_ids, item.kind
+       FROM permit_plans AS plan
+       LEFT JOIN permit_plan_items AS item ON item.plan_id = plan.id
+      WHERE plan.event_id = $1
+      ORDER BY plan.generated_at, plan.id`,
+    [eventId],
+  );
+
+  const identitiesByPlan = new Map<string, Set<string>>();
+  for (const row of rows) {
+    const identities = identitiesByPlan.get(row.plan_id) ?? new Set<string>();
+    if (row.rule_ids !== null && row.kind !== null) {
+      identities.add(requirementKey(row.rule_ids, row.kind));
+    }
+    identitiesByPlan.set(row.plan_id, identities);
+  }
+
+  const planIds = [...identitiesByPlan.keys()];
+  const latestIndex = planIds.indexOf(latestPlanId);
+  if (latestIndex < 0) {
+    throw new PlanIntegrityError(latestPlanId, "latest plan is absent from its event history");
+  }
+
+  const struck = new Set<string>();
+  // ponytail: quadratic in checklist rows × plan history; persist only if measured event histories
+  // outgrow the bounded capstone workload.
+  for (const item of items) {
+    const sourceIndex = planIds.indexOf(item.plan_id);
+    if (sourceIndex < 0) {
+      throw new PlanIntegrityError(
+        item.plan_id,
+        "checklist source plan is absent from event history",
+      );
+    }
+    const identity = requirementKey(item.rule_ids, item.kind);
+    for (let index = sourceIndex + 1; index <= latestIndex; index += 1) {
+      if (!identitiesByPlan.get(planIds[index] as string)?.has(identity)) {
+        struck.add(item.checklist_item_id);
+        break;
+      }
+    }
+  }
+  return struck;
 }
 
 async function documentsFor(
@@ -598,7 +661,7 @@ async function checklistView(database: Queryable, eventId: string, plan: LatestP
   const statusRollup = Object.fromEntries(
     CHECKLIST_STATUSES.map((status) => [
       status,
-      view.filter((item) => item.inLatestPlan && item.status === status).length,
+      view.filter((item) => !item.struckThrough && item.status === status).length,
     ]),
   );
 

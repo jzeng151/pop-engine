@@ -2,7 +2,7 @@
 
 **Status:** APPROVED (2026-07-24) · **Reviewer/approver:** product owner · **Owner:** see Lane below · see `docs/BASELINE.md`.
 **Phase:** 1 (core, week 1) · **Lane:** Dev 2 · **Depends on:** events schema (Phase 0), ruleset nyc.v2.8 ratified (BASELINE.md) · **Feeds:** everything (single source of truth)
-**Updated:** 2026-07-22 against nyc.v2.1; retargeted to nyc.v2.5 on 2026-07-25, to nyc.v2.6 on 2026-07-25 (dedupe-key correction only; no intake field, enum or asked-when condition moves), to nyc.v2.7 on 2026-07-26 (one config key published; no intake field, enum or asked-when condition moves), and to nyc.v2.8 on 2026-07-26 (DOB-ASSEMBLY-001's deadline unit and boundary corrected; no intake field, enum or asked-when condition moves — `venue_has_assembly_approval` is still collected and still read by no trigger, open on #89).
+**Updated:** 2026-07-22 against nyc.v2.1; retargeted to nyc.v2.5 on 2026-07-25, to nyc.v2.6 on 2026-07-25 (dedupe-key correction only; no intake field, enum or asked-when condition moves), to nyc.v2.7 on 2026-07-26 (one config key published; no intake field, enum or asked-when condition moves), and to nyc.v2.8 on 2026-07-26 (DOB-ASSEMBLY-001's deadline unit and boundary corrected; no intake field, enum or asked-when condition moves). `venue_has_assembly_approval` remains collected and read by no trigger; objective PACO/PA-permit coverage modeling is rehomed to SPEC-CONFLICT #188.
 
 ## User Story
 
@@ -29,7 +29,7 @@ The field list, enums, and asked-when conditions come from the ruleset's `intake
 
 ## Acceptance Criteria
 
-1. All six fixture scenarios (`docs/test-scenario-answer-key.md` v4) are enterable exactly as specified; each produces an event row with the mapped values.
+1. All six fixture scenarios (`docs/test-scenario-answer-key.md` v6) are enterable exactly as specified; each produces an event row with the mapped values.
 2. Conditional fields appear only when triggered, per the registry's `asked_when` conditions, which are authoritative: SAPO classification whenever `obstructs_public_way != no` (so `unknown` still asks it — a material unknown must not be hidden); street size only for street events; plaza level only for plazas; dimensions only for selected structure types; audibility only for private-venue sound; license/assembly questions only when relevant. Question count follows from the registry, not from a target: low-burden events answer 13–14 (Scenarios B, C), SAPO and max-complexity events more (A 17, D 16, F 18, E 24). Fields whose registry entry has no `asked_when` are always asked; the registry is the list.
 3. "I don't know" is accepted on **every** field whose registry entry declares an `unknown` value, and stored as `unknown`, never silently defaulted. This spec deliberately does not enumerate them: the registry is the list, and a prose copy of it drifts (it has, twice). Derive the set from `intake_fields` at build time. Numeric fields on a selected structure/generator may be left blank (stored NULL → engine evaluates unknown).
 4. Contradiction checks block submission with a specific message, never silently resolve:
@@ -52,4 +52,4 @@ The field list, enums, and asked-when conditions come from the ruleset's `intake
 
 ## Fixture Scenarios Exercised
 
-All six (A–F) as input fixtures. A exercises street size classification; D exercises block-party fields; E exercises plaza level, structures, and generator specs; F exercises all three unknown branch facts.
+All six (A–F) as input fixtures. A exercises street size classification; D exercises block-party fields; E exercises plaza level, structures, and generator specs; F exercises the license-coverage and sound-audibility verdict branches while retaining assembly approval as non-branching confirmation context.

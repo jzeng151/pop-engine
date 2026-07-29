@@ -1578,6 +1578,158 @@ if (disagreements.length > 0) {
   process.exit(1);
 }
 
+// ---------------------------------------------------------------------------------------------
+// SPEC-CONFLICT #127 item 2: Square/POS scope agreement (governance §5 step 7).
+//
+// The reconciliation dropped a standalone `Square/POS integrations` bullet from ROADMAP Phase 4
+// because it contradicted PRD.md:226, which scopes the Square capability to the inventory
+// low-stock webhook and assigns it to F-408. Governance §5 step 7 requires a rule so the
+// contradiction cannot silently return, and a one-time edit is not one: it closes the disagreement
+// once and leaves it free to come back on the next edit to any of the three files.
+//
+// WHY HERE rather than in a test. This file is already the repo's cross-artifact governance gate
+// rather than a BASELINE-only checker: it enforces the manifest-versus-header rule, the
+// exactly-one-published-ruleset rule, and the filename/field/pin agreement rule. A documentation
+// invariant that governance requires belongs beside those and behind `pnpm check:baseline`, which
+// is the gate governance work is run through. It is nonetheless proved the same way every other
+// rule here is proved, against a planted tree in check-baseline-drift.test.mjs.
+//
+// THE DECISION HAS TWO HALVES AND THE FIRST VERSION OF THIS RULE ONLY GUARDED ONE. It required a
+// scope line to name F-408 and stopped there, which defends against the shape nobody would write
+// (a bullet with no id) and permits the shape someone would: renaming F-408's own entry to
+// "Inventory Alerts and Square/POS Integrations" absorbs the dropped capability under the id that
+// already exists, names F-408 throughout, and passed. That is precisely the WIDENING branch the
+// product owner did not take, because it changes an assigned ID's meaning against DESIGN.md:25.
+// So the rule below guards the absence of the broader capability FIRST and independently of any
+// id, and checks the id assignment second.
+//
+// RULE A, the core: no capability ENTRY in the three artifacts may pair `Square` or a standalone
+// `POS` with `integration`. The reconciled artifacts spell the kept capability as "Square webhook";
+// every form of the dropped one, standalone or absorbed, is spelled with "integrations". This is
+// deliberately independent of F-ids, so a new id, F-408 itself, and an unassigned bullet all fail
+// the same way.
+//
+// RULE B: an entry that names `Square` AND names at least one F-id must name F-408, so the
+// capability cannot be reassigned to another id. Requiring an F-id is what keeps a provider MENTION
+// from reading as an assignment: "Square adapter credentials must be encrypted" is a list item
+// about a provider, assigns nothing, and must pass. A line can be an entry and still not assign a
+// capability, which is the same false positive as the code-block one below, one level in.
+//
+// RULE C: the assignment must still be PRESENT in the Roadmap and the PRD, and ARCHITECTURE-FUTURE
+// §9.3 must still own F-408, so deleting the assignment cannot pass by leaving nothing to disagree
+// with.
+//
+// WHAT COUNTS AS AN ENTRY, and why it is not any line mentioning POS. ARCHITECTURE-FUTURE names POS
+// three times as a PROVIDER CLASS behind an adapter: AD-13, the integrations package listing, and
+// the Phase 2+ worker list. None assigns a capability to an id and none should have to name one, so
+// matching every POS mention fails a compliant tree. An entry is a list item or a table row,
+// because that is what a capability assignment is in these three documents. Prose is out of scope
+// on purpose: the paragraph recording the drop is prose ABOUT an entry and necessarily repeats its
+// words, so matching prose would make the rule fail on the very edit it exists to protect. The
+// package listing is inside a fenced block and is not an entry either.
+//
+// A MISSING ARTIFACT IS A FAILURE, not a skip. The status loop above uses `if (!existsSync) continue`
+// deliberately, because it walks manifest rows including globs and files a row may name before they
+// are created. That reasoning does not carry here: these three paths are named explicitly by this
+// rule, all three exist, and each is an APPROVED row in the manifest. A guard whose subject can be
+// deleted into a pass is not a guard, and renaming one of these files is exactly the edit that
+// would do it.
+const posArtifacts = ["docs/ROADMAP.md", "docs/PRD.md", "docs/ARCHITECTURE-FUTURE.md"];
+const posFailures = [];
+const squareAssignments = new Map();
+
+for (const relative of posArtifacts) {
+  const full = join(repoRoot, relative);
+  if (!existsSync(full)) {
+    posFailures.push(
+      `${relative} is missing. This rule names it explicitly and the manifest marks it APPROVED, ` +
+        `so its absence is a governance event rather than a state to skip past. If it moved, ` +
+        `point this rule at its new path in the same PR.`,
+    );
+    continue;
+  }
+  const lines = readFileSync(full, "utf8").split("\n");
+  let namesSquareWithF408 = 0;
+  lines.forEach((line, index) => {
+    const isEntry = /^\s*[-*]\s/.test(line) || /^\s*\|/.test(line);
+    if (!isEntry) return;
+    const mentionsSquare = /\bSquare\b/.test(line);
+    const standalonePos = /\bPOS\b/.test(line);
+    if (!mentionsSquare && !standalonePos) return;
+
+    // RULE A. The broader capability, however it is spelled and whoever it is assigned to.
+    //
+    // The words must be ADJACENT, not merely both present. `PRD.md:226` reads "ticketing
+    // integration/export; inventory low-stock alerts (manual counts or Square webhook)": that
+    // "integration" belongs to F-308's ticketing, and a line-wide test flagged the compliant PRD
+    // entry as the dropped capability. The capability is always spelled as the noun phrase, so the
+    // pattern is the noun phrase.
+    if (/\b(?:Square|POS)(?:\s*\/\s*(?:Square|POS))?\s+integrations?\b/i.test(line)) {
+      posFailures.push(
+        `${relative}:${index + 1} asserts the broader standalone Square/POS capability, which the ` +
+          `reconciliation DROPPED:\n      ${line.trim()}`,
+      );
+      return;
+    }
+
+    // RULE B. Only an entry that names an id is an assignment; a provider mention is not.
+    if (!/\bF-\d{3}\b/.test(line)) return;
+    if (!line.includes("F-408")) {
+      posFailures.push(
+        `${relative}:${index + 1} assigns the Square capability to an id other than F-408:\n` +
+          `      ${line.trim()}`,
+      );
+      return;
+    }
+    if (mentionsSquare) namesSquareWithF408 += 1;
+  });
+  squareAssignments.set(relative, namesSquareWithF408);
+}
+
+// RULE C, first half.
+for (const relative of ["docs/ROADMAP.md", "docs/PRD.md"]) {
+  if (!existsSync(join(repoRoot, relative))) continue;
+  if ((squareAssignments.get(relative) ?? 0) === 0) {
+    posFailures.push(
+      `${relative} no longer assigns the Square capability to F-408. The three artifacts agree ` +
+        `only while each of them says so.`,
+    );
+  }
+}
+
+// RULE C, second half. ARCHITECTURE-FUTURE carries the assignment on its §9.3 ownership row rather
+// than by naming the vendor: the row places F-408 in the External integrations module, and that is
+// ALL it does. It does not scope F-408 to Square, to inventory or to a webhook, which PRD.md:226 is
+// the artifact that does. So this checks the row for what it actually carries, module ownership.
+const afPath = join(repoRoot, "docs/ARCHITECTURE-FUTURE.md");
+if (existsSync(afPath)) {
+  const ownsExternal = readFileSync(afPath, "utf8")
+    .split("\n")
+    .some((line) => /External integrations/.test(line) && line.includes("F-408"));
+  if (!ownsExternal) {
+    posFailures.push(
+      "docs/ARCHITECTURE-FUTURE.md §9.3 no longer lists F-408 on its External integrations " +
+        "ownership row, so the Square capability has no owning module there.",
+    );
+  }
+}
+
+if (posFailures.length > 0) {
+  console.error(
+    "Square/POS scope disagreement (SPEC-CONFLICT #127 item 2, reconciled 2026-07-28):\n",
+  );
+  for (const f of posFailures) console.error("  ✗ " + f);
+  console.error(
+    "\nThe decision was the NARROWING branch: F-408 keeps its established meaning, Inventory " +
+      "Low-Stock Alerts, scoped to the inventory Square webhook by PRD.md:226, and the broader " +
+      "standalone POS capability is dropped rather than absorbed. Absorbing it under F-408's name " +
+      "is the WIDENING branch: it changes an assigned ID's meaning and needs an amendment to " +
+      "docs/DESIGN.md:25. A new capability needs a new ID and a new product decision. Either way " +
+      "this rule moves with the decision that changed it, not around it.",
+  );
+  process.exit(1);
+}
+
 if (failures.length > 0) {
   console.error("Baseline status drift detected (docs/BASELINE.md vs file headers):\n");
   for (const f of failures) console.error("  ✗ " + f);
@@ -1593,6 +1745,11 @@ console.log(
     `${pinned}.`,
 );
 console.log(`Baseline status check passed: ${checked.length} APPROVED artifacts consistent.`);
+console.log(
+  `Square/POS scope check passed: ${posArtifacts.length} artifacts agree that the capability is `.concat(
+    "F-408's and that no standalone POS entry exists (SPEC-CONFLICT #127 item 2).",
+  ),
+);
 for (const c of checked) console.log("  ✓ " + c);
 
 if (headerless.length > 0) {

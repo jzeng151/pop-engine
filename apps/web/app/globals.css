@@ -977,3 +977,37 @@ a.pe-link:hover,
     transform: none;
   }
 }
+
+/* Progressive disclosure. The control is a real button, so it is focusable and keyboard-operable
+   without help from here; these rules make the state and the focus ring visible, and the marker is
+   decoration that `aria-expanded` already carries for assistive technology. */
+.disclosure {
+  margin-top: 0.5rem;
+}
+
+.disclosure__toggle {
+  display: inline-flex;
+  gap: 0.4rem;
+  align-items: center;
+  padding: 0.25rem 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+.disclosure__toggle:focus-visible {
+  outline: 2px solid currentColor;
+  outline-offset: 2px;
+}
+
+.disclosure__marker {
+  font-size: 0.75em;
+}
+
+.disclosure__panel {
+  padding-left: 0.75rem;
+  border-left: 2px solid rgba(0, 0, 0, 0.15);
+}

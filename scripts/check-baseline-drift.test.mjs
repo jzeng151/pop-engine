@@ -45,6 +45,23 @@ const scriptPath = resolve(dirname(fileURLToPath(import.meta.url)), "check-basel
  */
 const ruleset = (version) => ["nyc", `rules.v${version}.json`].join("-");
 
+/**
+ * The three SPEC-CONFLICT #127 item 2 artifacts in their reconciled state: the Square capability is
+ * F-408's, scoped to the inventory webhook, and no artifact carries a standalone POS entry.
+ *
+ * Minimal on purpose. These stand in for real approved documents and carry no product content
+ * beyond the one assignment the rule is about.
+ */
+const SQUARE_RECONCILED = {
+  "docs/ROADMAP.md":
+    "# Roadmap\n\n- **F-408 · Inventory Low-Stock Alerts** — manual counts or Square webhook.\n",
+  "docs/PRD.md":
+    "# PRD\n\n- **F-308 / F-408** — ticketing integration/export; inventory low-stock alerts " +
+    "(manual counts or Square webhook).\n",
+  "docs/ARCHITECTURE-FUTURE.md":
+    "# Architecture\n\n| External integrations | F-108, F-212, F-308, F-408 | webhook events |\n",
+};
+
 /** The fixture ruleset's version. Synthetic on purpose, and far from any published one. */
 const FIXTURE_VERSION = "nyc.v0.0";
 const FIXTURE_RULESET = ruleset("0.0");
@@ -69,6 +86,13 @@ function plant(files = {}) {
       "# Fixture manifest\n\nNo APPROVED rows, so no status or digest is claimed.\n",
     [`rules/${FIXTURE_RULESET}`]: JSON.stringify({ ruleset_version: FIXTURE_VERSION }),
     "apps/api/src/ruleset.ts": `const EXPECTED_RULESET_VERSION = "${FIXTURE_VERSION}";\n`,
+    // The three artifacts the SPEC-CONFLICT #127 item 2 rule guards, in their reconciled state.
+    // They are SEEDED rather than planted per case because a missing guarded artifact is now a
+    // failure, deliberately: a guard whose subject can be deleted into a pass is not a guard. Every
+    // other rule in this file would otherwise fail on an unrelated tree for a reason that has
+    // nothing to do with what it is testing. A case that wants one of them different overrides it,
+    // and a case that wants one ABSENT passes `null`, which the loop below skips writing.
+    ...SQUARE_RECONCILED,
     ...files,
   };
   for (const [relative, contents] of Object.entries(seed)) {
@@ -1706,5 +1730,209 @@ describe.concurrent("round 15: ignored files, substitution, and values that span
 
     expect(status).toBe(1);
     expect(output).toContain(`.github/workflows/ci.yml:6 names ${MISSING}`);
+  });
+});
+
+// The SPEC-CONFLICT #127 item 2 rule (governance §5 step 7). The reconciliation dropped a
+// standalone `Square/POS integrations` bullet from the Roadmap because it contradicted the PRD and
+// ARCHITECTURE-FUTURE, which assign the Square capability to F-408. A one-time edit closes that
+// once; these cases are what stop it returning.
+//
+// The three artifacts are planted per case rather than seeded, because the seed tree deliberately
+// carries no docs beyond a row-less manifest, and every other rule in this file is proved against a
+// tree holding only what its case needs.
+describe.concurrent("Square/POS scope agreement (SPEC-CONFLICT #127 item 2)", () => {
+  /** The reconciled state is the seed, so a case only names what it changes. */
+  const reconciled = (overrides = {}) => overrides;
+
+  it("passes the reconciled tree, so a failure below means something", async () => {
+    const { status, output } = await runOn(reconciled());
+
+    expect(status).toBe(0);
+    expect(output).toContain("Square/POS scope check passed");
+  });
+
+  // THE REINTRODUCTION. This is the exact line the reconciliation removed.
+  it("fails when the standalone Square/POS entry returns to the Roadmap", async () => {
+    const { status, output } = await runOn(
+      reconciled({
+        "docs/ROADMAP.md": SQUARE_RECONCILED["docs/ROADMAP.md"] + "- Square/POS integrations.\n",
+      }),
+    );
+
+    expect(status).toBe(1);
+    expect(output).toContain("docs/ROADMAP.md:4 asserts the broader standalone Square/POS");
+  });
+
+  // A standalone entry that never says "Square" is the same defect wearing a different word.
+  it("fails on a standalone POS entry that does not name the vendor", async () => {
+    const { status, output } = await runOn(
+      reconciled({
+        "docs/PRD.md": SQUARE_RECONCILED["docs/PRD.md"] + "- POS integrations, provider TBD.\n",
+      }),
+    );
+
+    expect(status).toBe(1);
+    expect(output).toContain("docs/PRD.md:4 asserts the broader standalone Square/POS");
+  });
+
+  // THE WIDENING BRANCH, which the first version of this rule permitted and which is the branch the
+  // product owner rejected. Absorbing the dropped capability under F-408's own name names F-408
+  // throughout, so a rule that only asked for F-408 passed it. Three shapes, one per artifact.
+  it("fails when F-408's own Roadmap entry is renamed to absorb the capability", async () => {
+    const { status, output } = await runOn(
+      reconciled({
+        "docs/ROADMAP.md":
+          "# Roadmap\n\n- **F-408 · Inventory Alerts and Square/POS Integrations** — manual " +
+          "counts or Square webhook.\n",
+      }),
+    );
+
+    expect(status).toBe(1);
+    expect(output).toContain("docs/ROADMAP.md:3 asserts the broader standalone Square/POS");
+  });
+
+  it("fails when the PRD widens F-408 to absorb the capability", async () => {
+    const { status, output } = await runOn(
+      reconciled({
+        "docs/PRD.md":
+          "# PRD\n\n- **F-308 / F-408** — ticketing; inventory low-stock alerts and Square/POS " +
+          "integrations.\n",
+      }),
+    );
+
+    expect(status).toBe(1);
+    expect(output).toContain("docs/PRD.md:3 asserts the broader standalone Square/POS");
+  });
+
+  it("fails when ARCHITECTURE-FUTURE gives the broader capability its own ownership row", async () => {
+    const { status, output } = await runOn(
+      reconciled({
+        "docs/ARCHITECTURE-FUTURE.md":
+          "# Architecture\n\n| External integrations | F-108, F-212, F-308, F-408 | webhook |\n" +
+          "| Square/POS integrations | F-408 | provider mappings |\n",
+      }),
+    );
+
+    expect(status).toBe(1);
+    expect(output).toContain("docs/ARCHITECTURE-FUTURE.md:4 asserts the broader standalone");
+  });
+
+  // Assigning the capability to a NEW id, without the widening wording, is caught by the other
+  // half of the rule. Deliberately spelled "Square webhook" so it tests RULE B and not RULE A.
+  it("fails when the capability is assigned to an id other than F-408", async () => {
+    const { status, output } = await runOn(
+      reconciled({
+        "docs/ROADMAP.md":
+          "# Roadmap\n\n- **F-414 · Inventory Low-Stock Alerts** — manual counts or Square " +
+          "webhook.\n",
+      }),
+    );
+
+    expect(status).toBe(1);
+    expect(output).toContain("assigns the Square capability to an id other than F-408");
+  });
+
+  // The other half of "agree": deleting the assignment cannot pass by leaving nothing to disagree
+  // with. A rule that only looks for contradictions is satisfied by an empty document.
+  it("fails when the Roadmap drops the F-408 assignment entirely", async () => {
+    const { status, output } = await runOn(
+      reconciled({ "docs/ROADMAP.md": "# Roadmap\n\nNothing assigned here.\n" }),
+    );
+
+    expect(status).toBe(1);
+    expect(output).toContain("docs/ROADMAP.md no longer assigns the Square capability to F-408");
+  });
+
+  it("fails when the PRD drops the F-408 assignment entirely", async () => {
+    const { status, output } = await runOn(
+      reconciled({ "docs/PRD.md": "# PRD\n\nNothing assigned here.\n" }),
+    );
+
+    expect(status).toBe(1);
+    expect(output).toContain("docs/PRD.md no longer assigns the Square capability to F-408");
+  });
+
+  it("fails when ARCHITECTURE-FUTURE stops owning F-408 on its external integrations row", async () => {
+    const { status, output } = await runOn(
+      reconciled({
+        "docs/ARCHITECTURE-FUTURE.md":
+          "# Architecture\n\n| External integrations | F-108, F-212, F-308 | webhook events |\n",
+      }),
+    );
+
+    expect(status).toBe(1);
+    expect(output).toContain("no longer lists F-408 on its External integrations");
+  });
+
+  // DELETING A GUARDED ARTIFACT IS A FAILURE, not a skip. The status loop above skips missing files
+  // because it walks manifest rows including globs and files a row may name before they exist; this
+  // rule names three paths explicitly, all approved and all present, so absence is a governance
+  // event. `null` tells the planter to write nothing.
+  for (const relative of ["docs/ROADMAP.md", "docs/PRD.md", "docs/ARCHITECTURE-FUTURE.md"]) {
+    it(`fails when ${relative} is deleted rather than passing by having nothing to check`, async () => {
+      const { status, output } = await runOn(reconciled({ [relative]: null }));
+
+      expect(status).toBe(1);
+      expect(output).toContain(`${relative} is missing`);
+    });
+  }
+
+  // The false positives this rule had to be shaped around, kept as PASSING cases so a later
+  // simplification fails here rather than in CI on a compliant tree.
+  it("accepts POS named as a provider class rather than as a capability entry", async () => {
+    const { status, output } = await runOn(
+      reconciled({
+        "docs/ARCHITECTURE-FUTURE.md":
+          SQUARE_RECONCILED["docs/ARCHITECTURE-FUTURE.md"] +
+          "\n| AD-13 | Put every external service behind an adapter. | POS providers cannot leak. |\n" +
+          "\n- calendar/ticketing/POS synchronization and webhook processing;\n" +
+          "\n```\n/packages/integrations   Calendar, ticketing, POS, geocoding adapters\n```\n",
+      }),
+    );
+
+    expect(status).toBe(0);
+    expect(output).toContain("Square/POS scope check passed");
+  });
+
+  // A list item CAN be an entry and still assign nothing. This is the same false positive as the
+  // code-block one, a level in: a provider mention with no id is not a capability assignment.
+  it("accepts a provider bullet that mentions Square and assigns no capability", async () => {
+    const { status, output } = await runOn(
+      reconciled({
+        "docs/ARCHITECTURE-FUTURE.md":
+          SQUARE_RECONCILED["docs/ARCHITECTURE-FUTURE.md"] +
+          "\n- Square adapter credentials must be encrypted at rest.\n",
+      }),
+    );
+
+    expect(status).toBe(0);
+    expect(output).toContain("Square/POS scope check passed");
+  });
+
+  // The words must be ADJACENT, not merely both on the line. The real PRD entry pairs F-308's
+  // "ticketing integration/export" with F-408's "Square webhook", and a line-wide test read the
+  // compliant entry as the dropped capability.
+  it("accepts an entry whose 'integration' belongs to a different id on the same line", async () => {
+    const { status, output } = await runOn(reconciled());
+
+    expect(status).toBe(0);
+    expect(output).toContain("Square/POS scope check passed");
+  });
+
+  // The record of the drop is prose ABOUT the removed entry and necessarily repeats its words. If
+  // the rule matched prose, the reconciliation PR could not describe what it had done.
+  it("accepts the prose record of the drop, which repeats the dropped entry's words", async () => {
+    const { status, output } = await runOn(
+      reconciled({
+        "docs/ROADMAP.md":
+          SQUARE_RECONCILED["docs/ROADMAP.md"] +
+          "\n**Dropped 2026-07-28:** a standalone `Square/POS integrations` entry sat here with no\n" +
+          "F-id, contradicting the PRD.\n",
+      }),
+    );
+
+    expect(status).toBe(0);
+    expect(output).toContain("Square/POS scope check passed");
   });
 });

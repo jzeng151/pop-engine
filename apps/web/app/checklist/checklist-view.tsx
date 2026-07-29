@@ -500,7 +500,7 @@ export function ChecklistView({ apiBaseUrl, eventId }: { apiBaseUrl: string; eve
   // regulatory basis of a plan that is currently sound.
   const supersededRuleset =
     meta !== null && compareToPinned(meta.ruleset_version, checklist.rulesetVersion) === "newer";
-  const retained = checklist.items.filter((item) => !item.inLatestPlan).length;
+  const retained = checklist.items.filter((item) => item.struckThrough).length;
 
   return (
     <main className="checklist">
