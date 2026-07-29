@@ -63,6 +63,7 @@ Exact HTTP, JSON Schema, migration, job, and provider shapes belong in their rev
 4. **F209-AC-04:** Final permit and expiration metadata retain history and never overwrite the source finding or application history.
 5. **F209-AC-05:** Unauthorized, oversized, disallowed, checksum-mismatched, or unsafe uploads are unavailable and create no accepted document state.
 6. **F209-AC-06:** Replanning marks every superseded or removed rule-derived estimate stale and excludes it from current totals; refresh creates source-linked current entries without overwriting old estimates, invoices, payments, or document history.
+7. **F209-AC-07:** Every document remains in private storage; each download request rechecks workspace ownership/role and scan state, returns only a short-lived signed URL, and expiry, revocation, or authorization loss makes the URL unusable.
 
 ## Fixtures and Verification
 

@@ -77,7 +77,7 @@ Exact HTTP, JSON Schema, migration, job, and provider shapes belong in their rev
 
 ## Rollout and Fallback
 
-- Ship assignments without notifications; add reminders only after the duplicate F-203 expansion receives a unique approved ID.
+- Ship assignments without notifications; add team reminders only through the Roadmap-approved F-203 full expansion after that expansion is separately approved.
 - Rollback disables the new surface and workers/provider calls without deleting confirmed user data or rewriting immutable plans, rulesets, revisions, or history.
 
 ## Approval Blockers

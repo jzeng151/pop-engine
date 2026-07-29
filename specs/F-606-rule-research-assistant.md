@@ -30,7 +30,7 @@ The verification team can receive source-change candidates for human review whil
 
 ## Inputs, Outputs, State, Validation, and Errors
 
-- Inputs are approved source record/version and prior snapshot; output is no-change, fetch failure, or non-authoritative review candidate.
+- Inputs are approved source record/version and prior snapshot; deterministic byte equality or an approved versioned normalization determines no-change, and any difference produces a non-authoritative review candidate or explicit failure.
 - Candidate state is new → triaged → accepted-for-research, dismissed, or superseded; none changes rule data.
 - Unavailable/blocked/ambiguous sources stay failed or research-required and never imply no change.
 - Missing or unresolved material data stays visibly unset, unknown, pending, or failed as appropriate; it never becomes a successful or complete result.
@@ -58,9 +58,10 @@ Exact HTTP, JSON Schema, migration, job, and provider shapes belong in their rev
 
 1. **F606-AC-01:** Only an approved allow-listed source/cadence can start a run, and every candidate links to exact prior/current snapshots and tool versions.
 2. **F606-AC-02:** No run or candidate edits a rule, source verification status, ruleset pointer, or published artifact.
-3. **F606-AC-03:** Fetch failure, blocked access, ambiguous change, or model failure remains visible and cannot be recorded as no change.
+3. **F606-AC-03:** Fetch failure, blocked access, ambiguous change, model failure, or any byte/approved-normalized snapshot difference remains visible and cannot be recorded as no change.
 4. **F606-AC-04:** Duplicate source changes deduplicate without erasing separate review decisions or evidence.
 5. **F606-AC-05:** An accepted candidate enters normal human research/review and still requires F-714 approvals before publication.
+6. **F606-AC-06:** No-change is emitted only by deterministic equality of the exact snapshots under the approved versioned normalization; AI may summarize or prioritize a detected difference but cannot suppress its review candidate.
 
 ## Fixtures and Verification
 

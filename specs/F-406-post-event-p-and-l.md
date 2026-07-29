@@ -59,7 +59,7 @@ Exact HTTP, JSON Schema, migration, job, and provider shapes belong in their rev
 1. **F406-AC-01:** Actual entries use integer minor units and one currency and deterministically calculate revenue, cost, profit/loss, margin, and budget variance.
 2. **F406-AC-02:** Unknown/missing actuals are not zero and produce an incomplete-result warning.
 3. **F406-AC-03:** Mapping or unmapping an actual changes rollups without mutating the referenced budget line.
-4. **F406-AC-04:** Confirming creates an immutable snapshot tied to exact budget/actual versions; correction creates a new snapshot.
+4. **F406-AC-04:** Confirmation atomically compare-and-swaps the complete current budget-mapping and actual-ledger version set; any mismatch rejects confirmation and requires a rebuilt preview. Success creates an immutable snapshot tied to those exact versions, and correction creates a new snapshot.
 5. **F406-AC-05:** No screen or export represents the result as audited accounting, tax, or payment data.
 
 ## Fixtures and Verification
