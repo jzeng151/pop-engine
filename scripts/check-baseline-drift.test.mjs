@@ -46,13 +46,17 @@ const scriptPath = resolve(dirname(fileURLToPath(import.meta.url)), "check-basel
 const ruleset = (version) => ["nyc", `rules.v${version}.json`].join("-");
 
 /**
- * The three SPEC-CONFLICT #127 item 2 artifacts in their reconciled state: the Square capability is
- * F-408's, scoped to the inventory webhook, and no artifact carries a standalone POS entry.
+ * The SPEC-CONFLICT #127 artifacts in their reconciled state: the Square capability is F-408's,
+ * scoped to the inventory webhook; no artifact carries a standalone POS entry; and the four F-203
+ * artifacts retain the same unscheduled Phase 2 depth.
  *
  * Minimal on purpose. These stand in for real approved documents and carry no product content
  * beyond the one assignment the rule is about.
  */
 const SQUARE_RECONCILED = {
+  "docs/BASELINE.md":
+    "# Baseline\n\n**Decision (SPEC-CONFLICT #127 item 1):** F-203 keeps alert escalations, " +
+    "digests, team reminders, and per-user preferences as its planned, unscheduled Phase 2 depth.\n",
   "docs/ROADMAP.md":
     "# Roadmap\n\n## Phase 2 — Execution Hardening\n\n" +
     "- **F-203 (full)** — alert escalations, digests, team reminders, and per-user preferences; " +
@@ -95,7 +99,7 @@ function plant(files = {}) {
       "# Fixture manifest\n\nNo APPROVED rows, so no status or digest is claimed.\n",
     [`rules/${FIXTURE_RULESET}`]: JSON.stringify({ ruleset_version: FIXTURE_VERSION }),
     "apps/api/src/ruleset.ts": `const EXPECTED_RULESET_VERSION = "${FIXTURE_VERSION}";\n`,
-    // The three artifacts the SPEC-CONFLICT #127 item 2 rule guards, in their reconciled state.
+    // The artifacts the SPEC-CONFLICT #127 rules guard, in their reconciled state.
     // They are SEEDED rather than planted per case because a missing guarded artifact is now a
     // failure, deliberately: a guard whose subject can be deleted into a pass is not a guard. Every
     // other rule in this file would otherwise fail on an unrelated tree for a reason that has
@@ -1771,7 +1775,7 @@ describe.concurrent("F-203 Phase 2 scope agreement (SPEC-CONFLICT #127 item 1)",
     expect(output).toContain("F-203 scope check passed");
   });
 
-  it.each(["docs/ROADMAP.md", "docs/PRD.md", "specs/F-203-deadline-alerts.md"])(
+  it.each(["docs/BASELINE.md", "docs/ROADMAP.md", "docs/PRD.md", "specs/F-203-deadline-alerts.md"])(
     "fails when %s drops per-user preferences",
     async (relative) => {
       const { status, output } = await runOn({
@@ -1779,7 +1783,7 @@ describe.concurrent("F-203 Phase 2 scope agreement (SPEC-CONFLICT #127 item 1)",
       });
 
       expect(status).toBe(1);
-      expect(output).toContain(`${relative} must assign escalations, digests, team reminders`);
+      expect(output).toContain(`${relative} must affirmatively assign escalations, digests`);
     },
   );
 
@@ -1816,14 +1820,40 @@ describe.concurrent("F-203 Phase 2 scope agreement (SPEC-CONFLICT #127 item 1)",
     expect(output).toContain("docs/PRD.md must keep its F-203 full-scope assignment under Phase 2");
   });
 
-  it("fails when the spec assigns the unchanged scope to Phase 3", async () => {
-    const relative = "specs/F-203-deadline-alerts.md";
+  it.each(["docs/BASELINE.md", "specs/F-203-deadline-alerts.md"])(
+    "fails when %s assigns the unchanged scope to Phase 3",
+    async (relative) => {
+      const { status, output } = await runOn({
+        [relative]: SQUARE_RECONCILED[relative].replace("Phase 2", "Phase 3"),
+      });
+
+      expect(status).toBe(1);
+      expect(output).toContain(`${relative} must assign its F-203 full scope to Phase 2`);
+    },
+  );
+
+  it.each([
+    ["negates a capability", "and per-user preferences", "and no per-user preferences"],
+    ["negates the plan", "planned, not scheduled", "not planned, not scheduled"],
+  ])("fails when the Roadmap %s", async (_label, from, to) => {
     const { status, output } = await runOn({
-      [relative]: SQUARE_RECONCILED[relative].replace("Phase 2", "Phase 3"),
+      "docs/ROADMAP.md": SQUARE_RECONCILED["docs/ROADMAP.md"].replace(from, to),
     });
 
     expect(status).toBe(1);
-    expect(output).toContain(`${relative} must assign its F-203 full scope to Phase 2`);
+    expect(output).toContain("docs/ROADMAP.md must affirmatively assign");
+  });
+
+  it("accepts an F-203 list item wrapped across physical lines", async () => {
+    const { status, output } = await runOn({
+      "docs/ROADMAP.md": SQUARE_RECONCILED["docs/ROADMAP.md"].replace(
+        "team reminders, and per-user preferences",
+        "team reminders,\n  and per-user preferences",
+      ),
+    });
+
+    expect(status).toBe(0);
+    expect(output).toContain("F-203 scope check passed");
   });
 });
 

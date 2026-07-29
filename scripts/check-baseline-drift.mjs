@@ -1589,10 +1589,19 @@ if (disagreements.length > 0) {
   process.exit(1);
 }
 
-// SPEC-CONFLICT #127 item 1: the three approved artifacts assign the same unscheduled Phase 2
+// SPEC-CONFLICT #127 item 1: the four approved artifacts assign the same unscheduled Phase 2
 // depth to F-203. Keeping this text-level check here makes the approved reconciliation durable.
-const f203Artifacts = ["docs/ROADMAP.md", "docs/PRD.md", "specs/F-203-deadline-alerts.md"];
-const f203Capabilities = ["escalations", "digests", "team reminders", "per-user preferences"];
+const f203Artifacts = [
+  "docs/BASELINE.md",
+  "docs/ROADMAP.md",
+  "docs/PRD.md",
+  "specs/F-203-deadline-alerts.md",
+];
+const f203Capabilities =
+  /\b(?:alert )?escalations,\s+digests,\s+team reminders,\s+and per-user preferences\b/i;
+const f203Planning = /\bplanned,\s+(?:not scheduled|unscheduled)\b/i;
+const f203Negation =
+  /\bnot planned\b|\b(?:no|without)\s+(?:alert )?(?:escalations|digests|team reminders|per-user preferences)\b/i;
 const f203Failures = [];
 
 for (const relative of f203Artifacts) {
@@ -1602,29 +1611,35 @@ for (const relative of f203Artifacts) {
     continue;
   }
 
-  const lines = readFileSync(full, "utf8").split("\n");
-  const assignmentIndex = lines.findIndex((line) => {
-    const normalized = line.toLowerCase();
-    return (
-      normalized.includes("f-203") &&
-      f203Capabilities.every((capability) => normalized.includes(capability)) &&
-      normalized.includes("planned, not scheduled")
+  const contents = readFileSync(full, "utf8");
+  const assignments = contents
+    .split(/\r?\n\s*\r?\n|\r?\n(?=\s*(?:[-*+]|\d+\.)\s+)/)
+    .map((raw) => ({ raw, normalized: raw.replace(/\s+/g, " ").trim() }))
+    .filter(
+      ({ normalized }) =>
+        normalized.toLowerCase().includes("f-203") &&
+        f203Capabilities.test(normalized) &&
+        f203Planning.test(normalized) &&
+        !f203Negation.test(normalized),
     );
-  });
-  if (assignmentIndex === -1) {
+  if (assignments.length === 0) {
     f203Failures.push(
-      `${relative} must assign escalations, digests, team reminders, and per-user preferences ` +
-        "to F-203 as planned, not scheduled",
+      `${relative} must affirmatively assign escalations, digests, team reminders, and ` +
+        "per-user preferences to F-203 as planned, unscheduled Phase 2 scope",
     );
-  } else if (relative === "specs/F-203-deadline-alerts.md") {
-    if (!/\bPhase 2\b/i.test(lines[assignmentIndex])) {
+  } else if (relative === "docs/BASELINE.md" || relative === "specs/F-203-deadline-alerts.md") {
+    if (!assignments.some(({ normalized }) => /\bPhase 2\b/i.test(normalized))) {
       f203Failures.push(`${relative} must assign its F-203 full scope to Phase 2`);
     }
   } else {
-    const heading = lines
-      .slice(0, assignmentIndex)
-      .findLast((line) => /^#{2,3}\s+.*\bPhase \d+\b/i.test(line));
-    if (!/\bPhase 2\b/i.test(heading ?? "")) {
+    const underPhase2 = assignments.some(({ raw }) => {
+      const heading = contents
+        .slice(0, contents.indexOf(raw))
+        .split(/\r?\n/)
+        .findLast((line) => /^#{2,3}\s+.*\bPhase \d+\b/i.test(line));
+      return /\bPhase 2\b/i.test(heading ?? "");
+    });
+    if (!underPhase2) {
       f203Failures.push(`${relative} must keep its F-203 full-scope assignment under Phase 2`);
     }
   }
