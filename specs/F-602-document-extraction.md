@@ -63,6 +63,7 @@ Exact HTTP, JSON Schema, migration, job, and provider shapes belong in their rev
 5. **F602-AC-05:** Duplicate/retried extraction of the same request does not create duplicate accepted proposals or records.
 6. **F602-AC-06:** External access atomically claims a non-cancellable `processing` state after checking run generation and exact document availability/scan state; cancellation, deletion, and quarantine serialize against that claim and cannot report prevention for already-processing work.
 7. **F602-AC-07:** Completion compare-and-swaps the pinned run generation and current document availability/scan state before publishing proposals; deletion, quarantine, or generation change discards the result and suppresses or purges derived snippets/proposals.
+8. **F602-AC-08:** Accepting or editing a pending proposal compare-and-swaps its state and rechecks the exact document version's current authorization, availability, and safe scan state. Deletion, quarantine, or other eligibility loss serializes against acceptance, invalidates every still-pending proposal and derived snippet from that version, and prevents them from entering F-208/F-209.
 
 ## Fixtures and Verification
 

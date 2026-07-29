@@ -14,12 +14,12 @@ An organizer can schedule consent-eligible RSVP reminders at T-7, T-1, and day-o
 
 - Create channel-specific campaign drafts for the three Roadmap offsets, select eligible recipients, preview, schedule, cancel, and inspect delivery results.
 - Reuse F-203 delivery plumbing through the approved durable job/outbox model.
-- Enforce distinct email/SMS marketing consent and central suppression before every attempt.
+- Enforce a distinct channel-specific transactional-notification lawful/consent basis, separate email/SMS marketing consent, and central purpose-scoped suppression before every attempt.
 
 **Non-goals**
 
 - Emergency messages, arbitrary marketing automation, segmentation beyond event RSVP eligibility, or contact acquisition.
-- Sending to contacts without the required channel consent.
+- Sending to contacts without the required channel-specific transactional-notification basis.
 
 ## Dependencies and Baseline
 
@@ -30,9 +30,9 @@ An organizer can schedule consent-eligible RSVP reminders at T-7, T-1, and day-o
 
 ## Inputs, Outputs, State, Validation, and Errors
 
-- Inputs are an exact event revision, channel, approved template content, and one Roadmap offset; outputs are a recipient snapshot plus message jobs/attempts pinned to that revision.
+- Inputs are an exact event revision and lifecycle generation, channel, approved template content, and one Roadmap offset; outputs are a recipient snapshot plus message jobs/attempts pinned to that revision and lifecycle generation.
 - Campaign state is draft → scheduled → sending → completed, partially failed, cancelled, or failed; cancellation marks the send generation stale and prevents unsent work from reaching a provider.
-- Eligibility, pinned revision, and campaign generation are rechecked immediately before provider delivery so later opt-out, suppression, reschedule, or cancellation wins over the schedule snapshot.
+- Eligibility, pinned revision, event lifecycle generation, and campaign generation are rechecked immediately before provider delivery so later transactional opt-out, suppression, reschedule, event cancellation/archive, or campaign cancellation wins over the schedule snapshot.
 - Missing or unresolved material data stays visibly unset, unknown, pending, or failed as appropriate; it never becomes a successful or complete result.
 - Invalid input produces a field or action-specific error without partial mutation. Retriable external failures preserve the user's confirmed state and expose a safe retry.
 
@@ -57,11 +57,12 @@ Exact HTTP, JSON Schema, migration, job, and provider shapes belong in their rev
 ## Acceptance Criteria
 
 1. **F305-AC-01:** T-7, T-1, and day-of schedules resolve from the pinned event revision in the event timezone and reject a send time already invalid under the approved immediate-send policy; when a new revision changes any approved message-relevant field, one transaction marks the old send generation cancelled and schedules replacements pinned to the new revision, recomputing times when date/time changed and otherwise preserving them, while retaining sent attempts/history.
-2. **F305-AC-02:** Only RSVP contacts with the required channel consent and no active suppression receive a job.
-3. **F305-AC-03:** Delivery atomically claims a non-cancellable `sending` state after its final eligibility/generation check; consent withdrawal, suppression, reschedule, or cancellation serializes against that claim and cannot report prevention for already-sending work. Unrelated revisions do not stale the message generation.
+2. **F305-AC-02:** Only RSVP contacts with the approved channel-specific transactional-notification lawful/consent record and no active suppression for that purpose receive a job. Marketing consent is not required; a marketing opt-out remains enforced for marketing without withdrawing the distinct transactional basis.
+3. **F305-AC-03:** Delivery atomically claims a non-cancellable `sending` state after its final eligibility/generation check; transactional-notification withdrawal, suppression, reschedule, event cancellation/archive, or campaign cancellation serializes against that claim and cannot report prevention for already-sending work. Unrelated revisions do not stale the message generation.
 4. **F305-AC-04:** Retries, worker crashes, and duplicate claims do not create more than one accepted provider delivery per recipient/campaign/channel.
 5. **F305-AC-05:** Cancellation stops unclaimed and pre-`sending` leased jobs before provider delivery; a job that already claimed the non-cancellable `sending` state continues as accounted already-sending work under AC-03. Attempts/history remain preserved and sent, suppressed, failed, already-sending, and cancelled counts stay accurate.
 6. **F305-AC-06:** The day-of reminder includes confirmed directions pinned and linked to their source record/version. Missing or unconfirmed directions block that reminder, and a directions-source change invalidates and replaces unsent work under AC-01.
+7. **F305-AC-07:** Scheduling rejects a cancelled or archived event. A transition to either state advances the lifecycle generation and atomically cancels every job that has not claimed `sending`; already-sending work remains accounted under AC-03 and no replacement reminder is scheduled.
 
 ## Fixtures and Verification
 

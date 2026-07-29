@@ -61,6 +61,7 @@ Exact HTTP, JSON Schema, migration, job, and provider shapes belong in their rev
 3. **F704-AC-03:** Activity metadata passes the approved allow-list and contains no secret, token, document body, message body, or unredacted contact data.
 4. **F704-AC-04:** Cross-workspace query/filter/pagination/source-link paths disclose no foreign activity or aggregate existence, and platform-scoped activity is visible only through the approved platform role.
 5. **F704-AC-05:** Corrections, rule publication/rollback, and system jobs append new entries and never rewrite earlier history.
+6. **F704-AC-06:** Every record carries a stable non-secret actor reference in addition to actor type; user attribution remains distinct and displayable under the approved deletion policy, while system and provider actions use explicit named identities rather than a generic or fabricated user.
 
 ## Fixtures and Verification
 
