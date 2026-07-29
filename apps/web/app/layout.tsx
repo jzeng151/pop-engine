@@ -13,7 +13,6 @@ const fraunces = Fraunces({
   weight: ["600"],
   variable: "--font-fraunces",
   display: "swap",
-  axes: ["opsz"],
 });
 
 const nunitoSans = Nunito_Sans({
