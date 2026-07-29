@@ -31,7 +31,13 @@ const storedPlan = {
   rulesetVersion: "nyc.v2.3",
   snapshotDate: "2026-07-25",
   verdict: "CONDITIONAL",
-  verdictDetail: { minSlackDays: null, missingFacts: [] },
+  verdictDetail: {
+    blockingFinding: null,
+    missedRuleIds: [],
+    minSlackDays: null,
+    missingFacts: [],
+    rescopeSuggestions: [],
+  },
   today: "2026-07-25",
   generatedAt: "2026-07-25T12:00:00.000Z",
   findings: [],
@@ -40,6 +46,7 @@ const storedPlan = {
 /** A finding as the api serves one, carrying every member the plan lines read. */
 const storedFinding = {
   ruleIds: ["PARKS-EVENT-001"],
+  kind: "permit",
   disposition: "required",
   name: "Special Event Permit",
   agency: "NYC Parks",
@@ -307,9 +314,9 @@ describe("coverage of every field this feature reads", () => {
       "verdict",
       "verdictDetail",
     ]);
-    // `kind`, `slackDays` and `triggeredBy` are absent by decision: nothing under app/plan reads
-    // them, so they stay the engine's schema to police rather than this client's.
-    expect(CONSUMED_FINDING_FIELDS).not.toContain("kind");
+    // `slackDays` and `triggeredBy` stay absent by decision. `kind` is consumed for F-201 AC 4's
+    // near-empty framing (notification confirmations vs dated may-be permits).
+    expect(CONSUMED_FINDING_FIELDS).toContain("kind");
     expect(CONSUMED_FINDING_FIELDS).not.toContain("slackDays");
     expect(CONSUMED_FINDING_FIELDS).not.toContain("triggeredBy");
   });

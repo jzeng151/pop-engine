@@ -100,6 +100,10 @@ type ChecklistItemView = {
   status: string;
   notes: string | null;
   inLatestPlan: boolean;
+  deadlineNotice: {
+    dateChange: { kind: string; previous?: string; current?: string } | null;
+    previousProvenance: { rulesetVersion: string };
+  } | null;
   latestApplyDate: string | null;
   applyAfterDate: string | null;
   agency: string | null;
@@ -515,6 +519,21 @@ describe.runIf(databaseUrl.length > 0)("F-202 compliance checklist", () => {
       expect(after?.latestApplyDate).toBe("2026-08-30");
       // ...so it must say the new plan is where that date came from.
       expect(after?.sourcePlan).toEqual({ rulesetVersion: "test.v2", snapshotDate: "2026-07-21" });
+      // F-202 AC 9: the previous date travels with the notice until a review re-points the row.
+      expect(after?.deadlineNotice?.dateChange).toEqual({
+        kind: "both",
+        previous: "2026-07-12",
+        current: "2026-08-30",
+      });
+      expect(after?.deadlineNotice?.previousProvenance.rulesetVersion).toBe("test.v1");
+      expect(after?.deadlineNotice?.previousProvenance).toMatchObject({
+        verificationStatus: "SOURCE_CONFIRMED",
+        sources: [],
+        sourceUrl: null,
+        conflictText: null,
+        snapshotDate: "2026-07-20",
+      });
+      expect(after?.deadlineNotice?.rulesetVersionsDiffer).toBe(true);
     });
 
     it("carries the apply_after date of a dependency-gated item (AC 5, Scenario C)", async () => {
@@ -699,6 +718,59 @@ describe.runIf(databaseUrl.length > 0)("F-202 compliance checklist", () => {
         [eventId],
       );
       expect(Number(rows[0]?.count)).toBe(3);
+    });
+
+    it("appends a new task when a struck kind returns, and never revives the struck row (AC 9)", async () => {
+      // Kind is part of requirement identity. Dropping permit→advisory strikes the task; a later
+      // plan that raises the same rule ids as permit again must append, not re-point the strike.
+      const RULE = "SAPO-STREET-LARGE-001";
+      const eventId = await createEvent(scenario("A"));
+      await insertPlan(
+        eventId,
+        [{ ruleIds: [RULE], kind: "permit", latestApplyDate: "2026-07-12" }],
+        "2026-07-22T10:00:00Z",
+      );
+      const api = appWith(fakeStorage());
+      const first = await review(api, eventId);
+      const struckId = (first.body.items as ChecklistItemView[])[0]?.id;
+      expect(struckId).toBeTruthy();
+      await request(api)
+        .patch(`/api/checklist-items/${struckId}`)
+        .send({ status: "in_progress", notes: "started while it was a permit" });
+
+      // Same rule ids, non-trackable kind: the permit task is struck at review.
+      await insertPlan(
+        eventId,
+        [{ ruleIds: [RULE], kind: "advisory" }],
+        "2026-07-22T11:00:00Z",
+      );
+      const dropped = await review(api, eventId);
+      expect(dropped.status).toBe(200);
+      const afterDrop = dropped.body.items as ChecklistItemView[];
+      expect(afterDrop).toHaveLength(1);
+      expect(afterDrop[0]?.id).toBe(struckId);
+      expect(afterDrop[0]?.inLatestPlan).toBe(false);
+      expect(afterDrop[0]?.status).toBe("in_progress");
+
+      // Kind returns as permit: append a fresh task; the struck row stays struck with its notes.
+      await insertPlan(
+        eventId,
+        [{ ruleIds: [RULE], kind: "permit", latestApplyDate: "2026-08-30" }],
+        "2026-07-22T12:00:00Z",
+      );
+      const returned = await review(api, eventId);
+      expect(returned.status).toBe(201);
+      const items = returned.body.items as ChecklistItemView[];
+      expect(items).toHaveLength(2);
+      const history = items.find((item) => item.id === struckId);
+      const appended = items.find((item) => item.id !== struckId);
+      expect(history?.inLatestPlan).toBe(false);
+      expect(history?.status).toBe("in_progress");
+      expect(history?.notes).toBe("started while it was a permit");
+      expect(appended?.inLatestPlan).toBe(true);
+      expect(appended?.status).toBe("not_started");
+      expect(appended?.ruleIds).toEqual([RULE]);
+      expect(appended?.latestApplyDate).toBe("2026-08-30");
     });
   });
 

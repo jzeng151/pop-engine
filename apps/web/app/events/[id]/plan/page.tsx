@@ -20,8 +20,10 @@ export default async function PlanPage({ params }: { params: Promise<{ id: strin
           honest either way: an event with no plan lands on the checklist's own "generate the
           permit plan first" state rather than on a broken page. A link that appears only once a
           plan exists belongs in `PlanView`, and is theirs to add. */}
-      <nav className="plan-next" aria-label="Next step">
+      <nav className="plan-next" aria-label="Next steps">
         <a href={`/events/${id}/checklist`}>Track this plan on your compliance checklist</a>
+        <span aria-hidden="true"> · </span>
+        <a href={`/events/${id}/dashboard`}>Live ops — door-day check-ins</a>
       </nav>
     </>
   );

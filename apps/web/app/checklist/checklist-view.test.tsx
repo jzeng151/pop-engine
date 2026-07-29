@@ -216,7 +216,9 @@ describe("AC 1 · one click converts the latest plan into a checklist", () => {
     });
     await renderView();
 
-    await userEvent.click(screen.getByRole("button"));
+    await userEvent.click(
+      screen.getByRole("button", { name: "Create the checklist from this plan" }),
+    );
 
     expect((await screen.findByRole("alert")).textContent).toBe("regenerate the plan first");
     expect(
@@ -1983,5 +1985,125 @@ describe("the checklist route", () => {
       ),
     );
     vi.unstubAllEnvs();
+  });
+});
+
+describe("F-203 AC 6 · Send test alert", () => {
+  it("posts a labeled test to the contact on the form", async () => {
+    stubApi({
+      [GET_CHECKLIST]: checklistOf({
+        created: true,
+        alertContacts: { email: "organizer@example.test", phone: null },
+      }),
+      [`POST /api/events/${EVENT}/alerts/test`]: () =>
+        jsonResponse(201, {
+          alert: { status: "sent", payload: { delivery: { simulated: false } } },
+        }),
+    });
+    await renderView();
+
+    await userEvent.click(screen.getByRole("button", { name: "Send test alert" }));
+
+    await waitFor(() => {
+      expect(
+        (global.fetch as unknown as { mock: { calls: [string, RequestInit][] } }).mock.calls.some(
+          ([url, init]) =>
+            String(url).endsWith("/alerts/test") &&
+            init?.method === "POST" &&
+            String(init.body).includes('"channel":"email"') &&
+            String(init.body).includes('"recipient":"organizer@example.test"'),
+        ),
+      ).toBe(true);
+    });
+    expect((await screen.findByTestId("test-alert-status")).textContent).toContain(
+      "labeled TEST",
+    );
+    expect((await screen.findByTestId("test-alert-status")).textContent).toContain("sent");
+  });
+
+  it("labels an SMS test as a simulation rather than claiming delivery", async () => {
+    stubApi({
+      [GET_CHECKLIST]: checklistOf({
+        created: true,
+        alertContacts: { email: null, phone: "+15555550123" },
+      }),
+      [`POST /api/events/${EVENT}/alerts/test`]: () =>
+        jsonResponse(201, {
+          alert: {
+            status: "sent",
+            payload: { delivery: { simulated: true, label: "simulated SMS" } },
+          },
+        }),
+    });
+    await renderView();
+
+    await userEvent.click(screen.getByRole("button", { name: "Send test alert" }));
+
+    const status = await screen.findByTestId("test-alert-status");
+    expect(status.textContent).toContain("labeled simulation");
+    expect(status.textContent).toContain("nothing was delivered");
+    expect(status.textContent).not.toContain("Test text message sent.");
+  });
+});
+
+describe("F-202 AC 9 · moved-deadline notice", () => {
+  it("renders previous and current dates with full previous provenance", async () => {
+    stubApi({
+      [GET_CHECKLIST]: checklistOf({
+        created: true,
+        planChanged: true,
+        items: [
+          trackedItem(STREET_MEDIUM, {
+            latestApplyDate: "2026-08-30",
+            deadlineNotice: {
+              dateChange: {
+                kind: "both",
+                previous: "2026-07-12",
+                current: "2026-08-30",
+              },
+              stateChange: null,
+              previousProvenance: {
+                verificationStatus: "SOURCE_CONFIRMED",
+                lastVerifiedDate: "2026-07-01",
+                sources: [
+                  {
+                    ruleId: STREET_MEDIUM,
+                    citation: "CECM permit-deadlines page",
+                    urls: ["https://example.gov/a", "https://example.gov/b"],
+                  },
+                ],
+                sourceUrl: "https://example.gov/a",
+                conflictText: null,
+                rulesetVersion: "test.v1",
+                snapshotDate: "2026-07-20",
+              },
+              rulesetVersionsDiffer: true,
+              previousRulesetVersion: "test.v1",
+              currentRulesetVersion: "test.v2",
+            },
+          }),
+        ],
+        statusRollup: { not_started: 1, in_progress: 0, submitted: 0, approved: 0, rejected: 0 },
+      }),
+    });
+    await renderView();
+
+    const notice = await screen.findByTestId("moved-deadline-notice");
+    expect(notice.textContent).toContain("Previous: 2026-07-12");
+    expect(notice.textContent).toContain("Current: 2026-08-30");
+    expect(notice.textContent).toContain(
+      "does not by itself establish anything about a filed application",
+    );
+    expect(notice.textContent?.toLowerCase()).not.toContain("amend");
+    expect(screen.getByTestId("previous-verification-status").textContent).toContain(
+      "SOURCE CONFIRMED",
+    );
+    expect(screen.getByTestId("previous-sources").textContent).toContain(
+      "CECM permit-deadlines page",
+    );
+    expect(within(screen.getByTestId("previous-sources")).getByRole("link", { name: "source 1" }).getAttribute(
+      "href",
+    )).toBe("https://example.gov/a");
+    expect(notice.textContent).toContain("https://example.gov/a");
   });
 });

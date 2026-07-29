@@ -11,14 +11,21 @@ import {
   type RulesMetaResponse,
 } from "./plan-api";
 import { InsurancePanel } from "./insurance-panel";
+import {
+  hasOnlyUndatedDeadlines,
+  isNearEmptyPlan,
+  NEAR_EMPTY_FRAMING,
+  NO_DATED_DEADLINES_NOTE,
+} from "./plan-framing";
 import { PlanLine } from "./plan-line";
 import { compareToPinned, SnapshotBanner } from "./snapshot-banner";
 import { AT_RISK_BUFFER_NOTE, verdictCopy } from "./verdict-copy";
+import { VerdictDetailPanel } from "./verdict-detail";
 import { type FieldChecks, isNumber, readChecked } from "./validated";
 
 // The plan view. F-206 owns what this page is for: the snapshot banner and the per-line citation
 // and verification-status rendering. The verdict is shown in its approved copy; F-102's branch
-// tables and rescope ladder are its own feature.
+// tables and rescope ladder render under that line from `verdictDetail`.
 //
 // What this page can be showing is written down once, as two states, rather than inferred from a
 // handful of booleans. Three review findings in a row were "a failure path was not considered",
@@ -245,6 +252,7 @@ export function PlanView({ apiBaseUrl, eventId }: { apiBaseUrl: string; eventId:
 
   return (
     <main className="plan">
+      <p className="pe-eyebrow">PopEngine · Plan</p>
       <h1>Your permit plan</h1>
 
       {plan !== null && (
@@ -348,21 +356,29 @@ export function PlanView({ apiBaseUrl, eventId }: { apiBaseUrl: string; eventId:
             </p>
           )}
 
+          {/* F-102 Edge Cases: only undated deadlines → FEASIBLE with this note (CONDITIONAL when
+              material unknowns remain is already the verdict above). */}
+          {plan.verdict === "FEASIBLE" && hasOnlyUndatedDeadlines(plan.findings) && (
+            <p className="plan__undated" role="note" data-testid="no-dated-deadlines">
+              {NO_DATED_DEADLINES_NOTE}
+            </p>
+          )}
+
+          <VerdictDetailPanel verdict={plan.verdict} detail={plan.verdictDetail} />
+
           {/* F-205: a dedicated card for R10/R11's insurance findings, above the line items each
               still renders from (AC 5). Nothing at all when none of the three rules triggered
               (AC 3) — that silence is `InsurancePanel`'s own, not a state this page decides. */}
           <InsurancePanel findings={plan.findings} eventId={eventId} />
 
-          {plan.findings.length === 0 ? (
-            /* F-201 AC 4 and ARCHITECTURE both make the near-empty result first-class, in those
-               words. An empty container under a verdict reads as an evaluation that failed or was
-               dropped; the sentence is what says the evaluation ran and found nothing. (The
-               ruleset's engine_conventions phrases the same statement "from the provided facts";
-               the spec governs this feature's acceptance, so its wording is the one rendered.) */
-            <p className="plan__empty">
-              No new city event requirement identified from your answers.
+          {/* F-201 AC 4: near-empty framing stays first-class beside advisories and named
+              confirmations (Scenario B), not only when the finding list is empty. */}
+          {isNearEmptyPlan(plan.findings) && (
+            <p className="plan__empty" data-testid="near-empty-framing">
+              {NEAR_EMPTY_FRAMING}
             </p>
-          ) : (
+          )}
+          {plan.findings.length > 0 && (
             <div className="plan__lines">
               {plan.findings.map((finding) => (
                 <PlanLine key={finding.ruleIds.join("+")} finding={finding} />

@@ -8,6 +8,7 @@ import {
   createChecklist,
   documentUrl,
   loadChecklist,
+  sendTestAlert,
   updateChecklistItem,
   uploadDocument,
   type ChecklistResponse,
@@ -179,6 +180,8 @@ export function ChecklistView({ apiBaseUrl, eventId }: { apiBaseUrl: string; eve
     email: "",
     phone: "",
   });
+  const [testAlertBusy, setTestAlertBusy] = useState(false);
+  const [testAlertMessage, setTestAlertMessage] = useState<string | null>(null);
 
   /**
    * Which event this page is showing. The create handler runs outside the effect, so it cannot
@@ -332,6 +335,34 @@ export function ChecklistView({ apiBaseUrl, eventId }: { apiBaseUrl: string; eve
   };
 
   /**
+   * F-203 AC 6: one immediate test send, labeled as a test by the api. Uses the contact boxes on
+   * this page so the organizer proves the channel they are about to rely on for filing reminders.
+   */
+  const fireTestAlert = async () => {
+    const email = contacts.email.trim();
+    const phone = contacts.phone.trim();
+    const channel = email !== "" ? "email" : phone !== "" ? "sms" : null;
+    const recipient = channel === "email" ? email : phone;
+    if (channel === null) {
+      setTestAlertMessage("Enter an email or mobile number before sending a test alert.");
+      return;
+    }
+    setTestAlertBusy(true);
+    setTestAlertMessage(null);
+    const result = await sendTestAlert(apiBaseUrl, eventId, channel, recipient);
+    setTestAlertBusy(false);
+    if (!result.ok) {
+      setTestAlertMessage(result.message);
+      return;
+    }
+    setTestAlertMessage(
+      result.simulated
+        ? `Test text message was recorded as a labeled simulation — nothing was delivered. It is labeled TEST and is not a filing reminder.`
+        : `Test ${channel === "email" ? "email" : "text message"} sent. It is labeled TEST and is not a filing reminder.`,
+    );
+  };
+
+  /**
    * Re-read the whole checklist after a write, and report what stopped that from working.
    *
    * The write already succeeded when this runs, so nothing here can be reported as the write
@@ -430,15 +461,19 @@ export function ChecklistView({ apiBaseUrl, eventId }: { apiBaseUrl: string; eve
 
   if (state.status === "loading") {
     return (
-      <p className="intake__lede" role="status">
-        Loading your checklist…
-      </p>
+      <main className="checklist">
+        <p className="pe-eyebrow">PopEngine · Checklist</p>
+        <p className="intake__lede" role="status">
+          Loading your checklist…
+        </p>
+      </main>
     );
   }
 
   if (state.status !== "ready") {
     return (
       <main className="checklist">
+        <p className="pe-eyebrow">PopEngine · Checklist</p>
         <h1>Your compliance checklist</h1>
         <p className="intake__error" role="alert">
           {state.message}
@@ -469,6 +504,7 @@ export function ChecklistView({ apiBaseUrl, eventId }: { apiBaseUrl: string; eve
 
   return (
     <main className="checklist">
+      <p className="pe-eyebrow">PopEngine · Checklist</p>
       <h1>Your compliance checklist</h1>
 
       {/* The snapshot the rows below are read against, both values off the checklist's own current
@@ -628,6 +664,21 @@ export function ChecklistView({ apiBaseUrl, eventId }: { apiBaseUrl: string; eve
                   ? "Review items against the current plan"
                   : "Save contact details"}
           </button>
+          {/* F-203 AC 6: demo utility, visibly labeled. Uses the contact entered above so the
+              organizer proves the channel they intend to use for filing reminders. */}
+          <button
+            className="intake__submit"
+            type="button"
+            onClick={() => void fireTestAlert()}
+            disabled={testAlertBusy || creating}
+          >
+            {testAlertBusy ? "Sending test…" : "Send test alert"}
+          </button>
+          {testAlertMessage !== null && (
+            <p className="checklist__lede" role="status" data-testid="test-alert-status">
+              {testAlertMessage}
+            </p>
+          )}
         </div>
       )}
 

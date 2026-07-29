@@ -1,4 +1,4 @@
-/* Route-local styles for F-301 public event page. */
+/* F-301 public event page. */
 
 .event-page {
   max-width: 28rem;
@@ -6,22 +6,38 @@
   display: flex;
   flex-direction: column;
   gap: 1rem;
-  padding: 1.25rem 0 3rem;
-  min-height: 100dvh;
+  padding: 0.5rem 0 2rem;
+  min-height: calc(100dvh - 5rem);
+  justify-content: center;
 }
 
 .event-page__eyebrow {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.55rem;
   margin: 0;
-  font-size: 0.85rem;
-  letter-spacing: 0.04em;
+  font-family: var(--pe-font-mono);
+  font-size: 0.7rem;
+  font-weight: 500;
+  letter-spacing: 0.16em;
   text-transform: uppercase;
-  color: var(--muted);
+  color: var(--pe-steel);
+  text-shadow: none;
+}
+
+.event-page__eyebrow::before {
+  content: "";
+  width: 0.4rem;
+  height: 0.4rem;
+  flex-shrink: 0;
+  border-radius: 50%;
+  background: var(--pe-clear);
+  box-shadow: none;
 }
 
 .event-page__title {
   margin: 0;
-  font-size: 1.85rem;
-  line-height: 1.15;
+  /* Display type from globals.css shared h1 block. */
 }
 
 .event-page__lede,
@@ -35,37 +51,33 @@
 }
 
 .event-page__map {
-  color: var(--ink);
-  font-weight: 600;
+  /* Link color from globals.css warm nav/link block. */
 }
 
 .event-page__field {
   display: flex;
   flex-direction: column;
   gap: 0.35rem;
+  padding: 0.95rem 1.05rem;
+  border: 1.5px solid var(--line);
+  border-radius: 0.35rem;
+  background: var(--pe-card);
 }
 
 .event-page__label {
-  font-weight: 600;
+  font-size: 0.82rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
 }
 
 .event-page__input {
-  font: inherit;
-  padding: 0.85rem 0.9rem;
-  border: 1px solid var(--line);
-  border-radius: 0.4rem;
-  background: #fff;
+  /* Shared warm input styles from globals.css */
 }
 
 .event-page__submit {
-  font: inherit;
-  font-weight: 600;
-  padding: 0.95rem 1rem;
-  border: none;
-  border-radius: 0.4rem;
-  background: var(--ink);
-  color: #fff;
-  cursor: pointer;
+  width: 100%;
+  /* Primary styles come from globals.css warm CTA block. */
 }
 
 .event-page__submit:disabled {
@@ -76,9 +88,10 @@
 .event-page__error {
   margin: 0;
   color: var(--error);
+  font-weight: 600;
 }
 
 .event-page__success {
   margin: 0;
-  font-weight: 600;
+  font-weight: 700;
 }

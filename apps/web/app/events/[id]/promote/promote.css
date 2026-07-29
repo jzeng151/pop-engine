@@ -14,32 +14,38 @@
 
 .promote__warning {
   margin: 0;
-  padding: 0.75rem 0.9rem;
+  padding: 0.85rem 1rem;
   background: var(--warning-bg);
   border: 1px solid var(--warning-line);
+  border-radius: 0.35rem;
 }
 
 .promote__error {
   margin: 0;
   color: var(--error);
+  font-weight: 600;
 }
 
 .promote__field {
   display: flex;
   flex-direction: column;
   gap: 0.35rem;
+  padding: 0.95rem 1.05rem;
+  border: 1.5px solid var(--line);
+  border-radius: 0.35rem;
+  background: var(--pe-card);
 }
 
 .promote__label {
-  font-weight: 600;
+  font-size: 0.82rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
 }
 
 .promote__input,
 .promote__textarea {
-  font: inherit;
-  padding: 0.75rem 0.85rem;
-  border: 1px solid var(--line);
-  border-radius: 0.35rem;
+  /* Shared warm input styles from globals.css */
 }
 
 .promote__textarea {
@@ -55,14 +61,8 @@
 }
 
 .promote__button {
-  font: inherit;
-  font-weight: 600;
-  padding: 0.7rem 1rem;
-  border: none;
-  border-radius: 0.35rem;
-  background: var(--ink);
-  color: #fff;
-  cursor: pointer;
+  /* Primary fill/border from globals.css warm CTA block. */
+  min-height: 2.9rem;
 }
 
 .promote__button:disabled {
@@ -70,13 +70,13 @@
   cursor: wait;
 }
 
-.promote__secondary {
-  background: #fff;
-  color: var(--ink);
-  border: 1px solid var(--line);
-}
+/* .promote__secondary overridden in globals for warm theme */
 
 .promote__share {
-  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-family: var(--pe-font-mono);
   word-break: break-all;
+  padding: 0.75rem 0.9rem;
+  border: 1px solid var(--line);
+  border-radius: 0.35rem;
+  background: var(--pe-surface);
 }

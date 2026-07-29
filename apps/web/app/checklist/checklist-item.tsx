@@ -13,6 +13,7 @@ import {
   type SourcePlan,
   type UploadOutcome,
 } from "./checklist-api";
+import { MovedDeadlineNoticeBlock } from "./moved-deadline-notice";
 
 // One checklist row. F-202 AC 2–5 and AC 8 all land here, and the row is deliberately the whole
 // unit of rendering: F-204's portal deep links, F-205's insurance card and F-206's per-row
@@ -328,6 +329,8 @@ export function ChecklistItemCard({
         </p>
       )}
 
+      {item.deadlineNotice !== null && <MovedDeadlineNoticeBlock notice={item.deadlineNotice} />}
+
       <PlanContextBody context={item} currentPlan={currentPlan} />
 
       <div className="check-item__track">
@@ -400,6 +403,7 @@ export function ChecklistItemCard({
           <input
             ref={fileInput}
             type="file"
+            className="check-item__file"
             aria-label={`Add a document to ${name}`}
             accept={ACCEPTED_DOCUMENT_TYPES.join(",")}
             disabled={busy}

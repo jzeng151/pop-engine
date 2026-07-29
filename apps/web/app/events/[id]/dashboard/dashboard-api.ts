@@ -5,6 +5,8 @@ export const CREDENTIALED = {
   headers: { "Content-Type": "application/json" },
 } as const satisfies RequestInit;
 
+/** localStorage key moved to `app/last-event.ts` (home hub import cannot use `[id]` path). */
+
 export type EventStats = {
   checkins_total: number;
   checkins_registered: number;
@@ -14,7 +16,19 @@ export type EventStats = {
   checkins_last_10min: number;
 };
 
+/** Intake fields shown on Live ops so the door view is bound to this event, not a blank template. */
+export type EventDoorContext = {
+  id: string;
+  name: string;
+  event_date: string;
+  location_name: string | null;
+};
+
 export type StatsResult = { ok: true; stats: EventStats } | { ok: false; message: string };
+
+export type ContextResult =
+  | { ok: true; context: EventDoorContext }
+  | { ok: false; message: string };
 
 export type LoadEventStatsOptions = {
   /** Abort when the caller unmounts or switches events. */
@@ -58,6 +72,25 @@ function parseStats(body: unknown): EventStats | null {
   };
 }
 
+function parseDoorContext(body: unknown): EventDoorContext | null {
+  const event = asRecord(asRecord(body)?.event);
+  if (event === null) return null;
+  if (typeof event.id !== "string" || typeof event.name !== "string") return null;
+  if (typeof event.event_date !== "string") return null;
+  const location =
+    event.location_name === null || event.location_name === undefined
+      ? null
+      : typeof event.location_name === "string"
+        ? event.location_name
+        : null;
+  return {
+    id: event.id,
+    name: event.name,
+    event_date: event.event_date,
+    location_name: location,
+  };
+}
+
 /**
  * Read JSON with the request abort still armed. A stall after headers but mid-body must not
  * leave DashboardView permanently `inFlight` (timeout cleared too early).
@@ -72,6 +105,48 @@ async function readJsonBody(
     if (signal.aborted) return { ok: false };
     return { ok: true, body: null };
   }
+}
+
+/** One-shot load of intake identity for the door dashboard (not polled). */
+export async function loadEventDoorContext(
+  apiBaseUrl: string,
+  eventId: string,
+  options: { signal?: AbortSignal } = {},
+): Promise<ContextResult> {
+  let response: Response;
+  try {
+    response = await fetch(`${apiBaseUrl}/api/events/${eventId}`, {
+      ...CREDENTIALED,
+      signal: options.signal,
+    });
+  } catch {
+    return { ok: false, message: UNREACHABLE };
+  }
+
+  let body: unknown;
+  try {
+    body = await response.json();
+  } catch {
+    body = null;
+  }
+
+  if (!response.ok) {
+    return {
+      ok: false,
+      message: failureMessage(
+        body,
+        response.status === 404
+          ? "That event was not found."
+          : `The event could not be loaded (HTTP ${response.status}).`,
+      ),
+    };
+  }
+
+  const context = parseDoorContext(body);
+  if (context === null) {
+    return { ok: false, message: "The API returned an event this page cannot read." };
+  }
+  return { ok: true, context };
 }
 
 export async function loadEventStats(

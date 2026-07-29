@@ -76,9 +76,7 @@ const emptyVerdictDetail = {
   missedRuleIds: [],
   minSlackDays: null,
   missingFacts: [],
-  unresolvedTimelines: [],
   rescopeSuggestions: [],
-  trace: [],
 };
 
 const plan = (overrides: Record<string, unknown> = {}) => ({
@@ -832,6 +830,130 @@ describe("the verdict's approved copy", () => {
     await screen.findByRole("complementary", { name: "Rules snapshot" });
 
     expect(screen.queryByText(/internal planning buffer/)).toBeNull();
+  });
+
+  it("notes FEASIBLE when every deadline is undated (F-102 edge case)", async () => {
+    stubApi(
+      plan({
+        verdict: "FEASIBLE",
+        findings: [
+          finding({
+            ruleIds: ["ADV-VENUE-OCCUPANCY-001"],
+            kind: "advisory",
+            disposition: "advisory",
+            deadlineStatus: "not_applicable",
+            sources: [],
+          }),
+        ],
+      }),
+    );
+    renderPlan();
+
+    expect((await screen.findByTestId("no-dated-deadlines")).textContent).toBe(
+      "No dated deadlines identified.",
+    );
+  });
+
+  it("does not claim undated deadlines when a dated status is present", async () => {
+    stubApi(
+      plan({
+        verdict: "FEASIBLE",
+        findings: [finding({ deadlineStatus: "on_track", latestApplyDate: "2026-08-26" })],
+      }),
+    );
+    renderPlan();
+    await screen.findByRole("complementary", { name: "Rules snapshot" });
+
+    expect(screen.queryByTestId("no-dated-deadlines")).toBeNull();
+  });
+});
+
+describe("F-102 · CONDITIONAL branch table and INFEASIBLE rescope ladder", () => {
+  it("renders each missing fact's branch outcomes for CONDITIONAL", async () => {
+    stubApi(
+      plan({
+        verdict: "CONDITIONAL",
+        verdictDetail: {
+          ...emptyVerdictDetail,
+          missingFacts: [
+            {
+              field: "venue_license_covers_event_area",
+              thresholds: null,
+              branches: [
+                {
+                  value: "yes",
+                  verdict: "CONDITIONAL",
+                  reason: "sound audibility still open",
+                },
+                {
+                  value: "no",
+                  verdict: "INFEASIBLE",
+                  reason: "SLA one-day window missed",
+                },
+              ],
+            },
+          ],
+        },
+      }),
+    );
+    renderPlan();
+    await screen.findByTestId("verdict-detail");
+
+    const fact = screen.getByTestId("missing-fact");
+    expect(fact.textContent).toContain("venue license covers event area");
+    expect(within(fact).getByText("Depends on")).toBeDefined();
+    expect(within(fact).getByText("Published deadline missed as scoped")).toBeDefined();
+    expect(within(fact).getByText("sound audibility still open")).toBeDefined();
+    expect(within(fact).getByText("SLA one-day window missed")).toBeDefined();
+  });
+
+  it("names the blocking finding and lists each re-evaluated rescope for INFEASIBLE", async () => {
+    stubApi(
+      plan({
+        verdict: "INFEASIBLE",
+        verdictDetail: {
+          ...emptyVerdictDetail,
+          blockingFinding: {
+            ruleIds: ["SAPO-STREET-LARGE-001"],
+            name: "Street Activity Permit — Large",
+          },
+          missedRuleIds: ["SAPO-STREET-LARGE-001"],
+          rescopeSuggestions: [
+            {
+              change: { field: "street_event_size", value: "medium" },
+              reevaluatedVerdict: "FEASIBLE_AT_RISK",
+              droppedRuleIds: ["SAPO-STREET-LARGE-001"],
+            },
+            {
+              change: { field: "location_type", value: "private_venue" },
+              reevaluatedVerdict: "CONDITIONAL",
+              droppedRuleIds: ["SAPO-INSURANCE-001", "SAPO-STREET-LARGE-001"],
+            },
+          ],
+        },
+      }),
+    );
+    renderPlan();
+    await screen.findByTestId("verdict-detail");
+
+    expect(screen.getByTestId("blocking-finding").textContent).toContain(
+      "Street Activity Permit — Large",
+    );
+    expect(screen.getByTestId("rescope-ladder")).toBeDefined();
+    const suggestions = screen.getAllByTestId("rescope-suggestion");
+    expect(suggestions).toHaveLength(2);
+    expect(suggestions[0]?.textContent).toContain("street event size");
+    expect(suggestions[0]?.textContent).toContain("medium");
+    expect(suggestions[0]?.textContent).toContain("At risk");
+    expect(suggestions[1]?.textContent).toContain("private venue");
+    expect(suggestions[1]?.textContent).toContain("Depends on");
+  });
+
+  it("shows nothing under a FEASIBLE verdict that has no branch or rescope work", async () => {
+    stubApi(plan({ verdict: "FEASIBLE" }));
+    renderPlan();
+    await screen.findByRole("complementary", { name: "Rules snapshot" });
+    expect(screen.queryByTestId("verdict-detail")).toBeNull();
   });
 });
 
@@ -1667,19 +1789,86 @@ describe("the states this page can be in", () => {
     });
     renderPlan();
 
-    expect(
-      await screen.findByText("No new city event requirement identified from your answers."),
-    ).toBeDefined();
+    expect(await screen.findByTestId("near-empty-framing")).toBeDefined();
+    expect(screen.getByTestId("near-empty-framing").textContent).toBe(
+      "No new city event requirement identified from your answers.",
+    );
+    expect(screen.getByTestId("no-dated-deadlines").textContent).toBe(
+      "No dated deadlines identified.",
+    );
     expect(screen.getByText("On track")).toBeDefined();
     expect(screen.queryAllByRole("article")).toEqual([]);
   });
 
-  it("still lists findings when there are any", async () => {
+  it("keeps the near-empty framing beside Scenario B confirmations (F-201 AC 4)", async () => {
+    // Gallery pop-up: DOHMH confirmations + occupancy advisory, no SAPO/sound/assembly/insurance.
+    // Overclaiming emptiness would hide the confirmations; omitting the sentence would read as a
+    // full permit plan. Both failure modes the criterion names.
+    stubScript({
+      plan: () =>
+        jsonResponse(
+          200,
+          plan({
+            verdict: "CONDITIONAL",
+            verdictDetail: {
+              ...emptyVerdictDetail,
+              missedRuleIds: ["DOHMH-ORGANIZER-NOTIFY-001"],
+              missingFacts: [
+                {
+                  field: "food_service_operator",
+                  branches: [],
+                  thresholds: null,
+                },
+              ],
+            },
+            findings: [
+              finding({
+                ruleIds: ["DOHMH-VENDOR-PERMIT-001"],
+                kind: "permit",
+                disposition: "required",
+                name: "DOHMH Temporary Food Service Establishment Permit",
+                agency: "DOHMH",
+                deadlineStatus: "not_calculable",
+                sources: [],
+              }),
+              finding({
+                ruleIds: ["DOHMH-ORGANIZER-NOTIFY-001"],
+                kind: "notification",
+                disposition: "may_be_required",
+                name: "DOHMH organizer notification",
+                agency: "DOHMH",
+                deadlineStatus: "published_deadline_missed",
+                latestApplyDate: "2026-07-13",
+                sources: [],
+              }),
+              finding({
+                ruleIds: ["ADV-VENUE-OCCUPANCY-001"],
+                kind: "advisory",
+                disposition: "advisory",
+                name: null,
+                agency: null,
+                deadlineStatus: "not_applicable",
+                sources: [],
+              }),
+            ],
+          }),
+        ),
+    });
+    renderPlan();
+
+    expect(await screen.findByTestId("near-empty-framing")).toBeDefined();
+    expect(screen.getByTestId("near-empty-framing").textContent).toBe(
+      "No new city event requirement identified from your answers.",
+    );
+    expect(screen.getAllByRole("article")).toHaveLength(3);
+  });
+
+  it("does not claim near-empty when a dated city-event permit is identified", async () => {
     stubScript({});
     renderPlan();
 
     await waitFor(() => expect(screen.getAllByRole("article").length).toBe(1));
-    expect(screen.queryByText(/No new city event requirement/)).toBeNull();
+    expect(screen.queryByTestId("near-empty-framing")).toBeNull();
   });
 });
 

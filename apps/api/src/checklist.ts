@@ -38,6 +38,10 @@ import {
   type AlertScheduler,
 } from "./alerts";
 import { calendarDateFrom, renderingKey, PlanIntegrityError, type FindingRendering } from "./plan";
+import {
+  movedDeadlineNotice,
+  type NoticePlanItem,
+} from "./moved-deadline-notice";
 import { DocumentStorageError, type DocumentStorage } from "./storage";
 
 const isChecklistStatus = (value: unknown): value is ChecklistStatus =>
@@ -153,8 +157,8 @@ type Queryable = {
 
 /**
  * A requirement's identity across plans. A regenerated plan writes new plan-item rows with new
- * uuids, so the stable identity of "the same requirement" is the set of rule ids behind it —
- * the same provenance `plan.ts` uses to zip findings back onto stored items.
+ * uuids, so the stable identity of "the same requirement" is the set of rule ids behind it
+ * together with its kind — F-202 AC 9: a kind change ends the task the organizer was tracking.
  *
  * Identity is the WHOLE set, and partial overlap is deliberately not a match. Findings sharing a
  * `dedupe_key` merge into one line carrying every contributing rule id, so changing a dedupe key
@@ -169,7 +173,8 @@ type Queryable = {
  * IS. (`plan.ts` joins unsorted, which is correct there: it zips positionally against renderings
  * written by the same evaluation, where order is guaranteed. Across two plans it is not.)
  */
-const requirementKey = (ruleIds: readonly string[]): string => [...ruleIds].sort().join(",");
+const requirementKey = (ruleIds: readonly string[], kind: string): string =>
+  `${[...ruleIds].sort().join(",")}|${kind}`;
 
 type PlanItemRow = {
   id: string;
@@ -240,6 +245,20 @@ type DocumentRow = {
 
 const isoDate = (value: Date | string | null): string | null =>
   value === null ? null : calendarDateFrom(value);
+
+/** Plan-item fields AC 9's notice compares, with dates as ISO calendar days. */
+const noticeItemFrom = (item: PlanItemRow): NoticePlanItem => ({
+  deadline: item.deadline,
+  latest_apply_date: isoDate(item.latest_apply_date),
+  apply_after_date: isoDate(item.apply_after_date),
+  deadline_status: item.deadline_status,
+  verification_status: item.verification_status,
+  last_verified_date: isoDate(item.last_verified_date),
+  sources: item.sources,
+  source_url: item.source_url,
+  source_ruleset_version: item.source_ruleset_version,
+  source_snapshot_date: isoDate(item.source_snapshot_date),
+});
 
 /**
  * The plan context a checklist row renders: deadline, agency, portal, verification badge — and
@@ -399,8 +418,12 @@ async function taskCreatedByRequirement(
   database: Queryable,
   eventId: string,
 ): Promise<Map<string, number>> {
-  const { rows } = await database.query<{ rule_ids: string[]; created_at: Date }>(
-    `SELECT item.rule_ids, checklist.created_at
+  const { rows } = await database.query<{
+    rule_ids: string[];
+    kind: FindingKind;
+    created_at: Date;
+  }>(
+    `SELECT item.rule_ids, item.kind, checklist.created_at
        FROM checklist_items AS checklist
        JOIN permit_plan_items AS item ON item.id = checklist.plan_item_id
        JOIN permit_plans AS plan ON plan.id = item.plan_id
@@ -409,9 +432,9 @@ async function taskCreatedByRequirement(
   );
   const createdAt = new Map<string, number>();
   for (const row of rows) {
-    // Identity is the whole rule-id set, order-insensitively, so the same requirement written two
-    // ways is one key and the earlier task is the one that dates it.
-    const key = requirementKey(row.rule_ids);
+    // Identity is the whole rule-id set plus kind, order-insensitively, so the same requirement
+    // written two ways is one key and the earlier task is the one that dates it.
+    const key = requirementKey(row.rule_ids, row.kind);
     const at = row.created_at.getTime();
     createdAt.set(key, Math.min(createdAt.get(key) ?? at, at));
   }
@@ -503,8 +526,8 @@ async function checklistView(database: Queryable, eventId: string, plan: LatestP
   // Stable, so the filing-date order the query already applied survives as the tiebreak.
   const items = [...unordered].sort(
     (left, right) =>
-      (taskCreated.get(requirementKey(left.rule_ids)) ?? 0) -
-      (taskCreated.get(requirementKey(right.rule_ids)) ?? 0),
+      (taskCreated.get(requirementKey(left.rule_ids, left.kind)) ?? 0) -
+      (taskCreated.get(requirementKey(right.rule_ids, right.kind)) ?? 0),
   );
   const latestItems = await planItems(database, plan.id);
   const documents = await documentsFor(
@@ -516,39 +539,58 @@ async function checklistView(database: Queryable, eventId: string, plan: LatestP
     ...new Set(items.map((item) => item.plan_id)),
   ]);
 
-  const latestByKey = new Map(latestItems.map((item) => [requirementKey(item.rule_ids), item]));
+  const latestByKey = new Map(
+    latestItems.map((item) => [requirementKey(item.rule_ids, item.kind), item]),
+  );
+  // Keys the organizer last reviewed. A requirement absent here but present on a row means that
+  // row was struck as of the last review — F-202 AC 9 makes that terminal even if the kind returns.
+  const acknowledgedId = await acknowledgedPlanId(database, eventId);
+  const acknowledgedKeys = new Set(
+    acknowledgedId === null
+      ? []
+      : (await planItems(database, acknowledgedId)).map((item) =>
+          requirementKey(item.rule_ids, item.kind),
+        ),
+  );
+  const rowPointingAt = new Set(items.map((item) => item.plan_item_id));
 
   const view = items.map((item) => {
-    const current = latestByKey.get(requirementKey(item.rule_ids));
-    // Deadlines come from the latest plan while the requirement still stands: the plan is
-    // recalculated, not patched (PRD principle 6). A dropped requirement keeps the dates of
-    // the last plan that raised it, which is the honest last-known state.
-    const source = current ?? item;
-    // A row describes two objects, which is worth stating because nothing said so before. The
-    // persisted half is the organizer's: `id`, `planItemId`, `status`, `notes`, `documents`.
-    // Everything `planContext` returns is regulatory content read off `source`, `sourcePlan`
-    // included, so on a still-required row that provenance names the LATEST plan.
-    //
-    // That last part was contested and is now settled: SPEC-CONFLICT #115 was resolved by amending
-    // F-206 Acceptance Criterion 4's mixed-checklist clause, which had said a retained row is
-    // *never* attributed to the checklist's current plan. That is true of a dropped row and false
-    // of a still-required one, and the criterion now states the two cases separately. F-202 AC 8 is
-    // unchanged and agrees: its "last plan that raised it" is the latest plan for a requirement
-    // that survives, and its purpose clause is that provenance is never copied from the live rules
-    // file or duplicated into checklist storage, which reading `sourcePlan` off `source` satisfies.
-    //
-    // Because both come off one object, neither case can print a version beside data it never
-    // carried. A DROPPED row was never in dispute: `current` is undefined, `source` is `item`, and
-    // it reports the plan that raised it.
+    const key = requirementKey(item.rule_ids, item.kind);
+    const current = latestByKey.get(key);
+    // Still raised for THIS row's task: either already re-pointed at the latest item, or a survivor
+    // awaiting re-point (raised at last review, and no newer task already owns the latest item).
+    // A terminal struck row shares the key when the kind returns but must stay struck (AC 9).
+    const stillRaised =
+      current !== undefined &&
+      (item.plan_item_id === current.id ||
+        (acknowledgedKeys.has(key) && !rowPointingAt.has(current.id)));
+    // Deadlines come from the latest plan while this row's task still stands: the plan is
+    // recalculated, not patched (PRD principle 6). A dropped or terminal-struck row keeps the
+    // dates of the plan item it still points at.
+    const source = stillRaised && current !== undefined ? current : item;
+    const previousRendering = renderingOrFail(renderings, item);
+    const sourceRendering = renderingOrFail(renderings, source);
+    // F-202 AC 9: compare only while this row's task still stands and has not yet been re-pointed.
+    const deadlineNotice =
+      stillRaised && current !== undefined && current.id !== item.id
+        ? movedDeadlineNotice(
+            noticeItemFrom(item),
+            previousRendering,
+            noticeItemFrom(current),
+            renderingOrFail(renderings, current),
+          )
+        : null;
     return {
       id: item.checklist_item_id,
       planItemId: item.plan_item_id,
       status: item.status,
       notes: item.notes,
       updatedAt: item.updated_at.toISOString(),
-      // A requirement the latest plan no longer raises is struck through, never deleted (AC 6).
-      inLatestPlan: current !== undefined,
-      ...planContext(source, renderingOrFail(renderings, source)),
+      // A requirement the latest plan no longer raises — or a terminal struck task — is struck
+      // through, never deleted (AC 6 / AC 9).
+      inLatestPlan: stillRaised,
+      deadlineNotice,
+      ...planContext(source, sourceRendering),
       documents: (documents.get(item.checklist_item_id) ?? []).map(documentView),
     };
   });
@@ -618,30 +660,35 @@ async function checklistView(database: Queryable, eventId: string, plan: LatestP
 /**
  * Bring the checklist into line with the latest plan, returning how many items were created.
  *
- * A requirement already tracked is re-pointed at the current plan's row rather than left on the
- * superseded one: `checklist_items` is mutable user state, not a plan snapshot, so moving the
- * link neither deletes nor rewrites history, and the status, notes and documents ride along. It
- * is also what makes `planChanged` fall back to false once the organizer has re-created the
- * checklist — without it, the AC 6 prompt would latch on at the first regeneration and never
- * clear. A requirement the latest plan dropped keeps pointing at the last plan that raised it,
- * which is what still renders it struck through.
+ * A requirement already tracked and still raised at the last review is re-pointed at the current
+ * plan's row. A requirement the latest plan dropped keeps pointing at the last plan that raised
+ * it (struck through). F-202 AC 9: a struck task is terminal — if the same rule-id set and kind
+ * return later, a new task is appended rather than reviving the struck row.
  */
 async function materialize(client: PoolClient, eventId: string, planId: string): Promise<number> {
+  const trackedRows = await checklistRows(client, eventId);
   const trackedByKey = new Map(
-    (await checklistRows(client, eventId)).map((item) => [
-      requirementKey(item.rule_ids),
-      item.checklist_item_id,
+    trackedRows.map((item) => [
+      requirementKey(item.rule_ids, item.kind),
+      { checklistItemId: item.checklist_item_id, planItemId: item.plan_item_id },
     ]),
   );
+  // What the organizer last reviewed. Absent keys are terminal strikes for any existing row.
+  const previousAck = await acknowledgedPlanId(client, eventId);
+  const acknowledgedKeys = new Set(
+    previousAck === null
+      ? []
+      : (await planItems(client, previousAck)).map((item) =>
+          requirementKey(item.rule_ids, item.kind),
+        ),
+  );
+
   let created = 0;
   for (const item of await planItems(client, planId)) {
     if (!TRACKABLE_FINDING_KINDS.has(item.kind)) continue;
-    const tracked = trackedByKey.get(requirementKey(item.rule_ids));
+    const key = requirementKey(item.rule_ids, item.kind);
+    const tracked = trackedByKey.get(key);
     if (tracked === undefined) {
-      // `created` is this task's position among the tasks this call creates, and the loop walks
-      // the plan in published filing-date order, so the position freezes that order at creation
-      // (migration 007). Recorded rather than re-read, because the date it came from is
-      // recalculated by every later regeneration and the order the organizer learned is not.
       await client.query(
         `INSERT INTO checklist_items (id, plan_item_id, cohort_position) VALUES ($1, $2, $3)
            ON CONFLICT (plan_item_id) DO NOTHING`,
@@ -650,9 +697,19 @@ async function materialize(client: PoolClient, eventId: string, planId: string):
       created += 1;
       continue;
     }
-    // Deliberately does not touch `updated_at`: re-pointing is not the organizer doing something.
+    if (previousAck !== null && !acknowledgedKeys.has(key)) {
+      // The last review had already struck this identity. Append a new task; never revive (AC 9).
+      await client.query(
+        `INSERT INTO checklist_items (id, plan_item_id, cohort_position) VALUES ($1, $2, $3)
+           ON CONFLICT (plan_item_id) DO NOTHING`,
+        [randomUUID(), item.id, created],
+      );
+      created += 1;
+      continue;
+    }
+    // Survivor still raised at last review: re-point without touching `updated_at`.
     await client.query("UPDATE checklist_items SET plan_item_id = $2 WHERE id = $1", [
-      tracked,
+      tracked.checklistItemId,
       item.id,
     ]);
   }

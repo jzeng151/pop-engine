@@ -106,7 +106,57 @@ export type ChecklistItem = PlanContext & {
    * kept (AC 6), and it is counted separately from the rollup, which is current-plan only (AC 2).
    */
   readonly inLatestPlan: boolean;
+  /**
+   * F-202 AC 9: the deadline PopEngine computes moved between the plan item this row still points
+   * at and the latest plan's item for the same requirement. Null when nothing moved, the row is
+   * struck through, or a review has already re-pointed the row.
+   */
+  readonly deadlineNotice: MovedDeadlineNotice | null;
   readonly documents: readonly ChecklistDocument[];
+};
+
+/**
+ * F-202 AC 9 wire shape. Dates are named "previous" / "current", never "earlier" — a recalculated
+ * deadline can land later than the one it replaces.
+ */
+export type MovedDeadlineNotice = {
+  readonly dateChange: DateChange | null;
+  readonly stateChange: {
+    readonly previous: DeadlineStateSide;
+    readonly current: DeadlineStateSide;
+  } | null;
+  readonly previousProvenance: PreviousDeadlineProvenance;
+  readonly rulesetVersionsDiffer: boolean;
+  readonly previousRulesetVersion: string;
+  readonly currentRulesetVersion: string;
+};
+
+export type DateChange =
+  | { readonly kind: "both"; readonly previous: string; readonly current: string }
+  | {
+      readonly kind: "became_not_calculable";
+      readonly previous: string;
+      readonly reason: string | null;
+    }
+  | { readonly kind: "became_not_applicable"; readonly previous: string }
+  | { readonly kind: "now_computed"; readonly current: string };
+
+export type DeadlineStateSide = {
+  readonly deadlineStatus: DeadlineStatus;
+  readonly deadlineDisplay: string | null;
+  readonly timelineUnresolvedReason: string | null;
+  readonly deadlineUnknownFields: readonly string[];
+  readonly gated: boolean;
+};
+
+export type PreviousDeadlineProvenance = {
+  readonly verificationStatus: VerificationStatus;
+  readonly lastVerifiedDate: string | null;
+  readonly sources: readonly FindingSource[];
+  readonly sourceUrl: string | null;
+  readonly conflictText: string | null;
+  readonly rulesetVersion: string;
+  readonly snapshotDate: string | null;
 };
 
 /**
@@ -333,12 +383,67 @@ const PLAN_CONTEXT_CHECKS: FieldChecks<PlanContext> = {
 
 const DOCUMENT_CHECKS: FieldChecks<ChecklistDocument> = { id: isString, filename: isString };
 
+const DATE_CHANGE_KINDS = tokensOf<DateChange["kind"]>({
+  both: true,
+  became_not_calculable: true,
+  became_not_applicable: true,
+  now_computed: true,
+});
+
+const isDateChange = (value: unknown): value is DateChange => {
+  const record = asRecord(value);
+  if (record === null || !isToken(DATE_CHANGE_KINDS)(record.kind)) return false;
+  switch (record.kind) {
+    case "both":
+      return isString(record.previous) && isString(record.current);
+    case "became_not_calculable":
+      return isString(record.previous) && (record.reason === null || isString(record.reason));
+    case "became_not_applicable":
+      return isString(record.previous);
+    case "now_computed":
+      return isString(record.current);
+  }
+};
+
+const STATE_SIDE_CHECKS: FieldChecks<DeadlineStateSide> = {
+  deadlineStatus: isToken(DEADLINE_STATUSES),
+  deadlineDisplay: nullOr(isString),
+  timelineUnresolvedReason: nullOr(isString),
+  deadlineUnknownFields: arrayOf(isString),
+  gated: isBoolean,
+};
+
+const PREVIOUS_PROVENANCE_CHECKS: FieldChecks<PreviousDeadlineProvenance> = {
+  verificationStatus: isToken(VERIFICATION_STATUSES),
+  lastVerifiedDate: nullOr(isString),
+  sources: arrayOf(shapedLike(SOURCE_CHECKS)),
+  sourceUrl: nullOr(isString),
+  conflictText: nullOr(isString),
+  rulesetVersion: isString,
+  snapshotDate: nullOr(isString),
+};
+
+const DEADLINE_NOTICE_CHECKS: FieldChecks<MovedDeadlineNotice> = {
+  dateChange: nullOr(isDateChange),
+  stateChange: nullOr(
+    shapedLike({
+      previous: shapedLike(STATE_SIDE_CHECKS),
+      current: shapedLike(STATE_SIDE_CHECKS),
+    }),
+  ),
+  previousProvenance: shapedLike(PREVIOUS_PROVENANCE_CHECKS),
+  rulesetVersionsDiffer: isBoolean,
+  previousRulesetVersion: isString,
+  currentRulesetVersion: isString,
+};
+
 const ITEM_CHECKS: FieldChecks<ChecklistItem> = {
   ...PLAN_CONTEXT_CHECKS,
   id: isString,
   status: isToken(STATUSES),
   notes: nullOr(isString),
   inLatestPlan: isBoolean,
+  deadlineNotice: nullOr(shapedLike(DEADLINE_NOTICE_CHECKS)),
   documents: arrayOf(shapedLike(DOCUMENT_CHECKS)),
 };
 
@@ -649,4 +754,48 @@ export async function documentUrl(apiBaseUrl: string, documentId: string): Promi
     return { ok: false, message: "The API returned a download link this page cannot read." };
   }
   return { ok: true, url };
+}
+
+export type TestAlertChannel = "email" | "sms";
+
+export type TestAlertResult =
+  | { ok: true; simulated: boolean }
+  | { ok: false; message: string };
+
+/**
+ * F-203 AC 6: fire one real alert immediately, visibly labeled as a test by the api's payload.
+ * Does not schedule against a filing deadline. When SMS is the labeled simulation, `simulated` is
+ * true so the UI never claims a text was delivered.
+ */
+export async function sendTestAlert(
+  apiBaseUrl: string,
+  eventId: string,
+  channel: TestAlertChannel,
+  recipient: string,
+): Promise<TestAlertResult> {
+  let response: Response;
+  try {
+    response = await fetch(`${apiBaseUrl}/api/events/${eventId}/alerts/test`, {
+      method: "POST",
+      ...CREDENTIALED,
+      body: JSON.stringify({ channel, recipient }),
+    });
+  } catch {
+    return { ok: false, message: UNREACHABLE };
+  }
+
+  const body = await readJson(response);
+  if (!response.ok) {
+    return {
+      ok: false,
+      message: failureMessage(
+        body,
+        `The test alert could not be sent (HTTP ${response.status}).`,
+      ),
+    };
+  }
+  const alert = asRecord(body)?.alert;
+  const payload = asRecord(asRecord(alert)?.payload);
+  const delivery = asRecord(payload?.delivery);
+  return { ok: true, simulated: delivery?.simulated === true };
 }
