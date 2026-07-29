@@ -1770,7 +1770,7 @@ for (const relative of f203Artifacts) {
   let nextStatementOffset = 0;
   const scopeStatements = contents
     .split(
-      /\r?\n\s*\r?\n|\r?\n(?=\s*(?:(?:[-*+]|\d+\.)\s+|\*\*(?:Status|(?:Later\s+)?Decisions?|Issue #\d+ amendment)\b))/i,
+      /\r?\n\s*\r?\n|\r?\n(?=(?:(?:[-*+]|\d+\.)\s+|\s*\*\*(?:Status|(?:Later\s+)?Decisions?|Issue #\d+ amendment)\b))/i,
     )
     .map((raw) => {
       const offset = contents.indexOf(raw, nextStatementOffset);
@@ -1803,6 +1803,9 @@ for (const relative of f203Artifacts) {
         }
         if (relative === "docs/PRD.md" && f203PrdDecision.test(raw)) {
           return lower.includes("f-203") && addressesScope;
+        }
+        if (!isListAssignment) {
+          return lower.includes("f-203") && addressesScope && f203SpecAssignment.test(normalized);
         }
         const ownsF203 = f203ListOwner.test(raw);
         const isRoadmapCore =
@@ -1850,6 +1853,7 @@ for (const relative of f203Artifacts) {
       return true;
     }
     if (relative === "docs/ROADMAP.md" || relative === "docs/PRD.md") {
+      if (!/^\s*(?:[-*+]|\d+\.)\s+/.test(raw)) return false;
       return !f203ListOwner.test(raw) || !f203ListScope.test(normalized);
     }
     if (relative === "docs/BASELINE.md") {

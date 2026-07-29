@@ -2279,6 +2279,21 @@ describe.concurrent("F-203 Phase 2 scope agreement (SPEC-CONFLICT #127 item 1)",
     expect(output).toContain("docs/ROADMAP.md must affirmatively assign");
   });
 
+  it("rejects a deferred capability nested under the Phase 1 F-203 entry", async () => {
+    const { status, output } = await runOn({
+      "docs/ROADMAP.md": SQUARE_RECONCILED["docs/ROADMAP.md"].replace(
+        "## Phase 2 — Execution Hardening",
+        "## Phase 1 — Core\n\n" +
+          "- **F-203 · Deadline Alerts** — email/SMS on computed deadlines.\n" +
+          "  - Weekly digests are sent every Monday.\n\n" +
+          "## Phase 2 — Execution Hardening",
+      ),
+    });
+
+    expect(status).toBe(1);
+    expect(output).toContain("docs/ROADMAP.md must affirmatively assign");
+  });
+
   it.each([
     [
       "moves a second assignment to Phase 3",
@@ -2354,6 +2369,20 @@ describe.concurrent("F-203 Phase 2 scope agreement (SPEC-CONFLICT #127 item 1)",
 
       expect(status, output).toBe(0);
       expect(output).toContain("F-203 scope check passed");
+    },
+  );
+
+  it.each(["docs/ROADMAP.md", "docs/PRD.md"])(
+    "rejects an added F-203 prose assignment in %s",
+    async (relative) => {
+      const { status, output } = await runOn({
+        [relative]:
+          SQUARE_RECONCILED[relative] +
+          "\nAutomatic permit filing remains planned, unscheduled Phase 2 depth under F-203.\n",
+      });
+
+      expect(status).toBe(1);
+      expect(output).toContain(`${relative} must affirmatively assign`);
     },
   );
 
