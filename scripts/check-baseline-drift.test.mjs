@@ -59,12 +59,16 @@ const SQUARE_RECONCILED = {
     "digests, team reminders, and per-user preferences as its planned, unscheduled Phase 2 depth. " +
     "This adds no Phase 2 acceptance criteria.\n",
   "docs/ROADMAP.md":
-    "# Roadmap\n\n## Phase 2 — Execution Hardening\n\n" +
+    "# Roadmap\n\n**Status:** SPEC-CONFLICT #127 resolved: F-203 retains alert escalations, " +
+    "digests, team reminders, and per-user preferences as planned, unscheduled Phase 2 depth.\n\n" +
+    "## Phase 2 — Execution Hardening\n\n" +
     "- **F-203 (full)** — alert escalations, digests, team reminders, and per-user preferences; " +
     "planned, not scheduled.\n\n## Phase 4 — Platform\n\n" +
     "- **F-408 · Inventory Low-Stock Alerts** — manual counts or Square webhook.\n",
   "docs/PRD.md":
-    "# PRD\n\n### Execution Hardening (Phase 2)\n\n" +
+    "# PRD\n\n**Issue #127 amendment:** F-203 retains alert escalations, digests, team reminders, " +
+    "and per-user preferences as planned, unscheduled Phase 2 depth.\n\n" +
+    "### Execution Hardening (Phase 2)\n\n" +
     "- **F-203 (full)** — alert escalations, digests, team reminders, and per-user preferences; " +
     "planned, not scheduled.\n\n### Platform (Phase 4)\n\n" +
     "- **F-308 / F-408** — ticketing integration/export; inventory low-stock alerts " +
@@ -1809,11 +1813,37 @@ describe.concurrent("F-203 Phase 2 scope agreement (SPEC-CONFLICT #127 item 1)",
     );
   });
 
+  it("fails when the Roadmap status contradicts its unchanged Phase 2 list entry", async () => {
+    const { status, output } = await runOn({
+      "docs/ROADMAP.md": SQUARE_RECONCILED["docs/ROADMAP.md"].replace(
+        "unscheduled Phase 2 depth",
+        "unscheduled Phase 3 depth",
+      ),
+    });
+
+    expect(status).toBe(1);
+    expect(output).toContain(
+      "docs/ROADMAP.md must keep its F-203 full-scope assignment under Phase 2",
+    );
+  });
+
   it("fails when the unchanged PRD assignment moves out of Phase 2", async () => {
     const { status, output } = await runOn({
       "docs/PRD.md": SQUARE_RECONCILED["docs/PRD.md"].replace(
         "### Execution Hardening (Phase 2)",
         "### Differentiation (Phase 3)",
+      ),
+    });
+
+    expect(status).toBe(1);
+    expect(output).toContain("docs/PRD.md must keep its F-203 full-scope assignment under Phase 2");
+  });
+
+  it("fails when the PRD amendment contradicts its unchanged Phase 2 list entry", async () => {
+    const { status, output } = await runOn({
+      "docs/PRD.md": SQUARE_RECONCILED["docs/PRD.md"].replace(
+        "unscheduled Phase 2 depth",
+        "unscheduled Phase 3 depth",
       ),
     });
 
@@ -1850,12 +1880,13 @@ describe.concurrent("F-203 Phase 2 scope agreement (SPEC-CONFLICT #127 item 1)",
     async (indentation) => {
       const { status, output } = await runOn({
         "docs/ROADMAP.md": SQUARE_RECONCILED["docs/ROADMAP.md"].replace(
-          "team reminders, and per-user preferences",
-          `team reminders,\n${indentation}and per-user preferences`,
+          "— alert escalations, digests, team reminders, and per-user preferences; planned",
+          `— alert escalations, digests, team reminders,\n${indentation}` +
+            "and per-user preferences; planned",
         ),
       });
 
-      expect(status).toBe(0);
+      expect(status, output).toBe(0);
       expect(output).toContain("F-203 scope check passed");
     },
   );
@@ -2010,7 +2041,7 @@ describe.concurrent("Square/POS scope agreement (SPEC-CONFLICT #127 item 2)", ()
     );
 
     expect(status).toBe(1);
-    expect(output).toContain("docs/ROADMAP.md:10 asserts the broader standalone Square/POS");
+    expect(output).toContain("docs/ROADMAP.md:12 asserts the broader standalone Square/POS");
   });
 
   // A standalone entry that never says "Square" is the same defect wearing a different word.
@@ -2022,7 +2053,7 @@ describe.concurrent("Square/POS scope agreement (SPEC-CONFLICT #127 item 2)", ()
     );
 
     expect(status).toBe(1);
-    expect(output).toContain("docs/PRD.md:10 asserts the broader standalone Square/POS");
+    expect(output).toContain("docs/PRD.md:12 asserts the broader standalone Square/POS");
   });
 
   // THE WIDENING BRANCH, which the first version of this rule permitted and which is the branch the

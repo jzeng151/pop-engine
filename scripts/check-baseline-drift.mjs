@@ -1607,6 +1607,12 @@ const f203BaselineScope = new RegExp(
   `\\bF-203\\b\\s+(?:keeps|retains)\\s+${f203Capabilities.source}\\s+as its planned,`,
   "i",
 );
+const f203RoadmapDecision = /(?:^|\r?\n)\s*\*\*Status:\*\*/i;
+const f203PrdDecision = /(?:^|\r?\n)\s*\*\*Issue #127 amendment\b/i;
+const f203RetainedScope = new RegExp(
+  `\\bF-203\\b\\s+retains\\s+${f203Capabilities.source}\\s+as planned,\\s+unscheduled\\b`,
+  "i",
+);
 const f203SpecScope = new RegExp(`${f203Capabilities.source}\\s+remain\\b`, "i");
 const f203CapabilityNames = ["escalations", "digests", "team reminders", "per-user preferences"];
 const f203Planning = /\bplanned,\s+(?:not scheduled|unscheduled)\b/i;
@@ -1666,6 +1672,12 @@ for (const relative of f203Artifacts) {
       const requiresListAssignment = relative === "docs/ROADMAP.md" || relative === "docs/PRD.md";
       const isListAssignment = requiresListAssignment && /^\s*(?:[-*+]|\d+\.)\s+/.test(raw);
       if (requiresListAssignment) {
+        if (relative === "docs/ROADMAP.md" && f203RoadmapDecision.test(raw)) {
+          return lower.includes("f-203");
+        }
+        if (relative === "docs/PRD.md" && f203PrdDecision.test(raw)) {
+          return lower.includes("f-203");
+        }
         const ownsF203 = /^\s*(?:[-*+]|\d+\.)\s+(?:\*\*)?F-203\b/i.test(raw);
         const isRoadmapCore =
           relative === "docs/ROADMAP.md" &&
@@ -1685,6 +1697,12 @@ for (const relative of f203Artifacts) {
     });
 
   const invalidAssignment = scopeStatements.find(({ raw, normalized }) => {
+    const isScopeDecision =
+      (relative === "docs/ROADMAP.md" && f203RoadmapDecision.test(raw)) ||
+      (relative === "docs/PRD.md" && f203PrdDecision.test(raw));
+    if (isScopeDecision) {
+      return !f203RetainedScope.test(normalized);
+    }
     if (!f203Capabilities.test(normalized) || !f203Planning.test(normalized)) return true;
     if (f203Negation.test(normalized)) return true;
     if (relative === "docs/ROADMAP.md" || relative === "docs/PRD.md") {
@@ -1700,7 +1718,13 @@ for (const relative of f203Artifacts) {
       !/\bper-user preferences\b[^.]*\bunder F-203\b/i.test(normalized)
     );
   });
-  if (scopeStatements.length === 0 || invalidAssignment) {
+  const missingRequiredAssignment =
+    (relative === "docs/ROADMAP.md" || relative === "docs/PRD.md") &&
+    (!scopeStatements.some(({ raw }) => /^\s*(?:[-*+]|\d+\.)\s+/.test(raw)) ||
+      !scopeStatements.some(({ raw }) =>
+        relative === "docs/ROADMAP.md" ? f203RoadmapDecision.test(raw) : f203PrdDecision.test(raw),
+      ));
+  if (scopeStatements.length === 0 || missingRequiredAssignment || invalidAssignment) {
     f203Failures.push(
       `${relative} must affirmatively assign escalations, digests, team reminders, and ` +
         "per-user preferences to F-203 as planned, unscheduled Phase 2 scope",
@@ -1715,7 +1739,13 @@ for (const relative of f203Artifacts) {
       f203Failures.push(`${relative} must assign its F-203 full scope to Phase 2`);
     }
   } else {
-    const underPhase2 = scopeStatements.every(({ offset }) => {
+    const underPhase2 = scopeStatements.every(({ raw, offset, normalized }) => {
+      const isScopeDecision =
+        (relative === "docs/ROADMAP.md" && f203RoadmapDecision.test(raw)) ||
+        (relative === "docs/PRD.md" && f203PrdDecision.test(raw));
+      if (isScopeDecision) {
+        return /\bunscheduled\s+Phase 2\s+depth\b/i.test(normalized);
+      }
       const headingPattern = relative === "docs/ROADMAP.md" ? /^#{1,2}\s+/ : /^#{1,3}\s+/;
       const heading = contents
         .slice(0, offset)
