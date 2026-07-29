@@ -1,8 +1,12 @@
 import { redirect } from "next/navigation";
+import type { Metadata } from "next";
 import { createServerSupabaseClient, requiresEmailConfirmation } from "../../lib/supabase/server";
 import { signOut } from "../auth/actions";
 
 export const dynamic = "force-dynamic";
+export const metadata: Metadata = {
+  title: "Account",
+};
 
 type AccountPageProps = {
   searchParams: Promise<{ message?: string }>;

@@ -156,23 +156,23 @@ export function DashboardView({
 
   if (failure !== null && stats === null) {
     return (
-      <div className="ops">
+      <main className="ops">
         <p className="pe-eyebrow">Door</p>
         <h1>Live ops</h1>
         <p className="ops__error" role="alert">
           {failure}
         </p>
-      </div>
+      </main>
     );
   }
 
   if (stats === null) {
     return (
-      <div className="ops">
+      <main className="ops">
         <p className="ops__lede" role="status">
           Loading check-ins…
         </p>
-      </div>
+      </main>
     );
   }
 
@@ -190,7 +190,7 @@ export function DashboardView({
     .join(" ");
 
   return (
-    <div className="ops">
+    <main className="ops">
       <p className="pe-eyebrow">Door</p>
       <h1>Live ops</h1>
       <p className="ops__lede">
@@ -221,16 +221,14 @@ export function DashboardView({
 
       <section className={gaugeClass} aria-label="Capacity" data-testid="capacity-gauge">
         <p className="ops__gauge-label">{gauge.label}</p>
-        {gauge.percentLabel !== null && (
-          <p className="ops__gauge-percent">{gauge.percentLabel}</p>
-        )}
+        {gauge.percentLabel !== null && <p className="ops__gauge-percent">{gauge.percentLabel}</p>}
         <div
           className="ops__rule"
           data-testid="capacity-rule"
           style={
             gauge.fillPercent === null
               ? undefined
-              : ({ "--ops-fill": `${gauge.fillPercent}%` } as CSSProperties)
+              : ({ "--ops-scale": gauge.fillPercent / 100 } as CSSProperties)
           }
           aria-hidden={gauge.fillPercent === null}
         >
@@ -247,7 +245,8 @@ export function DashboardView({
         {stats.rsvps_total} RSVPs confirmed · {stats.checkins_total} check-ins
       </p>
       <p className="ops__split" data-testid="checkin-split">
-        {stats.checkins_registered} registered check-ins · {stats.checkins_walk_in} walk-in check-ins
+        {stats.checkins_registered} registered check-ins · {stats.checkins_walk_in} walk-in
+        check-ins
       </p>
 
       {showStale && lastSuccessAt !== null && (
@@ -260,6 +259,6 @@ export function DashboardView({
           {failure}
         </p>
       )}
-    </div>
+    </main>
   );
 }

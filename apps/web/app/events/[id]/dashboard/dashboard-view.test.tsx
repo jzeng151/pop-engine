@@ -5,11 +5,7 @@ import { cleanup, render, screen, waitFor } from "@testing-library/react";
 import { readFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import {
-  capacitySummary,
-  DashboardView,
-  lastUpdatedLabel,
-} from "./dashboard-view";
+import { capacitySummary, DashboardView, lastUpdatedLabel } from "./dashboard-view";
 import type { EventStats } from "./dashboard-api";
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -40,10 +36,12 @@ const stats = (overrides: Partial<EventStats> = {}): EventStats => ({
 });
 
 /** Stats-only stub — F-402 polls `/stats`; no intake identity fetch on this page. */
-const stubDashboardFetch = (options: {
-  stats?: EventStats | (() => Promise<Response>);
-  onStatsUrl?: (url: string) => void;
-} = {}) => {
+const stubDashboardFetch = (
+  options: {
+    stats?: EventStats | (() => Promise<Response>);
+    onStatsUrl?: (url: string) => void;
+  } = {},
+) => {
   const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
     const url = String(input);
     options.onStatsUrl?.(url);
@@ -85,7 +83,9 @@ describe("lastUpdatedLabel", () => {
 describe("DashboardView", () => {
   it("renders an explicit zero check-ins state", async () => {
     stubDashboardFetch({ stats: stats({ checkins_total: 0 }) });
-    render(<DashboardView eventId={EVENT_ID} apiBaseUrl="https://api.example.com" pollMs={60_000} />);
+    render(
+      <DashboardView eventId={EVENT_ID} apiBaseUrl="https://api.example.com" pollMs={60_000} />,
+    );
 
     expect((await screen.findByTestId("zero-state")).textContent).toBe("0 check-ins so far.");
     expect(screen.getByTestId("checkins-total").textContent).toContain("0");
@@ -101,7 +101,9 @@ describe("DashboardView", () => {
     const fetchMock = stubDashboardFetch({
       stats: stats({ checkins_total: 1, capacity: 50 }),
     });
-    render(<DashboardView eventId={EVENT_ID} apiBaseUrl="https://api.example.com" pollMs={60_000} />);
+    render(
+      <DashboardView eventId={EVENT_ID} apiBaseUrl="https://api.example.com" pollMs={60_000} />,
+    );
 
     expect(await screen.findByRole("heading", { name: "Live ops" })).toBeDefined();
     expect(screen.queryByTestId("event-context")).toBeNull();
@@ -118,14 +120,16 @@ describe("DashboardView", () => {
         capacity: 10,
       }),
     });
-    render(<DashboardView eventId={EVENT_ID} apiBaseUrl="https://api.example.com" pollMs={60_000} />);
+    render(
+      <DashboardView eventId={EVENT_ID} apiBaseUrl="https://api.example.com" pollMs={60_000} />,
+    );
 
     const gauge = await screen.findByTestId("capacity-gauge");
     expect(gauge.textContent).toContain("12 of 10 capacity");
     expect(gauge.textContent).toContain("120%");
     expect(gauge.textContent).toContain("Check-ins are over the confirmed capacity.");
     expect(gauge.className).toContain("ops__gauge--over");
-    expect(screen.getByTestId("capacity-rule").getAttribute("style")).toContain("--ops-fill: 100%");
+    expect(screen.getByTestId("capacity-rule").getAttribute("style")).toContain("--ops-scale: 1");
     expect(screen.getByTestId("rsvp-compare").textContent).toBe(
       "20 RSVPs confirmed · 12 check-ins",
     );
@@ -318,7 +322,9 @@ describe("DashboardView", () => {
         checkins_last_10min: 2,
       }),
     });
-    render(<DashboardView eventId={EVENT_ID} apiBaseUrl="https://api.example.com" pollMs={60_000} />);
+    render(
+      <DashboardView eventId={EVENT_ID} apiBaseUrl="https://api.example.com" pollMs={60_000} />,
+    );
 
     const split = (await screen.findByTestId("checkin-split")).textContent ?? "";
     expect(split).toContain("registered check-ins");
@@ -333,5 +339,11 @@ describe("DashboardView", () => {
     const combined = `${viewSource}\n${pageSource}\n${cssSource}`.toLowerCase();
     expect(combined.includes("occupancy")).toBe(false);
     expect(combined.includes("foot traffic")).toBe(false);
+  });
+
+  it("animates the capacity fill with a transform instead of layout width", () => {
+    const cssSource = readFileSync(resolve(here, "dashboard.css"), "utf8");
+    expect(cssSource).toContain("transition: transform");
+    expect(cssSource).not.toContain("transition: width");
   });
 });

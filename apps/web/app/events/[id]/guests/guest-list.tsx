@@ -40,24 +40,24 @@ export function GuestListView({ eventId, apiBaseUrl }: GuestListProps) {
 
   if (failure !== null && list === null) {
     return (
-      <div className="guests">
+      <main className="guests">
         <p className="pe-eyebrow">PopEngine · Guests</p>
         <h1>Guest list</h1>
         <p className="guests__error" role="alert">
           {failure}
         </p>
-      </div>
+      </main>
     );
   }
 
   if (list === null) {
     return (
-      <div className="guests">
+      <main className="guests">
         <p className="pe-eyebrow">PopEngine · Guests</p>
         <p className="guests__lede" role="status">
           Loading guest list…
         </p>
-      </div>
+      </main>
     );
   }
 
@@ -82,7 +82,7 @@ export function GuestListView({ eventId, apiBaseUrl }: GuestListProps) {
   };
 
   return (
-    <div className="guests">
+    <main className="guests">
       <p className="pe-eyebrow">PopEngine · Guests</p>
       <h1>{list.event.name}</h1>
       <p className="guests__lede">Guest list · {list.event.event_date}</p>
@@ -91,8 +91,7 @@ export function GuestListView({ eventId, apiBaseUrl }: GuestListProps) {
       </p>
       <p className="guests__note">
         Synthetic demo data only (AD-12). Capacity uses intake headcount. Guests RSVP from the
-        published public event page.{" "}
-        <a href={`/events/${eventId}/promote`}>Promote / publish</a>
+        published public event page. <a href={`/events/${eventId}/promote`}>Promote / publish</a>
         {" · "}
         <a href={`/events/${eventId}/dashboard`}>Live ops</a>
         {" · "}
@@ -140,6 +139,6 @@ export function GuestListView({ eventId, apiBaseUrl }: GuestListProps) {
           ))}
         </ul>
       )}
-    </div>
+    </main>
   );
 }

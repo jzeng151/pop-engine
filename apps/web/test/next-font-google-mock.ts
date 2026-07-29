@@ -8,4 +8,6 @@ function mockFont(variable: string) {
 
 export const Fraunces = mockFont("--font-fraunces");
 export const Nunito_Sans = mockFont("--font-nunito-sans");
+export const Barlow_Condensed = mockFont("--font-barlow-condensed");
+export const Public_Sans = mockFont("--font-public-sans");
 export const IBM_Plex_Mono = mockFont("--font-ibm-plex-mono");

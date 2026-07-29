@@ -1,0 +1,408 @@
+{
+  "schemaVersion": 2,
+  "generatedAt": "2026-07-29T19:50:50Z",
+  "title": "Design System: PopEngine Riso Field Guide",
+  "extensions": {
+    "colorMeta": {
+      "federal-blue": {
+        "role": "primary",
+        "displayName": "Federal Blue",
+        "canonical": "#163f8c",
+        "tonalRamp": [
+          "oklch(15% 0.12 260)",
+          "oklch(27% 0.12 260)",
+          "oklch(39% 0.12 260)",
+          "oklch(51% 0.12 260)",
+          "oklch(63% 0.12 260)",
+          "oklch(75% 0.12 260)",
+          "oklch(87% 0.12 260)",
+          "oklch(95% 0.12 260)"
+        ]
+      },
+      "federal-blue-deep": {
+        "role": "primary",
+        "displayName": "Federal Blue Deep",
+        "canonical": "#0d2d6e",
+        "tonalRamp": [
+          "oklch(15% 0.1 260)",
+          "oklch(27% 0.1 260)",
+          "oklch(39% 0.1 260)",
+          "oklch(51% 0.1 260)",
+          "oklch(63% 0.1 260)",
+          "oklch(75% 0.1 260)",
+          "oklch(87% 0.1 260)",
+          "oklch(95% 0.1 260)"
+        ]
+      },
+      "signal-coral": {
+        "role": "secondary",
+        "displayName": "Signal Coral",
+        "canonical": "#b72f2b",
+        "tonalRamp": [
+          "oklch(15% 0.14 28)",
+          "oklch(27% 0.14 28)",
+          "oklch(39% 0.14 28)",
+          "oklch(51% 0.14 28)",
+          "oklch(63% 0.14 28)",
+          "oklch(75% 0.14 28)",
+          "oklch(87% 0.14 28)",
+          "oklch(95% 0.14 28)"
+        ]
+      },
+      "registration-yellow": {
+        "role": "tertiary",
+        "displayName": "Registration Yellow",
+        "canonical": "#f1c735",
+        "tonalRamp": [
+          "oklch(15% 0.13 92)",
+          "oklch(27% 0.13 92)",
+          "oklch(39% 0.13 92)",
+          "oklch(51% 0.13 92)",
+          "oklch(63% 0.13 92)",
+          "oklch(75% 0.13 92)",
+          "oklch(87% 0.13 92)",
+          "oklch(95% 0.13 92)"
+        ]
+      },
+      "field-green": {
+        "role": "tertiary",
+        "displayName": "Field Green",
+        "canonical": "#23683d",
+        "tonalRamp": [
+          "oklch(15% 0.09 148)",
+          "oklch(27% 0.09 148)",
+          "oklch(39% 0.09 148)",
+          "oklch(51% 0.09 148)",
+          "oklch(63% 0.09 148)",
+          "oklch(75% 0.09 148)",
+          "oklch(87% 0.09 148)",
+          "oklch(95% 0.09 148)"
+        ]
+      },
+      "paper": {
+        "role": "neutral",
+        "displayName": "Field Paper",
+        "canonical": "#f3efe3",
+        "tonalRamp": [
+          "oklch(15% 0.018 85)",
+          "oklch(27% 0.018 85)",
+          "oklch(39% 0.018 85)",
+          "oklch(51% 0.018 85)",
+          "oklch(63% 0.018 85)",
+          "oklch(75% 0.018 85)",
+          "oklch(87% 0.018 85)",
+          "oklch(95% 0.018 85)"
+        ]
+      },
+      "paper-deep": {
+        "role": "neutral",
+        "displayName": "Deep Paper",
+        "canonical": "#e5ddcb",
+        "tonalRamp": [
+          "oklch(15% 0.025 78)",
+          "oklch(27% 0.025 78)",
+          "oklch(39% 0.025 78)",
+          "oklch(51% 0.025 78)",
+          "oklch(63% 0.025 78)",
+          "oklch(75% 0.025 78)",
+          "oklch(87% 0.025 78)",
+          "oklch(95% 0.025 78)"
+        ]
+      },
+      "ink": {
+        "role": "neutral",
+        "displayName": "Press Ink",
+        "canonical": "#171815",
+        "tonalRamp": [
+          "oklch(15% 0.008 110)",
+          "oklch(27% 0.008 110)",
+          "oklch(39% 0.008 110)",
+          "oklch(51% 0.008 110)",
+          "oklch(63% 0.008 110)",
+          "oklch(75% 0.008 110)",
+          "oklch(87% 0.008 110)",
+          "oklch(95% 0.008 110)"
+        ]
+      },
+      "steel": {
+        "role": "neutral",
+        "displayName": "Field Steel",
+        "canonical": "#5d5b52",
+        "tonalRamp": [
+          "oklch(15% 0.015 85)",
+          "oklch(27% 0.015 85)",
+          "oklch(39% 0.015 85)",
+          "oklch(51% 0.015 85)",
+          "oklch(63% 0.015 85)",
+          "oklch(75% 0.015 85)",
+          "oklch(87% 0.015 85)",
+          "oklch(95% 0.015 85)"
+        ]
+      },
+      "rule": {
+        "role": "neutral",
+        "displayName": "Paper Rule",
+        "canonical": "#ada898",
+        "tonalRamp": [
+          "oklch(15% 0.018 82)",
+          "oklch(27% 0.018 82)",
+          "oklch(39% 0.018 82)",
+          "oklch(51% 0.018 82)",
+          "oklch(63% 0.018 82)",
+          "oklch(75% 0.018 82)",
+          "oklch(87% 0.018 82)",
+          "oklch(95% 0.018 82)"
+        ]
+      },
+      "surface": {
+        "role": "neutral",
+        "displayName": "Clean Surface",
+        "canonical": "#faf7ee",
+        "tonalRamp": [
+          "oklch(15% 0.012 85)",
+          "oklch(27% 0.012 85)",
+          "oklch(39% 0.012 85)",
+          "oklch(51% 0.012 85)",
+          "oklch(63% 0.012 85)",
+          "oklch(75% 0.012 85)",
+          "oklch(87% 0.012 85)",
+          "oklch(95% 0.012 85)"
+        ]
+      },
+      "card": {
+        "role": "neutral",
+        "displayName": "Card Paper",
+        "canonical": "#f8f4e9",
+        "tonalRamp": [
+          "oklch(15% 0.015 84)",
+          "oklch(27% 0.015 84)",
+          "oklch(39% 0.015 84)",
+          "oklch(51% 0.015 84)",
+          "oklch(63% 0.015 84)",
+          "oklch(75% 0.015 84)",
+          "oklch(87% 0.015 84)",
+          "oklch(95% 0.015 84)"
+        ]
+      },
+      "cream-text": {
+        "role": "neutral",
+        "displayName": "Cream Text",
+        "canonical": "#fffdf6",
+        "tonalRamp": [
+          "oklch(15% 0.006 85)",
+          "oklch(27% 0.006 85)",
+          "oklch(39% 0.006 85)",
+          "oklch(51% 0.006 85)",
+          "oklch(63% 0.006 85)",
+          "oklch(75% 0.006 85)",
+          "oklch(87% 0.006 85)",
+          "oklch(98% 0.006 85)"
+        ]
+      }
+    },
+    "typographyMeta": {
+      "display": {
+        "displayName": "Display",
+        "purpose": "Product marks, cover titles, and the organizer overview."
+      },
+      "headline": {
+        "displayName": "Headline",
+        "purpose": "Functional page titles."
+      },
+      "title": {
+        "displayName": "Title",
+        "purpose": "Lifecycle chapters and workbench headings."
+      },
+      "body": {
+        "displayName": "Body",
+        "purpose": "Instructions, findings, and interactive copy."
+      },
+      "label": {
+        "displayName": "Evidence Label",
+        "purpose": "Provenance, statuses, navigation chapters, and stamps."
+      }
+    },
+    "shadows": [
+      {
+        "name": "ink-registration",
+        "value": "4px 4px 0 var(--pe-ink)",
+        "purpose": "Primary actions, verdict bands, and strong active states."
+      },
+      {
+        "name": "blue-plate-offset",
+        "value": "4px 4px 0 rgba(22, 63, 140, 0.14)",
+        "purpose": "Quieter paper cards and regulatory units."
+      },
+      {
+        "name": "pressed-registration",
+        "value": "2px 2px 0 var(--pe-ink)",
+        "purpose": "Pressed and hover states paired with a two-pixel translation."
+      },
+      {
+        "name": "coral-plate-offset",
+        "value": "3px 3px 0 var(--pe-coral)",
+        "purpose": "Selected field-guide and planned-module moments."
+      }
+    ],
+    "motion": [
+      {
+        "name": "state-fast",
+        "value": "160ms ease",
+        "purpose": "Color, border, and registration-offset changes on controls."
+      },
+      {
+        "name": "surface-steady",
+        "value": "180ms ease",
+        "purpose": "Focus-within and card-surface state changes."
+      },
+      {
+        "name": "reduced-motion",
+        "value": "prefers-reduced-motion: reduce",
+        "purpose": "Removes optional transitions and movement when requested."
+      }
+    ],
+    "breakpoints": [
+      {
+        "name": "content-grid",
+        "value": "40rem"
+      },
+      {
+        "name": "wide-gutter",
+        "value": "48rem"
+      },
+      {
+        "name": "desktop-rail",
+        "value": "64rem"
+      }
+    ]
+  },
+  "components": [
+    {
+      "name": "Primary Button",
+      "kind": "button",
+      "refersTo": "button-primary",
+      "description": "The coral call to action with a hard ink registration offset.",
+      "html": "<button class=\"ds-button-primary\" type=\"button\">REVIEW EVENT INTAKE</button>",
+      "css": ".ds-button-primary { display: inline-flex; min-height: 2.8rem; align-items: center; justify-content: center; padding: 0.68rem 1rem; border: 2px solid var(--pe-ink); border-radius: var(--pe-radius); color: var(--pe-cream-text); background: var(--pe-coral); font-family: var(--pe-font-body); font-size: 0.9rem; font-weight: 800; box-shadow: 4px 4px 0 var(--pe-ink); cursor: pointer; transition: background 160ms ease, box-shadow 160ms ease, transform 160ms ease; } .ds-button-primary:hover { background: var(--pe-blue); box-shadow: 2px 2px 0 var(--pe-ink); transform: translate(2px, 2px); } .ds-button-primary:focus-visible { outline: 3px solid var(--pe-yellow); outline-offset: 3px; } .ds-button-primary:active { box-shadow: 1px 1px 0 var(--pe-ink); transform: translate(3px, 3px); }"
+    },
+    {
+      "name": "Secondary Button",
+      "kind": "button",
+      "refersTo": "card",
+      "description": "A paper action for supporting or reversible tasks.",
+      "html": "<button class=\"ds-button-secondary\" type=\"button\">REGENERATE PLAN</button>",
+      "css": ".ds-button-secondary { display: inline-flex; min-height: 2.75rem; align-items: center; justify-content: center; padding: 0.55rem 1rem; border: 1.5px solid var(--pe-ink); border-radius: var(--pe-radius); color: var(--pe-ink); background: var(--pe-card); font-family: var(--pe-font-body); font-size: 0.9rem; font-weight: 700; cursor: pointer; transition: background 160ms ease, border-color 160ms ease; } .ds-button-secondary:hover { border-color: var(--pe-coral); background: var(--pe-paper-deep); } .ds-button-secondary:focus-visible { outline: 3px solid var(--pe-yellow); outline-offset: 3px; } .ds-button-secondary:active { background: var(--pe-surface); }"
+    },
+    {
+      "name": "Text Field",
+      "kind": "input",
+      "refersTo": "input",
+      "description": "A square paper field with an explicit label and signal-color focus.",
+      "html": "<label class=\"ds-field\"><span>EVENT NAME</span><input type=\"text\" value=\"Neighborhood block party\" /></label>",
+      "css": ".ds-field { display: grid; gap: 0.4rem; color: var(--pe-ink); font-family: var(--pe-font-body); } .ds-field > span { font-family: var(--pe-font-mono); font-size: 0.68rem; font-weight: 600; letter-spacing: 0.12em; text-transform: uppercase; } .ds-field input { min-height: 2.85rem; padding: 0.7rem 0.8rem; border: 1.5px solid var(--pe-rule); border-radius: var(--pe-radius); color: var(--pe-ink); background: var(--pe-surface); font: inherit; transition: border-color 160ms ease, background 160ms ease; } .ds-field input:hover { border-color: var(--pe-coral); background: var(--pe-card); } .ds-field input:focus-visible { border-color: var(--pe-coral); outline: 3px solid var(--pe-yellow); outline-offset: 3px; }"
+    },
+    {
+      "name": "Active Lifecycle Link",
+      "kind": "nav",
+      "refersTo": "navigation-active",
+      "description": "The current organizer route in the federal-blue lifecycle rail.",
+      "html": "<nav class=\"ds-nav\" aria-label=\"Event lifecycle\"><a aria-current=\"page\" href=\"#\">PERMIT PLAN</a></nav>",
+      "css": ".ds-nav { width: 14rem; padding: 0.8rem; color: var(--pe-cream-text); background: var(--pe-blue); font-family: var(--pe-font-body); } .ds-nav a { display: flex; min-height: 2.75rem; align-items: center; padding: 0.48rem 0.62rem; border: 1px solid var(--pe-ink); color: var(--pe-ink); background: var(--pe-yellow); font-size: 0.85rem; font-weight: 800; text-decoration: none; box-shadow: 3px 3px 0 var(--pe-ink); } .ds-nav a:hover { background: var(--pe-paper); } .ds-nav a:focus-visible { outline: 3px solid var(--pe-yellow); outline-offset: 3px; } .ds-nav a:active { box-shadow: 1px 1px 0 var(--pe-ink); transform: translate(2px, 2px); }"
+    },
+    {
+      "name": "Planned Module Insert",
+      "kind": "custom",
+      "refersTo": "card",
+      "description": "A visibly provisional disabled module on clipped field-guide paper.",
+      "html": "<div class=\"ds-planned\"><strong>PLANNED</strong><button disabled type=\"button\">APPLICATIONS <span>PLANNED</span></button></div>",
+      "css": ".ds-planned { width: 14rem; padding: 1rem 1.25rem; border: 1.5px solid var(--pe-ink); color: var(--pe-blue); background: var(--pe-paper); font-family: var(--pe-font-body); box-shadow: 4px 5px 0 var(--pe-coral); clip-path: polygon(1% 2%, 96% 0, 100% 96%, 4% 100%, 0 48%); transform: rotate(-0.8deg); } .ds-planned > strong { font-family: var(--pe-font-mono); font-size: 0.68rem; letter-spacing: 0.18em; } .ds-planned button { display: flex; width: 100%; min-height: 2.75rem; align-items: center; justify-content: space-between; padding: 0.48rem 0; border: 0; color: rgba(22, 63, 140, 0.57); background: transparent; font: inherit; cursor: not-allowed; } .ds-planned button span { padding: 0.12rem 0.3rem; border: 1px solid currentColor; font-family: var(--pe-font-mono); font-size: 0.68rem; letter-spacing: 0.08em; } .ds-planned button:focus-visible { outline: 3px solid var(--pe-yellow); outline-offset: 3px; }"
+    },
+    {
+      "name": "Task Card",
+      "kind": "card",
+      "refersTo": "card",
+      "description": "A discrete next-task unit used in the event field-guide overview.",
+      "html": "<a class=\"ds-task-card\" href=\"#\"><strong>OPEN PERMIT PLAN</strong><small>Review the engine-generated verdict, findings, provenance, and coverage notices.</small></a>",
+      "css": ".ds-task-card { display: grid; gap: 0.25rem; min-height: 4.5rem; padding: 0.8rem 0.9rem; border: 1.5px solid var(--pe-ink); color: var(--pe-ink); background: var(--pe-card); font-family: var(--pe-font-body); text-decoration: none; box-shadow: 3px 3px 0 rgba(22, 63, 140, 0.2); transition: color 160ms ease, background 160ms ease, box-shadow 160ms ease; } .ds-task-card strong { font-family: var(--pe-font-display); font-size: 1.25rem; line-height: 1; } .ds-task-card small { color: var(--pe-steel); line-height: 1.4; } .ds-task-card:hover { color: var(--pe-cream-text); background: var(--pe-blue); box-shadow: 3px 3px 0 var(--pe-coral); } .ds-task-card:hover small { color: inherit; } .ds-task-card:focus-visible { outline: 3px solid var(--pe-yellow); outline-offset: 3px; } .ds-task-card:active { box-shadow: 1px 1px 0 var(--pe-coral); transform: translate(2px, 2px); }"
+    },
+    {
+      "name": "At-Risk Verdict Band",
+      "kind": "custom",
+      "refersTo": "verdict-at-risk",
+      "description": "An engine-derived at-risk result with high-contrast registration treatment.",
+      "html": "<p class=\"ds-verdict\" role=\"status\"><strong>At risk</strong></p>",
+      "css": ".ds-verdict { margin: 0; padding: 0.85rem 1rem; border: 2px solid var(--pe-ink); border-radius: var(--pe-radius); color: var(--pe-ink); background: var(--pe-yellow); font-family: var(--pe-font-body); line-height: 1.55; box-shadow: 4px 4px 0 var(--pe-ink); } .ds-verdict:hover { box-shadow: 3px 3px 0 var(--pe-ink); } .ds-verdict:focus-visible { outline: 3px solid var(--pe-yellow); outline-offset: 3px; }"
+    },
+    {
+      "name": "Provenance Snapshot",
+      "kind": "custom",
+      "refersTo": "card",
+      "description": "Compact source metadata for the ruleset pinned to a permit plan.",
+      "html": "<p class=\"ds-snapshot\"><strong>RULESET VERSION</strong> · SNAPSHOT DATE</p>",
+      "css": ".ds-snapshot { margin: 0; padding: 0.7rem 0.95rem; border: 1.5px solid var(--pe-blue); border-radius: var(--pe-radius); color: var(--pe-steel); background: var(--pe-surface); font-family: var(--pe-font-mono); font-size: 0.84rem; box-shadow: 3px 3px 0 rgba(22, 63, 140, 0.18); } .ds-snapshot strong { color: var(--pe-ink); } .ds-snapshot:hover { background: var(--pe-card); } .ds-snapshot:focus-visible { outline: 3px solid var(--pe-yellow); outline-offset: 3px; }"
+    }
+  ],
+  "narrative": {
+    "northStar": "Riso Field Guide",
+    "overview": "PopEngine feels like a practical printed manual assembled for work in the field. Federal blue, signal coral, registration yellow, real paper grain, condensed type, hard rules, and deliberately offset ink marks create an ownable visual world without compromising the clarity expected of an operational tool.\n\nThe system follows one event through Ideate, Comply, Market, and Operate. Its expression can be tactile and assertive, but the product remains source-conscious: verdicts, ruleset snapshots, citations, unknowns, conflicts, and research states keep their hierarchy and never disappear into decoration. Planned capabilities look intentionally provisional and remain disabled.",
+    "keyCharacteristics": [
+      "Printed field-manual materiality rather than generic dashboard chrome.",
+      "A federal-blue lifecycle rail anchoring a warm paper work area.",
+      "Signal colors assigned to operational meaning, not ambient decoration.",
+      "Condensed headlines paired with highly legible body copy and mono provenance.",
+      "Hard registration offsets, square rules, and restrained misregistration details.",
+      "One responsive system for desktop planning and phone-based field work."
+    ],
+    "rules": [
+      {
+        "name": "The Signal Color Rule",
+        "body": "Coral marks action or blocked conditions; yellow marks focus, current position, or at-risk state. Do not interchange them for decoration.",
+        "section": "colors"
+      },
+      {
+        "name": "The Paper Is a Surface Rule",
+        "body": "Texture may make the canvas tactile, but it never carries meaning or reduces text contrast.",
+        "section": "colors"
+      },
+      {
+        "name": "The Three-Voice Rule",
+        "body": "Barlow Condensed carries marks, headlines, and chapters; Public Sans carries sentences and controls; IBM Plex Mono carries evidence and status.",
+        "section": "typography"
+      },
+      {
+        "name": "The Useful Label Rule",
+        "body": "Small uppercase mono type must identify real metadata or state, never serve as ornamental eyebrow copy.",
+        "section": "typography"
+      },
+      {
+        "name": "The One-Event Rail Rule",
+        "body": "The lifecycle rail orients every organizer task around the same event; attendee and authentication surfaces remain outside it.",
+        "section": "layout"
+      },
+      {
+        "name": "The Registration, Not Elevation Rule",
+        "body": "Shadows are short, hard printing offsets. Do not introduce generic soft card shadows into the Riso Field Guide shell.",
+        "section": "elevation"
+      },
+      {
+        "name": "The One Torn Edge Rule",
+        "body": "Reserve irregular clipping and rotation for clearly planned material; functional regulatory content stays rectilinear and easy to scan.",
+        "section": "shapes"
+      }
+    ],
+    "dos": [
+      "Do keep federal blue dominant in the organizer shell and reserve signal inks for their assigned operational roles.",
+      "Do pair every regulatory decision with its engine-provided provenance and uncertainty state.",
+      "Do use the real paper texture as a low-contrast material layer.",
+      "Do preserve visible focus, 44px targets, responsive stacking, and reduced-motion behavior.",
+      "Do label synthetic data and planned capabilities wherever they could be mistaken for real or shipped behavior."
+    ],
+    "donts": [
+      "Don't turn the shell into a generic rounded-card dashboard or add soft ambient elevation.",
+      "Don't use tiny mono labels as decorative eyebrows or allow them to become unreadable.",
+      "Don't invent regulatory copy, ruleset versions, statuses, metrics, or feature availability for visual effect.",
+      "Don't hide unknowns, official conflicts, research-required states, coverage gaps, or partial plans.",
+      "Don't apply torn-paper silhouettes to active regulatory content."
+    ]
+  }
+}

@@ -1,5 +1,10 @@
 import { PromoteView } from "./promote-view";
+import type { Metadata } from "next";
 import "./promote.css";
+
+export const metadata: Metadata = {
+  title: "Event page",
+};
 
 // Organizer promote controls for F-301 (description, publish toggle, share URL).
 
