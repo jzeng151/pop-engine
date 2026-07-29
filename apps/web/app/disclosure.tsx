@@ -23,6 +23,7 @@ export function Disclosure({
   children,
   className,
   defaultOpen = false,
+  onOpenChange,
 }: {
   /**
    * What this expands, named. "Details for Block Party Permit", never "more": a screen-reader user
@@ -33,6 +34,7 @@ export function Disclosure({
   readonly children: ReactNode;
   readonly className?: string;
   readonly defaultOpen?: boolean;
+  readonly onOpenChange?: (open: boolean) => void;
 }) {
   const [open, setOpen] = useState(defaultOpen);
   const regionId = useId();
@@ -44,7 +46,10 @@ export function Disclosure({
         className="disclosure__toggle"
         aria-expanded={open}
         aria-controls={regionId}
-        onClick={() => setOpen((wasOpen) => !wasOpen)}
+        onClick={() => {
+          setOpen(!open);
+          onOpenChange?.(!open);
+        }}
       >
         {/* Decoration only: `aria-expanded` above is what conveys the state. Hidden from the
             accessibility tree so it is not read as content. */}

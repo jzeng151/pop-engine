@@ -5,6 +5,7 @@ import { createCheckinsRouter } from "./checkins";
 import { createChecklistRouter, type ChecklistDependencies } from "./checklist";
 import { createEventsRouter, type EventsDependencies } from "./events";
 import { EventNotFoundError, PlanIntegrityError, type PlanService } from "./plan";
+import { createParksRouter } from "./parks";
 import { createPublicPageRouter } from "./public-page";
 import { createRsvpsRouter } from "./rsvps";
 import { createStatsRouter } from "./stats";
@@ -91,6 +92,7 @@ export function createApp(dependencies: AppDependencies): Express {
   );
   // F-402: organizer live-ops totals; polled ~5s. Same Access gate as /guests (not CF-bypassed).
   app.use("/api", createStatsRouter({ database: dependencies.database }));
+  app.use("/api/permits", createParksRouter());
   // F-301: registers GET /e/:eventId at the app root (ARCHITECTURE) plus organizer
   // /api/events/:id/public-page routes on the same router.
   app.use(createPublicPageRouter({ database: dependencies.database }));
