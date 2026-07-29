@@ -6,7 +6,11 @@ output. This document decides none of that. It prices it.
 
 **Method:** every confirmation enumerated below follows from a published rule trigger or a published
 intake field on `main` at `46971a0`. Nothing here was chosen because it reads well. No rule, ruleset,
-spec, answer key, BASELINE row or engine file is changed by this document.
+spec, answer key, BASELINE row or engine file is changed by this document. Scenario and inventory
+counts are historical measurements at that pinned commit, not claims about the active fixture on
+current `main`: the shared issue #178 publication later applied issue #194's removal of
+`food_affinity_private_exception_claimed` and F-110's replacement of
+`venue_has_assembly_approval` with the PACO and FDNY permit-coverage fields.
 
 **Headline, up front.** The proposed line largely does not reproduce Scenario B, the issue's own worked
 example: three of the four absences that scenario names sit on a different axis from the one the line
@@ -18,12 +22,13 @@ confirmation text still need regulatory approval; source discovery for those thr
 unpaid cost. The framing and noise findings remain reasons to revisit the proposal; the source
 correction reduces its cost.
 
-**Seventh revision.** Four findings applied. The measured shape now carries all five qualifying
-unknown-valued fields across Scenarios E and F and all seventeen implementation rules. The approval
-path has three independent classes, not four: the UI-copy row routes regulatory claims to the
-regulatory-content class rather than adding another approval. Existing SOURCE_CONFIRMED threshold
-sources remove the proposed source-research cost. Editing `deadline.qualification` moves evaluated
-`notes`, even though it moves no date, status or verdict.
+**Seventh revision.** Four findings applied. The historical measured shape at `46971a0` now carries
+all five qualifying unknown-valued fields across Scenarios E and F and all seventeen implementation
+rules. The approval path has three independent classes, not four: the UI-copy row routes regulatory
+claims to the regulatory-content class rather than adding another approval. Existing
+SOURCE_CONFIRMED threshold sources remove the proposed source-research cost. Editing
+`deadline.qualification` moves evaluated `notes` and triggers F-202's moved-deadline state notice
+until checklist review, even though it moves no date, status or verdict.
 
 **Sixth revision.** Two findings applied. The safe restriction covers TEN of seventeen rather than eight, which corrects a figure used in the decision recorded on issue #107. And consuming two of the seventeen fields fails API boot rather than a test, the second engine dependency found hiding inside a rules publication; a third is now named.
 
@@ -66,11 +71,12 @@ For an enum gate, `"unknown"` makes an `eq "no"` condition evaluate tri-state UN
 | `"unknown"` | yes | **yes**, stating "You told us this event is not open to the public" |
 | `"yes"` | yes | no, correctly |
 
-**Not hypothetical for the approved suite.** Five fields in the corrected inventory are answered
-`"unknown"` by the fixtures: `structure_over_10ft_tall` in Scenario E, and
+**Not hypothetical for the fixture suite pinned at `46971a0`.** Five fields in the corrected
+historical inventory are answered `"unknown"`: `structure_over_10ft_tall` in Scenario E, and
 `food_affinity_private_exception_claimed`, `sound_audible_from_public_way`,
 `venue_license_covers_event_area` and `venue_has_assembly_approval` in Scenario F. A confirmation rule
-on any of them would state a false absence in those two approved scenarios today.
+on any of them would state a false absence in those two scenarios at that pinned commit. The first
+and fourth Scenario F fields named here are superseded on current `main` as described in Method.
 
 Options, unpriced and listed rather than recommended: an engine change so a classification emits only
 on a TRUE trigger, which touches `resolveFindings` for every rule kind and needs the engine owner; a
@@ -240,8 +246,8 @@ Three observations, each verified rather than inferred:
 
 ### Confirmations per scenario
 
-Fixture answers read from `packages/engine/src/intake/scenario-intake-fixtures.ts`. A field
-contributes only when its answer is the negative value and the field was in scope.
+Fixture answers read from `packages/engine/src/intake/scenario-intake-fixtures.ts` at `46971a0`. A
+field contributes only when its answer is the negative value and the field was in scope.
 
 Under the **seventeen-field** reading:
 
@@ -272,11 +278,11 @@ as UNPRICED. So the table below is **the shape actually measured**, with no reme
 Mean 7.0 lines, range 5 to 10, and 14 rendered sentences on average once section 3's duplication is
 included.
 
-**Two things this changes.** Scenario F carries four false statements out of ten confirmations, so the
-defect is not a corner case in the approved suite but 40 percent of one scenario's confirmations. And
-the two review findings compound: the inventory correction and the unknown correction each add to F, so
-fixing either alone would still have understated it. The earlier figures of 4 and 6 for E and F were
-low on both axes.
+**Two things this changes.** At the pinned commit, Scenario F carries four false statements out of ten
+confirmations, so the defect is not a corner case in that suite but 40 percent of one scenario's
+confirmations. And the two review findings compound: the inventory correction and the unknown
+correction each add to F, so fixing either alone would still have understated it. The earlier figures
+of 4 and 6 for E and F were low on both axes.
 
 A table for a REMEDIED shape, in which unknown answers emit nothing, is the true column of the table
 above: A 5, B 7, C 7, D 7, E 5, F 6. Corrected in review: an earlier version gave E 4 and F 6, which
@@ -344,7 +350,7 @@ aggregated form:
 - **F:** `6. Confirmations: no generator, no battery system stated in your answers.`
 
 Under the seventeen-field reading the same line carries 5 to 10 items instead of 2 to 3, or 5 to 10
-separate plan lines in the shape that exists today, doubling to 10 to 20 rendered sentences once
+separate plan lines in the shape measured at `46971a0`, doubling to 10 to 20 rendered sentences once
 section 3's duplication is included. Corrected in review: this said eleven-field and 4 to 7.
 
 ### It contradicts an APPROVED artifact, which is a SPEC-CONFLICT rather than answer-key movement
@@ -587,7 +593,7 @@ Three changes are pending for one bump.
 
 | Change | Adds or edits | Moves evaluated output? | Needs a decision first? |
 |---|---|---|---|
-| TPA source re-attribution on DOB-ASSEMBLY-001 | edits `deadline.qualification` | **yes**: `buildFinding` copies the qualification into evaluated `notes`, which are persisted and rendered; no date, status or verdict moves | **yes**: evaluated regulatory source and content, needing the verification owner plus rules reviewer |
+| TPA source re-attribution on DOB-ASSEMBLY-001 | edits `deadline.qualification` | **yes**: `buildFinding` copies the qualification into persisted and rendered `notes`; F-202 AC 9 also compares it in the stored deadline snapshot, so an older checklist emits a moved-deadline state notice until review re-points it; no date, status or verdict moves | **yes**: evaluated regulatory source and content, needing the verification owner plus rules reviewer |
 | `DEPENDENCY_SEQUENCING_BINDINGS` into the ruleset | adds published data, removes an engine constant | only if the published table differs from the constant | **yes**: `proposals.ts` carries an explicit "PROPOSAL — NOT YET APPROVED" header requiring verification-owner plus engine-owner sign-off, and publishing the machine-readable binding IS approving the sequencing semantics |
 | Named confirmations | adds N rules | **yes, moves approved answer-key output** | **yes, undecided, and THREE independent approval classes rather than two** |
 
@@ -595,10 +601,11 @@ Three changes are pending for one bump.
 earlier version of this brief described the first two that way, and I relayed it. What is true is
 weaker: the first two are decided in principle and not yet approved as publications. The
 re-attribution changes evaluated `notes` through `ruleNotes`; those notes are persisted and rendered
-as organizer-visible regulatory text, which is governance's "Regulatory source/status/content" row,
-verification owner plus rules reviewer. The binding sits under a file-level header naming its own
-approval class as verification owner plus engine owner, and publishing it is the approval, not a
-consequence of one.
+as organizer-visible regulatory text. It also changes the deadline snapshot F-202 AC 9 compares, so
+an existing checklist reports a deadline state change until the organizer reviews the latest plan and
+the row is re-pointed. That is governance's "Regulatory source/status/content" row, verification owner
+plus rules reviewer. The binding sits under a file-level header naming its own approval class as
+verification owner plus engine owner, and publishing it is the approval, not a consequence of one.
 
 Nothing about the three conflicts technically: one edits a field, one adds a root key, one adds rules,
 and the provenance block already separates per-change consequences this way for v2.6 and v2.7. The
