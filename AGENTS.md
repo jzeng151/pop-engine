@@ -1,6 +1,6 @@
 # PopEngine Agent Instructions
 
-These rules apply to every coding agent and contributor in this repository. Adopted 2026-07-22 (trimmed from the proposed version in `docs/proposals/` to match artifacts that actually exist; items marked *Phase 2+* activate when those artifacts do).
+These rules apply to every coding agent and contributor in this repository. Adopted 2026-07-22 (trimmed from the proposed version in `docs/proposals/` to match artifacts that actually exist; items marked _Phase 2+_ activate when those artifacts do).
 
 ## Before changing code
 
@@ -10,7 +10,7 @@ Read, in order:
 2. this file and `CONTRIBUTING.md`
 3. your issue and its `specs/F-xxx-*.md`
 4. the relevant sections of `docs/ARCHITECTURE.md`
-5. `rules/nyc-rules.v2.9.json` and `docs/test-scenario-answer-key.md` when the feature touches rules, plans, or verdicts
+5. `rules/nyc-rules.v2.10.json` and `docs/test-scenario-answer-key.md` when the feature touches rules, plans, or verdicts
 
 If a required artifact is absent, unapproved, superseded, or contradictory: stop the affected work and open a `SPEC-CONFLICT` issue per `docs/DOCUMENTATION-GOVERNANCE.md` §5. Do not infer the intended behavior. Do not pick the version you prefer.
 
@@ -24,7 +24,7 @@ If a required artifact is absent, unapproved, superseded, or contradictory: stop
 ## Regulatory safety (the non-negotiables)
 
 - Never invent or complete a permit name, agency, trigger, deadline, fee, document, portal, exception, or source.
-- Regulatory output comes only from the published ruleset (`rules/nyc-rules.v2.9.json`). Authority order: approved primary source → published rule → approved fixture → engine output → UI copy. When levels disagree, fix the lower one; never bend the engine to reproduce an unsupported expectation.
+- Regulatory output comes only from the published ruleset (`rules/nyc-rules.v2.10.json`). Authority order: approved primary source → published rule → approved fixture → engine output → UI copy. When levels disagree, fix the lower one; never bend the engine to reproduce an unsupported expectation.
 - `SOURCE_CONFIRMED`, `OFFICIAL_CONFLICT`, `RESEARCH_REQUIRED`, and `COVERAGE_GAP` states stay visible end to end. Never present a partial plan as complete; never render an official conflict as resolved.
 - Only the verification owner (Dev 4) changes verification statuses. Rule-semantics changes also need the engine owner's (Dev 1) review.
 - AI output is never a regulatory source. This includes you.
@@ -43,7 +43,7 @@ If a required artifact is absent, unapproved, superseded, or contradictory: stop
 - Phase 2+: `packages/engine` remains authoritative until the approved OpenAPI/JSON Schema code-generation handoff lands. That PR moves schema-derived definitions to `packages/contracts` and updates imports, this file, and `CONTRIBUTING.md` atomically; no phase may have two authoritative definitions.
 - The `events` schema migration is the four-lane contract: changes require all-lane approval (Phase 0 sign-off, then team decision per governance §6).
 - Never edit a merged migration; add a new ordered one.
-- *Phase 2+:* OpenAPI and JSON Schema contracts, workspace tenancy, worker/outbox — see `docs/ARCHITECTURE-FUTURE.md`. Do not build toward them early.
+- _Phase 2+:_ OpenAPI and JSON Schema contracts, workspace tenancy, worker/outbox — see `docs/ARCHITECTURE-FUTURE.md`. Do not build toward them early.
 
 ## Data and security
 

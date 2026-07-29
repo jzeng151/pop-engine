@@ -9,7 +9,7 @@
 Prerequisites, not features:
 
 - Agree the `events` schema (the team's single integration point) — approved by all four devs before any lane codes.
-- Ratify `rules/nyc-rules.v2.9.json` (42 rules + 4 advisories: verification-owner sign-off + team approval per `BASELINE.md`); boot validation loads it.
+- Ratify `rules/nyc-rules.v2.10.json` (42 rules + 4 advisories: verification-owner sign-off + team approval per `BASELINE.md`); boot validation loads it.
 - Repo scaffold, deploy target, Twilio account + A2P registration started.
 
 ## Phase 1 — MVP Core (capstone; iron-clad, no mocks)

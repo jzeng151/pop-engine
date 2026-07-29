@@ -1,8 +1,8 @@
 # F-201 · Permit Plan Generator
 
 **Status:** APPROVED (2026-07-24; Acceptance Criterion 2's COVERAGE_GAP clause is amended 2026-07-27 under `docs/DOCUMENTATION-GOVERNANCE.md` §2 against the published legend, and is approved under §6 ("Regulatory source/status/content") by the product owner acting as verification owner and rules reviewer. ONE person signed in THREE capacities, all lanes being currently held by one person. §6 states two things about that, and the first is unconditional: "No person approves their own regulatory publication alone. The author and source reviewer should be distinct whenever the team size permits." The first sentence does not bite here because there is no regulatory publication to approve: the amendment asserts no new regulatory fact, changes no rule, trigger, threshold, deadline or verification status, and conforms a lower-authority artifact to the legend already published in `rules/nyc-rules.v2.8.json` under §2's authority hierarchy. The second sentence is the one that applies, and its "whenever the team size permits" is what a single-person team cannot satisfy. Recorded so the sole-approver fact is visible rather than implied) · **Reviewer/approver:** product owner · **Owner:** see Lane below · see `docs/BASELINE.md`.
-**Phase:** 1 (core, week 1) · **Lane:** Dev 1 · **Depends on:** F-101, ruleset nyc.v2.9 ratified (BASELINE.md) · **Feeds:** F-102, F-202, F-203, F-204
-**Updated:** 2026-07-22 against nyc.v2.1; retargeted through nyc.v2.8 for the changes recorded in `docs/BASELINE.md`, and to nyc.v2.9 on 2026-07-29. The shared issue #178 publication adds the nine issue #107 named confirmations, F-110's two active assembly-document fields, and issue #194's active food-claim removal. The registry changes add no finding or verdict; the named confirmations change no substantive requirement or verdict and narrow near-empty to plans with no `required` or `prohibited_or_ineligible` finding. Scenario B remains CONDITIONAL with low identified burden and is not near-empty because DOHMH-VENDOR-PERMIT-001 is `required + not_calculable`.
+**Phase:** 1 (core, week 1) · **Lane:** Dev 1 · **Depends on:** F-101, ruleset nyc.v2.10 ratified (BASELINE.md) · **Feeds:** F-102, F-202, F-203, F-204
+**Updated:** 2026-07-22 against nyc.v2.1; retargeted through nyc.v2.8 for the changes recorded in `docs/BASELINE.md`, to nyc.v2.9 on 2026-07-29, and to nyc.v2.10 the same day for issue #181's citation-only correction. The shared issue #178 publication adds the nine issue #107 named confirmations, F-110's two active assembly-document fields, and issue #194's active food-claim removal. The registry changes add no finding or verdict; the named confirmations change no substantive requirement or verdict and narrow near-empty to plans with no `required` or `prohibited_or_ineligible` finding. v2.10 changes no trigger, output, status, or verdict. Scenario B remains CONDITIONAL with low identified burden and is not near-empty because DOHMH-VENDOR-PERMIT-001 is `required + not_calculable`.
 
 ## User Story
 
@@ -11,7 +11,7 @@ As an independent organizer, I get the complete list of requirements my specific
 ## Inputs
 
 - An `events` row (F-101 fields) + its `revision_counter`.
-- `rules/nyc-rules.v2.9.json` (authoritative, loaded in-memory at boot; AD-2/AD-9).
+- `rules/nyc-rules.v2.10.json` (authoritative, loaded in-memory at boot; AD-2/AD-9).
 - `today` and the pinned holiday calendar (injected; the engine never reads the clock; AD-6/AD-11).
 
 ## Outputs
