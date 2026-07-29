@@ -621,10 +621,11 @@ export const UNCONSUMED_INTAKE_FIELDS: Readonly<Record<string, string>> = {
     "renders as an advisory on event_open_to_public alone. Open on issue #89.",
   venue_has_assembly_approval:
     "Confirms only that an assembly approval exists; it cannot establish whether the current PACO " +
-    "and PA permit cover the event's exact space, use, occupancy, and layout. A matching current " +
-    "PACO may avoid a separate TPA, while inconsistent conditions require amendment or separate " +
-    "authorization. No published rule consumes this coarse field, so answering it changes no " +
-    "output; objective coverage-specific input and rule modeling is open on issue #188.",
+    "and PA permit cover the event's exact space, use, occupancy, and layout. Whether exact coverage " +
+    "removes the temporary filing is not published either way; confirm with DOB. Inconsistent " +
+    "conditions require amendment or separate authorization. No published rule consumes this " +
+    "coarse field, so answering it changes no output; objective coverage-specific input and rule " +
+    "modeling is open on issue #188.",
 };
 
 /**
