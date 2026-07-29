@@ -1,6 +1,6 @@
 // Verification-status copy that more than one feature renders, in one place.
 //
-// This string is mandated, not chosen. The published legend in `rules/nyc-rules.v2.9.json` defines
+// This string is mandated, not chosen. The published legend in `rules/nyc-rules.v2.10.json` defines
 // COVERAGE_GAP as "combination not modeled by this ruleset version; advisory asserts nothing".
 // That is a statement about what this ruleset version covers, and it says nothing about whether a
 // source exists. The copy this replaced announced that a source had not yet been established, which
