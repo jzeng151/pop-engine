@@ -59,7 +59,7 @@ Exact HTTP, JSON Schema, migration, job, and provider shapes belong in their rev
 1. **F304-AC-01:** For one confirmed event snapshot, the composer returns distinct Instagram, email, and SMS drafts tied to the exact event revision and prompt/model version; a newer source revision visibly invalidates or warns on those drafts before copy.
 2. **F304-AC-02:** The provider receives only the organizer-approved public fields shown in the preview; private documents, contacts, and hidden intake values are absent.
 3. **F304-AC-03:** Drafts cannot send or publish, and copying/editing a draft does not mutate the event or approved plan.
-4. **F304-AC-04:** Generated text cannot add a regulatory deadline, fee, agency, permit, completeness claim, or requirement not present in approved source wording.
+4. **F304-AC-04:** Generated text cannot add a regulatory deadline, fee, agency, permit, completeness claim, or requirement not present in approved source wording. Every other concrete event claim must match an exact confirmed source fact shown in the preview; otherwise the draft is rejected before copy with an action to confirm or correct the authoritative event data and regenerate.
 5. **F304-AC-05:** Timeout, policy rejection, provider failure, and unsafe output show a recoverable error and preserve manual composition.
 
 ## Fixtures and Verification

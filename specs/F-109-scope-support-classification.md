@@ -82,6 +82,7 @@ Exact HTTP, JSON Schema, migration, job, and provider shapes belong in their rev
 
 ## Approval Blockers
 
+- Resolve `docs/OPEN-QUESTIONS.md` T-4 before approval, including its durable-architecture and shared-enum approvals and verification/rules review if the decision retires or redefines `COVERAGE_GAP`.
 - Approve the scope-support decision table/reason taxonomy and atomic OpenAPI/JSON Schema/type handoff.
 - Obtain all affected lane-owner approval for the shared enum.
 - Assign the owner and independent reviewer, approve this spec, and add it to `docs/BASELINE.md`.

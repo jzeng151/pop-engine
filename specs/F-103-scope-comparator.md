@@ -58,7 +58,7 @@ Exact HTTP, JSON Schema, migration, job, and provider shapes belong in their rev
 
 1. **F103-AC-01:** Both configurations evaluate with byte-identical engine version/checksum, ruleset, calendar, and `today` inputs, producing normal immutable plans; otherwise they are incomparable.
 2. **F103-AC-02:** The comparison identifies each added, removed, and materially changed finding without hiding deduplicated source facets.
-3. **F103-AC-03:** Permit burden is derived from typed plan output, and earliest feasible dates come only from F-106 candidate-date evaluations for the same explicit shared target month and engine context; neither value comes from prose parsing or a second rules implementation.
+3. **F103-AC-03:** Permit burden is unavailable until SPEC-CONFLICT #208 approves the exact included finding kinds/dispositions, deduplication/source-facet rule, and unknown/conflict treatment; the comparison then derives it only from typed plan output. Earliest feasible dates come only from F-106 candidate-date evaluations for the same explicit shared target month and engine context; neither value comes from prose parsing or a second rules implementation.
 4. **F103-AC-04:** Unknown, conflict, research-required, or evaluation failure remains visible and cannot make a configuration appear better by omission.
 5. **F103-AC-05:** Swapping left and right preserves each plan and reverses only directional comparison labels.
 
@@ -82,5 +82,6 @@ Exact HTTP, JSON Schema, migration, job, and provider shapes belong in their rev
 
 ## Approval Blockers
 
+- Resolve SPEC-CONFLICT #208 and approve its exact permit-burden derivation and paired-plan fixtures before exposing the value.
 - Approve Event Revision, finding-identity, plan-diff, and F-106 earliest-feasible-date contracts.
 - Assign the owner and independent reviewer, approve this spec, and add it to `docs/BASELINE.md`.

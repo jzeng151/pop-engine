@@ -60,7 +60,7 @@ Exact HTTP, JSON Schema, migration, job, and provider shapes belong in their rev
 2. **F307-AC-02:** A public submission compare-and-swaps the current active form version and validates required, length, and option membership atomically with RSVP; a retired version is rejected unless accompanied by an approved bounded server-issued in-flight grace token.
 3. **F307-AC-03:** Editing a published definition creates a new version; earlier answers remain readable against their original labels/options.
 4. **F307-AC-04:** User text renders and exports as data, never HTML, script, formula, or engine input.
-5. **F307-AC-05:** Only approved non-sensitive purpose keys and supported field types can be published; the form displays mandatory prohibited-data guidance and applies the approved retention/deletion policy. The feature does not claim to classify arbitrary free-text answers as medical, payment, or government-ID data.
+5. **F307-AC-05:** Only approved non-sensitive purpose keys and supported field types can be published; organizer-controlled labels, help text, and options are validated against the approved prohibited-data policy, and disallowed definitions are rejected. The form displays mandatory prohibited-data guidance and applies the approved retention/deletion policy; the feature does not claim to classify arbitrary attendee answers.
 
 ## Fixtures and Verification
 
