@@ -1616,6 +1616,13 @@ const f203PrdDecision = /(?:^|\r?\n)\s*\*\*(?:Issue #127 amendment|(?:Later\s+)?
 const f203BaselineDecision = /^\s*\*\*(?:Status|(?:Later\s+)?Decisions?)\b/i;
 const f203BaselineManifestRow =
   /^\s*\|\s*(?:Product requirements|Feature registry \+ phasing|Phase 1–1\.5 specs)\s*\|/i;
+const f203BaselineManifestScope = new RegExp(
+  `(?:\\bF-203\\b(?:\\s+scope amendment[^:|·]*:)?|` +
+    "`specs/F-203-deadline-alerts\\.md`\\s+scope amended[^:|·]*:)" +
+    `\\s+retains\\s+${f203Capabilities.source}\\s+as planned,\\s+unscheduled Phase \\d+ depth` +
+    "\\.?\\s*(?=\\||·|$)",
+  "i",
+);
 const f203SpecDecision = /^\s*\*\*(?:Status|(?:Later\s+)?Decisions?)\b/i;
 const f203RetainedScope = new RegExp(
   `\\bF-203\\b\\s+retains\\s+${f203Capabilities.source}\\s+as planned,\\s+unscheduled\\b`,
@@ -1754,11 +1761,12 @@ for (const relative of f203Artifacts) {
       return lines.some((line, index) => {
         const heading = /^(#{1,6})\s+/.exec(line);
         if (heading) {
-          if (f203CapabilityMention.test(line)) capabilityHeadingLevel = heading[1].length;
+          const namesCapability = f203CapabilityMention.test(line);
+          if (namesCapability) capabilityHeadingLevel = heading[1].length;
           else if (capabilityHeadingLevel !== null && heading[1].length <= capabilityHeadingLevel) {
             capabilityHeadingLevel = null;
           }
-          return false;
+          return namesCapability && !f203CriterionNonGoal.test(line);
         }
         if (capabilityHeadingLevel === null) return false;
         const isListCriterion = /^\s*(?:[-*+]|\d+\.)\s+/.test(line);
@@ -1884,7 +1892,12 @@ for (const relative of f203Artifacts) {
       return !f203ListOwner.test(raw) || !f203ListScope.test(normalized);
     }
     if (relative === "docs/BASELINE.md") {
-      if (f203BaselineManifestRow.test(raw)) return false;
+      if (f203BaselineManifestRow.test(raw)) {
+        if (hasF203ConflictingPhase(normalized)) return false;
+        if (!f203BaselineManifestScope.test(normalized)) return true;
+        const remaining = normalized.replace(f203BaselineManifestScope, "").replace(/`[^`]*`/g, "");
+        return f203SpecAssignment.test(remaining);
+      }
       return !f203BaselineScope.test(normalized);
     }
     return (

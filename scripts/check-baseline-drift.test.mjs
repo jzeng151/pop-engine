@@ -2138,6 +2138,20 @@ describe.concurrent("F-203 Phase 2 scope agreement (SPEC-CONFLICT #127 item 1)",
     );
   });
 
+  it("rejects a capability-bearing acceptance-criteria heading", async () => {
+    const { status, output } = await runOn({
+      "specs/F-203-deadline-alerts.md":
+        SQUARE_RECONCILED["specs/F-203-deadline-alerts.md"] +
+        "\n## Additional Acceptance Criteria\n\n### Send weekly digests every Monday\n\n" +
+        "### Phase 1 criteria\n\n1. Existing behavior.\n",
+    });
+
+    expect(status).toBe(1);
+    expect(output).toContain(
+      "specs/F-203-deadline-alerts.md must not define Phase 2 acceptance criteria",
+    );
+  });
+
   it("accepts a generic criterion that preserves the Phase 1 scope cut", async () => {
     const { status, output } = await runOn({
       "specs/F-203-deadline-alerts.md":
@@ -2438,6 +2452,21 @@ describe.concurrent("F-203 Phase 2 scope agreement (SPEC-CONFLICT #127 item 1)",
         "docs/BASELINE.md": SQUARE_RECONCILED["docs/BASELINE.md"].replace(
           new RegExp(`(\\| ${concern.replace("+", "\\+")} \\|)[^\\n]+`),
           "$1 F-203 is now unplanned and assigned to Phase 3. |",
+        ),
+      });
+
+      expect(status).toBe(1);
+      expect(output).toContain("docs/BASELINE.md must affirmatively assign");
+    },
+  );
+
+  it.each(["Product requirements", "Feature registry + phasing", "Phase 1–1.5 specs"])(
+    "rejects added F-203 scope in the %s baseline manifest row",
+    async (concern) => {
+      const { status, output } = await runOn({
+        "docs/BASELINE.md": SQUARE_RECONCILED["docs/BASELINE.md"].replace(
+          new RegExp(`(\\| ${concern.replace("+", "\\+")} \\|[^\\n]*Phase 2 depth\\.)`),
+          "$1 F-203 also includes automatic permit filing.",
         ),
       });
 
