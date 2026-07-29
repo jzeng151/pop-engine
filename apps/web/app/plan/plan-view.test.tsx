@@ -1732,15 +1732,13 @@ describe("the states this page can be in", () => {
   });
 
   it("explains an evaluation that found nothing rather than rendering an empty page", async () => {
-    // The approved boundary fixture: a park event at headcount 19 triggers no rule at all, and
-    // F-201 AC 4 makes that result first-class so it is never read as a failed evaluation.
     stubScript({
       plan: () => jsonResponse(200, plan({ verdict: "FEASIBLE", findings: [] })),
     });
     renderPlan();
 
     expect(
-      await screen.findByText("No new city event requirement identified from your answers."),
+      await screen.findByText("No definite city event requirement identified from your answers."),
     ).toBeDefined();
     expect(screen.getByText("On track")).toBeDefined();
     expect(screen.queryAllByRole("article")).toEqual([]);
@@ -1751,7 +1749,59 @@ describe("the states this page can be in", () => {
     renderPlan();
 
     await waitFor(() => expect(screen.getAllByRole("article").length).toBe(1));
-    expect(screen.queryByText(/No new city event requirement/)).toBeNull();
+    expect(screen.queryByText(/No definite city event requirement/)).toBeNull();
+  });
+
+  it("keeps near-empty copy alongside advisories and named confirmations", async () => {
+    stubScript({
+      plan: () =>
+        jsonResponse(
+          200,
+          plan({
+            verdict: "FEASIBLE",
+            findings: [
+              finding({
+                ruleIds: ["ADV-VENUE-OCCUPANCY-001"],
+                kind: "advisory",
+                disposition: "advisory",
+              }),
+              finding({
+                ruleIds: ["CONF-NO-BATTERY-001"],
+                kind: "note",
+                disposition: "no_new_requirement",
+              }),
+            ],
+          }),
+        ),
+    });
+    renderPlan();
+
+    expect(
+      await screen.findByText("No definite city event requirement identified from your answers."),
+    ).toBeDefined();
+    expect(screen.getAllByRole("article")).toHaveLength(2);
+  });
+
+  it("never classifies a definite required finding as near-empty when its deadline is not calculable", async () => {
+    stubScript({
+      plan: () =>
+        jsonResponse(
+          200,
+          plan({
+            findings: [
+              finding({
+                disposition: "required",
+                deadlineStatus: "not_calculable",
+                latestApplyDate: null,
+              }),
+            ],
+          }),
+        ),
+    });
+    renderPlan();
+
+    await screen.findByRole("article");
+    expect(screen.queryByText(/No definite city event requirement/)).toBeNull();
   });
 });
 
