@@ -4,7 +4,10 @@ description: A printed field-manual interface for moving one NYC event from idea
 colors:
   federal-blue: "#163f8c"
   federal-blue-deep: "#0d2d6e"
-  signal-coral: "#b72f2b"
+  intake-orange: "#cc5500"
+  intake-orange-text: "#a34400"
+  intake-orange-hover: "#e26713"
+  accent-ink: "#0a0b0a"
   registration-yellow: "#f1c735"
   field-green: "#23683d"
   paper: "#f3efe3"
@@ -16,6 +19,17 @@ colors:
   surface: "#faf7ee"
   card: "#f8f4e9"
   cream-text: "#fffdf6"
+  midnight-canvas: "#111316"
+  midnight-surface: "#181c22"
+  midnight-card: "#20262e"
+  midnight-text: "#f4eee1"
+  midnight-muted: "#b9b3a7"
+  midnight-rule: "#737068"
+  midnight-orange: "#ff8a3d"
+  midnight-orange-bright: "#ff9a5c"
+  midnight-brand-orange: "#a34400"
+  midnight-blue: "#82a7ff"
+  midnight-green: "#6bc98a"
 typography:
   display:
     fontFamily: "Barlow Condensed, Arial Narrow, sans-serif"
@@ -56,15 +70,15 @@ spacing:
   card-inline: "1.25rem"
 components:
   button-primary:
-    backgroundColor: "{colors.signal-coral}"
-    textColor: "{colors.cream-text}"
+    backgroundColor: "{colors.intake-orange}"
+    textColor: "{colors.accent-ink}"
     typography: "{typography.body}"
     rounded: "{rounded.field}"
     padding: "0.68rem 1rem"
     height: "2.8rem"
   button-primary-hover:
-    backgroundColor: "{colors.federal-blue}"
-    textColor: "{colors.cream-text}"
+    backgroundColor: "{colors.intake-orange-hover}"
+    textColor: "{colors.accent-ink}"
     typography: "{typography.body}"
     rounded: "{rounded.field}"
     padding: "0.68rem 1rem"
@@ -94,8 +108,8 @@ components:
     rounded: "{rounded.field}"
     padding: "0.85rem 1rem"
   verdict-infeasible:
-    backgroundColor: "{colors.signal-coral}"
-    textColor: "{colors.cream-text}"
+    backgroundColor: "{colors.intake-orange}"
+    textColor: "{colors.accent-ink}"
     rounded: "{rounded.field}"
     padding: "0.85rem 1rem"
 ---
@@ -106,8 +120,8 @@ components:
 
 **Creative North Star: "Riso Field Guide"**
 
-PopEngine feels like a practical printed manual assembled for work in the field. Federal blue,
-signal coral, registration yellow, real paper grain, condensed type, hard rules, and deliberately
+PopEngine feels like a practical printed manual assembled for work in the field. Intake orange,
+federal blue, registration yellow, real paper grain, condensed type, hard rules, and deliberately
 offset ink marks create an ownable visual world without compromising the clarity expected of an
 operational tool.
 
@@ -119,7 +133,7 @@ decoration. Planned capabilities look intentionally provisional and remain disab
 **Key Characteristics:**
 
 - Printed field-manual materiality rather than generic dashboard chrome.
-- A federal-blue lifecycle rail anchoring a warm paper work area.
+- An intake-orange lifecycle rail anchoring a warm paper work area.
 - Signal colors assigned to operational meaning, not ambient decoration.
 - Condensed headlines paired with highly legible body copy and mono provenance.
 - Hard registration offsets, square rules, and restrained misregistration details.
@@ -127,23 +141,29 @@ decoration. Planned capabilities look intentionally provisional and remain disab
 
 ## Colors
 
-The palette combines workwear blue and printing-press signal inks with warm, legible paper
-neutrals.
+The palette combines the intake form's original burnt-orange selection accent, workwear-blue
+information states, and
+warm, legible paper neutrals.
 
 ### Primary
 
-- **Federal Blue:** Owns the organizer rail, links, feasible verdicts, and major structural rules.
-- **Federal Blue Deep:** Supplies the darker blue state when the primary needs greater depth.
+- **Intake Orange:** The original `#cc5500` selected-option color owns the organizer rail, product
+  mark, landing headline, primary action, and active operational emphasis.
+- **Intake Orange Text:** `#a34400` carries small orange text on paper where the brighter original
+  orange would not meet normal-text contrast.
+- **Intake Orange Hover:** `#e26713` keeps dark control text accessible while clearly shifting the
+  pressed plate.
 
 ### Secondary
 
-- **Signal Coral:** Marks the primary action, infeasible verdicts, conflicts, and riso registration
-  offsets.
+- **Federal Blue:** Marks source-backed information, citations, feasible verdicts, and regulatory
+  structure. It is not a general decorative accent.
+- **Federal Blue Deep:** Supplies the darker informational state when blue needs greater depth.
 
 ### Tertiary
 
-- **Registration Yellow:** Marks focus on dark surfaces, the current route, at-risk verdicts, and
-  small field-guide labels. Federal blue supplies the accessible focus rule on paper surfaces.
+- **Registration Yellow:** Marks focus on dark surfaces, the current route, and at-risk verdicts.
+  Intake orange supplies the accessible focus rule on light paper surfaces.
 - **Field Green:** Reserved for cleared or trustworthy status, never as a general accent.
 
 ### Neutral
@@ -156,12 +176,28 @@ neutrals.
 - **Control Rule:** Input, radio, and checkbox boundaries that must remain visible against paper.
 - **Surface:** Input and metadata-banner fill.
 - **Card:** Regulatory units and task surfaces that need a discrete container.
-- **Cream Text:** High-contrast copy placed on federal blue or signal coral.
+- **Cream Text:** High-contrast copy placed on dark federal blue and green semantic surfaces.
+- **Accent Ink:** Near-black copy placed on the original intake-orange action surface so normal
+  text meets WCAG AA without darkening the orange.
+
+### Midnight Press
+
+Dark mode uses a composed charcoal-stock palette rather than an inversion. Canvas, surface, and
+card progress through `#111316`, `#181c22`, and `#20262e`; warm text uses `#f4eee1`, muted text
+uses `#b9b3a7`, and control rules use `#737068`. Intake orange lifts to `#ff8a3d`, with
+`#ff9a5c` reserved for readable small foreground emphasis. Orange-filled actions use midnight ink.
+The lifecycle rail uses the deeper `#a34400` with warm text. Federal blue lifts to `#82a7ff` and
+remains reserved for information; cleared states lift to `#6bc98a`.
+
+Light is the default theme on a first visit regardless of the operating-system preference. A
+keyboard-accessible theme control on the landing page and event workspace switches themes and
+stores the explicit selection locally. The root `data-theme` attribute remaps semantic tokens; the
+control does not introduce an account setting, server state, or new workflow.
 
 ### Named Rules
 
-**The Signal Color Rule.** Coral marks action or blocked conditions; yellow marks focus, current
-position, or at-risk state. Do not interchange them for decoration.
+**The Signal Color Rule.** Intake orange marks action or blocked conditions; yellow marks focus,
+current position, or at-risk state. Do not interchange them for decoration.
 
 **The Paper Is a Surface Rule.** Texture may make the canvas tactile, but it never carries meaning
 or reduces text contrast.
@@ -223,9 +259,9 @@ fills create the rest of the hierarchy.
 
 - **Ink Registration:** `4px 4px 0 var(--pe-ink)` for primary actions, verdict bands, and strong
   active states.
-- **Blue Plate Offset:** `4px 4px 0 rgba(22, 63, 140, 0.14)` for quieter paper cards.
+- **Orange Plate Offset:** `4px 4px 0 var(--pe-accent-soft)` for quieter paper cards.
 - **Pressed Registration:** `2px 2px 0 var(--pe-ink)` paired with a two-pixel translation on hover.
-- **Coral Plate Offset:** `3px 3px 0 var(--pe-coral)` for selected field-guide and planned-module
+- **Ink Plate Offset:** `3px 3px 0 var(--pe-ink)` for selected field-guide and planned-module
   moments.
 
 ### Named Rules
@@ -251,11 +287,12 @@ minimum interactive height of roughly 44px.
 ### Buttons
 
 - **Shape:** Nearly square field corners with a 2px ink border.
-- **Primary:** Signal coral with cream text, bold Public Sans, compact horizontal padding, and a hard
-  ink registration offset.
-- **Hover / Focus:** Hover changes to federal blue and presses the registration offset inward. Focus
-  uses federal blue on paper and registration yellow on the federal-blue rail.
-- **Secondary:** Paper or card fill with an ink rule; hover shifts to deep paper and coral border.
+- **Primary:** Intake orange with accent ink in light mode and midnight ink in Midnight Press, bold
+  Public Sans, compact horizontal padding, and a hard ink registration offset.
+- **Hover / Focus:** Hover moves to the theme's brighter orange tone and presses the registration
+  offset inward. Focus uses intake orange on paper and registration yellow on dark surfaces.
+- **Secondary:** Paper or card fill with an ink rule; hover shifts to deep paper and an orange
+  border.
 - **Disabled:** The label remains readable, opacity drops, and the prohibited cursor makes the state
   explicit.
 
@@ -263,7 +300,7 @@ minimum interactive height of roughly 44px.
 
 - **Corner Style:** Nearly square field corners.
 - **Background:** Card or translucent surface over the paper texture.
-- **Shadow Strategy:** Blue plate offsets for standard units; ink offsets for strong interactive
+- **Shadow Strategy:** Orange plate offsets for standard units; ink offsets for strong interactive
   units.
 - **Border:** 1.5–2px ink or semantic-color rule.
 - **Internal Padding:** The card spacing token, with denser values only for compact metadata.
@@ -272,29 +309,36 @@ minimum interactive height of roughly 44px.
 
 - **Style:** Surface fill, accessible control rule, nearly square corners, and mono text for entered
   regulatory data where already established.
-- **Focus:** Coral border plus a visible external focus treatment; the global focus token switches
-  between federal blue on paper and registration yellow on dark surfaces.
-- **Error / Disabled:** Error text and border use signal coral; disabled controls preserve their
-  label and are never hidden.
+- **Focus:** Orange border plus a visible external focus treatment; the global focus token switches
+  between intake orange on paper and registration yellow on dark surfaces.
+- **Error / Disabled:** Error text and border use the distinct semantic red; disabled controls
+  preserve their label and are never hidden.
 
 ### Navigation
 
-The federal-blue lifecycle rail groups links under Ideate, Comply, Market, and Operate. Each target
+The intake-orange lifecycle rail groups links under Ideate, Comply, Market, and Operate. Each target
 has an inline riso icon and a 44px minimum hit area. Hover uses a light paper wash; the active route
 switches to registration yellow with ink text and a hard offset. Mobile uses a native `details`
 disclosure, while desktop keeps the rail persistent.
 
+### Theme Control
+
+The theme control is a native button with a 44px minimum height, a visible icon plus text, an
+action-oriented accessible name, and `aria-pressed` for the dark state. Its visible copy identifies
+the current theme. Light is visually quiet; dark uses the intake-orange active treatment with dark
+ink. The choice persists in local storage and synchronizes across tabs.
+
 ### Planned Modules
 
-Planned modules appear on a clipped paper insert over the blue rail. Every item is a disabled native
-button and the group is visibly stamped `PLANNED`; the treatment communicates roadmap breadth
+Planned modules appear on a clipped paper insert over the orange rail. Every item is a disabled
+native button and the group is visibly stamped `PLANNED`; the treatment communicates roadmap breadth
 without implying the capability works.
 
 ### Permit Plan Workbench
 
 The plan keeps its live regulatory content in the review column and pairs it with a scoped checklist
 companion at desktop widths. Engine-derived verdict bands use federal blue, registration yellow, or
-signal coral by actual verdict. Ruleset snapshots, citations, verification states, unknowns,
+intake orange by actual verdict. Ruleset snapshots, citations, verification states, unknowns,
 conflicts, research requirements, and coverage gaps remain visible and retain their source-backed
 copy.
 
@@ -308,8 +352,8 @@ presentation copy.
 
 ### Do:
 
-- **Do** keep federal blue dominant in the organizer shell and reserve signal inks for their assigned
-  operational roles.
+- **Do** keep intake orange dominant in product wayfinding and action while reserving federal blue
+  for source-backed information and feasible regulatory states.
 - **Do** pair every regulatory decision with its engine-provided provenance and uncertainty state.
 - **Do** use the real paper texture as a low-contrast material layer.
 - **Do** preserve visible focus, 44px targets, responsive stacking, and reduced-motion behavior.

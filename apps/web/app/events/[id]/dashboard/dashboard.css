@@ -135,7 +135,7 @@
   box-shadow:
     var(--pe-shadow),
     0 10px 0 -2px var(--pe-rule),
-    0 14px 0 -2px rgba(210, 180, 140, 0.55);
+    0 14px 0 -2px var(--pe-paper-stack);
   transform: rotateX(18deg) rotateY(-6deg) translateZ(12px);
   transform-style: preserve-3d;
   transform-origin: 50% 100%;
@@ -161,11 +161,11 @@
 }
 
 .ops__gauge--over {
-  border-color: var(--pe-amber);
-  background: var(--pe-amber-wash);
+  border-color: var(--pe-accent);
+  background: var(--pe-accent-wash);
   box-shadow:
-    0 14px 28px -16px rgba(204, 85, 0, 0.35),
-    0 4px 0 rgba(204, 85, 0, 0.18);
+    0 14px 28px -16px var(--pe-accent-soft),
+    0 4px 0 var(--pe-accent-soft);
 }
 
 .ops__gauge--unset .ops__rule-fill {
@@ -183,7 +183,7 @@
 
 .ops__gauge-percent {
   margin-top: 0.25rem;
-  color: var(--pe-cyan);
+  color: var(--pe-accent-text);
 }
 
 .ops__rule {
@@ -211,7 +211,7 @@
   transform: scaleX(var(--ops-scale, 0));
   transform-origin: left center;
   transition: transform 420ms cubic-bezier(0.2, 0.8, 0.2, 1);
-  box-shadow: 2px 0 10px rgba(34, 139, 34, 0.35);
+  box-shadow: 2px 0 10px var(--pe-clear-glow);
   animation: ops-fill-pulse 1.8s ease-in-out 0.4s 1;
 }
 
@@ -226,7 +226,7 @@
 }
 
 .ops__gauge--over .ops__rule-fill {
-  background: linear-gradient(90deg, var(--pe-amber-deep), var(--pe-amber));
+  background: var(--pe-accent);
   opacity: 1;
   box-shadow: 2px 0 10px var(--pe-glow);
 }
@@ -234,7 +234,7 @@
 .ops__warning {
   margin: 0.7rem 0 0;
   font-weight: 700;
-  color: var(--pe-amber);
+  color: var(--pe-accent-text);
 }
 
 .ops__error {
@@ -244,7 +244,7 @@
 }
 
 .ops__stale {
-  color: var(--pe-amber);
+  color: var(--pe-accent-text);
 }
 
 @media (prefers-reduced-motion: reduce) {

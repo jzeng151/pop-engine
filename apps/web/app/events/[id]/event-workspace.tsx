@@ -4,6 +4,7 @@ import { usePathname } from "next/navigation";
 import { useEffect, useState, type ReactNode } from "react";
 
 import { loadEvent } from "../../intake/events-api";
+import { ThemeToggle } from "../../theme-toggle";
 
 type EventWorkspaceProps = {
   apiBaseUrl: string;
@@ -243,7 +244,10 @@ export function EventWorkspace({ apiBaseUrl, children, eventId }: EventWorkspace
               {eventName}
             </p>
           </div>
-          <p className="riso-masthead__mode">Synthetic data demo</p>
+          <div className="riso-masthead__controls">
+            <ThemeToggle />
+            <p className="riso-masthead__mode">Synthetic data demo</p>
+          </div>
         </header>
 
         <div id="event-workspace-content" tabIndex={-1}>

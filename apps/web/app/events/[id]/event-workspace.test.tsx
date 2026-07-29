@@ -45,6 +45,7 @@ describe("the organizer event workspace", () => {
     }
     expect(screen.getByText("Current surface")).toBeDefined();
     expect(document.querySelector("#event-workspace-content")?.getAttribute("tabindex")).toBe("-1");
+    expect(screen.getByRole("button", { name: "Switch to dark theme" })).toBeDefined();
   });
 
   it("exposes future modules as disabled planned scaffolds", () => {

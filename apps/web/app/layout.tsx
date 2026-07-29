@@ -33,19 +33,33 @@ const ibmPlexMono = IBM_Plex_Mono({
   display: "swap",
 });
 
+const initializeTheme = `
+  try {
+    if (localStorage.getItem("popengine-theme") === "dark") {
+      document.documentElement.dataset.theme = "dark";
+      document.documentElement.style.colorScheme = "dark";
+    }
+  } catch {}
+`;
+
 export default function RootLayout({ children }: { children: ReactNode }) {
   return (
     <html
+      data-theme="light"
       lang="en"
       className={`${barlowCondensed.variable} ${publicSans.variable} ${ibmPlexMono.variable}`}
+      suppressHydrationWarning
     >
+      <head>
+        <script dangerouslySetInnerHTML={{ __html: initializeTheme }} />
+      </head>
       <body>
         <div
           aria-hidden="true"
           data-impeccable-contract
           dangerouslySetInnerHTML={{
             __html:
-              "<!-- THESIS: Riso Field Guide turns the organizer workspace into a practical printed manual, not a generic SaaS dashboard. OWN-WORLD: federal blue, signal coral, registration yellow, paper grain, condensed type, and offset ink marks. STORY: one event moves through Ideate, Comply, Market, and Operate while regulatory provenance remains attached. FIRST VIEWPORT: a blue lifecycle rail anchors a paper work area with the active event and current task. FORM: selected Riso Field Guide direction, seed 7a503d37. FINISH: unreviewed and undocumented is unfinished; this build ends with the finish review, the verdict, and DESIGN.md -->",
+              "<!-- THESIS: Riso Field Guide turns the organizer workspace into a practical printed manual, not a generic SaaS dashboard. OWN-WORLD: intake orange, federal blue, registration yellow, paper grain, condensed type, and offset ink marks. STORY: one event moves through Ideate, Comply, Market, and Operate while regulatory provenance remains attached. FIRST VIEWPORT: an intake-orange lifecycle rail anchors a paper work area with the active event and current task. FORM: selected Riso Field Guide direction, seed 7a503d37. FINISH: unreviewed and undocumented is unfinished; this build ends with the finish review, the verdict, and DESIGN.md -->",
           }}
           hidden
         />

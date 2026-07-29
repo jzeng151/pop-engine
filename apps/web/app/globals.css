@@ -1,4 +1,4 @@
-/* PopEngine — Riso Field Guide: federal blue, signal coral, registration yellow, paper. */
+/* PopEngine — Riso Field Guide: intake orange, federal blue, registration yellow, paper. */
 
 :root {
   /* next/font sets --font-* on <html>; fallbacks keep layout usable without them. */
@@ -14,35 +14,60 @@
   --pe-control-rule: #858077;
   --pe-surface: #faf7ee;
   --pe-card: #f8f4e9;
+  --pe-card-translucent: rgba(250, 247, 238, 0.84);
+  --pe-card-soft: rgba(250, 247, 238, 0.78);
+  --pe-card-quiet: rgba(250, 247, 238, 0.76);
+  --pe-paper-offset: rgba(243, 239, 227, 0.72);
+  --pe-texture-blend: multiply;
+  --pe-texture-opacity: 0.58;
 
-  /* Burnt orange as primary action/accent (legacy cyan/amber/neon slots).
-     Primary and clear hover meet WCAG AA normal-text contrast (≥4.5:1) against cream labels. */
+  /* The original intake-selection orange owns brand/action.
+     A darker companion is reserved for small text on light paper. */
   --pe-blue: #163f8c;
   --pe-blue-deep: #0d2d6e;
-  --pe-coral: #b72f2b;
+  --pe-coral: #cc5500;
+  --pe-coral-deep: #a34400;
   --pe-yellow: #f1c735;
+  --pe-accent: var(--pe-coral);
+  --pe-accent-hover: #e26713;
+  --pe-accent-text: #a34400;
+  --pe-accent-wash: #f8e4d4;
+  --pe-accent-soft: rgba(204, 85, 0, 0.16);
+  --pe-on-accent: #0a0b0a;
+  --pe-action-edge: #0a0b0a;
+  --pe-brand-surface: #cc5500;
+  --pe-brand-on: #0a0b0a;
+  --pe-info: var(--pe-blue);
+  --pe-info-wash: #e2e7f0;
+  --pe-info-wash-translucent: rgba(226, 231, 240, 0.78);
+  --pe-info-wash-strong: rgba(226, 231, 240, 0.82);
+  --pe-on-info: #fffdf6;
+  --pe-on-highlight: #171815;
   --pe-cyan: var(--pe-blue);
   --pe-cyan-wash: rgba(22, 63, 140, 0.09);
-  --pe-glow: rgba(22, 63, 140, 0.18);
+  --pe-glow: rgba(204, 85, 0, 0.2);
   --pe-amber: var(--pe-coral);
-  --pe-amber-deep: #8e201e;
-  --pe-amber-wash: #f3ded5;
-  --pe-amber-soft: rgba(183, 47, 43, 0.16);
+  --pe-amber-deep: var(--pe-coral-deep);
+  --pe-amber-wash: var(--pe-accent-wash);
+  --pe-amber-soft: var(--pe-accent-soft);
   --pe-neon: var(--pe-blue);
-  --pe-neon-wash: #e2e7f0;
+  --pe-neon-wash: var(--pe-info-wash);
 
   /* Forest green for cleared / trustworthy states */
   --pe-clear: #23683d;
   --pe-clear-bright: #23683d;
-  --pe-rose: var(--pe-coral);
+  --pe-on-clear: #fffdf6;
+  --pe-rose: #9b2d1f;
   --pe-cream-text: #fffdf6;
-  --pe-focus-light: var(--pe-blue);
+  --pe-focus-light: var(--pe-accent);
   --pe-focus-dark: var(--pe-yellow);
   --pe-divider: rgba(23, 24, 21, 0.16);
-  --pe-link-line: rgba(22, 63, 140, 0.42);
+  --pe-link-line: rgba(204, 85, 0, 0.48);
   --pe-radius: 0.15rem;
   --pe-border: 1.5px solid var(--pe-ink);
-  --pe-shadow: 4px 4px 0 rgba(22, 63, 140, 0.16);
+  --pe-shadow: 4px 4px 0 rgba(204, 85, 0, 0.18);
+  --pe-paper-stack: rgba(210, 180, 140, 0.55);
+  --pe-clear-glow: rgba(34, 139, 34, 0.35);
 
   /* Layout scale — stretch content into the cream canvas consistently */
   --pe-measure-narrow: 34rem; /* door / RSVP / check-in */
@@ -62,6 +87,58 @@
   --error: var(--pe-rose);
 
   color-scheme: light;
+}
+
+[data-theme="dark"] {
+  color-scheme: dark;
+  --pe-paper: #111316;
+  --pe-paper-deep: #2b3037;
+  --pe-ink: #f4eee1;
+  --pe-steel: #b9b3a7;
+  --pe-rule: #737068;
+  --pe-control-rule: #737068;
+  --pe-surface: #181c22;
+  --pe-card: #20262e;
+  --pe-card-translucent: rgba(32, 38, 46, 0.92);
+  --pe-card-soft: rgba(32, 38, 46, 0.84);
+  --pe-card-quiet: rgba(32, 38, 46, 0.78);
+  --pe-paper-offset: rgba(244, 238, 225, 0.16);
+  --pe-texture-blend: soft-light;
+  --pe-texture-opacity: 0.26;
+
+  --pe-blue: #82a7ff;
+  --pe-blue-deep: #6389dd;
+  --pe-coral: #ff8a3d;
+  --pe-coral-deep: #ff9a5c;
+  --pe-yellow: #f1c735;
+  --pe-accent-hover: #ff9a5c;
+  --pe-accent-text: #ff9a5c;
+  --pe-accent-wash: #3b261b;
+  --pe-accent-soft: rgba(255, 138, 61, 0.22);
+  --pe-on-accent: #111316;
+  --pe-action-edge: #111316;
+  --pe-brand-surface: #a34400;
+  --pe-brand-on: #f4eee1;
+  --pe-info-wash: #202d49;
+  --pe-info-wash-translucent: rgba(32, 45, 73, 0.9);
+  --pe-info-wash-strong: rgba(32, 45, 73, 0.96);
+  --pe-on-info: #171815;
+  --pe-on-highlight: #171815;
+  --pe-cyan-wash: rgba(130, 167, 255, 0.14);
+  --pe-glow: rgba(255, 138, 61, 0.28);
+
+  --pe-clear: #6bc98a;
+  --pe-clear-bright: #85dba0;
+  --pe-on-clear: #171815;
+  --pe-rose: #ff8a7d;
+  --pe-cream-text: #f4eee1;
+  --pe-focus-light: #f1c735;
+  --pe-focus-dark: #f1c735;
+  --pe-divider: rgba(244, 238, 225, 0.18);
+  --pe-link-line: rgba(255, 138, 61, 0.58);
+  --pe-shadow: 4px 4px 0 rgba(255, 138, 61, 0.3);
+  --pe-paper-stack: rgba(115, 112, 104, 0.52);
+  --pe-clear-glow: rgba(107, 201, 138, 0.35);
 }
 
 * {
@@ -94,10 +171,10 @@ body {
   inset: 0;
   z-index: 0;
   pointer-events: none;
-  opacity: 0.58;
+  opacity: var(--pe-texture-opacity);
   background-image: url("/textures/riso-paper.webp");
   background-size: 48rem 48rem;
-  mix-blend-mode: multiply;
+  mix-blend-mode: var(--pe-texture-blend);
 }
 
 .pe-shell > * {
@@ -451,7 +528,7 @@ fieldset.intake__question > legend {
   border-color: var(--pe-amber);
   background: var(--pe-amber-wash);
   color: var(--pe-amber-deep);
-  box-shadow: inset 0 0 0 1px rgba(204, 85, 0, 0.25);
+  box-shadow: inset 0 0 0 1px var(--pe-accent-soft);
 }
 
 .intake__option:has(input:focus-visible) {
@@ -620,7 +697,7 @@ fieldset.intake__question > legend {
   border: 1.5px solid var(--pe-amber);
   border-radius: var(--pe-radius);
   background: var(--pe-amber);
-  color: var(--pe-cream-text);
+  color: var(--pe-on-accent);
   cursor: pointer;
   text-decoration: none;
   display: inline-flex;
@@ -640,15 +717,15 @@ fieldset.intake__question > legend {
   transform: none;
   background: var(--pe-clear);
   border-color: var(--pe-clear);
-  color: var(--pe-cream-text);
-  box-shadow: 0 10px 20px -12px rgba(34, 139, 34, 0.4);
+  color: var(--pe-on-clear);
+  box-shadow: 0 10px 20px -12px var(--pe-clear-glow);
 }
 
 .intake__submit:focus-visible,
 .promote__button:not(.promote__secondary):focus-visible,
 .event-page__submit:focus-visible,
 .checkin__submit:focus-visible {
-  outline: 2px solid var(--pe-neon);
+  outline: 2px solid var(--pe-focus-light);
   outline-offset: 3px;
 }
 
@@ -732,7 +809,7 @@ a.pe-link:hover,
 .event-page__map:hover,
 .guests a:hover,
 .plan-next a:hover {
-  color: var(--pe-amber);
+  color: var(--pe-accent-text);
   border-bottom-color: var(--pe-amber);
 }
 
@@ -799,8 +876,8 @@ a.pe-link:hover,
 }
 
 .line--blocker {
-  border-color: var(--error, #9b2d1f);
-  background: color-mix(in srgb, var(--error, #9b2d1f) 8%, transparent);
+  border-color: var(--error);
+  background: color-mix(in srgb, var(--error) 8%, transparent);
 }
 
 .line {
@@ -1176,7 +1253,7 @@ a.pe-link:hover,
 
 ::selection {
   background: var(--pe-yellow);
-  color: var(--pe-ink);
+  color: var(--pe-on-highlight);
 }
 
 a {
@@ -1206,7 +1283,7 @@ textarea:focus-visible {
   z-index: 100;
   padding: 0.65rem 0.85rem;
   background: var(--pe-yellow);
-  color: var(--pe-ink);
+  color: var(--pe-on-highlight);
   font-weight: 800;
   transform: translateY(-160%);
 }
@@ -1222,25 +1299,72 @@ textarea:focus-visible {
   justify-content: center;
   width: fit-content;
   padding: 0.68rem 1rem;
-  border: 2px solid var(--pe-ink);
+  border: 2px solid var(--pe-action-edge);
   border-radius: var(--pe-radius);
   font-family: var(--pe-font-body);
   font-size: 0.9rem;
   font-weight: 800;
   text-decoration: none;
-  box-shadow: 4px 4px 0 var(--pe-ink);
+  box-shadow: 4px 4px 0 var(--pe-action-edge);
 }
 
 .button--primary {
-  background: var(--pe-coral);
-  color: var(--pe-cream-text);
+  background: var(--pe-accent);
+  color: var(--pe-on-accent);
 }
 
 .button--primary:hover {
-  background: var(--pe-blue);
-  color: var(--pe-cream-text);
+  background: var(--pe-accent-hover);
+  color: var(--pe-on-accent);
   transform: translate(2px, 2px);
-  box-shadow: 2px 2px 0 var(--pe-ink);
+  box-shadow: 2px 2px 0 var(--pe-action-edge);
+}
+
+.theme-toggle {
+  display: inline-flex;
+  min-height: 2.75rem;
+  align-items: center;
+  gap: 0.45rem;
+  padding: 0.45rem 0.6rem;
+  border: 1.5px solid var(--pe-control-rule);
+  border-radius: var(--pe-radius);
+  color: var(--pe-ink);
+  background: var(--pe-card);
+  font-family: var(--pe-font-body);
+  font-size: 0.78rem;
+  line-height: 1;
+  cursor: pointer;
+  box-shadow: 2px 2px 0 var(--pe-accent-soft);
+}
+
+.theme-toggle:hover {
+  border-color: var(--pe-accent);
+  background: var(--pe-accent-wash);
+}
+
+.theme-toggle[aria-pressed="true"] {
+  border-color: var(--pe-action-edge);
+  color: var(--pe-on-accent);
+  background: var(--pe-accent);
+  box-shadow: 2px 2px 0 var(--pe-action-edge);
+}
+
+.theme-toggle__icon {
+  width: 1.1rem;
+  height: 1.1rem;
+  flex: 0 0 auto;
+  fill: none;
+  stroke: currentColor;
+  stroke-linecap: square;
+  stroke-linejoin: miter;
+  stroke-width: 1.7;
+}
+
+.theme-toggle strong {
+  font-family: var(--pe-font-mono);
+  font-size: 0.68rem;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
 }
 
 .riso-workspace {
@@ -1253,11 +1377,11 @@ textarea:focus-visible {
 .riso-nav {
   position: relative;
   z-index: 3;
-  color: #fffdf6;
-  background-color: var(--pe-blue);
+  color: var(--pe-brand-on);
+  background-color: var(--pe-brand-surface);
   background-image: url("/textures/riso-paper.webp");
   background-size: 48rem 48rem;
-  background-blend-mode: multiply;
+  background-blend-mode: var(--pe-texture-blend);
   border-bottom: 3px solid var(--pe-ink);
 }
 
@@ -1330,7 +1454,7 @@ textarea:focus-visible {
 
 .riso-nav__group h2 {
   margin: 0 0 0.35rem;
-  color: var(--pe-yellow);
+  color: var(--pe-brand-on);
   font-family: var(--pe-font-mono);
   font-size: 0.68rem;
   font-weight: 600;
@@ -1374,7 +1498,7 @@ textarea:focus-visible {
   width: 1.35rem;
   height: 1.35rem;
   flex: 0 0 auto;
-  filter: drop-shadow(1px 0 rgba(183, 47, 43, 0.45));
+  filter: drop-shadow(1px 0 var(--pe-brand-surface));
 }
 
 .riso-nav__group a:hover {
@@ -1383,15 +1507,15 @@ textarea:focus-visible {
 }
 
 .riso-nav__group a[aria-current="page"] {
-  border-color: var(--pe-ink);
-  color: var(--pe-ink);
+  border-color: var(--pe-on-highlight);
+  color: var(--pe-on-highlight);
   background: var(--pe-yellow);
-  box-shadow: 3px 3px 0 var(--pe-ink);
+  box-shadow: 3px 3px 0 var(--pe-on-highlight);
   font-weight: 800;
 }
 
 .riso-nav__group button:disabled {
-  color: rgba(255, 253, 246, 0.58);
+  color: color-mix(in srgb, var(--pe-brand-on) 58%, transparent);
   cursor: not-allowed;
 }
 
@@ -1400,13 +1524,14 @@ textarea:focus-visible {
   margin-inline: -0.65rem;
   padding: 1rem 1.6rem 1rem 0.75rem;
   border: 1.5px solid var(--pe-ink);
-  color: var(--pe-blue);
+  color: var(--pe-accent-text);
   background-color: var(--pe-paper);
   background-image: url("/textures/riso-paper.webp");
   background-size: 30rem 30rem;
+  background-blend-mode: var(--pe-texture-blend);
   box-shadow:
-    4px 5px 0 var(--pe-coral),
-    -3px 8px 0 rgba(243, 239, 227, 0.72);
+    4px 5px 0 var(--pe-ink),
+    -3px 8px 0 var(--pe-paper-offset);
   clip-path: polygon(1% 2%, 96% 0, 100% 96%, 4% 100%, 0 48%);
   transform: rotate(-0.8deg);
 }
@@ -1417,7 +1542,7 @@ textarea:focus-visible {
   top: 44%;
   right: -1.4rem;
   padding: 0.2rem 0.45rem;
-  border: 2px solid var(--pe-blue);
+  border: 2px solid var(--pe-accent);
   font-family: var(--pe-font-display);
   font-size: 1rem;
   font-weight: 800;
@@ -1428,7 +1553,7 @@ textarea:focus-visible {
 }
 
 .riso-nav__group--planned h2 {
-  color: var(--pe-blue);
+  color: var(--pe-accent-text);
 }
 
 .riso-nav__group--planned li {
@@ -1444,12 +1569,12 @@ textarea:focus-visible {
   width: 0.28rem;
   height: 0.28rem;
   border-radius: 50%;
-  background: var(--pe-blue);
+  background: var(--pe-accent);
   transform: translateY(-50%);
 }
 
 .riso-nav__group--planned button:disabled {
-  color: rgba(22, 63, 140, 0.57);
+  color: color-mix(in srgb, var(--pe-accent-text) 58%, transparent);
 }
 
 .riso-nav__group--planned .riso-nav__stamp {
@@ -1473,6 +1598,7 @@ textarea:focus-visible {
   background-color: var(--pe-paper);
   background-image: url("/textures/riso-paper.webp");
   background-size: 48rem 48rem;
+  background-blend-mode: var(--pe-texture-blend);
 }
 
 .riso-masthead {
@@ -1500,7 +1626,7 @@ textarea:focus-visible {
 }
 
 .riso-masthead__label {
-  color: var(--pe-blue);
+  color: var(--pe-accent-text);
   font-weight: 600;
 }
 
@@ -1512,7 +1638,7 @@ textarea:focus-visible {
   letter-spacing: -0.01em;
   line-height: 1.1;
   text-transform: uppercase;
-  text-shadow: 1px 0 0 rgba(183, 47, 43, 0.28);
+  text-shadow: 1px 0 0 var(--pe-accent-soft);
   overflow-wrap: anywhere;
 }
 
@@ -1522,7 +1648,7 @@ textarea:focus-visible {
 
 .riso-masthead__event[data-load-state="unavailable"]::after {
   content: " · name unavailable";
-  color: var(--pe-coral);
+  color: var(--pe-rose);
   font-family: var(--pe-font-mono);
   font-size: 0.68rem;
   letter-spacing: 0.04em;
@@ -1533,9 +1659,18 @@ textarea:focus-visible {
   padding: 0.25rem 0.45rem;
   border: 1px solid var(--pe-ink);
   background: var(--pe-yellow);
-  color: var(--pe-ink);
+  color: var(--pe-on-highlight);
   font-weight: 600;
   transform: rotate(1deg);
+}
+
+.riso-masthead__controls,
+.riso-cover__controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 0.75rem;
 }
 
 /* Organizer overview */
@@ -1559,8 +1694,8 @@ textarea:focus-visible {
   line-height: 0.83;
   text-transform: uppercase;
   text-shadow:
-    1px 0 0 rgba(183, 47, 43, 0.38),
-    -1px 1px 0 rgba(22, 63, 140, 0.16);
+    1px 0 0 var(--pe-accent-soft),
+    -1px 1px 0 var(--pe-divider);
 }
 
 .riso-overview__intro p {
@@ -1588,7 +1723,7 @@ textarea:focus-visible {
 }
 
 .riso-overview__section-heading > span {
-  color: var(--pe-coral);
+  color: var(--pe-accent-text);
   font-family: var(--pe-font-mono);
   font-size: 0.68rem;
 }
@@ -1613,15 +1748,15 @@ textarea:focus-visible {
   padding: 0.8rem 0.9rem;
   border: 1.5px solid var(--pe-ink);
   color: var(--pe-ink);
-  background: rgba(250, 247, 238, 0.78);
+  background: var(--pe-card-soft);
   text-decoration: none;
-  box-shadow: 3px 3px 0 rgba(22, 63, 140, 0.2);
+  box-shadow: 3px 3px 0 var(--pe-accent-soft);
 }
 
 .riso-overview__links a:hover {
-  color: var(--pe-cream-text);
-  background: var(--pe-blue);
-  box-shadow: 3px 3px 0 var(--pe-coral);
+  color: var(--pe-on-accent);
+  background: var(--pe-accent);
+  box-shadow: 3px 3px 0 var(--pe-ink);
 }
 
 .riso-overview__links span {
@@ -1663,9 +1798,9 @@ textarea:focus-visible {
   text-transform: uppercase;
 }
 
-.riso-cover__header > a:last-child {
-  color: var(--pe-blue) !important;
-  border-bottom-color: var(--pe-blue) !important;
+.riso-cover__controls > a {
+  color: var(--pe-accent-text) !important;
+  border-bottom-color: var(--pe-accent) !important;
 }
 
 .riso-cover__mark {
@@ -1673,13 +1808,13 @@ textarea:focus-visible {
   width: 3rem;
   height: 3rem;
   place-items: center;
-  border: 2px solid var(--pe-ink) !important;
-  color: var(--pe-cream-text) !important;
-  background: var(--pe-blue);
+  border: 2px solid var(--pe-action-edge) !important;
+  color: var(--pe-on-accent) !important;
+  background: var(--pe-accent);
   font-family: var(--pe-font-display);
   font-size: 1.35rem;
   text-decoration: none;
-  box-shadow: 4px 4px 0 var(--pe-coral);
+  box-shadow: 4px 4px 0 var(--pe-action-edge);
 }
 
 .riso-cover__hero {
@@ -1692,7 +1827,7 @@ textarea:focus-visible {
   width: fit-content;
   margin: 0;
   padding: 0.25rem 0.5rem;
-  color: var(--pe-ink);
+  color: var(--pe-on-highlight);
   background: var(--pe-yellow);
   font-family: var(--pe-font-mono);
   font-size: 0.68rem;
@@ -1702,7 +1837,7 @@ textarea:focus-visible {
 }
 
 .riso-cover h1 {
-  color: var(--pe-blue);
+  color: var(--pe-accent);
   font-size: clamp(3.25rem, 18vw, 13rem);
   overflow-wrap: anywhere;
 }
@@ -1739,7 +1874,7 @@ textarea:focus-visible {
 
 .riso-cover__lifecycle span {
   grid-row: 1 / 3;
-  color: var(--pe-coral);
+  color: var(--pe-accent-text);
   font-family: var(--pe-font-mono);
   font-size: 0.68rem;
 }
@@ -1787,19 +1922,21 @@ textarea:focus-visible {
 .promote__button:not(.promote__secondary),
 .event-page__submit,
 .checkin__submit {
-  border: 2px solid var(--pe-ink);
+  border: 2px solid var(--pe-action-edge);
   border-radius: var(--pe-radius);
-  background: var(--pe-coral);
-  box-shadow: 4px 4px 0 var(--pe-ink);
+  color: var(--pe-on-accent);
+  background: var(--pe-accent);
+  box-shadow: 4px 4px 0 var(--pe-action-edge);
 }
 
 .intake__submit:hover:not([disabled]),
 .promote__button:not(.promote__secondary):hover:not([disabled]),
 .event-page__submit:hover:not([disabled]),
 .checkin__submit:hover:not([disabled]) {
-  background: var(--pe-blue);
-  border-color: var(--pe-ink);
-  box-shadow: 2px 2px 0 var(--pe-ink);
+  color: var(--pe-on-accent);
+  background: var(--pe-accent-hover);
+  border-color: var(--pe-action-edge);
+  box-shadow: 2px 2px 0 var(--pe-action-edge);
   transform: translate(2px, 2px);
 }
 
@@ -1812,8 +1949,8 @@ textarea:focus-visible {
 .guests__panel,
 .promote__panel {
   border-color: var(--pe-ink);
-  background: rgba(250, 247, 238, 0.84);
-  box-shadow: 4px 4px 0 rgba(22, 63, 140, 0.14);
+  background: var(--pe-card-translucent);
+  box-shadow: var(--pe-shadow);
 }
 
 input,
@@ -1832,7 +1969,7 @@ textarea {
   font-size: clamp(3.5rem, 8vw, 6.5rem);
   line-height: 0.9;
   text-shadow:
-    1.5px 0 0 rgba(183, 47, 43, 0.42),
+    1.5px 0 0 var(--pe-accent-soft),
     -1px 1px 0 rgba(22, 63, 140, 0.18);
 }
 
@@ -1880,20 +2017,20 @@ textarea {
 
 .snapshot {
   border: 1.5px solid var(--pe-blue);
-  background: rgba(226, 231, 240, 0.78);
-  box-shadow: 3px 3px 0 rgba(22, 63, 140, 0.18);
+  background: var(--pe-info-wash-translucent);
+  box-shadow: 3px 3px 0 var(--pe-cyan-wash);
 }
 
 .plan__verdict {
   padding: 0.85rem 1rem;
   border: 2px solid var(--pe-ink);
-  color: var(--pe-ink);
+  color: var(--pe-on-highlight);
   background: var(--pe-yellow);
   box-shadow: 4px 4px 0 var(--pe-ink);
 }
 
 .plan__verdict--infeasible {
-  color: var(--pe-cream-text);
+  color: var(--pe-on-accent);
   background: var(--pe-coral);
 }
 
@@ -1902,7 +2039,7 @@ textarea {
 }
 
 .plan__verdict--feasible {
-  color: var(--pe-cream-text);
+  color: var(--pe-on-info);
   background: var(--pe-blue);
 }
 
@@ -1924,7 +2061,7 @@ textarea {
 .plan__refused {
   border: 1.5px solid var(--pe-coral);
   background: var(--pe-amber-wash);
-  box-shadow: 3px 3px 0 rgba(183, 47, 43, 0.2);
+  box-shadow: 3px 3px 0 var(--pe-accent-soft);
 }
 
 .plan__route {
@@ -1939,7 +2076,7 @@ textarea {
   position: relative;
   min-width: 0;
   border: 1.5px solid var(--pe-blue);
-  background: rgba(250, 247, 238, 0.78);
+  background: var(--pe-card-soft);
 }
 
 .plan__route-step + .plan__route-step {
@@ -1959,7 +2096,7 @@ textarea {
 }
 
 .plan__route-step > a:hover {
-  color: var(--pe-cream-text);
+  color: var(--pe-on-info);
   background: var(--pe-blue);
 }
 
@@ -1998,13 +2135,13 @@ textarea {
 }
 
 .plan__route-step--current {
-  color: var(--pe-ink);
+  color: var(--pe-on-highlight);
   background: var(--pe-yellow);
   box-shadow: 3px 3px 0 var(--pe-coral);
 }
 
 .plan__route-step--complete {
-  background: rgba(226, 231, 240, 0.82);
+  background: var(--pe-info-wash-strong);
 }
 
 .plan__workbench {
@@ -2018,7 +2155,7 @@ textarea {
   min-width: 0;
   padding: 1rem;
   border: 1.5px solid var(--pe-blue);
-  background: rgba(250, 247, 238, 0.76);
+  background: var(--pe-card-quiet);
 }
 
 .plan__review-column > h2,
@@ -2073,17 +2210,17 @@ textarea {
   align-items: center;
   justify-content: center;
   padding: 0.55rem 0.7rem;
-  border: 1.5px solid var(--pe-ink);
-  color: var(--pe-cream-text);
-  background: var(--pe-blue);
+  border: 1.5px solid var(--pe-action-edge);
+  color: var(--pe-on-accent);
+  background: var(--pe-accent);
   font-weight: 800;
   text-align: center;
   text-decoration: none;
-  box-shadow: 3px 3px 0 var(--pe-ink);
+  box-shadow: 3px 3px 0 var(--pe-action-edge);
 }
 
 .plan__checklist-column a:hover {
-  background: var(--pe-coral);
+  background: var(--pe-accent-hover);
 }
 
 @media (min-width: 40rem) {
@@ -2212,7 +2349,7 @@ textarea {
 
 .disclosure__panel {
   padding-left: 0.75rem;
-  border-left: 2px solid rgba(0, 0, 0, 0.15);
+  border-left: 2px solid var(--pe-rule);
 }
 
 @media (prefers-reduced-motion: reduce) {
