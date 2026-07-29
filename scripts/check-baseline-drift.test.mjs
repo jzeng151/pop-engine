@@ -1954,6 +1954,19 @@ describe.concurrent("F-203 Phase 2 scope agreement (SPEC-CONFLICT #127 item 1)",
     expect(output).toContain("F-203 scope check passed");
   });
 
+  it.each(["docs/ROADMAP.md", "docs/PRD.md"])(
+    "accepts a non-mutating F-203 decision reference in %s",
+    async (relative) => {
+      const { status, output } = await runOn({
+        [relative]:
+          SQUARE_RECONCILED[relative] + "\n**Decision:** This does not change F-203 scope.\n",
+      });
+
+      expect(status, output).toBe(0);
+      expect(output).toContain("F-203 scope check passed");
+    },
+  );
+
   it("rejects a conflicting whole-feature Roadmap decision", async () => {
     const { status, output } = await runOn({
       "docs/ROADMAP.md":
@@ -2187,6 +2200,17 @@ describe.concurrent("F-203 Phase 2 scope agreement (SPEC-CONFLICT #127 item 1)",
     expect(output).toContain(
       "specs/F-203-deadline-alerts.md must not define Phase 2 acceptance criteria",
     );
+  });
+
+  it("accepts a heading that explicitly denies Phase 2 acceptance criteria", async () => {
+    const { status, output } = await runOn({
+      "specs/F-203-deadline-alerts.md":
+        SQUARE_RECONCILED["specs/F-203-deadline-alerts.md"] +
+        "\n## Phase 2 — No Acceptance Criteria Yet\n",
+    });
+
+    expect(status).toBe(0);
+    expect(output).toContain("F-203 scope check passed");
   });
 
   it("accepts a generic criterion that preserves the Phase 1 scope cut", async () => {
@@ -2645,6 +2669,26 @@ describe.concurrent("F-203 Phase 2 scope agreement (SPEC-CONFLICT #127 item 1)",
         [relative]: SQUARE_RECONCILED[relative].replace(
           "\n- **F-203 (full)**",
           "\nPhase 3 — moved assignment\n--------------------------\n\n- **F-203 (full)**",
+        ),
+      });
+
+      expect(status).toBe(1);
+      expect(output).toContain(
+        `${relative} must keep its F-203 full-scope assignment under Phase 2`,
+      );
+    },
+  );
+
+  it.each([
+    ["docs/ROADMAP.md", "### Phase 3 — Deferred"],
+    ["docs/PRD.md", "#### Phase 3 — Deferred"],
+  ])(
+    "respects a nested phase heading before the F-203 assignment in %s",
+    async (relative, heading) => {
+      const { status, output } = await runOn({
+        [relative]: SQUARE_RECONCILED[relative].replace(
+          "\n- **F-203 (full)**",
+          `\n${heading}\n\n- **F-203 (full)**`,
         ),
       });
 

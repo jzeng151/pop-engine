@@ -1646,6 +1646,10 @@ const f203CriterionNonGoal = new RegExp(
     `(?:a\\s+)?(?:non-goals?|out of scope|excluded)\\b)\\s*[.!]?\\s*$`,
   "i",
 );
+const f203NoAcceptanceCriteria =
+  /\b(?:no|without)\s+(?:Phase\s+2\s+)?acceptance criteria\b|\bacceptance criteria\b[^.]*\b(?:none|not (?:defined|scheduled|included)|non-goal)\b/i;
+const f203NoScopeChange =
+  /\b(?:does|do|did|will)\s+not\s+(?:change|alter|modify)\s+(?:the\s+)?F-203(?:'s)?\s+(?:scope|depth|phase|scheduling)\s*[.!]?\s*$/i;
 const f203DecisionScope =
   /\b(?:scope|depth|phase\s+\d+|planned|unplanned|scheduled|unscheduled|scheduling|acceptance criteria)\b/i;
 const f203Planning = /\bplanned,\s+(?:not scheduled|unscheduled)\b/i;
@@ -1705,6 +1709,23 @@ function parseMarkdownHeadings(markdown) {
       title: heading[1],
     })),
   ].sort((left, right) => left.index - right.index);
+}
+
+function f203OwningPhase(headings, offset) {
+  let descendantLevel = 7;
+  for (let index = headings.length - 1; index >= 0; index -= 1) {
+    const heading = headings[index];
+    if (heading.index >= offset || heading.level >= descendantLevel) continue;
+    descendantLevel = heading.level;
+    const phase = /\bPhase\s+(\d+)\b/i.exec(heading.title);
+    if (phase) return phase[1];
+  }
+  return undefined;
+}
+
+function isOnlyNonMutatingF203Reference(text) {
+  const references = text.split(/(?<=[.!?])\s+/).filter((sentence) => /\bF-203\b/i.test(sentence));
+  return references.length > 0 && references.every((sentence) => f203NoScopeChange.test(sentence));
 }
 
 for (const relative of f203Artifacts) {
@@ -1793,8 +1814,10 @@ for (const relative of f203Artifacts) {
       addsUnscheduledProseCriterion ||
       addsUnscheduledTableCriterion ||
       addsHeadingScopedCriterion ||
-      headings.some(({ title }) =>
-        /(?:Phase 2\b.*\bAcceptance Criteria|Acceptance Criteria\b.*\bPhase 2)\b/i.test(title),
+      headings.some(
+        ({ title }) =>
+          /(?:Phase 2\b.*\bAcceptance Criteria|Acceptance Criteria\b.*\bPhase 2)\b/i.test(title) &&
+          !f203NoAcceptanceCriteria.test(title),
       )
     ) {
       f203Failures.push(
@@ -1835,6 +1858,7 @@ for (const relative of f203Artifacts) {
       const isListAssignment = requiresListAssignment && /^\s*(?:[-*+]|\d+[.)])\s+/.test(raw);
       const isTableAssignment = requiresListAssignment && /^\s*\|/.test(raw);
       if (requiresListAssignment) {
+        if (isOnlyNonMutatingF203Reference(normalized)) return false;
         if (relative === "docs/ROADMAP.md" && f203RoadmapDecision.test(raw)) {
           return lower.includes("f-203") && addressesScope;
         }
@@ -1968,11 +1992,7 @@ for (const relative of f203Artifacts) {
       if (isScopeDecision) {
         return /\bunscheduled\s+Phase 2\s+depth\b/i.test(normalized);
       }
-      const maxHeadingLevel = relative === "docs/ROADMAP.md" ? 2 : 3;
-      const heading = headings.findLast(
-        (candidate) => candidate.index < offset && candidate.level <= maxHeadingLevel,
-      );
-      return /\bPhase\s+(\d+)\b/i.exec(heading?.title ?? "")?.[1] === "2";
+      return f203OwningPhase(headings, offset) === "2";
     });
     if (!underPhase2) {
       f203Failures.push(`${relative} must keep its F-203 full-scope assignment under Phase 2`);
