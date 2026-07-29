@@ -150,15 +150,21 @@ describe.runIf(databaseUrl.length > 0)("F-101 event intake endpoints", () => {
       });
     });
 
-    it("keeps historical food-exception claims out of active responses", async () => {
+    it("keeps retired historical answers out of active create and read responses", async () => {
       const created = await post(scenario("F"));
+      expect(created.body.event).not.toHaveProperty("food_affinity_private_exception_claimed");
+      expect(created.body.event).not.toHaveProperty("venue_has_assembly_approval");
       await database.query(
-        "UPDATE events SET food_affinity_private_exception_claimed = 'yes' WHERE id = $1",
+        `UPDATE events
+            SET food_affinity_private_exception_claimed = 'yes',
+                venue_has_assembly_approval = 'yes'
+          WHERE id = $1`,
         [created.body.event.id],
       );
       const response = await request(api).get(`/api/events/${created.body.event.id}`);
       expect(response.status).toBe(200);
       expect(response.body.event).not.toHaveProperty("food_affinity_private_exception_claimed");
+      expect(response.body.event).not.toHaveProperty("venue_has_assembly_approval");
     });
 
     it("warns inline that a selling block party conflicts with eligibility, and stores it", async () => {
@@ -244,8 +250,17 @@ describe.runIf(databaseUrl.length > 0)("F-101 event intake endpoints", () => {
          VALUES ($1, $2, 1, 'nyc.v2.2', 'feasible', '{}'::jsonb, '{}'::jsonb)`,
         [randomUUID(), event.id],
       );
+      await database.query(
+        `UPDATE events
+            SET food_affinity_private_exception_claimed = 'yes',
+                venue_has_assembly_approval = 'yes'
+          WHERE id = $1`,
+        [event.id],
+      );
 
       const stored = await request(api).get(`/api/events/${event.id}`);
+      expect(stored.body.event).not.toHaveProperty("food_affinity_private_exception_claimed");
+      expect(stored.body.event).not.toHaveProperty("venue_has_assembly_approval");
       const resaved = await request(api)
         .patch(`/api/events/${event.id}`)
         .send(
@@ -261,10 +276,6 @@ describe.runIf(databaseUrl.length > 0)("F-101 event intake endpoints", () => {
                   // F-301 promotion fields — not intake; re-sending them is unknown_field.
                   "description",
                   "public_page_published",
-                  // F-110 keeps the replaced coarse answer as historical storage only.
-                  "venue_has_assembly_approval",
-                  // #194 keeps the removed claim as historical storage only.
-                  "food_affinity_private_exception_claimed",
                 ].includes(column),
             ),
           ),
@@ -274,6 +285,8 @@ describe.runIf(databaseUrl.length > 0)("F-101 event intake endpoints", () => {
       expect(resaved.body.event.revision_counter).toBe(1);
       expect(resaved.body.plan_stale).toBe(false);
       expect(resaved.body.event.updated_at).toBe(stored.body.event.updated_at);
+      expect(resaved.body.event).not.toHaveProperty("food_affinity_private_exception_claimed");
+      expect(resaved.body.event).not.toHaveProperty("venue_has_assembly_approval");
       expect((await request(api).get(`/api/events/${event.id}`)).body.plan_stale).toBe(false);
     });
 
@@ -303,10 +316,6 @@ describe.runIf(databaseUrl.length > 0)("F-101 event intake endpoints", () => {
               "updated_at",
               "description",
               "public_page_published",
-              // F-110 keeps the replaced coarse answer as historical storage only.
-              "venue_has_assembly_approval",
-              // #194 keeps the removed claim as historical storage only.
-              "food_affinity_private_exception_claimed",
             ].includes(column),
         ),
       );

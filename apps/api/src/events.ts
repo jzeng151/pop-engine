@@ -73,6 +73,7 @@ async function eventResponse(
 ): Promise<EventResponse> {
   const activeEvent = { ...event };
   delete activeEvent.food_affinity_private_exception_claimed;
+  delete activeEvent.venue_has_assembly_approval;
   return {
     status,
     body: {

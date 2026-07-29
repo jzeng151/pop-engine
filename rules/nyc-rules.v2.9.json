@@ -259,7 +259,7 @@
       "values": ["yes", "no", "unknown"],
       "collected": true,
       "asked_when": "location_type = private_venue AND headcount gte 75",
-      "note": "Answer yes only when the current or most recent PACO, certificate of occupancy, and DOB-approved primary or alternate plan identify the exact event space, authorize the event use and assembly classification, allow the event maximum occupant load, and match its seating, furnishings, and layout."
+      "note": "Check the current or most recent PACO, certificate of occupancy, and DOB-approved primary or alternate plan:\n- Identifies the exact event space.\n- Authorizes the event use and assembly classification.\n- Allows the event's maximum occupant load.\n- Matches the event's seating, furnishings, and layout.\nAnswer No if any checklist item has a proved mismatch.\nAnswer Yes if all checklist items are proved.\nAnswer I don't know otherwise."
     },
     {
       "field": "venue_fdny_pa_permit_current_for_event_space",

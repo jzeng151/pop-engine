@@ -91,6 +91,21 @@ describe("intake contract derives from the published registry", () => {
     }
   });
 
+  it("publishes the approved PACO checklist and complete fold guidance", () => {
+    expect(fieldNamed("venue_paco_covers_exact_event").note).toBe(
+      [
+        "Check the current or most recent PACO, certificate of occupancy, and DOB-approved primary or alternate plan:",
+        "- Identifies the exact event space.",
+        "- Authorizes the event use and assembly classification.",
+        "- Allows the event's maximum occupant load.",
+        "- Matches the event's seating, furnishings, and layout.",
+        "Answer No if any checklist item has a proved mismatch.",
+        "Answer Yes if all checklist items are proved.",
+        "Answer I don't know otherwise.",
+      ].join("\n"),
+    );
+  });
+
   it("resolves each asked_when form to the clause it means", () => {
     // These are the engine's clauses, not a second vocabulary: the questionnaire and the rules
     // engine parse `asked_when` with one parser, so they cannot drift apart on what a
