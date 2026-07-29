@@ -1609,6 +1609,7 @@ const f203BaselineScope = new RegExp(
 );
 const f203RoadmapDecision = /(?:^|\r?\n)\s*\*\*Status:\*\*/i;
 const f203PrdDecision = /(?:^|\r?\n)\s*\*\*Issue #127 amendment\b/i;
+const f203SpecDecision = /^\s*\*\*(?:Status|Decision)\b/i;
 const f203RetainedScope = new RegExp(
   `\\bF-203\\b\\s+retains\\s+${f203Capabilities.source}\\s+as planned,\\s+unscheduled\\b`,
   "i",
@@ -1658,6 +1659,17 @@ for (const relative of f203Artifacts) {
   }
 
   const contents = activeMarkdown(readFileSync(full, "utf8"));
+  if (
+    relative === "specs/F-203-deadline-alerts.md" &&
+    /^#{1,6}\s+(?:Phase 2\b.*\bAcceptance Criteria|Acceptance Criteria\b.*\bPhase 2)\b/im.test(
+      contents,
+    )
+  ) {
+    f203Failures.push(
+      "specs/F-203-deadline-alerts.md must not define Phase 2 acceptance criteria while " +
+        "its Phase 2 scope is planned but unscheduled",
+    );
+  }
   let nextStatementOffset = 0;
   const scopeStatements = contents
     .split(/\r?\n\s*\r?\n|\r?\n(?=\s*(?:[-*+]|\d+\.)\s+)/)
@@ -1691,6 +1703,7 @@ for (const relative of f203Artifacts) {
       if (relative === "docs/BASELINE.md") {
         return /^\s*\*\*Decision\b/i.test(raw) && lower.includes("f-203");
       }
+      if (f203SpecDecision.test(raw)) return lower.includes("f-203");
       if (!namesScope || !lower.includes("f-203")) return false;
       return (
         /\bF-203\b[^.]*\b(?:keeps|retains|owns|includes)\b/i.test(normalized) ||
@@ -1704,6 +1717,9 @@ for (const relative of f203Artifacts) {
       (relative === "docs/PRD.md" && f203PrdDecision.test(raw));
     if (isScopeDecision) {
       return !f203RetainedScope.test(normalized);
+    }
+    if (relative === "specs/F-203-deadline-alerts.md" && f203SpecDecision.test(raw)) {
+      return false;
     }
     if (!f203Capabilities.test(normalized) || !f203Planning.test(normalized)) return true;
     if (f203Negation.test(normalized)) return true;

@@ -76,8 +76,9 @@ const SQUARE_RECONCILED = {
   "docs/ARCHITECTURE-FUTURE.md":
     "# Architecture\n\n| External integrations | F-108, F-212, F-308, F-408 | webhook events |\n",
   "specs/F-203-deadline-alerts.md":
-    "# F-203\n\nEscalations, digests, team reminders, and per-user preferences remain Phase 2 " +
-    "depth under F-203; planned, not scheduled.\n",
+    "# F-203\n\n**Status:** Phase 2 depth retained under F-203 without scheduling it.\n\n" +
+    "Escalations, digests, team reminders, and per-user preferences remain Phase 2 depth under " +
+    "F-203; planned, not scheduled.\n",
 };
 
 /** The fixture ruleset's version. Synthetic on purpose, and far from any published one. */
@@ -1808,6 +1809,33 @@ describe.concurrent("F-203 Phase 2 scope agreement (SPEC-CONFLICT #127 item 1)",
 
     expect(status).toBe(1);
     expect(output).toContain("docs/BASELINE.md must affirmatively assign");
+  });
+
+  it("rejects a conflicting phase decision in the spec status", async () => {
+    const { status, output } = await runOn({
+      "specs/F-203-deadline-alerts.md": SQUARE_RECONCILED["specs/F-203-deadline-alerts.md"].replace(
+        "Phase 2 depth retained under F-203",
+        "Phase 3 depth retained under F-203",
+      ),
+    });
+
+    expect(status).toBe(1);
+    expect(output).toContain(
+      "specs/F-203-deadline-alerts.md must assign its F-203 full scope to Phase 2",
+    );
+  });
+
+  it("rejects Phase 2 acceptance criteria while the scope remains unscheduled", async () => {
+    const { status, output } = await runOn({
+      "specs/F-203-deadline-alerts.md":
+        SQUARE_RECONCILED["specs/F-203-deadline-alerts.md"] +
+        "\n## Phase 2 Acceptance Criteria\n\n1. Send a digest.\n",
+    });
+
+    expect(status).toBe(1);
+    expect(output).toContain(
+      "specs/F-203-deadline-alerts.md must not define Phase 2 acceptance criteria",
+    );
   });
 
   it.each([
