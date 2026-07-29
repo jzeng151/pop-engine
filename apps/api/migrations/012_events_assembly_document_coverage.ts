@@ -27,7 +27,9 @@ export function up(pgm: MigrationBuilder): void {
   pgm.sql(`
     UPDATE events
        SET venue_paco_covers_exact_event = 'unknown',
-           venue_fdny_pa_permit_current_for_event_space = 'unknown'
+           venue_fdny_pa_permit_current_for_event_space = 'unknown',
+           revision_counter = revision_counter + 1,
+           updated_at = current_timestamp
      WHERE status = 'draft'
        AND location_type = 'private_venue'
        AND headcount >= 75

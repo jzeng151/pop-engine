@@ -55,13 +55,6 @@ const QUESTION_LABELS: Readonly<Record<string, string>> = {
     "Is the FDNY Public Assembly Permit current for this event space?",
 };
 
-const PACO_EVIDENCE_CHECKS = [
-  "The documents identify the exact event space.",
-  "They authorize the event use and assembly classification.",
-  "They allow the event's maximum occupant load.",
-  "The seating, furnishings, and layout match an approved primary or alternate plan.",
-] as const;
-
 const isBlank = (value: IntakeValue): boolean =>
   value === null || value === undefined || value === "";
 
@@ -561,18 +554,10 @@ function Question({
       </legend>
       {field.note !== null && <p className="intake__note">{field.note}</p>}
       {field.field === "venue_paco_covers_exact_event" && (
-        <div className="intake__note">
-          <p>Check the PACO, certificate of occupancy, and approved plan for all four facts:</p>
-          <ul>
-            {PACO_EVIDENCE_CHECKS.map((check) => (
-              <li key={check}>{check}</li>
-            ))}
-          </ul>
-          <p>
-            Answer No if any check mismatches, Yes only if all four match, and I don&rsquo;t know
-            otherwise. These checks are guidance; only the answer below is saved.
-          </p>
-        </div>
+        <p className="intake__note">
+          Use the published conditions above as the evidence checklist; only the answer below is
+          saved.
+        </p>
       )}
       <Control field={field} value={value} onAnswer={onAnswer} />
       <FieldError issue={issue} />

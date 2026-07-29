@@ -52,9 +52,11 @@ const questionsOnScreen = (): string[] =>
       "",
   );
 
-const renderForm = (eventId?: string) => {
+const renderForm = (eventId?: string, activeContract = contract) => {
   const user = userEvent.setup();
-  render(<IntakeForm contract={contract} apiBaseUrl="https://api.example.com" eventId={eventId} />);
+  render(
+    <IntakeForm contract={activeContract} apiBaseUrl="https://api.example.com" eventId={eventId} />,
+  );
   return user;
 };
 
@@ -194,20 +196,23 @@ describe("conditional reveal follows the registry (spec #2)", () => {
     ).toBeNull();
   });
 
-  it("shows the four PACO evidence checks and the approved fold guidance", async () => {
-    const user = renderForm();
+  it("renders PACO evidence guidance from the active registry instead of web copy", async () => {
+    const alternateGuidance = "Alternate published PACO evidence guidance.";
+    const activeContract = {
+      ...contract,
+      fields: contract.fields.map((field) =>
+        field.field === "venue_paco_covers_exact_event"
+          ? { ...field, note: alternateGuidance }
+          : field,
+      ),
+    };
+    const user = renderForm(undefined, activeContract);
     await chooseOption(user, "location_type", "private_venue");
     await fillField(user, "headcount", "75");
 
-    for (const check of [
-      "The documents identify the exact event space.",
-      "They authorize the event use and assembly classification.",
-      "They allow the event's maximum occupant load.",
-      "The seating, furnishings, and layout match an approved primary or alternate plan.",
-    ]) {
-      expect(screen.getByText(check)).toBeDefined();
-    }
-    expect(screen.getByText(/Answer No if any check mismatches/)).toBeDefined();
+    expect(screen.getByText(alternateGuidance)).toBeDefined();
+    expect(screen.queryByText(/The documents identify the exact event space/)).toBeNull();
+    expect(screen.getByText(/published conditions above as the evidence checklist/)).toBeDefined();
     expect(screen.getByText(/only the answer below is saved/)).toBeDefined();
   });
 

@@ -1,6 +1,6 @@
 # Venue Assembly-Approval Coverage
 
-**Status:** SUPERSEDED (2026-07-29) — retained as research history only. The product owner assigned and approved F-110 under issue #188 and decision gate `msg_bed16d397a64`; `specs/F-110-assembly-document-coverage-intake.md` is the implementable contract and this file is not.
+**Status:** PROPOSED (2026-07-28; Approval Blocker 13 resolved 2026-07-28 by the product owner as route 1, venue-neutral output, recorded on PR #171. Still PROPOSED: that decision settles what the feature says, not whether it can be published, and Approval Blocker 5 is the one that governs publication.) · **Reviewer/approver:** unassigned · **Owner:** unassigned — **both are Approval Blocker 21, a PREREQUISITE**, because only tagged entries gate approval and an untagged note here would let this spec reach APPROVED with the lane unowned · not in `docs/BASELINE.md` and must not be added there while this is PROPOSED.
 **Phase:** post-MVP · **Lane:** Dev 1 (engine) + Dev 4 (verification), pending assignment · **Depends on:** F-101 (intake registry), F-201 (plan generation), F-102 (verdict and branch tables) · **Feeds:** nothing yet.
 **NO F-ID IS ASSIGNED, and the filename says so deliberately.** `F-1NN` below is a placeholder, not
 an assignment: the Stage 1 range is saturated and the id is an approval blocker. Every acceptance
