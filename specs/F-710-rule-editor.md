@@ -30,9 +30,9 @@ An authorized rules administrator can draft and edit rules as validated data wit
 
 ## Inputs, Outputs, State, Validation, and Errors
 
-- Inputs are schema-valid draft fields/AST and source references; output is a versioned non-published draft.
+- Inputs are schema-valid draft fields/AST and source references where the published rules contract requires them; output is a versioned non-published draft.
 - Draft state is editing → ready-for-review → changes-requested/approved-for-test; publication remains separate.
-- Schema error, unsupported AST, missing source, conflict, or stale edit blocks progression and never changes runtime output.
+- Schema error, unsupported AST, required source missing, conflict, or stale edit blocks progression and never changes runtime output. A source-less `COVERAGE_GAP` draft is allowed only when it matches the published rules contract and asserts no regulatory fact.
 - Missing or unresolved material data stays visibly unset, unknown, pending, or failed as appropriate; it never becomes a successful or complete result.
 - Invalid input produces a field or action-specific error without partial mutation. Retriable external failures preserve the user's confirmed state and expose a safe retry.
 
@@ -61,11 +61,12 @@ Exact HTTP, JSON Schema, migration, job, and provider shapes belong in their rev
 3. **F710-AC-03:** A stale concurrent save is rejected with a diff/reload path and no lost update.
 4. **F710-AC-04:** Verification status changes require the verification owner; semantic rule changes require verification plus engine-owner review.
 5. **F710-AC-05:** No draft affects runtime evaluation until F-714 publishes a new immutable approved artifact.
+6. **F710-AC-06:** Missing source blocks readiness for every entry except a schema-valid `COVERAGE_GAP` entry that asserts no regulatory fact; that exception matches the runtime artifact validator and has a positive fixture.
 
 ## Fixtures and Verification
 
 - Planned automated fixture IDs are the acceptance IDs above; each must map one-to-one to a runnable test before approval can claim implementation readiness.
-- Regulatory fixtures: Schema-valid/invalid AST fixtures and approved rule examples; every semantic draft requires affected and full suite coverage via F-712.
+- Regulatory fixtures: Schema-valid/invalid AST fixtures, approved rule examples, a valid source-less `COVERAGE_GAP` advisory, and a rejected source-less non-`COVERAGE_GAP` entry; every semantic draft requires affected and full suite coverage via F-712.
 - Security-sensitive and cross-workspace paths require negative authorization tests; provider paths require success, duplicate-delivery, retry, invalid-signature, and permanent-failure tests where applicable.
 
 ## Allowed Footprint and Coordination

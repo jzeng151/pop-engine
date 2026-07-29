@@ -57,7 +57,7 @@ Exact HTTP, JSON Schema, migration, job, and provider shapes belong in their rev
 ## Acceptance Criteria
 
 1. **F712-AC-01:** A run records exact candidate bytes/checksum, engine, fixture set/version, calendar, `today`, command, and result for every fixture.
-2. **F712-AC-02:** Targeted selection follows approved coverage metadata; F-714 still requires the full suite for the same candidate checksum.
+2. **F712-AC-02:** Targeted selection follows approved coverage metadata and rejects the publication gate unless every changed or added semantic branch has an approved fixture that actually exercises it; numeric thresholds require below/at/above fixtures. Empty or stale coverage metadata fails even when the unchanged full suite passes, and F-714 still requires the full suite for the same candidate checksum.
 3. **F712-AC-03:** Failure, evaluation error, timeout, cancellation, missing fixture, or changed input cannot count as a passing publication gate.
 4. **F712-AC-04:** Expected outputs remain approved fixture data and are never regenerated from the candidate under test.
 5. **F712-AC-05:** Identical inputs produce byte-stable result artifacts and no rule data executes as code.
@@ -65,7 +65,7 @@ Exact HTTP, JSON Schema, migration, job, and provider shapes belong in their rev
 ## Fixtures and Verification
 
 - Planned automated fixture IDs are the acceptance IDs above; each must map one-to-one to a runnable test before approval can claim implementation readiness.
-- Regulatory fixtures: The complete approved regulatory fixture suite plus schema-invalid, evaluation-error, timeout, and determinism runner fixtures.
+- Regulatory fixtures: The complete approved regulatory fixture suite plus schema-invalid, unexercised semantic branch, missing numeric boundary, evaluation-error, timeout, and determinism runner fixtures.
 - Security-sensitive and cross-workspace paths require negative authorization tests; provider paths require success, duplicate-delivery, retry, invalid-signature, and permanent-failure tests where applicable.
 
 ## Allowed Footprint and Coordination

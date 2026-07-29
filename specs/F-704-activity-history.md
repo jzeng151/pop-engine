@@ -12,7 +12,7 @@ Authorized users can see who changed material answers, recalculated plans, chang
 
 **In scope**
 
-- Append-only significant activity for the Roadmap actions with actor, workspace, aggregate, action, timestamp, and redacted metadata.
+- Append-only significant activity for the Roadmap actions with actor, scope, aggregate, action, timestamp, and redacted metadata. Workspace activity carries its workspace; jurisdiction-wide rules publication/rollback carries platform scope and jurisdiction instead.
 - Filter by event/action/date and link to an authorized source record.
 - Represent system, user, provider, and later rules-publication actors distinctly.
 
@@ -47,7 +47,7 @@ Authorized users can see who changed material answers, recalculated plans, chang
 | Concern              | Proposed impact                                                                                                                                  |
 | -------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------ |
 | API                  | Activity query/filter/pagination operations require approved OpenAPI contracts; writes remain internal to domain transactions.                   |
-| Schema               | Forward migration for append-only activity log with workspace/aggregate indexes and redacted metadata schema.                                    |
+| Schema               | Forward migration for append-only activity log with explicit workspace-or-platform scope, aggregate indexes, and redacted metadata schema.       |
 | Jobs                 | Jobs record their own actor/correlation and activity in the same transaction as successful state change.                                         |
 | Providers            | None.                                                                                                                                            |
 | Privacy and security | Role-scoped reads, tenant filters, strict metadata allow-list, retention, tamper-evident operational controls, and no secrets/PII/document text. |
@@ -56,10 +56,10 @@ Exact HTTP, JSON Schema, migration, job, and provider shapes belong in their rev
 
 ## Acceptance Criteria
 
-1. **F704-AC-01:** Each in-scope successful material action creates one activity record atomically with actor type, workspace, aggregate, action, and timestamp.
+1. **F704-AC-01:** Each in-scope successful material action creates one activity record atomically with actor type, exactly one approved scope, aggregate, action, and timestamp; workspace scope requires a workspace, while platform rules publication/rollback requires a jurisdiction and no fabricated workspace.
 2. **F704-AC-02:** Failed, unauthorized, rolled-back, or no-op actions do not appear as successful activity.
 3. **F704-AC-03:** Activity metadata passes the approved allow-list and contains no secret, token, document body, message body, or unredacted contact data.
-4. **F704-AC-04:** Cross-workspace query/filter/pagination/source-link paths disclose no foreign activity or aggregate existence.
+4. **F704-AC-04:** Cross-workspace query/filter/pagination/source-link paths disclose no foreign activity or aggregate existence, and platform-scoped activity is visible only through the approved platform role.
 5. **F704-AC-05:** Corrections, rule publication/rollback, and system jobs append new entries and never rewrite earlier history.
 
 ## Fixtures and Verification
@@ -82,5 +82,5 @@ Exact HTTP, JSON Schema, migration, job, and provider shapes belong in their rev
 
 ## Approval Blockers
 
-- Approve action vocabulary, metadata/redaction, retention, role visibility, and transactional emission pattern.
+- Approve action vocabulary, workspace/platform scope contract, metadata/redaction, retention, role visibility, and transactional emission pattern.
 - Assign the owner and independent reviewer, approve this spec, and add it to `docs/BASELINE.md`.

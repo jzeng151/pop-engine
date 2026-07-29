@@ -23,8 +23,7 @@ An organizer can generate one current event-day sheet containing confirmed permi
 
 ## Dependencies and Baseline
 
-- F-202 checklist, F-208/F-209 records where present, and the F-701/F-702/F-703 gate.
-- F-213 may enrich staff assignments later but is not required for a runbook without assignments.
+- F-202 checklist, F-208/F-209 records where present, F-213 staff assignments, and the F-701/F-702/F-703 gate.
 - Baseline at draft time: PRD, Roadmap, Design, and Phase 0–1.5 Architecture approved 2026-07-22; `ARCHITECTURE-FUTURE.md` approved as a planning target 2026-07-25; NYC ruleset `nyc.v2.7`, rules schema `popengine-rules/v2`, and scenario fixtures v5 where regulatory output is consumed.
 - The approval PR must re-pin any baseline version that changes before approval. A proposed or superseded input blocks implementation.
 
@@ -57,7 +56,7 @@ Exact HTTP, JSON Schema, migration, job, and provider shapes belong in their rev
 ## Acceptance Criteria
 
 1. **F405-AC-01:** A runbook identifies the exact event revision, plan/ruleset version, generation time, and source update times.
-2. **F405-AC-02:** Confirmed permit numbers, load-in tasks, contacts, and available assignments appear once and link back to their source record.
+2. **F405-AC-02:** Confirmed permit numbers, load-in tasks, contacts, and staff assignments appear once and link back to their source record.
 3. **F405-AC-03:** Missing, unknown, conflict, research-required, expired, or stale values are visibly labeled and prevent a complete/ready claim.
 4. **F405-AC-04:** Changing a source record marks the prior runbook stale; regeneration creates current output without rewriting source history.
 5. **F405-AC-05:** The approved print viewport produces readable ordering and no clipped critical content.
@@ -82,5 +81,5 @@ Exact HTTP, JSON Schema, migration, job, and provider shapes belong in their rev
 
 ## Approval Blockers
 
-- Approve included fields, ready/incomplete wording, privacy handling, and whether snapshots require persistence.
+- Approve included fields, ready/incomplete wording, privacy handling, whether snapshots require persistence, and the F-213 assignment contract.
 - Assign the owner and independent reviewer, approve this spec, and add it to `docs/BASELINE.md`.

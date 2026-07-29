@@ -12,7 +12,7 @@ An organizer can start from a past event's confirmed inputs while PopEngine alwa
 
 **In scope**
 
-- Duplicate selected organizer-confirmed event inputs into a new draft revision and require review of date/location/material unknowns.
+- Duplicate selected organizer-confirmed event inputs into a new mutable event draft and require review of date/location/material unknowns.
 - Record source event/template provenance and evaluate only after normal submission.
 - Optionally save a reusable input template without findings or workflow records.
 
@@ -30,8 +30,8 @@ An organizer can start from a past event's confirmed inputs while PopEngine alwa
 
 ## Inputs, Outputs, State, Validation, and Errors
 
-- Inputs are one authorized source revision/template; output is a new incomplete draft revision with source provenance.
-- Draft must be reviewed/submitted; evaluation pins the current baseline ruleset, calendar, and new revision.
+- Inputs are one authorized source revision/template; output is a new incomplete mutable event draft with source provenance.
+- Draft must be reviewed and submitted; submission creates the immutable revision, and evaluation pins the current baseline ruleset, calendar, and that revision.
 - Fields no longer present/compatible in the current intake registry are omitted and reported, never coerced.
 - Missing or unresolved material data stays visibly unset, unknown, pending, or failed as appropriate; it never becomes a successful or complete result.
 - Invalid input produces a field or action-specific error without partial mutation. Retriable external failures preserve the user's confirmed state and expose a safe retry.
@@ -59,7 +59,7 @@ Exact HTTP, JSON Schema, migration, job, and provider shapes belong in their rev
 1. **F503-AC-01:** Creating from a past event copies only the approved organizer-input allow-list into a new draft with a new stable Event identity.
 2. **F503-AC-02:** No finding, verdict, deadline, application, file, contact, RSVP, check-in, incident, or outcome record is copied.
 3. **F503-AC-03:** Removed/incompatible registry fields are omitted with an explicit review warning, not mapped by guess.
-4. **F503-AC-04:** Submitting evaluates the new revision with the then-current approved ruleset/calendar and stores that exact artifact version.
+4. **F503-AC-04:** Submitting the complete draft creates an immutable revision, evaluates that revision with the then-current approved ruleset/calendar, and stores the exact artifact version.
 5. **F503-AC-05:** Changing the source event after duplication cannot mutate the new draft or its later plan.
 
 ## Fixtures and Verification
