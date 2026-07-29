@@ -139,6 +139,28 @@ describe.runIf(databaseUrl.length > 0)("F-101 event intake endpoints", () => {
       expect(errorCodes(response.body)).toEqual({ body: "invalid_body" });
     });
 
+    it("rejects the deprecated food-exception claim as active input", async () => {
+      const response = await post({
+        ...scenario("F"),
+        food_affinity_private_exception_claimed: "unknown",
+      });
+      expect(response.status).toBe(400);
+      expect(errorCodes(response.body)).toEqual({
+        food_affinity_private_exception_claimed: "unknown_field",
+      });
+    });
+
+    it("keeps historical food-exception claims out of active responses", async () => {
+      const created = await post(scenario("F"));
+      await database.query(
+        "UPDATE events SET food_affinity_private_exception_claimed = 'yes' WHERE id = $1",
+        [created.body.event.id],
+      );
+      const response = await request(api).get(`/api/events/${created.body.event.id}`);
+      expect(response.status).toBe(200);
+      expect(response.body.event).not.toHaveProperty("food_affinity_private_exception_claimed");
+    });
+
     it("warns inline that a selling block party conflicts with eligibility, and stores it", async () => {
       const blockParty = scenario("D");
       const response = await post({ ...blockParty, selling_anything: true });
