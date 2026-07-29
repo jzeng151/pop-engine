@@ -61,6 +61,7 @@ Exact HTTP, JSON Schema, migration, job, and provider shapes belong in their rev
 3. **F412-AC-03:** Unknown/conflicting details remain labeled and the system never generates a legal, medical, or emergency classification.
 4. **F412-AC-04:** Unsafe/unauthorized files remain unavailable and do not erase the text incident.
 5. **F412-AC-05:** Export/retention behavior matches the approved policy and records the actor/action.
+6. **F412-AC-06:** Attachments remain in private storage; every download issuance rechecks event/workspace authorization and scan state and returns only a short-lived signed URL. Authorization loss blocks new URLs, and an issued direct-storage URL has only its disclosed bounded validity until expiry.
 
 ## Fixtures and Verification
 

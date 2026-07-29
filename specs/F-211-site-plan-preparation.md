@@ -56,7 +56,7 @@ Exact HTTP, JSON Schema, migration, job, and provider shapes belong in their rev
 
 ## Acceptance Criteria
 
-1. **F211-AC-01:** Every preparation checklist element has an approved rule or user-confirmed agency-instruction source.
+1. **F211-AC-01:** Every preparation checklist element is either linked to an approved published rule or visibly labeled user-recorded/non-regulatory with exact organizer-confirmed agency-instruction evidence; the latter cannot mutate the plan/ruleset or support an official completeness claim.
 2. **F211-AC-02:** Dimensions require explicit units and validate approved ranges without inferring missing values.
 3. **F211-AC-03:** Replacing a file preserves earlier version metadata and never edits a merged migration or immutable plan.
 4. **F211-AC-04:** Unknown/conflicting elements remain visible and prevent the interface from claiming the site plan complete.

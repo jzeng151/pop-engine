@@ -57,7 +57,7 @@ Exact HTTP, JSON Schema, migration, job, and provider shapes belong in their rev
 ## Acceptance Criteria
 
 1. **F306-AC-01:** At capacity, an eligible registration creates one ordered waitlist entry rather than an over-capacity RSVP.
-2. **F306-AC-02:** For any positive capacity delta, one transaction promotes the earliest eligible entries up to all available places and cannot overbook under concurrent workers/requests.
+2. **F306-AC-02:** For any positive capacity delta, one transaction promotes the earliest eligible entries up to all available places and inserts each durable promotion-notice outbox record; it cannot overbook or silently promote without notice work under concurrent workers/requests.
 3. **F306-AC-03:** Duplicate join, cancellation, webhook, or retry actions do not create duplicate entries, RSVPs, or promotion messages.
 4. **F306-AC-04:** Withdrawal or ineligibility before claim skips that entry without reordering remaining eligible entries.
 5. **F306-AC-05:** Promotion communication is transactional only and does not create marketing consent.

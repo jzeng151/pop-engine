@@ -61,6 +61,7 @@ Exact HTTP, JSON Schema, migration, job, and provider shapes belong in their rev
 3. **F602-AC-03:** Existing confirmed values are never overwritten; accepting a difference creates a source-linked, typed, confirmed-but-unapplied proposal for F-604 rather than appending domain history.
 4. **F602-AC-04:** Unreadable, ambiguous, conflicting, or unsupported content cannot create a confirmed workflow fact; low-confidence content stays pending until an organizer verifies and accepts/edits it against the displayed source, or is suppressed as a proposal in favor of manual entry.
 5. **F602-AC-05:** Duplicate/retried extraction of the same request does not create duplicate accepted proposals or records.
+6. **F602-AC-06:** Cancellation atomically changes the run generation; every queued or leased scan/extraction step rechecks that generation and the exact document version's availability/scan state immediately before external access, so cancelled, deleted, or quarantined content is not sent and creates no proposal.
 
 ## Fixtures and Verification
 

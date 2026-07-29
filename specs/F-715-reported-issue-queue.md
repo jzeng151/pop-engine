@@ -61,7 +61,7 @@ Exact HTTP, JSON Schema, migration, job, and provider shapes belong in their rev
 3. **F715-AC-03:** Every triage transition records actor/time/reason and preserves original report/context.
 4. **F715-AC-04:** Duplicate/link handling preserves each report and cannot inflate evidence or erase reporter context.
 5. **F715-AC-05:** Unauthorized, abusive, oversized, unsafe, or cross-workspace submissions are rejected/quarantined without exposing private plan data.
-6. **F715-AC-06:** Successful submission returns an opaque receipt; only the same authenticated reporter or an authorized triage actor can retrieve its non-authoritative status, and receipt lookup discloses no private plan, queue, other-reporter, or internal triage context.
+6. **F715-AC-06:** Successful submission returns an opaque receipt; an authenticated reporter uses their identity, while any separately approved anonymous mode issues an additional unguessable status credential shown once. Only that reporter/credential or an authorized triage actor can retrieve bounded non-authoritative status, with no private plan, queue, other-reporter, or internal triage context.
 
 ## Fixtures and Verification
 
