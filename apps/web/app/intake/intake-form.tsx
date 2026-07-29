@@ -1,5 +1,6 @@
 "use client";
 
+import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
   askedFields,
@@ -115,6 +116,7 @@ export function IntakeForm({
   /** Set on the edit route: the saved event this form loads and edits. */
   eventId?: string;
 }) {
+  const router = useRouter();
   const [answers, setAnswers] = useState<Answers>({});
   const [saved, setSaved] = useState<SavedEvent | null>(null);
   const [planStale, setPlanStale] = useState(false);
@@ -286,6 +288,7 @@ export function IntakeForm({
       setSaved(body.event);
       currentRevision.current = body.event.revision_counter;
       setPlanStale(body.plan_stale === true);
+      if (eventId === undefined) router.push(`/events/${body.event.id}`);
     } catch {
       setFailure("The API could not be reached.");
     } finally {

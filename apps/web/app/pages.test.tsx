@@ -9,6 +9,8 @@ import IntakePage from "./intake/page";
 import EditIntakePage from "./intake/[id]/page";
 import { intakeFormProps } from "./intake/intake-page-props";
 
+vi.mock("next/navigation", () => ({ useRouter: () => ({ push: vi.fn() }) }));
+
 // The route components are thin: each one reads the published ruleset on the server and
 // hands the questionnaire its props. These assert the wiring — that the contract really
 // is the published registry, and that the edit route passes the id through — rather than
