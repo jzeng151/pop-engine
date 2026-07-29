@@ -906,7 +906,6 @@ describe("the verdict's approved copy", () => {
   });
 });
 
-
 describe("F-102 · undated deadlines note", () => {
   it("notes FEASIBLE when every deadline is undated", async () => {
     stubApi(
@@ -2148,6 +2147,71 @@ describe("a scannable line (progressive disclosure)", () => {
         { ruleId: "PARKS-EVENT-001", citation: "Second page", urls: ["https://example.gov/two"] },
       ],
     });
+
+  it("renders a sourced plain-language summary and keeps legal prose collapsed", async () => {
+    const line = await collapsedLine(
+      finding({
+        name: "Place of Assembly (PACO) / Temporary Place of Assembly (TPA)",
+        agency: "DOB (+ FDNY Public Assembly Permit)",
+        disposition: "may_be_required",
+        deadlineDisplay: "Published legal deadline text.",
+        deadlineStatus: "not_calculable",
+        feeDisplay: "Published legal fee text.",
+        notes: ["Long legal qualification."],
+        userSummary: {
+          heading: "Place of Assembly approval (PACO / TPA)",
+          points: [
+            {
+              kind: "deadline",
+              text: "File at least 10 business days before the event.",
+              sources: [
+                {
+                  label: "DOB TPA filing page",
+                  url: "https://example.gov/tpa",
+                },
+              ],
+            },
+            {
+              kind: "fee",
+              text: "DOB's published TPA filing fee is $250.",
+              sources: [
+                {
+                  label: "DOB fee page",
+                  url: "https://example.gov/fees",
+                },
+              ],
+            },
+          ],
+        },
+      }),
+    );
+
+    expect(
+      line.getByRole("heading", { name: "Place of Assembly approval (PACO / TPA)" }),
+    ).toBeDefined();
+    expect(line.getByRole("list").querySelectorAll("li")).toHaveLength(3);
+    expect(line.getByText(/File at least 10 business days/)).toBeDefined();
+    expect(
+      line
+        .getAllByRole("link", { name: "DOB TPA filing page" })
+        .every((link) => link.getAttribute("href") === "https://example.gov/tpa"),
+    ).toBe(true);
+    expect(line.getByRole("link", { name: "DOB fee page" }).getAttribute("href")).toBe(
+      "https://example.gov/fees",
+    );
+    expect(line.queryByText("Published legal deadline text.")).toBeNull();
+    expect(line.queryByText("Published legal fee text.")).toBeNull();
+    expect(line.queryByText("Long legal qualification.")).toBeNull();
+
+    await userEvent.click(
+      line.getByRole("button", {
+        name: "Legal details and all sources for Place of Assembly approval (PACO / TPA)",
+      }),
+    );
+    expect(line.getByText(/Published legal deadline text/)).toBeDefined();
+    expect(line.getByText("Published legal fee text.")).toBeDefined();
+    expect(line.getByText("Long legal qualification.")).toBeDefined();
+  });
 
   it("shows exactly the summary fields before the line is expanded", async () => {
     const line = await collapsedLine(full());

@@ -866,6 +866,60 @@ describe("ruleset parsing rejects anything it cannot evaluate", () => {
     );
   });
 
+  it("parses sourced user summaries and rejects links outside the rule source", () => {
+    const output = {
+      ...baseRule.output,
+      user_summary: {
+        heading: "Plain heading",
+        points: [
+          {
+            kind: "fee",
+            text: "The fee is $25.",
+            sources: [{ label: "Official fee page", url: "https://example.test" }],
+          },
+        ],
+      },
+    };
+    const parsed = syntheticRuleset([{ ...baseRule, output }]);
+    expect(parsed.rules[0]?.userSummary).toEqual(output.user_summary);
+
+    expect(() =>
+      syntheticRuleset([
+        {
+          ...baseRule,
+          output: {
+            ...output,
+            user_summary: {
+              ...output.user_summary,
+              points: [
+                {
+                  kind: "fee",
+                  text: "The fee is $25.",
+                  sources: [{ label: "Other page", url: "https://other.test" }],
+                },
+              ],
+            },
+          },
+        },
+      ]),
+    ).toThrow(/must also appear in the rule's source.urls/);
+
+    expect(() =>
+      syntheticRuleset([
+        {
+          ...baseRule,
+          output: {
+            ...output,
+            user_summary: {
+              ...output.user_summary,
+              points: [{ kind: "fee", text: "The fee is $25.", sources: [] }],
+            },
+          },
+        },
+      ]),
+    ).toThrow(/sources must not be empty for a sourced rule/);
+  });
+
   it("rejects a malformed trigger tree", () => {
     expect(withRule({ ...baseRule, trigger: { all: [] } })).toThrow(/must not be empty/);
     expect(withRule({ ...baseRule, trigger: { all: [{ any: [], field: "headcount" }] } })).toThrow(
@@ -1011,7 +1065,7 @@ describe("ruleset parsing rejects anything it cannot evaluate", () => {
   });
 
   it("accepts the published ruleset unchanged", () => {
-    expect(ruleset.rulesetVersion).toBe("nyc.v2.10");
+    expect(ruleset.rulesetVersion).toBe("nyc.v2.11");
     expect(ruleset.slackWarningDays).toBe(14);
     expect(ruleset.rules).toHaveLength(46);
   });
@@ -1764,7 +1818,9 @@ describe("facts the ruleset publishes rather than the engine assuming (nyc.v2.4)
       TODAY,
       calendar,
     );
-    const tentFact = result.verdictDetail.missingFacts.find((fact) => fact.field === "tent_area_sqft");
+    const tentFact = result.verdictDetail.missingFacts.find(
+      (fact) => fact.field === "tent_area_sqft",
+    );
     expect(tentFact?.thresholds).toContain("DOB-TENT-001 applies above 400");
     expect(tentFact?.thresholds ?? "").not.toContain("conditional boundary");
   });

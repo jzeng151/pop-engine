@@ -129,6 +129,24 @@ export type Verdict = "FEASIBLE" | "FEASIBLE_AT_RISK" | "CONDITIONAL" | "INFEASI
 
 export type RuleSource = { readonly citation: string; readonly urls: readonly string[] };
 
+export type UserSummaryPointKind = "overview" | "deadline" | "fee" | "action" | "warning";
+
+export type SummarySourceLink = {
+  readonly label: string;
+  readonly url: string;
+};
+
+export type UserSummaryPoint = {
+  readonly kind: UserSummaryPointKind;
+  readonly text: string;
+  readonly sources: readonly SummarySourceLink[];
+};
+
+export type RuleUserSummary = {
+  readonly heading: string;
+  readonly points: readonly UserSummaryPoint[];
+};
+
 export type IntakeFieldDefinition = {
   readonly field: string;
   readonly type: string;
@@ -202,6 +220,7 @@ export type EngineRule = {
    */
   readonly verificationLastVerifiedDate: string | null;
   readonly source: RuleSource | null;
+  readonly userSummary: RuleUserSummary | null;
 };
 
 export type EngineRuleset = {
@@ -273,6 +292,7 @@ export type Finding = {
   /** Both readings of an OFFICIAL_CONFLICT rule, verbatim; null otherwise. */
   readonly conflictText: string | null;
   readonly sources: readonly FindingSource[];
+  readonly userSummary?: RuleUserSummary | null;
   readonly verificationStatus: VerificationStatus;
   /**
    * Earliest contributing rule verification date when every contributing rule publishes one;

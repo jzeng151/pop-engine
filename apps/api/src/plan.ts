@@ -114,6 +114,8 @@ export type FindingRendering = {
   deadline_unknown_fields: readonly string[];
   timeline_unresolved_reason: string | null;
   portal_instructions: string | null;
+  /** Absent on plans stored before organizer summaries were introduced. */
+  user_summary?: Finding["userSummary"];
 };
 
 const renderingOf = (finding: Finding): FindingRendering => ({
@@ -126,6 +128,7 @@ const renderingOf = (finding: Finding): FindingRendering => ({
   deadline_unknown_fields: finding.deadlineUnknownFields,
   timeline_unresolved_reason: finding.timelineUnresolvedReason,
   portal_instructions: finding.portalInstructions,
+  user_summary: finding.userSummary ?? null,
 });
 
 export const renderingKey = (ruleIds: readonly string[]): string => ruleIds.join(",");
@@ -397,6 +400,7 @@ function findingFromRow(row: PlanItemRow, rendering: FindingRendering): StoredFi
     timelineUnresolvedReason: rendering.timeline_unresolved_reason,
     conflictText: rendering.conflict_text,
     sources: row.sources,
+    userSummary: rendering.user_summary ?? null,
     verificationStatus: row.verification_status,
     lastVerifiedDate: isoDate(row.last_verified_date),
     triggeredBy: row.triggered_by,

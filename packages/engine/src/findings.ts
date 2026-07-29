@@ -101,6 +101,8 @@ function buildFinding(
     // An OFFICIAL_CONFLICT rule renders both readings and every source; it never resolves silently.
     conflictText: rule.verificationStatus === "OFFICIAL_CONFLICT" ? rule.noteText : null,
     sources: ruleSources(rule),
+    // Preserve byte-stable historical finding shapes until a published rule carries the field.
+    ...(rule.userSummary === null ? {} : { userSummary: rule.userSummary }),
     verificationStatus: rule.verificationStatus,
     ...(rule.verificationLastVerifiedDate === null
       ? {}
@@ -110,6 +112,8 @@ function buildFinding(
 }
 
 function mergeFindings(first: Finding, second: Finding): Finding {
+  const firstSummary = first.userSummary ?? null;
+  const secondSummary = second.userSummary ?? null;
   const carriesVerificationDate =
     first.lastVerifiedDate !== undefined || second.lastVerifiedDate !== undefined;
   const lastVerifiedDate =
@@ -126,6 +130,15 @@ function mergeFindings(first: Finding, second: Finding): Finding {
     ruleIds: [...first.ruleIds, ...second.ruleIds],
     notes: [...first.notes, ...second.notes],
     sources: [...first.sources, ...second.sources],
+    userSummary:
+      firstSummary === null
+        ? secondSummary
+        : secondSummary === null
+          ? firstSummary
+          : {
+              heading: firstSummary.heading,
+              points: [...firstSummary.points, ...secondSummary.points],
+            },
     triggeredBy: [...first.triggeredBy, ...second.triggeredBy],
     deadlineUnknownFields: [...first.deadlineUnknownFields, ...second.deadlineUnknownFields],
     timelineUnresolvedReason: first.timelineUnresolvedReason ?? second.timelineUnresolvedReason,
