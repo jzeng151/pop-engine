@@ -32,7 +32,7 @@ An organizer can collect a small, safe set of extra RSVP answers without adding 
 ## Inputs, Outputs, State, Validation, and Errors
 
 - Inputs are bounded field definitions using an approved purpose key; outputs are a versioned public form projection and validated answer set.
-- Draft fields become active only on publish; changing an active definition creates a new version and preserves prior answers.
+- Draft fields become active only on publish; each draft and active-form pointer is versioned, and changing an active definition creates a new version while preserving prior answers.
 - Unknown field type/version, oversized text, invalid option, or omitted required answer rejects the submission without partial RSVP mutation.
 - Missing or unresolved material data stays visibly unset, unknown, pending, or failed as appropriate; it never becomes a successful or complete result.
 - Invalid input produces a field or action-specific error without partial mutation. Retriable external failures preserve the user's confirmed state and expose a safe retry.
@@ -59,7 +59,7 @@ Exact HTTP, JSON Schema, migration, job, and provider shapes belong in their rev
 
 1. **F307-AC-01:** Only the four approved field types and bounded label/help/option counts can be published.
 2. **F307-AC-02:** A public submission compare-and-swaps the current active form version and validates required, length, and option membership atomically with RSVP; a retired version is rejected unless accompanied by an approved bounded server-issued in-flight grace token.
-3. **F307-AC-03:** Editing a published definition creates a new version; earlier answers remain readable against their original labels/options.
+3. **F307-AC-03:** Publishing compare-and-swaps both the expected active-form version and exact reviewed draft version. A mismatch changes no active pointer and requires the organizer to rebase and review the draft; success creates one immutable new active version, while earlier answers remain readable against their original labels/options.
 4. **F307-AC-04:** User text renders and exports as data, never HTML, script, formula, or engine input.
 5. **F307-AC-05:** Only approved non-sensitive purpose keys and supported field types can be published; organizer-controlled labels, help text, and options are validated against the approved prohibited-data policy, and disallowed definitions are rejected. The form displays mandatory prohibited-data guidance and applies the approved retention/deletion policy; the feature does not claim to classify arbitrary attendee answers.
 6. **F307-AC-06:** While an active form has required custom answers, F-306 waitlist join and promotion remain unavailable unless an approved shared contract pins the exact form/answer versions to the waitlist entry, validates them at join and promotion, and atomically links the validated answer set to the promoted RSVP. The system cannot silently drop required answers or create unapproved waitlist-answer storage.

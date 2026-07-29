@@ -30,7 +30,7 @@ An organizer can start from a past event's confirmed inputs while PopEngine alwa
 
 ## Inputs, Outputs, State, Validation, and Errors
 
-- Inputs are one authorized source revision/template; output is a new incomplete mutable event draft with source provenance.
+- Inputs are one authorized source revision/template and a stable creation-request identity; output is a new incomplete mutable event draft with source provenance.
 - Draft must be reviewed and submitted; submission creates the immutable revision, and evaluation pins the current baseline ruleset, calendar, and that revision.
 - Fields no longer present/compatible in the current intake registry are omitted and reported, never coerced.
 - Missing or unresolved material data stays visibly unset, unknown, pending, or failed as appropriate; it never becomes a successful or complete result.
@@ -56,7 +56,7 @@ Exact HTTP, JSON Schema, migration, job, and provider shapes belong in their rev
 
 ## Acceptance Criteria
 
-1. **F503-AC-01:** Creating from a past event copies only the approved organizer-input allow-list into a new draft with a new stable Event identity.
+1. **F503-AC-01:** Creating from a past event copies only the approved organizer-input allow-list into a new draft with a new stable Event identity. The creation request binds its stable request identity to that Event and original draft result; a recognized lost-response retry returns the same result without another Event, while deliberate repeated duplication uses a new request identity.
 2. **F503-AC-02:** No finding, verdict, deadline, application, file, contact, RSVP, check-in, incident, or outcome record is copied.
 3. **F503-AC-03:** Removed/incompatible registry fields are omitted with an explicit review warning, not mapped by guess.
 4. **F503-AC-04:** Submitting the complete draft creates an immutable revision, evaluates that revision with the then-current approved ruleset/calendar, and stores the exact artifact version.

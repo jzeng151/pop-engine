@@ -30,7 +30,7 @@ Check-in staff can continue recording arrivals during a temporary network loss a
 
 ## Inputs, Outputs, State, Validation, and Errors
 
-- Input is a minimal check-in operation with event, contact fields, client ID, and captured time; output is queued then server-acknowledged operation.
+- Input is a minimal check-in operation with event, contact fields, client ID, captured time, and the event lifecycle generation last confirmed by the server; output is queued then server-acknowledged operation.
 - State is local-pending → syncing → acknowledged, duplicate-resolved, or rejected; retries reuse the same operation ID.
 - Server identity/deduplication remains authoritative; a rejected conflict stays visible for staff resolution and never disappears silently.
 - Missing or unresolved material data stays visibly unset, unknown, pending, or failed as appropriate; it never becomes a successful or complete result.
@@ -56,11 +56,12 @@ Exact HTTP, JSON Schema, migration, job, and provider shapes belong in their rev
 
 ## Acceptance Criteria
 
-1. **F409-AC-01:** While offline, a valid check-in is durably queued locally with a unique operation ID and visible pending state.
-2. **F409-AC-02:** After reconnection, repeated sync of the same operation creates at most one server check-in and returns the same acknowledgment.
+1. **F409-AC-01:** While offline, a valid check-in is durably queued locally with a unique operation ID, captured time, last-confirmed event lifecycle generation, and visible pending state.
+2. **F409-AC-02:** After reconnection, sync rechecks the operation's lifecycle generation and F-401's current New York date gate before ingestion; repeated sync of the same operation creates at most one server check-in and returns the same acknowledgment.
 3. **F409-AC-03:** Concurrent devices and preexisting check-ins resolve through F-401 identity rules without losing an operation silently.
 4. **F409-AC-04:** Acknowledged data is removed locally; rejected/pending data remains visible until resolved or explicitly discarded with confirmation/audit.
-5. **F409-AC-05:** Offline storage contains only approved minimal encrypted fields. Before event close, sign-out, or hard retention expiry, pending/rejected operations require resolution, confirmed audited discard, or secure server handoff; at hard expiry the contact payload is cleared without user interaction, retaining at most a non-sensitive operation/conflict tombstone so an abandoned shared device cannot keep attendee data indefinitely.
+5. **F409-AC-05:** Offline storage contains only approved minimal encrypted fields. Sign-out or hard retention expiry requires pending/rejected operations to be resolved, securely handed off, or discarded with confirmation and audit; at hard expiry the contact payload is cleared without user interaction, retaining at most a non-sensitive operation/conflict tombstone so an abandoned shared device cannot keep attendee data indefinitely.
+6. **F409-AC-06:** If the lifecycle generation changed or F-401 now considers the event expired, automatic sync creates no check-in and returns a visible closed-event conflict that remains available for resolution under AC-04. Only an authorized, audited backfill under the approved conflict policy may append the operation with its original captured time and stale-generation provenance; it does not reopen the event or bypass F-401's ordinary route. Without that approved policy or sufficient evidence, the only terminal resolution is confirmed audited discard.
 
 ## Fixtures and Verification
 

@@ -30,7 +30,7 @@ Event staff can perform only their assigned door operations and validate attende
 
 ## Inputs, Outputs, State, Validation, and Errors
 
-- Inputs are authorized staff assignment and event credential; outputs are minimal validation result and append-only attempt/entry record.
+- Inputs are an exact authorized staff-assignment generation and event-credential version; outputs are minimal validation result and append-only attempt/entry record.
 - Credential state is active → revoked or expired; validation is event-bound and reveals only the minimum door decision.
 - Unknown/malformed/wrong-event credentials deny without disclosing private attendee/vendor data.
 - Missing or unresolved material data stays visibly unset, unknown, pending, or failed as appropriate; it never becomes a successful or complete result.
@@ -57,10 +57,10 @@ Exact HTTP, JSON Schema, migration, job, and provider shapes belong in their rev
 ## Acceptance Criteria
 
 1. **F411-AC-01:** A check-in staff member can perform only the approved event-scoped door actions and no broader organizer/admin operation.
-2. **F411-AC-02:** Validation and its accepted attempt/entry record serialize against revocation on the same credential version, so exactly one wins: a winning validation records one idempotent entry and returns the approved minimal category/decision, while a winning revocation prevents acceptance.
+2. **F411-AC-02:** Validation and its accepted attempt/entry record serialize against both credential revocation and staff-assignment removal on the exact versions, so exactly one wins: a winning validation records one idempotent entry and returns the approved minimal category/decision, while a winning revocation or removal prevents acceptance.
 3. **F411-AC-03:** Revoked, expired, malformed, guessed, or wrong-event credentials deny without revealing identity/contact details and append one idempotent non-sensitive attempt with the denial category.
 4. **F411-AC-04:** Vendor and performer categories remain distinct from attendee and do not create RSVP, consent, or regulatory status.
-5. **F411-AC-05:** Removing a staff assignment blocks the next protected action while preserving prior attempt attribution.
+5. **F411-AC-05:** Removing a staff assignment advances its generation and serializes against validation's claim of the prior generation; a winning removal blocks that validation and every later protected action, while preserving prior attempt attribution.
 
 ## Fixtures and Verification
 
