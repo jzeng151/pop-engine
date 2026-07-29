@@ -1817,7 +1817,7 @@ describe.concurrent("Square/POS scope agreement (SPEC-CONFLICT #127 item 2)", ()
     );
 
     expect(status).toBe(1);
-    expect(output).toContain("docs/ROADMAP.md:4 asserts the broader standalone Square/POS");
+    expect(output).toContain("docs/ROADMAP.md:5 asserts the broader standalone Square/POS");
   });
 
   // A standalone entry that never says "Square" is the same defect wearing a different word.
@@ -1829,7 +1829,7 @@ describe.concurrent("Square/POS scope agreement (SPEC-CONFLICT #127 item 2)", ()
     );
 
     expect(status).toBe(1);
-    expect(output).toContain("docs/PRD.md:4 asserts the broader standalone Square/POS");
+    expect(output).toContain("docs/PRD.md:5 asserts the broader standalone Square/POS");
   });
 
   // THE WIDENING BRANCH, which the first version of this rule permitted and which is the branch the
