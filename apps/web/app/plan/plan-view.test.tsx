@@ -977,6 +977,13 @@ describe("F-102 · CONDITIONAL branch table and INFEASIBLE rescope ladder", () =
           missedRuleIds: ["SAPO-STREET-LARGE-001"],
           rescopeSuggestions: [
             {
+              change: { field: "location_type", value: "private_venue" },
+              reevaluatedVerdict: "CONDITIONAL",
+              droppedRuleIds: ["SAPO-INSURANCE-001", "SAPO-STREET-LARGE-001"],
+              minSlackDays: null,
+              atRiskFindingName: null,
+            },
+            {
               change: { field: "street_event_size", value: "medium" },
               reevaluatedVerdict: "FEASIBLE_AT_RISK",
               droppedRuleIds: ["SAPO-STREET-LARGE-001"],
@@ -984,11 +991,11 @@ describe("F-102 · CONDITIONAL branch table and INFEASIBLE rescope ladder", () =
               atRiskFindingName: "Street Activity Permit — Medium",
             },
             {
-              change: { field: "location_type", value: "private_venue" },
-              reevaluatedVerdict: "CONDITIONAL",
-              droppedRuleIds: ["SAPO-INSURANCE-001", "SAPO-STREET-LARGE-001"],
+              change: { field: "street_event_size", value: "small" },
+              reevaluatedVerdict: "FEASIBLE_AT_RISK",
+              droppedRuleIds: ["SAPO-STREET-LARGE-001"],
               minSlackDays: null,
-              atRiskFindingName: null,
+              atRiskFindingName: "Organizer notification to DOHMH",
             },
           ],
         },
@@ -1002,16 +1009,49 @@ describe("F-102 · CONDITIONAL branch table and INFEASIBLE rescope ladder", () =
     );
     expect(screen.getByTestId("rescope-ladder")).toBeDefined();
     const suggestions = screen.getAllByTestId("rescope-suggestion");
-    expect(suggestions).toHaveLength(2);
-    expect(suggestions[0]?.textContent).toContain("street event size");
+    expect(suggestions).toHaveLength(3);
+    // AC 7 ladder order even when the wire arrives in field-discovery order.
     expect(suggestions[0]?.textContent).toContain("medium");
     expect(suggestions[0]?.textContent).toContain("At risk — apply within 5 days");
     expect(suggestions[0]?.textContent).toContain("on Street Activity Permit — Medium");
+    expect(suggestions[1]?.textContent).toContain("small");
+    expect(suggestions[2]?.textContent).toContain("private venue");
     expect(screen.getByTestId("rescope-at-risk-buffer").textContent).toContain(
       "PopEngine's internal planning buffer",
     );
-    expect(suggestions[1]?.textContent).toContain("private venue");
-    expect(suggestions[1]?.textContent).toContain("Depends on");
+  });
+
+  it("does not treat one multi-rule finding as multiple missed deadlines", async () => {
+    stubApi(
+      plan({
+        verdict: "INFEASIBLE",
+        findings: [
+          finding({
+            ruleIds: ["DOB-TENT-001", "DOB-TALL-STRUCTURE-001"],
+            name: "Temporary structure filing",
+            deadlineStatus: "published_deadline_missed",
+            latestApplyDate: "2026-07-01",
+          }),
+        ],
+        verdictDetail: {
+          ...emptyVerdictDetail,
+          blockingFinding: {
+            ruleIds: ["DOB-TENT-001", "DOB-TALL-STRUCTURE-001"],
+            name: "Temporary structure filing",
+          },
+          missedRuleIds: ["DOB-TENT-001", "DOB-TALL-STRUCTURE-001"],
+        },
+      }),
+    );
+    renderPlan();
+    await screen.findByTestId("verdict-detail");
+
+    expect(screen.getByTestId("blocking-finding").textContent).toContain(
+      "Temporary structure filing",
+    );
+    expect(screen.getByTestId("blocking-finding").textContent).not.toContain(
+      "All published deadlines missed as scoped",
+    );
   });
 
   it("explains a conditional miss on may-be-required published windows", async () => {

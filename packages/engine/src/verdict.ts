@@ -91,19 +91,46 @@ function describeDifference(base: readonly Finding[], candidate: readonly Findin
   const candidateIds = new Set(ruleIdsOf(candidate));
   const added = [...candidateIds].filter((id) => !baseIds.has(id));
   const dropped = [...baseIds].filter((id) => !candidateIds.has(id));
+  const describeMissed = (finding: Finding, id: string): string =>
+    finding.deadlineStatus === "published_deadline_missed"
+      ? `${id} (published deadline missed as scoped)`
+      : id;
   const describeAdded = (id: string): string => {
     const finding = candidate.find((entry) => entry.ruleIds.includes(id));
     // F-102 AC 6: the no-license branch must surface the missed-window reason, not only the rule id.
-    if (finding?.deadlineStatus === "published_deadline_missed") {
-      return `${id} (published deadline missed as scoped)`;
-    }
-    return id;
+    return finding === undefined ? id : describeMissed(finding, id);
   };
+
+  // Same rule ids can still tighten: Scenario F's unresolved base already carries SLA-ONEDAY /
+  // SLA-CATERING as may_be_required, and the no-license branch makes them required with a missed
+  // window. Report that even when another finding is merely dropped (AC 6).
+  const tightened: string[] = [];
+  for (const finding of candidate) {
+    const prior = base.find((entry) =>
+      entry.ruleIds.some((ruleId) => finding.ruleIds.includes(ruleId)),
+    );
+    if (prior === undefined) continue;
+    if (
+      prior.disposition === finding.disposition &&
+      prior.deadlineStatus === finding.deadlineStatus
+    ) {
+      continue;
+    }
+    if (finding.deadlineStatus === "published_deadline_missed") {
+      tightened.push(`${finding.ruleIds.join(", ")} (published deadline missed as scoped)`);
+      continue;
+    }
+    if (prior.disposition !== finding.disposition) {
+      tightened.push(`${finding.ruleIds.join(", ")} becomes ${finding.disposition}`);
+    }
+  }
+
   const parts = [
     added.length > 0 ? `adds ${added.map(describeAdded).join(", ")}` : null,
     dropped.length > 0 ? `drops ${dropped.join(", ")}` : null,
+    ...tightened,
   ].filter((part): part is string => part !== null);
-  return parts.length === 0 ? "same findings, re-dated" : parts.join("; ");
+  return parts.length > 0 ? parts.join("; ") : "same findings, re-dated";
 }
 
 type BranchValue = { readonly display: string; readonly value: IntakeValue };
@@ -385,7 +412,20 @@ function buildRescopeSuggestions(
       }
     }
   }
-  return suggestions;
+  // F-102 AC 7 demonstration ladder: Medium → Small → private venue (Large is the blocked base).
+  return [...suggestions].sort((left, right) => rescopeLadderRank(left) - rescopeLadderRank(right));
+}
+
+/**
+ * Preferred display order for Scenario A's approved ladder. Unknown suggestions keep engine
+ * discovery order after the named steps.
+ */
+function rescopeLadderRank(suggestion: RescopeSuggestion): number {
+  const key = `${suggestion.change.field}:${suggestion.change.value}`;
+  if (key === "street_event_size:medium") return 0;
+  if (key === "street_event_size:small") return 1;
+  if (key === "location_type:private_venue") return 2;
+  return 100;
 }
 
 export function computeVerdict(

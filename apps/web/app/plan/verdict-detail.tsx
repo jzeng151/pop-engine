@@ -82,7 +82,18 @@ function RescopeLadder({
   suggestions: ConsumedVerdictDetail["rescopeSuggestions"];
 }) {
   if (suggestions.length === 0) return null;
-  const hasAtRisk = suggestions.some(
+  // F-102 AC 7: Medium → Small → private venue, even when a stored plan serialized field order.
+  const ordered = [...suggestions].sort((left, right) => {
+    const rank = (suggestion: (typeof suggestions)[number]): number => {
+      const key = `${suggestion.change.field}:${suggestion.change.value}`;
+      if (key === "street_event_size:medium") return 0;
+      if (key === "street_event_size:small") return 1;
+      if (key === "location_type:private_venue") return 2;
+      return 100;
+    };
+    return rank(left) - rank(right);
+  });
+  const hasAtRisk = ordered.some(
     (suggestion) => suggestion.reevaluatedVerdict === "FEASIBLE_AT_RISK",
   );
 
@@ -98,7 +109,7 @@ function RescopeLadder({
         </p>
       )}
       <ul className="verdict-detail__rescope-list">
-        {suggestions.map((suggestion) => (
+        {ordered.map((suggestion) => (
           <li
             key={`${suggestion.change.field}:${suggestion.change.value}`}
             className="verdict-detail__rescope"
@@ -257,6 +268,10 @@ export function VerdictDetailPanel({
 
   if (verdict === "INFEASIBLE") {
     const blocker = detail.blockingFinding;
+    // One finding can carry multiple rule ids; count findings, not provenance ids (F-102 edge case).
+    const missedFindings = findings.filter((finding) =>
+      finding.ruleIds.some((ruleId) => detail.missedRuleIds.includes(ruleId)),
+    );
     return (
       <div className="verdict-detail" data-testid="verdict-detail">
         {blocker !== null && (
@@ -266,7 +281,7 @@ export function VerdictDetailPanel({
               {blocker.name ?? blocker.ruleIds.join(", ")}
             </p>
             <p className="verdict-detail__rule-ids">{blocker.ruleIds.join(", ")}</p>
-            {detail.missedRuleIds.length > 1 && (
+            {missedFindings.length > 1 && (
               <p className="verdict-detail__missed">
                 All published deadlines missed as scoped:{" "}
                 <span className="verdict-detail__rule-ids">{detail.missedRuleIds.join(", ")}</span>

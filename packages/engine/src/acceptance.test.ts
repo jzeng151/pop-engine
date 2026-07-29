@@ -154,14 +154,19 @@ describe("Scenario A — Bushwick Street Activation (demo anchor)", () => {
 
   it("produces the three rescopes by full re-evaluation, not static text (AC 9)", () => {
     const suggestions = plan(intakeA).verdictDetail.rescopeSuggestions;
+    // F-102 AC 7 ladder order: Medium → Small → private venue.
+    expect(suggestions.map((suggestion) => suggestion.change.value)).toEqual([
+      "medium",
+      "small",
+      "private_venue",
+    ]);
     expect(suggestions).toMatchObject([
-      // (c) private venue: SAPO permit + SAPO insurance drop. Conditional rather than at-risk
-      // because moving indoors opens a question the street version never asked — whether the
-      // amplified sound carries to a public way (§10-108(b)(3)) — and that decides a permit.
+      // (a) size=medium: 30-day deadline = 2026-07-27, five days out
       {
-        change: { field: "location_type", value: "private_venue" },
-        reevaluatedVerdict: "CONDITIONAL",
-        droppedRuleIds: ["SAPO-INSURANCE-001", "SAPO-STREET-LARGE-001"],
+        change: { field: "street_event_size", value: "medium" },
+        reevaluatedVerdict: "FEASIBLE_AT_RISK",
+        droppedRuleIds: ["SAPO-STREET-LARGE-001"],
+        minSlackDays: 5,
       },
       // (b) size=small: 14-day deadline clears; the DOHMH notification is the tight one
       {
@@ -169,12 +174,13 @@ describe("Scenario A — Bushwick Street Activation (demo anchor)", () => {
         reevaluatedVerdict: "FEASIBLE_AT_RISK",
         droppedRuleIds: ["SAPO-STREET-LARGE-001"],
       },
-      // (a) size=medium: 30-day deadline = 2026-07-27, five days out
+      // (c) private venue: SAPO permit + SAPO insurance drop. Conditional rather than at-risk
+      // because moving indoors opens a question the street version never asked — whether the
+      // amplified sound carries to a public way (§10-108(b)(3)) — and that decides a permit.
       {
-        change: { field: "street_event_size", value: "medium" },
-        reevaluatedVerdict: "FEASIBLE_AT_RISK",
-        droppedRuleIds: ["SAPO-STREET-LARGE-001"],
-        minSlackDays: 5,
+        change: { field: "location_type", value: "private_venue" },
+        reevaluatedVerdict: "CONDITIONAL",
+        droppedRuleIds: ["SAPO-INSURANCE-001", "SAPO-STREET-LARGE-001"],
       },
     ]);
     const medium = suggestions.find((s) => s.change.value === "medium");
@@ -638,6 +644,10 @@ describe("Scenario F — Rooftop Launch Party (conditional branches)", () => {
       ["yes", "CONDITIONAL"],
       ["no", "INFEASIBLE"],
     ]);
+    const noLicense = licenseFact?.branches.find((branch) => branch.value === "no");
+    // AC 6: the closed SLA window is named even when the rule ids were already on the unresolved base.
+    expect(noLicense?.reason).toContain("published deadline missed as scoped");
+    expect(noLicense?.reason).not.toBe("same findings, re-dated");
     expect(result.verdictDetail.missingFacts.map((fact) => fact.field)).toContain(
       "sound_audible_from_public_way",
     );
