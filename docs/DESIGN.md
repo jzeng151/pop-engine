@@ -4,7 +4,7 @@
 
 ## Decisions of 2026-07-22 (baseline correction)
 
-5. **Ruleset baseline is the corrected subset `nyc.v2.1`** (33 rules + 4 advisories, evidence-linked to `VERIFICATION-SOURCES.md`), after two fetch-confirmed verification passes contradicted several v1 facts; the pointer is now `nyc.v2.8`, retargeted 2026-07-25 with no regulatory change. The 59-rule draft stays in `rules/proposals/` as the post-capstone target. Scenario fixtures v6 derive from the ruleset.
+5. **Ruleset baseline is the corrected subset `nyc.v2.1`** (33 rules + 4 advisories, evidence-linked to `VERIFICATION-SOURCES.md`), after two fetch-confirmed verification passes contradicted several v1 facts; the pointer is now `nyc.v2.8`, authorized by the product owner on 2026-07-26. That publication carries a regulatory correction and moves evaluated output; the 2026-07-28 #184 repair only retargets this document's stale pointer and changes no regulatory fact. The 59-rule draft stays in `rules/proposals/` as the post-capstone target. Scenario fixtures v6 derive from the ruleset.
 6. **The demo anchor is re-anchored:** a Large street event 35 days out misses its verified 45-day deadline (the universal 60-day SAPO lead was contradicted by primary sources).
 7. **Verdict model:** the four-state verdict stays as the top-level summary, computed from per-finding deadline statuses (ON_TRACK / DEADLINE_APPROACHING / PUBLISHED_DEADLINE_MISSED / NOT_CALCULABLE / NOT_APPLICABLE). INFEASIBLE copy = "published deadline missed as scoped." The 14-day slack threshold is labeled as internal policy.
 8. **Real business-day math** against a pinned holiday calendar replaces the calendar approximation (fixture dates are pinned, so determinism holds).
@@ -49,7 +49,7 @@ AI may draft and extract; it may never make the authoritative permit determinati
 - Every plan line shows its verification status. Source-bearing lines cite an official source; a COVERAGE_GAP finding that carries no citation visibly states that the combination is not covered by this ruleset version, and never invents a citation or implies a source is merely missing (that is RESEARCH_REQUIRED's meaning; the published legend calls COVERAGE_GAP "combination not modeled by this ruleset version").
 - The full fixture suite passes (6 scenarios + boundary fixtures, `test-scenario-answer-key.md` v6): 100% of expected findings, zero false omissions, zero false additions, correct verdicts.
 - Zero fabricated permit facts; RESEARCH_REQUIRED renders "confirm with agency"; OFFICIAL_CONFLICT renders both readings.
-- The ruleset's SOURCE_CONFIRMED facts are signed off by the verification owner and `BASELINE.md` flips nyc.v2.8 to APPROVED before the demo.
+- The ruleset's SOURCE_CONFIRMED facts are checked against their primary sources in a browser and promoted per fact to VERIFIED by the verification owner before the demo.
 - Nothing in the core path is mocked, seeded, or hardcoded to look like engine output.
 
 ## Green Gate (target end of day 8) — the demo decision point
@@ -70,7 +70,7 @@ One integration point (the `events` schema — agreed by all four devs before an
 - **Dev 1 — Rules engine + verdict:** F-201, F-102; owns engine fidelity to `rules/nyc-rules.v2.8.json` and the fixture suite. Verify: full fixture suite (scenarios + boundaries) passes as automated tests.
 - **Dev 2 — Intake + plan UI:** F-101 (incl. contradiction checks, "I don't know"), F-206, plan rendering. Verify: Scenario A renders end-to-end with citations + snapshot banner.
 - **Dev 3 — Checklist + portals:** F-202, F-204. Verify: plan converts to checklist; every permit links to its portal with its document list.
-- **Dev 4 — Alerts + platform:** F-203, DB migrations, deploy, demo environment; **owns verification sign-off**: confirms the ruleset's SOURCE_CONFIRMED facts in a browser (evidence pre-collected in `VERIFICATION-SOURCES.md`) and works the open research items (OPEN-QUESTIONS §2). Verify: a seeded deadline fires a real email/SMS; `BASELINE.md` flips nyc.v2.8 to APPROVED.
+- **Dev 4 — Alerts + platform:** F-203, DB migrations, deploy, demo environment; **owns verification sign-off**: confirms the ruleset's SOURCE_CONFIRMED facts in a browser (evidence pre-collected in `VERIFICATION-SOURCES.md`) and works the open research items (OPEN-QUESTIONS §2). Verify: a seeded deadline fires a real email/SMS; browser-confirmed facts are promoted per fact from SOURCE_CONFIRMED to VERIFIED.
 
 Track B staffing is the team's kickoff call (default suggestion: Dev 3 → F-301/F-302 and Dev 4 → F-401/F-402 as their core items complete; F-205 stays with Dev 1 but begins only after the F-201/F-202 views merge). The invariant from Decision 10: a dev holding an unmerged core blocker works the blocker first, and parallel Track B branches never touch core-path files.
 
