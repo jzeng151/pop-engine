@@ -1,0 +1,270 @@
+/* F-402 live ops — field clipboard on the shared pe-shell canvas. */
+
+.ops {
+  margin: 0 auto;
+  display: flex;
+  flex-direction: column;
+  gap: var(--pe-stack);
+  min-height: calc(100dvh - 5rem);
+  justify-content: center;
+  perspective: 1100px;
+}
+
+.ops > * {
+  animation: ops-rise 520ms cubic-bezier(0.2, 0.85, 0.2, 1) both;
+}
+
+.ops > *:nth-child(1) {
+  animation-delay: 0ms;
+}
+.ops > *:nth-child(2) {
+  animation-delay: 40ms;
+}
+.ops > *:nth-child(3) {
+  animation-delay: 80ms;
+}
+.ops > *:nth-child(4) {
+  animation-delay: 120ms;
+}
+.ops > *:nth-child(5) {
+  animation-delay: 160ms;
+}
+.ops > *:nth-child(6) {
+  animation-delay: 200ms;
+}
+.ops > *:nth-child(7) {
+  animation-delay: 240ms;
+}
+.ops > *:nth-child(8) {
+  animation-delay: 280ms;
+}
+.ops > *:nth-child(9) {
+  animation-delay: 320ms;
+}
+
+@keyframes ops-rise {
+  from {
+    opacity: 0;
+    transform: translateY(0.85rem) translateZ(-24px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) translateZ(0);
+  }
+}
+
+.ops__lede,
+.ops__recent,
+.ops__compare,
+.ops__split,
+.ops__zero,
+.ops__stale {
+  margin: 0;
+  color: var(--pe-steel);
+}
+
+.ops__lede {
+  font-size: 1rem;
+  max-width: 100%;
+  line-height: 1.45;
+}
+
+.ops__total {
+  margin: 0.75rem 0 0;
+  display: flex;
+  align-items: baseline;
+  gap: 0.45rem;
+  flex-wrap: wrap;
+}
+
+.ops__total-number {
+  font-family: var(--pe-font-mono);
+  font-size: clamp(3.75rem, 16vw, 5rem);
+  font-weight: 600;
+  line-height: 0.95;
+  letter-spacing: -0.05em;
+  font-variant-numeric: tabular-nums;
+  color: var(--pe-ink);
+  text-shadow: none;
+}
+
+.ops__total-number--tick {
+  animation: ops-counter-tick 320ms cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+@keyframes ops-counter-tick {
+  0% {
+    transform: translateY(0.22em) rotateX(-28deg);
+    opacity: 0.25;
+  }
+  55% {
+    transform: translateY(-0.05em) rotateX(6deg);
+    opacity: 1;
+  }
+  100% {
+    transform: translateY(0) rotateX(0);
+    opacity: 1;
+  }
+}
+
+.ops__total-label {
+  font-size: 1.25rem;
+  font-weight: 600;
+  color: var(--pe-ink);
+}
+
+.ops__zero {
+  font-size: 1rem;
+}
+
+.ops__recent,
+.ops__compare,
+.ops__split,
+.ops__stale {
+  font-family: var(--pe-font-mono);
+  font-size: 0.84rem;
+  letter-spacing: 0.01em;
+}
+
+.ops__gauge {
+  margin: 0.85rem 0 0.35rem;
+  padding: var(--pe-card-pad);
+  border: var(--pe-border);
+  border-radius: var(--pe-radius);
+  background: var(--pe-card);
+  box-shadow:
+    var(--pe-shadow),
+    0 10px 0 -2px var(--pe-rule),
+    0 14px 0 -2px rgba(210, 180, 140, 0.55);
+  transform: rotateX(18deg) rotateY(-6deg) translateZ(12px);
+  transform-style: preserve-3d;
+  transform-origin: 50% 100%;
+  /* One-shot entrance only — infinite float drains battery on door phones (F-401). */
+  animation: ops-slab-enter 700ms cubic-bezier(0.2, 0.8, 0.2, 1) both;
+  transition:
+    transform 280ms cubic-bezier(0.2, 0.8, 0.2, 1),
+    border-color 200ms ease,
+    background 200ms ease;
+}
+
+@keyframes ops-slab-enter {
+  from {
+    transform: rotateX(26deg) rotateY(-10deg) translateZ(0);
+  }
+  to {
+    transform: rotateX(18deg) rotateY(-6deg) translateZ(12px);
+  }
+}
+
+.ops__gauge:hover {
+  transform: rotateX(8deg) rotateY(0deg) translateZ(28px);
+}
+
+.ops__gauge--over {
+  border-color: var(--pe-amber);
+  background: var(--pe-amber-wash);
+  box-shadow: 0 14px 28px -16px rgba(204, 85, 0, 0.35),
+    0 4px 0 rgba(204, 85, 0, 0.18);
+}
+
+.ops__gauge--unset .ops__rule-fill {
+  width: 0 !important;
+  background: transparent;
+}
+
+.ops__gauge-label,
+.ops__gauge-percent {
+  margin: 0;
+  font-family: var(--pe-font-mono);
+  font-size: 0.92rem;
+  font-weight: 600;
+}
+
+.ops__gauge-percent {
+  margin-top: 0.25rem;
+  color: var(--pe-cyan);
+}
+
+.ops__rule {
+  margin-top: 0.85rem;
+  position: relative;
+  height: 0.85rem;
+  border-top: 1.5px solid var(--pe-ink);
+  border-bottom: 1.5px solid var(--pe-ink);
+  background:
+    repeating-linear-gradient(
+      90deg,
+      transparent,
+      transparent calc(10% - 1.5px),
+      var(--pe-rule) calc(10% - 1.5px),
+      var(--pe-rule) 10%
+    );
+  transform: translateZ(12px);
+  overflow: hidden;
+}
+
+.ops__rule-fill {
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: var(--ops-fill, 0%);
+  max-width: 100%;
+  background: linear-gradient(90deg, var(--pe-clear), var(--pe-clear-bright));
+  opacity: 0.92;
+  transition: width 420ms cubic-bezier(0.2, 0.8, 0.2, 1);
+  box-shadow: 2px 0 10px rgba(34, 139, 34, 0.35);
+  animation: ops-fill-pulse 1.8s ease-in-out 0.4s 1;
+}
+
+@keyframes ops-fill-pulse {
+  0%,
+  100% {
+    filter: brightness(1);
+  }
+  40% {
+    filter: brightness(1.18);
+  }
+}
+
+.ops__gauge--over .ops__rule-fill {
+  background: linear-gradient(90deg, var(--pe-amber-deep), var(--pe-amber));
+  opacity: 1;
+  box-shadow: 2px 0 10px var(--pe-glow);
+}
+
+.ops__warning {
+  margin: 0.7rem 0 0;
+  font-weight: 700;
+  color: var(--pe-amber);
+}
+
+.ops__error {
+  margin: 0;
+  color: var(--pe-rose);
+  font-weight: 700;
+}
+
+.ops__stale {
+  color: var(--pe-amber);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ops > * {
+    animation: none;
+  }
+
+  .ops__total-number--tick {
+    animation: none;
+  }
+
+  .ops__rule-fill {
+    transition: none !important;
+    animation: none !important;
+  }
+
+  .ops__gauge,
+  .ops__gauge:hover {
+    animation: none;
+    transform: none;
+    box-shadow: var(--pe-shadow);
+  }
+}

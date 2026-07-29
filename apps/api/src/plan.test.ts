@@ -13,6 +13,7 @@ import {
   type HolidayCalendar,
   type IntakeContract,
 } from "@pop-engine/engine";
+import { SCENARIO_INTAKE_FIXTURES, fixtureSubmission } from "@pop-engine/engine/fixtures";
 import { createApp } from "./app";
 import { holidayCalendarWarning, pinnedCalendar, todayInJurisdiction } from "./calendar";
 import { calendarDateFrom, createPlanService } from "./plan";
@@ -39,6 +40,7 @@ const scenarioAEvent = {
   structure_types: ["none"],
   open_flame_or_cooking: ["none"],
   generator_present: false,
+  battery_present: false,
   battery_system_kwh: 0,
   alcohol: false,
 };
@@ -89,7 +91,7 @@ describe.runIf(databaseUrl.length > 0)("plan API (F-201)", () => {
     `THIS IS AN EXPECTED RESOLUTION OF SPEC-CONFLICT #130, NOT A REGRESSION:`,
     `F-201 AC 10 and ARCHITECTURE AD-11 both require business-day math against this calendar, and`,
     `neither is satisfiable in production while no list exists. This assertion is a notification,`,
-    `so that publishing lands in one visible place instead of silently moving three plan dates.`,
+    `so that publishing lands in one visible place instead of silently moving four plan dates.`,
     `Before deleting it, read the doc comment on PUBLISHED_HOLIDAY_CALENDARS in`,
     `apps/api/src/calendar.ts: it records what blocked publication — no source consulted defines`,
     `"business day" for a filing lead, which is the independent reason, and one calendar id spans`,
@@ -124,7 +126,7 @@ describe.runIf(databaseUrl.length > 0)("plan API (F-201)", () => {
     const response = await request(appWith()).post(`/api/events/${eventId}/plan`);
 
     expect(response.status).toBe(201);
-    expect(response.body.rulesetVersion).toBe("nyc.v2.7");
+    expect(response.body.rulesetVersion).toBe("nyc.v2.9");
     expect(response.body.eventRevision).toBe(1);
     expect(response.body.verdict).toBe("INFEASIBLE");
     expect(response.body.findings.map((finding: { ruleIds: string[] }) => finding.ruleIds)).toEqual(
@@ -134,6 +136,11 @@ describe.runIf(databaseUrl.length > 0)("plan API (F-201)", () => {
         ["NYPD-SOUND-001"],
         ["DOHMH-VENDOR-PERMIT-001"],
         ["DOHMH-ORGANIZER-NOTIFY-001"],
+        ["CONF-NO-STRUCTURE-001"],
+        ["CONF-NO-FLAME-001"],
+        ["CONF-NO-GENERATOR-001"],
+        ["CONF-NO-BATTERY-001"],
+        ["CONF-NO-ALCOHOL-001"],
       ],
     );
     const [blocking] = response.body.findings;
@@ -146,6 +153,29 @@ describe.runIf(databaseUrl.length > 0)("plan API (F-201)", () => {
       { field: "sapo_event_type", value: "street_event" },
       { field: "street_event_size", value: "large" },
     ]);
+    const noBattery = response.body.findings.find((entry: { ruleIds: string[] }) =>
+      entry.ruleIds.includes("CONF-NO-BATTERY-001"),
+    );
+    expect(noBattery).toMatchObject({
+      kind: "note",
+      disposition: "no_new_requirement",
+      agency: null,
+      deadline: null,
+      feeDisplay: null,
+      portalName: null,
+      verificationStatus: "SOURCE_CONFIRMED",
+      triggeredBy: [{ field: "battery_present", value: false }],
+      sources: [
+        {
+          ruleId: "CONF-NO-BATTERY-001",
+          citation: "CECM FDNY page + Parks special-event guide",
+          urls: [
+            "https://www.nyc.gov/site/cecm/support/new-york-city-fire-department.page",
+            "https://www.nycgovparks.org/permits/special-events/guide",
+          ],
+        },
+      ],
+    });
   });
 
   it("pins the ruleset version and its snapshot date together on the plan", async () => {
@@ -162,6 +192,56 @@ describe.runIf(databaseUrl.length > 0)("plan API (F-201)", () => {
     // date left NULL here is unrecoverable once the live file moves on.
     expect(rows[0]?.ruleset_version).toBe(ruleset.rulesetVersion);
     expect(rows[0]?.snapshot_date).toBe(ruleset.snapshotDate);
+  });
+
+  it("regenerates both F-110 answers into a new immutable intake snapshot only", async () => {
+    const fixture = SCENARIO_INTAKE_FIXTURES.find(({ scenario }) => scenario === "F");
+    if (fixture === undefined) throw new Error("Scenario F fixture is missing");
+    const app = appWith();
+    const created = await request(app).post("/api/events").send(fixtureSubmission(fixture));
+    expect(created.status).toBe(201);
+    const eventId = created.body.event.id as string;
+
+    const first = await request(app).post(`/api/events/${eventId}/plan`);
+    expect(first.status).toBe(201);
+    const edited = await request(app).patch(`/api/events/${eventId}`).send({
+      venue_paco_covers_exact_event: "yes",
+      venue_fdny_pa_permit_current_for_event_space: "no",
+    });
+    expect(edited.status).toBe(200);
+    expect(edited.body.plan_stale).toBe(true);
+    const regenerated = await request(app).post(`/api/events/${eventId}/plan`);
+
+    expect(regenerated.status).toBe(201);
+    expect(regenerated.body.eventRevision).toBe(2);
+    expect(regenerated.body.verdict).toBe(first.body.verdict);
+    expect(
+      regenerated.body.findings.map((finding: { ruleIds: string[] }) => finding.ruleIds),
+    ).toEqual(first.body.findings.map((finding: { ruleIds: string[] }) => finding.ruleIds));
+
+    const { rows } = await pool.query<{ event_revision: number; intake_snapshot: unknown }>(
+      `SELECT event_revision, intake_snapshot
+         FROM permit_plans
+        WHERE event_id = $1
+        ORDER BY event_revision`,
+      [eventId],
+    );
+    expect(rows).toEqual([
+      {
+        event_revision: 1,
+        intake_snapshot: expect.objectContaining({
+          venue_paco_covers_exact_event: "unknown",
+          venue_fdny_pa_permit_current_for_event_space: "unknown",
+        }),
+      },
+      {
+        event_revision: 2,
+        intake_snapshot: expect.objectContaining({
+          venue_paco_covers_exact_event: "yes",
+          venue_fdny_pa_permit_current_for_event_space: "no",
+        }),
+      },
+    ]);
   });
 
   it("persists plan items with the columns the schema requires and leaves verified_status unwritten", async () => {
@@ -183,7 +263,7 @@ describe.runIf(databaseUrl.length > 0)("plan API (F-201)", () => {
       [eventId],
     );
 
-    expect(rows).toHaveLength(5);
+    expect(rows).toHaveLength(10);
     expect(rows.every((row) => row.verified_status === null)).toBe(true);
     const notification = rows.find((row) => row.rule_ids[0] === "DOHMH-ORGANIZER-NOTIFY-001");
     expect(notification?.kind).toBe("notification");
@@ -327,7 +407,7 @@ describe.runIf(databaseUrl.length > 0)("plan API (F-201)", () => {
 
     expect(response.status).toBe(201);
     expect(response.body.verdict).toBe("INFEASIBLE");
-    expect(response.body.findings).toHaveLength(5);
+    expect(response.body.findings).toHaveLength(10);
     expect(response.body.findings[0].latestApplyDate).toBe("2026-07-12");
     // The only undated lines are ones the ruleset itself leaves undated: insurance is owed before
     // issuance and the DOHMH vendor lead time is research-required. Neither is a calendar gap, and
@@ -358,7 +438,7 @@ describe.runIf(databaseUrl.length > 0)("plan API (F-201)", () => {
     // SPEC-CONFLICT #130 records, so this failing means the conflict was resolved.
     //
     // It exists because that change would otherwise be silent. Every other test in this file now
-    // states its own calendar, so publication moves three production plan dates and breaks nothing
+    // states its own calendar, so publication moves four production plan dates and breaks nothing
     // — one visible failure carrying an explanation beats none, and it beats the two bare
     // NOT_CALCULABLE failures the old arrangement would have produced.
     expect(pinnedCalendar(ruleset.calendarId).holidays, PUBLICATION_IS_A_RESOLUTION).toBeNull();
@@ -405,7 +485,14 @@ describe.runIf(databaseUrl.length > 0)("plan API (F-201)", () => {
       food_present: false,
       food_vendor_count: null,
       selling_anything: false,
-      amplified_sound: false,
+      // Amplified and audible from the street on purpose, to keep this test's second half alive.
+      // It used to read DOB-ASSEMBLY-001 as the finding that dates normally while the calendar is
+      // unpublished; nyc.v2.9 carries that business-day rule, so without a sound permit this intake
+      // has NO calendar-dated finding left and the "everything else still dates" guarantee would
+      // have silently lost its subject rather than failed. NYPD-SOUND-001 publishes 5 calendar
+      // days, needs no holiday list, and is therefore the subject that survives the bump.
+      amplified_sound: true,
+      sound_audible_from_public_way: "yes",
       alcohol: true,
       venue_license_covers_event_area: "no",
     });
@@ -427,13 +514,28 @@ describe.runIf(databaseUrl.length > 0)("plan API (F-201)", () => {
         (entry: { ruleIds: string[] }) => entry.ruleIds,
       ),
     ).toContainEqual(["SLA-ONEDAY-001"]);
-    // Everything that needs no business-day math still carries its real date. DOB-ASSEMBLY-001
-    // publishes an exclusive 10-day bound ("earlier than 10 days before the event"), so for an
-    // event on 2026-08-26 the last valid filing day is the 15th, not the 16th.
+    // DOB-ASSEMBLY-001 is now undatable here too, and that is the carried v2.8 correction rather than a
+    // regression. It used to publish 10 CALENDAR days on an exclusive bound and dated to 2026-08-15
+    // with no holiday list needed. v2.8 corrects the unit to 10 BUSINESS days on an inclusive bound
+    // against TPPN #07/96 and AC Table 28-112.8, so it now needs the same unpublished calendar
+    // SLA-ONEDAY-001 does and declines to date for the same reason. Asserted explicitly, both
+    // fields, because "no date" is exactly what a broken deadline also looks like: the point is
+    // that it is NOT silently dropped and NOT silently dated from weekday-only arithmetic.
     const assembly = degraded.body.findings.find((finding: { ruleIds: string[] }) =>
       finding.ruleIds.includes("DOB-ASSEMBLY-001"),
     );
-    expect(assembly.latestApplyDate).toBe("2026-08-15");
+    expect(assembly.latestApplyDate).toBeNull();
+    expect(assembly.deadlineStatus).toBe("not_calculable");
+    expect(assembly.notes).toContain("confirm with agency");
+    // And the guarantee this half exists for, now carried by a rule the bump did not touch:
+    // everything that needs no business-day math still carries its real date. NYPD-SOUND-001
+    // publishes "at least 5 days", inclusive, so for an event on 2026-08-26 the last valid filing
+    // day is the 21st.
+    const sound = degraded.body.findings.find((finding: { ruleIds: string[] }) =>
+      finding.ruleIds.includes("NYPD-SOUND-001"),
+    );
+    expect(sound.latestApplyDate).toBe("2026-08-21");
+    expect(sound.deadlineStatus).toBe("on_track");
 
     // With a published list the same finding dates for real, which is what the fixtures exercise.
     const computed = await request(appWith()).post(`/api/events/${eventId}/plan`);
@@ -463,7 +565,7 @@ describe.runIf(databaseUrl.length > 0)("plan API (F-201)", () => {
     const eventId = await insertEvent();
     const app = appWith();
     const generated = await request(app).post(`/api/events/${eventId}/plan`);
-    expect(generated.body.findings).toHaveLength(5);
+    expect(generated.body.findings).toHaveLength(10);
 
     // Simulate a lost child row. The insert is transactional, so this cannot happen during normal
     // generation, but nothing in the schema enforces the item count afterwards.
@@ -476,7 +578,7 @@ describe.runIf(databaseUrl.length > 0)("plan API (F-201)", () => {
     expect(fetched.status).toBe(500);
     expect(fetched.body.error).toBe("plan lookup failed");
     expect(fetched.body.detail).toContain("is incomplete");
-    // The surviving four findings are not served as if they were the whole plan.
+    // The surviving nine findings are not served as if they were the whole plan.
     expect(fetched.body.findings).toBeUndefined();
   });
 

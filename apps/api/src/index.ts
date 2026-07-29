@@ -1,16 +1,19 @@
 import { readFile } from "node:fs/promises";
 import { Client, Pool } from "pg";
 import { parseEngineRuleset, parseIntakeContract } from "@pop-engine/engine";
+import { sendersFromEnv } from "./alert-delivery";
+import { ALERT_POLLER_CONNECTIONS, createAlertPoller, createAlertScheduler } from "./alerts";
 import { createApp } from "./app";
 import { holidayCalendarWarning, pinnedCalendar, todayInJurisdiction } from "./calendar";
 import { createPlanService } from "./plan";
-import { loadRuleset, rulesFilePath, syncPermitRules } from "./ruleset";
+import { deadlineReminderOffsets, loadRuleset, rulesFilePath, syncPermitRules } from "./ruleset";
 import {
   createS3DocumentStorage,
   s3ClientFor,
   s3SettingsFromEnv,
   unconfiguredDocumentStorage,
 } from "./storage";
+import { supabaseAccessTokenVerifier } from "./auth";
 
 // Long-lived process (ARCHITECTURE.md AD-1). This server also hosts the in-process
 // 60s alert poller once F-203 (issue #8) lands, which is why the api must stay on an
@@ -62,13 +65,50 @@ const documentStorage =
     ? unconfiguredDocumentStorage()
     : createS3DocumentStorage(s3ClientFor(s3Settings), s3Settings.bucket);
 
+// F-203. Email sends live when Resend is configured and fails loudly when it is not; SMS is the
+// labeled in-product simulation until an A2P 10DLC approval date is recorded (BASELINE.md,
+// OPEN-QUESTIONS T-1). The offsets come from the ruleset the boot validator just checked.
+const senders = sendersFromEnv(process.env);
+if (!process.env.RESEND_API_KEY || !process.env.SMTP_FROM) {
+  console.warn("RESEND_API_KEY / SMTP_FROM are not configured; email alerts will stay pending");
+}
+console.warn("SMS alerts render as a labeled in-product simulation (Twilio A2P 10DLC pending)");
+const scheduleAlerts = createAlertScheduler({
+  reminderDaysBefore: deadlineReminderOffsets(ruleset),
+  slackWarningDays: engineRuleset.slackWarningDays,
+  jurisdiction: engineRuleset.jurisdiction,
+});
+// A pool of the poller's own, because a send holds its connection for as long as the provider
+// takes and the API must not be competing for what is left. Sized to the concurrency the poller
+// actually runs at, plus one for the scan that picks the batch. Sharing the API's ten connections
+// was what pinned that concurrency low enough to miss AC 2's delivery bound during an outage.
+const alertPool = new Pool({
+  connectionString: databaseUrl,
+  max: ALERT_POLLER_CONNECTIONS,
+});
+const alertPoller = createAlertPoller({
+  database: alertPool,
+  senders,
+  jurisdiction: engineRuleset.jurisdiction,
+});
+const verifyAccessToken = supabaseAccessTokenVerifier();
+if (verifyAccessToken === null) {
+  console.warn(
+    "SUPABASE_URL / SUPABASE_PUBLISHABLE_KEY is not configured; /api/session returns 503",
+  );
+}
+
 createApp({
   database: pool,
   intakeContract: parseIntakeContract(ruleset.document),
   today,
   planService,
-  checklist: { database: pool, storage: documentStorage },
+  checklist: { database: pool, storage: documentStorage, scheduleAlerts },
+  alerts: { jurisdiction: engineRuleset.jurisdiction, database: pool, senders },
   rulesMeta: { rulesetVersion: ruleset.rulesetVersion, snapshotDate: ruleset.snapshotDate },
+  ...(verifyAccessToken ? { verifyAccessToken } : {}),
 }).listen(PORT, () => {
   console.log(`pop-engine-api listening on :${PORT}`);
+  // In-process, in the long-lived api (AD-1/AD-4): no queue, no second service.
+  alertPoller.start();
 });

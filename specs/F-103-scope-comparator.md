@@ -23,7 +23,7 @@ An organizer can compare two event configurations using two complete engine eval
 
 ## Dependencies and Baseline
 
-- F-101, F-201, F-102, and approved Event Revisions.
+- F-101, F-201, F-102, F-106 Date Advisor, and approved Event Revisions.
 - Stable plan/finding identity and plan-diff contracts from `ARCHITECTURE-FUTURE.md`.
 - Baseline at draft time: PRD, Roadmap, Design, and Phase 0–1.5 Architecture approved 2026-07-22; `ARCHITECTURE-FUTURE.md` approved as a planning target 2026-07-25; NYC ruleset `nyc.v2.7`, rules schema `popengine-rules/v2`, and scenario fixtures v5 where regulatory output is consumed.
 - The approval PR must re-pin any baseline version that changes before approval. A proposed or superseded input blocks implementation.
@@ -58,7 +58,7 @@ Exact HTTP, JSON Schema, migration, job, and provider shapes belong in their rev
 
 1. **F103-AC-01:** Both configurations evaluate with byte-identical ruleset, calendar, and `today` inputs, producing normal immutable plans.
 2. **F103-AC-02:** The comparison identifies each added, removed, and materially changed finding without hiding deduplicated source facets.
-3. **F103-AC-03:** Permit burden and earliest feasible date are derived from typed plan output, not prose parsing or a second rules implementation.
+3. **F103-AC-03:** Permit burden is derived from typed plan output, and earliest feasible dates come only from F-106 candidate-date evaluations using the same engine context; neither value comes from prose parsing or a second rules implementation.
 4. **F103-AC-04:** Unknown, conflict, research-required, or evaluation failure remains visible and cannot make a configuration appear better by omission.
 5. **F103-AC-05:** Swapping left and right preserves each plan and reverses only directional comparison labels.
 
@@ -82,5 +82,5 @@ Exact HTTP, JSON Schema, migration, job, and provider shapes belong in their rev
 
 ## Approval Blockers
 
-- Approve Event Revision, finding-identity, plan-diff, and earliest-feasible-date contracts.
+- Approve Event Revision, finding-identity, plan-diff, and F-106 earliest-feasible-date contracts.
 - Assign the owner and independent reviewer, approve this spec, and add it to `docs/BASELINE.md`.

@@ -6,10 +6,12 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { cleanup, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { CONFIRM_WITH_AGENCY, type Finding } from "@pop-engine/engine";
+import { publishedRulesFileIn } from "../rules-file";
 import PlanPage from "../events/[id]/plan/page";
 import { PlanView } from "./plan-view";
 import { SnapshotBanner, compareToPinned, formatSnapshotDate } from "./snapshot-banner";
 import { verdictCopy } from "./verdict-copy";
+import { NOT_COVERED_BY_RULESET } from "../verification-copy";
 
 // Component tests for F-206. Regulatory prose in the assertions is read out of the published
 // ruleset rather than retyped here, so a rule edit moves the test the same way it moves the
@@ -19,11 +21,16 @@ const publishedRuleset: {
   snapshot_date: string;
   rules: {
     id: string;
-    output: Record<string, string>;
+    output: {
+      permit_name?: string;
+      note_text?: string;
+      portal?: { name?: string; url?: string | null; instructions?: string };
+      [key: string]: unknown;
+    };
     source?: { citation: string; urls: string[] };
     verification: { status: string; qualification?: string };
   }[];
-} = JSON.parse(readFileSync(resolve("rules/nyc-rules.v2.7.json"), "utf8"));
+} = JSON.parse(readFileSync(resolve(publishedRulesFileIn("rules")), "utf8"));
 
 const publishedRule = (id: string) => {
   const rule = publishedRuleset.rules.find((candidate) => candidate.id === id);
@@ -269,10 +276,21 @@ describe("a plan generated before migration 002 recorded a snapshot date (AC 4)"
 });
 
 describe("per-line citations and status (AC 2, AC 3)", () => {
+  /**
+   * One rendered line, with its detail expanded when it has any.
+   *
+   * The line is progressively disclosed: the summary carries name, agency, disposition, fee, the
+   * deadline, the verification badge and the primary citation, and everything else is one click
+   * away. These cases assert that a field RENDERS with the right content, which is unchanged by
+   * the split, so the helper opens the panel. The collapsed contract has its own cases below.
+   */
   const lineFor = async (only: Finding) => {
     stubApi(plan({ findings: [only] }));
     renderPlan();
-    return within(await screen.findByRole("article"));
+    const line = within(await screen.findByRole("article"));
+    const toggle = line.queryByRole("button", { name: /^Details for/ });
+    if (toggle !== null) await userEvent.click(toggle);
+    return line;
   };
 
   it("shows each line's citation with click-through to the official page", async () => {
@@ -321,6 +339,56 @@ describe("per-line citations and status (AC 2, AC 3)", () => {
     expect(note.getAttribute("title")).toBeNull();
     expect(line.getByText("RESEARCH REQUIRED")).toBeDefined();
   });
+
+  it.each([CONFIRM_WITH_AGENCY, `14–60 days depending on level; ${CONFIRM_WITH_AGENCY}`])(
+    "renders one confirmation when the deadline displays %s",
+    async (deadlineDisplay) => {
+      const line = await lineFor(
+        finding({
+          verificationStatus: "RESEARCH_REQUIRED",
+          deadline: { type: "research_required", display: null, qualification: null },
+          deadlineDisplay,
+          deadlineStatus: "not_calculable",
+        }),
+      );
+
+      expect(
+        (screen.getByRole("article").textContent ?? "").split(CONFIRM_WITH_AGENCY),
+      ).toHaveLength(2);
+      expect(line.getByText("RESEARCH REQUIRED")).toBeDefined();
+    },
+  );
+
+  it.each(["Published output note", "Published verification qualification"])(
+    "keeps one confirmation visible before and after expanding a %s",
+    async (publishedProse) => {
+      const note = `${publishedProse}: ${CONFIRM_WITH_AGENCY}`;
+      stubApi(
+        plan({
+          findings: [
+            finding({
+              verificationStatus: "RESEARCH_REQUIRED",
+              notes: [note],
+            }),
+          ],
+        }),
+      );
+      renderPlan();
+      const article = await screen.findByRole("article");
+      const line = within(article);
+
+      expect(line.getByRole("note").textContent).toBe(CONFIRM_WITH_AGENCY);
+      expect(line.queryByText(note)).toBeNull();
+      expect((article.textContent ?? "").split(CONFIRM_WITH_AGENCY)).toHaveLength(2);
+
+      await userEvent.click(line.getByRole("button", { name: /^Details for/ }));
+
+      expect(line.queryByRole("note")).toBeNull();
+      expect(line.getByText(note)).toBeDefined();
+      expect((article.textContent ?? "").split(CONFIRM_WITH_AGENCY)).toHaveLength(2);
+      expect(line.getByText("RESEARCH REQUIRED")).toBeDefined();
+    },
+  );
 
   it("renders both readings of an official conflict with every source behind them", async () => {
     const conflict = finding({
@@ -420,7 +488,7 @@ describe("per-line citations and status (AC 2, AC 3)", () => {
     }
   });
 
-  it("renders the explicit source-not-established state for a source-less coverage gap", async () => {
+  it("renders the explicit not-covered-by-this-ruleset-version state for a source-less coverage gap", async () => {
     // ADV-ALCOHOL-PUBLIC-001 is a COVERAGE_GAP advisory: it asserts nothing and cites nothing.
     const line = await lineFor(
       finding({
@@ -435,7 +503,7 @@ describe("per-line citations and status (AC 2, AC 3)", () => {
 
     expect(line.queryAllByRole("link")).toEqual([]);
     expect(line.getByText("COVERAGE GAP")).toBeDefined();
-    expect(line.getByText("source not yet established")).toBeDefined();
+    expect(line.getByText(NOT_COVERED_BY_RULESET)).toBeDefined();
   });
 
   it("omits the agency label on findings that publish no agency", async () => {
@@ -451,13 +519,20 @@ describe("per-line citations and status (AC 2, AC 3)", () => {
 
   it("renders the filing route for a rule that publishes instructions instead of a URL", async () => {
     // NYPD-SOUND-001 publishes the precinct and form PD 656-041A and no portal URL; that text is
-    // the entire filing route for the line.
+    // the entire filing route for the line (F-204 AC 1).
     const instructions = "File at the precinct where the device will be used; form PD 656-041A.";
     const line = await lineFor(
-      finding({ ruleIds: ["NYPD-SOUND-001"], portalUrl: null, portalInstructions: instructions }),
+      finding({
+        ruleIds: ["NYPD-SOUND-001"],
+        portalName: "Local NYPD precinct (in person)",
+        portalUrl: null,
+        portalInstructions: instructions,
+      }),
     );
 
+    expect(line.getByText(/apply at Local NYPD precinct \(in person\)/)).toBeDefined();
     expect(line.getByText(instructions)).toBeDefined();
+    expect(line.queryByRole("link", { name: "Local NYPD precinct (in person)" })).toBeNull();
   });
 
   it("links the portal when the rule publishes one, and names it plainly when it has no URL", async () => {
@@ -468,16 +543,78 @@ describe("per-line citations and status (AC 2, AC 3)", () => {
         feeDisplay: "$105 filing fee",
       }),
     );
+    expect(linked.getByText(/apply at/)).toBeDefined();
     expect(linked.getByRole("link", { name: "FDNY Business" }).getAttribute("href")).toBe(
       "https://fires.fdnycloud.org/CitizenAccess/Default.aspx",
+    );
+    expect(linked.getByRole("link", { name: "FDNY Business" }).getAttribute("target")).toBe(
+      "_blank",
     );
     expect(linked.getByText("$105 filing fee")).toBeDefined();
     cleanup();
 
     // A portal named but not yet resolved to a URL renders as text rather than a dead link.
     const unlinked = await lineFor(finding({ portalUrl: null, portalName: "Borough office" }));
-    expect(unlinked.getByText("Borough office")).toBeDefined();
+    expect(unlinked.getByText(/apply at Borough office/)).toBeDefined();
     expect(unlinked.queryByRole("link", { name: "Borough office" })).toBeNull();
+  });
+
+  it("renders distinct application paths for Scenario A SAPO and Scenario C Parks (F-204 AC 5)", async () => {
+    const sapo = publishedRule("SAPO-STREET-LARGE-001");
+    const parks = publishedRule("PARKS-EVENT-001");
+    const sound = publishedRule("NYPD-SOUND-001");
+    const sapoPortal = sapo.output.portal as { name: string; url: string };
+    const parksPortal = parks.output.portal as { name: string; url: string };
+    const soundPortal = sound.output.portal as {
+      name: string;
+      url: null;
+      instructions: string;
+    };
+
+    const sapoLine = await lineFor(
+      finding({
+        ruleIds: [sapo.id],
+        portalName: sapoPortal.name,
+        portalUrl: sapoPortal.url,
+        portalInstructions: null,
+      }),
+    );
+    expect(sapoLine.getByRole("link", { name: "E-Apply" }).getAttribute("href")).toBe(
+      "https://nyceventpermits.nyc.gov/cems/Login",
+    );
+    cleanup();
+
+    const parksLine = await lineFor(
+      finding({
+        ruleIds: [parks.id],
+        portalName: parksPortal.name,
+        portalUrl: parksPortal.url,
+        portalInstructions: null,
+      }),
+    );
+    expect(
+      parksLine.getByRole("link", { name: "NYC Parks event permits" }).getAttribute("href"),
+    ).toBe("https://nyceventpermits.nyc.gov/parks");
+    cleanup();
+
+    const soundLine = await lineFor(
+      finding({
+        ruleIds: [sound.id],
+        portalName: soundPortal.name,
+        portalUrl: null,
+        portalInstructions: soundPortal.instructions,
+      }),
+    );
+    expect(soundLine.queryByRole("link", { name: soundPortal.name })).toBeNull();
+    expect(soundLine.getByText(/apply at Local NYPD precinct \(in person\)/)).toBeDefined();
+    expect(soundLine.getByText(soundPortal.instructions)).toBeDefined();
+  });
+
+  it("omits the portal block when the finding carries no portal fields", async () => {
+    const line = await lineFor(
+      finding({ portalName: null, portalUrl: null, portalInstructions: null }),
+    );
+    expect(line.queryByText(/apply at/)).toBeNull();
   });
 
   it("renders every published note on the line", async () => {
@@ -605,10 +742,21 @@ describe("the plan view's own states", () => {
 });
 
 describe("dated lines that publish no deadline prose", () => {
+  /**
+   * One rendered line, with its detail expanded when it has any.
+   *
+   * The line is progressively disclosed: the summary carries name, agency, disposition, fee, the
+   * deadline, the verification badge and the primary citation, and everything else is one click
+   * away. These cases assert that a field RENDERS with the right content, which is unchanged by
+   * the split, so the helper opens the panel. The collapsed contract has its own cases below.
+   */
   const lineFor = async (only: Finding) => {
     stubApi(plan({ findings: [only] }));
     renderPlan();
-    return within(await screen.findByRole("article"));
+    const line = within(await screen.findByRole("article"));
+    const toggle = line.queryByRole("button", { name: /^Details for/ });
+    if (toggle !== null) await userEvent.click(toggle);
+    return line;
   };
 
   it("shows the demo anchor's apply-by date and missed status with no display text", async () => {
@@ -1043,7 +1191,12 @@ describe("a rule whose whole deadline is its type", () => {
     );
     renderPlan();
 
-    const line = within(await screen.findByRole("article"));
+    // F-205 also renders SAPO-INSURANCE-001 as its own dedicated card, so two articles now match
+    // this rule id; this test is about the plan LINE (F-206), scoped here by its own class.
+    await screen.findAllByRole("article");
+    const planLine = document.querySelector("article.line");
+    expect(planLine).not.toBeNull();
+    const line = within(planLine as HTMLElement);
     expect(line.getByText("before issuance")).toBeDefined();
   });
 
@@ -1579,15 +1732,13 @@ describe("the states this page can be in", () => {
   });
 
   it("explains an evaluation that found nothing rather than rendering an empty page", async () => {
-    // The approved boundary fixture: a park event at headcount 19 triggers no rule at all, and
-    // F-201 AC 4 makes that result first-class so it is never read as a failed evaluation.
     stubScript({
       plan: () => jsonResponse(200, plan({ verdict: "FEASIBLE", findings: [] })),
     });
     renderPlan();
 
     expect(
-      await screen.findByText("No new city event requirement identified from your answers."),
+      await screen.findByText("No definite city event requirement identified from your answers."),
     ).toBeDefined();
     expect(screen.getByText("On track")).toBeDefined();
     expect(screen.queryAllByRole("article")).toEqual([]);
@@ -1598,7 +1749,59 @@ describe("the states this page can be in", () => {
     renderPlan();
 
     await waitFor(() => expect(screen.getAllByRole("article").length).toBe(1));
-    expect(screen.queryByText(/No new city event requirement/)).toBeNull();
+    expect(screen.queryByText(/No definite city event requirement/)).toBeNull();
+  });
+
+  it("keeps near-empty copy alongside advisories and named confirmations", async () => {
+    stubScript({
+      plan: () =>
+        jsonResponse(
+          200,
+          plan({
+            verdict: "FEASIBLE",
+            findings: [
+              finding({
+                ruleIds: ["ADV-VENUE-OCCUPANCY-001"],
+                kind: "advisory",
+                disposition: "advisory",
+              }),
+              finding({
+                ruleIds: ["CONF-NO-BATTERY-001"],
+                kind: "note",
+                disposition: "no_new_requirement",
+              }),
+            ],
+          }),
+        ),
+    });
+    renderPlan();
+
+    expect(
+      await screen.findByText("No definite city event requirement identified from your answers."),
+    ).toBeDefined();
+    expect(screen.getAllByRole("article")).toHaveLength(2);
+  });
+
+  it("never classifies a definite required finding as near-empty when its deadline is not calculable", async () => {
+    stubScript({
+      plan: () =>
+        jsonResponse(
+          200,
+          plan({
+            findings: [
+              finding({
+                disposition: "required",
+                deadlineStatus: "not_calculable",
+                latestApplyDate: null,
+              }),
+            ],
+          }),
+        ),
+    });
+    renderPlan();
+
+    await screen.findByRole("article");
+    expect(screen.queryByText(/No definite city event requirement/)).toBeNull();
   });
 });
 
@@ -1648,5 +1851,233 @@ describe("a regeneration that finishes after the page has moved on", () => {
     expect(screen.queryByText(/nyc\.v2\.1/)).toBeNull();
     expect(screen.queryAllByRole("article")).toEqual([]);
     expect(screen.getByRole("button", { name: "Generate the plan" })).toBeDefined();
+  });
+});
+
+// Progressive disclosure. Nothing was removed from a line; these pin WHICH fields are visible
+// before an interaction and which are one interaction away, because that split is the whole
+// change and a later edit could quietly move a field across it.
+describe("a scannable line (progressive disclosure)", () => {
+  const collapsedLine = async (only: Finding) => {
+    stubApi(plan({ findings: [only] }));
+    renderPlan();
+    return within(await screen.findByRole("article"));
+  };
+
+  /** Everything the summary carries, on a finding that publishes all of it. */
+  const full = () =>
+    finding({
+      name: "Special Event Permit",
+      agency: "NYC Parks",
+      disposition: "required",
+      feeDisplay: "$25 processing fee",
+      latestApplyDate: "2026-08-01",
+      deadlineStatus: "on_track",
+      verificationStatus: "SOURCE_CONFIRMED",
+      lastVerifiedDate: "2026-07-18",
+      noteText: "A published note.",
+      portalName: "NYC Parks portal",
+      portalUrl: "https://example.gov/apply",
+      notes: ["Another published note."],
+      sources: [
+        { ruleId: "PARKS-EVENT-001", citation: "Parks FAQ", urls: ["https://example.gov/faq"] },
+        { ruleId: "PARKS-EVENT-001", citation: "Second page", urls: ["https://example.gov/two"] },
+      ],
+    });
+
+  it("shows exactly the summary fields before the line is expanded", async () => {
+    const line = await collapsedLine(full());
+
+    // Present: name, agency, disposition, fee, the deadline and its status, the badge, the
+    // primary citation.
+    expect(line.getByRole("heading", { name: "Special Event Permit" })).toBeDefined();
+    expect(line.getByText("NYC Parks")).toBeDefined();
+    expect(line.getByText("required")).toBeDefined();
+    expect(line.getByText("$25 processing fee")).toBeDefined();
+    expect(line.getByText(/apply by 2026-08-01/)).toBeDefined();
+    expect(line.getByText(/on track/)).toBeDefined();
+    expect(line.getByText("SOURCE CONFIRMED")).toBeDefined();
+    expect(line.getByText("Parks FAQ")).toBeDefined();
+
+    // Absent until expanded, and absent from the DOM rather than merely hidden.
+    expect(line.queryByText("Second page")).toBeNull();
+    expect(line.queryByText(/last verified/)).toBeNull();
+    expect(line.queryByText("A published note.")).toBeNull();
+    expect(line.queryByText("Another published note.")).toBeNull();
+    expect(line.queryByText(/apply at/)).toBeNull();
+    expect(line.queryByText("PARKS-EVENT-001")).toBeNull();
+  });
+
+  it("reveals exactly the detail fields when expanded", async () => {
+    const line = await collapsedLine(full());
+    await userEvent.click(line.getByRole("button", { name: "Details for Special Event Permit" }));
+
+    expect(line.getByText("Second page")).toBeDefined();
+    expect(line.getByText("last verified 2026-07-18")).toBeDefined();
+    expect(line.getByText("A published note.")).toBeDefined();
+    expect(line.getByText("Another published note.")).toBeDefined();
+    expect(line.getByText(/apply at/)).toBeDefined();
+    expect(line.getByText("PARKS-EVENT-001")).toBeDefined();
+
+    // The summary keeps everything it had: expanding adds, it never moves a field down.
+    expect(line.getByText(/apply by 2026-08-01/)).toBeDefined();
+    expect(line.getByText("SOURCE CONFIRMED")).toBeDefined();
+  });
+
+  it("shows a RESEARCH_REQUIRED line's absent source on the line itself", async () => {
+    // The absence IS the information, so it cannot sit behind the expand: an empty citation slot
+    // would read as a rendering fault instead of a finding.
+    const line = await collapsedLine(
+      finding({ verificationStatus: "RESEARCH_REQUIRED", sources: [] }),
+    );
+
+    expect(line.getByText(CONFIRM_WITH_AGENCY)).toBeDefined();
+    expect(line.getByText("RESEARCH REQUIRED")).toBeDefined();
+  });
+
+  it("signals an official conflict in the summary and states both readings on expand", async () => {
+    const line = await collapsedLine(
+      finding({
+        verificationStatus: "OFFICIAL_CONFLICT",
+        conflictText: "One source says 90 days; another says December 31 of the prior year.",
+      }),
+    );
+
+    // The badge is the scannable signal; the two readings are one interaction away, verbatim.
+    expect(line.getByText("OFFICIAL CONFLICT")).toBeDefined();
+    expect(line.queryByText(/One source says 90 days/)).toBeNull();
+
+    await userEvent.click(line.getByRole("button", { name: /^Details for/ }));
+    expect(line.getByText(/One source says 90 days/)).toBeDefined();
+  });
+
+  it("renders a published fee, and nothing at all when none is published", async () => {
+    // The line used to say "fee not published" for a null fee. That sentence asserted two things at
+    // once — that a price exists, and that its amount was withheld — and a finding carries evidence
+    // for neither: `ruleset.ts` collapses an absent `fee` and an explicit `fee: null` to one value,
+    // so "this filing has no fee" and "the amount is unpublished" arrive here identical. Deciding it
+    // from the finding's KIND only moved the inference up a level, to what OTHER rules of that kind
+    // publish, which is a fact about a different filing. SAPO-INSURANCE-BLOCK-PARTY-RIDE-001,
+    // PARKS-EVENT-EXACTLY-20-001 and DOB-PROP-TRUSS-001 are all fee-bearing kinds carrying no fee,
+    // and all three would have been captioned on that basis alone.
+    const published = await collapsedLine(finding({ feeDisplay: "$25 processing fee" }));
+    expect(published.getByText("$25 processing fee")).toBeDefined();
+
+    cleanup();
+    const absent = await collapsedLine(finding({ feeDisplay: null }));
+    expect(absent.queryByText("fee not published")).toBeNull();
+    // No blank row standing where the amount would be: the row is not rendered at all.
+    expect(document.querySelector(".line__fee")).toBeNull();
+    expect(absent.queryByText("$0")).toBeNull();
+  });
+
+  /** Scenario B's DOHMH-EXEMPTION-001: one source, and none of the optional detail fields. */
+  const bareFinding = () =>
+    finding({
+      ruleIds: ["DOHMH-EXEMPTION-001"],
+      kind: "advisory",
+      name: "Temporary food service exemption",
+      disposition: "may_be_required",
+      noteText: null,
+      conflictText: null,
+      notes: [],
+      portalName: null,
+      portalUrl: null,
+      portalInstructions: null,
+      applyAfterDate: null,
+      timelineUnresolvedReason: null,
+      deadlineUnknownFields: [],
+      lastVerifiedDate: null,
+      sources: [
+        {
+          ruleId: "DOHMH-EXEMPTION-001",
+          citation: "DOHMH temporary food service FAQ",
+          urls: ["https://example.gov/dohmh"],
+        },
+      ],
+    });
+
+  it("keeps the rule ids reachable on a finding that has no optional detail", async () => {
+    // F-201 AC 1: every finding references its rule ID. The rule ids render inside the panel, so
+    // gating the panel on the OPTIONAL fields took them off the page entirely for this shape —
+    // not hidden behind an expand, absent, with no control to reveal them.
+    const line = await collapsedLine(bareFinding());
+
+    const toggle = line.getByRole("button", {
+      name: "Details for Temporary food service exemption",
+    });
+    await userEvent.click(toggle);
+    expect(line.getByText("DOHMH-EXEMPTION-001")).toBeDefined();
+  });
+
+  it("offers the expand on every finding shape, so no panel field can vanish with the panel", async () => {
+    // The general form of the case above: the panel is unconditional, so a finding shape can never
+    // drop a field that was moved into it. Asserted on the emptiest shape the plan produces.
+    for (const shape of [bareFinding(), finding({ sources: [] }), full()]) {
+      cleanup();
+      const line = await collapsedLine(shape);
+      expect(line.queryByRole("button", { name: /^Details for/ })).not.toBeNull();
+    }
+  });
+
+  it("reports a URL-less source that is behind the expand, without anyone expanding it", async () => {
+    // The log is how an operator learns a stored plan has lost its click-through, and a plan row is
+    // immutable, so nothing else reports it. A source past the first renders inside the panel, and
+    // the panel is UNMOUNTED while collapsed: while the check lived inside the citation it ran only
+    // if someone happened to expand that one line. The existing case above covers a url-less
+    // PRIMARY source, which stays mounted, and passes either way.
+    const logged = vi.spyOn(console, "error").mockImplementation(() => {});
+    try {
+      const line = await collapsedLine(
+        finding({
+          sources: [
+            { ruleId: "PARKS-EVENT-001", citation: "Parks FAQ", urls: ["https://example.gov/faq"] },
+            {
+              ruleId: "PARKS-EVENT-EXACTLY-20-001",
+              citation: "Parks borough office, by phone",
+              urls: [],
+            },
+          ],
+        }),
+      );
+
+      // Still collapsed, and the second citation is genuinely absent rather than hidden.
+      expect(line.queryByText("Parks borough office, by phone")).toBeNull();
+
+      await waitFor(() =>
+        expect(logged).toHaveBeenCalledWith(
+          expect.stringContaining("no source URL"),
+          expect.objectContaining({
+            ruleId: "PARKS-EVENT-EXACTLY-20-001",
+            citation: "Parks borough office, by phone",
+          }),
+        ),
+      );
+    } finally {
+      logged.mockRestore();
+    }
+  });
+
+  it("is operable from the keyboard and reports its state programmatically", async () => {
+    const line = await collapsedLine(full());
+    const toggle = line.getByRole("button", { name: "Details for Special Event Permit" });
+
+    // Reachable by Tab, and the state is on the control rather than in a colour or a glyph.
+    expect(toggle.getAttribute("aria-expanded")).toBe("false");
+    await userEvent.tab();
+    while (document.activeElement !== toggle) await userEvent.tab();
+
+    await userEvent.keyboard("{Enter}");
+    expect(toggle.getAttribute("aria-expanded")).toBe("true");
+    expect(line.getByText("last verified 2026-07-18")).toBeDefined();
+
+    await userEvent.keyboard(" ");
+    expect(toggle.getAttribute("aria-expanded")).toBe("false");
+
+    // The control points at the region it opens, so assistive technology can follow it.
+    await userEvent.keyboard("{Enter}");
+    const panelId = toggle.getAttribute("aria-controls");
+    expect(panelId).not.toBeNull();
+    expect(document.getElementById(panelId as string)).not.toBeNull();
   });
 });

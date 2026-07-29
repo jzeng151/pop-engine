@@ -35,11 +35,29 @@ export type DocumentStorage = {
    * "the api streams to S3").
    */
   put(key: string, body: Readable, contentType: string, sizeBytes: number): Promise<void>;
-  /** A URL that grants read access to `key` for `expiresInSeconds` and no longer. */
-  signedDownloadUrl(key: string, expiresInSeconds: number): Promise<string>;
+  /**
+   * A URL that grants read access to `key` for `expiresInSeconds` and no longer, and that
+   * downloads rather than previews. `filename` is the display name the document was stored under;
+   * it is what the saved file is called.
+   */
+  signedDownloadUrl(key: string, expiresInSeconds: number, filename: string): Promise<string>;
   /** Removes the object. Used to compensate an upload whose metadata write then failed. */
   remove(key: string): Promise<void>;
 };
+
+/**
+ * A `Content-Disposition` that saves the file under its stored name.
+ *
+ * Two forms, because one cannot carry both. `filename=` is a quoted ASCII fallback for anything
+ * that does not read RFC 5987, with the quote and backslash escaped so the header cannot be broken
+ * out of, and non-ASCII replaced rather than dropped so the fallback is never empty. `filename*=`
+ * carries the real name UTF-8 percent-encoded, which is what a current browser uses — and it
+ * matters here because the api deliberately keeps filenames in any script.
+ */
+export function attachmentDisposition(filename: string): string {
+  const ascii = filename.replace(/[^\x20-\x7e]/g, "_").replace(/["\\]/g, "_");
+  return `attachment; filename="${ascii}"; filename*=UTF-8''${encodeURIComponent(filename)}`;
+}
 
 export type S3StorageSettings = {
   readonly endpoint: string;
@@ -114,11 +132,20 @@ export function createS3DocumentStorage(client: S3Client, bucket: string): Docum
       }
     },
 
-    async signedDownloadUrl(key, expiresInSeconds) {
+    async signedDownloadUrl(key, expiresInSeconds, filename) {
       try {
-        return await getSignedUrl(client, new GetObjectCommand({ Bucket: bucket, Key: key }), {
-          expiresIn: expiresInSeconds,
-        });
+        return await getSignedUrl(
+          client,
+          new GetObjectCommand({
+            Bucket: bucket,
+            Key: key,
+            // Every accepted type — PDF, PNG, JPEG — is one a browser renders inline, so a plain
+            // signed GET previews the document under a control labelled Download. The disposition
+            // is signed with the URL, so it cannot be stripped by whoever holds the link.
+            ResponseContentDisposition: attachmentDisposition(filename),
+          }),
+          { expiresIn: expiresInSeconds },
+        );
       } catch (error) {
         console.error("signing a document download url failed", error);
         throw new DocumentStorageError("document storage is unavailable");

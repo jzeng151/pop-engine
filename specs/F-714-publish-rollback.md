@@ -59,13 +59,13 @@ Exact HTTP, JSON Schema, migration, job, and provider shapes belong in their rev
 1. **F714-AC-01:** Publication rejects unless the exact candidate checksum has required independent approvals and a passing full F-712 suite.
 2. **F714-AC-02:** A successful transaction stores the immutable artifact/metadata and advances exactly one jurisdiction pointer atomically with an audit record.
 3. **F714-AC-03:** Retrying the same publish/rollback request is idempotent; a partial failure cannot expose an unrecorded pointer.
-4. **F714-AC-04:** Rollback points to a prior immutable artifact, records reason/actors, and never edits/deletes either artifact.
+4. **F714-AC-04:** Rollback rejects unless the exact prior artifact checksum has explicit authorization and the required independent approval; success records the reason/actors, moves only the pointer, and never edits or deletes either artifact.
 5. **F714-AC-05:** Historical plans continue resolving their pinned ruleset/revision and are never silently re-evaluated after publish or rollback.
 
 ## Fixtures and Verification
 
 - Planned automated fixture IDs are the acceptance IDs above; each must map one-to-one to a runnable test before approval can claim implementation readiness.
-- Regulatory fixtures: Full approved suite for candidate bytes plus transaction failure, idempotency, approval separation, cache refresh, and historical replay fixtures.
+- Regulatory fixtures: Full approved suite for candidate bytes plus transaction failure, idempotency, publication and rollback approval separation, cache refresh, and historical replay fixtures.
 - Security-sensitive and cross-workspace paths require negative authorization tests; provider paths require success, duplicate-delivery, retry, invalid-signature, and permanent-failure tests where applicable.
 
 ## Allowed Footprint and Coordination

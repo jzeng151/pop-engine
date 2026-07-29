@@ -1,3 +1,4 @@
+import { readFileSync, readdirSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -28,12 +29,104 @@ export type PublishedRuleset = {
 };
 
 const EXPECTED_SCHEMA = "popengine-rules/v2";
-const EXPECTED_RULESET_VERSION = "nyc.v2.7";
-const EXPECTED_RULE_COUNT = 33;
+const EXPECTED_RULESET_VERSION = "nyc.v2.9";
+const EXPECTED_RULE_COUNT = 42;
 const EXPECTED_ADVISORY_COUNT = 4;
-const DEFAULT_RULES_FILE = fileURLToPath(
-  new URL("../../../rules/nyc-rules.v2.7.json", import.meta.url),
-);
+/** Published rulesets are `nyc-rules.v<version>.json`; `rules/proposals/` is drafts and excluded. */
+const PUBLISHED_RULESET = /^nyc-rules\.v.+\.json$/;
+
+/** The artifact family this api can read. `EXPECTED_SCHEMA` pins the exact token at validation. */
+const SCHEMA_FAMILY = "popengine-rules/";
+
+const RULES_DIRECTORY = fileURLToPath(new URL("../../../rules/", import.meta.url));
+
+/**
+ * The published ruleset, FOUND rather than named.
+ *
+ * This used to spell the versioned filename directly, and that is a landmine a bump
+ * cannot see: publishing the next version deletes the file this points at, and the api then fails
+ * to boot on a path nobody remembered to update. Reading the directory means a bump changes one
+ * artifact and nothing else has to be swept.
+ *
+ * Exactly one is expected. Zero and two both throw naming what was found, because booting against
+ * an arbitrary one of two rulesets is the failure this whole file exists to prevent — every permit
+ * fact the product states would come from an artifact nobody chose.
+ *
+ * NOTE ON `EXPECTED_RULESET_VERSION` ABOVE, which deliberately still names nyc.v2.9: the two are
+ * not redundant and this change does not weaken it. The PATH says which file to read; the VERSION
+ * says which content is approved to boot on, and a mismatch is a hard boot failure on purpose
+ * (AD-2, and the check further down this file). Finding the file does not decide whether its
+ * contents are the ratified ones, so a bump that publishes v2.10 without updating that constant
+ * still fails loudly at boot — which is the intended behaviour, not a gap.
+ */
+/**
+ * Asserts that `path` is a published ruleset, and nothing more than that.
+ *
+ * The cost of finding rather than naming. A named path failed loudly when the file was missing;
+ * discovery succeeds on any file whose NAME fits, so a truncated download, a merge artefact or a
+ * half-written publish would be found and booted from. The name is not evidence, so the file is
+ * asked to identify itself: it must parse as JSON, declare a `popengine-rules/*` schema, and carry
+ * a non-empty `ruleset_version`.
+ *
+ * It stops there deliberately. `validateRuleset` below already checks the schema token exactly, the
+ * version against `EXPECTED_RULESET_VERSION`, the rule and advisory counts, and every field of
+ * every rule — and `loadRuleset` runs it on whatever path this returns. Re-checking any of that
+ * here would be a second copy of the contract, free to drift from the one that boots the api. This
+ * answers "is this the artifact?"; `validateRuleset` answers "is it the approved artifact?".
+ */
+function assertPublishedRuleset(path: string): void {
+  let document: unknown;
+  try {
+    document = JSON.parse(readFileSync(path, "utf8"));
+  } catch (error) {
+    throw new Error(
+      `${path} matches the published-ruleset name pattern but is not readable JSON: ` +
+        `${error instanceof Error ? error.message : String(error)}`,
+    );
+  }
+  const record =
+    typeof document === "object" && document !== null
+      ? (document as Record<string, unknown>)
+      : null;
+  const schema = record?.schema;
+  if (typeof schema !== "string" || !schema.startsWith(SCHEMA_FAMILY)) {
+    throw new Error(
+      `${path} matches the published-ruleset name pattern but does not declare a ` +
+        `${SCHEMA_FAMILY}* schema (found ${JSON.stringify(schema)}); it is not a published ruleset`,
+    );
+  }
+  const version = record?.ruleset_version;
+  if (typeof version !== "string" || version === "") {
+    throw new Error(
+      `${path} declares a ${SCHEMA_FAMILY}* schema but carries no ruleset_version ` +
+        `(found ${JSON.stringify(version)}); it is not a published ruleset`,
+    );
+  }
+}
+
+/**
+ * The published artifact itself, ignoring any `RULES_FILE` override. Exported so the suites that
+ * assert against the real ruleset read the same one the api boots from rather than spelling their
+ * own path to it.
+ *
+ * A FUNCTION RATHER THAN A CONST, which is the whole of the override fix. As a module-scope const
+ * this scanned the directory at IMPORT, so a missing or ambiguous `rules/` threw before
+ * `rulesFilePath` ever looked at `RULES_FILE` — defeating the override in precisely the situation
+ * someone reaches for it, which is pointing the api at a file when the directory is not in the
+ * expected state. Nothing scans now until something actually needs the default.
+ */
+export function publishedRulesFile(): string {
+  const published = readdirSync(RULES_DIRECTORY).filter((entry) => PUBLISHED_RULESET.test(entry));
+  if (published.length !== 1) {
+    throw new Error(
+      `expected exactly one published ruleset in ${RULES_DIRECTORY}, found ${published.length}` +
+        (published.length === 0 ? "" : `: ${published.join(", ")}`),
+    );
+  }
+  const path = `${RULES_DIRECTORY}${published[0] as string}`;
+  assertPublishedRuleset(path);
+  return path;
+}
 
 export const RULE_KINDS = new Set([
   "permit",
@@ -182,7 +275,7 @@ export const MAX_REPRESENTABLE_DAYS_BEFORE = 719_528;
  * whole number of days from 1 to 3650." That spec is the approved artifact this constant enforces —
  * change it there first, then here, and it is deliberately alone on this line. Rationale, from the
  * spec: an offset counts days back from a filing deadline, and the longest window published in
- * nyc.v2.7 is 60 days, so 3,650 never binds on anything real while still refusing nonsense. It is
+ * nyc.v2.9 is 60 days, so 3,650 never binds on anything real while still refusing nonsense. It is
  * ~200× smaller than `MAX_REPRESENTABLE_DAYS_BEFORE`, so in practice
  * this is the bound that does the work; the representable one documents the mechanical ceiling and
  * catches the case where this is ever raised past what the arithmetic can take.
@@ -228,7 +321,7 @@ function requireDaysBefore(value: unknown, label: string): void {
     if (day > MAX_PRODUCT_DAYS_BEFORE) {
       validationError(
         `${at} is ${day}, beyond the ${MAX_PRODUCT_DAYS_BEFORE}-day maximum reminder offset; the ` +
-          `longest window nyc.v2.7 publishes is 60 days`,
+          `longest window nyc.v2.9 publishes is 60 days`,
       );
     }
     if (seen.has(day)) {
@@ -292,6 +385,18 @@ function requireAlertOffsets(value: unknown, label: string): void {
       requireDaysBefore(entry.days_before, `${label}.${alertType}.days_before`);
     }
   }
+}
+
+/**
+ * The reminder offsets F-203 schedules from, read off the artifact rather than restated as a
+ * constant — the spec says they are config and not code. Safe to assert the shape here because
+ * `requireAlertOffsets` refused the load otherwise; boot is where an unusable value fails.
+ */
+export function deadlineReminderOffsets(ruleset: PublishedRuleset): number[] {
+  const config = ruleset.document.config as {
+    alert_offsets: Record<string, { days_before: number[] }>;
+  };
+  return [...(config.alert_offsets[REQUIRED_ALERT_TYPE]?.days_before ?? [])];
 }
 
 function parseSource(value: unknown, label: string): JsonObject {
@@ -463,7 +568,14 @@ export function validateRuleset(value: unknown): PublishedRuleset {
 
 /** The published ruleset path the api boots from; the engine parses the same file (AD-2). */
 export function rulesFilePath(): string {
-  return process.env.RULES_FILE ? resolve(process.env.RULES_FILE) : DEFAULT_RULES_FILE;
+  // The override is consulted BEFORE the directory is scanned. It used to be the other way round
+  // only by accident — the default was a module-scope const — and that made the escape hatch
+  // unusable exactly when it was needed: a caller who set RULES_FILE because `rules/` was empty,
+  // ambiguous or holding a bad artifact still got the scan's error, about a directory they had
+  // just said not to use. What the override names is the caller's explicit choice, so it is
+  // returned unexamined here; `loadRuleset` validates it in full either way.
+  const override = process.env.RULES_FILE;
+  return override !== undefined && override !== "" ? resolve(override) : publishedRulesFile();
 }
 
 export async function loadRuleset(filePath = rulesFilePath()): Promise<PublishedRuleset> {
@@ -502,7 +614,7 @@ export async function syncPermitRules(client: Client, ruleset: PublishedRuleset)
       ruleset.rulesetVersion,
     ]);
 
-    // ponytail: 37 boot-time rows; use one bulk insert only if ruleset size grows materially.
+    // ponytail: 46 boot-time rows; use one bulk insert only if ruleset size grows materially.
     for (const rule of [...ruleset.rules, ...ruleset.advisories]) {
       await client.query(
         `INSERT INTO permit_rules

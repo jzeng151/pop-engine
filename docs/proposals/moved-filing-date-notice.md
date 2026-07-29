@@ -1,14 +1,42 @@
 # PopEngine — Moved-Filing-Date Notice
 
-**Status:** PROPOSED. Not approved, and not implementable.
+**Status:** ARCHIVED (2026-07-26) — historical research, never current authority (`docs/DOCUMENTATION-GOVERNANCE.md` §3). Its premise defect was tested and held; `specs/F-202-compliance-checklist.md` Acceptance Criterion 9 is the approved outcome, and it is narrower than anything proposed here. §2's criteria were NOT approved and were not adopted. §4's research is retained because it is the evidence for what was rejected. `docs/BASELINE.md` already classes `docs/proposals/*` as ARCHIVED / PROPOSED drafts, so this needs no manifest row of its own and none was added.
 **Covered by:** `docs/BASELINE.md`, "Superseded/draft material" row (`docs/proposals/*`): _never build from these_.
-**Proposes:** new acceptance criteria on `specs/F-202-compliance-checklist.md`, plus the rule data and schema they would require.
-**Blocks:** PR #117, which implements this behaviour and must not merge until these criteria are approved.
+**Proposed:** new acceptance criteria on `specs/F-202-compliance-checklist.md`, plus the rule data and schema they would require.
+**Blocked:** PR #117, which implemented this behaviour. #117 is superseded rather than unblocked — see below.
 **Drafted:** 2026-07-26
 
 ---
 
+## 0. Outcome (2026-07-26): the premise defect was decisive, not a caveat
+
+SPEC-CONFLICT #121 was resolved by approving **F-202 Acceptance Criterion 9**, which authorises a notice that makes two claims and forbids a third. Read that criterion, not §2 of this document, before implementing anything.
+
+**Approved.** The row may state that the deadline PopEngine **computes** for the item has changed, and where the two plans pin different `ruleset_version`s it may state that, naming both versions.
+
+What it compares, which dates it names, and what it must say when either date is absent are **AC 9's to state, and are deliberately not restated here**. This section records which way SPEC-CONFLICT #121 was resolved; it is not a second copy of the criterion. An earlier revision of this paragraph did paraphrase the mechanics, and the paraphrase drifted from the approved text inside a single review round: it said "earlier" where AC 9 requires "previous" and explains why, and it collapsed `not_applicable` into `not_calculable`, a distinction AC 9 was revised to preserve. Both were corrections AC 9 had already made. A summary that has to be re-patched every time the criterion is refined is the wrong artifact, so it now points rather than paraphrases.
+
+**Rejected: every claim about the organizer's filed application.** Not "you may need to contact the agency about amending your application", not a re-application, not a linked procedure, not the per-agency branch table in §2, not AC-N+6's three-way copy split.
+
+**Why, and it is this document's own §2 finding taken to its conclusion.** "Known defect in AC-N: the trigger is wider than the premise" recorded that `latest_apply_date` is computed and moves when any input moves, and offered option 2 (reword) as a mitigation and option 1 (record the cause of the change at regeneration) as the fix. Neither was adopted, because the defect turned out to be disqualifying for the whole class of claim rather than a wording problem: no source establishes that a change in **our arithmetic** obliges an organizer to do anything at all. §4.3's research answers a different question — what happens when the **event** changes — and it answers it for two of its seven grouped rows, which is a narrower result than it sounds: those seven rows are groupings, not findings, and §4.2 counts thirteen date-capable findings plus one merged requirement behind them. Four reachable findings were never surveyed at all (`SAPO-BLOCK-PARTY-001`, `DOB-ASSEMBLY-001`, `SLA-ONEDAY-001`, `SLA-CATERING-001`), and neither was the merged `dob-structure` requirement. A notice built on that research would attach an amendment procedure, honestly cited, to an event that did not change.
+
+**The worked example, taken from what is already merged rather than from anything pending.** `apps/api/src/calendar.ts` publishes no holiday list for the calendar the ruleset pins, and deliberately: SPEC-CONFLICT #130 records that no consulted source establishes that a published closure stops an agency's filing counter. So every `business_days_minimum` finding — `DOB-TENT-001`, `DOB-ASSEMBLY-001`, `SLA-ONEDAY-001`, `SLA-CATERING-001` — renders NOT_CALCULABLE today, with no `latest_apply_date` at all. Publishing that list is one of #130's own resolutions, and the day it happens every one of those dates appears at once; any future ruleset that corrects a lead time or a boundary moves them again. Nothing about any organizer's event changes in either direction. Under PR #117's behaviour every organizer holding one of those items would have been told their filing date moved and sent to the agency about amending their filing, on the strength of a change in our arithmetic alone. What that change does or does not mean for a filing already with an agency is not something this document establishes in either direction, which is the whole of the rejection below.
+
+An earlier draft of this section illustrated the same point with a then-pending correction to `DOB-ASSEMBLY-001`'s lead time and boundary. It was removed because at the time of writing that correction was unpublished. Describing an unpublished correction to a disputed regulatory semantic as established fact is the exact failure Acceptance Criterion 9 exists to prevent, and a document arguing for that criterion cannot be the thing that does it.
+
+**That reason has since expired, and this paragraph is retained as history rather than as a live caution.** `rules/nyc-rules.v2.8.json` is APPROVED in `docs/BASELINE.md` and publishes the correction: `DOB-ASSEMBLY-001` now carries `business_days_minimum`, `business_days: 10` and `boundary: inclusive`, with its own `qualification` citing two independent primary sources. `nyc-rules.v2.7.json` no longer exists in the tree. What has not changed is `docs/OPEN-QUESTIONS.md` R-4, which remains open and still says "pin exact wording before UI copy ships"; that is a question about the wording UI copy uses, not about whether the rule is published.
+
+**§4 is retained deliberately.** The per-agency table is the evidence for the rejection: it shows that AMEND was established for SAPO and a cancel-then-re-request for FDNY generators, that five of seven rows located nothing, and — the load-bearing part — that even the two established procedures address a changed event date rather than a changed computation. Deleting the research would leave the rejection looking like an untested preference. §4.4's no-inheritance rule and the §4 method note stand on their own and are worth keeping for any future survey.
+
+**PR #117 is superseded, not revived.** It built the rejected claim, and it carried migration 008's `checklist_items.worked_against_date`. AC 9 needs no new column: the persisted plan item already carries the date the row is pointed at. That is a coarser signal than #117's column — it tracks the last conversion or review of the checklist rather than each individual action on a row — and AC 9 is written against what it actually says, which is why AC-N+3's persist-at-the-moment-of-work machinery is not part of the approved criterion either. #117's column was never merged and is not being added.
+
+Still open and untouched by this outcome: §5 step 2's observation that procedure research state cannot be expressed through `verification.status` without relabelling a whole finding. It only matters if procedure text is ever published, which AC 9 does not require.
+
+---
+
 ## 1. Why this document exists
+
+> **Historical from here down (2026-07-26).** Everything below §0 was written before SPEC-CONFLICT #121 was filed and resolved, and it is retained as the record of what was planned and researched — not as work to do. Where a paragraph below states a task or a status, §0 is what actually happened. The inline corrections marked **[SUPERSEDED]** are the places where following the old text would now cause harm rather than merely repeat history.
 
 PR #117 implements a moved-filing-date notice on the compliance checklist: when a requirement the organizer has already filed for shows a filing date different from the one they worked against, the row carries a notice.
 
@@ -16,13 +44,15 @@ Review established that **no approved acceptance criterion covers any of it**. N
 
 The product owner has **parked** the work rather than approving criteria under review pressure. That is the right call and this document records it, so the next person does not rediscover the gap or, worse, read #117's merged code as the specification.
 
-**#117 is not merged and should not be merged until this is approved as acceptance criteria on F-202.**
+**#117 is not merged and should not be merged until this is approved as acceptance criteria on F-202.** — **[SUPERSEDED]** approving criteria did not unblock #117. AC 9 authorises a narrower notice than #117 built and forbids the claim it was built around, so #117 is superseded; see §0.
 
-### The required conflict record does not exist yet
+### The required conflict record did not exist yet
 
-Parking the code in a proposal is **not** the record governance asks for, and this document should not be mistaken for it. `docs/DOCUMENTATION-GOVERNANCE.md` §5 requires a conflict record when a required artifact is missing, with the exact artifact locations and the user-visible consequence. Checked across the repository's issues: **no SPEC-CONFLICT exists for the moved-date gap.** #115 is F-206 provenance, which is a different artifact and a different defect.
+> **[SUPERSEDED]** It exists and is closed: **SPEC-CONFLICT #121**, resolved by AC 9. Do not file another for this gap.
 
-So filing it is a **prerequisite step, not an alternative to this document**, and it is step 0 of §5. This proposal is the design record; the issue is the tracking record; the two are not interchangeable, and a proposal that quietly stands in for a conflict record is the process failure that let #117 reach review with an inferred contract in the first place.
+Parking the code in a proposal is **not** the record governance asks for, and this document should not be mistaken for it. `docs/DOCUMENTATION-GOVERNANCE.md` §5 requires a conflict record when a required artifact is missing, with the exact artifact locations and the user-visible consequence. Checked across the repository's issues at the time of drafting: **no SPEC-CONFLICT existed for the moved-date gap.** #115 is F-206 provenance, which is a different artifact and a different defect.
+
+So filing it was a **prerequisite step, not an alternative to this document**, and it was step 0 of §5. This proposal is the design record; the issue is the tracking record; the two are not interchangeable, and a proposal that quietly stands in for a conflict record is the process failure that let #117 reach review with an inferred contract in the first place.
 
 ### What the approved specs actually say
 
@@ -53,7 +83,7 @@ These are drafted as criteria for adoption into F-202, in F-202's numbering styl
 | SOURCE_CONFIRMED  | the procedure with its citation                                         |
 | RESEARCH_REQUIRED | the procedure, plus "confirm with agency" **visibly**, not in a tooltip |
 | OFFICIAL_CONFLICT | **both readings with both sources**, never resolved to one              |
-| COVERAGE_GAP      | says no source is published and asserts nothing further                 |
+| COVERAGE_GAP      | says the combination is not covered by this ruleset version, and asserts nothing further |
 
 This is the same status vocabulary F-201 AC 2 and F-206 AC 2 use, deliberately, so a reader does not have to learn a second one. It is also the reason §5 needs field-level verification metadata: without it there is no status to render here, and AC-N+1's requirement to load procedure verification metadata has nothing to load.
 
@@ -73,7 +103,7 @@ Those are different sets, and the trigger is neither sufficient nor necessary fo
 
 - a newer ruleset changes a lead time (`published_minimum`, `business_days_minimum`). This repository bumped its ruleset six times in one week;
 - a level or size input changes, so `published_minimum_by_level` resolves to a different number of days. `SAPO-PLAZA-001` is exactly this shape, and SAPO is the one agency for which an amendment procedure is established;
-- the pinned holiday calendar changes. This one is scheduled rather than hypothetical: `us-ny-business-days@2026.1` currently carries an **empty** holiday list, published as RESEARCH_REQUIRED. The day it is published, every `business_days_minimum` date moves at once, which is `DOB-TENT-001`, `SLA-ONEDAY-001` and `SLA-CATERING-001`, and every `submitted` row among them would be told to ask its agency about amending a date that never changed.
+- the pinned holiday calendar changes. This one is scheduled rather than hypothetical: `us-ny-business-days@2026.1` currently carries an **empty** holiday list, published as RESEARCH_REQUIRED. The day it is published, every `business_days_minimum` date moves at once, which is `DOB-TENT-001`, `DOB-ASSEMBLY-001`, `SLA-ONEDAY-001` and `SLA-CATERING-001`, and every `submitted` row among them would be told to ask its agency about amending a date that never changed.
 
 **Not necessary.** The inverse also holds. An event moved between two days that `subtractBusinessDays` maps to the same deadline leaves `latest_apply_date` identical, so the notice stays silent although the date on the application genuinely changed. That is the case the organizer most needs and the trigger cannot see it.
 
@@ -227,7 +257,9 @@ That is worth recording as method, not trivia: for this class of question, an ag
 
 ## 5. What implementing this would take
 
-Scope for whoever picks it up. Five pieces, in order. The sequence matters: an earlier draft had three, and it let a ruleset bump stand in for engine and persistence work it does not cover.
+> **[SUPERSEDED] as a plan; retained as analysis.** Step 0 is done (#121, closed). Step 1 did not happen as written — §2's criteria were not adopted; AC 9 was written instead and is narrower. Steps 2 and 3 describe work AC 9 does not require, because AC 9 publishes no procedure text. Step 4 is void: #117 is superseded, not awaiting rebase. What survives is the analysis inside the steps, particularly step 2's finding about `verification.status` and step 4's two open defects, which would matter to any future work of this shape.
+
+Scope as it was understood before the outcome in §0. Five pieces, in order. The sequence matters: an earlier draft had three, and it let a ruleset bump stand in for engine and persistence work it does not cover.
 
 0. **File the SPEC-CONFLICT.** Per §1, no conflict record exists for this gap and this document is not one. It names the missing artifact (`specs/F-202-compliance-checklist.md` has no criterion for a moved filing date), the code that inferred it (#117), and the user-visible consequence. Nothing below is properly tracked until it exists.
 1. **Approve the criteria onto F-202.** Sections 2 and 3 above, adopted into `specs/F-202-compliance-checklist.md` with its numbering, reviewed by the product owner and the affected lane owners as that spec's status header requires. Nothing below is safe to start first: the schema and the rule data both encode decisions these criteria make.

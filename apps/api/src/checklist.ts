@@ -6,16 +6,16 @@
 //
 // Plans are immutable snapshots (AD-7), so a rescope produces a NEW plan rather than editing the
 // old one. Supersession is therefore a relationship between two plans, not a flag on either, and
-// this file returns it as explicit fields (`planChanged`, `inLatestPlan`, `planStale`) so a client
+// this file returns it as explicit fields (`planChanged`, `struckThrough`, `planStale`) so a client
 // renders rather than re-derives it. Nothing is ever deleted or rewritten (spec AC 6).
 //
-// The two are answered from different places, deliberately. `inLatestPlan` is per row, so it is a
-// comparison against the latest plan's items. `planChanged` is about the plan as a whole and is
-// answered from `checklist_acknowledgements` — which plan the organizer last converted — because
-// the checklist's own rows cannot answer it: a regeneration that removes every trackable
-// requirement leaves nothing to compare, and that is the case the prompt most needs to fire in.
+// The two are answered from different places, deliberately. `struckThrough` is terminal per row,
+// derived from immutable plan history. `planChanged` is about the plan as a whole and is answered
+// from `checklist_acknowledgements` — which plan the organizer last converted — because the
+// checklist's own rows cannot answer it: a regeneration that removes every trackable requirement
+// leaves nothing to compare, and that is the case the prompt most needs to fire in.
 
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { Readable } from "node:stream";
 import { Router, type NextFunction, type Request, type Response } from "express";
 import { DatabaseError } from "pg";
@@ -30,6 +30,14 @@ import type {
   FindingKind,
   VerificationStatus,
 } from "@pop-engine/engine";
+import {
+  alertContacts,
+  failedDeliveries,
+  parseContacts,
+  simulatedDeliveries,
+  type AlertScheduler,
+} from "./alerts";
+import { movedDeadlineNotice, type NoticePlanItem } from "./moved-deadline-notice";
 import { calendarDateFrom, renderingKey, PlanIntegrityError, type FindingRendering } from "./plan";
 import { DocumentStorageError, type DocumentStorage } from "./storage";
 
@@ -78,9 +86,66 @@ const DOWNLOAD_URL_TTL_SECONDS = 300;
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
+/**
+ * Namespace for the deterministic document ids below. A fixed, arbitrary UUID, as RFC 4122 §4.3
+ * requires: it only has to be constant, so that the same key always names the same document.
+ */
+const UPLOAD_NAMESPACE = "f2b0c1a4-6d3e-4f57-9a8b-0c2d4e6f8a10";
+
+/**
+ * The document id a given upload key names, derived rather than minted.
+ *
+ * This is what makes the upload idempotent, and it is the root of a defect that took three review
+ * rounds to reach. `POST .../documents` used to mint a fresh id and a fresh storage key on every
+ * request, so any repeat stored a second object and a second row. Everything built on top of that
+ * — a retryable flag, then a three-state outcome, then a reconciling re-read — was the client
+ * trying not to repeat a request whose result it could not observe. None of it could be made
+ * airtight, because a client cannot know whether a request it never saw the answer to landed.
+ *
+ * Deriving the id removes the question instead of answering it. The same key from the same item
+ * names the same row and the same object however many times it arrives, so a repeat is the same
+ * document rather than another one, and a racing read is harmless.
+ *
+ * RFC 4122 version 5 (SHA-1, namespace + name), which is the standard shape for exactly this. No
+ * migration: `documents.id` is already the primary key, so the uniqueness this relies on is the
+ * constraint that has always been there.
+ */
+function documentIdFor(checklistItemId: string, uploadKey: string): string {
+  const namespace = Buffer.from(UPLOAD_NAMESPACE.replace(/-/g, ""), "hex");
+  const hash = createHash("sha1")
+    .update(namespace)
+    .update(`${checklistItemId}:${uploadKey}`, "utf8")
+    .digest();
+  // Version 5 in the high nibble of byte 6, RFC 4122 variant in the top bits of byte 8.
+  hash[6] = ((hash[6] as number) & 0x0f) | 0x50;
+  hash[8] = ((hash[8] as number) & 0x3f) | 0x80;
+  const hex = hash.subarray(0, 16).toString("hex");
+  return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20, 32)}`;
+}
+
+/**
+ * The client's idempotency key for this upload, or null when it sent none.
+ *
+ * Bounded and reduced to a conservative character set for the same reason the filename is: it is
+ * untrusted input. It never reaches storage or SQL directly — it is hashed — so this is about
+ * keeping the key stable and small rather than about escaping.
+ */
+function uploadKeyOf(supplied: string | undefined): string | null {
+  if (supplied === undefined) return null;
+  const cleaned = supplied.replace(/[^A-Za-z0-9%._~-]/g, "_").slice(0, 200);
+  return cleaned === "" ? null : cleaned;
+}
+
 export type ChecklistDependencies = {
   database: Pool;
   storage: DocumentStorage;
+  /**
+   * F-203. Materializing a checklist is also where its alerts are computed, so the two run in one
+   * transaction: a checklist whose reminders silently did not get written is the failure mode
+   * F-202's spec ("creation also schedules F-203 alerts") is guarding against. Required rather
+   * than optional for the same reason — an absent scheduler would schedule nothing, quietly.
+   */
+  scheduleAlerts: AlertScheduler;
 };
 
 type Queryable = {
@@ -89,8 +154,8 @@ type Queryable = {
 
 /**
  * A requirement's identity across plans. A regenerated plan writes new plan-item rows with new
- * uuids, so the stable identity of "the same requirement" is the set of rule ids behind it —
- * the same provenance `plan.ts` uses to zip findings back onto stored items.
+ * uuids, so the stable identity of "the same requirement" is its finding kind plus the set of rule
+ * ids behind it.
  *
  * Identity is the WHOLE set, and partial overlap is deliberately not a match. Findings sharing a
  * `dedupe_key` merge into one line carrying every contributing rule id, so changing a dedupe key
@@ -105,7 +170,8 @@ type Queryable = {
  * IS. (`plan.ts` joins unsorted, which is correct there: it zips positionally against renderings
  * written by the same evaluation, where order is guaranteed. Across two plans it is not.)
  */
-const requirementKey = (ruleIds: readonly string[]): string => [...ruleIds].sort().join(",");
+const requirementKey = (ruleIds: readonly string[], kind: FindingKind): string =>
+  `${kind}:${[...ruleIds].sort().join(",")}`;
 
 type PlanItemRow = {
   id: string;
@@ -152,16 +218,18 @@ const PLAN_ITEM_ORDER = `latest_apply_date NULLS LAST, permit_name, rule_ids`;
  * 007), so the checklist still leads with the soonest deadline without re-reading a date that a
  * later plan moved.
  *
- * `rule_ids` last is what makes the order total, and is what rows predating migration 007 fall
- * through to: `materialize` keeps one row per requirement, so no two rows can share it.
+ * `rule_ids` and the checklist id make the order total. The id matters after a terminal identity
+ * returns: the old and new tasks deliberately carry the same rule ids and kind.
  */
-const CHECKLIST_COHORT_ORDER = `checklist.cohort_position, item.rule_ids`;
+const CHECKLIST_COHORT_ORDER =
+  "checklist.created_at, checklist.cohort_position, item.rule_ids, checklist.id";
 
 type ChecklistRow = PlanItemRow & {
   checklist_item_id: string;
   plan_item_id: string;
   status: ChecklistStatus;
   notes: string | null;
+  created_at: Date;
   updated_at: Date;
 };
 
@@ -221,6 +289,19 @@ const planContext = (item: PlanItemRow, rendering: FindingRendering) => ({
     rulesetVersion: item.source_ruleset_version,
     snapshotDate: isoDate(item.source_snapshot_date),
   },
+});
+
+const noticeItemFrom = (item: PlanItemRow): NoticePlanItem => ({
+  deadline: item.deadline,
+  latest_apply_date: isoDate(item.latest_apply_date),
+  apply_after_date: isoDate(item.apply_after_date),
+  deadline_status: item.deadline_status,
+  verification_status: item.verification_status,
+  last_verified_date: isoDate(item.last_verified_date),
+  sources: item.sources,
+  source_url: item.source_url,
+  source_ruleset_version: item.source_ruleset_version,
+  source_snapshot_date: isoDate(item.source_snapshot_date),
 });
 
 type LatestPlan = {
@@ -322,42 +403,7 @@ async function planItems(database: Queryable, planId: string): Promise<PlanItemR
 }
 
 /**
- * When each requirement became a checklist task, keyed the same way identity is.
- *
- * This is what "new items appended" orders by (AC 6). It reads `checklist_items.created_at` rather
- * than the plans, because the plans answer a different question: a requirement that appeared in an
- * early plan, was absent when the checklist was created, and returned later has an early plan
- * timestamp and a late task, and ordering by the plan sorts it ahead of everything the organizer
- * has been working instead of appending it. Re-pointing a surviving row at the current plan does
- * not touch `created_at`, so the order also survives every regeneration.
- */
-async function taskCreatedByRequirement(
-  database: Queryable,
-  eventId: string,
-): Promise<Map<string, number>> {
-  const { rows } = await database.query<{ rule_ids: string[]; created_at: Date }>(
-    `SELECT item.rule_ids, checklist.created_at
-       FROM checklist_items AS checklist
-       JOIN permit_plan_items AS item ON item.id = checklist.plan_item_id
-       JOIN permit_plans AS plan ON plan.id = item.plan_id
-      WHERE plan.event_id = $1`,
-    [eventId],
-  );
-  const createdAt = new Map<string, number>();
-  for (const row of rows) {
-    // Identity is the whole rule-id set, order-insensitively, so the same requirement written two
-    // ways is one key and the earlier task is the one that dates it.
-    const key = requirementKey(row.rule_ids);
-    const at = row.created_at.getTime();
-    createdAt.set(key, Math.min(createdAt.get(key) ?? at, at));
-  }
-  return createdAt;
-}
-
-/**
  * Every checklist row of the event, in the order rows created together are displayed in.
- * `checklistView` then stably re-groups them by when each requirement first appeared, which is the
- * display order.
  *
  * Deliberately says nothing about the plan each row currently points at, nor about anything that
  * plan recomputed. The plan a row points at is not a property of the task, it is a property of the
@@ -370,7 +416,7 @@ async function taskCreatedByRequirement(
 async function checklistRows(database: Queryable, eventId: string): Promise<ChecklistRow[]> {
   const { rows } = await database.query<ChecklistRow>(
     `SELECT checklist.id AS checklist_item_id, checklist.plan_item_id, checklist.status,
-            checklist.notes, checklist.updated_at,
+            checklist.notes, checklist.created_at, checklist.updated_at,
             ${PLAN_ITEM_COLUMNS.split(",")
               .map((column) => `item.${column.trim()}`)
               .join(", ")},
@@ -384,6 +430,69 @@ async function checklistRows(database: Queryable, eventId: string): Promise<Chec
     [eventId],
   );
   return rows;
+}
+
+/**
+ * A row is terminal once any later immutable plan omits its complete rule-id-set-and-kind identity.
+ * The latest plan may raise that identity again; the missing intervening plan is the durable fact
+ * that keeps the old task struck and makes the return a new task (F-202 AC 9).
+ */
+async function struckChecklistItemIds(
+  database: Queryable,
+  eventId: string,
+  latestPlanId: string,
+  items: readonly ChecklistRow[],
+): Promise<Set<string>> {
+  if (items.length === 0) return new Set();
+
+  const { rows } = await database.query<{
+    plan_id: string;
+    rule_ids: string[] | null;
+    kind: FindingKind | null;
+  }>(
+    `SELECT plan.id AS plan_id, item.rule_ids, item.kind
+       FROM permit_plans AS plan
+       LEFT JOIN permit_plan_items AS item ON item.plan_id = plan.id
+      WHERE plan.event_id = $1
+      ORDER BY plan.generated_at, plan.id`,
+    [eventId],
+  );
+
+  const identitiesByPlan = new Map<string, Set<string>>();
+  for (const row of rows) {
+    const identities = identitiesByPlan.get(row.plan_id) ?? new Set<string>();
+    if (row.rule_ids !== null && row.kind !== null) {
+      identities.add(requirementKey(row.rule_ids, row.kind));
+    }
+    identitiesByPlan.set(row.plan_id, identities);
+  }
+
+  const planIds = [...identitiesByPlan.keys()];
+  const latestIndex = planIds.indexOf(latestPlanId);
+  if (latestIndex < 0) {
+    throw new PlanIntegrityError(latestPlanId, "latest plan is absent from its event history");
+  }
+
+  const struck = new Set<string>();
+  // ponytail: quadratic in checklist rows × plan history; persist only if measured event histories
+  // outgrow the bounded capstone workload.
+  for (const item of items) {
+    const sourceIndex = planIds.indexOf(item.plan_id);
+    if (sourceIndex < 0) {
+      throw new PlanIntegrityError(
+        item.plan_id,
+        "checklist source plan is absent from event history",
+      );
+    }
+    const identity = requirementKey(item.rule_ids, item.kind);
+    for (let index = sourceIndex + 1; index <= latestIndex; index += 1) {
+      if (!identitiesByPlan.get(planIds[index] as string)?.has(identity)) {
+        struck.add(item.checklist_item_id);
+        break;
+      }
+    }
+  }
+  return struck;
 }
 
 async function documentsFor(
@@ -434,14 +543,8 @@ async function acknowledgedPlanId(database: Queryable, eventId: string): Promise
 }
 
 async function checklistView(database: Queryable, eventId: string, plan: LatestPlan) {
-  const unordered = await checklistRows(database, eventId);
-  const taskCreated = await taskCreatedByRequirement(database, eventId);
-  // Stable, so the filing-date order the query already applied survives as the tiebreak.
-  const items = [...unordered].sort(
-    (left, right) =>
-      (taskCreated.get(requirementKey(left.rule_ids)) ?? 0) -
-      (taskCreated.get(requirementKey(right.rule_ids)) ?? 0),
-  );
+  const items = await checklistRows(database, eventId);
+  const struck = await struckChecklistItemIds(database, eventId, plan.id, items);
   const latestItems = await planItems(database, plan.id);
   const documents = await documentsFor(
     database,
@@ -452,39 +555,36 @@ async function checklistView(database: Queryable, eventId: string, plan: LatestP
     ...new Set(items.map((item) => item.plan_id)),
   ]);
 
-  const latestByKey = new Map(latestItems.map((item) => [requirementKey(item.rule_ids), item]));
+  const latestByKey = new Map(
+    latestItems.map((item) => [requirementKey(item.rule_ids, item.kind), item]),
+  );
 
   const view = items.map((item) => {
-    const current = latestByKey.get(requirementKey(item.rule_ids));
-    // Deadlines come from the latest plan while the requirement still stands: the plan is
-    // recalculated, not patched (PRD principle 6). A dropped requirement keeps the dates of
-    // the last plan that raised it, which is the honest last-known state.
-    const source = current ?? item;
-    // A row describes two objects, which is worth stating because nothing said so before. The
-    // persisted half is the organizer's: `id`, `planItemId`, `status`, `notes`, `documents`.
-    // Everything `planContext` returns is regulatory content read off `source`, `sourcePlan`
-    // included, so on a still-required row that provenance names the LATEST plan.
-    //
-    // That last part was contested and is now settled: SPEC-CONFLICT #115 was resolved by amending
-    // F-206 Acceptance Criterion 4's mixed-checklist clause, which had said a retained row is
-    // *never* attributed to the checklist's current plan. That is true of a dropped row and false
-    // of a still-required one, and the criterion now states the two cases separately. F-202 AC 8 is
-    // unchanged and agrees: its "last plan that raised it" is the latest plan for a requirement
-    // that survives, and its purpose clause is that provenance is never copied from the live rules
-    // file or duplicated into checklist storage, which reading `sourcePlan` off `source` satisfies.
-    //
-    // Because both come off one object, neither case can print a version beside data it never
-    // carried. A DROPPED row was never in dispute: `current` is undefined, `source` is `item`, and
-    // it reports the plan that raised it.
+    const struckThrough = struck.has(item.checklist_item_id);
+    const current = latestByKey.get(requirementKey(item.rule_ids, item.kind));
+    if (!struckThrough && current === undefined) {
+      throw new PlanIntegrityError(plan.id, "active checklist task is absent from the latest plan");
+    }
+    // A struck row keeps its persisted regulatory values and provenance. An active row displays
+    // the latest immutable plan snapshot (F-202 AC 8; F-206 AC 4).
+    const source = struckThrough ? item : (current as PlanItemRow);
     return {
       id: item.checklist_item_id,
       planItemId: item.plan_item_id,
       status: item.status,
       notes: item.notes,
       updatedAt: item.updated_at.toISOString(),
-      // A requirement the latest plan no longer raises is struck through, never deleted (AC 6).
-      inLatestPlan: current !== undefined,
+      struckThrough,
       ...planContext(source, renderingOrFail(renderings, source)),
+      deadlineNotice:
+        !struckThrough && current !== undefined && current.id !== item.id
+          ? movedDeadlineNotice(
+              noticeItemFrom(item),
+              renderingOrFail(renderings, item),
+              noticeItemFrom(current),
+              renderingOrFail(renderings, current),
+            )
+          : null,
       documents: (documents.get(item.checklist_item_id) ?? []).map(documentView),
     };
   });
@@ -492,7 +592,7 @@ async function checklistView(database: Queryable, eventId: string, plan: LatestP
   const statusRollup = Object.fromEntries(
     CHECKLIST_STATUSES.map((status) => [
       status,
-      view.filter((item) => item.inLatestPlan && item.status === status).length,
+      view.filter((item) => !item.struckThrough && item.status === status).length,
     ]),
   );
 
@@ -529,6 +629,20 @@ async function checklistView(database: Queryable, eventId: string, plan: LatestP
     // in that state; a read says so rather than presenting the plan as current.
     planStale: plan.eventRevision < plan.currentRevision,
     statusRollup,
+    // F-203: channels that reported an alert sent without delivering it, with the label that says
+    // so. Empty in every configuration where nothing is simulated. It is read here rather than
+    // from a new endpoint because a simulated send has to be visible where the organizer works,
+    // and this is that surface (AGENTS.md: a simulation is only permissible while it is labeled).
+    simulatedAlertDeliveries: await simulatedDeliveries(database, eventId),
+    // F-203: where this event's alerts go, so the organizer can see and correct it. Read from the
+    // contact store rather than off an alert row — an alert records where one message went, which
+    // is a different fact with a different lifetime, and is why nothing was ever scheduled through
+    // the product before the store existed.
+    // F-203: channels whose alerts tried to send and did not, counted from the rows rather than
+    // inferred. Kept separate from the simulation above on purpose — "switched off by design" and
+    // "tried and failed" are different facts, and collapsing them would misreport both.
+    failedAlertDeliveries: await failedDeliveries(database, eventId),
+    alertContacts: await alertContacts(database, eventId),
     items: view,
     // Advisories, notifications, prohibitions and notes: shown for context, not tracked.
     contextItems: latestItems
@@ -545,20 +659,21 @@ async function checklistView(database: Queryable, eventId: string, plan: LatestP
  * link neither deletes nor rewrites history, and the status, notes and documents ride along. It
  * is also what makes `planChanged` fall back to false once the organizer has re-created the
  * checklist — without it, the AC 6 prompt would latch on at the first regeneration and never
- * clear. A requirement the latest plan dropped keeps pointing at the last plan that raised it,
- * which is what still renders it struck through.
+ * clear. A terminal task keeps pointing at the plan item that raised it, preserving its provenance
+ * and leaving a returning identity free to create a new task.
  */
 async function materialize(client: PoolClient, eventId: string, planId: string): Promise<number> {
+  const existing = await checklistRows(client, eventId);
+  const struck = await struckChecklistItemIds(client, eventId, planId, existing);
   const trackedByKey = new Map(
-    (await checklistRows(client, eventId)).map((item) => [
-      requirementKey(item.rule_ids),
-      item.checklist_item_id,
-    ]),
+    existing
+      .filter((item) => !struck.has(item.checklist_item_id))
+      .map((item) => [requirementKey(item.rule_ids, item.kind), item.checklist_item_id]),
   );
   let created = 0;
   for (const item of await planItems(client, planId)) {
     if (!TRACKABLE_FINDING_KINDS.has(item.kind)) continue;
-    const tracked = trackedByKey.get(requirementKey(item.rule_ids));
+    const tracked = trackedByKey.get(requirementKey(item.rule_ids, item.kind));
     if (tracked === undefined) {
       // `created` is this task's position among the tasks this call creates, and the loop walks
       // the plan in published filing-date order, so the position freezes that order at creation
@@ -625,14 +740,41 @@ const handle =
   };
 
 /**
- * A display name only. The client's filename is untrusted: it is reduced to its last path
- * segment and a conservative character set, and it never contributes to the storage key.
+ * Everything a header value cannot carry, percent-decoded back.
+ *
+ * A header value is a ByteString, so a browser cannot put "文件.pdf" in one — constructing the
+ * request throws before a byte is sent. The client therefore percent-encodes the name and this
+ * undoes it. Decoding happens BEFORE the path split below, deliberately: `..%2F..%2Fetc%2Fpasswd`
+ * decoded after splitting would still be a path, and the split is what makes a filename a name.
+ *
+ * A value that is not valid percent-encoding is used as sent rather than rejected. It is a display
+ * name; a literal `%` in a filename from some other client is not worth a failed upload.
+ */
+function decodeFilename(supplied: string | undefined): string {
+  if (supplied === undefined) return "";
+  try {
+    return decodeURIComponent(supplied);
+  } catch {
+    return supplied;
+  }
+}
+
+/**
+ * A display name only. The client's filename is untrusted: it is reduced to its last path segment
+ * and a bounded character set, and it never contributes to the storage key.
+ *
+ * Letters, numbers and combining marks are kept in any script, so an organizer who names a file in
+ * Chinese gets that name back rather than a row of underscores. Everything else becomes `_`, which
+ * still excludes the classes that make a display name dangerous: control characters, the bidi and
+ * other invisible format characters (`\p{Cf}`) that can reverse how a name reads on screen, and
+ * every path separator and shell metacharacter.
  */
 function displayFilename(supplied: string | undefined, extension: string): string {
-  const lastSegment = (supplied ?? "").split(/[\\/]/).pop() ?? "";
+  const lastSegment = decodeFilename(supplied).split(/[\\/]/).pop() ?? "";
   const cleaned = lastSegment
-    .replace(/[^A-Za-z0-9._-]/g, "_")
-    .replace(/^\.+/, "")
+    .replace(/[^\p{L}\p{N}\p{M}._ -]/gu, "_")
+    .replace(/^[.\s]+/u, "")
+    .trim()
     .slice(0, 120);
   return cleaned === "" ? `document.${extension}` : cleaned;
 }
@@ -746,7 +888,7 @@ async function metadataOutcome(
 }
 
 export function createChecklistRouter(dependencies: ChecklistDependencies): Router {
-  const { database, storage } = dependencies;
+  const { database, storage, scheduleAlerts } = dependencies;
   const router = Router();
 
   router.post(
@@ -754,6 +896,37 @@ export function createChecklistRouter(dependencies: ChecklistDependencies): Rout
     handle(async (req, res) => {
       const eventId = req.params.id ?? "";
       if (rejectMalformedId(eventId, res, "event id")) return;
+
+      // WHICH PLAN THE ORGANIZER WAS LOOKING AT WHEN THEY PRESSED REVIEW. Required, not optional.
+      //
+      // Converting a plan into a checklist writes `checklist_acknowledgements`, and AC 6 reads
+      // that row to mean the organizer has reviewed the changed items. Choosing the plan
+      // server-side made that record unfalsifiable: a second tab regenerating between the render
+      // and the click left the acknowledgement pointing at a plan the organizer had never been
+      // shown, and nothing anywhere could tell the difference afterwards.
+      //
+      // A caller that does not say what it displayed cannot have that checked, so omitting this
+      // is refused rather than defaulted to the latest plan. Defaulting is precisely the old
+      // behaviour, and leaving it reachable would keep the defect one forgetful caller away.
+      const displayedPlanId: unknown = (req.body as { planId?: unknown } | undefined)?.planId;
+      if (typeof displayedPlanId !== "string" || !UUID.test(displayedPlanId)) {
+        res.status(400).json({
+          error:
+            "planId is required and must be the uuid of the plan being displayed; a review " +
+            "records which plan the organizer read, so the server will not choose one for it",
+        });
+        return;
+      }
+
+      // Where the alerts go (F-203 Inputs: contact fields are entered at checklist creation, since
+      // there is no account to read them off in the MVP). Read from the same body as the plan id
+      // above, and optional: a checklist without a contact is still a checklist, and the response
+      // reports that nothing was scheduled rather than refusing the conversion.
+      const parsed = parseContacts(req.body);
+      if ("error" in parsed) {
+        res.status(400).json({ error: parsed.error });
+        return;
+      }
 
       // The event row is locked for the decision so two clicks cannot both find the checklist
       // missing and both materialize it. The UNIQUE plan_item_id backs that up.
@@ -787,11 +960,37 @@ export function createChecklistRouter(dependencies: ChecklistDependencies): Rout
           });
           return;
         }
+        // THE STALE TAB. The organizer is looking at a plan that is no longer the latest, because
+        // another tab or another device regenerated after this one rendered. Re-pointing the
+        // review at the newer plan is what the old code did silently, and it produced an
+        // acknowledgement asserting a review that did not happen.
+        //
+        // Refused and re-presented rather than refused flat: nothing is written, and the newer
+        // plan's checklist comes back in the same response so the organizer sees what changed and
+        // can press review again against a plan they have now actually been shown. A bare error
+        // would leave them re-reading a screen that still shows the superseded plan.
+        //
+        // Read under the same row lock as everything above, so a regeneration committing mid
+        // request lands either wholly before this comparison or wholly after it.
+        if (displayedPlanId !== plan.id) {
+          const current = await checklistView(client, eventId, plan);
+          await client.query("ROLLBACK");
+          res.status(409).json({
+            error: `plan ${displayedPlanId} is no longer the latest plan for event ${eventId}; nothing was recorded — review the current plan shown here and submit again`,
+            supersededPlanId: displayedPlanId,
+            checklist: current,
+          });
+          return;
+        }
         const created = await materialize(client, eventId, plan.id);
+        // After materialization, because reminders hang off the checklist rows it just wrote, and
+        // inside the same transaction, so the checklist and its alerts commit together (AC 7: a
+        // regeneration reviewed here is also where pending alerts are recomputed).
+        const alerts = await scheduleAlerts(client, eventId, plan.id, parsed.contacts);
         const view = await checklistView(client, eventId, plan);
         await client.query("COMMIT");
         // A second call creates nothing and returns the checklist that already exists.
-        res.status(created > 0 ? 201 : 200).json(view);
+        res.status(created > 0 ? 201 : 200).json({ ...view, alerts });
       } catch (error) {
         await client.query("ROLLBACK");
         throw error;
@@ -919,25 +1118,57 @@ export function createChecklistRouter(dependencies: ChecklistDependencies): Rout
         return;
       }
 
-      // The key is generated, never derived from the filename: a caller cannot choose where
-      // its bytes land or overwrite another item's document.
-      const storageKey = `checklist-items/${checklistItemId}/${randomUUID()}.${accepted.extension}`;
+      // The id names the document, and the key names its bytes. With an upload key both are
+      // derived from it, so a repeat overwrites the same object and collides with the same row
+      // instead of creating a second of each; without one they are random, which is the previous
+      // behaviour and what a client that sends no key still gets.
+      //
+      // Neither is derived from the FILENAME: a caller still cannot choose where its bytes land or
+      // reach another item's document, because the item id is inside the hash.
+      const uploadKey = uploadKeyOf(req.get("x-upload-key"));
+      const documentId =
+        uploadKey === null ? randomUUID() : documentIdFor(checklistItemId, uploadKey);
+      const storageKey = `checklist-items/${checklistItemId}/${documentId}.${accepted.extension}`;
       // Storage first, metadata second: a failed upload leaves no row pointing at bytes that
       // are not there (spec edge case), and the client can simply retry. The request itself is
       // what gets streamed — a body that ended inside the peek is re-sent from the head, since
       // an ended stream cannot be unshifted.
       await storage.put(storageKey, ended ? Readable.from(head) : req, contentType, sizeBytes);
 
-      const documentId = randomUUID();
       const filename = displayFilename(req.get("x-filename"), accepted.extension);
       try {
         const { rows: created } = await database.query<DocumentRow>(
           `INSERT INTO documents (id, checklist_item_id, filename, content_type, size_bytes, storage_key)
            VALUES ($1, $2, $3, $4, $5, $6)
+           ON CONFLICT (id) DO NOTHING
            RETURNING id, checklist_item_id, filename, content_type, size_bytes, uploaded_at`,
           [documentId, checklistItemId, filename, contentType, sizeBytes, storageKey],
         );
-        res.status(201).json(documentView(created[0] as DocumentRow));
+        const stored = created[0];
+        if (stored !== undefined) {
+          res.status(201).json(documentView(stored));
+          return;
+        }
+
+        // The id was already there: this key has been uploaded before, so this request IS that
+        // document rather than another one. Answered 200 rather than 201 — nothing was created —
+        // which is the same distinction `POST /events/:id/checklist` already draws.
+        //
+        // Scoped by `checklist_item_id` as well as by id. The id derives from the item, so a row
+        // under a different item cannot collide with it short of a SHA-1 collision; the scope
+        // makes that structural rather than probabilistic, and a miss is a conflict rather than
+        // another item's document handed to this caller.
+        const { rows: existing } = await database.query<DocumentRow>(
+          `SELECT id, checklist_item_id, filename, content_type, size_bytes, uploaded_at
+             FROM documents WHERE id = $1 AND checklist_item_id = $2`,
+          [documentId, checklistItemId],
+        );
+        const previous = existing[0];
+        if (previous === undefined) {
+          res.status(409).json({ error: "that upload key names a document on another item" });
+          return;
+        }
+        res.status(200).json(documentView(previous));
       } catch (error) {
         const outcome = await metadataOutcome(database, documentId, error);
         if (outcome.state === "written") {
@@ -954,11 +1185,23 @@ export function createChecklistRouter(dependencies: ChecklistDependencies): Rout
         } else {
           // Nobody can say whether the row landed. Deleting on that would leave a document the
           // organizer can click and get nothing from, so the bytes stay and the key is logged.
+          //
+          // And the client is TOLD it is unknown rather than left to infer it from a bare 500.
+          // Every other failure here stored nothing — a refusal never reached storage, and the
+          // not_written path above deletes the object — so a client that reads a 500 as "safe to
+          // resend" is right in every case except this one, which is exactly the case where
+          // resending duplicates a committed row. `storedOutcome` is the api's own three-state
+          // answer (`metadataOutcome`) carried onto the wire instead of being flattened by it.
           console.error(
             `document ${documentId} may have been written for object ${storageKey}; the object ` +
               `is kept and needs reconciling by hand (metadata outcome: ${outcome.state})`,
             error,
           );
+          res.status(500).json({
+            error: "the document may have been stored; the checklist will show whether it was",
+            storedOutcome: "unknown",
+          });
+          return;
         }
         throw error;
       }
@@ -980,7 +1223,11 @@ export function createChecklistRouter(dependencies: ChecklistDependencies): Rout
         return;
       }
       res.json({
-        url: await storage.signedDownloadUrl(document.storage_key, DOWNLOAD_URL_TTL_SECONDS),
+        url: await storage.signedDownloadUrl(
+          document.storage_key,
+          DOWNLOAD_URL_TTL_SECONDS,
+          document.filename,
+        ),
         filename: document.filename,
         expiresInSeconds: DOWNLOAD_URL_TTL_SECONDS,
       });

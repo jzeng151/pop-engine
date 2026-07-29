@@ -44,5 +44,12 @@ export {
 export { CONFIRM_WITH_AGENCY } from "./deadlines";
 export { computeWindowVerdict } from "./verdict";
 export { UNKNOWN_ANSWER } from "./conditions";
-export { DEFAULT_DISPOSITION_BY_RULE_KIND, UNKNOWN_TRIGGER_DISPOSITION } from "./proposals";
+export {
+  DEFAULT_DISPOSITION_BY_RULE_KIND,
+  // F-203 names the dependency in `dependency_unlocked` copy, which means naming the upstream
+  // requirement a gated finding waits on. The binding is what links the two rule ids; without it
+  // the api would have to re-derive the link from prose.
+  DEPENDENCY_SEQUENCING_BINDINGS,
+  UNKNOWN_TRIGGER_DISPOSITION,
+} from "./proposals";
 export * from "./types";

@@ -2,7 +2,7 @@ import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { Client } from "pg";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { RULE_KINDS, VERIFICATION_STATUSES } from "./ruleset";
+import { publishedRulesFile, RULE_KINDS, VERIFICATION_STATUSES } from "./ruleset";
 
 // Regression guard for the root cause behind issues #70, #73 and #76: one contract
 // is hand-copied into four places (the published ruleset, ARCHITECTURE.md, the F-2xx
@@ -162,7 +162,7 @@ describe.runIf(databaseUrl.length > 0)("shared enum contracts do not drift", () 
 
   it("keeps the published status_legend equal to the verification-status enum", () => {
     const ruleset: { status_legend: Record<string, string> } = JSON.parse(
-      readFileSync(repoFile("rules/nyc-rules.v2.7.json"), "utf8"),
+      readFileSync(publishedRulesFile(), "utf8"),
     );
     expect(
       sorted(Object.keys(ruleset.status_legend)),

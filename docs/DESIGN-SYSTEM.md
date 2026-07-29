@@ -1,71 +1,65 @@
 # PopEngine Design System
 
 **STATUS:** APPROVED (2026-07-25; see `docs/BASELINE.md`)
+**AMENDMENT:** Amended 2026-07-29 for the Warm & Authentic visual foundation (this PR).
 **AUTHORITATIVE FOR:** visual foundations and intake-card design language. Approved feature specs remain authoritative for feature behavior, regulatory/safety copy, and required UI states.
 
-> Directly adapted from the architectural design language of Aura’s **Altitude MTL** template (monochrome palette, spatial coordinate tagging, clean typography hierarchy, and structured modular cards) for **PopEngine**'s NYC event intake and permitting engine.
+**Governance gate:** This is a baseline design-system amendment, not a roadmap F-id. Visual tokens and shared CSS land only while `docs/DESIGN-SYSTEM.md` remains `APPROVED` in `docs/BASELINE.md` (documentation governance). Do not invent a product F-id for theme work; feature behavior still requires an approved `specs/F-xxx-*.md`. Scope of this amendment is presentation only — tokens, type, color, spacing, and existing-route chrome. It must not add endpoints, tables, regulatory copy, feature acceptance criteria, or new cross-feature navigation / workflow shortcuts.
 
-Utility-class names below are reference notation for the intended values. The current app uses plain CSS; this document does not require Tailwind or additional font packages.
+This document describes the Warm & Authentic CSS foundation in `apps/web/app/globals.css`. It does not add a CSS framework. Display, body, and mono faces are self-hosted through `next/font/google` in `apps/web/app/layout.tsx` (no runtime request to fonts.googleapis.com).
 
 ---
 
 ## 1. Core Vision & Design Philosophy
 
-PopEngine translates complex, multi-agency municipal permitting rules (DOHMH, Parks TUA, DOB, FDNY, SAPO) into an effortless, high-clarity intake flow.
-
-* **Tone:** Architectural, precise, authoritative, and clean B2B SaaS.
+* **Tone:** Warm, clear, grounded, and trustworthy.
 * **Core Design Principles:**
-  * **Architectural Surface Cards:** Form questions are grouped into clean, white visual cards with high-clarity border lines (`border-slate-200`) and ample breathing room.
-  * **Spatial & Status Metadata Tagging:** Key fields display metadata chips (`BOROUGH: MANHATTAN`, `DOB SCOPE`, `STEP 01/03`) in monospace caps to mirror urban blueprints and spatial coordinates.
-  * **High-Contrast Precision Palette:** Stark monochrome foundations (`slate-900` on `slate-50`) paired with subtle amber and emerald badges for live compliance status updates.
+  * **Cream canvas:** A soft paper field provides depth without reducing contrast or clarity.
+  * **Grounded cards:** Near-white cards and sand rules group related content with restrained shadows.
+  * **Clear hierarchy:** Display type is reserved for page titles; body copy and metadata remain legible at compact sizes.
+  * **Status is visible:** Orange directs primary action, green identifies cleared states, and rose identifies errors.
 
 ---
 
 ## 2. Color Palette & Utility System
 
 ### Base Surface & Text
-* **Canvas Background:** `#F8FAFC` (`bg-slate-50`)
-* **Card Surface:** `#FFFFFF` (`bg-white`)
-* **Primary Headers / Active UI:** `#0F172A` (`bg-slate-900`, `text-slate-900`)
-* **Muted Body Text:** `#475569` (`text-slate-600`)
-* **Field Borders:** `#E2E8F0` (`border-slate-200`)
-* **Hover / Focus Accent:** `#0F172A` (`border-slate-900`, `ring-slate-900`)
+* **Canvas:** `#fffdd0` (`--pe-paper`) with `#f3e6c4` (`--pe-paper-deep`) for depth.
+* **Card surfaces:** `#fffef5` (`--pe-surface`) and `#fffef8` (`--pe-card`).
+* **Ink:** `#3d2314` (`--pe-ink`) for headings and high-emphasis content.
+* **Muted text:** `#7a5c45` (`--pe-steel`) for supporting copy and metadata.
+* **Rules and borders:** `#d2b48c` (`--pe-rule`).
 
-### Dynamic Permit Trigger Status Badges
-* **Neutral Metadata Tag:** `bg-slate-100 text-slate-700 border-slate-300`
-* **Triggered Permit Warning (Amber):** `bg-amber-50 text-amber-800 border-amber-200`
-* **High-Compliance Flag (Rose):** `bg-rose-50 text-rose-800 border-rose-200`
-* **Verified / Cleared State (Emerald):** `bg-emerald-50 text-emerald-800 border-emerald-200`
+### Actions and Status
+* **Primary action / focus:** Burnt orange `#b34a00` (`--pe-amber`) — chosen for ≥4.5:1 contrast with cream action labels.
+* **Clear state / primary hover:** Forest green `#1c7a1c` (`--pe-clear`) — same contrast floor with cream labels.
+* **Error state:** Rose `#9b2d1f` (`--pe-rose`).
+* **Supporting warm accent:** Saddle brown `#8b4513` (`--pe-neon`).
 
 ---
 
 ## 3. Typography Hierarchy
 
-* **Primary Sans-Serif:** `Inter`, `-apple-system`, `sans-serif` (Headers, form field labels, body copy)
-* **Metadata Monospace:** `JetBrains Mono`, `ui-monospace`, `monospace` (Step counters, agency scopes, headcount badges, coordinates)
+* **Display:** Self-hosted `Fraunces` with Georgia fallback (`--pe-font-display`) for page titles.
+* **Body:** Self-hosted `Nunito Sans` with system sans fallback (`--pe-font-body`) for labels, controls, and prose.
+* **Metadata:** Self-hosted `IBM Plex Mono` with system mono fallback (`--pe-font-mono`) for eyebrow labels, counters, and compact status details.
 
-| Role | Tailwind Classes | Usage Example |
+| Role | CSS foundation | Usage |
 | :--- | :--- | :--- |
-| **System Tag** | `font-mono text-xs uppercase tracking-widest text-slate-500` | `40.7128° N / 74.0060° W` or `STEP 01/03` |
-| **Main Header** | `text-2xl font-bold tracking-tight text-slate-900` | Section / Page title (`Describe your event`) |
-| **Field Group Title** | `text-sm font-semibold text-slate-900 uppercase tracking-wider` | Card form header (`Structure types`) |
-| **Form Label / Body** | `text-sm font-medium text-slate-700` | Radio/Checkbox options & input values |
+| **Eyebrow** | `--pe-font-mono`, uppercase, tracked, muted steel | Route context and compact metadata |
+| **Main header** | `--pe-font-display`, ink, responsive display scale | Page title |
+| **Field label** | `--pe-font-body`, uppercase, ink | Form field label |
+| **Body** | `--pe-font-body`, ink or muted steel | Supporting copy and input values |
 
 ---
 
 ## 4. UI Component Specifications
 
-### 1. Architectural Form Card
-```tsx
-<div className="bg-white rounded-xl border border-slate-200 p-6 shadow-sm space-y-4">
-  <div className="flex items-center justify-between border-b border-slate-100 pb-3">
-    <label className="text-sm font-semibold text-slate-900 uppercase tracking-wider">
-      Structure types
-    </label>
-    <span className="text-xs font-mono text-slate-500 border border-slate-200 px-2 py-0.5 rounded bg-slate-50">
-      DOB / FDNY SCOPE
-    </span>
-  </div>
-  {/* Form fields go here */}
-</div>
-```
+### 1. Cards and fields
+Cards use near-white surfaces, sand borders, modest radius, and restrained warm shadows. Inputs use the metadata face where compact structured data benefits from alignment. Hover and focus states use the burnt-orange accent with a visible focus outline.
+
+### 2. Primary and secondary actions
+Primary actions use burnt orange with cream text; their hover state shifts to forest green. Secondary actions retain the card surface and use the sand rule. Both states preserve a visible keyboard focus treatment.
+
+### 3. Eyebrows and metadata
+The shared `.pe-eyebrow` uses IBM Plex Mono, uppercase tracking, muted steel text, and a small forest-green mark. It provides context without competing with the display heading.

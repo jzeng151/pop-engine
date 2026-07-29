@@ -1,10 +1,17 @@
 export default function Home() {
   return (
-    <main>
+    <main className="home">
+      <p className="pe-eyebrow">Municipal permit planning</p>
       <h1>PopEngine</h1>
-      <p>Scaffold online. Synthetic data only; access-gated demo (AD-12).</p>
+      <p className="home__lede">
+        Synthetic-data demo only — access-gated (AD-12). Translate NYC event rules into a clear
+        intake, plan, and door-day ops surface.
+      </p>
+      <a className="intake__submit" href="/intake">
+        Describe your event
+      </a>
       <p>
-        <a href="/intake">Describe your event</a>
+        <a href="/auth">Authentication foundation</a>
       </p>
     </main>
   );

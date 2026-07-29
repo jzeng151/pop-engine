@@ -25,7 +25,7 @@ const scenario = (id: string): Record<string, unknown> => {
   return fixtureSubmission(fixture);
 };
 
-// Every scenario is entered exactly as answer key v4 writes it — it states the values the
+// Every scenario is entered exactly as answer key v6 writes it — it states the values the
 // fixtures were already running on (SPEC-CONFLICT #88 and #106, both closed). The provenance
 // branch stays so a future inferred value cannot be reported as "as written".
 const SCENARIO_CASES = SCENARIO_INTAKE_FIXTURES.map((fixture) => ({
@@ -89,7 +89,8 @@ describe.runIf(databaseUrl.length > 0)("F-101 event intake endpoints", () => {
       const rooftop = scenario("F");
       const { body } = await post({ ...rooftop });
       expect(body.event.venue_license_covers_event_area).toBe("unknown");
-      expect(body.event.venue_has_assembly_approval).toBe("unknown");
+      expect(body.event.venue_paco_covers_exact_event).toBe("unknown");
+      expect(body.event.venue_fdny_pa_permit_current_for_event_space).toBe("unknown");
       expect(body.event.sound_audible_from_public_way).toBe("unknown");
 
       const plaza = scenario("E");
@@ -136,6 +137,34 @@ describe.runIf(databaseUrl.length > 0)("F-101 event intake endpoints", () => {
       const response = await request(api).post("/api/events").send([]);
       expect(response.status).toBe(400);
       expect(errorCodes(response.body)).toEqual({ body: "invalid_body" });
+    });
+
+    it("rejects the deprecated food-exception claim as active input", async () => {
+      const response = await post({
+        ...scenario("F"),
+        food_affinity_private_exception_claimed: "unknown",
+      });
+      expect(response.status).toBe(400);
+      expect(errorCodes(response.body)).toEqual({
+        food_affinity_private_exception_claimed: "unknown_field",
+      });
+    });
+
+    it("keeps retired historical answers out of active create and read responses", async () => {
+      const created = await post(scenario("F"));
+      expect(created.body.event).not.toHaveProperty("food_affinity_private_exception_claimed");
+      expect(created.body.event).not.toHaveProperty("venue_has_assembly_approval");
+      await database.query(
+        `UPDATE events
+            SET food_affinity_private_exception_claimed = 'yes',
+                venue_has_assembly_approval = 'yes'
+          WHERE id = $1`,
+        [created.body.event.id],
+      );
+      const response = await request(api).get(`/api/events/${created.body.event.id}`);
+      expect(response.status).toBe(200);
+      expect(response.body.event).not.toHaveProperty("food_affinity_private_exception_claimed");
+      expect(response.body.event).not.toHaveProperty("venue_has_assembly_approval");
     });
 
     it("warns inline that a selling block party conflicts with eligibility, and stores it", async () => {
@@ -221,8 +250,17 @@ describe.runIf(databaseUrl.length > 0)("F-101 event intake endpoints", () => {
          VALUES ($1, $2, 1, 'nyc.v2.2', 'feasible', '{}'::jsonb, '{}'::jsonb)`,
         [randomUUID(), event.id],
       );
+      await database.query(
+        `UPDATE events
+            SET food_affinity_private_exception_claimed = 'yes',
+                venue_has_assembly_approval = 'yes'
+          WHERE id = $1`,
+        [event.id],
+      );
 
       const stored = await request(api).get(`/api/events/${event.id}`);
+      expect(stored.body.event).not.toHaveProperty("food_affinity_private_exception_claimed");
+      expect(stored.body.event).not.toHaveProperty("venue_has_assembly_approval");
       const resaved = await request(api)
         .patch(`/api/events/${event.id}`)
         .send(
@@ -243,10 +281,12 @@ describe.runIf(databaseUrl.length > 0)("F-101 event intake endpoints", () => {
           ),
         );
 
-      expect(resaved.status).toBe(200);
+      expect(resaved.status, JSON.stringify(resaved.body)).toBe(200);
       expect(resaved.body.event.revision_counter).toBe(1);
       expect(resaved.body.plan_stale).toBe(false);
       expect(resaved.body.event.updated_at).toBe(stored.body.event.updated_at);
+      expect(resaved.body.event).not.toHaveProperty("food_affinity_private_exception_claimed");
+      expect(resaved.body.event).not.toHaveProperty("venue_has_assembly_approval");
       expect((await request(api).get(`/api/events/${event.id}`)).body.plan_stale).toBe(false);
     });
 
@@ -311,7 +351,7 @@ describe.runIf(databaseUrl.length > 0)("F-101 event intake endpoints", () => {
 
       // The answer describes the row as it stands after the concurrent edit, never the
       // one this request would have read had it not waited.
-      expect(resaved.status).toBe(200);
+      expect(resaved.status, JSON.stringify(resaved.body)).toBe(200);
       expect(resaved.body.event.revision_counter).toBeGreaterThan(1);
       expect(resaved.body.plan_stale).toBe(true);
       const afterwards = await request(api).get(`/api/events/${event.id}`);
@@ -412,20 +452,62 @@ describe.runIf(databaseUrl.length > 0)("F-101 event intake endpoints", () => {
       expect(missing.status).toBe(400);
       expect(errorCodes(missing.body)).toEqual({
         sound_audible_from_public_way: "required",
-        venue_has_assembly_approval: "required",
+        venue_paco_covers_exact_event: "required",
+        venue_fdny_pa_permit_current_for_event_space: "required",
       });
 
       const response = await request(api).patch(`/api/events/${event.id}`).send({
         location_type: "private_venue",
         sound_audible_from_public_way: "unknown",
-        venue_has_assembly_approval: "unknown",
+        venue_paco_covers_exact_event: "unknown",
+        venue_fdny_pa_permit_current_for_event_space: "unknown",
       });
       expect(response.status).toBe(200);
       expect(response.body.event.location_type).toBe("private_venue");
       expect(response.body.event.street_event_size).toBeNull();
-      expect(response.body.event.venue_has_assembly_approval).toBe("unknown");
+      expect(response.body.event.venue_paco_covers_exact_event).toBe("unknown");
+      expect(response.body.event.venue_fdny_pa_permit_current_for_event_space).toBe("unknown");
       expect(response.body.event.revision_counter).toBe(2);
     });
+
+    it.each([
+      ["venue_paco_covers_exact_event", "venue_fdny_pa_permit_current_for_event_space", "yes"],
+      ["venue_paco_covers_exact_event", "venue_fdny_pa_permit_current_for_event_space", "no"],
+      ["venue_paco_covers_exact_event", "venue_fdny_pa_permit_current_for_event_space", "unknown"],
+      ["venue_fdny_pa_permit_current_for_event_space", "venue_paco_covers_exact_event", "yes"],
+      ["venue_fdny_pa_permit_current_for_event_space", "venue_paco_covers_exact_event", "no"],
+      ["venue_fdny_pa_permit_current_for_event_space", "venue_paco_covers_exact_event", "unknown"],
+    ] as const)(
+      "edits only %s to %s, bumps the revision, and reloads it exactly",
+      async (field, otherField, value) => {
+        const initialValue = value === "unknown" ? "yes" : "unknown";
+        const created = await post({ ...scenario("F"), [field]: initialValue });
+        expect(created.status).toBe(201);
+        expect(created.body.event).toMatchObject({
+          [field]: initialValue,
+          [otherField]: "unknown",
+        });
+        const id = created.body.event.id as string;
+
+        const edited = await request(api)
+          .patch(`/api/events/${id}`)
+          .send({ [field]: value });
+        expect(edited.status).toBe(200);
+        expect(edited.body.event).toMatchObject({
+          revision_counter: 2,
+          [field]: value,
+          [otherField]: "unknown",
+        });
+
+        const reloaded = await request(api).get(`/api/events/${id}`);
+        expect(reloaded.status).toBe(200);
+        expect(reloaded.body.event).toMatchObject({
+          revision_counter: 2,
+          [field]: value,
+          [otherField]: "unknown",
+        });
+      },
+    );
 
     it("warns inline on an edit that creates a coverage gap", async () => {
       const park = scenario("C");

@@ -1,0 +1,295 @@
+/* F-202 checklist — drafting cards on the shared pe-shell canvas. */
+
+.checklist {
+  --badge-neutral-bg: var(--pe-paper-deep);
+  --badge-neutral-text: var(--pe-steel);
+  --badge-neutral-line: var(--pe-rule);
+  --badge-amber-bg: var(--pe-amber-wash);
+  --badge-amber-text: var(--pe-amber-deep);
+  --badge-amber-line: var(--pe-amber);
+  --badge-neon-bg: var(--pe-neon-wash);
+  --badge-neon-text: var(--pe-neon);
+  --badge-neon-line: var(--pe-neon);
+  --badge-emerald-bg: rgba(34, 139, 34, 0.12);
+  --badge-emerald-text: var(--pe-clear);
+  --badge-emerald-line: var(--pe-clear);
+  --badge-rose-bg: rgba(155, 45, 31, 0.1);
+  --badge-rose-text: var(--pe-rose);
+  --badge-rose-line: var(--pe-rose);
+
+  margin: 0 auto;
+  display: flex;
+  flex-direction: column;
+  gap: var(--pe-stack);
+}
+
+.checklist__lede,
+.checklist__rollup {
+  margin: 0;
+  color: var(--muted);
+}
+
+.checklist__rollup {
+  font-weight: 600;
+  color: var(--ink);
+  font-family: var(--pe-font-mono);
+}
+
+.checklist__flag {
+  padding: 0.85rem 1rem;
+  margin: 0;
+  background: var(--warning-bg);
+  border: 1.5px solid var(--warning-line);
+  border-radius: var(--pe-radius);
+}
+
+.checklist__actions {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.6rem;
+  margin: 0.25rem 0;
+}
+
+.checklist__empty {
+  padding: var(--pe-card-pad);
+  border: var(--pe-border);
+  border-radius: var(--pe-radius);
+  color: var(--muted);
+  background: var(--pe-surface);
+}
+
+.checklist__items,
+.checklist__context {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.checklist__context {
+  margin-top: 1.5rem;
+}
+
+.checklist__context h2 {
+  margin: 0;
+  font-family: var(--pe-font-display);
+  font-size: 1.25rem;
+}
+
+.check-item {
+  padding: var(--pe-card-pad);
+  background: var(--pe-card);
+  border: var(--pe-border);
+  border-radius: var(--pe-radius);
+  box-shadow: var(--pe-shadow);
+}
+
+.check-item__head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.5rem;
+  padding-bottom: 0.5rem;
+  border-bottom: 1px solid var(--pe-divider);
+}
+
+.check-item__name {
+  margin: 0;
+  font-size: 1rem;
+  font-weight: 700;
+}
+
+.check-item--dropped .check-item__name {
+  text-decoration: line-through;
+}
+
+.check-item__retained {
+  margin: 0.65rem 0 0;
+  padding: 0.65rem 0.8rem;
+  background: var(--warning-bg);
+  border: 1.5px solid var(--warning-line);
+  border-radius: var(--pe-radius);
+}
+
+
+.badge {
+  font-family: var(--pe-font-mono);
+  font-size: 0.7rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  padding: 0.15rem 0.45rem;
+  border-radius: var(--pe-radius);
+  background: var(--badge-neutral-bg);
+  color: var(--badge-neutral-text);
+  border: 1px solid var(--badge-neutral-line);
+}
+
+.badge--official_conflict,
+.badge--research_required {
+  background: var(--badge-neon-bg);
+  color: var(--badge-neon-text);
+  border-color: var(--badge-neon-line);
+  box-shadow: none;
+}
+
+.badge--in_progress {
+  background: var(--badge-amber-bg);
+  color: var(--badge-amber-text);
+  border-color: var(--badge-amber-line);
+}
+
+.badge--submitted {
+  background: var(--badge-amber-bg);
+  color: var(--badge-amber-text);
+  border-color: var(--badge-amber-line);
+}
+
+.badge--approved {
+  background: var(--badge-emerald-bg);
+  color: var(--badge-emerald-text);
+  border-color: var(--badge-emerald-line);
+}
+
+.badge--rejected {
+  background: var(--badge-rose-bg);
+  color: var(--badge-rose-text);
+  border-color: var(--badge-rose-line);
+}
+
+.check-item__meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem 0.75rem;
+  margin: 0.4rem 0 0;
+  font-size: 0.875rem;
+  color: var(--muted);
+}
+
+.check-item__rule-ids {
+  font-family: var(--pe-font-mono);
+}
+
+.check-item__caveat {
+  margin: 0.65rem 0 0;
+  padding: 0.65rem 0.8rem;
+  background: var(--warning-bg);
+  border: 1.5px solid var(--warning-line);
+  border-radius: var(--pe-radius);
+}
+
+.check-item__text,
+.check-item__deadline {
+  margin: 0.5rem 0 0;
+  font-size: 0.9375rem;
+}
+
+.check-item__citations {
+  list-style: none;
+  margin: 0.65rem 0 0;
+  padding: 0.65rem 0 0;
+  border-top: 1px solid var(--pe-divider);
+  font-size: 0.875rem;
+}
+
+.check-item__citations a {
+  margin-left: 0.5rem;
+  color: var(--pe-cyan);
+  font-weight: 600;
+  text-decoration: underline;
+  text-decoration-color: rgba(204, 85, 0, 0.4);
+  text-underline-offset: 0.15em;
+}
+
+.check-item__citations a:hover {
+  text-decoration-color: var(--pe-amber-deep);
+}
+
+.check-item__provenance {
+  margin: 0.65rem 0 0;
+  font-family: var(--pe-font-mono);
+  font-size: 0.78rem;
+  letter-spacing: 0.02em;
+  color: var(--muted);
+}
+
+.check-item__track,
+.check-item__documents {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 0.6rem 1rem;
+  margin-top: 0.9rem;
+  padding-top: 0.9rem;
+  border-top: 1px solid var(--pe-divider);
+}
+
+.check-item__field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.check-item__field-label {
+  font-size: 0.8125rem;
+  font-weight: 600;
+  color: var(--muted);
+}
+
+.check-item__select,
+.check-item__notes {
+  min-width: 0;
+  width: 100%;
+}
+
+.check-item__button:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+.check-item__document-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  font-size: 0.9375rem;
+}
+
+.check-item__document-list li {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.check-item__error {
+  margin: 0.6rem 0 0;
+  color: var(--error);
+  font-size: 0.9375rem;
+  font-weight: 600;
+}
+
+.check-item__deadline-notice {
+  margin: 0.65rem 0 0;
+  padding: 0.65rem 0.8rem;
+  background: var(--warning-bg);
+  border: 1.5px solid var(--warning-line);
+  border-radius: 0.5rem;
+  font-size: 0.9375rem;
+}
+
+.check-item__deadline-notice p {
+  margin: 0 0 0.45rem;
+}
+
+.check-item__deadline-notice p:last-child {
+  margin-bottom: 0;
+}
+
+.check-item__deadline-notice-provenance,
+.check-item__deadline-notice-rulesets,
+.check-item__deadline-notice-limit {
+  color: var(--muted);
+  font-size: 0.875rem;
+}

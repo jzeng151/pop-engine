@@ -7,6 +7,7 @@ import { Readable } from "node:stream";
 import { S3Client } from "@aws-sdk/client-s3";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
+  attachmentDisposition,
   DocumentStorageError,
   createS3DocumentStorage,
   s3ClientFor,
@@ -80,7 +81,9 @@ describe("S3-compatible document storage", () => {
   it("signs a path-style download url that expires with the requested lifetime", async () => {
     const storage = createS3DocumentStorage(s3ClientFor(SETTINGS), SETTINGS.bucket);
 
-    const url = new URL(await storage.signedDownloadUrl("checklist-items/abc/def.pdf", 300));
+    const url = new URL(
+      await storage.signedDownloadUrl("checklist-items/abc/def.pdf", 300, "permit.pdf"),
+    );
 
     // Supabase serves one bucket path under a fixed project host, so the bucket must be in
     // the path rather than the hostname.
@@ -90,6 +93,25 @@ describe("S3-compatible document storage", () => {
     expect(url.searchParams.get("X-Amz-Signature")).toMatch(/^[0-9a-f]{64}$/);
     // The signing key itself is never in the URL; only the key id, inside the credential scope.
     expect(url.search).not.toContain(SETTINGS.secretAccessKey);
+    // Signed, not merely appended: a disposition outside the signature could be stripped or
+    // swapped by whoever holds the link.
+    expect(url.searchParams.get("response-content-disposition")).toBe(
+      `attachment; filename="permit.pdf"; filename*=UTF-8''permit.pdf`,
+    );
+    expect(url.searchParams.get("X-Amz-SignedHeaders")).not.toBeNull();
+  });
+
+  // The api keeps filenames in any script, so the header has to carry one. It cannot do that in
+  // `filename=` alone, which is why both forms are emitted.
+  it.each([
+    [
+      "\u7533\u8bf7\u4e66.pdf",
+      `attachment; filename="___.pdf"; filename*=UTF-8''%E7%94%B3%E8%AF%B7%E4%B9%A6.pdf`,
+    ],
+    ['a"b.pdf', `attachment; filename="a_b.pdf"; filename*=UTF-8''a%22b.pdf`],
+    ["plain.png", `attachment; filename="plain.png"; filename*=UTF-8''plain.png`],
+  ])("builds a download disposition for %s", (filename, expected) => {
+    expect(attachmentDisposition(filename)).toBe(expected);
   });
 
   it("reports an upload failure as our own message and logs the provider's", async () => {
@@ -141,7 +163,7 @@ describe("S3-compatible document storage", () => {
     const logged = vi.spyOn(console, "error").mockImplementation(() => {});
     const storage = createS3DocumentStorage(client, SETTINGS.bucket);
 
-    await expect(storage.signedDownloadUrl("key.pdf", 300)).rejects.toThrow(
+    await expect(storage.signedDownloadUrl("key.pdf", 300, "key.pdf")).rejects.toThrow(
       new DocumentStorageError("document storage is unavailable"),
     );
     expect(logged).toHaveBeenCalledOnce();
@@ -156,7 +178,9 @@ describe("unconfigured document storage", () => {
     await expect(
       storage.put("key.pdf", pdfStream(), "application/pdf", PDF.byteLength),
     ).rejects.toThrow(notConfigured);
-    await expect(storage.signedDownloadUrl("key.pdf", 300)).rejects.toThrow(notConfigured);
+    await expect(storage.signedDownloadUrl("key.pdf", 300, "key.pdf")).rejects.toThrow(
+      notConfigured,
+    );
     await expect(storage.remove("key.pdf")).rejects.toThrow(notConfigured);
   });
 });

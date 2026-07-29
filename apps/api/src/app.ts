@@ -1,11 +1,15 @@
 import express, { type Express, type Response } from "express";
 import { describeEngine, EvaluationError } from "@pop-engine/engine";
+import { createAlertsRouter, type AlertsDependencies } from "./alerts";
 import { createCheckinsRouter } from "./checkins";
 import { createChecklistRouter, type ChecklistDependencies } from "./checklist";
 import { createEventsRouter, type EventsDependencies } from "./events";
 import { EventNotFoundError, PlanIntegrityError, type PlanService } from "./plan";
+import { createParksRouter } from "./parks";
 import { createPublicPageRouter } from "./public-page";
 import { createRsvpsRouter } from "./rsvps";
+import { createStatsRouter } from "./stats";
+import { requireSupabaseAuth, type VerifyAccessToken } from "./auth";
 
 /**
  * What the loaded rules file says about itself (F-206). `snapshotDate` is the date the ruleset
@@ -19,8 +23,12 @@ export type AppDependencies = EventsDependencies & {
   planService?: PlanService;
   /** Same contract for F-202: the checklist routes register only when storage is supplied. */
   checklist?: ChecklistDependencies;
+  /** Same contract for F-203: the alert test route registers only when senders are supplied. */
+  alerts?: AlertsDependencies;
   /** Absent in the scaffold's own tests; the rules-meta route registers only when it is supplied. */
   rulesMeta?: RulesMeta;
+  /** F-701 foundation only: verifies identity; it does not infer workspace or role authorization. */
+  verifyAccessToken?: VerifyAccessToken;
 };
 
 // The Express app factory. Kept separate from the server bootstrap (index.ts) so tests
@@ -43,7 +51,10 @@ export function createApp(dependencies: AppDependencies): Express {
       // X-Filename carries a document upload's display name (F-202). A preflight that lists a
       // header this allowlist omits fails in the browser before the route is ever reached, and
       // web and api are separately hosted, so that is the normal path rather than an edge case.
-      res.setHeader("Access-Control-Allow-Headers", "Content-Type, X-Filename");
+      res.setHeader(
+        "Access-Control-Allow-Headers",
+        "Authorization, Content-Type, X-Filename, X-Upload-Key",
+      );
       res.sendStatus(204);
       return;
     }
@@ -58,6 +69,16 @@ export function createApp(dependencies: AppDependencies): Express {
     res.json({ status: "ok", service: "pop-engine-api", engine: describeEngine() });
   });
 
+  if (dependencies.verifyAccessToken === undefined) {
+    app.get("/api/session", (_req, res) => {
+      res.status(503).json({ error: "Supabase authentication is not configured." });
+    });
+  } else {
+    app.get("/api/session", requireSupabaseAuth(dependencies.verifyAccessToken), (_req, res) => {
+      res.json({ actor: res.locals.actor as { id: string; email?: string } });
+    });
+  }
+
   app.use("/api", createEventsRouter(dependencies));
   // F-401 / F-302: only need pool (+ today for RSVP date checks) already on AppDependencies —
   // no index.ts wiring beyond what events already use.
@@ -69,12 +90,18 @@ export function createApp(dependencies: AppDependencies): Express {
     "/api",
     createRsvpsRouter({ database: dependencies.database, today: dependencies.today }),
   );
+  // F-402: organizer live-ops totals; polled ~5s. Same Access gate as /guests (not CF-bypassed).
+  app.use("/api", createStatsRouter({ database: dependencies.database }));
+  app.use("/api/permits", createParksRouter());
   // F-301: registers GET /e/:eventId at the app root (ARCHITECTURE) plus organizer
   // /api/events/:id/public-page routes on the same router.
   app.use(createPublicPageRouter({ database: dependencies.database }));
   if (dependencies.planService !== undefined) registerPlanRoutes(app, dependencies.planService);
   if (dependencies.checklist !== undefined) {
     app.use("/api", createChecklistRouter(dependencies.checklist));
+  }
+  if (dependencies.alerts !== undefined) {
+    app.use("/api", createAlertsRouter(dependencies.alerts));
   }
   if (dependencies.rulesMeta !== undefined) registerRulesRoutes(app, dependencies.rulesMeta);
 

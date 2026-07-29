@@ -48,11 +48,12 @@ function resolveDisposition(rule: EngineRule, result: Tristate): Disposition {
  * `qualification` (which instrument applies, calendar vs business days) and the verification
  * block's, both of which are regulatory text and neither of which may be dropped just because the
  * engine computed a date. Any deadline the engine could not compute also gets the published
- * "confirm with agency" treatment.
+ * "confirm with agency" treatment. RESEARCH_REQUIRED itself does not add the same text here:
+ * renderers own that visible status treatment, and adding it to notes renders it twice.
  */
 function ruleNotes(rule: EngineRule, deadlineStatus: DeadlineStatus): string[] {
   const needsAgencyConfirmation =
-    deadlineStatus === "not_calculable" || rule.verificationStatus === "RESEARCH_REQUIRED";
+    deadlineStatus === "not_calculable" && rule.verificationStatus !== "RESEARCH_REQUIRED";
   return [
     ...rule.notes,
     ...(rule.deadline?.qualification === undefined || rule.deadline.qualification === null

@@ -79,6 +79,13 @@ export type PlanResponse = Omit<
  * The `Finding` members this feature reads, and only those. `kind`, `slackDays` and `triggeredBy`
  * are deliberately absent: nothing here reads them, so they stay the engine's schema to police
  * rather than the client's — F-206's boundary, unchanged, and now enforced the same way.
+ *
+ * `kind` was briefly consumed, to decide whether a finding was the sort of filing that could carry a
+ * fee, so that a null `feeDisplay` could be reported as an unpublished amount. That split is
+ * withdrawn: an absent fee and an explicit `fee: null` are one value by the time a finding carries
+ * one, so no reading of `kind` could say which a given finding was, and deciding it from what OTHER
+ * rules of the same kind publish is a claim about this filing taken from a fact about another. A
+ * null fee now renders nothing, which needs no kind.
  */
 export type ConsumedFinding = Omit<
   Pick<

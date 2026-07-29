@@ -1,6 +1,6 @@
 import { readFileSync } from "node:fs";
-import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
+import { PUBLISHED_RULES_FILE } from "../__fixtures__/published-ruleset";
 import { parseIntakeContract } from "./registry";
 import { askedFields, askedFieldNames as askedNamesIn } from "./visibility";
 import { isIntakeUnchanged, mergeIntakeEdit, validateIntake } from "./validate";
@@ -15,10 +15,7 @@ import {
 // contract itself. Structural error branches use minimal synthetic rulesets.
 
 const publishedRuleset: Record<string, unknown> = JSON.parse(
-  readFileSync(
-    fileURLToPath(new URL("../../../../rules/nyc-rules.v2.7.json", import.meta.url)),
-    "utf8",
-  ),
+  readFileSync(PUBLISHED_RULES_FILE, "utf8"),
 );
 const contract = parseIntakeContract(publishedRuleset);
 const fieldNamed = (name: string) => {
@@ -94,6 +91,21 @@ describe("intake contract derives from the published registry", () => {
     }
   });
 
+  it("publishes the approved PACO checklist and complete fold guidance", () => {
+    expect(fieldNamed("venue_paco_covers_exact_event").note).toBe(
+      [
+        "Check the current or most recent PACO, certificate of occupancy, and DOB-approved primary or alternate plan:",
+        "- Identifies the exact event space.",
+        "- Authorizes the event use and assembly classification.",
+        "- Allows the event's maximum occupant load.",
+        "- Matches the event's seating, furnishings, and layout.",
+        "Answer No if any checklist item has a proved mismatch.",
+        "Answer Yes if all checklist items are proved.",
+        "Answer I don't know otherwise.",
+      ].join("\n"),
+    );
+  });
+
   it("resolves each asked_when form to the clause it means", () => {
     // These are the engine's clauses, not a second vocabulary: the questionnaire and the rules
     // engine parse `asked_when` with one parser, so they cannot drift apart on what a
@@ -113,7 +125,11 @@ describe("intake contract derives from the published registry", () => {
     expect(fieldNamed("tent_area_sqft").askedWhen).toEqual([
       { kind: "member", field: "structure_types", member: "tent_canopy" },
     ]);
-    expect(fieldNamed("venue_has_assembly_approval").askedWhen).toEqual([
+    expect(fieldNamed("venue_paco_covers_exact_event").askedWhen).toEqual([
+      { kind: "compare", field: "location_type", op: "=", value: "private_venue" },
+      { kind: "at_least", field: "headcount", threshold: 75 },
+    ]);
+    expect(fieldNamed("venue_fdny_pa_permit_current_for_event_space").askedWhen).toEqual([
       { kind: "compare", field: "location_type", op: "=", value: "private_venue" },
       { kind: "at_least", field: "headcount", threshold: 75 },
     ]);
@@ -350,23 +366,29 @@ describe("conditional flow (spec #2)", () => {
       "venue_license_covers_event_area",
     );
 
-    expect(askedFieldNames({ location_type: "private_venue", headcount: 74 })).not.toContain(
-      "venue_has_assembly_approval",
-    );
-    expect(askedFieldNames({ location_type: "private_venue", headcount: 75 })).toContain(
-      "venue_has_assembly_approval",
-    );
-  });
-
-  it("asks the private-function food question only for non-public events", () => {
-    expect(askedFieldNames({ food_present: true, event_open_to_public: "yes" })).not.toContain(
-      "food_affinity_private_exception_claimed",
-    );
-    for (const audience of ["no", "unknown"]) {
-      expect(askedFieldNames({ food_present: true, event_open_to_public: audience })).toContain(
-        "food_affinity_private_exception_claimed",
+    const assemblyFields = [
+      "venue_paco_covers_exact_event",
+      "venue_fdny_pa_permit_current_for_event_space",
+    ];
+    for (const field of assemblyFields) {
+      expect(askedFieldNames({ location_type: "private_venue", headcount: 74 })).not.toContain(
+        field,
       );
     }
+    for (const headcount of [75, 76]) {
+      expect(askedFieldNames({ location_type: "private_venue", headcount })).toEqual(
+        expect.arrayContaining(assemblyFields),
+      );
+      for (const field of assemblyFields) {
+        expect(askedFieldNames({ location_type: "park", headcount })).not.toContain(field);
+      }
+    }
+  });
+
+  it("does not declare the deprecated food-exception claim", () => {
+    expect(contract.fields.map((field) => field.field)).not.toContain(
+      "food_affinity_private_exception_claimed",
+    );
     expect(askedFieldNames({ food_present: false, event_open_to_public: "no" })).not.toContain(
       "food_vendor_count",
     );
@@ -445,7 +467,8 @@ describe("the six scenario fixtures are enterable (spec #1)", () => {
     const values = validateIntake(contract, scenario("C"), FIXTURE_TODAY).values;
     expect(values?.obstructs_public_way).toBeNull();
     expect(values?.food_vendor_count).toBeNull();
-    expect(values?.venue_has_assembly_approval).toBeNull();
+    expect(values?.venue_paco_covers_exact_event).toBeNull();
+    expect(values?.venue_fdny_pa_permit_current_for_event_space).toBeNull();
     expect(values?.location_name).toBeNull();
     expect(values?.capacity).toBeNull();
   });
@@ -465,7 +488,8 @@ describe("unknown is a real answer (spec #3)", () => {
     "plaza_level",
     "sound_audible_from_public_way",
     "venue_license_covers_event_area",
-    "venue_has_assembly_approval",
+    "venue_paco_covers_exact_event",
+    "venue_fdny_pa_permit_current_for_event_space",
     "structure_over_10ft_tall",
   ];
 
@@ -477,8 +501,8 @@ describe("unknown is a real answer (spec #3)", () => {
     const values = validateIntake(contract, scenario("F"), FIXTURE_TODAY).values;
     expect(values?.sound_audible_from_public_way).toBe("unknown");
     expect(values?.venue_license_covers_event_area).toBe("unknown");
-    expect(values?.venue_has_assembly_approval).toBe("unknown");
-    expect(values?.food_affinity_private_exception_claimed).toBe("unknown");
+    expect(values?.venue_paco_covers_exact_event).toBe("unknown");
+    expect(values?.venue_fdny_pa_permit_current_for_event_space).toBe("unknown");
   });
 
   it("keeps blank numeric answers on a selected structure or generator as null", () => {
@@ -529,11 +553,13 @@ describe("contradictions are challenged, never resolved silently (spec #4)", () 
       codesFor({
         ...scenario("A"),
         venue_license_covers_event_area: "yes",
-        venue_has_assembly_approval: "yes",
+        venue_paco_covers_exact_event: "yes",
+        venue_fdny_pa_permit_current_for_event_space: "yes",
       }),
     ).toEqual({
       venue_license_covers_event_area: "not_applicable",
-      venue_has_assembly_approval: "not_applicable",
+      venue_paco_covers_exact_event: "not_applicable",
+      venue_fdny_pa_permit_current_for_event_space: "not_applicable",
     });
   });
 

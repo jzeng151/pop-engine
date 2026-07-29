@@ -1,0 +1,182 @@
+// F-203 delivery channels. The poller in `alerts.ts` decides WHAT is due; this file is the only
+// place that talks to a provider, so the scheduling logic stays testable without a network and a
+// provider swap touches one file (ARCHITECTURE: Twilio for SMS, Resend for email per BASELINE.md).
+
+/** Mirrors the `alerts.channel` CHECK in migration 001. */
+export const ALERT_CHANNELS = ["email", "sms"] as const;
+export type AlertChannel = (typeof ALERT_CHANNELS)[number];
+
+export type AlertMessage = {
+  readonly recipient: string;
+  readonly subject: string;
+  readonly body: string;
+  /**
+   * The row's `idempotency_key`, handed to the provider rather than only stored.
+   *
+   * This is what makes AC 2's crash requirement hold. The poller marks an alert sent in the same
+   * transaction it sends from, so a crash in between rolls the mark back and the next tick tries
+   * the same row again — correct for a send that never left, a double-send for one that did.
+   * Nothing on this side can tell those apart, so the decision is deferred to the party that can:
+   * the provider sees the same key twice and delivers once (AD-13).
+   */
+  readonly idempotencyKey: string;
+};
+
+/**
+ * What actually happened, recorded onto the alert row so a reader can tell a live send from a
+ * labeled simulation without inferring it from configuration it cannot see.
+ */
+export type AlertDelivery = {
+  readonly simulated: boolean;
+  /** Shown in-product when the send was simulated; null for a live one. */
+  readonly label: string | null;
+  readonly provider: string;
+};
+
+/** A delivery that did not happen. The alert stays for a later tick; nothing is lost. */
+export class AlertDeliveryError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "AlertDeliveryError";
+  }
+}
+
+export type AlertSender = (message: AlertMessage) => Promise<AlertDelivery>;
+
+export type AlertSenders = Readonly<Record<AlertChannel, AlertSender>>;
+
+/**
+ * How long one provider request may take before it is abandoned as an outage.
+ *
+ * This bound is load-bearing rather than defensive. The poller sends due alerts one at a time and
+ * holds the row's transaction open across the send, so a request that connects and then never
+ * answers does not stall one alert — it stalls every later due alert behind it, for as long as the
+ * socket stays open. AC 2 gives a two-minute delivery budget and the tick runs every 60 seconds,
+ * so a request is given ten seconds and then treated as the outage it is: the alert stays queued
+ * and the next tick retries it, which is the path the spec's provider-outage edge case describes.
+ */
+export const PROVIDER_TIMEOUT_MS = 10_000;
+
+/**
+ * Email via Resend's HTTP API (BASELINE.md provider baseline; live in the demo).
+ *
+ * The REST endpoint rather than the `resend` SDK: the only call this product makes is one POST,
+ * and `Idempotency-Key` — the header AC 2 leans on — is part of the HTTP contract, not something
+ * the SDK adds. One fewer vendor dependency for no lost capability.
+ */
+export function createResendEmailSender(settings: {
+  readonly apiKey: string;
+  readonly from: string;
+  /** Injected in tests; the real one is the global. */
+  readonly fetch?: typeof globalThis.fetch;
+  readonly timeoutMs?: number;
+}): AlertSender {
+  const send = settings.fetch ?? globalThis.fetch;
+  const timeoutMs = settings.timeoutMs ?? PROVIDER_TIMEOUT_MS;
+  return async (message) => {
+    let response: Response;
+    try {
+      response = await send("https://api.resend.com/emails", {
+        method: "POST",
+        headers: {
+          authorization: `Bearer ${settings.apiKey}`,
+          "content-type": "application/json",
+          "Idempotency-Key": message.idempotencyKey,
+        },
+        body: JSON.stringify({
+          from: settings.from,
+          to: [message.recipient],
+          subject: message.subject,
+          text: message.body,
+        }),
+        // Bounds the whole request, connection included. Without it a half-open socket blocks the
+        // poller indefinitely; with it the failure lands on the retry path like any other outage.
+        signal: AbortSignal.timeout(timeoutMs),
+      });
+    } catch (error) {
+      // A transport failure is exactly the outage the spec's edge case describes: retry later.
+      // The timeout arrives here as an abort, and is named for what it is so an operator reading
+      // `payload.last_error` can tell a refused connection from a provider that went quiet.
+      const timedOut = error instanceof Error && error.name === "TimeoutError";
+      throw new AlertDeliveryError(
+        timedOut
+          ? `email provider did not respond within ${timeoutMs}ms`
+          : `email provider unreachable: ${error instanceof Error ? error.message : "unknown error"}`,
+      );
+    }
+    // THE BODY IS RELEASED ON BOTH PATHS, and the throwing one is why this is a comment rather
+    // than a line. Undici holds a connection open until its response body is consumed or
+    // cancelled, so a body that is simply never read keeps its socket until garbage collection.
+    // The poller sends up to eight at a time and retries through outages, which is exactly the
+    // shape that accumulates them: the concurrency bound limits requests in flight, not sockets
+    // left behind by requests that finished.
+    //
+    // Cancelled rather than read, because nothing here wants the contents. The provider's body can
+    // echo the recipient, which is contact data (AGENTS.md "do not log unredacted contact data"),
+    // so the rejection carries the status and nothing else.
+    await response.body?.cancel();
+    if (!response.ok) {
+      throw new AlertDeliveryError(
+        `email provider rejected the send with status ${response.status}`,
+      );
+    }
+    return { simulated: false, label: null, provider: "resend" };
+  };
+}
+
+/**
+ * The email path with no credentials configured.
+ *
+ * Deliberately NOT a simulation. The spec permits a labeled simulation for SMS only, and an
+ * unconfigured email channel that reported success would be a mock presented as a send
+ * (AGENTS.md "do not claim completion while a mock is present"). Failing leaves the alert pending
+ * for a later tick, so configuring the key later delivers it rather than losing it.
+ */
+export function unconfiguredEmailSender(): AlertSender {
+  return async () => {
+    throw new AlertDeliveryError(
+      "RESEND_API_KEY and SMTP_FROM are not configured; email alerts stay pending until they are",
+    );
+  };
+}
+
+/**
+ * The label an in-product simulated SMS carries, stored on the alert row so every reader shows the
+ * same words.
+ */
+export const SIMULATED_SMS_LABEL =
+  "SIMULATED SMS — not delivered. Twilio A2P 10DLC registration is still pending " +
+  "(docs/BASELINE.md provider baseline; OPEN-QUESTIONS T-1), so SMS renders in-product rather " +
+  "than sending.";
+
+/**
+ * SMS while A2P 10DLC registration is outstanding (DESIGN.md fallback, PRD risk table,
+ * OPEN-QUESTIONS T-1). BASELINE.md records the registration as started and not approved, so this
+ * is the path the repo's own artifacts select; a live Twilio sender is written when an approval
+ * date is recorded, not before.
+ *
+ * `sent` here means "rendered", and the row says so: the delivery it returns is what puts
+ * `SIMULATED_SMS_LABEL` on the alert. Nothing presents it as a delivered message.
+ */
+export function createSimulatedSmsSender(record?: (message: AlertMessage) => void): AlertSender {
+  return async (message) => {
+    record?.(message);
+    return { simulated: true, label: SIMULATED_SMS_LABEL, provider: "simulated" };
+  };
+}
+
+/**
+ * The senders an api process runs with, from its environment. Email is live when configured and
+ * fails loudly when it is not; SMS is the labeled simulation until the A2P approval is recorded.
+ */
+export function sendersFromEnv(environment: NodeJS.ProcessEnv): AlertSenders {
+  const apiKey = environment.RESEND_API_KEY ?? "";
+  const from = environment.SMTP_FROM ?? "";
+  return {
+    email:
+      apiKey === "" || from === ""
+        ? unconfiguredEmailSender()
+        : createResendEmailSender({ apiKey, from }),
+    sms: createSimulatedSmsSender(),
+  };
+}

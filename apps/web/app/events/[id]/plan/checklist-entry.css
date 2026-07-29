@@ -1,0 +1,16 @@
+/* The plan route's link on to the checklist (F-202 AC 1). */
+
+.plan-next {
+  margin: 0 auto;
+  padding-top: 1.5rem;
+  border-top: var(--pe-border);
+  font-size: 0.9375rem;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem 0;
+  align-items: baseline;
+}
+
+.plan-next a {
+  font-weight: 700;
+}

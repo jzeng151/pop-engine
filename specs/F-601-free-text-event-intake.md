@@ -6,14 +6,15 @@
 
 ## Purpose and User Outcome
 
-An organizer can describe an event in free text and receive proposed structured F-101 answers, but only confirmed values reach coverage classification or evaluation.
+An organizer can describe an event in free text and receive proposed structured F-101 answers, but only confirmed values reach F-109 scope-support classification or evaluation.
 
 ## Scope
 
 **In scope**
 
 - Send bounded organizer text through the approved AI gateway and map proposals only to current intake-registry fields/options.
-- Show evidence snippets/confidence where available, allow accept/edit/reject per field, and run F-109 coverage classification.
+- Show evidence snippets/confidence where available, allow accept/edit/reject per field, and run F-109 scope-support classification.
+- Present a material concept with no current registry field as an unmatched-scope review item that the organizer can confirm or reject; it is never an engine answer.
 - Create a normal event draft/revision only from explicit confirmations.
 
 **Non-goals**
@@ -32,7 +33,7 @@ An organizer can describe an event in free text and receive proposed structured 
 
 - Input is bounded free text plus registry/version; output is field-level proposals with provenance and no committed answers.
 - Each proposal is pending → accepted/edited/rejected; only accepted/edited values enter the draft.
-- Unsupported concepts, ambiguity, missing material facts, model failure, and unsafe content remain visible through F-109 or manual intake.
+- Unsupported concepts, ambiguity, missing material facts, model failure, and unsafe content remain visible through F-109 or manual intake. A confirmed unmatched-scope item is a scope-support input outside the engine answer registry.
 - Missing or unresolved material data stays visibly unset, unknown, pending, or failed as appropriate; it never becomes a successful or complete result.
 - Invalid input produces a field or action-specific error without partial mutation. Retriable external failures preserve the user's confirmed state and expose a safe retry.
 
@@ -57,8 +58,8 @@ Exact HTTP, JSON Schema, migration, job, and provider shapes belong in their rev
 ## Acceptance Criteria
 
 1. **F601-AC-01:** The model can propose only fields/options present in the exact current intake registry and cannot create an endpoint, enum, or rule.
-2. **F601-AC-02:** No proposed value reaches coverage classification/evaluation until the user accepts or edits it.
-3. **F601-AC-03:** Material ambiguity, unsupported scope, or missing facts produces the appropriate F-109 state and cannot yield a complete-plan claim.
+2. **F601-AC-02:** No proposed field value or unmatched-scope observation reaches scope-support classification or evaluation until the user accepts, edits, or confirms it.
+3. **F601-AC-03:** A material concept with no current registry field blocks evaluation until the organizer rejects it as inapplicable or confirms it as unmatched scope; confirmed unmatched scope enters F-109, never the engine answer set, and cannot yield a complete-plan claim.
 4. **F601-AC-04:** Rejecting a proposal leaves the corresponding answer absent; editing uses normal F-101 validation.
 5. **F601-AC-05:** Provider/model/prompt failure preserves the original text and offers the complete manual F-101 path.
 

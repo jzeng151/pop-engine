@@ -1,4 +1,6 @@
 import { randomUUID } from "node:crypto";
+export { normalizeOptionalPhone } from "./contact";
+import { normalizeOptionalPhone } from "./contact";
 import { Router, type Request, type Response } from "express";
 import type { Pool, PoolClient, QueryResult, QueryResultRow } from "pg";
 
@@ -43,21 +45,6 @@ export function normalizeEmail(raw: string): NormalizedEmail {
 }
 
 /** Optional phone: digits only when present, so F-401 matching stays consistent. */
-export function normalizeOptionalPhone(
-  raw: unknown,
-): { ok: true; phone: string | null } | { ok: false; message: string } {
-  if (raw === undefined || raw === null || raw === "") {
-    return { ok: true, phone: null };
-  }
-  if (typeof raw !== "string") {
-    return { ok: false, message: "phone must be a string" };
-  }
-  const digits = raw.trim().replace(/\D/g, "");
-  if (digits.length < 10) {
-    return { ok: false, message: "phone must be a valid number when provided" };
-  }
-  return { ok: true, phone: digits };
-}
 
 type RsvpBody = { name: string; email: string; phone: string | null };
 

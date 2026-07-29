@@ -10,6 +10,7 @@ import {
   type IntakeValue,
 } from "@pop-engine/engine";
 import { CREDENTIALED, loadEvent, regeneratePlan, type SavedEvent } from "./events-api";
+import { discoverParks, parksBoroughCode, type ParkSuggestion } from "./parks-api";
 
 // The intake questionnaire. Every question, option, and asked-when condition comes from
 // the contract prop, which the server component parses from the published ruleset — this
@@ -40,6 +41,7 @@ const DESCRIPTIVE_QUESTIONS = [
     required: false,
   },
 ];
+const MAX_PARK_SEARCH_LENGTH = 80;
 
 const humanize = (token: string): string =>
   token.replace(/_/g, " ").replace(/^./, (letter) => letter.toUpperCase());
@@ -124,11 +126,17 @@ export function IntakeForm({
   const [regeneratedRevision, setRegeneratedRevision] = useState<number | null>(null);
   const [loading, setLoading] = useState(eventId !== undefined);
   const [loadFailure, setLoadFailure] = useState<string | null>(null);
+  const [parkSuggestions, setParkSuggestions] = useState<ParkSuggestion[] | null>(null);
+  const [parkSearchFailure, setParkSearchFailure] = useState<string | null>(null);
+  const [parkSearching, setParkSearching] = useState(false);
 
   // The revision the form is currently sitting on. A ref, because an in-flight
   // regeneration has to compare against the revision as it stands when the plan lands,
   // not against the one captured when the button was clicked.
   const currentRevision = useRef<number | null>(null);
+  const parkSearchRequest = useRef(0);
+  const parkSearchController = useRef<AbortController | null>(null);
+  const locationNameInput = useRef<HTMLInputElement | null>(null);
 
   useEffect(() => {
     if (eventId === undefined) return;
@@ -155,9 +163,64 @@ export function IntakeForm({
   // submit (spec #4, #5). The same function runs server-side on save.
   const warnings = useMemo(() => intakeWarnings(contract, answers), [contract, answers]);
   const errorFor = (field: string) => errors.find((error) => error.field === field);
+  const parkBorough = parksBoroughCode(answers.borough);
+  const canSearchParks = answers.location_type === "park" && parkBorough !== null;
+  const parkSearchName =
+    typeof answers.location_name === "string" ? answers.location_name.trim() : "";
+  const parkSearchTooLong = parkSearchName.length > MAX_PARK_SEARCH_LENGTH;
+
+  useEffect(() => {
+    parkSearchRequest.current += 1;
+    parkSearchController.current?.abort();
+    parkSearchController.current = null;
+    setParkSuggestions(null);
+    setParkSearchFailure(null);
+    setParkSearching(false);
+  }, [answers.location_type, parkBorough]);
+
+  useEffect(
+    () => () => {
+      parkSearchController.current?.abort();
+    },
+    [],
+  );
 
   const answer = (field: string, value: IntakeValue) => {
+    if (field === "location_name") {
+      parkSearchRequest.current += 1;
+      parkSearchController.current?.abort();
+      parkSearchController.current = null;
+      setParkSuggestions(null);
+      setParkSearchFailure(null);
+      setParkSearching(false);
+    }
     setAnswers((current) => ({ ...current, [field]: value }));
+  };
+
+  const searchParks = async () => {
+    if (!canSearchParks || parkBorough === null || parkSearchName.length === 0 || parkSearchTooLong)
+      return;
+
+    const request = ++parkSearchRequest.current;
+    parkSearchController.current?.abort();
+    const controller = new AbortController();
+    parkSearchController.current = controller;
+    setParkSearching(true);
+    setParkSearchFailure(null);
+    setParkSuggestions(null);
+
+    const result = await discoverParks(apiBaseUrl, parkBorough, parkSearchName, controller.signal);
+    if (parkSearchRequest.current !== request) return;
+
+    parkSearchController.current = null;
+    setParkSearching(false);
+    if (result.ok) {
+      setParkSuggestions(result.spaces);
+      return;
+    }
+    setParkSearchFailure(
+      `${result.message} You can still enter and save the location name manually.`,
+    );
   };
 
   const submission = (): Record<string, IntakeValue> => {
@@ -243,9 +306,12 @@ export function IntakeForm({
 
   if (loading) {
     return (
-      <p className="intake__lede" role="status">
-        Loading your event…
-      </p>
+      <div className="intake">
+        <p className="pe-eyebrow">PopEngine · Survey</p>
+        <p className="intake__lede" role="status">
+          Loading your event…
+        </p>
+      </div>
     );
   }
 
@@ -253,9 +319,13 @@ export function IntakeForm({
   // second event rather than edit the one asked for.
   if (loadFailure !== null) {
     return (
-      <p className="intake__error" role="alert">
-        {loadFailure}
-      </p>
+      <div className="intake">
+        <p className="pe-eyebrow">PopEngine · Survey</p>
+        <h1>Edit your event</h1>
+        <p className="intake__error" role="alert">
+          {loadFailure}
+        </p>
+      </div>
     );
   }
 
@@ -267,6 +337,7 @@ export function IntakeForm({
         void save();
       }}
     >
+      <p className="pe-eyebrow">PopEngine · Survey</p>
       <h1>{eventId === undefined ? "Describe your event" : "Edit your event"}</h1>
       <p className="intake__lede">
         Answer what applies to your event. Questions appear as your answers make them relevant, and
@@ -275,13 +346,27 @@ export function IntakeForm({
       </p>
 
       {DESCRIPTIVE_QUESTIONS.map((question) => (
-        <label className="intake__question" key={question.field}>
-          <span className="intake__label">{question.label}</span>
+        <div className="intake__question" key={question.field}>
+          <span className="intake__question-head">
+            <label className="intake__label" htmlFor={`intake-${question.field}`}>
+              {question.label}
+            </label>
+            <span className="intake__tag" aria-hidden="true">
+              {question.field}
+            </span>
+          </span>
           <input
+            id={`intake-${question.field}`}
+            ref={question.field === "location_name" ? locationNameInput : undefined}
             className="intake__input"
             name={question.field}
             type={question.type}
             required={question.required}
+            aria-describedby={
+              question.field === "location_name" && canSearchParks
+                ? "intake-park-search-note"
+                : undefined
+            }
             value={String(answers[question.field] ?? "")}
             onChange={(event) => {
               const raw = event.target.value;
@@ -291,8 +376,65 @@ export function IntakeForm({
               );
             }}
           />
+          {question.field === "location_name" && canSearchParks && (
+            <div className="intake__park-search">
+              <p className="intake__note" id="intake-park-search-note">
+                Enter part of a park name to search NYC Parks, or keep typing any venue or location
+                name manually.
+              </p>
+              <button
+                className="intake__secondary"
+                type="button"
+                aria-controls="intake-park-search-results"
+                disabled={parkSearching || parkSearchName.length === 0 || parkSearchTooLong}
+                onClick={() => void searchParks()}
+              >
+                {parkSearching ? "Searching NYC Parks…" : "Search NYC Parks"}
+              </button>
+              <div id="intake-park-search-results" aria-busy={parkSearching} aria-live="polite">
+                {parkSearchFailure !== null && <p className="intake__note">{parkSearchFailure}</p>}
+                {parkSearchTooLong && (
+                  <p className="intake__note">
+                    Park searches must be 80 characters or fewer. You can still save this location
+                    name manually.
+                  </p>
+                )}
+                {parkSearching === false &&
+                  parkSearchFailure === null &&
+                  !parkSearchTooLong &&
+                  parkSuggestions === null &&
+                  parkSearchName.length > 0 && (
+                    <p className="intake__note">Search to see matching NYC park names.</p>
+                  )}
+                {parkSearching === false &&
+                  parkSearchFailure === null &&
+                  parkSuggestions?.length === 0 && (
+                    <p className="intake__note">
+                      No matching parks found. You can still save the location name manually.
+                    </p>
+                  )}
+                {parkSuggestions !== null && parkSuggestions.length > 0 && (
+                  <ul className="intake__park-results" aria-label="NYC park suggestions">
+                    {parkSuggestions.map((park) => (
+                      <li key={park.locationId}>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            answer("location_name", park.parkName);
+                            locationNameInput.current?.focus();
+                          }}
+                        >
+                          {park.parkName}
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </div>
+            </div>
+          )}
           <FieldError issue={errorFor(question.field)} />
-        </label>
+        </div>
       ))}
 
       {questions.map((question) => (
@@ -384,6 +526,33 @@ function FieldError({ issue }: { issue: IntakeIssue | undefined }) {
   );
 }
 
+function Guidance({ note }: { note: string }) {
+  const blocks: ({ text: string } | { items: string[] })[] = [];
+  for (const line of note.split("\n").filter((part) => part.length > 0)) {
+    if (line.startsWith("- ")) {
+      const previous = blocks.at(-1);
+      if (previous !== undefined && "items" in previous) previous.items.push(line.slice(2));
+      else blocks.push({ items: [line.slice(2)] });
+    } else {
+      blocks.push({ text: line });
+    }
+  }
+
+  return blocks.map((block, index) =>
+    "items" in block ? (
+      <ul className="intake__note" key={index}>
+        {block.items.map((item) => (
+          <li key={item}>{item}</li>
+        ))}
+      </ul>
+    ) : (
+      <p className="intake__note" key={index}>
+        {block.text}
+      </p>
+    ),
+  );
+}
+
 function Question({
   field,
   value,
@@ -397,8 +566,13 @@ function Question({
 }) {
   return (
     <fieldset className="intake__question">
-      <legend className="intake__label">{humanize(field.field)}</legend>
-      {field.note !== null && <p className="intake__note">{field.note}</p>}
+      <legend className="intake__question-head">
+        <span className="intake__label">{humanize(field.field)}</span>
+        <span className="intake__tag" aria-hidden="true">
+          {field.field}
+        </span>
+      </legend>
+      {field.note !== null && <Guidance note={field.note} />}
       <Control field={field} value={value} onAnswer={onAnswer} />
       <FieldError issue={issue} />
     </fieldset>

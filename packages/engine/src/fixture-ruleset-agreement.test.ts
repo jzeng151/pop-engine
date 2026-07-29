@@ -19,6 +19,7 @@
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
+import { PUBLISHED_RULES_FILE } from "./__fixtures__/published-ruleset";
 import { evaluate, parseEngineRuleset, triggerFields } from "./index";
 import { UNCONSUMED_INTAKE_FIELDS } from "./ruleset";
 import type { EventIntake, Finding, HolidayCalendar, PermitPlan } from "./types";
@@ -39,12 +40,18 @@ type PublishedRule = {
 };
 
 const publishedRuleset: { rules: PublishedRule[]; advisories: PublishedRule[] } = JSON.parse(
-  readFileSync(repoFile("rules/nyc-rules.v2.7.json"), "utf8"),
+  readFileSync(PUBLISHED_RULES_FILE, "utf8"),
 );
 
 const ruleset = parseEngineRuleset(publishedRuleset);
 const answerKey = readFileSync(repoFile("docs/test-scenario-answer-key.md"), "utf8");
 const calendar: HolidayCalendar = { id: ruleset.calendarId, holidays: [] };
+const approvedFixtureConsumers = [
+  "docs/PRD.md",
+  "docs/DESIGN.md",
+  "specs/F-101-event-intake.md",
+  "specs/F-201-permit-plan-generator.md",
+] as const;
 
 /**
  * A published rule id: uppercase segments ending in a three-digit suffix. Deliberately narrow so
@@ -584,6 +591,16 @@ const scenarioIdsIn = {
 const sorted = (ids: readonly string[]): string[] => [...new Set(ids)].sort();
 
 describe("the three artifacts name the same scenarios", () => {
+  it.each(approvedFixtureConsumers)("%s selects only fixture v7", (path) => {
+    const versions = [
+      ...readFileSync(repoFile(path), "utf8").matchAll(
+        /(?:test-scenario-answer-key\.md|Scenario fixtures)[^\n]{0,80}?\bv(\d+)\b/gi,
+      ),
+    ].map((match) => match[1]);
+    expect(versions.length, `${path} fixture pointers`).toBeGreaterThan(0);
+    expect([...new Set(versions)]).toEqual(["7"]);
+  });
+
   // Runs before anything parameterized: a disagreement here means every check below is looping
   // over the wrong set, so reporting it as its own failure is clearer than a downstream symptom.
   it("the answer key and the intake fixtures cover the same scenarios", () => {
@@ -637,6 +654,20 @@ describe("the fixture suite and the published ruleset agree", () => {
     const clock = /`today = (\d{4}-\d{2}-\d{2})`/.exec(answerKey)?.[1];
     expect(clock, "the key states its fixture clock").toBeDefined();
     expect(FIXTURE_TODAY).toBe(clock);
+  });
+
+  it("Scenario F documents exactly the material facts that branch its verdict", () => {
+    const documented = [
+      ...(sectionFor("F").match(/material branch facts: ([^.]+)\./)?.[1] ?? "").matchAll(
+        /`([^`]+)`/g,
+      ),
+    ].map((match) => match[1]);
+    expect(documented).toHaveLength(2);
+    expect(
+      planFor("F")
+        .verdictDetail.missingFacts.map((fact) => fact.field)
+        .sort(),
+    ).toEqual(documented.sort());
   });
 
   it("reads a rule id out of every scenario's expected findings", () => {
@@ -878,6 +909,69 @@ describe("the fixture suite and the published ruleset agree", () => {
     }
   });
 
+  it("gives every OFFICIAL_CONFLICT rule the note_text its conflict line renders from", () => {
+    // F-206 AC 2 requires an OFFICIAL_CONFLICT line to render BOTH readings with BOTH sources, and
+    // `findings.ts` builds that line from exactly one field:
+    //
+    //   conflictText: rule.verificationStatus === "OFFICIAL_CONFLICT" ? rule.noteText : null
+    //
+    // `noteText` is read from `output.note_text` alone (ruleset.ts). A rule whose conflict prose
+    // lives in the `notes` ARRAY instead therefore parses fine, evaluates fine, and renders a
+    // conflict badge with NOTHING in it. The criterion holds today only by luck: both published
+    // OFFICIAL_CONFLICT rules happen to carry note_text.
+    //
+    // Nothing in the suite caught this. It was measured, not guessed: flipping DOB-ASSEMBLY-001 to
+    // OFFICIAL_CONFLICT left the suite 808/808 GREEN while the rendering was broken, because every
+    // other check compares rule ids, dispositions and dates, and none reads the field the conflict
+    // line is made of. This is the ABSENT-not-disagreeing shape the rest of this file has been
+    // moved toward: it fails when a rule arrives without the field, rather than only when two
+    // artifacts state that field differently.
+    //
+    // Asserted over the whole published ruleset (`ruleset.rules` is rules followed by advisories in
+    // file order) rather than a fixture list, so a third OFFICIAL_CONFLICT rule added later is
+    // covered without anyone remembering to extend a test.
+    //
+    // Two assertions, not one, because "the field is present" and "the field carries something a
+    // reader can see" are different claims and a note_text of " " satisfies the first while
+    // producing exactly the empty badge this guard exists to prevent. They are kept separate so the
+    // failure names which of the two happened: a missing field means the prose is somewhere else
+    // (probably the notes array), a blank one means the prose was never written.
+    //
+    // Non-whitespace is the strongest claim this check can honestly make. F-206 AC 2 wants BOTH
+    // readings with BOTH sources, and no length threshold tests for that: a one-character note_text
+    // passes any minimum, and a long one can still state a single reading. Whether two readings are
+    // actually present is a reading-comprehension judgement that belongs to the verification owner,
+    // not to a character count invented here. So this asserts renderability, which is mechanical,
+    // and deliberately stops short of adequacy, which is not.
+    const conflictRules = ruleset.rules.filter(
+      (rule) => rule.verificationStatus === "OFFICIAL_CONFLICT",
+    );
+    expect(
+      conflictRules.length,
+      "the published ruleset declares at least one OFFICIAL_CONFLICT rule",
+    ).toBeGreaterThan(0);
+
+    for (const rule of conflictRules) {
+      expect(
+        rule.noteText,
+        `${rule.id} is OFFICIAL_CONFLICT but publishes no output.note_text, so findings.ts ` +
+          `computes conflictText: null and F-206's conflict line renders empty. OFFICIAL_CONFLICT ` +
+          `requires note_text because conflictText reads that field and nothing else. If this ` +
+          `rule's prose is in the output.notes array, move it into note_text rather than changing ` +
+          `the rule's verification status.`,
+      ).not.toBeNull();
+
+      expect(
+        (rule.noteText ?? "").trim().length,
+        `${rule.id} is OFFICIAL_CONFLICT and its output.note_text is present but blank (whitespace ` +
+          `only), so findings.ts computes a non-null conflictText that renders as an empty ` +
+          `conflict badge. F-206 AC 2 requires the line to state BOTH readings with BOTH sources, ` +
+          `so write that prose into note_text; a present-but-empty field is the same defect as a ` +
+          `missing one from the reader's side.`,
+      ).toBeGreaterThan(0);
+    }
+  });
+
   // ---------------------------------------------------------------------------------------------
   // The key's OUTPUTS, not just its rule ids.
   //
@@ -1015,6 +1109,8 @@ describe("the fixture suite and the published ruleset agree", () => {
         eight: 8,
         nine: 9,
         ten: 10,
+        eleven: 11,
+        twelve: 12,
       };
       const stated = new RegExp(`\\b(${Object.keys(written).join("|")}) findings\\b`).exec(
         sectionFor(scenario),
@@ -1237,7 +1333,7 @@ describe("the fixture suite and the published ruleset agree", () => {
       // was calling the same finding "Street Event Permit (Large)" on its own finding line and
       // "SAPO Street Event (Large)" on its verdict line, and the alias declared the two equivalent
       // instead of surfacing it. The key's verdict line is corrected in the same commit, because the
-      // published rule outranks the fixture (DOCUMENTATION-GOVERNANCE §27-35, and the key says so
+      // published rule outranks the fixture (DOCUMENTATION-GOVERNANCE §2 "Regulatory authority hierarchy", and the key says so
       // itself at its own line 5). Checked across all six scenarios before correcting: A is the only
       // verdict line that names a blocking finding at all, so there was no naming convention to
       // defend.
@@ -1367,12 +1463,12 @@ describe("the fixture suite and the published ruleset agree", () => {
       ),
       "outputs read out of the key per scenario",
     ).toEqual({
-      A: { findings: 5, statuses: 4, dates: 2 },
-      B: { findings: 3, statuses: 1, dates: 1 },
-      C: { findings: 4, statuses: 2, dates: 1 },
-      D: { findings: 4, statuses: 3, dates: 1 },
-      E: { findings: 8, statuses: 5, dates: 2 },
-      F: { findings: 6, statuses: 1, dates: 1 },
+      A: { findings: 6, statuses: 4, dates: 2 },
+      B: { findings: 4, statuses: 1, dates: 1 },
+      C: { findings: 5, statuses: 2, dates: 1 },
+      D: { findings: 5, statuses: 3, dates: 1 },
+      E: { findings: 9, statuses: 5, dates: 2 },
+      F: { findings: 7, statuses: 1, dates: 1 },
     });
     for (const scenario of scenarios) {
       // Throws rather than returning a default if the verdict line stops matching.

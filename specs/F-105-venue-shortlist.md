@@ -31,7 +31,7 @@ An organizer can keep a private list of candidate venues and deliberately copy s
 ## Inputs, Outputs, State, Validation, and Errors
 
 - Inputs are organizer-entered candidate facts; outputs are workspace-owned candidates and an explicit prefill proposal.
-- Candidate state is active → archived; applying a candidate creates/edits an event revision but never mutates the candidate or auto-submits intake.
+- Candidate state is active → archived; applying a candidate creates or edits the mutable event draft but never mutates the candidate or auto-submits intake.
 - Missing or incompatible candidate fields remain unanswered in F-101; free-text notes never enter engine inputs.
 - Missing or unresolved material data stays visibly unset, unknown, pending, or failed as appropriate; it never becomes a successful or complete result.
 - Invalid input produces a field or action-specific error without partial mutation. Retriable external failures preserve the user's confirmed state and expose a safe retry.
@@ -59,7 +59,7 @@ Exact HTTP, JSON Schema, migration, job, and provider shapes belong in their rev
 1. **F105-AC-01:** An organizer can create, update, archive, and list only their workspace's venue candidates.
 2. **F105-AC-02:** Applying a candidate previews and changes only the approved F-101 field mapping after confirmation.
 3. **F105-AC-03:** Missing, unknown, or incompatible facts remain unanswered and cannot be inferred from notes or tags.
-4. **F105-AC-04:** Prefill creates a normal event revision, marks prior plans stale, and requires normal intake submission/evaluation.
+4. **F105-AC-04:** Prefill updates the mutable event draft; normal intake submission creates the immutable revision, marks prior plans stale, and triggers normal evaluation.
 5. **F105-AC-05:** No surface claims availability, price, suitability, regulatory approval, or marketplace status.
 
 ## Fixtures and Verification

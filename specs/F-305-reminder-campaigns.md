@@ -23,14 +23,14 @@ An organizer can schedule consent-eligible RSVP reminders at T-7, T-1, and day-o
 
 ## Dependencies and Baseline
 
-- F-302 RSVPs, F-203 messaging plumbing, F-403 consent, and the F-701/F-702/F-703 gate.
+- F-302 RSVPs, F-203 messaging plumbing, F-403 consent, approved Event Revisions, and the F-701/F-702/F-703 gate.
 - Approved job/outbox, consent, timezone, provider, and template contracts.
 - Baseline at draft time: PRD, Roadmap, Design, and Phase 0–1.5 Architecture approved 2026-07-22; `ARCHITECTURE-FUTURE.md` approved as a planning target 2026-07-25; NYC ruleset `nyc.v2.7`, rules schema `popengine-rules/v2`, and scenario fixtures v5 where regulatory output is consumed.
 - The approval PR must re-pin any baseline version that changes before approval. A proposed or superseded input blocks implementation.
 
 ## Inputs, Outputs, State, Validation, and Errors
 
-- Inputs are event, channel, approved template content, and one Roadmap offset; outputs are a recipient snapshot plus message jobs/attempts.
+- Inputs are an exact event revision, channel, approved template content, and one Roadmap offset; outputs are a recipient snapshot plus message jobs/attempts pinned to that revision.
 - Campaign state is draft → scheduled → sending → completed, partially failed, cancelled, or failed; cancellation prevents unclaimed sends.
 - Eligibility is rechecked immediately before provider delivery so later opt-out/suppression wins over the schedule snapshot.
 - Missing or unresolved material data stays visibly unset, unknown, pending, or failed as appropriate; it never becomes a successful or complete result.
@@ -56,7 +56,7 @@ Exact HTTP, JSON Schema, migration, job, and provider shapes belong in their rev
 
 ## Acceptance Criteria
 
-1. **F305-AC-01:** T-7, T-1, and day-of schedules resolve in the event timezone and reject a send time already invalid under the approved immediate-send policy.
+1. **F305-AC-01:** T-7, T-1, and day-of schedules resolve from the pinned event revision in the event timezone and reject a send time already invalid under the approved immediate-send policy; when a new revision changes the event date, one transaction cancels unclaimed old jobs and schedules their replacements while preserving sent attempts and history.
 2. **F305-AC-02:** Only RSVP contacts with the required channel consent and no active suppression receive a job.
 3. **F305-AC-03:** A consent withdrawal or suppression after scheduling prevents delivery when eligibility is rechecked.
 4. **F305-AC-04:** Retries, worker crashes, and duplicate claims do not create more than one accepted provider delivery per recipient/campaign/channel.

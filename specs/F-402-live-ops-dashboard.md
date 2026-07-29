@@ -1,6 +1,6 @@
 # F-402 · Live Ops Dashboard (STRETCH)
 
-**Status:** APPROVED (2026-07-25) · **Reviewer/approver:** product owner + affected lane owners via the approval PR · **Owner:** see Lane below · see `docs/BASELINE.md`.
+**Status:** APPROVED (2026-07-25) · **Reviewer/approver:** product owner + affected lane owners via the approval PR · **Owner:** see Lane below · see `docs/BASELINE.md`. · I/O amended 2026-07-27: stats payload adds `checkins_registered` and `checkins_walk_in` so the dashboard can show the registered vs walk-in split F-302 Acceptance Criterion 4 assigns here; product-owner approved in the implementing PR.
 **Phase:** 1.5 (second in retention order) · **Lane:** Dev 4 (parallel Track B; core blockers outrank it) · **Depends on:** F-401
 
 ## User Story
@@ -9,8 +9,8 @@ As an organizer during the event, I watch check-in counts climb against my capac
 
 ## Inputs / Outputs
 
-- `GET /api/events/:id/stats` → `{checkins_total, rsvps_total, capacity: number | null, checkins_last_10min}`; `capacity` is the optional confirmed `events.capacity`, and the endpoint is polled every ~5 seconds (no websockets in MVP).
-- Dashboard page: count, capacity gauge, RSVP-vs-checked-in comparison.
+- `GET /api/events/:id/stats` → `{checkins_total, checkins_registered, checkins_walk_in, rsvps_total, capacity: number | null, checkins_last_10min}`; `capacity` is the optional confirmed `events.capacity`; `checkins_registered` / `checkins_walk_in` split on whether the check-in row has an `rsvp_id` (F-302 AC 4); and the endpoint is polled every ~5 seconds (no websockets in MVP).
+- Dashboard page: count, capacity gauge, RSVP-vs-checked-in comparison, registered vs walk-in split.
 
 ## Acceptance Criteria
 

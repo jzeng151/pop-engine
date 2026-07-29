@@ -103,7 +103,7 @@ These are the items where verification is likely to _change_ the rules file, not
 
 ## Round 2 — 2026-07-22 (verification of the external rules-v1 critique)
 
-A second fetch-confirmed pass run to verify the external (Codex) assessment of ruleset v1. Same method and caveats as Round 1. These findings are the evidence basis for `rules/nyc-rules.v2.7.json`.
+A second fetch-confirmed pass run to verify the external (Codex) assessment of ruleset v1. Same method and caveats as Round 1. These findings are the evidence basis for `rules/nyc-rules.v2.8.json`.
 
 ### Confirmed (quote on file, URL fetched)
 
@@ -217,17 +217,17 @@ A second fetch-confirmed pass run to verify the external (Codex) assessment of r
 
 ## Round 5 — 2026-07-26 (does a published agency closure stop that agency's filing counter? DOB and SLA — SPEC-CONFLICT #130)
 
-**Purpose:** `OPEN-QUESTIONS.md` §2 item R-10 (holiday-calendar source for `us-ny-business-days@2026`), and the prior question R-10 turns on — whether any published source defines "business day" for a DOB or SLA filing lead. Recorded so the reasoning in `apps/api/src/calendar.ts` rests on a dossier entry rather than on a doc comment alone. **Nothing here is a verification and nothing is promoted.** `PUBLISHED_HOLIDAY_CALENDARS` stays empty, the three business-day rules keep rendering NOT_CALCULABLE, and no holiday date is published by this round.
+**Purpose:** `OPEN-QUESTIONS.md` §2 item R-10 (holiday-calendar source for `us-ny-business-days@2026`), and the prior question R-10 turns on — whether any published source defines "business day" for a DOB or SLA filing lead. Recorded so the reasoning in `apps/api/src/calendar.ts` rests on a dossier entry rather than on a doc comment alone. **Nothing here is a verification and nothing is promoted.** `PUBLISHED_HOLIDAY_CALENDARS` stays empty, the four business-day rules keep rendering NOT_CALCULABLE, and no holiday date is published by this round.
 
 **Note on a gap this closes.** Neither pass below was in this dossier before 2026-07-26, though R-10 has been in scope since Round 1: the research lived only in the `calendar.ts` doc comment across PR #129 (`d692e24`, `8a5bd4a`, `44e25b8`) and PR #133. That was the pre-existing state, not something either PR introduced, and this entry is where it stops being true.
 
-**The question, unchanged since Round 4's successor pass:** does an agency's published closure stop that agency's _filing_ counter? Every candidate holiday list depends on it, and no source located in either pass answers it.
+**The question, unchanged since Round 4's successor pass:** does an agency's published closure stop that agency's _filing_ counter? Every candidate holiday list depends on it. Pass A compared staff schedules and statutes; it did not fetch a DOB or SLA closure source. Pass B assessed DOB's TUP path against a DOB closure source. For SLA's One-Day Alcohol Event and Catering Permit paths, Pass B examined permit and statutory-holiday sources but no SLA-published closure source. Neither pass assessed DOB's separate TPA path.
 
-**Outcome: NOT PUBLISHED, for both DOB and SLA, reached independently twice.**
+**Outcome:** DOB TUP — NOT PUBLISHED from the Pass B source set, fetched below. Pass A establishes only the staff-schedule/statute gap and is not an independent DOB-closure assessment. SLA statutory-holiday sources — no counter connection published; SLA agency-closure question — NOT ASSESSED. DOB TPA — NOT ASSESSED.
 
 **Pass A** (PR #129) — the city Office of Payroll Administration holiday list, the state Civil Service pass-day treatment, DCAS PSB 440-2, the federal OPM schedule, General Construction Law §24 and §25-a, and Public Officers Law §62. Result: staff-holiday divergence established; the filing-counter link not established. Two leads left open (GCL §25-a, POL §62) and recorded as leads in `calendar.ts`, not as answers.
 
-**Pass B** (2026-07-26, this round) — an independent pass over the DOB TUP page, the DOB closure calendar, ABC Law §97 and §98, and 9 NYCRR Part 29. Same result: NOT PUBLISHED for both agencies. **Auditing caveat, stated because it bounds what this pass is worth:** pass B's own retrievals were reported to this round, not re-fetched here, and no quoted text or retrieval metadata was carried over for the closure calendar, ABC §97/§98 or 9 NYCRR Part 29. Those four are therefore an _uncorroborated concurring result_, not fetched evidence on file. Anyone promoting anything on the strength of pass B must fetch them first. They are named rather than omitted so that whoever retrieves them knows where to start, but under this dossier's own method rule above — "unfetched links were excluded" — they are not eligible to be cited as evidence, and this entry does not cite them as such. Pass B also treated POL §62 as a general lead; `calendar.ts` keeps the narrower statement, that §62 reaches state and county offices but not DOB, a city agency.
+**Pass B** (2026-07-26, this round) — a pass over the DOB TUP page, the DOB closure calendar, ABC Law §97 and §98, and 9 NYCRR Part 29. DOB TUP result: NOT PUBLISHED. For SLA, the pass examined permit and statutory sources but no SLA-published closure source, so it did not assess the agency-closure question. **Auditing caveat, stated because it bounds what this pass is worth:** pass B's own retrievals were reported to this round, not re-fetched here, and no quoted text or retrieval metadata was carried over for the closure calendar, ABC §97/§98 or 9 NYCRR Part 29. Those four are therefore an _uncorroborated reported result_, not fetched evidence on file. Anyone promoting anything on the strength of pass B must fetch them first. They are named rather than omitted so that whoever retrieves them knows where to start, but under this dossier's own method rule above — "unfetched links were excluded" — they are not eligible to be cited as evidence, and this entry does not cite them as such. Pass B also treated POL §62 as a general lead; `calendar.ts` keeps the narrower statement, that §62 reaches state and county offices but not DOB, a city agency.
 
 **Fetched first-hand in this round (quote on file, URL retrieved 2026-07-26 with a browser user-agent):**
 
@@ -256,7 +256,111 @@ The checklist's text extracts cleanly (2,141 characters, not a scanned image) an
 
 **Candidate assessment (NOT ADDRESS, for triage only):** none of the three Chapter 33 sections addresses the TUP filing lead. Each governs a different notification, each is counted in clock hours rather than business days, and the TUP materials incorporate none of them. Chapter 33 uses "business day" in all three rules and never defines it, so it does not close the definitional gap either. **What the omission means is not established:** no located source speaks to whether the TUP silence was considered or simply never addressed, and the clock-hour framing of all three analogues is a complete innocent explanation on its own. An earlier draft of the `calendar.ts` comment called the omission a "deliberate silence"; that inferred agency intent from absent text and was withdrawn in review of PR #133. What the evidence does establish is narrower and still useful: DOB has a published practice of writing such rules, so the TUP omission is not explained by DOB lacking a mechanism for one.
 
-**What would unblock publication**, unchanged by this round: a source establishing, per agency, that that agency's published closure stops that agency's filing counter. Not a better list of dates.
+### Follow-up — 2026-07-27 (named leads and Pass B retrievals)
+
+**Question:** for a filing lead counted in business days, does a given agency's published closure stop that agency's filing counter? DOB and SLA are separate. This follow-up assesses DOB's 15-business-day TUP path against a fetched DOB closure source. For SLA's 15-business-day One-Day Alcohol Event and Catering Permit paths, it fetches permit and statutory-holiday sources but no SLA-published closure source. It does not assess DOB-ASSEMBLY-001's separate 10-business-day TPA path and did not collect or assess another holiday-date list.
+
+**Outcome:** DOB TUP — **NOT PUBLISHED**: the fetched DOB closure source is not connected to the TUP counter. SLA statutory-holiday sources — **NOT PUBLISHED**: none connects the statutory treatment to either permit counter. SLA agency-closure question — **NOT ASSESSED**: no SLA-published closure source was fetched. DOB TPA — **NOT ASSESSED**.
+
+**GCL §25-a lead — fetched 2026-07-27:**
+
+- `https://www.nysenate.gov/legislation/laws/GCN/25-A` (retrieved 2026-07-27) — the statute reaches a period "within which or after which or before which an act is authorized or required to be done" and permits the act on the next succeeding business day when that period ends on a Saturday, Sunday, or public holiday.
+- `https://www.nysenate.gov/legislation/laws/GCN/110` (retrieved 2026-07-27) — "This chapter is applicable to every statute" unless its object, context, or other provisions require a different application.
+- `https://www.nycourts.gov/Reporter/3dseries/2022/2022_22226.htm` (retrieved 2026-07-27) — in _208 W 20th St. LLC v Blanchard_, the court addressed a filing governed both by a terminal three-day filing period and by a separate requirement that service occur "at least ten and not more than seventeen days before" the appearance. The court states that the filing was timely when §25-a was applied, but dismissed because the petitioner "did not strictly comply with the requirements of RPAPL 733 (1)." The opinion also describes the First Department's _Berkeley_ result: §25-a made the terminal filing timely, but did not cure the resulting short minimum-notice period.
+- `https://www.nycourts.gov/Reporter/3dseries/2025/2025_25084.htm` (retrieved 2026-07-27) — in _Matter of AMH Resources Corp v French_, a later court considering the same backward-counted notice scheme found that "service of the notice and petition was effected at least 10 days before" the return date; it treated the later affidavit filing as a non-prejudicial procedural defect under CPLR 2001 and remitted the matter.
+
+**What the §25-a lead establishes:** §25-a can govern the day on which a filing act is timely even when that filing sits inside a separate backward-counted minimum-notice scheme. The fetched cases do not state that a holiday or agency closure inside a minimum-notice period is omitted from that period's count. Neither case concerns DOB, SLA, TUP, a one-day alcohol permit, a catering permit, or a lead expressed in business days.
+
+**DOB Pass B sources — re-fetched 2026-07-27:**
+
+- `https://www.nyc.gov/site/buildings/industry/tup.page` (retrieved 2026-07-27) — "email the completed form ... no later than 15 business days prior" to construction of the temporary structure or commencement of the temporary use. The page does not define "business day" or mention the closure page.
+- `https://www.nyc.gov/site/buildings/dob/holidays-office-closings.page` (retrieved 2026-07-27) — "The Department of Buildings will be closed on the following dates." The page does not mention TUP, filing deadlines, or business-day computation.
+
+**DOB result:** the TUP page establishes the filing lead and the closure page establishes that DOB closes. Neither source connects the closure page to the TUP counter. The §25-a sources above establish a rule for a terminal filing day in periods governed by statute; they do not state that DOB's published closures are excluded throughout the TUP lead. **NOT PUBLISHED.**
+
+**SLA permit and statutory-holiday sources — re-fetched 2026-07-27:**
+
+- `https://sla.ny.gov/permits-available-online` (retrieved 2026-07-27) — "The application for a One-Day Alcohol Event Permit must be received ... a minimum of 15 business days prior to the event." The page states the same minimum for a Catering Permit. It does not define "business day", identify a holiday calendar, or state a closure rule.
+- `https://www.nysenate.gov/legislation/laws/PBO/62` (retrieved 2026-07-27) — for state offices, "Holidays and Saturdays shall be considered as Sunday for all purposes relating to the transaction of business". The only express extension in §62 is for a last filing or performance day that expires on Saturday. The section does not mention SLA, its permits, a backward-counted lead, or an agency-published closure that is not otherwise a holiday under law.
+- `https://www.nysenate.gov/legislation/laws/ABC/97` (retrieved 2026-07-27) — §97 authorizes SLA to issue a temporary permit, "effective for a period not to exceed twenty-four consecutive hours". It does not state the 15-business-day filing lead or a closure rule.
+- `https://www.nysenate.gov/legislation/laws/ABC/98` (retrieved 2026-07-27) — §98 authorizes a caterer's permit "effective for a period not to exceed twenty-four consecutive hours". It does not state the 15-business-day filing lead or a closure rule.
+- `https://www.law.cornell.edu/regulations/new-york/title-9/subtitle-B/chapter-I/subchapter-A/part-29` (retrieved 2026-07-27) — the current quarterly text of 9 NYCRR Part 29 contains §§29.1–29.3: persons eligible, sale and delivery, and functions on licensed premises. Section 29.1 states, "A permit will be issued only to an on-premises liquor, wine or beer licensee"; §§29.2–29.3 govern authorized beverages, duration, delivery, and licensed-premises limits. Part 29 does not state the 15-business-day filing lead or a closure rule. The State's online NYCRR publisher at `https://govt.westlaw.com/nycrr/Browse/Home/NewYork/UnofficialNewYorkCodesRulesandRegulations?guid=I8256f7f0b72a11ddba5e846354f3a78d` exposed the same three-section table of contents to search retrieval but returned HTTP 403 to direct retrieval, so the Cornell quarterly text is the fetched section text on file.
+- `https://sla.ny.gov/system/files/documents/2022/12/advisory_2022-36_-_caterers_permits.pdf` (retrieved 2026-07-27) — SLA Advisory 2022-36 says, "The issuance of Caterer's Permits is covered by §98 of the ABC Law and Part 29". Its published guidance addresses eligibility, licensed premises, authorized beverages, and conditions of use; it does not state a holiday or closure rule.
+
+**SLA result:** POL §62 establishes how holidays and Saturdays are treated for transacting business in state offices. It does not define SLA's 15-business-day unit or connect that treatment to either backward count. The permit page, ABC Law §§97–98, current Part 29, and Advisory 2022-36 do not supply that connection. **NOT PUBLISHED for the statutory-holiday source set.** No SLA-published closure source was fetched, so whether an SLA-published closure stops either permit counter is **NOT ASSESSED**.
+
+**Now established:** DOB publishes a TUP filing lead and a DOB closure page; SLA publishes two 15-business-day filing leads; POL §62 governs transaction of business in state offices on holidays and Saturdays; and §25-a has been applied to a terminal filing day in a backward-counted minimum-notice setting without thereby supplying a general rule that internal holidays are removed from the minimum period.
+
+**Not established:** the contents of either agency's filing calendar; a definition of "business day" for any of the three examined rules; that a DOB closure stops the DOB TUP counter; that an SLA closure stops either SLA permit counter; or that an agency's closure list supplies the holidays to which §25-a or POL §62 applies. No SLA-published closure source was fetched. This follow-up also does not establish whether a DOB closure stops DOB-ASSEMBLY-001's separate TPA counter. No rule, calendar, verification status, or spec is promoted by this follow-up.
+
+**What would unblock DOB TUP**, unchanged by this round: a source establishing that DOB's published closure stops the TUP filing counter. Not a better list of dates. **What SLA still needs:** an applicable SLA-published closure source, then a source establishing its effect on the two permit counters. That would not by itself support publishing the shared calendar: DOB-ASSEMBLY-001's TPA path consumes the same calendar and remains outside this follow-up.
+
+## Round 6 — 2026-07-27 (DOB-ASSEMBLY-001 one-off FDNY fee and DOB TPA fee row)
+
+**Purpose:** resolve the two `NOT ESTABLISHED` fee questions in `DOB-ASSEMBLY-001` without changing published ruleset `nyc.v2.8`. This is an evidence-only pass. It does not change a verification status, rule, fixture, or rendered amount. All URLs below were retrieved 2026-07-27.
+
+### Question A — which Appendix A line does FDNY bill for a one-off event?
+
+**Outcome: NOT ESTABLISHED. The current rendering stands:** “FDNY's charge for a one-off event is not published as an amount — confirm with FDNY.”
+
+The current City event guide adds a useful fact but does not name an Appendix A line or dollar amount:
+
+- `https://www.nyc.gov/assets/cecm/downloads/pdf/CECM-Comprehensive-Event-Permitting-Guide-2024_final.pdf` — the FDNY table names a “Temporary Public Assembly Permit” and states “Permit fees based on occupancy.” Its instructions say: “The promoter or sponsor of the event shall make an application for a Fire Department Permit thru the FDNY public portal.” This establishes that the event promoter or sponsor applies and that FDNY describes the fee as occupancy-based. It does **not** state A03.1(4), A03.1(68), `$415`, or `$210 per hour`.
+- `https://www.nyc.gov/site/fdny/business/all-certifications/per-assemblyoccupancy2.page` — “To maintain or operate a place of assembly”; “Fee varies based on the number of occupants”; “Not to exceed 1 year.” The page does not distinguish permanent from temporary public assembly fees and states no amount.
+- `https://www.nyc.gov/assets/fdny/downloads/pdf/about/appendix-a-2022.pdf` — A03.1 says: “All such fees are per year, except when based on frequency of inspection or hourly rate, as indicated.” Item (4) states “Assembly occupancies (places of assembly)” and “Fire safety inspection/permit (frequency of inspection as required by code or rule),” with “Occupancy 75 to 149” at `$415.00`. Item (68) states “Street fairs and other public gatherings or gathering places,” with “Review of site plan (per hour)” and “Fire safety inspection (per hour)” each at `$210.00`.
+- `https://www.nyc.gov/assets/fdny/downloads/pdf/about/chapter-1-2022.pdf` — FC 105.6 states: “A permit is required to establish and operate a place of assembly. The term of such permit shall be for a period not to exceed 1 year.”
+- `https://www.nyc.gov/site/buildings/dob/project-categories-paco.page` — DOB states: “The Fire Code has operational requirements for a TPA, also referred to in the Fire Code as a public gathering.”
+
+No retrieved source says that a one-off TPA inspection or permit is billed under A03.1(4), under A03.1(68), or under both. The City guide's “based on occupancy” wording cannot be converted into A03.1(4)'s dollar amount without supplying the missing cross-reference by inference. A03.1(68) remains textually applicable to public gatherings, while DOB expressly uses that term for a TPA. The exact line and amount therefore remain unpublished.
+
+### Question B — which Table 28-112.8 row does DOB NOW bill for a TPA?
+
+**Outcome: the current operational charge is established as `$250` per TPA application; the table-label reconciliation remains NOT ESTABLISHED.** No current source retrieved in this pass says that the same filing also draws the adjacent `$130` certificate charge.
+
+Current operational sources:
+
+- `https://nyc-business.nyc.gov/nycbusiness/description/temporary-place-of-assembly-certificate-of-operation` — “The fee for a TPA is $250.” It also states: “If the event is less than 10 business days away, you must pay an extra $100 per day” and “You pay the fee online through the DOB NOW system by credit card or e-check.”
+- `https://www.nyc.gov/assets/buildings/pdf/build_pa_presentation.pdf` — under “Temporary Place of Assembly Filing Fees”: “$250 Fee for each Temporary Place of Assembly application” and “A Late Fee of $100/day is charged for each day the TPA filing fee is late.” This presentation remains linked from DOB's current PA/TPA resources page at `https://www.nyc.gov/site/buildings/industry/dob-now-build-resources-pa.page`.
+- `https://www.nyc.gov/assets/cecm/downloads/pdf/CECM-Comprehensive-Event-Permitting-Guide-2024_final.pdf` — “Applicants for a TPA pay a fee of $250. If the event is less than 10 business days away, applicants must pay an additional $100 per day. ... The fee is paid online through the DOB NOW system by credit card or e-check.” Its fee summary separately states: “Temporary Place of Assembly Certificate of Operation carries a minimum fee of $250.”
+
+The statute still uses two labels:
+
+- `https://codelibrary.amlegal.com/codes/newyorkcity/latest/NYCadmin/0-0-0-156729` — Table 28-112.8 lists “Temporary place of assembly certificate of operation” at `$130` filing and `$130` renewal, then “Temporary use letter for place of assembly” at `$250`, with the comment: “Application shall be submitted at least ten work days prior to the event; late fees shall be imposed at $100 for each day following required submission date that the application is received by the department.”
+
+No current 1 RCNY bridge was located:
+
+- `https://www.nyc.gov/assets/buildings/rules/1_RCNY_101-03.pdf` — the current ten-page fee rule contains no “place of assembly,” “temporary place,” or `TPA` entry.
+- `https://www.nyc.gov/assets/buildings/rules/1_RCNY_14-04.pdf` — “§14-04 Fees Payable to the Department of Buildings. [REPEALED] Please see Title 28 of the Administrative Code for new provisions.”
+- `https://www.nyc.gov/site/buildings/codes/oppn0298.page` is historical only. It said: “When an applicant files for a Temporary Place of Assembly Permit for a Temporary Event, the Borough office will collect a $250.00 fee.” The page is marked “RESCINDED BY BUILDINGS BULLETIN 2017-007.”
+- `https://www.nyc.gov/assets/buildings/bldgs_bulletins/bb_2017-007.pdf` says OPPN 2/98 was among notices “no longer applicable under any Code” and that rescinded documents “will not be applicable to any projects after the issuance date of this Bulletin.”
+
+The operational question is therefore answered only to the amount DOB currently publishes and describes as the TPA application fee: `$250`, plus the published late fee when applicable. The retrieved sources do not name the Table 28-112.8 row DOB NOW maps that payment to, and none expressly says whether the `$130` certificate row can never be charged separately. Do not rewrite the statute's labels or claim that a rule reconciles them.
+
+### Future ruleset follow-up flag — not included in v2.9
+
+`DOB-ASSEMBLY-001.output.deadline.qualification` currently cites Table 28-112.8's “at least ten work days prior to the event” comment as one source for the ten-day unit. That comment is on the “Temporary use letter for place of assembly” row, not the “Temporary place of assembly certificate of operation” row. The current operational pages independently publish ten business days for a TPA, but the table attribution should not be presented as belonging to the TPA certificate row unless a source reconciles the labels. Correcting that attribution requires a new immutable rules publication after `nyc.v2.9`; it is deliberately not attempted here.
+
+## Round 7 — 2026-07-29 (shared issue #178 publication)
+
+**Approval record, not a new research pass.** The product owner approved the nine-gate product set, meaning boundary, near-empty predicate/copy, and Scenario B correction. In decision gate `msg_68b1f57ec560`, the same owner separately approved the exact source/status/copy contract as verification owner and rules reviewer, and the exact triggers as verification owner and engine owner. This records one person's approvals in four named capacities; it does not imply independent reviewers.
+
+The same immutable publication carries F-110's approved assembly-document registry replacement and issue #194's approved removal of the organizer-claimed food exception from active intake. Those registry deltas change no rule, trigger, finding, deadline, branch, verdict, source, or verification status; the two F-110 fields are confirmation-only and support no temporary-filing inference, and the removed food claim remains inert in historical replay.
+
+The approved publication reuses only source URLs already published by nyc.v2.8 and the evidence sections named below. It adds no agency, deadline, fee, portal, threshold, exception, or new source:
+
+| Rule | Status | Evidence |
+| --- | --- | --- |
+| CONF-NO-FOOD-001 | SOURCE_CONFIRMED | VS §3 Round 1 + Round2 #9 |
+| CONF-NO-SALES-001 | OFFICIAL_CONFLICT | VS §8 Round 1 + Round2 #6/#12 |
+| CONF-NO-AMPLIFIED-SOUND-001 | SOURCE_CONFIRMED | VS §9-10 Round 1 + Round2 unresolved list |
+| CONF-NO-STRUCTURE-001 | SOURCE_CONFIRMED | VS §1 Round 1 + Round2 #7 |
+| CONF-NO-FLAME-001 | SOURCE_CONFIRMED | VS §2 Round 1 |
+| CONF-NO-GENERATOR-001 | SOURCE_CONFIRMED | VS Round2 #10 |
+| CONF-NO-BATTERY-001 | SOURCE_CONFIRMED | VS Round2 #10 |
+| CONF-NO-ALCOHOL-001 | SOURCE_CONFIRMED | VS §5 Round 1 + Round2 #6/#11 + Round3 unit re-verification |
+| CONF-NO-BLOCK-PARTY-RIDE-001 | SOURCE_CONFIRMED | VS §4 Round 1 |
+
+Organizer-visible text and the complete official URL snapshots are published verbatim in `rules/nyc-rules.v2.9.json`; that immutable artifact is the authoritative copy.
 
 ## Suggested Dev 4 Workflow
 

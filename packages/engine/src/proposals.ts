@@ -1,11 +1,23 @@
 // ─────────────────────────────────────────────────────────────────────────────
-// PROPOSAL — NOT YET APPROVED. Needs verification owner + engine owner sign-off
-// (DOCUMENTATION-GOVERNANCE §6, "rule trigger, dedupe, branch, deadline, or formula
-// semantics"). Everything in this file is a contract that F-201 needs and that no
-// approved artifact states. It is collected here, in one place, on purpose: when the
-// team decides, the decision moves into the ruleset's `engine_conventions` and this
-// file shrinks or disappears. Nothing here invents a regulatory fact — every value is
-// either a vocabulary mapping or a quotation of published rule text.
+// PROPOSAL — PARTLY APPROVED. §7 is approved (2026-07-27, see its own block for the
+// scope and the capacity); §1, §2, §3 and §6 are NOT, and still need verification
+// owner plus engine owner sign-off (DOCUMENTATION-GOVERNANCE §6, "rule trigger,
+// dedupe, branch, deadline, or formula semantics").
+//
+// The banner is per-section rather than per-file on purpose. It used to read NOT YET
+// APPROVED for everything, and replacing it wholesale when one contract was decided
+// would have approved the other four by implication, which nobody decided. A reader
+// who needs to know whether a given contract is settled has to be able to get that
+// answer for THAT contract.
+//
+// Everything in this file is a contract that F-201 needs and that no approved artifact
+// states. It is collected here, in one place, on purpose: when the team decides, the
+// decision moves into the ruleset's `engine_conventions` and this file shrinks or
+// disappears. That move is PENDING rather than forgotten for §7. The issue #107 v2.9
+// publication deliberately did not carry it: moving the contract requires an engine
+// change of its own, as `docs/BASELINE.md` records.
+// Nothing here invents a regulatory fact — every value is either a vocabulary mapping
+// or a quotation of published rule text.
 //
 // Recorded on issue #4 (comment "Two undecided contracts F-201 will hit") for §1 and §2.
 // §3, §6 and §7 were found while deriving the six scenarios and are new. §4 and §5 are gone:
@@ -70,7 +82,35 @@ export const UNKNOWN_TRIGGER_DISPOSITION: Disposition = "may_be_required";
 export const MISSED_MAY_BE_REQUIRED_IS_CONDITIONAL = true;
 
 /**
- * §7 — Dependency sequencing bindings.
+ * §7 — Dependency sequencing bindings. APPROVED 2026-07-27.
+ *
+ * WHO APPROVED IT, stated plainly rather than implied. Governance §6 puts this class — "rule
+ * trigger, dedupe, branch, deadline, or formula semantics" — with the verification owner plus the
+ * engine owner. The product owner currently holds both lanes and granted it in that capacity. That
+ * is one person approving, not two independent sign-offs, and the record says so because a reader
+ * counting signatures would otherwise count two.
+ *
+ * WHAT THE APPROVAL COVERS, and the reservation is part of it rather than a separate question
+ * left open. Two of the three things this binding does are uncontroversial. The sequencing
+ * RELATIONSHIP is already published regulatory content: NYPD-SOUND-PARKS-DEP-001 states in its own
+ * `note_text` that Parks controls amplified-sound permission through its event review and that it
+ * should be obtained before pursuing the NYPD permit, SOURCE_CONFIRMED with a source URL. And the
+ * DATES are not invented here either — every one comes from PARKS-EVENT-001's own published
+ * `processing_range_days`, so this file contributes no number.
+ *
+ * The third thing is an interpretation, and it is the part being approved rather than merely
+ * recorded. The published prose says "Parks amplified-sound permission ... through its event
+ * review"; treating that as PARKS-EVENT-001, the Special Event Permit, is a reading of which Parks
+ * instrument is meant. It is load-bearing, because it is what imports that rule's 21 to 30 day
+ * processing range into a date an organizer is shown. A different reading of the instrument would
+ * produce a different date. That is precisely why this needed §6 approval and not an implementer's
+ * judgement, and it is what was approved.
+ *
+ * WHAT THIS APPROVAL REGULARISES RATHER THAN AUTHORISES: `findings.ts` already consumes this
+ * binding on main to populate `permit_plan_items.apply_after_date`, which F-202 renders as the
+ * start date on a checklist row. The interpretation above has therefore been reaching organizers
+ * since F-201. The approval catches the record up with what shipped; it does not switch anything
+ * on.
  *
  * NYPD-SOUND-PARKS-DEP-001 states in prose that Parks amplified-sound permission precedes the NYPD
  * sound permit, but nothing machine-readable says which finding it gates or which one it waits on,

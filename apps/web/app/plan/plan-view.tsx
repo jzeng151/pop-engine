@@ -10,6 +10,7 @@ import {
   type PlanResult,
   type RulesMetaResponse,
 } from "./plan-api";
+import { InsurancePanel } from "./insurance-panel";
 import { PlanLine } from "./plan-line";
 import { compareToPinned, SnapshotBanner } from "./snapshot-banner";
 import { AT_RISK_BUFFER_NOTE, verdictCopy } from "./verdict-copy";
@@ -78,6 +79,11 @@ const eventStateFrom = (result: LoadResult): EventState => {
   if (event === null) return { status: "unavailable" };
   return { status: "found", revision: event.revision_counter };
 };
+
+const isNearEmpty = (findings: PlanResponse["findings"]): boolean =>
+  findings.every(
+    ({ disposition }) => disposition !== "required" && disposition !== "prohibited_or_ineligible",
+  );
 
 /**
  * Why regenerating this plan is refused, or null when it is safe to offer.
@@ -244,6 +250,7 @@ export function PlanView({ apiBaseUrl, eventId }: { apiBaseUrl: string; eventId:
 
   return (
     <main className="plan">
+      <p className="pe-eyebrow">PopEngine · Plan</p>
       <h1>Your permit plan</h1>
 
       {plan !== null && (
@@ -347,16 +354,17 @@ export function PlanView({ apiBaseUrl, eventId }: { apiBaseUrl: string; eventId:
             </p>
           )}
 
-          {plan.findings.length === 0 ? (
-            /* F-201 AC 4 and ARCHITECTURE both make the near-empty result first-class, in those
-               words. An empty container under a verdict reads as an evaluation that failed or was
-               dropped; the sentence is what says the evaluation ran and found nothing. (The
-               ruleset's engine_conventions phrases the same statement "from the provided facts";
-               the spec governs this feature's acceptance, so its wording is the one rendered.) */
+          {/* F-205: a dedicated card for R10/R11's insurance findings, above the line items each
+              still renders from (AC 5). Nothing at all when none of the three rules triggered
+              (AC 3) — that silence is `InsurancePanel`'s own, not a state this page decides. */}
+          <InsurancePanel findings={plan.findings} eventId={eventId} />
+
+          {isNearEmpty(plan.findings) && (
             <p className="plan__empty">
-              No new city event requirement identified from your answers.
+              No definite city event requirement identified from your answers.
             </p>
-          ) : (
+          )}
+          {plan.findings.length > 0 && (
             <div className="plan__lines">
               {plan.findings.map((finding) => (
                 <PlanLine key={finding.ruleIds.join("+")} finding={finding} />

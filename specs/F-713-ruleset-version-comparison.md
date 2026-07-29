@@ -12,7 +12,7 @@ Rules reviewers can compare two immutable ruleset versions by stable identity an
 
 **In scope**
 
-- Diff metadata/config/intake/rule/advisory/source/verification facets using `(ruleset_version, rule_id)` lineage and stable field paths.
+- Diff metadata/config/intake/rule/advisory/source/verification facets by stable `rule_id`, using an explicitly reviewed lineage mapping for renamed, split, or merged rules, and stable field paths. `(ruleset_version, rule_id)` identifies a stored rule within one version; it does not match rules across versions.
 - Show added, removed, and changed data plus linked F-712 result differences when available.
 - Export a bounded machine-readable/human-readable diff with exact checksums.
 
@@ -57,7 +57,7 @@ Exact HTTP, JSON Schema, migration, job, and provider shapes belong in their rev
 ## Acceptance Criteria
 
 1. **F713-AC-01:** The comparison verifies and displays both exact versions/checksums before diffing.
-2. **F713-AC-02:** Added, removed, and changed registry/rule/advisory/source/verification/config fields are deterministically keyed and path-addressable.
+2. **F713-AC-02:** Added, removed, and changed registry/rule/advisory/source/verification/config fields are deterministically matched across versions by stable `rule_id` or an approved lineage mapping and are path-addressable; ruleset version is not part of the cross-version match key.
 3. **F713-AC-03:** Missing, invalid, checksum-mismatched, or incompatible artifacts produce an explicit failure and never 'no changes'.
 4. **F713-AC-04:** The UI makes no evaluated/user-impact claim unless linked F-712 runs for the exact artifacts demonstrate it.
 5. **F713-AC-05:** Swapping versions preserves changed values and reverses only before/after and add/remove direction.

@@ -6,6 +6,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { cleanup, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { parseIntakeContract } from "@pop-engine/engine";
+import { publishedRulesFileIn } from "../rules-file";
 import { IntakeForm } from "./intake-form";
 
 // Component tests for the questionnaire. The contract is parsed from the published
@@ -16,7 +17,7 @@ import { IntakeForm } from "./intake-form";
 // Resolved from the repo root, which is vitest's working directory: under jsdom
 // `import.meta.url` is the document's http URL, not a file one.
 const contract = parseIntakeContract(
-  JSON.parse(readFileSync(resolve("rules/nyc-rules.v2.7.json"), "utf8")),
+  JSON.parse(readFileSync(resolve(publishedRulesFileIn("rules")), "utf8")),
 );
 
 const jsonResponse = (status: number, body: unknown): Response =>
@@ -42,13 +43,22 @@ const echoSavedEvent = (
     ...savedEvent({ ...JSON.parse(String(init.body)), ...overrides }),
   });
 
-/** The questions on screen, by their legend, in the order they are asked. */
+/** The questions on screen, by their legend label, in the order they are asked. */
 const questionsOnScreen = (): string[] =>
-  screen.getAllByRole("group").map((group) => group.querySelector("legend")?.textContent ?? "");
+  screen
+    .getAllByRole("group")
+    .map(
+      (group) =>
+        group.querySelector("legend .intake__label")?.textContent ??
+        group.querySelector("legend")?.textContent ??
+        "",
+    );
 
-const renderForm = (eventId?: string) => {
+const renderForm = (eventId?: string, activeContract = contract) => {
   const user = userEvent.setup();
-  render(<IntakeForm contract={contract} apiBaseUrl="https://api.example.com" eventId={eventId} />);
+  render(
+    <IntakeForm contract={activeContract} apiBaseUrl="https://api.example.com" eventId={eventId} />,
+  );
   return user;
 };
 
@@ -160,15 +170,85 @@ describe("conditional reveal follows the registry (spec #2)", () => {
     const user = renderForm();
     await chooseOption(user, "location_type", "private_venue");
     await fillField(user, "headcount", "74");
-    expect(questionsOnScreen()).not.toContain("Venue has assembly approval");
+    expect(questionsOnScreen()).not.toContain("Venue paco covers exact event");
+    expect(questionsOnScreen()).not.toContain("Venue fdny pa permit current for event space");
 
     await fillField(user, "headcount", "75");
-    expect(questionsOnScreen()).toContain("Venue has assembly approval");
+    expect(questionsOnScreen()).toEqual(
+      expect.arrayContaining([
+        "Venue paco covers exact event",
+        "Venue fdny pa permit current for event space",
+      ]),
+    );
 
     await chooseOption(user, "amplified_sound", "true");
     expect(questionsOnScreen()).toContain("Sound audible from public way");
     await chooseOption(user, "alcohol", "true");
     expect(questionsOnScreen()).toContain("Venue license covers event area");
+  });
+
+  it("never asks the deprecated food-exception claim", async () => {
+    const user = renderForm();
+    await chooseOption(user, "food_present", "true");
+    await chooseOption(user, "event_open_to_public", "no");
+    expect(
+      document.querySelector('input[name="food_affinity_private_exception_claimed"]'),
+    ).toBeNull();
+  });
+
+  it("renders PACO evidence guidance from the active registry instead of web copy", async () => {
+    const alternateGuidance = [
+      "Alternate published introduction.",
+      "- First active-contract check.",
+      "- Second active-contract check.",
+      "Alternate published fold guidance.",
+    ].join("\n");
+    const activeContract = {
+      ...contract,
+      fields: contract.fields.map((field) =>
+        field.field === "venue_paco_covers_exact_event"
+          ? { ...field, note: alternateGuidance }
+          : field,
+      ),
+    };
+    const user = renderForm(undefined, activeContract);
+    await chooseOption(user, "location_type", "private_venue");
+    await fillField(user, "headcount", "75");
+
+    expect(screen.getByText("Alternate published introduction.").tagName).toBe("P");
+    expect(screen.getByText("Alternate published fold guidance.").tagName).toBe("P");
+    const list = screen.getByRole("list");
+    expect(
+      within(list)
+        .getAllByRole("listitem")
+        .map((item) => item.textContent),
+    ).toEqual(["First active-contract check.", "Second active-contract check."]);
+    expect(screen.queryByText(/The documents identify the exact event space/)).toBeNull();
+  });
+
+  it("renders all published PACO checks and tri-state fold instructions", async () => {
+    const user = renderForm();
+    await chooseOption(user, "location_type", "private_venue");
+    await fillField(user, "headcount", "75");
+
+    const question = screen.getByRole("group", { name: "Venue paco covers exact event" });
+    expect(
+      within(question)
+        .getAllByRole("listitem")
+        .map((item) => item.textContent),
+    ).toEqual([
+      "Identifies the exact event space.",
+      "Authorizes the event use and assembly classification.",
+      "Allows the event's maximum occupant load.",
+      "Matches the event's seating, furnishings, and layout.",
+    ]);
+    for (const instruction of [
+      "Answer No if any checklist item has a proved mismatch.",
+      "Answer Yes if all checklist items are proved.",
+      "Answer I don't know otherwise.",
+    ]) {
+      expect(within(question).getByText(instruction).tagName).toBe("P");
+    }
   });
 
   it("renders the registry's published note as the question's help text", async () => {
@@ -216,6 +296,22 @@ describe("'I don't know' is a real answer (spec #3)", () => {
 
     await waitFor(() => expect(fetchMock).toHaveBeenCalled());
     expect(requestBody(fetchMock).event_open_to_public).toBe("unknown");
+  });
+
+  it("submits both assembly-document answers as explicit tri-states", async () => {
+    const user = renderForm();
+    await answerParkEvent(user);
+    await chooseOption(user, "location_type", "private_venue");
+    await chooseOption(user, "sound_audible_from_public_way", "unknown");
+    await chooseOption(user, "venue_paco_covers_exact_event", "unknown");
+    await chooseOption(user, "venue_fdny_pa_permit_current_for_event_space", "no");
+    await save(user);
+
+    await waitFor(() => expect(fetchMock).toHaveBeenCalled());
+    expect(requestBody(fetchMock)).toMatchObject({
+      venue_paco_covers_exact_event: "unknown",
+      venue_fdny_pa_permit_current_for_event_space: "no",
+    });
   });
 
   it("sends a blank optional quantity as null rather than zero", async () => {
@@ -300,6 +396,35 @@ describe("loading a saved event to edit it", () => {
     expect(document.querySelector('input[name="status"]')).toBeNull();
     // A park is not asked the SAPO questions, so the null column stays unanswered.
     expect(questionsOnScreen()).not.toContain("Obstructs public way");
+  });
+
+  it("reloads both assembly-document answers for editing", async () => {
+    fetchMock.mockResolvedValueOnce(
+      jsonResponse(200, {
+        event: {
+          ...storedEvent,
+          location_type: "private_venue",
+          headcount: 75,
+          venue_paco_covers_exact_event: "no",
+          venue_fdny_pa_permit_current_for_event_space: "unknown",
+        },
+        warnings: [],
+        plan_stale: false,
+      }),
+    );
+    renderForm("event-9");
+
+    await waitFor(() => expect(screen.getByText(/Saved as revision 4/)).toBeDefined());
+    expect(
+      document.querySelector<HTMLInputElement>(
+        'input[name="venue_paco_covers_exact_event"][value="no"]',
+      )?.checked,
+    ).toBe(true);
+    expect(
+      document.querySelector<HTMLInputElement>(
+        'input[name="venue_fdny_pa_permit_current_for_event_space"][value="unknown"]',
+      )?.checked,
+    ).toBe(true);
   });
 
   it("edits the loaded event rather than creating a second one", async () => {
@@ -396,6 +521,119 @@ describe("clearing an optional answer on an edit", () => {
     const edit = requestBody(fetchMock, 1);
     expect(edit).toHaveProperty("location_name", null);
     expect(edit).toHaveProperty("capacity", null);
+  });
+});
+
+describe("NYC park-name suggestions", () => {
+  const parksResponse = (parkName: string, locationId: string) =>
+    jsonResponse(200, {
+      status: "SUCCESS",
+      spaces: [
+        {
+          locationId,
+          parkName,
+          borough: "B",
+          type: "Whole Park",
+          acres: "1",
+        },
+      ],
+    });
+
+  it("appears only for a park with a borough and selects a result into location_name", async () => {
+    const user = renderForm();
+    expect(screen.queryByRole("button", { name: "Search NYC Parks" })).toBeNull();
+
+    await chooseOption(user, "borough", "brooklyn");
+    expect(screen.queryByRole("button", { name: "Search NYC Parks" })).toBeNull();
+    await chooseOption(user, "location_type", "park");
+    const search = screen.getByRole("button", { name: "Search NYC Parks" });
+    expect(search.hasAttribute("disabled")).toBe(true);
+
+    await fillField(user, "location_name", "Prospect");
+    fetchMock.mockResolvedValueOnce(parksResponse("Prospect Park", "B073-EVENTAREA-1"));
+    await user.click(search);
+
+    const suggestion = await screen.findByRole("button", { name: "Prospect Park" });
+    const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    expect(url).toBe(
+      "https://api.example.com/api/permits/nyc/discover?borough=B&name=Prospect&limit=20",
+    );
+    expect(init.credentials).toBe("include");
+
+    await user.click(suggestion);
+    expect(document.querySelector<HTMLInputElement>('input[name="location_name"]')?.value).toBe(
+      "Prospect Park",
+    );
+  });
+
+  it("ignores an older search response after the location name changes", async () => {
+    const releases: Array<(response: Response) => void> = [];
+    fetchMock.mockImplementation(
+      () =>
+        new Promise<Response>((resolve) => {
+          releases.push(resolve);
+        }),
+    );
+    const user = renderForm();
+    await chooseOption(user, "borough", "brooklyn");
+    await chooseOption(user, "location_type", "park");
+
+    await fillField(user, "location_name", "Meadow");
+    await user.click(screen.getByRole("button", { name: "Search NYC Parks" }));
+    await waitFor(() => expect(releases).toHaveLength(1));
+
+    await fillField(user, "location_name", "Lake");
+    await user.click(screen.getByRole("button", { name: "Search NYC Parks" }));
+    await waitFor(() => expect(releases).toHaveLength(2));
+    expect(((fetchMock.mock.calls[0]?.[1] as RequestInit).signal as AbortSignal).aborted).toBe(
+      true,
+    );
+
+    releases[1]?.(parksResponse("Prospect Lake", "B073-EVENTAREA-2"));
+    expect(await screen.findByRole("button", { name: "Prospect Lake" })).toBeDefined();
+
+    releases[0]?.(parksResponse("Long Meadow", "B073-EVENTAREA-3"));
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(screen.queryByRole("button", { name: "Long Meadow" })).toBeNull();
+    expect(screen.getByRole("button", { name: "Prospect Lake" })).toBeDefined();
+  });
+
+  it("keeps manual location saving available when discovery fails", async () => {
+    fetchMock.mockResolvedValueOnce(jsonResponse(502, { error: "unavailable" }));
+    const user = renderForm();
+    await answerParkEvent(user);
+    await fillField(user, "location_name", "My neighborhood green");
+    await user.click(screen.getByRole("button", { name: "Search NYC Parks" }));
+
+    expect(
+      await screen.findByText(/You can still enter and save the location name manually/),
+    ).toBeDefined();
+    await save(user);
+
+    await waitFor(() => expect(screen.getByText(/Saved as revision 1/)).toBeDefined());
+    expect(requestBody(fetchMock, 1).location_name).toBe("My neighborhood green");
+  });
+
+  it("explains the search limit without restricting manual location entry", async () => {
+    const user = renderForm();
+    await answerParkEvent(user);
+    const manualLocation = "x".repeat(81);
+    await fillField(user, "location_name", manualLocation);
+
+    expect(
+      screen.getByText(
+        "Park searches must be 80 characters or fewer. You can still save this location name manually.",
+      ),
+    ).toBeDefined();
+    expect(screen.getByRole("button", { name: "Search NYC Parks" }).hasAttribute("disabled")).toBe(
+      true,
+    );
+    expect(fetchMock).not.toHaveBeenCalled();
+
+    await save(user);
+    await waitFor(() => expect(screen.getByText(/Saved as revision 1/)).toBeDefined());
+    expect(requestBody(fetchMock).location_name).toBe(manualLocation);
   });
 });
 

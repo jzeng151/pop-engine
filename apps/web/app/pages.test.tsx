@@ -2,6 +2,7 @@
 
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { cleanup, render, screen } from "@testing-library/react";
+import { publishedRulesFileIn } from "./rules-file";
 import RootLayout, { metadata } from "./layout";
 import Home from "./page";
 import IntakePage from "./intake/page";
@@ -21,7 +22,7 @@ afterEach(() => {
 // `intakeFormProps` resolves the ruleset against the working directory, which is the
 // Next app's own directory when it runs. Vitest runs from the repo root, so the tests
 // point RULES_FILE at the same artifact the way a deployment does.
-const useRepoRuleset = () => vi.stubEnv("RULES_FILE", "rules/nyc-rules.v2.7.json");
+const useRepoRuleset = () => vi.stubEnv("RULES_FILE", publishedRulesFileIn("rules"));
 
 describe("the app shell", () => {
   it("names the product and says the demo holds synthetic data only", () => {
@@ -57,11 +58,17 @@ describe("intakeFormProps", () => {
   });
 
   it("fails loudly when the ruleset is not where it expects", async () => {
-    // With no RULES_FILE the path is resolved against the working directory, which is
-    // the Next app's own directory when it runs and the repo root here. A page that
-    // cannot read the published ruleset must not render a questionnaire at all.
+    // With no RULES_FILE the rules DIRECTORY is resolved against the working directory, which is
+    // the Next app's own directory when it runs and the repo root here. A page that cannot read
+    // the published ruleset must not render a questionnaire at all.
+    //
+    // Matched on the directory rather than on a filename. Pinning `nyc-rules.v2.8.json` here made
+    // this assertion itself a version landmine — the very thing the resolver removes — and it
+    // would have gone green on the next bump only because the message happened to still contain
+    // whatever name was hard-coded. The directory is what the page looks for now, so that is what
+    // this asserts, and it stays true across every bump.
     vi.stubEnv("RULES_FILE", undefined);
-    await expect(intakeFormProps()).rejects.toThrow(/nyc-rules\.v2\.7\.json/);
+    await expect(intakeFormProps()).rejects.toThrow(/rules/);
   });
 });
 

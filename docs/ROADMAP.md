@@ -1,6 +1,6 @@
 # PopEngine — Roadmap (Canonical)
 
-**Status:** APPROVED (2026-07-22; see `docs/BASELINE.md`).
+**Status:** APPROVED (2026-07-22; F-109 retitled "Scope-Support Classification" and its concept renamed from "coverage states" to "scope support states" 2026-07-26, product-owner approved, resolving a three-way overload of "coverage"; the five state values are unchanged; standalone `Square/POS integrations` entry dropped from Phase 4 on 2026-07-28, product-owner approved, resolving SPEC-CONFLICT #127 item 2 by the narrowing branch, no F-id's meaning changed; see `docs/BASELINE.md`).
 **Companion docs:** `PRD.md` (requirements) · `DESIGN.md` (lifecycle model, lanes, gates, demo plan, dependency graph) · `test-scenario-answer-key.md` (MVP ground truth).
 **Feature IDs:** F-xxx IDs are permanent shared vocabulary; once assigned, an ID's meaning never changes. Full ID policy in `DESIGN.md`.
 
@@ -9,7 +9,7 @@
 Prerequisites, not features:
 
 - Agree the `events` schema (the team's single integration point) — approved by all four devs before any lane codes.
-- Ratify `rules/nyc-rules.v2.7.json` (33 rules + 4 advisories: verification-owner sign-off + team approval per `BASELINE.md`); boot validation loads it.
+- Ratify `rules/nyc-rules.v2.9.json` (42 rules + 4 advisories: verification-owner sign-off + team approval per `BASELINE.md`); boot validation loads it.
 - Repo scaffold, deploy target, Twilio account + A2P registration started.
 
 ## Phase 1 — MVP Core (capstone; iron-clad, no mocks)
@@ -19,6 +19,7 @@ The permit-planning spine. Must pass all 6 answer-key scenarios; "iron-clad" is 
 **Week 1:**
 
 - **F-101 · Event Intake Questionnaire** — conditional intake mirroring the ruleset's field registry (location/obstruction, SAPO class + size/plaza level, headcount, date, audience, food, sales, sound, structures, fuel, generator/battery, alcohol/license, assembly); contradiction checks; "I don't know" on branching facts.
+- **F-110 · Assembly Document Coverage Intake** — at private venues with headcount 75+, replace the coarse assembly-approval question with explicit tri-state PACO exact-event coverage and current FDNY Public Assembly Permit confirmations; persist through reload and plan snapshots without adding a regulatory or verdict branch.
 - **F-201 · Permit Plan Generator** — rules-engine output: typed findings (permits, insurance, notifications, registrations, eligibility, prohibitions, advisories) with agencies, typed deadlines, fees, portals, citations + verification statuses; ruleset version stored per plan.
 - **F-102 · Feasibility Verdict** — backward-computed timeline; per-finding deadline statuses under a four-state verdict (FEASIBLE / FEASIBLE-AT-RISK / CONDITIONAL / INFEASIBLE); INFEASIBLE = "published deadline missed as scoped"; rescopes are full re-evaluations; unknowns propagate to CONDITIONAL.
 - **F-206 · Rules Snapshot Banner** — "Rules snapshot [version] · published [date]" in-product (never "verified as of"); per-line citations + verification status.
@@ -85,7 +86,7 @@ Worked separately from the core per `DESIGN.md` Decision 10; doubles as the fall
 
 - **F-207 · Multi-Jurisdiction Rules Architecture (activated)** — city #2 as a data import, not a rewrite. (Architecture requirement from day 1; activation is Phase 4.)
 - **F-108 · Location & Authority Resolution** — geocoding; park/plaza/precinct/community-board identification; confidence + manual correction.
-- **F-109 · Coverage-State Classification** — fully/partially supported, unsupported, ambiguous, awaiting-information states (required once intake goes open-ended via F-601).
+- **F-109 · Scope-Support Classification** — fully/partially supported, unsupported, ambiguous, awaiting-information states (required once intake goes open-ended via F-601). Retitled from "Coverage-State Classification" 2026-07-26: "coverage" named this, the per-rule `COVERAGE_GAP` verification status, and `ARCHITECTURE-FUTURE.md` §7.1's per-result completeness, with nothing distinguishing them. This is the pre-evaluation gate on the scope the organizer described; the five values are unchanged. The F-id and its meaning are unchanged, per the ID policy above.
 - **F-308 · Ticketing Integration** — integrate/export to established providers; no in-house payments.
 - **F-408 · Inventory Low-Stock Alerts** — manual counts or Square webhook (deliberately last).
 - **F-601 · Free-Text Event Intake** — description → proposed structured answers; user confirms before evaluation.
@@ -100,4 +101,14 @@ Worked separately from the core per `DESIGN.md` Decision 10; doubles as the fall
 - **F-713 · Ruleset Version Comparison** — diff two ruleset versions.
 - **F-714 · Publish & Rollback** — atomic ruleset publication; restore prior version.
 - **F-715 · Reported-Issue Queue** — users flag wrong/missing/outdated requirements.
-- Square/POS integrations.
+
+**Dropped 2026-07-28, product-owner approved (SPEC-CONFLICT #127 item 2, narrowing branch):** a
+standalone `Square/POS integrations` entry sat here with no F-id and no spec, contradicting
+`PRD.md:226`, which assigns the Square capability to F-408 and scopes it to the inventory low-stock
+webhook. `ARCHITECTURE-FUTURE.md` §9.3 is not a second source for that scope: its row places F-408
+in the generic External integrations module beside F-108, F-212 and F-308 and lists generic
+integration entities, naming neither Square, nor inventory, nor a webhook. The broader standalone POS capability is DROPPED, not deferred
+and not absorbed: F-408 keeps exactly its established meaning, Inventory Low-Stock Alerts, because
+widening it would change an assigned ID's meaning against the policy above. Reintroducing the
+broader capability is a new ID and a new product decision, not a restoration. Recorded here so the
+absence reads as a decision rather than an omission.

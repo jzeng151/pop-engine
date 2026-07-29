@@ -309,6 +309,13 @@ describe("coverage of every field this feature reads", () => {
     ]);
     // `kind`, `slackDays` and `triggeredBy` are absent by decision: nothing under app/plan reads
     // them, so they stay the engine's schema to police rather than this client's.
+    //
+    // `kind` was consumed for one release of this branch, to decide whether a null `feeDisplay`
+    // meant "not published" or "no fee at all". That split is withdrawn and the field is back out:
+    // an absent fee and an explicit `fee: null` are one value by the time a finding carries one, so
+    // no kind could distinguish them, and inferring this filing's fee from what other rules of the
+    // same kind publish is a fact about a different filing. Nothing reads `kind` now, and a field
+    // consumed by nothing does not belong on this list.
     expect(CONSUMED_FINDING_FIELDS).not.toContain("kind");
     expect(CONSUMED_FINDING_FIELDS).not.toContain("slackDays");
     expect(CONSUMED_FINDING_FIELDS).not.toContain("triggeredBy");

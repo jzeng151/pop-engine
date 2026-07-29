@@ -10,10 +10,10 @@ import type { HolidayCalendar } from "@pop-engine/engine";
  * Overclaiming feasibility is the failure this product exists to prevent, and inventing holidays
  * to fill the gap is not an option (AGENTS.md, Golden Rule 1).
  *
- * This condition is now per finding, not per plan. Only three of the published rules use
- * business-day deadlines (DOB-TENT-001, SLA-ONEDAY-001, SLA-CATERING-001); a plan that triggers
- * none of them is fully computable and is generated normally. A plan that does trigger one gets
- * that line rendered NOT_CALCULABLE with "confirm with agency" and excluded from verdict
+ * This condition is now per finding, not per plan. Four published rules use business-day
+ * deadlines (DOB-TENT-001, DOB-ASSEMBLY-001, SLA-ONEDAY-001, SLA-CATERING-001); a plan that
+ * triggers none of them is fully computable and is generated normally. A plan that does trigger
+ * one gets that line rendered NOT_CALCULABLE with "confirm with agency" and excluded from verdict
  * arithmetic — the ruleset's own treatment for a deadline the engine cannot compute
  * (engine_conventions) — rather than the whole plan being withheld. Declining to claim one date
  * tells an organizer exactly which item needs confirmation; withholding a correct plan tells them
@@ -40,11 +40,13 @@ export class MissingHolidayCalendarError extends Error {
  * If you are here to add it, read this first: the blocker is not that nobody looked up the dates.
  *
  * ONE CALENDAR ID SERVES RULES FROM TWO GOVERNMENTS, AND THEIR PUBLISHED STAFF HOLIDAY SCHEDULES
- * DIFFER. DOB-TENT-001 is a New York CITY agency; SLA-ONEDAY-001 and SLA-CATERING-001 are a New
- * York STATE agency. What was established is a divergence between three EMPLOYEE holiday schedules
- * — which days staff are off — and one statute enumerating legal holidays. Not one of the four is
- * a DOB or SLA FILING-OFFICE calendar, and no such calendar was located. Each source is labelled
- * below for what it actually is, because the labels are the whole point:
+ * DIFFER. DOB-TENT-001 and DOB-ASSEMBLY-001 are New York CITY agency rules; SLA-ONEDAY-001 and
+ * SLA-CATERING-001 are New York STATE agency rules. What was established is a divergence between
+ * three EMPLOYEE holiday schedules — which days staff are off — and one statute enumerating legal
+ * holidays. DOB also publishes an office-closings page, fetched in Round 5; it states when DOB is
+ * closed and does not mention TUP, TPA, filing deadlines, or business-day computation. No
+ * SLA-published closure source was fetched. Each source is labelled below for what it actually is,
+ * because the labels are the whole point:
  *   - Fri 2026-07-03 — on the city's PAYROLL holiday list ("07/03 - Independence Day (Observed)",
  *     nyc.gov/site/opa/my-payroll/list-of-holidays.page, Office of Payroll Administration) and on
  *     the federal EMPLOYEE schedule (opm.gov 2026, "Friday, July 03"). Not on the state's CIVIL
@@ -62,7 +64,7 @@ export class MissingHolidayCalendarError extends Error {
  *
  * WHAT FOLLOWS FROM THOSE DATES IS CONDITIONAL, and the condition is unestablished. IF an agency's
  * staff closure stops that agency's filing counter, THEN no single list is right for both
- * governments and this one calendar id cannot serve all three rules. Whether it does is precisely
+ * governments and this one calendar id cannot serve all four rules. Whether it does is precisely
  * the question the leads below are leads for, and nothing consulted here answers it. An earlier
  * draft of this comment said the closure calendars "provably differ" and that "any single list is
  * wrong for one of them": the dates are real evidence and they stand, but the regulatory
@@ -75,9 +77,9 @@ export class MissingHolidayCalendarError extends Error {
  * unestablished premise is this same gap seen from the other side. GCL §24
  * (nysenate.gov/legislation/laws/GCN/24) enumerates public holidays; it does not say an agency's
  * filing counter stops on them. The DOB Temporary Use Permit page publishes "no later than 15
- * business days prior" without defining the unit, and the ruleset defines it no further. Two
- * statutes bear on the question and NEITHER was run down; they are listed as unresolved leads
- * below rather than dismissed here. Every candidate list is therefore an inference about what a
+ * business days prior" without defining the unit, and the ruleset defines it no further. The two
+ * named statutory leads were run on 2026-07-27; neither supplied a rule removing agency closures
+ * from the assessed backward counts. Every candidate list is therefore an inference about what a
  * published closure means for a filing, not a published fact — and a comment can document an
  * inference without authorizing it. The decision not to publish stands on this paragraph.
  *
@@ -92,26 +94,28 @@ export class MissingHolidayCalendarError extends Error {
  * General CITY Law §24, a different statute with no holidays in it; landing there suggests,
  * wrongly, that the citation is bad.
  *
- * TWO UNRESOLVED LEADS. Neither was run down, and neither is excluded — they are recorded so the
- * verification owner can judge them, not so this file's reasoning can be inherited.
+ * TWO NAMED LEADS, RUN 2026-07-27. The fetched statutes and cases are quoted with retrieval metadata
+ * in docs/VERIFICATION-SOURCES.md Round 5.
  *   - GENERAL CONSTRUCTION LAW §25-a (GCN/25-A), "Public holiday, Saturday or Sunday in statutes;
  *     extension of time where performance of act is due on Saturday, Sunday or public holiday". Its
- *     scope clause reaches this shape of deadline: "When any period of time, computed from a
- *     certain day, within which or after which OR BEFORE WHICH an act is authorized or required to
- *     be done, ends on a Saturday, Sunday or a public holiday, such act may be done on the next
- *     succeeding business day". A filing lead is a period before which an act must be done, so
- *     §25-a is not excluded by its own terms. What could NOT be established is whether a lead this
- *     engine counts BACKWARD from an event date (`subtractBusinessDays`) is a period that "ends on"
- *     a day in §25-a's sense, and if it is, what the "next succeeding business day" extension does
- *     to a "no later than" filing date — moving a filing deadline later is a substantive change no
- *     source consulted here authorizes. An earlier draft of this comment stated that §25-a "never
- *     reaches the arithmetic"; that was a legal conclusion the text does not clearly support, and
- *     it is withdrawn rather than left for the next reader to inherit.
+ *     scope clause includes a period "before which" an act must be done. In 208 W 20th St. LLC v
+ *     Blanchard, §25-a made a terminal filing timely inside a separate backward-counted
+ *     minimum-notice scheme, but did not cure noncompliance with that minimum notice. The fetched
+ *     cases do not state that a holiday or agency closure inside a minimum-notice period is omitted
+ *     from its count, and none concerns a business-day lead or any rule here.
  *   - NY PUBLIC OFFICERS LAW §62 (PBO/62), "Business in public offices on public holidays":
  *     "Holidays and Saturdays shall be considered as Sunday for all purposes relating to the
- *     transaction of business in the public offices of the state". It sits closer to an SLA filing
- *     than an employee leave calendar does, and it reaches state offices and county offices — not
- *     DOB, which is a city agency, so it cannot answer the question for all three rules on its own.
+ *     transaction of business in the public offices of the state". The section does not define
+ *     SLA's business-day unit or state that every SLA-published closure is excluded from a backward
+ *     count. It does not reach DOB, which is a city agency.
+ *
+ * SCOPE OF THAT FOLLOW-UP: DOB-TENT-001 was assessed against a fetched DOB closure source. For
+ * SLA-ONEDAY-001 and SLA-CATERING-001, the permit leads and state-office holiday treatment were
+ * fetched, but no SLA-published closure source was fetched; the agency-closure question therefore
+ * remains unassessed for those paths. DOB-ASSEMBLY-001 is a fourth business-day rule using this
+ * shared calendar, but its TPA filing path was also not assessed. Nothing in the TUP result
+ * establishes what a DOB closure does to the TPA counter. Publication of this shared calendar
+ * therefore remains unsupported for those independent reasons too.
  *
  * WHAT DOB PUBLISHES ELSEWHERE, AND WHAT IT DOES NOT PUBLISH FOR TUP. This is not a third lead. The
  * two leads above are candidate authorities that might answer the question; this is not one of them,
@@ -168,26 +172,24 @@ export class MissingHolidayCalendarError extends Error {
  * would be a pattern rather than a slip. The record is more complete than it was; the argument it
  * supports is weaker than that draft claimed, and the decision below is unchanged either way.
  *
- * TWO PASSES, NOT ONE, and both are on file. A second research pass on 2026-07-26 asked the question
- * this comment records as open — does an agency's published closure stop its filing counter — and
- * reached NOT PUBLISHED for both DOB and SLA, working from the DOB TUP page, the DOB closure
- * calendar, ABC Law §97 and §98, and 9 NYCRR Part 29. Both passes are recorded in
- * docs/VERIFICATION-SOURCES.md, Round 5, which is where the evidence lives and where the limits of
- * each pass are stated: the second pass's four sources were reported rather than re-fetched, with no
- * quoted text or retrieval metadata carried over, so they are an uncorroborated concurring result
- * and not fetched evidence on file. Read as such, the conclusion rests on two independent passes
- * rather than one. That pass treated POL §62 as a general lead; the narrower statement above stands
- * — §62 reaches state and county offices, not DOB.
+ * FOLLOW-UP EVIDENCE IS ON FILE. On 2026-07-27 the named leads were run and the DOB TUP page, DOB
+ * closure page, ABC Law §97 and §98, 9 NYCRR Part 29 and SLA permit materials were fetched with
+ * quotes, URLs and retrieval dates. docs/VERIFICATION-SOURCES.md Round 5 records what each source
+ * states and does not state. The earlier reported-only Pass B remains history, not independent
+ * corroboration; the listed sources are now fetched evidence instead of relying on that report.
+ * Pass A compared staff schedules and statutes and did not fetch a DOB or SLA closure source.
  *
- * What would unblock this is not a better list of dates. It is a source establishing, per agency,
- * that the agency's published closure stops that agency's filing counter.
+ * What would unblock DOB-TENT-001 is not a better list of dates, but a source establishing that
+ * DOB's published closure stops the TUP filing counter. The SLA paths first need an applicable
+ * SLA-published closure source, then a source establishing its effect on those counters. Publishing
+ * this shared calendar also requires a supported answer for DOB-ASSEMBLY-001's separate TPA path.
  *
  * MEANWHILE, AN APPROVED CRITERION CANNOT BE MET: F-201 AC 10 requires Scenario F's business-day
  * count "against the pinned calendar" and ARCHITECTURE AD-11 requires real business-day math
- * against it, and neither happens in production while this record is empty — the line renders
- * NOT_CALCULABLE instead. That is recorded as SPEC-CONFLICT #130, which also states the resolutions
- * and their costs. Publishing this list is one of them, so publication is an EXPECTED outcome here
- * and not a regression; `plan.test.ts` notifies when it happens and says the same thing.
+ * against it, and neither happens in production while this record is empty — affected findings
+ * render NOT_CALCULABLE instead. That is recorded as SPEC-CONFLICT #130, which also states the
+ * resolutions and their costs. Publishing this list is one of them, so publication is an EXPECTED
+ * outcome here and not a regression; `plan.test.ts` notifies when it happens and says the same thing.
  */
 const PUBLISHED_HOLIDAY_CALENDARS: Readonly<Record<string, readonly string[]>> = {};
 
@@ -223,6 +225,53 @@ export function todayInJurisdiction(jurisdiction: string, now: Date = new Date()
     month: "2-digit",
     day: "2-digit",
   }).format(now);
+}
+
+/**
+ * The instant a given local hour falls on, on a published calendar day in the jurisdiction.
+ *
+ * F-203 schedules from dates, and a date is not an instant. Scheduling `latest_apply_date − 7` at
+ * UTC midnight would send the reminder at 8pm New York time on the day BEFORE the one it names,
+ * which is a day the copy does not claim. The mapping this reads is the same deployment mapping
+ * `todayInJurisdiction` uses, so the whole api agrees on which clock a calendar day belongs to.
+ *
+ * The offset is read at the naive instant and applied once. Every jurisdiction here changes offset
+ * at 2am local, so a sending hour in the working day is never the ambiguous or skipped hour a
+ * two-pass resolution exists to handle.
+ */
+export function instantAtLocalHour(jurisdiction: string, isoDate: string, hour: number): Date {
+  const timeZone = JURISDICTION_TIME_ZONES[jurisdiction];
+  if (timeZone === undefined) throw new UnmappedJurisdictionError(jurisdiction);
+  const [year, month, day] = isoDate.split("-").map(Number) as [number, number, number];
+  const naive = Date.UTC(year, month - 1, day, hour);
+  return new Date(naive - zoneOffsetMs(new Date(naive), timeZone));
+}
+
+/** How far ahead of UTC the zone is at `instant`, in milliseconds. */
+function zoneOffsetMs(instant: Date, timeZone: string): number {
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    timeZone,
+    hour12: false,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+  }).formatToParts(instant);
+  const field = (type: Intl.DateTimeFormatPartTypes): number =>
+    Number(parts.find((part) => part.type === type)?.value ?? "0");
+  // `hour` formats midnight as 24 under hour12: false; Date.UTC normalizes it to the next day,
+  // which is the same instant, so no special case is needed.
+  const asUtc = Date.UTC(
+    field("year"),
+    field("month") - 1,
+    field("day"),
+    field("hour"),
+    field("minute"),
+    field("second"),
+  );
+  return asUtc - instant.getTime();
 }
 
 /** Operational warning at boot: plans still generate, but business-day lines will not be dated. */

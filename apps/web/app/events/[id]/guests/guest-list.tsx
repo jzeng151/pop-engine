@@ -41,6 +41,7 @@ export function GuestListView({ eventId, apiBaseUrl }: GuestListProps) {
   if (failure !== null && list === null) {
     return (
       <div className="guests">
+        <p className="pe-eyebrow">PopEngine · Guests</p>
         <h1>Guest list</h1>
         <p className="guests__error" role="alert">
           {failure}
@@ -52,6 +53,7 @@ export function GuestListView({ eventId, apiBaseUrl }: GuestListProps) {
   if (list === null) {
     return (
       <div className="guests">
+        <p className="pe-eyebrow">PopEngine · Guests</p>
         <p className="guests__lede" role="status">
           Loading guest list…
         </p>
@@ -81,6 +83,7 @@ export function GuestListView({ eventId, apiBaseUrl }: GuestListProps) {
 
   return (
     <div className="guests">
+      <p className="pe-eyebrow">PopEngine · Guests</p>
       <h1>{list.event.name}</h1>
       <p className="guests__lede">Guest list · {list.event.event_date}</p>
       <p className="guests__count" aria-live="polite">
@@ -90,6 +93,8 @@ export function GuestListView({ eventId, apiBaseUrl }: GuestListProps) {
         Synthetic demo data only (AD-12). Capacity uses intake headcount. Guests RSVP from the
         published public event page.{" "}
         <a href={`/events/${eventId}/promote`}>Promote / publish</a>
+        {" · "}
+        <a href={`/events/${eventId}/dashboard`}>Live ops</a>
         {" · "}
         <a href={`/intake/${eventId}`}>Edit intake</a>
       </p>
