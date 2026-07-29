@@ -1,5 +1,10 @@
 import { GuestListView } from "./guest-list";
+import type { Metadata } from "next";
 import "./guests.css";
+
+export const metadata: Metadata = {
+  title: "Guests",
+};
 
 // Organizer guest list for F-302. Public RSVP UI lives on the published F-301 page.
 

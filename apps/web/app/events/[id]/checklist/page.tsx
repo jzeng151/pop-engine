@@ -1,5 +1,10 @@
 import { ChecklistView } from "../../../checklist/checklist-view";
+import type { Metadata } from "next";
 import "../../../checklist/checklist.css";
+
+export const metadata: Metadata = {
+  title: "Compliance checklist",
+};
 
 // The checklist route (F-202). The checklist, its updates and its uploads are all fetched from
 // the browser, because the Cloudflare Access cookie is the browser's and not this server's

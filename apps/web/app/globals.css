@@ -1,42 +1,48 @@
-/* PopEngine — Warm & Authentic (cream, earth tones, burnt orange + forest green). */
+/* PopEngine — Riso Field Guide: federal blue, signal coral, registration yellow, paper. */
 
 :root {
   /* next/font sets --font-* on <html>; fallbacks keep layout usable without them. */
-  --pe-font-display: var(--font-fraunces, "Fraunces"), Georgia, "Times New Roman", serif;
-  --pe-font-body: var(--font-nunito-sans, "Nunito Sans"), "Segoe UI", system-ui, sans-serif;
+  --pe-font-display: var(--font-barlow-condensed, "Barlow Condensed"), "Arial Narrow", sans-serif;
+  --pe-font-body: var(--font-public-sans, "Public Sans"), "Segoe UI", system-ui, sans-serif;
   --pe-font-mono: var(--font-ibm-plex-mono, "IBM Plex Mono"), ui-monospace, Menlo, monospace;
 
-  /* Cream canvas + sand depth */
-  --pe-paper: #fffdd0;
-  --pe-paper-deep: #f3e6c4;
-  --pe-ink: #3d2314;
-  --pe-steel: #7a5c45;
-  --pe-rule: #d2b48c;
-  --pe-surface: #fffef5;
-  --pe-card: #fffef8;
+  --pe-paper: #f3efe3;
+  --pe-paper-deep: #e5ddcb;
+  --pe-ink: #171815;
+  --pe-steel: #5d5b52;
+  --pe-rule: #ada898;
+  --pe-control-rule: #858077;
+  --pe-surface: #faf7ee;
+  --pe-card: #f8f4e9;
 
   /* Burnt orange as primary action/accent (legacy cyan/amber/neon slots).
      Primary and clear hover meet WCAG AA normal-text contrast (≥4.5:1) against cream labels. */
-  --pe-cyan: #b34a00;
-  --pe-cyan-wash: rgba(179, 74, 0, 0.1);
-  --pe-glow: rgba(179, 74, 0, 0.2);
-  --pe-amber: #b34a00;
-  --pe-amber-deep: #8f3a00;
-  --pe-amber-wash: #f8e4d4;
-  --pe-amber-soft: rgba(179, 74, 0, 0.16);
-  --pe-neon: #8b4513;
-  --pe-neon-wash: #f0e4d4;
+  --pe-blue: #163f8c;
+  --pe-blue-deep: #0d2d6e;
+  --pe-coral: #b72f2b;
+  --pe-yellow: #f1c735;
+  --pe-cyan: var(--pe-blue);
+  --pe-cyan-wash: rgba(22, 63, 140, 0.09);
+  --pe-glow: rgba(22, 63, 140, 0.18);
+  --pe-amber: var(--pe-coral);
+  --pe-amber-deep: #8e201e;
+  --pe-amber-wash: #f3ded5;
+  --pe-amber-soft: rgba(183, 47, 43, 0.16);
+  --pe-neon: var(--pe-blue);
+  --pe-neon-wash: #e2e7f0;
 
   /* Forest green for cleared / trustworthy states */
-  --pe-clear: #1c7a1c;
-  --pe-clear-bright: #228b22;
-  --pe-rose: #9b2d1f;
-  --pe-cream-text: #fffef5;
-  --pe-divider: rgba(139, 69, 19, 0.14);
-  --pe-link-line: rgba(139, 69, 19, 0.35);
-  --pe-radius: 0.35rem;
-  --pe-border: 1.5px solid var(--pe-rule);
-  --pe-shadow: 0 8px 20px -14px rgba(139, 69, 19, 0.35);
+  --pe-clear: #23683d;
+  --pe-clear-bright: #23683d;
+  --pe-rose: var(--pe-coral);
+  --pe-cream-text: #fffdf6;
+  --pe-focus-light: var(--pe-blue);
+  --pe-focus-dark: var(--pe-yellow);
+  --pe-divider: rgba(23, 24, 21, 0.16);
+  --pe-link-line: rgba(22, 63, 140, 0.42);
+  --pe-radius: 0.15rem;
+  --pe-border: 1.5px solid var(--pe-ink);
+  --pe-shadow: 4px 4px 0 rgba(22, 63, 140, 0.16);
 
   /* Layout scale — stretch content into the cream canvas consistently */
   --pe-measure-narrow: 34rem; /* door / RSVP / check-in */
@@ -71,7 +77,7 @@ body {
   background: var(--pe-paper);
 }
 
-/* Soft cream canvas with sand wash */
+/* Printed-paper canvas with a restrained halftone texture. */
 .pe-shell {
   position: relative;
   isolation: isolate;
@@ -79,9 +85,7 @@ body {
   padding: 2rem 1.5rem 3.5rem;
   color: var(--pe-ink);
   font-family: var(--pe-font-body);
-  background:
-    radial-gradient(ellipse 80% 50% at 50% -5%, rgba(255, 254, 245, 0.9), transparent 60%),
-    linear-gradient(180deg, var(--pe-paper) 0%, var(--pe-paper-deep) 100%);
+  background: var(--pe-paper);
 }
 
 .pe-shell::before {
@@ -90,13 +94,10 @@ body {
   inset: 0;
   z-index: 0;
   pointer-events: none;
-  opacity: 0.35;
-  background-image:
-    radial-gradient(circle at 20% 30%, rgba(210, 180, 140, 0.35) 0 1px, transparent 1.5px),
-    radial-gradient(circle at 70% 60%, rgba(139, 69, 19, 0.12) 0 1px, transparent 1.5px);
-  background-size:
-    1.75rem 1.75rem,
-    2.25rem 2.25rem;
+  opacity: 0.58;
+  background-image: url("/textures/riso-paper.webp");
+  background-size: 48rem 48rem;
+  mix-blend-mode: multiply;
 }
 
 .pe-shell > * {
@@ -327,8 +328,8 @@ fieldset.intake__question > legend {
   padding: 0.7rem 0.8rem;
   font: inherit;
   font-family: var(--pe-font-mono);
-  font-size: 0.95rem;
-  border: 1.5px solid var(--pe-rule);
+  font-size: 1rem;
+  border: 1.5px solid var(--pe-control-rule);
   border-radius: var(--pe-radius);
   min-height: 2.85rem;
   background: var(--pe-surface);
@@ -431,7 +432,7 @@ fieldset.intake__question > legend {
   color: var(--pe-ink);
   cursor: pointer;
   user-select: none;
-  border: 1.5px solid var(--pe-rule);
+  border: 1.5px solid var(--pe-control-rule);
   border-radius: var(--pe-radius);
   background: var(--pe-surface);
   transition:
@@ -467,7 +468,7 @@ fieldset.intake__question > legend {
   width: 1.2rem;
   height: 1.2rem;
   margin: 0;
-  border: 1.5px solid var(--pe-rule);
+  border: 1.5px solid var(--pe-control-rule);
   background: var(--pe-card);
   cursor: pointer;
   transition:
@@ -713,7 +714,6 @@ fieldset.intake__question > legend {
 }
 
 a.pe-link,
-.home a:not(.intake__submit),
 .ops__links a,
 .promote a:not(.promote__button),
 .intake__saved a,
@@ -726,7 +726,6 @@ a.pe-link,
   border-bottom: 1px solid var(--pe-link-line);
 }
 a.pe-link:hover,
-.home a:not(.intake__submit):hover,
 .ops__links a:hover,
 .promote a:not(.promote__button):hover,
 .intake__saved a:hover,
@@ -1142,15 +1141,6 @@ a.pe-link:hover,
   font-size: 0.9375rem;
 }
 
-@media (prefers-reduced-motion: reduce) {
-  .intake__submit:hover:not([disabled]),
-  .promote__button:not(.promote__secondary):hover:not([disabled]),
-  .event-page__submit:hover:not([disabled]),
-  .checkin__submit:hover:not([disabled]) {
-    transform: none;
-  }
-}
-
 /* Progressive disclosure. The control is a real button, so it is focusable and keyboard-operable
    without help from here; these rules make the state and the focus ring visible, and the marker is
    decoration that `aria-expanded` already carries for assistive technology. */
@@ -1180,7 +1170,1057 @@ a.pe-link:hover,
   font-size: 0.75em;
 }
 
+/* -------------------------------------------------------------------------- */
+/* Riso Field Guide application shell                                          */
+/* -------------------------------------------------------------------------- */
+
+::selection {
+  background: var(--pe-yellow);
+  color: var(--pe-ink);
+}
+
+a {
+  text-underline-offset: 0.18em;
+}
+
+a:focus-visible,
+button:focus-visible,
+summary:focus-visible,
+input:focus-visible,
+select:focus-visible,
+textarea:focus-visible {
+  outline: 3px solid var(--pe-focus-light);
+  outline-offset: 3px;
+}
+
+.riso-nav a:focus-visible,
+.riso-nav button:focus-visible,
+.riso-nav summary:focus-visible {
+  outline-color: var(--pe-focus-dark);
+}
+
+.pe-skip-link {
+  position: fixed;
+  top: 0.75rem;
+  left: 0.75rem;
+  z-index: 100;
+  padding: 0.65rem 0.85rem;
+  background: var(--pe-yellow);
+  color: var(--pe-ink);
+  font-weight: 800;
+  transform: translateY(-160%);
+}
+
+.pe-skip-link:focus {
+  transform: translateY(0);
+}
+
+.button {
+  display: inline-flex;
+  min-height: 2.8rem;
+  align-items: center;
+  justify-content: center;
+  width: fit-content;
+  padding: 0.68rem 1rem;
+  border: 2px solid var(--pe-ink);
+  border-radius: var(--pe-radius);
+  font-family: var(--pe-font-body);
+  font-size: 0.9rem;
+  font-weight: 800;
+  text-decoration: none;
+  box-shadow: 4px 4px 0 var(--pe-ink);
+}
+
+.button--primary {
+  background: var(--pe-coral);
+  color: var(--pe-cream-text);
+}
+
+.button--primary:hover {
+  background: var(--pe-blue);
+  color: var(--pe-cream-text);
+  transform: translate(2px, 2px);
+  box-shadow: 2px 2px 0 var(--pe-ink);
+}
+
+.riso-workspace {
+  display: grid;
+  min-height: 100dvh;
+  margin: -2rem -1.5rem -3.5rem;
+  background: var(--pe-paper);
+}
+
+.riso-nav {
+  position: relative;
+  z-index: 3;
+  color: #fffdf6;
+  background-color: var(--pe-blue);
+  background-image: url("/textures/riso-paper.webp");
+  background-size: 48rem 48rem;
+  background-blend-mode: multiply;
+  border-bottom: 3px solid var(--pe-ink);
+}
+
+.riso-nav__brand {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.riso-nav__brand a,
+.riso-nav__brand strong {
+  color: inherit;
+  font-family: var(--pe-font-display);
+  font-size: 1.75rem;
+  font-weight: 800;
+  letter-spacing: -0.025em;
+  line-height: 1;
+  text-decoration: none;
+  text-transform: uppercase;
+}
+
+.riso-nav__brand > span {
+  font-family: var(--pe-font-mono);
+  font-size: 0.68rem;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+
+.riso-nav__brand--desktop,
+.riso-nav__desktop {
+  display: none;
+}
+
+.riso-nav__mobile summary {
+  display: flex;
+  min-height: 4.75rem;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 0.9rem 1.25rem;
+  cursor: pointer;
+  list-style: none;
+}
+
+.riso-nav__mobile summary::-webkit-details-marker {
+  display: none;
+}
+
+.riso-nav__mobile summary > span:last-child {
+  padding: 0.25rem 0.5rem;
+  border: 1px solid rgba(255, 253, 246, 0.65);
+  font-family: var(--pe-font-mono);
+  font-size: 0.68rem;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.riso-nav__mobile[open] summary {
+  border-bottom: 1px solid rgba(255, 253, 246, 0.35);
+}
+
+.riso-nav__groups {
+  padding: 1rem 1.25rem 1.5rem;
+}
+
+.riso-nav__group + .riso-nav__group {
+  margin-top: 1.15rem;
+}
+
+.riso-nav__group h2 {
+  margin: 0 0 0.35rem;
+  color: var(--pe-yellow);
+  font-family: var(--pe-font-mono);
+  font-size: 0.68rem;
+  font-weight: 600;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+}
+
+.riso-nav__group ul {
+  display: grid;
+  gap: 0.14rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.riso-nav__group a,
+.riso-nav__group button {
+  display: flex;
+  width: 100%;
+  min-height: 2.75rem;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.48rem 0.62rem;
+  border: 1px solid transparent;
+  border-radius: 0;
+  color: inherit;
+  background: transparent;
+  font: inherit;
+  font-size: 0.85rem;
+  text-align: left;
+  text-decoration: none;
+}
+
+.riso-nav__link-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.65rem;
+}
+
+.riso-nav__icon {
+  width: 1.35rem;
+  height: 1.35rem;
+  flex: 0 0 auto;
+  filter: drop-shadow(1px 0 rgba(183, 47, 43, 0.45));
+}
+
+.riso-nav__group a:hover {
+  border-color: rgba(255, 253, 246, 0.55);
+  background: rgba(255, 253, 246, 0.08);
+}
+
+.riso-nav__group a[aria-current="page"] {
+  border-color: var(--pe-ink);
+  color: var(--pe-ink);
+  background: var(--pe-yellow);
+  box-shadow: 3px 3px 0 var(--pe-ink);
+  font-weight: 800;
+}
+
+.riso-nav__group button:disabled {
+  color: rgba(255, 253, 246, 0.58);
+  cursor: not-allowed;
+}
+
+.riso-nav__group--planned {
+  position: relative;
+  margin-inline: -0.65rem;
+  padding: 1rem 1.6rem 1rem 0.75rem;
+  border: 1.5px solid var(--pe-ink);
+  color: var(--pe-blue);
+  background-color: var(--pe-paper);
+  background-image: url("/textures/riso-paper.webp");
+  background-size: 30rem 30rem;
+  box-shadow:
+    4px 5px 0 var(--pe-coral),
+    -3px 8px 0 rgba(243, 239, 227, 0.72);
+  clip-path: polygon(1% 2%, 96% 0, 100% 96%, 4% 100%, 0 48%);
+  transform: rotate(-0.8deg);
+}
+
+.riso-nav__group--planned::after {
+  content: "PLANNED";
+  position: absolute;
+  top: 44%;
+  right: -1.4rem;
+  padding: 0.2rem 0.45rem;
+  border: 2px solid var(--pe-blue);
+  font-family: var(--pe-font-display);
+  font-size: 1rem;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  line-height: 1;
+  transform: rotate(90deg);
+  opacity: 0.55;
+}
+
+.riso-nav__group--planned h2 {
+  color: var(--pe-blue);
+}
+
+.riso-nav__group--planned li {
+  position: relative;
+  padding-left: 0.65rem;
+}
+
+.riso-nav__group--planned li::before {
+  content: "";
+  position: absolute;
+  top: 50%;
+  left: 0;
+  width: 0.28rem;
+  height: 0.28rem;
+  border-radius: 50%;
+  background: var(--pe-blue);
+  transform: translateY(-50%);
+}
+
+.riso-nav__group--planned button:disabled {
+  color: rgba(22, 63, 140, 0.57);
+}
+
+.riso-nav__group--planned .riso-nav__stamp {
+  display: none;
+}
+
+.riso-nav__stamp {
+  padding: 0.12rem 0.3rem;
+  border: 1px solid currentColor;
+  font-family: var(--pe-font-mono);
+  font-size: 0.68rem;
+  letter-spacing: 0.08em;
+  line-height: 1.2;
+  text-transform: uppercase;
+  transform: rotate(-2deg);
+}
+
+.riso-workspace__paper {
+  min-width: 0;
+  padding: 1.15rem 1rem 3.5rem;
+  background-color: var(--pe-paper);
+  background-image: url("/textures/riso-paper.webp");
+  background-size: 48rem 48rem;
+}
+
+.riso-masthead {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+  max-width: var(--pe-measure-xl);
+  margin: 0 auto 2.25rem;
+  padding: 0 0 0.85rem;
+  border-bottom: 2px solid var(--pe-ink);
+}
+
+.riso-masthead p {
+  margin: 0;
+}
+
+.riso-masthead__label,
+.riso-masthead__mode {
+  font-family: var(--pe-font-mono);
+  font-size: 0.68rem;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.riso-masthead__label {
+  color: var(--pe-blue);
+  font-weight: 600;
+}
+
+.riso-masthead__event {
+  margin-top: 0.12rem !important;
+  font-family: var(--pe-font-display);
+  font-size: 1.25rem;
+  font-weight: 800;
+  letter-spacing: -0.01em;
+  line-height: 1.1;
+  text-transform: uppercase;
+  text-shadow: 1px 0 0 rgba(183, 47, 43, 0.28);
+  overflow-wrap: anywhere;
+}
+
+.riso-masthead__event[data-load-state="loading"] {
+  color: var(--pe-steel);
+}
+
+.riso-masthead__event[data-load-state="unavailable"]::after {
+  content: " · name unavailable";
+  color: var(--pe-coral);
+  font-family: var(--pe-font-mono);
+  font-size: 0.68rem;
+  letter-spacing: 0.04em;
+}
+
+.riso-masthead__mode {
+  flex: 0 0 auto;
+  padding: 0.25rem 0.45rem;
+  border: 1px solid var(--pe-ink);
+  background: var(--pe-yellow);
+  color: var(--pe-ink);
+  font-weight: 600;
+  transform: rotate(1deg);
+}
+
+/* Organizer overview */
+.riso-overview {
+  max-width: var(--pe-measure-xl);
+  margin: 0 auto;
+}
+
+.riso-overview__intro {
+  display: grid;
+  gap: 1rem;
+  padding-bottom: 2.5rem;
+}
+
+.riso-overview__intro h1,
+.riso-cover h1 {
+  font-family: var(--pe-font-display);
+  font-size: clamp(3.5rem, 10vw, 7.5rem);
+  font-weight: 800;
+  letter-spacing: -0.045em;
+  line-height: 0.83;
+  text-transform: uppercase;
+  text-shadow:
+    1px 0 0 rgba(183, 47, 43, 0.38),
+    -1px 1px 0 rgba(22, 63, 140, 0.16);
+}
+
+.riso-overview__intro p {
+  max-width: 42rem;
+  margin: 0;
+  font-size: clamp(1.05rem, 2.4vw, 1.35rem);
+  line-height: 1.45;
+}
+
+.riso-overview__sections {
+  border-top: 3px solid var(--pe-ink);
+}
+
+.riso-overview__section {
+  display: grid;
+  gap: 1rem;
+  padding: 1.4rem 0;
+  border-bottom: 1.5px solid var(--pe-ink);
+}
+
+.riso-overview__section-heading {
+  display: flex;
+  align-items: baseline;
+  gap: 0.65rem;
+}
+
+.riso-overview__section-heading > span {
+  color: var(--pe-coral);
+  font-family: var(--pe-font-mono);
+  font-size: 0.68rem;
+}
+
+.riso-overview__section-heading h2 {
+  margin: 0;
+  font-family: var(--pe-font-display);
+  font-size: 2rem;
+  line-height: 1;
+  text-transform: uppercase;
+}
+
+.riso-overview__links {
+  display: grid;
+  gap: 0.6rem;
+}
+
+.riso-overview__links a {
+  display: grid;
+  gap: 0.25rem;
+  min-height: 4.5rem;
+  padding: 0.8rem 0.9rem;
+  border: 1.5px solid var(--pe-ink);
+  color: var(--pe-ink);
+  background: rgba(250, 247, 238, 0.78);
+  text-decoration: none;
+  box-shadow: 3px 3px 0 rgba(22, 63, 140, 0.2);
+}
+
+.riso-overview__links a:hover {
+  color: var(--pe-cream-text);
+  background: var(--pe-blue);
+  box-shadow: 3px 3px 0 var(--pe-coral);
+}
+
+.riso-overview__links span {
+  font-family: var(--pe-font-display);
+  font-size: 1.25rem;
+  font-weight: 800;
+  line-height: 1;
+  text-transform: uppercase;
+}
+
+.riso-overview__links small {
+  color: var(--pe-steel);
+  font-size: 0.78rem;
+  line-height: 1.4;
+}
+
+.riso-overview__links a:hover small {
+  color: inherit;
+}
+
+/* Riso cover */
+.home.riso-cover {
+  width: 100%;
+  max-width: none;
+  min-height: calc(100dvh - 5.5rem);
+  justify-content: space-between;
+  gap: 2.5rem;
+}
+
+.riso-cover__header,
+.riso-cover__footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  font-family: var(--pe-font-mono);
+  font-size: 0.68rem;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+.riso-cover__header > a:last-child {
+  color: var(--pe-blue) !important;
+  border-bottom-color: var(--pe-blue) !important;
+}
+
+.riso-cover__mark {
+  display: grid;
+  width: 3rem;
+  height: 3rem;
+  place-items: center;
+  border: 2px solid var(--pe-ink) !important;
+  color: var(--pe-cream-text) !important;
+  background: var(--pe-blue);
+  font-family: var(--pe-font-display);
+  font-size: 1.35rem;
+  text-decoration: none;
+  box-shadow: 4px 4px 0 var(--pe-coral);
+}
+
+.riso-cover__hero {
+  display: grid;
+  gap: 1.2rem;
+  max-width: 72rem;
+}
+
+.riso-cover__edition {
+  width: fit-content;
+  margin: 0;
+  padding: 0.25rem 0.5rem;
+  color: var(--pe-ink);
+  background: var(--pe-yellow);
+  font-family: var(--pe-font-mono);
+  font-size: 0.68rem;
+  font-weight: 600;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+.riso-cover h1 {
+  color: var(--pe-blue);
+  font-size: clamp(3.25rem, 18vw, 13rem);
+  overflow-wrap: anywhere;
+}
+
+.riso-cover .home__lede {
+  max-width: 48rem;
+  color: var(--pe-ink);
+  font-size: clamp(1.05rem, 2vw, 1.35rem);
+  line-height: 1.48;
+}
+
+.riso-cover__lifecycle {
+  display: grid;
+  margin: 0;
+  padding: 0;
+  border-top: 3px solid var(--pe-ink);
+  border-bottom: 3px solid var(--pe-ink);
+  list-style: none;
+}
+
+.riso-cover__lifecycle li {
+  display: grid;
+  min-height: 7.5rem;
+  grid-template-columns: auto 1fr;
+  gap: 0.15rem 0.6rem;
+  align-content: center;
+  padding: 1rem;
+  border-bottom: 1.5px solid var(--pe-ink);
+}
+
+.riso-cover__lifecycle li:last-child {
+  border-bottom: 0;
+}
+
+.riso-cover__lifecycle span {
+  grid-row: 1 / 3;
+  color: var(--pe-coral);
+  font-family: var(--pe-font-mono);
+  font-size: 0.68rem;
+}
+
+.riso-cover__lifecycle strong {
+  font-family: var(--pe-font-display);
+  font-size: 1.8rem;
+  line-height: 1;
+  text-transform: uppercase;
+}
+
+.riso-cover__lifecycle small {
+  color: var(--pe-steel);
+  line-height: 1.35;
+}
+
+.riso-cover__footer {
+  align-items: flex-start;
+  color: var(--pe-steel);
+}
+
+.riso-cover__footer p {
+  max-width: 28rem;
+  margin: 0;
+}
+
+/* Existing functional surfaces inherit the field-guide material language. */
+.pe-shell h1,
+.plan > h1,
+.checklist > h1,
+.guests > h1,
+.promote > h1,
+.checkin__success h1,
+.event-page__title,
+.checkin__title,
+.ops h1,
+.intake h1,
+.auth h1 {
+  font-weight: 800;
+  letter-spacing: -0.035em;
+  text-transform: uppercase;
+}
+
+.intake__submit,
+.promote__button:not(.promote__secondary),
+.event-page__submit,
+.checkin__submit {
+  border: 2px solid var(--pe-ink);
+  border-radius: var(--pe-radius);
+  background: var(--pe-coral);
+  box-shadow: 4px 4px 0 var(--pe-ink);
+}
+
+.intake__submit:hover:not([disabled]),
+.promote__button:not(.promote__secondary):hover:not([disabled]),
+.event-page__submit:hover:not([disabled]),
+.checkin__submit:hover:not([disabled]) {
+  background: var(--pe-blue);
+  border-color: var(--pe-ink);
+  box-shadow: 2px 2px 0 var(--pe-ink);
+  transform: translate(2px, 2px);
+}
+
+.pe-card,
+.line,
+.verdict-detail,
+.insurance__card,
+.check-item,
+.intake__question,
+.guests__panel,
+.promote__panel {
+  border-color: var(--pe-ink);
+  background: rgba(250, 247, 238, 0.84);
+  box-shadow: 4px 4px 0 rgba(22, 63, 140, 0.14);
+}
+
+input,
+select,
+textarea {
+  border-radius: var(--pe-radius);
+  background: var(--pe-surface);
+}
+
+.plan {
+  gap: 1.3rem;
+}
+
+.plan > h1 {
+  color: var(--pe-blue);
+  font-size: clamp(3.5rem, 8vw, 6.5rem);
+  line-height: 0.9;
+  text-shadow:
+    1.5px 0 0 rgba(183, 47, 43, 0.42),
+    -1px 1px 0 rgba(22, 63, 140, 0.18);
+}
+
+.plan__tabs {
+  display: flex;
+  align-items: stretch;
+  gap: 0;
+  overflow-x: auto;
+  border-bottom: 2px solid var(--pe-blue);
+}
+
+.plan__tabs a,
+.plan__tabs > span {
+  display: inline-flex;
+  min-height: 2.75rem;
+  align-items: center;
+  gap: 0.45rem;
+  padding: 0.55rem 0.8rem;
+  color: var(--pe-blue);
+  font-family: var(--pe-font-display);
+  font-size: 1rem;
+  font-weight: 800;
+  letter-spacing: 0.02em;
+  text-decoration: none;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.plan__tabs a[aria-current="page"] {
+  border-bottom: 5px solid var(--pe-coral);
+}
+
+.plan__tabs > span {
+  color: var(--pe-steel);
+}
+
+.plan__tabs small {
+  padding: 0.12rem 0.3rem;
+  border: 1px solid currentColor;
+  font-family: var(--pe-font-mono);
+  font-size: 0.68rem;
+  font-weight: 500;
+  letter-spacing: 0.06em;
+}
+
+.snapshot {
+  border: 1.5px solid var(--pe-blue);
+  background: rgba(226, 231, 240, 0.78);
+  box-shadow: 3px 3px 0 rgba(22, 63, 140, 0.18);
+}
+
+.plan__verdict {
+  padding: 0.85rem 1rem;
+  border: 2px solid var(--pe-ink);
+  color: var(--pe-ink);
+  background: var(--pe-yellow);
+  box-shadow: 4px 4px 0 var(--pe-ink);
+}
+
+.plan__verdict--infeasible {
+  color: var(--pe-cream-text);
+  background: var(--pe-coral);
+}
+
+.plan__verdict--feasible_at_risk {
+  background: var(--pe-yellow);
+}
+
+.plan__verdict--feasible {
+  color: var(--pe-cream-text);
+  background: var(--pe-blue);
+}
+
+.line__head,
+.line__citations {
+  border-color: var(--pe-ink);
+}
+
+.line__status {
+  border-radius: 0;
+  font-weight: 600;
+}
+
+.line__status--official_conflict,
+.line__status--research_required,
+.line__conflict,
+.line__research,
+.plan__stale,
+.plan__refused {
+  border: 1.5px solid var(--pe-coral);
+  background: var(--pe-amber-wash);
+  box-shadow: 3px 3px 0 rgba(183, 47, 43, 0.2);
+}
+
+.plan__route {
+  display: grid;
+  gap: 0;
+  margin: 0.3rem 0 0.8rem;
+  padding: 0;
+  list-style: none;
+}
+
+.plan__route-step {
+  position: relative;
+  min-width: 0;
+  border: 1.5px solid var(--pe-blue);
+  background: rgba(250, 247, 238, 0.78);
+}
+
+.plan__route-step + .plan__route-step {
+  border-top: 0;
+}
+
+.plan__route-step > a,
+.plan__route-step:not(:has(a)) {
+  display: grid;
+  grid-template-columns: 2.5rem minmax(0, 1fr);
+  grid-template-rows: auto auto;
+  min-height: 4.4rem;
+  align-content: center;
+  padding: 0.55rem 0.75rem;
+  color: var(--pe-blue);
+  text-decoration: none;
+}
+
+.plan__route-step > a:hover {
+  color: var(--pe-cream-text);
+  background: var(--pe-blue);
+}
+
+.plan__route-step span {
+  grid-row: 1 / 3;
+  display: grid;
+  width: 2rem;
+  height: 2rem;
+  place-items: center;
+  align-self: center;
+  border: 1.5px solid currentColor;
+  font-family: var(--pe-font-display);
+  font-size: 1.3rem;
+  font-weight: 800;
+  line-height: 1;
+  transform: rotate(-2deg);
+}
+
+.plan__route-step strong {
+  align-self: end;
+  font-family: var(--pe-font-display);
+  font-size: 1.1rem;
+  line-height: 1;
+  text-transform: uppercase;
+}
+
+.plan__route-step small {
+  align-self: start;
+  color: var(--pe-steel);
+  font-family: var(--pe-font-mono);
+  font-size: 0.68rem;
+}
+
+.plan__route-step > a:hover small {
+  color: inherit;
+}
+
+.plan__route-step--current {
+  color: var(--pe-ink);
+  background: var(--pe-yellow);
+  box-shadow: 3px 3px 0 var(--pe-coral);
+}
+
+.plan__route-step--complete {
+  background: rgba(226, 231, 240, 0.82);
+}
+
+.plan__workbench {
+  display: grid;
+  gap: 1rem;
+  align-items: start;
+}
+
+.plan__review-column,
+.plan__checklist-column {
+  min-width: 0;
+  padding: 1rem;
+  border: 1.5px solid var(--pe-blue);
+  background: rgba(250, 247, 238, 0.76);
+}
+
+.plan__review-column > h2,
+.plan__checklist-column h2 {
+  margin: 0;
+  color: var(--pe-blue);
+  font-family: var(--pe-font-display);
+  font-size: 2rem;
+  font-weight: 800;
+  line-height: 1;
+  text-transform: uppercase;
+}
+
+.plan__review-column > h2 {
+  padding-bottom: 0.65rem;
+  border-bottom: 2px solid var(--pe-blue);
+}
+
+.plan__checklist-column {
+  display: grid;
+  gap: 1rem;
+  box-shadow: 4px 4px 0 var(--pe-coral);
+}
+
+.plan__checklist-column > div {
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+  padding-bottom: 0.65rem;
+  border-bottom: 2px solid var(--pe-blue);
+}
+
+.plan__checklist-column > div > span {
+  display: grid;
+  width: 2rem;
+  height: 2rem;
+  place-items: center;
+  border: 1.5px solid var(--pe-blue);
+  color: var(--pe-blue);
+  font-size: 1.2rem;
+}
+
+.plan__checklist-column p {
+  margin: 0;
+  color: var(--pe-steel);
+  font-size: 0.88rem;
+}
+
+.plan__checklist-column a {
+  display: inline-flex;
+  min-height: 2.75rem;
+  align-items: center;
+  justify-content: center;
+  padding: 0.55rem 0.7rem;
+  border: 1.5px solid var(--pe-ink);
+  color: var(--pe-cream-text);
+  background: var(--pe-blue);
+  font-weight: 800;
+  text-align: center;
+  text-decoration: none;
+  box-shadow: 3px 3px 0 var(--pe-ink);
+}
+
+.plan__checklist-column a:hover {
+  background: var(--pe-coral);
+}
+
+@media (min-width: 40rem) {
+  .riso-overview__section {
+    grid-template-columns: minmax(8rem, 0.65fr) minmax(0, 1.35fr);
+  }
+
+  .riso-overview__links {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .riso-cover__lifecycle {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .riso-cover__lifecycle li:nth-child(odd) {
+    border-right: 1.5px solid var(--pe-ink);
+  }
+
+  .riso-cover__lifecycle li:nth-child(3) {
+    border-bottom: 0;
+  }
+
+  .plan__route {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .plan__route-step + .plan__route-step {
+    border-top: 1.5px solid var(--pe-blue);
+    border-left: 0;
+  }
+
+  .plan__route-step:not(:last-child)::after {
+    content: "→";
+    position: absolute;
+    top: 50%;
+    right: -0.78rem;
+    z-index: 2;
+    display: grid;
+    width: 1.5rem;
+    height: 1.5rem;
+    place-items: center;
+    color: var(--pe-blue);
+    background: var(--pe-paper);
+    font-family: var(--pe-font-display);
+    font-size: 1.25rem;
+    font-weight: 800;
+    transform: translateY(-50%);
+  }
+}
+
+@media (min-width: 48rem) {
+  .riso-workspace {
+    margin: -2.75rem -2rem -4.5rem;
+  }
+
+  .riso-workspace__paper {
+    padding: 1.75rem 2rem 4.5rem;
+  }
+}
+
+@media (min-width: 64rem) {
+  .riso-workspace {
+    grid-template-columns: 17rem minmax(0, 1fr);
+    margin: -3rem -2.5rem -5rem;
+  }
+
+  .riso-nav {
+    position: sticky;
+    top: 0;
+    height: 100dvh;
+    overflow-y: auto;
+    border-right: 2px solid var(--pe-ink);
+    border-bottom: 0;
+  }
+
+  .riso-nav__brand--desktop {
+    display: flex;
+    padding: 1.65rem 1.35rem 1.35rem;
+    border-bottom: 2px solid rgba(255, 253, 246, 0.5);
+  }
+
+  .riso-nav__desktop {
+    display: block;
+  }
+
+  .riso-nav__mobile {
+    display: none;
+  }
+
+  .riso-nav__groups {
+    padding: 1.35rem;
+  }
+
+  .riso-workspace__paper {
+    padding: 2rem clamp(2rem, 5vw, 5.5rem) 5rem;
+  }
+
+  .riso-masthead {
+    margin-bottom: 3.5rem;
+  }
+
+  .riso-cover__lifecycle {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+
+  .riso-cover__lifecycle li,
+  .riso-cover__lifecycle li:nth-child(3) {
+    border-right: 1.5px solid var(--pe-ink);
+    border-bottom: 0;
+  }
+
+  .riso-cover__lifecycle li:last-child {
+    border-right: 0;
+  }
+
+  .plan__workbench {
+    grid-template-columns: minmax(0, 1.65fr) minmax(12rem, 0.75fr);
+  }
+
+  .plan__checklist-column {
+    position: sticky;
+    top: 2rem;
+  }
+}
+
 .disclosure__panel {
   padding-left: 0.75rem;
   border-left: 2px solid rgba(0, 0, 0, 0.15);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .button--primary:hover,
+  .intake__submit:hover:not([disabled]),
+  .promote__button:not(.promote__secondary):hover:not([disabled]),
+  .event-page__submit:hover:not([disabled]),
+  .checkin__submit:hover:not([disabled]) {
+    transform: none;
+  }
 }

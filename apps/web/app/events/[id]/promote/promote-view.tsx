@@ -48,30 +48,29 @@ export function PromoteView({ eventId, apiBaseUrl, webOrigin }: PromoteViewProps
 
   if (failure !== null && state === null) {
     return (
-      <div className="promote">
+      <main className="promote">
         <p className="pe-eyebrow">PopEngine · Promote</p>
         <h1>Promote</h1>
         <p className="promote__error" role="alert">
           {failure}
         </p>
-      </div>
+      </main>
     );
   }
 
   if (state === null) {
     return (
-      <div className="promote">
+      <main className="promote">
         <p className="pe-eyebrow">PopEngine · Promote</p>
         <p className="promote__lede" role="status">
           Loading promote controls…
         </p>
-      </div>
+      </main>
     );
   }
 
-  const origin = (webOrigin !== undefined && webOrigin.trim() !== ""
-    ? webOrigin
-    : browserOrigin
+  const origin = (
+    webOrigin !== undefined && webOrigin.trim() !== "" ? webOrigin : browserOrigin
   ).replace(/\/$/, "");
   const shareUrl = origin.length > 0 ? `${origin}${state.public_path}` : state.public_path;
 
@@ -96,7 +95,7 @@ export function PromoteView({ eventId, apiBaseUrl, webOrigin }: PromoteViewProps
   };
 
   return (
-    <div className="promote">
+    <main className="promote">
       <p className="pe-eyebrow">PopEngine · Promote</p>
       <h1>{state.title}</h1>
       <p className="promote__lede">
@@ -190,6 +189,6 @@ export function PromoteView({ eventId, apiBaseUrl, webOrigin }: PromoteViewProps
         </p>
       )}
       <p className="promote__note">Synthetic demo only (AD-12).</p>
-    </div>
+    </main>
   );
 }

@@ -137,6 +137,7 @@ export function IntakeForm({
   const parkSearchRequest = useRef(0);
   const parkSearchController = useRef<AbortController | null>(null);
   const locationNameInput = useRef<HTMLInputElement | null>(null);
+  const formRef = useRef<HTMLFormElement | null>(null);
 
   useEffect(() => {
     if (eventId === undefined) return;
@@ -168,6 +169,19 @@ export function IntakeForm({
   const parkSearchName =
     typeof answers.location_name === "string" ? answers.location_name.trim() : "";
   const parkSearchTooLong = parkSearchName.length > MAX_PARK_SEARCH_LENGTH;
+
+  useEffect(() => {
+    const firstFieldError = errors.find(
+      (error) => error.field !== "body" && error.code !== "unknown_field",
+    );
+    if (firstFieldError === undefined || formRef.current === null) return;
+
+    const control = Array.from(formRef.current.elements).find(
+      (element) =>
+        element instanceof HTMLElement && element.getAttribute("name") === firstFieldError.field,
+    );
+    if (control instanceof HTMLElement) control.focus();
+  }, [errors]);
 
   useEffect(() => {
     parkSearchRequest.current += 1;
@@ -306,12 +320,12 @@ export function IntakeForm({
 
   if (loading) {
     return (
-      <div className="intake">
+      <main className="intake">
         <p className="pe-eyebrow">PopEngine · Survey</p>
         <p className="intake__lede" role="status">
           Loading your event…
         </p>
-      </div>
+      </main>
     );
   }
 
@@ -319,208 +333,221 @@ export function IntakeForm({
   // second event rather than edit the one asked for.
   if (loadFailure !== null) {
     return (
-      <div className="intake">
+      <main className="intake">
         <p className="pe-eyebrow">PopEngine · Survey</p>
         <h1>Edit your event</h1>
         <p className="intake__error" role="alert">
           {loadFailure}
         </p>
-      </div>
+      </main>
     );
   }
 
   return (
-    <form
-      className="intake"
-      onSubmit={(event) => {
-        event.preventDefault();
-        void save();
-      }}
-    >
-      <p className="pe-eyebrow">PopEngine · Survey</p>
-      <h1>{eventId === undefined ? "Describe your event" : "Edit your event"}</h1>
-      <p className="intake__lede">
-        Answer what applies to your event. Questions appear as your answers make them relevant, and
-        &ldquo;I don&rsquo;t know&rdquo; is a real answer — it is stored as unknown and carried into
-        your plan.
-      </p>
-
-      {DESCRIPTIVE_QUESTIONS.map((question) => (
-        <div className="intake__question" key={question.field}>
-          <span className="intake__question-head">
-            <label className="intake__label" htmlFor={`intake-${question.field}`}>
-              {question.label}
-            </label>
-            <span className="intake__tag" aria-hidden="true">
-              {question.field}
-            </span>
-          </span>
-          <input
-            id={`intake-${question.field}`}
-            ref={question.field === "location_name" ? locationNameInput : undefined}
-            className="intake__input"
-            name={question.field}
-            type={question.type}
-            required={question.required}
-            aria-describedby={
-              question.field === "location_name" && canSearchParks
-                ? "intake-park-search-note"
-                : undefined
-            }
-            value={String(answers[question.field] ?? "")}
-            onChange={(event) => {
-              const raw = event.target.value;
-              answer(
-                question.field,
-                question.type === "number" ? (raw === "" ? null : Number(raw)) : raw,
-              );
-            }}
-          />
-          {question.field === "location_name" && canSearchParks && (
-            <div className="intake__park-search">
-              <p className="intake__note" id="intake-park-search-note">
-                Enter part of a park name to search NYC Parks, or keep typing any venue or location
-                name manually.
-              </p>
-              <button
-                className="intake__secondary"
-                type="button"
-                aria-controls="intake-park-search-results"
-                disabled={parkSearching || parkSearchName.length === 0 || parkSearchTooLong}
-                onClick={() => void searchParks()}
-              >
-                {parkSearching ? "Searching NYC Parks…" : "Search NYC Parks"}
-              </button>
-              <div id="intake-park-search-results" aria-busy={parkSearching} aria-live="polite">
-                {parkSearchFailure !== null && <p className="intake__note">{parkSearchFailure}</p>}
-                {parkSearchTooLong && (
-                  <p className="intake__note">
-                    Park searches must be 80 characters or fewer. You can still save this location
-                    name manually.
-                  </p>
-                )}
-                {parkSearching === false &&
-                  parkSearchFailure === null &&
-                  !parkSearchTooLong &&
-                  parkSuggestions === null &&
-                  parkSearchName.length > 0 && (
-                    <p className="intake__note">Search to see matching NYC park names.</p>
-                  )}
-                {parkSearching === false &&
-                  parkSearchFailure === null &&
-                  parkSuggestions?.length === 0 && (
-                    <p className="intake__note">
-                      No matching parks found. You can still save the location name manually.
-                    </p>
-                  )}
-                {parkSuggestions !== null && parkSuggestions.length > 0 && (
-                  <ul className="intake__park-results" aria-label="NYC park suggestions">
-                    {parkSuggestions.map((park) => (
-                      <li key={park.locationId}>
-                        <button
-                          type="button"
-                          onClick={() => {
-                            answer("location_name", park.parkName);
-                            locationNameInput.current?.focus();
-                          }}
-                        >
-                          {park.parkName}
-                        </button>
-                      </li>
-                    ))}
-                  </ul>
-                )}
-              </div>
-            </div>
-          )}
-          <FieldError issue={errorFor(question.field)} />
-        </div>
-      ))}
-
-      {questions.map((question) => (
-        <Question
-          key={question.field}
-          field={question}
-          value={answers[question.field] ?? null}
-          issue={errorFor(question.field)}
-          onAnswer={(value) => answer(question.field, value)}
-        />
-      ))}
-
-      {warnings.map((warning) => (
-        <p className="intake__warning" key={warning.code} role="status">
-          <strong>{humanize(warning.code)}:</strong> {warning.message}
-          {warning.ruleId !== undefined && (
-            // The published rule and its verification status stay visible end to end:
-            // a COVERAGE_GAP notice must never read as a confirmed requirement.
-            <span className="intake__provenance">
-              {warning.ruleId} · {warning.verificationStatus}
-            </span>
-          )}
+    <main>
+      <form
+        ref={formRef}
+        className="intake"
+        onSubmit={(event) => {
+          event.preventDefault();
+          void save();
+        }}
+      >
+        <p className="pe-eyebrow">PopEngine · Survey</p>
+        <h1>{eventId === undefined ? "Describe your event" : "Edit your event"}</h1>
+        <p className="intake__lede">
+          Answer what applies to your event. Questions appear as your answers make them relevant,
+          and &ldquo;I don&rsquo;t know&rdquo; is a real answer — it is stored as unknown and
+          carried into your plan.
         </p>
-      ))}
 
-      {errors
-        .filter((error) => error.code === "unknown_field" || error.field === "body")
-        .map((error) => (
-          <p className="intake__error" key={error.field} role="alert">
-            {error.message}
+        {DESCRIPTIVE_QUESTIONS.map((question) => {
+          const issue = errorFor(question.field);
+          const errorId = `intake-${question.field}-error`;
+          const describedBy = [
+            question.field === "location_name" && canSearchParks ? "intake-park-search-note" : null,
+            issue === undefined ? null : errorId,
+          ]
+            .filter((id): id is string => id !== null)
+            .join(" ");
+
+          return (
+            <div className="intake__question" key={question.field}>
+              <span className="intake__question-head">
+                <label className="intake__label" htmlFor={`intake-${question.field}`}>
+                  {question.label}
+                </label>
+                <span className="intake__tag" aria-hidden="true">
+                  {question.field}
+                </span>
+              </span>
+              <input
+                id={`intake-${question.field}`}
+                ref={question.field === "location_name" ? locationNameInput : undefined}
+                className="intake__input"
+                name={question.field}
+                type={question.type}
+                required={question.required}
+                aria-describedby={describedBy.length === 0 ? undefined : describedBy}
+                aria-invalid={issue === undefined ? undefined : true}
+                value={String(answers[question.field] ?? "")}
+                onChange={(event) => {
+                  const raw = event.target.value;
+                  answer(
+                    question.field,
+                    question.type === "number" ? (raw === "" ? null : Number(raw)) : raw,
+                  );
+                }}
+              />
+              {question.field === "location_name" && canSearchParks && (
+                <div className="intake__park-search">
+                  <p className="intake__note" id="intake-park-search-note">
+                    Enter part of a park name to search NYC Parks, or keep typing any venue or
+                    location name manually.
+                  </p>
+                  <button
+                    className="intake__secondary"
+                    type="button"
+                    aria-controls="intake-park-search-results"
+                    disabled={parkSearching || parkSearchName.length === 0 || parkSearchTooLong}
+                    onClick={() => void searchParks()}
+                  >
+                    {parkSearching ? "Searching NYC Parks…" : "Search NYC Parks"}
+                  </button>
+                  <div id="intake-park-search-results" aria-busy={parkSearching} aria-live="polite">
+                    {parkSearchFailure !== null && (
+                      <p className="intake__note">{parkSearchFailure}</p>
+                    )}
+                    {parkSearchTooLong && (
+                      <p className="intake__note">
+                        Park searches must be 80 characters or fewer. You can still save this
+                        location name manually.
+                      </p>
+                    )}
+                    {parkSearching === false &&
+                      parkSearchFailure === null &&
+                      !parkSearchTooLong &&
+                      parkSuggestions === null &&
+                      parkSearchName.length > 0 && (
+                        <p className="intake__note">Search to see matching NYC park names.</p>
+                      )}
+                    {parkSearching === false &&
+                      parkSearchFailure === null &&
+                      parkSuggestions?.length === 0 && (
+                        <p className="intake__note">
+                          No matching parks found. You can still save the location name manually.
+                        </p>
+                      )}
+                    {parkSuggestions !== null && parkSuggestions.length > 0 && (
+                      <ul className="intake__park-results" aria-label="NYC park suggestions">
+                        {parkSuggestions.map((park) => (
+                          <li key={park.locationId}>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                answer("location_name", park.parkName);
+                                locationNameInput.current?.focus();
+                              }}
+                            >
+                              {park.parkName}
+                            </button>
+                          </li>
+                        ))}
+                      </ul>
+                    )}
+                  </div>
+                </div>
+              )}
+              <FieldError id={errorId} issue={issue} />
+            </div>
+          );
+        })}
+
+        {questions.map((question) => (
+          <Question
+            key={question.field}
+            field={question}
+            value={answers[question.field] ?? null}
+            issue={errorFor(question.field)}
+            onAnswer={(value) => answer(question.field, value)}
+          />
+        ))}
+
+        {warnings.map((warning) => (
+          <p className="intake__warning" key={warning.code} role="status">
+            <strong>{humanize(warning.code)}:</strong> {warning.message}
+            {warning.ruleId !== undefined && (
+              // The published rule and its verification status stay visible end to end:
+              // a COVERAGE_GAP notice must never read as a confirmed requirement.
+              <span className="intake__provenance">
+                {warning.ruleId} · {warning.verificationStatus}
+              </span>
+            )}
           </p>
         ))}
-      {failure !== null && (
-        <p className="intake__error" role="alert">
-          {failure}
-        </p>
-      )}
 
-      <button className="intake__submit" type="submit" disabled={saving}>
-        {saved === null ? "Save event" : "Save changes"}
-      </button>
+        {errors
+          .filter((error) => error.code === "unknown_field" || error.field === "body")
+          .map((error) => (
+            <p className="intake__error" key={error.field} role="alert">
+              {error.message}
+            </p>
+          ))}
+        {failure !== null && (
+          <p className="intake__error" role="alert">
+            {failure}
+          </p>
+        )}
 
-      {saved !== null && (
-        <section className="intake__saved" aria-live="polite">
-          <p>
-            Saved as revision {saved.revision_counter}.{" "}
-            <a href={`/intake/${saved.id}`}>Come back to this event</a> to edit it later, or{" "}
-            <a href={`/events/${saved.id}/plan`}>see its permit plan</a>.
-          </p>
-          <p>
-            <a href={`/events/${saved.id}/promote`}>Promote public page</a>
-            {" · "}
-            <a href={`/events/${saved.id}/guests`}>Guest list</a>
-          </p>
-          {planStale && (
-            <div className="intake__stale">
-              <p>
-                This edit is newer than the plan that was generated, so the plan is out of date.
-              </p>
-              <button
-                type="button"
-                onClick={() => void regenerate(saved.id, saved.revision_counter)}
-                disabled={regenerating}
-              >
-                {regenerating ? "Regenerating plan…" : "Regenerate plan"}
-              </button>
-              {regenerationError !== null && (
-                <p className="intake__error" role="alert">
-                  {regenerationError}
+        <button className="intake__submit" type="submit" disabled={saving}>
+          {saved === null ? "Save event" : "Save changes"}
+        </button>
+
+        {saved !== null && (
+          <section className="intake__saved" aria-live="polite">
+            <p>
+              Saved as revision {saved.revision_counter}.{" "}
+              <a href={`/intake/${saved.id}`}>Come back to this event</a> to edit it later, or{" "}
+              <a href={`/events/${saved.id}/plan`}>see its permit plan</a>.
+            </p>
+            <p>
+              <a href={`/events/${saved.id}/promote`}>Promote public page</a>
+              {" · "}
+              <a href={`/events/${saved.id}/guests`}>Guest list</a>
+            </p>
+            {planStale && (
+              <div className="intake__stale">
+                <p>
+                  This edit is newer than the plan that was generated, so the plan is out of date.
                 </p>
-              )}
-            </div>
-          )}
-          {planStale === false && regeneratedRevision !== null && (
-            <p role="status">Plan regenerated for revision {regeneratedRevision}.</p>
-          )}
-        </section>
-      )}
-    </form>
+                <button
+                  type="button"
+                  onClick={() => void regenerate(saved.id, saved.revision_counter)}
+                  disabled={regenerating}
+                >
+                  {regenerating ? "Regenerating plan…" : "Regenerate plan"}
+                </button>
+                {regenerationError !== null && (
+                  <p className="intake__error" role="alert">
+                    {regenerationError}
+                  </p>
+                )}
+              </div>
+            )}
+            {planStale === false && regeneratedRevision !== null && (
+              <p role="status">Plan regenerated for revision {regeneratedRevision}.</p>
+            )}
+          </section>
+        )}
+      </form>
+    </main>
   );
 }
 
-function FieldError({ issue }: { issue: IntakeIssue | undefined }) {
+function FieldError({ id, issue }: { id: string; issue: IntakeIssue | undefined }) {
   if (issue === undefined) return null;
   return (
-    <span className="intake__error" role="alert">
+    <span className="intake__error" id={id} role="alert">
       {issue.message}
     </span>
   );
@@ -564,27 +591,60 @@ function Question({
   issue: IntakeIssue | undefined;
   onAnswer: (value: IntakeValue) => void;
 }) {
+  const labelId = `intake-${field.field}-label`;
+  const guidanceId = `intake-${field.field}-guidance`;
+  const errorId = `intake-${field.field}-error`;
+  const describedBy = [
+    field.note === null ? null : guidanceId,
+    issue === undefined ? null : errorId,
+  ]
+    .filter((id): id is string => id !== null)
+    .join(" ");
+
   return (
-    <fieldset className="intake__question">
+    <fieldset
+      className="intake__question"
+      aria-describedby={describedBy.length === 0 ? undefined : describedBy}
+      aria-invalid={issue === undefined ? undefined : true}
+    >
       <legend className="intake__question-head">
-        <span className="intake__label">{humanize(field.field)}</span>
+        <span className="intake__label" id={labelId}>
+          {humanize(field.field)}
+        </span>
         <span className="intake__tag" aria-hidden="true">
           {field.field}
         </span>
       </legend>
-      {field.note !== null && <Guidance note={field.note} />}
-      <Control field={field} value={value} onAnswer={onAnswer} />
-      <FieldError issue={issue} />
+      {field.note !== null && (
+        <div id={guidanceId}>
+          <Guidance note={field.note} />
+        </div>
+      )}
+      <Control
+        describedBy={describedBy}
+        field={field}
+        invalid={issue !== undefined}
+        labelId={labelId}
+        value={value}
+        onAnswer={onAnswer}
+      />
+      <FieldError id={errorId} issue={issue} />
     </fieldset>
   );
 }
 
 function Control({
+  describedBy,
   field,
+  invalid,
+  labelId,
   value,
   onAnswer,
 }: {
+  describedBy: string;
   field: IntakeField;
+  invalid: boolean;
+  labelId: string;
   value: IntakeValue;
   onAnswer: (value: IntakeValue) => void;
 }) {
@@ -642,6 +702,9 @@ function Control({
       name={field.field}
       type={field.type === "date" ? "date" : "number"}
       step={field.type === "number" ? "any" : undefined}
+      aria-describedby={describedBy.length === 0 ? undefined : describedBy}
+      aria-invalid={invalid ? true : undefined}
+      aria-labelledby={labelId}
       value={value === null ? "" : String(value)}
       onChange={(event) => {
         const raw = event.target.value;
