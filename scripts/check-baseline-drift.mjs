@@ -1617,11 +1617,13 @@ const f203Failures = [];
 function activeMarkdown(markdown) {
   const lines = markdown.replace(/<!--[\s\S]*?(?:-->|$)/g, "").split(/\r?\n/);
   let fence = null;
+  let continuesListItem = false;
   return lines
     .map((line) => {
       const marker = /^ {0,3}(`{3,}|~{3,})(.*)$/.exec(line);
       if (fence === null && marker) {
         fence = marker[1];
+        continuesListItem = false;
         return "";
       }
       if (
@@ -1634,8 +1636,10 @@ function activeMarkdown(markdown) {
         fence = null;
         return "";
       }
-      if (fence === null && /^(?: {4}|\t)/.test(line)) return "";
-      return fence === null ? line : "";
+      if (fence !== null) return "";
+      if (/^(?: {4}|\t)/.test(line)) return continuesListItem ? line : "";
+      continuesListItem = /^\s*(?:[-*+]|\d+\.)\s+/.test(line);
+      return line;
     })
     .join("\n");
 }
@@ -1661,8 +1665,18 @@ for (const relative of f203Artifacts) {
       const namesScope = f203CapabilityNames.some((capability) => lower.includes(capability));
       const requiresListAssignment = relative === "docs/ROADMAP.md" || relative === "docs/PRD.md";
       const isListAssignment = requiresListAssignment && /^\s*(?:[-*+]|\d+\.)\s+/.test(raw);
+      if (requiresListAssignment) {
+        const ownsF203 = /^\s*(?:[-*+]|\d+\.)\s+(?:\*\*)?F-203\b/i.test(raw);
+        const isRoadmapCore =
+          relative === "docs/ROADMAP.md" &&
+          /^\s*[-*+]\s+\*\*F-203\s+·\s+Deadline Alerts\*\*/i.test(raw);
+        return (
+          isListAssignment &&
+          !isRoadmapCore &&
+          (ownsF203 || (namesScope && lower.includes("f-203")))
+        );
+      }
       if (!namesScope || !lower.includes("f-203")) return false;
-      if (requiresListAssignment) return isListAssignment;
       if (relative === "docs/BASELINE.md") return /^\s*\*\*Decision\b/i.test(raw);
       return (
         /\bF-203\b[^.]*\b(?:keeps|retains|owns|includes)\b/i.test(normalized) ||

@@ -1845,16 +1845,31 @@ describe.concurrent("F-203 Phase 2 scope agreement (SPEC-CONFLICT #127 item 1)",
     expect(output).toContain("docs/ROADMAP.md must affirmatively assign");
   });
 
-  it("accepts an F-203 list item wrapped across physical lines", async () => {
+  it.each(["  ", "    "])(
+    "accepts an F-203 list item wrapped with %s-space continuation indentation",
+    async (indentation) => {
+      const { status, output } = await runOn({
+        "docs/ROADMAP.md": SQUARE_RECONCILED["docs/ROADMAP.md"].replace(
+          "team reminders, and per-user preferences",
+          `team reminders,\n${indentation}and per-user preferences`,
+        ),
+      });
+
+      expect(status).toBe(0);
+      expect(output).toContain("F-203 scope check passed");
+    },
+  );
+
+  it("rejects an F-203-owned entry containing only added capabilities", async () => {
     const { status, output } = await runOn({
-      "docs/ROADMAP.md": SQUARE_RECONCILED["docs/ROADMAP.md"].replace(
-        "team reminders, and per-user preferences",
-        "team reminders,\n  and per-user preferences",
-      ),
+      "docs/ROADMAP.md":
+        SQUARE_RECONCILED["docs/ROADMAP.md"] +
+        "\n## Phase 3 — Differentiation\n\n" +
+        "- **F-203 add-on** — dashboard sharing; planned, not scheduled.\n",
     });
 
-    expect(status).toBe(0);
-    expect(output).toContain("F-203 scope check passed");
+    expect(status).toBe(1);
+    expect(output).toContain("docs/ROADMAP.md must affirmatively assign");
   });
 
   it.each([
