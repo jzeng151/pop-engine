@@ -29,9 +29,10 @@ so the recipe is written down rather than implied:
 
 If a future reader gets a different number, the tree or step 2 is the first thing to check.
 
-**What has NOT been re-measured**, stated so nobody assumes otherwise: the answer-key impact of the
-ruleset alternative in section 6, which has never been measured at all and is flagged as such
-there.
+**What has NOT been re-measured**, stated so nobody assumes otherwise: the answer-key impact of an
+order-independent implementation of issue #108's semantics, and the answer-key impact of the
+ruleset alternative in section 6. Attempt 3's existing-order result is not evidence for the first,
+for the reason measured later in section 2.
 
 ---
 
@@ -192,25 +193,27 @@ unanswered. Reporting its number as "the answer key does not move" was measuring
 quoting it about another, and the number was relayed to the product owner and to an external
 reviewer on that basis.
 
-**Third attempt, round 3: preserve #108's semantics exactly and fix the recursion at its actual
-cause.** The dependent resolves unknown whatever its own stored value is, which is the requested
-behaviour. The non-termination was never in the semantics; it was in `evaluateConditional`
-branching on a field it could not settle. A dependent that is unknown *for want of its gate's
-answer* is not resolved by supplying the dependent's value, so that branch never shrank the unknown
-set. **Branching on the blocking GATE instead does shrink it**, because every branch answers a gate
-and there are finitely many gates.
+**Third attempt, round 3: target #108's semantics and fix the immediate recursion.** The dependent
+resolves unknown whatever its own stored value is, which is the requested behaviour for a
+single-level gate. The non-termination was in `evaluateConditional` branching on a field it could
+not settle. A dependent that is unknown *for want of its gate's answer* is not resolved by
+supplying the dependent's value, so that branch never shrank the unknown set. **Branching on the
+blocking GATE does shrink that case**, because every branch answers a gate and there are finitely
+many gates. It does not make the scope resolver order-independent or implement three-valued
+conjunction; the cold-resolver measurements below disprove both stronger claims.
 
-With that, plus the two fixture lines:
+With that, plus the two fixture lines, under the rules' existing evaluation order:
 
-> **Full suite: 1163/1163 pass, under the semantics issue #108 actually proposes. Zero answer-key
-> expectations move.**
+> **Full suite: 1163/1163 pass for attempt 3 in the existing evaluation order.**
 
-Verified live rather than inferred from a green suite, because a change that does nothing also
-passes: with `battery_present` absent, `FDNY-GENERATOR-001` now lists on a plan where it previously
-did not; with `battery_present: false` it does not list. The semantics bite and the answer key
-still does not move.
+The result proves that the patch has an effect on the one-level battery case: with
+`battery_present` absent, `FDNY-GENERATOR-001` lists where it previously did not; with
+`battery_present: false` it does not list. It does **not** prove that issue #108's transitive
+semantics leave the answer key unchanged. The cold-resolver probe below makes attempt 3
+order-dependent and suppresses a deeper SAPO branch.
 
-The measured source diff is **two files**: `packages/engine/src/conditions.ts` (+33/-3) and
+The measured throwaway diff for attempt 3 is **two files**:
+`packages/engine/src/conditions.ts` (+33/-3) and
 `packages/engine/src/verdict.ts` (+9/-2), plus the two fixture lines. Earlier rounds published
 +47/-3 and +18/-2, which did not match the appendix patch. **The counts were stale, not the patch
 incomplete**, and the difference matters for the reproducibility claim so it is stated rather than
@@ -234,7 +237,7 @@ named at the top, back to back, 1163 tests each:
 | --- | --- | --- | --- | --- | --- |
 | 1 | as #108 asks | original | 15 fail | 5 fail | 5 fixtures |
 | 2 | narrower | original | **0 fail** | 0 fail | none |
-| 3 | as #108 asks | on the gate | 6 fail | **0 fail** | none |
+| 3 | targets #108; order-dependent | on the gate | 6 fail | **0 fail** | none |
 
 **Attempt 2's first cell was wrong in rounds 3 and 4**, which reported 15 there. It is 0: under the
 narrower rule a dependent that HAS a stored value counts as answered, and both fixture objects store
@@ -615,10 +618,13 @@ corrected price:
 4. **Every fixture that submits one of these fields as a boolean, which must land BEFORE the
    answer-key impact can be measured at all.** `readFieldValue` accepts an enum only as a declared
    string (`validate.ts:85`), so `food_present: true` stops validating the moment the type changes.
-   This is 112 boolean literals across 8 files: `scenario-intake-fixtures.ts` (30),
+   This is 132 boolean literals across 9 files: `scenario-intake-fixtures.ts` (30),
    `acceptance.test.ts` (19), `engine.test.ts` (17), `intake/intake.test.ts` (14),
    `plan.test.ts` (11), `rules-snapshot.test.ts` (10), `intake-form.test.tsx` (8) and
-   `events.test.ts` (3).
+   `events.test.ts` (3), plus 20 positional SQL values across five event inserts in
+   `ruleset.test.ts`. Those inserts name `food_present`, `amplified_sound`,
+   `generator_present`, and `alcohol` as columns but supply their values positionally, so a scan for
+   named fixture literals misses them.
 
    **`apps/api/migrations/006_events_battery_present.ts` is deliberately NOT in that list**, and it
    was until this round. It is a migration, not a fixture and not an enum submission: it adds
@@ -640,15 +646,17 @@ corrected price:
    fixtures BY RULESET VERSION rather than replace values globally, which is design work this
    inventory did not previously account for.
 
-   Rounds 1 to 6 listed trigger, validator, schema and form work and omitted this entirely. It is
+   Rounds 1 to 6 listed trigger, validator, and schema work and omitted this entirely. It is
    the item that gates the others: point 6 below says this option's answer-key impact has never been
    measured, and it cannot be measured until the fixtures submit strings, because every scenario
    fails validation first.
-5. A new published ruleset version, a migration per changed column (boolean to text), and a form
-   control change.
-6. Answer-key impact, which this document has **not** measured for this option. The engine change
-   was measured and moves nothing; this one changes 12 trigger conditions across 11 published
-   objects plus two validator checks, and cannot be assumed to move nothing.
+5. A new published ruleset version and a migration per changed column (boolean to text). The form
+   control does **not** change: `Control` already renders every declared enum value as a radio option
+   and returns the selected string.
+6. Answer-key impact, which this document has **not** measured for this option. Attempt 3 was
+   measured only under the engine's existing evaluation order; this option changes 12 trigger
+   conditions across 11 published objects plus two validator checks, and neither option can be
+   assumed to move nothing.
 
 What it buys: the distinction is expressible by an organizer who genuinely does not know, which is a
 case the engine change does *not* address, because that change only helps where nobody was asked at
@@ -673,24 +681,19 @@ migration and no backfill is running.
 What it still does not reach: route 5, and any gate whose unanswered state arrives without a
 migration to write into.
 
-**On the corrected price this option is no longer the cheap one.** The engine change is **two
-files, `conditions.ts` +33/-3 and `verdict.ts` +9/-2**, with the answer key measured and unmoved
-under #108's own semantics. This one is 8 regulatory decisions, 11 published objects and 2 validator
-checks at risk of silent non-matching, a ruleset publication, a migration, a form change, an
-unmeasured answer key, and it reaches only five of the eight gates that need it. I am still not recommending either. I am recording that the first version of this
-document understated this option's cost and overstated the other's, and that correcting both moves
-them in the same direction.
+**On the corrected inventory this option is still broad.** It is 8 regulatory decisions, 11
+published objects and 2 validator checks at risk of silent non-matching, 132 fixture inputs, a
+ruleset publication, a migration, an unmeasured answer key, and it reaches only five of the eight
+gates that need it. Attempt 3's two-file throwaway diff is not a reliable implementation estimate
+for the engine option because its resolver is order-dependent. I am still not recommending either.
 
 ## 7. What the measurement does and does not force
 
-It does not force an answer. The load-bearing number came out **against** the assumption in the
-issue that this class of change moves approved output: **under the semantics issue #108 actually
-proposes**, the answer key does not move, and the implementation is two files.
-
-That qualifier is round 3's correction and it matters. Rounds 1 and 2 reported the same number for a
-narrower change and quoted it as though it were about #108's. The number now says what it appeared
-to say, but only because the recursion was fixed in `verdict.ts` rather than worked around in the
-semantics.
+It does not force an answer. It also does not establish the load-bearing result earlier rounds
+claimed. Attempt 3 passes 1163 tests only under the current evaluation order, while a cold
+transitive lookup silently suppresses a deeper branch and `false AND unknown` is not evaluated as
+three-valued conjunction. The answer-key impact and implementation size of a correct,
+order-independent implementation therefore remain unmeasured.
 
 The two facts a decision should turn on, neither of which is about fixtures:
 
@@ -703,23 +706,22 @@ The two facts a decision should turn on, neither of which is about fixtures:
   engine owner's review as well as the verification owner's, so it has a mandatory reviewer whose
   job includes noticing exactly this.
 - The change is **larger than the issue scopes it**: `verdict.ts` must change too, or the plan
-  generator does not terminate (section 2). That is a correctness-critical file the issue does not
-  mention, and it is where the whole difficulty of this change lives. The semantics are three lines;
-  the branching is the part that has to be got right.
+  generator does not terminate, and `conditions.ts` still needs an order-independent transitive
+  resolver with correct conjunction semantics (section 2). Those correctness details must be
+  implemented and re-measured before comparing costs or fixture movement.
 
-**The round 2 corrections all moved in the same direction, and it is not the direction that favours
-the alternative.** The engine option lost a cost it never had (no database change: section 4), and
-the ruleset option gained several it does have (8 regulatory decisions, 11 published objects and
-2 validator checks that fail quietly, an unmeasured answer key: section 6). That narrows the gap between them considerably.
+The ruleset alternative remains broad for the reasons in section 6, but this measurement no longer
+supports calling the engine alternative cheaper or output-neutral. Those comparisons inherited
+attempt 3's invalid premise.
 
-It still does not force an answer, and the reason is the one fact none of the corrections touched:
-the engine change buys correctness in a state nothing can currently produce. A cheaper option that
-addresses an unreachable state is not thereby worth taking.
+It still does not force an answer. The independent production-reachability finding remains: the
+engine change buys correctness in a state the API cannot currently produce.
 
 If the deployment gains real rows before the next ruleset version that widens a gate, route 5
 becomes live and the calculus changes, and route 5 needs no migration to arrive. Until then the
-measurement supports deferring, without forcing it. What it no longer supports is the sentence
-rounds 1 to 3 offered for deferring: that reaching this state requires a mistake.
+reachability evidence supports deferring, without forcing it. What the measurement no longer
+supports is a decision based on zero answer-key movement, a two-file implementation estimate, or
+the sentence rounds 1 to 3 offered for deferring: that reaching this state requires a mistake.
 
 ---
 
@@ -877,6 +879,21 @@ taken from the final artifact of the version.
 
 Across seven rounds: 23 corrections applied, one declined and then found to have been declined
 wrongly, and twelve of the applied ones have favoured this document's own conclusion.
+
+### Round 8
+
+Issue #174 corrected three remaining findings:
+
+24. **Attempt 3's headline result was not measured under the semantics it named.** The
+    cold-resolver and conjunction probes already in section 2 show order-dependent suppression and
+    incorrect `false AND unknown` handling. The 1163/1163 result is now scoped to that throwaway
+    patch's existing evaluation order; correct answer-key impact and implementation size are
+    explicitly unmeasured.
+25. **The enum fixture inventory missed five positional SQL inserts.** Their four converted gate
+    values add 20 literals in `ruleset.test.ts`, bringing the inventory to 132 literals across nine
+    files.
+26. **The enum option priced a form-control change that does not exist.** The shared `Control`
+    already renders declared enum values and returns the selected string, so the cost is removed.
 
 
 ---

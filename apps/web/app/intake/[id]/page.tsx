@@ -1,5 +1,10 @@
 import { IntakeForm } from "../intake-form";
 import { intakeFormProps } from "../intake-page-props";
+import type { Metadata } from "next";
+
+export const metadata: Metadata = {
+  title: "Edit your event",
+};
 
 // The edit route. An organizer who navigated away (or refreshed) reaches their saved
 // event here, so the revision/stale-plan/regenerate path is reachable rather than

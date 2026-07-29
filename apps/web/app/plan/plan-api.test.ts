@@ -347,6 +347,24 @@ describe("coverage of every field this feature reads", () => {
     },
   );
 
+  it("accepts a historical finding with no user summary and normalizes it to null", async () => {
+    stubFetch(async () =>
+      jsonResponse(200, {
+        ...storedPlan,
+        findings: [omit(storedFinding, "userSummary")],
+      }),
+    );
+    const result = await loadPlan("https://api.example.com", "event-1");
+    expect(result.ok && result.plan.findings[0]?.userSummary).toBeNull();
+  });
+
+  it("refuses a malformed user summary", async () => {
+    await expectRefused({
+      ...storedPlan,
+      findings: [{ ...storedFinding, userSummary: WRONG }],
+    });
+  });
+
   // Cases the derived sweep cannot express, kept for the reasoning rather than the coverage.
   it("refuses a verdict token the approved copy does not cover", async () => {
     // A string that is not one of the four renders an empty verdict line and silently drops the
@@ -379,20 +397,19 @@ describe("coverage of every field this feature reads", () => {
   });
 });
 
-
-  it("accepts a conditional missingFact that omits thresholds (pre-field stored plans)", async () => {
-    stubFetch(async () =>
-      jsonResponse(200, {
-        ...storedPlan,
-        verdict: "CONDITIONAL",
-        verdictDetail: {
-          ...storedPlan.verdictDetail,
-          missingFacts: [{ field: "venue_license_covers_event_area", branches: [] }],
-        },
-      }),
-    );
-    const result = await loadPlan("http://api.test", "event-1");
-    expect(result.ok).toBe(true);
-    if (!result.ok) return;
-    expect(result.plan.verdictDetail.missingFacts[0]?.thresholds).toBeNull();
-  });
+it("accepts a conditional missingFact that omits thresholds (pre-field stored plans)", async () => {
+  stubFetch(async () =>
+    jsonResponse(200, {
+      ...storedPlan,
+      verdict: "CONDITIONAL",
+      verdictDetail: {
+        ...storedPlan.verdictDetail,
+        missingFacts: [{ field: "venue_license_covers_event_area", branches: [] }],
+      },
+    }),
+  );
+  const result = await loadPlan("http://api.test", "event-1");
+  expect(result.ok).toBe(true);
+  if (!result.ok) return;
+  expect(result.plan.verdictDetail.missingFacts[0]?.thresholds).toBeNull();
+});

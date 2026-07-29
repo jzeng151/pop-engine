@@ -12,8 +12,12 @@ import type {
   FindingSource,
   MissingFact,
   PermitPlan,
+  RuleUserSummary,
   RescopeSuggestion,
+  SummarySourceLink,
   UnresolvedTimeline,
+  UserSummaryPoint,
+  UserSummaryPointKind,
   Verdict,
   VerdictDetail,
   VerificationStatus,
@@ -112,14 +116,17 @@ export type ConsumedFinding = Omit<
     | "timelineUnresolvedReason"
     | "conflictText"
     | "sources"
+    | "userSummary"
     | "verificationStatus"
     | "lastVerifiedDate"
   >,
-  "deadline" | "lastVerifiedDate"
+  "deadline" | "lastVerifiedDate" | "userSummary"
 > & {
   readonly deadline: ConsumedDeadline | null;
   /** Required on the stored-plan wire even though pre-field engine replays omit it internally. */
   readonly lastVerifiedDate: string | null;
+  /** Normalized to null for plans stored before organizer summaries existed. */
+  readonly userSummary?: RuleUserSummary | null;
 };
 
 /**
@@ -262,6 +269,30 @@ const DEADLINE_STATUSES = tokensOf<DeadlineStatus>({
 
 const DEADLINE_CHECKS: FieldChecks<ConsumedDeadline> = { type: isString };
 
+const USER_SUMMARY_POINT_KINDS = tokensOf<UserSummaryPointKind>({
+  overview: true,
+  deadline: true,
+  fee: true,
+  action: true,
+  warning: true,
+});
+
+const SUMMARY_SOURCE_CHECKS: FieldChecks<SummarySourceLink> = {
+  label: isString,
+  url: isString,
+};
+
+const SUMMARY_POINT_CHECKS: FieldChecks<UserSummaryPoint> = {
+  kind: isToken(USER_SUMMARY_POINT_KINDS),
+  text: isString,
+  sources: arrayOf(shapedLike(SUMMARY_SOURCE_CHECKS)),
+};
+
+const USER_SUMMARY_CHECKS: FieldChecks<RuleUserSummary> = {
+  heading: isString,
+  points: arrayOf(shapedLike(SUMMARY_POINT_CHECKS)),
+};
+
 /** Every field of a citation is read — the text, the rule it belongs to, and each URL. */
 const SOURCE_CHECKS: FieldChecks<FindingSource> = {
   ruleId: isString,
@@ -290,6 +321,8 @@ const FINDING_CHECKS: FieldChecks<ConsumedFinding> = {
   timelineUnresolvedReason: nullOr(isString),
   conflictText: nullOr(isString),
   sources: arrayOf(shapedLike(SOURCE_CHECKS)),
+  userSummary: (value: unknown): value is RuleUserSummary | null =>
+    value === undefined || value === null || shapedLike(USER_SUMMARY_CHECKS)(value),
   verificationStatus: isToken(VERIFICATION_STATUSES),
   lastVerifiedDate: nullOr(isString),
 };
@@ -365,11 +398,17 @@ const PLAN_CHECKS: FieldChecks<PlanResponse> = {
 
 /** The plan fields and finding members this feature reads, exposed so a test can assert coverage. */
 export const CONSUMED_PLAN_FIELDS: readonly string[] = Object.keys(PLAN_CHECKS);
-export const CONSUMED_FINDING_FIELDS: readonly string[] = Object.keys(FINDING_CHECKS);
+export const CONSUMED_FINDING_FIELDS: readonly string[] = Object.keys(FINDING_CHECKS).filter(
+  (field) => field !== "userSummary",
+);
 
 function normalizePlan(plan: PlanResponse): PlanResponse {
   return {
     ...plan,
+    findings: plan.findings.map((finding) => ({
+      ...finding,
+      userSummary: finding.userSummary ?? null,
+    })),
     verdictDetail: {
       ...plan.verdictDetail,
       unresolvedTimelines: plan.verdictDetail.unresolvedTimelines ?? [],

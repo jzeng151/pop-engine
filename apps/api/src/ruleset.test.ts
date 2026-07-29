@@ -72,7 +72,7 @@ describe("ruleset validation", () => {
     const ruleset = await loadRuleset();
 
     expect(ruleset.schema).toBe("popengine-rules/v2");
-    expect(ruleset.rulesetVersion).toBe("nyc.v2.10");
+    expect(ruleset.rulesetVersion).toBe("nyc.v2.11");
     expect(ruleset.snapshotDate).toBe("2026-07-29");
     expect(ruleset.intakeFields).toHaveLength(33);
     expect(ruleset.intakeFields).not.toContain("food_affinity_private_exception_claimed");
@@ -126,7 +126,7 @@ describe("ruleset validation", () => {
   it("honors RULES_FILE", async () => {
     process.env.RULES_FILE = rulesFile;
     await expect(loadRuleset()).resolves.toMatchObject({
-      rulesetVersion: "nyc.v2.10",
+      rulesetVersion: "nyc.v2.11",
     });
   });
 

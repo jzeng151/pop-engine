@@ -1,20 +1,20 @@
 # PopEngine — Architecture (Canonical)
 
-**Status:** APPROVED (2026-07-22; see `docs/BASELINE.md`). Technical design for Phase 0–1.5. Companion to `PRD.md` (requirements), `ROADMAP.md` (phasing), `DESIGN.md` (lanes, gates, demo), `ARCHITECTURE-FUTURE.md` (Phase 2+ target). Permit facts referenced here trace to `rules/nyc-rules.v2.10.json`; none are asserted beyond it.
+**Status:** APPROVED (2026-07-22; see `docs/BASELINE.md`). Technical design for Phase 0–1.5. Companion to `PRD.md` (requirements), `ROADMAP.md` (phasing), `DESIGN.md` (lanes, gates, demo), `ARCHITECTURE-FUTURE.md` (Phase 2+ target). Permit facts referenced here trace to `rules/nyc-rules.v2.11.json`; none are asserted beyond it.
 
 ## Architecture Decisions (2026-07-21, extended 2026-07-28)
 
 | #     | Decision                                                                                                                                                 | Rationale                                                                                                                                                                                                                                         |
 | ----- | -------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | AD-1  | Separate Express API + Next.js frontend (two services)                                                                                                   | Canonical stack; long-lived process hosts the alert poller in-process; decoupled lifecycles. Chosen after explicit tradeoff review vs. single Next.js app.                                                                                        |
-| AD-2  | The published ruleset file in git (`rules/nyc-rules.v2.10.json`) is authoritative; loaded in-memory at boot; `permit_rules` table is a seeded read model | Engine tests run without a database; rule changes are PRs (matches the manual rules-admin workflow in `DESIGN.md`); "crown jewel is a versioned file" stays literally true.                                                                       |
+| AD-2  | The published ruleset file in git (`rules/nyc-rules.v2.11.json`) is authoritative; loaded in-memory at boot; `permit_rules` table is a seeded read model | Engine tests run without a database; rule changes are PRs (matches the manual rules-admin workflow in `DESIGN.md`); "crown jewel is a versioned file" stays literally true.                                                                       |
 | AD-3  | S3-compatible object storage for F-202 document uploads (metadata in Postgres)                                                                           | Production-correct from day one; survives redeploys.                                                                                                                                                                                              |
 | AD-4  | No Redis                                                                                                                                                 | Demo-scale check-in volume needs no queue layer (PRD appendix). Alerts run on a DB-backed poller.                                                                                                                                                 |
 | AD-5  | No auth in MVP                                                                                                                                           | Demo runs single-tenant. F-701 is Phase 2.                                                                                                                                                                                                        |
 | AD-6  | Rules engine is a pure module (no DB, no HTTP, no clock)                                                                                                 | Deterministic; testable against the 6 scenarios as plain unit tests from day 3. `today` is a parameter, never `Date.now()` inside evaluation.                                                                                                     |
 | AD-7  | Plans are immutable snapshots                                                                                                                            | Regeneration inserts a new plan row pinned to its ruleset version; history is reproducible even after rules change.                                                                                                                               |
 | AD-8  | TypeScript across the monorepo                                                                                                                           | The engine package's exported intake/plan/verdict types are the client/server contract; TS makes it enforced rather than conventional. Decided 2026-07-22 (OPEN-QUESTIONS S-5).                                                                   |
-| AD-9  | Ruleset baseline: nyc.v2.10 (corrected subset), schema popengine-rules/v2                                                                                | Adopted 2026-07-22 as nyc.v2.1 after two fetch-confirmed verification passes; nyc.v2.10 publishes the issue #107 named confirmations; the 59-rule draft in `rules/proposals/` is the post-capstone target.                                        |
+| AD-9  | Ruleset baseline: nyc.v2.11 (corrected subset), schema popengine-rules/v2                                                                                | Adopted 2026-07-22 as nyc.v2.1 after two fetch-confirmed verification passes; nyc.v2.11 adds organizer summaries without changing regulatory behavior; the 59-rule draft in `rules/proposals/` is the post-capstone target.                       |
 | AD-10 | Layered result model: finding kind + disposition + per-finding deadline status, summarized by the four-state verdict                                     | Preserves demo vocabulary while never overclaiming; INFEASIBLE = "published deadline missed as scoped."                                                                                                                                           |
 | AD-11 | Real business-day math against a pinned holiday calendar (`us-ny-business-days@2026`)                                                                    | Fixture dates are pinned, so determinism holds; the calendar artifact versions with the ruleset. Holiday source is an open research item.                                                                                                         |
 | AD-12 | Demo environment is access-gated with synthetic data only                                                                                                | The no-auth MVP must not hold real PII, documents, or notification destinations (audit finding B-07). A host-level gate (basic auth or IP allowlist) fronts the demo deploy; public RSVP/check-in routes open only for the rehearsal/demo window. |
@@ -27,7 +27,7 @@
 │  apps/web        │ ─────────────────▶ │  apps/api (Express)       │
 │  Next.js         │                    │  ├─ routes/validation     │
 │  (organizer UI,  │                    │  ├─ alert poller (60s)    │
-│   plan render,   │                    │  └─ packages/engine ◀── rules/nyc-rules.v2.10.json
+│   plan render,   │                    │  └─ packages/engine ◀── rules/nyc-rules.v2.11.json
 │   stretch pages) │                    └────────┬─────────┬───────┘
 └─────────────────┘                              │         │
                                           PostgreSQL   S3-compatible
@@ -45,7 +45,7 @@
 /apps/web          Next.js frontend (Dev 2 lane; stretch pages Dev 3/4)
 /apps/api          Express API + alert poller (Dev 1/3/4 lanes)
 /packages/engine   Pure rules engine module (Dev 1 lane)
-/rules             nyc-rules.v2.10.json (published ruleset) + proposals/ (drafts; never build from these)
+/rules             nyc-rules.v2.11.json (published ruleset) + proposals/ (drafts; never build from these)
 /specs             One spec per F-id
 /docs              PRD, ROADMAP, DESIGN, this file, OPEN-QUESTIONS
 ```
@@ -65,7 +65,7 @@ One **Event** row is the single source of truth. Four stage-scoped module views 
 
 ### events
 
-Intake columns mirror the ruleset's `intake_fields` registry (`rules/nyc-rules.v2.10.json` is authoritative for names, enums, and asked-when conditions; the table below groups them):
+Intake columns mirror the ruleset's `intake_fields` registry (`rules/nyc-rules.v2.11.json` is authoritative for names, enums, and asked-when conditions; the table below groups them):
 
 | Column group        | Columns                                                                                                                                                                                                                                                                    | Notes                                                                                                                                                                                                                                              |
 | ------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -82,7 +82,7 @@ Intake columns mirror the ruleset's `intake_fields` registry (`rules/nyc-rules.v
 
 _Unknown-capable active fields use explicit `unknown` values, never NULL-as-unknown. Editing any intake field bumps `revision_counter` server-side, marks the current plan stale, and prompts regeneration (recalculate, don't patch). Migration 012 adds both F-110 columns, backfills `unknown` only for qualifying drafts, and retains the superseded assembly and food-claim columns as historical storage._
 
-### permit_rules _(read model, seeded from `rules/nyc-rules.v2.10.json` at migration/boot; never hand-edited)_
+### permit_rules _(read model, seeded from `rules/nyc-rules.v2.11.json` at migration/boot; never hand-edited)_
 
 | Column                    | Type                                                                                                                                | Notes                                                                                                                                                   |
 | ------------------------- | ----------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -240,7 +240,7 @@ evaluate(intake, ruleset, today, calendar) → {
 
 ### Rules as data
 
-Each rule in `rules/nyc-rules.v2.10.json` carries: `id`, `kind`, `trigger` (condition tree over the declared intake fields), `output` (name/variants, agency, typed deadline, fee, portal, paths for branchable rules), `verification` (status + evidence reference into `VERIFICATION-SOURCES.md`), and `source` except when a COVERAGE_GAP deliberately asserts nothing. The file also declares its own `intake_fields` registry, `config` (slack threshold, alert offsets, calendar, assembly thresholds — `alert_offsets` is keyed by `alerts.alert_type` and carries the reminder day offsets F-203 schedules from, which that spec states are config rather than code), and `engine_conventions`. F-207 adds a second city as data, not jurisdiction-specific executable code. If its rules cannot be expressed by the approved generic operators and deadline types, F-207 stops until a separately approved engine/schema change adds the required generic primitive.
+Each rule in `rules/nyc-rules.v2.11.json` carries: `id`, `kind`, `trigger` (condition tree over the declared intake fields), `output` (name/variants, agency, typed deadline, fee, portal, paths for branchable rules), `verification` (status + evidence reference into `VERIFICATION-SOURCES.md`), and `source` except when a COVERAGE_GAP deliberately asserts nothing. The file also declares its own `intake_fields` registry, `config` (slack threshold, alert offsets, calendar, assembly thresholds — `alert_offsets` is keyed by `alerts.alert_type` and carries the reminder day offsets F-203 schedules from, which that spec states are config rather than code), and `engine_conventions`. F-207 adds a second city as data, not jurisdiction-specific executable code. If its rules cannot be expressed by the approved generic operators and deadline types, F-207 stops until a separately approved engine/schema change adds the required generic primitive.
 
 ### Condition evaluation (tri-state)
 
@@ -321,5 +321,5 @@ Error principle: rule-evaluation failures return an explicit error; the API neve
 - **CORS:** api allows the web origin only.
 - **Shared types:** `packages/engine` exports the intake/plan/verdict types; both apps import from it.
 - **Migrations:** node-pg-migrate; the cumulative Phase 1 `events` shape is ratified for the access-gated demo through PR #137. Production activation still requires strict all-lane ratification. Future shared/core-table changes require `DOCUMENTATION-GOVERNANCE.md` §6.
-- **Rules loading:** api boots by validating `rules/nyc-rules.v2.10.json` (schema check; 42 rules + 4 advisories present; every trigger field declared in the file's `intake_fields` registry) and syncing `permit_rules`; a validation failure aborts boot loudly.
+- **Rules loading:** api boots by validating `rules/nyc-rules.v2.11.json` (schema check; 42 rules + 4 advisories present; every trigger field declared in the file's `intake_fields` registry) and syncing `permit_rules`; a validation failure aborts boot loudly.
 - **Observability (MVP-appropriate):** structured request logs + an engine-evaluation trace (rule → tri-state result) attached to each plan row in `verdict_detail`; nothing fancier until Phase 2.

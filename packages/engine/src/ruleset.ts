@@ -18,7 +18,11 @@ import type {
   IntakeFieldDefinition,
   RuleKind,
   RuleSource,
+  RuleUserSummary,
+  SummarySourceLink,
   TriggerNode,
+  UserSummaryPoint,
+  UserSummaryPointKind,
   VerificationStatus,
 } from "./types";
 
@@ -409,6 +413,60 @@ function parseSource(value: unknown, label: string): RuleSource | null {
   };
 }
 
+const USER_SUMMARY_POINT_KINDS: readonly UserSummaryPointKind[] = [
+  "overview",
+  "deadline",
+  "fee",
+  "action",
+  "warning",
+];
+
+function parseSummarySource(
+  value: unknown,
+  label: string,
+  source: RuleSource | null,
+): SummarySourceLink {
+  const link = asObject(value, label);
+  const url = asString(link.url, `${label}.url`);
+  if (source === null || !source.urls.includes(url)) {
+    fail(`${label}.url must also appear in the rule's source.urls`);
+  }
+  return { label: asString(link.label, `${label}.label`), url };
+}
+
+function parseUserSummary(
+  value: unknown,
+  label: string,
+  source: RuleSource | null,
+): RuleUserSummary | null {
+  if (value === undefined) return null;
+  const summary = asObject(value, label);
+  const points = asArray(summary.points, `${label}.points`);
+  if (points.length === 0) fail(`${label}.points must not be empty`);
+  return {
+    heading: asString(summary.heading, `${label}.heading`),
+    points: points.map((value, index): UserSummaryPoint => {
+      const pointLabel = `${label}.points[${index}]`;
+      const point = asObject(value, pointLabel);
+      const kind = asString(point.kind, `${pointLabel}.kind`) as UserSummaryPointKind;
+      if (!USER_SUMMARY_POINT_KINDS.includes(kind)) {
+        fail(`${pointLabel}.kind has unsupported value "${kind}"`);
+      }
+      const sources = asArray(point.sources, `${pointLabel}.sources`).map((link, sourceIndex) =>
+        parseSummarySource(link, `${pointLabel}.sources[${sourceIndex}]`, source),
+      );
+      if (source !== null && sources.length === 0) {
+        fail(`${pointLabel}.sources must not be empty for a sourced rule`);
+      }
+      return {
+        kind,
+        text: asString(point.text, `${pointLabel}.text`),
+        sources,
+      };
+    }),
+  };
+}
+
 function parseRule(
   value: unknown,
   label: string,
@@ -446,6 +504,7 @@ function parseRule(
     output.fee === undefined || output.fee === null
       ? null
       : asObject(output.fee, `${label}.output.fee`);
+  const source = parseSource(rule.source, `${label}.source`);
 
   return {
     id: asString(rule.id, `${label}.id`),
@@ -482,7 +541,8 @@ function parseRule(
     verificationStatus,
     verificationQualification: optionalString(verification, "qualification"),
     verificationLastVerifiedDate: optionalString(verification, "last_verified_date"),
-    source: parseSource(rule.source, `${label}.source`),
+    source,
+    userSummary: parseUserSummary(output.user_summary, `${label}.output.user_summary`, source),
   };
 }
 

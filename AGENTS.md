@@ -10,7 +10,7 @@ Read, in order:
 2. this file and `CONTRIBUTING.md`
 3. your issue and its `specs/F-xxx-*.md`
 4. the relevant sections of `docs/ARCHITECTURE.md`
-5. `rules/nyc-rules.v2.10.json` and `docs/test-scenario-answer-key.md` when the feature touches rules, plans, or verdicts
+5. `rules/nyc-rules.v2.11.json` and `docs/test-scenario-answer-key.md` when the feature touches rules, plans, or verdicts
 
 If a required artifact is absent, unapproved, superseded, or contradictory: stop the affected work and open a `SPEC-CONFLICT` issue per `docs/DOCUMENTATION-GOVERNANCE.md` §5. Do not infer the intended behavior. Do not pick the version you prefer.
 
@@ -24,7 +24,7 @@ If a required artifact is absent, unapproved, superseded, or contradictory: stop
 ## Regulatory safety (the non-negotiables)
 
 - Never invent or complete a permit name, agency, trigger, deadline, fee, document, portal, exception, or source.
-- Regulatory output comes only from the published ruleset (`rules/nyc-rules.v2.10.json`). Authority order: approved primary source → published rule → approved fixture → engine output → UI copy. When levels disagree, fix the lower one; never bend the engine to reproduce an unsupported expectation.
+- Regulatory output comes only from the published ruleset (`rules/nyc-rules.v2.11.json`). Authority order: approved primary source → published rule → approved fixture → engine output → UI copy. When levels disagree, fix the lower one; never bend the engine to reproduce an unsupported expectation.
 - `SOURCE_CONFIRMED`, `OFFICIAL_CONFLICT`, `RESEARCH_REQUIRED`, and `COVERAGE_GAP` states stay visible end to end. Never present a partial plan as complete; never render an official conflict as resolved.
 - Only the verification owner (Dev 4) changes verification statuses. Rule-semantics changes also need the engine owner's (Dev 1) review.
 - AI output is never a regulatory source. This includes you.

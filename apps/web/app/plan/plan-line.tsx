@@ -1,5 +1,9 @@
 import { useEffect, useState } from "react";
-import { CONFIRM_WITH_AGENCY, type FindingSource } from "@pop-engine/engine";
+import {
+  CONFIRM_WITH_AGENCY,
+  type FindingSource,
+  type SummarySourceLink,
+} from "@pop-engine/engine";
 import { Disclosure } from "../disclosure";
 import { PortalBlock } from "../portal-block";
 import { includesAgencyConfirmation, NOT_COVERED_BY_RULESET } from "../verification-copy";
@@ -129,6 +133,57 @@ function Citation({ source }: { source: FindingSource }) {
   );
 }
 
+const SUMMARY_LABEL = {
+  overview: "What this means",
+  deadline: "Deadline",
+  fee: "Fee",
+  action: "Next step",
+  warning: "Important",
+} as const;
+
+function SummarySources({ sources }: { sources: readonly SummarySourceLink[] }) {
+  if (sources.length === 0) return null;
+  return (
+    <span className="line__point-sources">
+      {" "}
+      {sources.length === 1 ? "Source: " : "Sources: "}
+      {sources.map((source, index) => (
+        <span key={`${source.label}:${source.url}`}>
+          {index > 0 && ", "}
+          <a href={source.url} target="_blank" rel="noreferrer noopener">
+            {source.label}
+          </a>
+        </span>
+      ))}
+    </span>
+  );
+}
+
+function PublishedDeadline({ finding }: { finding: ConsumedFinding }) {
+  if (!hasDeadlineData(finding)) return null;
+  return (
+    <p className="line__deadline">
+      {finding.deadlineDisplay !== null && (
+        <span className="line__deadline-display">{finding.deadlineDisplay}</span>
+      )}
+      {deadlineTypeLabel(finding) !== null && (
+        <span className="line__deadline-type">{deadlineTypeLabel(finding)}</span>
+      )}
+      {finding.latestApplyDate !== null && (
+        <span className="line__deadline-date">
+          {finding.deadlineDisplay !== null && " · "}apply by {finding.latestApplyDate}
+        </span>
+      )}
+      {finding.deadlineStatus !== "not_applicable" && (
+        <span className="line__deadline-status">
+          {" · "}
+          {humanize(finding.deadlineStatus)}
+        </span>
+      )}
+    </p>
+  );
+}
+
 export function PlanLine({ finding }: { finding: ConsumedFinding }) {
   const ruleIds = finding.ruleIds.join(", ");
   const isResearchRequired = finding.verificationStatus === "RESEARCH_REQUIRED";
@@ -144,8 +199,18 @@ export function PlanLine({ finding }: { finding: ConsumedFinding }) {
       finding.portalInstructions,
       ...finding.notes,
     ]);
-  const name = finding.name ?? ruleIds;
+  const userSummary = finding.userSummary ?? null;
+  const hasUserSummary = userSummary !== null;
+  const name = userSummary?.heading ?? finding.name ?? ruleIds;
   const [primarySource, ...furtherSources] = finding.sources;
+  const deadlineSources = [
+    ...new Map(
+      (userSummary?.points ?? [])
+        .filter((point) => point.kind === "deadline")
+        .flatMap((point) => point.sources)
+        .map((source) => [source.url, source]),
+    ).values(),
+  ];
 
   useSourceUrlAudit(finding.sources);
 
@@ -153,11 +218,7 @@ export function PlanLine({ finding }: { finding: ConsumedFinding }) {
     /* An article rather than a list item: each finding is a self-contained requirement, and its
        citations are the list inside it. */
     <article
-      className={
-        finding.disposition === "prohibited_or_ineligible"
-          ? "line line--blocker"
-          : "line"
-      }
+      className={finding.disposition === "prohibited_or_ineligible" ? "line line--blocker" : "line"}
       data-testid={
         finding.disposition === "prohibited_or_ineligible" ? "prohibited-finding" : undefined
       }
@@ -170,46 +231,49 @@ export function PlanLine({ finding }: { finding: ConsumedFinding }) {
         <VerificationBadge status={finding.verificationStatus} />
       </div>
 
-      <p className="line__meta">
-        {/* advisory, note and classification findings legitimately publish no agency, so the
-            label is omitted rather than rendered empty. */}
-        {finding.agency !== null && <span className="line__agency">{finding.agency}</span>}
-        <span className="line__disposition">{humanize(finding.disposition)}</span>
-      </p>
-
-      {/* The published prose is optional and ten dated rules omit it, including
-          SAPO-STREET-LARGE-001 — the demo anchor's blocking finding. Gating the block on the
-          prose hid the computed apply-by date and the missed status, which are the two facts
-          that line exists to state. Any deadline data at all renders the block. */}
-      {hasDeadlineData(finding) && (
-        <p className="line__deadline">
-          {finding.deadlineDisplay !== null && (
-            <span className="line__deadline-display">{finding.deadlineDisplay}</span>
-          )}
-          {deadlineTypeLabel(finding) !== null && (
-            <span className="line__deadline-type">{deadlineTypeLabel(finding)}</span>
-          )}
-          {finding.latestApplyDate !== null && (
-            <span className="line__deadline-date">
-              {finding.deadlineDisplay !== null && " · "}apply by {finding.latestApplyDate}
-            </span>
-          )}
-          {finding.deadlineStatus !== "not_applicable" && (
-            <span className="line__deadline-status">
-              {" · "}
-              {humanize(finding.deadlineStatus)}
-            </span>
-          )}
+      {hasUserSummary && (
+        <p className="line__meta">
+          {finding.agency !== null && <span className="line__agency">{finding.agency}</span>}
+          <span className="line__disposition">{humanize(finding.disposition)}</span>
         </p>
       )}
 
-      {/* Rendered when the ruleset publishes an amount, and NOTHING when it does not.
-          No "fee not published" line: `ruleset.ts` collapses an absent `fee` and an explicit
-          `fee: null` to one value, so a finding cannot distinguish "this filing has no fee" from
-          "the amount was not published", and nothing downstream can recover the difference. Saying
-          either would be a claim the data does not carry. A blank row is not the alternative — the
-          row is absent, so nothing reads as a rendering fault. */}
-      {finding.feeDisplay !== null && <p className="line__fee">{finding.feeDisplay}</p>}
+      {hasUserSummary ? (
+        <ul className="line__summary">
+          {userSummary?.points.map((point, index) => (
+            <li className={`line__point line__point--${point.kind}`} key={`${point.kind}:${index}`}>
+              <strong>{SUMMARY_LABEL[point.kind]}:</strong> {point.text}
+              <SummarySources sources={point.sources} />
+            </li>
+          ))}
+          {finding.latestApplyDate !== null && (
+            <li className="line__point line__point--deadline">
+              <strong>Apply by:</strong> {finding.latestApplyDate}
+              {finding.deadlineStatus !== "not_applicable" &&
+                ` · ${humanize(finding.deadlineStatus)}`}
+              <SummarySources sources={deadlineSources} />
+            </li>
+          )}
+          {finding.latestApplyDate === null && finding.deadlineStatus === "not_calculable" && (
+            <li className="line__point line__point--warning">
+              <strong>Exact apply-by date:</strong> not calculable — {CONFIRM_WITH_AGENCY}
+              <SummarySources sources={deadlineSources} />
+            </li>
+          )}
+        </ul>
+      ) : (
+        <>
+          <p className="line__meta">
+            {/* advisory, note and classification findings legitimately publish no agency, so the
+                label is omitted rather than rendered empty. */}
+            {finding.agency !== null && <span className="line__agency">{finding.agency}</span>}
+            <span className="line__disposition">{humanize(finding.disposition)}</span>
+          </p>
+          <PublishedDeadline finding={finding} />
+          {/* An absent fee and an explicit null are indistinguishable, so null renders nothing. */}
+          {finding.feeDisplay !== null && <p className="line__fee">{finding.feeDisplay}</p>}
+        </>
+      )}
 
       {/* A RESEARCH_REQUIRED line has no located primary source, which the organizer has to see
           on the line itself rather than discover behind an expand: the absence IS the finding. */}
@@ -222,14 +286,14 @@ export function PlanLine({ finding }: { finding: ConsumedFinding }) {
         )}
 
       {/* COVERAGE_GAP means this ruleset version does not model the combination, not that a
-          source is missing (published legend, rules/nyc-rules.v2.10.json). Saying "no source" here
+          source is missing (published legend, rules/nyc-rules.v2.11.json). Saying "no source" here
           would state RESEARCH_REQUIRED's meaning, which renders CONFIRM_WITH_AGENCY above. Also a
           summary field, because it too explains why no citation follows. */}
       {finding.verificationStatus === "COVERAGE_GAP" && finding.sources.length === 0 && (
         <p className="line__not-covered">{NOT_COVERED_BY_RULESET}</p>
       )}
 
-      {primarySource !== undefined && (
+      {!hasUserSummary && primarySource !== undefined && (
         <ul className="line__citations">
           <Citation source={primarySource} />
         </ul>
@@ -243,7 +307,8 @@ export function PlanLine({ finding }: { finding: ConsumedFinding }) {
           always means no field moved into it can disappear with it, for any finding shape, rather
           than that one hole being patched. */}
       <Disclosure
-        label={`Details for ${name}`}
+        label={hasUserSummary ? "Legal details and all sources" : `Details for ${name}`}
+        ariaLabel={hasUserSummary ? `Legal details and all sources for ${name}` : undefined}
         className="line__detail"
         onOpenChange={setDetailsOpen}
       >
@@ -253,6 +318,14 @@ export function PlanLine({ finding }: { finding: ConsumedFinding }) {
             <span className="line__verified-date">last verified {finding.lastVerifiedDate}</span>
           )}
         </p>
+
+        {hasUserSummary && <PublishedDeadline finding={finding} />}
+        {hasUserSummary && finding.feeDisplay !== null && (
+          <p className="line__fee">{finding.feeDisplay}</p>
+        )}
+        {hasUserSummary && finding.name !== null && finding.name !== name && (
+          <p className="line__note">{finding.name}</p>
+        )}
 
         {/* Both readings of an official conflict, verbatim. The badge in the summary already
               says OFFICIAL CONFLICT, so this states what the summary signals. */}
@@ -296,9 +369,9 @@ export function PlanLine({ finding }: { finding: ConsumedFinding }) {
           </p>
         ))}
 
-        {furtherSources.length > 0 && (
+        {(hasUserSummary ? finding.sources : furtherSources).length > 0 && (
           <ul className="line__citations">
-            {furtherSources.map((source) => (
+            {(hasUserSummary ? finding.sources : furtherSources).map((source) => (
               <Citation key={`${source.ruleId}:${source.citation}`} source={source} />
             ))}
           </ul>

@@ -129,6 +129,24 @@ export type Verdict = "FEASIBLE" | "FEASIBLE_AT_RISK" | "CONDITIONAL" | "INFEASI
 
 export type RuleSource = { readonly citation: string; readonly urls: readonly string[] };
 
+export type UserSummaryPointKind = "overview" | "deadline" | "fee" | "action" | "warning";
+
+export type SummarySourceLink = {
+  readonly label: string;
+  readonly url: string;
+};
+
+export type UserSummaryPoint = {
+  readonly kind: UserSummaryPointKind;
+  readonly text: string;
+  readonly sources: readonly SummarySourceLink[];
+};
+
+export type RuleUserSummary = {
+  readonly heading: string;
+  readonly points: readonly UserSummaryPoint[];
+};
+
 export type IntakeFieldDefinition = {
   readonly field: string;
   readonly type: string;
@@ -195,13 +213,14 @@ export type EngineRule = {
   /**
    * The date a rule's facts were last confirmed against their sources, when one is published.
    *
-   * Optional and null throughout nyc.v2.10: every fact is still pre-VERIFIED, and a date this repo
+   * Optional and null throughout nyc.v2.11: every fact is still pre-VERIFIED, and a date this repo
    * cannot evidence would be an invented permit fact. `permit_plan_items.last_verified_date` and
    * F-206's per-line date have had a column and a writer since migration 001 with nothing to read;
    * this is what they will read when verification rounds resume.
    */
   readonly verificationLastVerifiedDate: string | null;
   readonly source: RuleSource | null;
+  readonly userSummary: RuleUserSummary | null;
 };
 
 export type EngineRuleset = {
@@ -273,6 +292,7 @@ export type Finding = {
   /** Both readings of an OFFICIAL_CONFLICT rule, verbatim; null otherwise. */
   readonly conflictText: string | null;
   readonly sources: readonly FindingSource[];
+  readonly userSummary?: RuleUserSummary | null;
   readonly verificationStatus: VerificationStatus;
   /**
    * Earliest contributing rule verification date when every contributing rule publishes one;

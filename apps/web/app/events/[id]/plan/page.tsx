@@ -1,5 +1,10 @@
 import { PlanView } from "../../../plan/plan-view";
+import type { Metadata } from "next";
 import "./checklist-entry.css";
+
+export const metadata: Metadata = {
+  title: "Permit plan",
+};
 
 // The plan route. The plan and the ruleset meta are both fetched from the browser, because the
 // Cloudflare Access cookie is the browser's and not this server's (BASELINE.md provider baseline).

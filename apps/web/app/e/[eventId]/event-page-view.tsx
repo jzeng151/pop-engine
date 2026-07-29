@@ -40,7 +40,7 @@ export function EventPageView({ eventId, apiBaseUrl }: EventPageViewProps) {
 
   if (failure !== null && event === null) {
     return (
-      <div className="event-page">
+      <main className="event-page">
         <h1 className="event-page__title">Event unavailable</h1>
         <p className="event-page__error" role="alert">
           {failure}
@@ -48,17 +48,17 @@ export function EventPageView({ eventId, apiBaseUrl }: EventPageViewProps) {
         <p className="event-page__note">
           Ask the organizer for a current link. Demo data only (AD-12).
         </p>
-      </div>
+      </main>
     );
   }
 
   if (event === null) {
     return (
-      <div className="event-page">
+      <main className="event-page">
         <p className="event-page__lede" role="status">
           Opening event…
         </p>
-      </div>
+      </main>
     );
   }
 
@@ -85,7 +85,7 @@ export function EventPageView({ eventId, apiBaseUrl }: EventPageViewProps) {
   };
 
   return (
-    <div className="event-page">
+    <main className="event-page">
       <p className="pe-eyebrow">{event.event_date}</p>
       <h1 className="event-page__title">{event.title}</h1>
       <p className="event-page__lede">{venueLabel}</p>
@@ -159,6 +159,6 @@ export function EventPageView({ eventId, apiBaseUrl }: EventPageViewProps) {
           </p>
         </form>
       )}
-    </div>
+    </main>
   );
 }

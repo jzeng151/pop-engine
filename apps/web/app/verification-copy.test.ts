@@ -9,7 +9,7 @@ describe("COVERAGE_GAP copy against the published legend", () => {
   it("states what the ruleset does not cover, not what a source does not do", () => {
     expect(NOT_COVERED_BY_RULESET).toContain("Not covered by this ruleset version");
     // "source" in any form is RESEARCH_REQUIRED's territory. COVERAGE_GAP asserts nothing about
-    // sources: rules/nyc-rules.v2.10.json calls it "combination not modeled by this ruleset
+    // sources: rules/nyc-rules.v2.11.json calls it "combination not modeled by this ruleset
     // version; advisory asserts nothing".
     expect(NOT_COVERED_BY_RULESET.toLowerCase()).not.toContain("source");
   });
