@@ -1602,21 +1602,25 @@ for (const relative of f203Artifacts) {
     continue;
   }
 
-  const assignment = readFileSync(full, "utf8")
-    .split("\n")
-    .find((line) => {
-      const normalized = line.toLowerCase();
-      return (
-        normalized.includes("f-203") &&
-        f203Capabilities.every((capability) => normalized.includes(capability)) &&
-        normalized.includes("planned, not scheduled")
-      );
-    });
-  if (!assignment) {
+  const lines = readFileSync(full, "utf8").split("\n");
+  const assignmentIndex = lines.findIndex((line) => {
+    const normalized = line.toLowerCase();
+    return (
+      normalized.includes("f-203") &&
+      f203Capabilities.every((capability) => normalized.includes(capability)) &&
+      normalized.includes("planned, not scheduled")
+    );
+  });
+  if (assignmentIndex === -1) {
     f203Failures.push(
       `${relative} must assign escalations, digests, team reminders, and per-user preferences ` +
         "to F-203 as planned, not scheduled",
     );
+  } else if (relative === "docs/ROADMAP.md") {
+    const heading = lines.slice(0, assignmentIndex).findLast((line) => /^##\s+/.test(line));
+    if (!/^##\s+Phase 2\b/i.test(heading ?? "")) {
+      f203Failures.push(`${relative} must keep its F-203 full-scope assignment under Phase 2`);
+    }
   }
 }
 

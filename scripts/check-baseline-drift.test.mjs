@@ -54,9 +54,10 @@ const ruleset = (version) => ["nyc", `rules.v${version}.json`].join("-");
  */
 const SQUARE_RECONCILED = {
   "docs/ROADMAP.md":
-    "# Roadmap\n\n- **F-408 · Inventory Low-Stock Alerts** — manual counts or Square webhook.\n" +
+    "# Roadmap\n\n## Phase 2 — Execution Hardening\n\n" +
     "- **F-203 (full)** — alert escalations, digests, team reminders, and per-user preferences; " +
-    "planned, not scheduled.\n",
+    "planned, not scheduled.\n\n## Phase 4 — Platform\n\n" +
+    "- **F-408 · Inventory Low-Stock Alerts** — manual counts or Square webhook.\n",
   "docs/PRD.md":
     "# PRD\n\n- **F-308 / F-408** — ticketing integration/export; inventory low-stock alerts " +
     "(manual counts or Square webhook).\n" +
@@ -1787,6 +1788,20 @@ describe.concurrent("F-203 Phase 2 scope agreement (SPEC-CONFLICT #127 item 1)",
     expect(status).toBe(1);
     expect(output).toContain("specs/F-203-deadline-alerts.md is missing");
   });
+
+  it("fails when the unchanged Roadmap assignment moves out of Phase 2", async () => {
+    const { status, output } = await runOn({
+      "docs/ROADMAP.md": SQUARE_RECONCILED["docs/ROADMAP.md"].replace(
+        "## Phase 2 — Execution Hardening",
+        "## Phase 3 — Differentiation",
+      ),
+    });
+
+    expect(status).toBe(1);
+    expect(output).toContain(
+      "docs/ROADMAP.md must keep its F-203 full-scope assignment under Phase 2",
+    );
+  });
 });
 
 // The SPEC-CONFLICT #127 item 2 rule (governance §5 step 7). The reconciliation dropped a
@@ -1817,7 +1832,7 @@ describe.concurrent("Square/POS scope agreement (SPEC-CONFLICT #127 item 2)", ()
     );
 
     expect(status).toBe(1);
-    expect(output).toContain("docs/ROADMAP.md:5 asserts the broader standalone Square/POS");
+    expect(output).toContain("docs/ROADMAP.md:10 asserts the broader standalone Square/POS");
   });
 
   // A standalone entry that never says "Square" is the same defect wearing a different word.
