@@ -30,7 +30,7 @@ When registration capacity is full, an attendee can join a deterministic waitlis
 
 ## Inputs, Outputs, State, Validation, and Errors
 
-- Inputs are event, contact, and current capacity; outputs are confirmed RSVP or ordered waitlist entry.
+- Inputs are event and lifecycle generation, contact, and current capacity; outputs are confirmed RSVP or ordered waitlist entry.
 - State is waitlisted → promoted/confirmed, withdrawn, or expired; transitions are atomic and idempotent.
 - Duplicate contact submissions return current state only to the authenticated attendee or holder of that entry's receipt credential; other callers receive a non-disclosing result. A suppressed marketing contact may still receive only the policy-approved transactional promotion notice.
 - Missing or unresolved material data stays visibly unset, unknown, pending, or failed as appropriate; it never becomes a successful or complete result.
@@ -62,6 +62,7 @@ Exact HTTP, JSON Schema, migration, job, and provider shapes belong in their rev
 4. **F306-AC-04:** Withdrawal or ineligibility before claim skips that entry without reordering remaining eligible entries.
 5. **F306-AC-05:** Promotion communication is transactional only and does not create marketing consent.
 6. **F306-AC-06:** Joining returns an unguessable receipt credential shown once; attendee status and withdrawal require that credential or the authenticated entry owner. A duplicate submission without either proof returns only a non-disclosing result and cannot reveal or change the existing entry.
+7. **F306-AC-07:** Promotion and its notice outbox record compare-and-swap the current event lifecycle generation; event cancellation/archive serializes against promotion, so closure that wins first creates no RSVP or notice. Notice delivery atomically claims `sending` after rechecking that generation; closure cancels work not yet `sending` and accounts for any already-sending notice explicitly.
 
 ## Fixtures and Verification
 

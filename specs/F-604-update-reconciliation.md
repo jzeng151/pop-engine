@@ -61,6 +61,7 @@ Exact HTTP, JSON Schema, migration, job, and provider shapes belong in their rev
 3. **F604-AC-03:** Accepting an application number, agency deadline, or status appends F-208 history; accepting a fee appends F-209 history; each triggers its approved stale/reminder/calendar handling atomically.
 4. **F604-AC-04:** Rejecting preserves current state and source; duplicate or stale acceptance is idempotent or rejected without lost updates.
 5. **F604-AC-05:** Official conflict, ambiguity, type mismatch, or unconfirmed extraction remains visible and cannot be auto-resolved.
+6. **F604-AC-06:** Creating or accepting reconciliation work compare-and-swaps the exact F-602 proposal, source document, and current-record versions and requires the document to remain authorized, available, and scan-safe. Deletion, quarantine, or other source ineligibility serializes against those actions, supersedes every outstanding reconciliation from that version, and prevents it from updating F-208/F-209.
 
 ## Fixtures and Verification
 

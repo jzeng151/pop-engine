@@ -61,6 +61,7 @@ Exact HTTP, JSON Schema, migration, job, and provider shapes belong in their rev
 3. **F214-AC-03:** Missing, unknown, expired, conflicting, user-recorded, or not-authoritatively-accepted evidence remains visibly distinct and prevents a regulatory compliance claim.
 4. **F214-AC-04:** Status changes and replacement documents preserve actor/time/version history.
 5. **F214-AC-05:** Vendor contacts do not enter attendee CRM, campaign eligibility, or consent records automatically.
+6. **F214-AC-06:** Each vendor projection pins the exact F-208/F-209/F-210 requirement and evidence versions it consumes. Supersession or removal visibly marks affected projection data stale and excludes it from current workflow completeness until reconciled, while preserving the prior requirement, evidence, and status history.
 
 ## Fixtures and Verification
 

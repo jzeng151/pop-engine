@@ -30,7 +30,7 @@ An authorized organizer can deliberately send an urgent event message to eligibl
 
 ## Inputs, Outputs, State, Validation, and Errors
 
-- Inputs are authorized actor, event, channel, exact message, and audience; outputs are an immutable send snapshot plus message attempts.
+- Inputs are authorized actor, event, channel, exact message, audience, and an explicit validity deadline under the approved policy; outputs are an immutable send snapshot plus message attempts.
 - State is draft → confirmed/queued → sending → completed, partially failed, cancelled, or failed; editing after confirmation requires a new send.
 - Eligibility is checked at confirmation and immediately before delivery; unknown eligibility fails closed.
 - Missing or unresolved material data stays visibly unset, unknown, pending, or failed as appropriate; it never becomes a successful or complete result.
@@ -62,6 +62,7 @@ Exact HTTP, JSON Schema, migration, job, and provider shapes belong in their rev
 4. **F413-AC-04:** Retries/duplicate claims create at most one accepted provider delivery per contact/send/channel and preserve every attempt.
 5. **F413-AC-05:** Provider failure or partial delivery reports exact known counts and never claims all attendees were reached.
 6. **F413-AC-06:** Delivery atomically claims a non-cancellable `sending` state after its final eligibility/generation check; cancellation, consent withdrawal, and suppression serialize against that claim, prevent only work not yet `sending`, report already-sending attempts separately, preserve every attempt, and keep sent/cancelled counts accurate.
+7. **F413-AC-07:** Confirmation freezes the approved explicit validity deadline and send generation. Every retry and delivery claim rejects expired or explicitly superseded generations, cancels their work before `sending`, and preserves their attempt history; the spec does not invent a default validity duration.
 
 ## Fixtures and Verification
 
@@ -83,5 +84,5 @@ Exact HTTP, JSON Schema, migration, job, and provider shapes belong in their rev
 
 ## Approval Blockers
 
-- Approve emergency consent/legal policy, role, templates/copy limits, priority/retry policy, and live-provider readiness.
+- Approve emergency consent/legal policy, role, templates/copy limits, validity/supersession and priority/retry policy, and live-provider readiness.
 - Assign the owner and independent reviewer, approve this spec, and add it to `docs/BASELINE.md`.

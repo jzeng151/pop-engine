@@ -63,6 +63,7 @@ Exact HTTP, JSON Schema, migration, job, and provider shapes belong in their rev
 4. **F107-AC-04:** Submitting a complete draft creates an immutable revision; later edits remain in a new mutable draft, and only its next explicit submission creates another revision and marks prior plan output stale.
 5. **F107-AC-05:** Two stale clients cannot silently overwrite each other; the later conflicting save is rejected with a reload/reconcile path.
 6. **F107-AC-06:** When the intake registry changes, reopening uses only the approved migration path, shows removed or incompatible answers for review, and cannot submit obsolete inputs or a draft that fails the current registry.
+7. **F107-AC-07:** Submission compare-and-swaps the exact `complete-unsubmitted` draft version/state and binds a stable submission request identity to its immutable revision, evaluation, and plan-staleness result. One concurrent submission wins, stale submissions are rejected, and a lost-response retry returns the original result without creating duplicate work.
 
 ## Fixtures and Verification
 

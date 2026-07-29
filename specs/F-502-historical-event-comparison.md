@@ -25,6 +25,7 @@ An organizer can compare permit burden, cost, preparation time, and attendance a
 
 - F-406/F-407 confirmed outcome snapshots and retained immutable plan/application data.
 - Approved comparison metrics and compatibility rules.
+- F-103 and the exact shared permit-burden definition and fixtures approved through [SPEC-CONFLICT #208](https://github.com/jzeng151/pop-engine/issues/208).
 - Baseline at draft time: PRD, Roadmap, Design, and Phase 0–1.5 Architecture approved 2026-07-22; `ARCHITECTURE-FUTURE.md` approved as a planning target 2026-07-25; NYC ruleset `nyc.v2.7`, rules schema `popengine-rules/v2`, and scenario fixtures v5 where regulatory output is consumed.
 - The approval PR must re-pin any baseline version that changes before approval. A proposed or superseded input blocks implementation.
 
@@ -57,7 +58,7 @@ Exact HTTP, JSON Schema, migration, job, and provider shapes belong in their rev
 ## Acceptance Criteria
 
 1. **F502-AC-01:** Only explicitly selected events from the active workspace enter a comparison.
-2. **F502-AC-02:** Permit burden, cost, preparation time, and attendance use approved metric definitions and show units/source versions.
+2. **F502-AC-02:** Cost, preparation time, and attendance use approved metric definitions and show units/source versions. Permit burden remains unavailable until SPEC-CONFLICT #208 approves its exact shared definition; afterward F-502 consumes the same included finding kinds/dispositions, deduplication/source-facet rule, unknown/conflict treatment, version, and fixtures as F-103 and cannot define a separate interpretation.
 3. **F502-AC-03:** Missing, partial, incompatible-version, or incompatible-currency values display as unavailable rather than zero or a coerced comparison.
 4. **F502-AC-04:** Historical regulatory results remain pinned to their original artifact and are never recomputed for this report.
 5. **F502-AC-05:** Reordering selected events changes presentation only and leaves metric values unchanged.
@@ -65,7 +66,7 @@ Exact HTTP, JSON Schema, migration, job, and provider shapes belong in their rev
 ## Fixtures and Verification
 
 - Planned automated fixture IDs are the acceptance IDs above; each must map one-to-one to a runnable test before approval can claim implementation readiness.
-- Regulatory fixtures: none; this feature does not define regulatory ground truth.
+- Regulatory fixtures: Permit burden reuses the exact shared SPEC-CONFLICT #208/F-103 fixtures; F-502 adds no separate regulatory interpretation.
 - Security-sensitive and cross-workspace paths require negative authorization tests; provider paths require success, duplicate-delivery, retry, invalid-signature, and permanent-failure tests where applicable.
 
 ## Allowed Footprint and Coordination

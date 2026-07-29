@@ -25,6 +25,7 @@ An organizer can collect a small, safe set of extra RSVP answers without adding 
 
 - F-302 registration, F-404 export where available, and the F-701/F-702/F-703 gate.
 - Approved field limits, prohibited-data policy, retention, and form-version contract.
+- F-306 and F-307 cannot be enabled together for a form with required custom answers until an approved shared waitlist answer/form-version contract exists.
 - Baseline at draft time: PRD, Roadmap, Design, and Phase 0–1.5 Architecture approved 2026-07-22; `ARCHITECTURE-FUTURE.md` approved as a planning target 2026-07-25; NYC ruleset `nyc.v2.7`, rules schema `popengine-rules/v2`, and scenario fixtures v5 where regulatory output is consumed.
 - The approval PR must re-pin any baseline version that changes before approval. A proposed or superseded input blocks implementation.
 
@@ -61,6 +62,7 @@ Exact HTTP, JSON Schema, migration, job, and provider shapes belong in their rev
 3. **F307-AC-03:** Editing a published definition creates a new version; earlier answers remain readable against their original labels/options.
 4. **F307-AC-04:** User text renders and exports as data, never HTML, script, formula, or engine input.
 5. **F307-AC-05:** Only approved non-sensitive purpose keys and supported field types can be published; organizer-controlled labels, help text, and options are validated against the approved prohibited-data policy, and disallowed definitions are rejected. The form displays mandatory prohibited-data guidance and applies the approved retention/deletion policy; the feature does not claim to classify arbitrary attendee answers.
+6. **F307-AC-06:** While an active form has required custom answers, F-306 waitlist join and promotion remain unavailable unless an approved shared contract pins the exact form/answer versions to the waitlist entry, validates them at join and promotion, and atomically links the validated answer set to the promoted RSVP. The system cannot silently drop required answers or create unapproved waitlist-answer storage.
 
 ## Fixtures and Verification
 
@@ -83,4 +85,5 @@ Exact HTTP, JSON Schema, migration, job, and provider shapes belong in their rev
 ## Approval Blockers
 
 - Approve the non-sensitive purpose allow-list, field/length/option limits, prohibited-data copy, versioning, and retention policy.
+- Approve the shared F-306/F-307 waitlist answer/form-version contract before enabling both features together.
 - Assign the owner and independent reviewer, approve this spec, and add it to `docs/BASELINE.md`.
