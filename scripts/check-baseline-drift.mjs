@@ -1624,8 +1624,15 @@ const hasAllF203Capabilities = (text) =>
   f203CapabilityNames.every((capability) => text.toLowerCase().includes(capability));
 const f203CapabilityMention =
   /\b(?:escalations?|digests?|team reminders?|per-user preferences?)\b/i;
-const f203CriterionNonGoal =
-  /\b(?:must|shall|should|does|do|will|is|are)\s+not\b|\b(?:non-goal|out of scope|excluded)\b/i;
+const f203CriterionCapabilityList = `${f203CapabilityMention.source}(?:\\s+(?:and|or)\\s+${f203CapabilityMention.source})*`;
+const f203CriterionNonGoal = new RegExp(
+  `(?:\\b(?:must|shall|should|does|do|will)\\s+not\\s+` +
+    `(?:send|provide|implement|schedule|deliver|support|include|offer|enable)\\s+` +
+    `${f203CriterionCapabilityList}\\s*[.!]?\\s*$|` +
+    `\\b${f203CriterionCapabilityList}\\s+(?:is|are)\\s+` +
+    `(?:a\\s+)?(?:non-goals?|out of scope|excluded)\\b)`,
+  "i",
+);
 const f203DecisionScope =
   /\b(?:scope|depth|phase\s+\d+|planned|unplanned|scheduled|unscheduled|scheduling|acceptance criteria)\b/i;
 const f203Planning = /\bplanned,\s+(?:not scheduled|unscheduled)\b/i;

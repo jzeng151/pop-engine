@@ -1910,6 +1910,19 @@ describe.concurrent("F-203 Phase 2 scope agreement (SPEC-CONFLICT #127 item 1)",
     expect(output).toContain("F-203 scope check passed");
   });
 
+  it("rejects a delivery constraint for an unscheduled capability", async () => {
+    const { status, output } = await runOn({
+      "specs/F-203-deadline-alerts.md":
+        SQUARE_RECONCILED["specs/F-203-deadline-alerts.md"] +
+        "\n## Acceptance Criteria\n\n8. Weekly digests must not arrive later than Monday.\n",
+    });
+
+    expect(status).toBe(1);
+    expect(output).toContain(
+      "specs/F-203-deadline-alerts.md must not define Phase 2 acceptance criteria",
+    );
+  });
+
   it.each([
     ["docs/BASELINE.md", "alert escalations"],
     ["docs/ROADMAP.md", "alert escalations"],
