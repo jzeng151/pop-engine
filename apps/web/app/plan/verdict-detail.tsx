@@ -130,6 +130,14 @@ function RescopeLadder({
                 </span>
               </p>
             )}
+            {suggestion.introducedRuleIds.length > 0 && (
+              <p className="verdict-detail__rescope-introduced">
+                Requirements that would newly apply under this change:{" "}
+                <span className="verdict-detail__rule-ids">
+                  {suggestion.introducedRuleIds.join(", ")}
+                </span>
+              </p>
+            )}
           </li>
         ))}
       </ul>
@@ -144,14 +152,28 @@ function MissedMayBeRequiredSection({
   missedRuleIds: readonly string[];
   findings: readonly ConsumedFinding[];
 }) {
-  const missed = missedRuleIds.map((ruleId) => {
+  // One finding can carry multiple contributing rule ids; list each finding once.
+  const missed: {
+    readonly ruleIds: readonly string[];
+    readonly name: string | null;
+    readonly disposition: ConsumedFinding["disposition"] | null;
+  }[] = [];
+  const seenFindingKeys = new Set<string>();
+  for (const ruleId of missedRuleIds) {
     const finding = findings.find((entry) => entry.ruleIds.includes(ruleId));
-    return {
-      ruleId,
-      name: finding?.name ?? null,
-      disposition: finding?.disposition ?? null,
-    };
-  });
+    if (finding === undefined) {
+      missed.push({ ruleIds: [ruleId], name: null, disposition: null });
+      continue;
+    }
+    const key = finding.ruleIds.join("|");
+    if (seenFindingKeys.has(key)) continue;
+    seenFindingKeys.add(key);
+    missed.push({
+      ruleIds: finding.ruleIds.filter((id) => missedRuleIds.includes(id)),
+      name: finding.name,
+      disposition: finding.disposition,
+    });
+  }
 
   return (
     <section className="verdict-detail__missed-conditional" data-testid="missed-may-be-required">
@@ -165,8 +187,8 @@ function MissedMayBeRequiredSection({
       </p>
       <ul>
         {missed.map((entry) => (
-          <li key={entry.ruleId}>
-            <span className="verdict-detail__rule-ids">{entry.ruleId}</span>
+          <li key={entry.ruleIds.join("|")}>
+            <span className="verdict-detail__rule-ids">{entry.ruleIds.join(", ")}</span>
             {entry.name !== null ? ` — ${entry.name}` : ""}
             {entry.disposition !== null ? ` (${humanize(entry.disposition)})` : ""}
           </li>

@@ -166,6 +166,9 @@ function alternativeValues(
 /**
  * The published thresholds that decide a field the engine cannot enumerate, so a numeric unknown
  * still tells a client what to ask for instead of leaving an empty branch table (P2).
+ *
+ * When a condition declares `boundary: "conditional"`, the exact threshold is unresolved (not
+ * "below the line"), so the description must say so — e.g. DOB-TENT-001 at exactly 400 sq ft.
  */
 function publishedThresholds(field: string, ruleset: EngineRuleset): string | null {
   const described: string[] = [];
@@ -173,13 +176,39 @@ function publishedThresholds(field: string, ruleset: EngineRuleset): string | nu
     if ("field" in node) {
       if (node.field !== field || typeof node.value !== "number") return;
       const comparison = node.op === "gt" ? "above" : node.op === "gte" ? "at or above" : null;
-      if (comparison !== null) described.push(`${ruleId} applies ${comparison} ${node.value}`);
+      if (comparison === null) return;
+      if (node.boundary === "conditional") {
+        described.push(
+          `${ruleId} applies ${comparison} ${node.value}; exactly ${node.value} is a conditional boundary (confirm with the publishing agency)`,
+        );
+      } else {
+        described.push(`${ruleId} applies ${comparison} ${node.value}`);
+      }
       return;
     }
     for (const child of "all" in node ? node.all : node.any) walk(child, ruleId);
   };
   for (const rule of ruleset.rules) walk(rule.trigger, rule.id);
   return described.length === 0 ? null : described.join("; ");
+}
+
+/**
+ * Closed set of ruleset eras whose stored plans serialized three-field rescopes (change,
+ * reevaluatedVerdict, droppedRuleIds) before F-102 enrichment. Evaluating those artifacts must
+ * keep that shape for AD-7 replay; nyc.v2.8+ emits the enriched suggestion fields.
+ */
+const RESCOPE_THREE_FIELD_ERAS: ReadonlySet<string> = new Set([
+  "nyc.v2.1",
+  "nyc.v2.2",
+  "nyc.v2.3",
+  "nyc.v2.4",
+  "nyc.v2.5",
+  "nyc.v2.6",
+  "nyc.v2.7",
+]);
+
+function emitsRescopeEnrichment(rulesetVersion: string): boolean {
+  return !RESCOPE_THREE_FIELD_ERAS.has(rulesetVersion);
 }
 
 type ConditionalEvaluation = {
@@ -393,9 +422,15 @@ function buildRescopeSuggestions(
         reevaluatedVerdict: candidate.verdict,
         droppedRuleIds: [...baseRuleIds].filter((ruleId) => !candidateIds.has(ruleId)),
       };
-      // Enrichment is only attached for at-risk re-evaluations. Unconditionally writing
-      // `minSlackDays: null` / `atRiskFindingName: null` on every suggestion would change the
-      // historical three-field serialization that superseded-ruleset replay must reproduce.
+      // Superseded eras keep the historical three-field shape. Current-line enrichment carries
+      // introduced rule ids on every suggestion, plus at-risk slack/name only when at risk.
+      if (!emitsRescopeEnrichment(ruleset.rulesetVersion)) {
+        suggestions.push(suggestion);
+        continue;
+      }
+      const introducedRuleIds = [...candidateIds]
+        .filter((ruleId) => !baseRuleIds.has(ruleId))
+        .sort();
       if (candidate.verdict === "FEASIBLE_AT_RISK") {
         const minSlackDays = candidate.window.minSlackDays;
         const atRiskFinding =
@@ -404,11 +439,12 @@ function buildRescopeSuggestions(
             : null;
         suggestions.push({
           ...suggestion,
+          introducedRuleIds,
           minSlackDays,
           atRiskFindingName: atRiskFinding?.name ?? null,
         });
       } else {
-        suggestions.push(suggestion);
+        suggestions.push({ ...suggestion, introducedRuleIds });
       }
     }
   }

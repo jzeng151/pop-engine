@@ -181,7 +181,15 @@ describe("Scenario A — Bushwick Street Activation (demo anchor)", () => {
     const privateVenue = suggestions.find((s) => s.change.value === "private_venue");
     expect(medium?.minSlackDays).toBe(5);
     expect(small?.atRiskFindingName ?? small?.minSlackDays).toBeTruthy();
-    // Non-at-risk suggestions keep the historical three-field shape (no null enrichment keys).
+    // Current-line enrichment names requirements the private-venue re-evaluation introduces.
+    expect(privateVenue?.introducedRuleIds).toEqual(
+      expect.arrayContaining([
+        "ADV-NOISE-CODE-001",
+        "ADV-VENUE-OCCUPANCY-001",
+        "DOB-ASSEMBLY-001",
+      ]),
+    );
+    // Non-at-risk suggestions omit at-risk-only enrichment keys (null would still change shape).
     expect(privateVenue !== undefined && !("minSlackDays" in privateVenue)).toBe(true);
     expect(privateVenue !== undefined && !("atRiskFindingName" in privateVenue)).toBe(true);
   });
@@ -551,6 +559,13 @@ describe("Scenario E — Plaza Brand Activation (max complexity)", () => {
     const tent = plan(intakeE).findings.find((finding) => finding.ruleIds.includes("DOB-TENT-001"));
     expect(tent?.disposition).toBe("may_be_required");
     expect(tent?.notes.join(" ")).toContain("confirm footprint calculation with DOB");
+  });
+
+  it("names the conditional boundary when tent area is unanswered", () => {
+    const result = plan({ ...intakeE, tent_area_sqft: null, structure_over_10ft_tall: false });
+    const tentFact = result.verdictDetail.missingFacts.find((fact) => fact.field === "tent_area_sqft");
+    expect(tentFact?.thresholds).toContain("DOB-TENT-001 applies above 400");
+    expect(tentFact?.thresholds).toContain("exactly 400 is a conditional boundary");
   });
 });
 

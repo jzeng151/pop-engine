@@ -992,6 +992,11 @@ describe("F-102 · CONDITIONAL branch table and INFEASIBLE rescope ladder", () =
               change: { field: "location_type", value: "private_venue" },
               reevaluatedVerdict: "CONDITIONAL",
               droppedRuleIds: ["SAPO-INSURANCE-001", "SAPO-STREET-LARGE-001"],
+              introducedRuleIds: [
+                "ADV-NOISE-CODE-001",
+                "ADV-VENUE-OCCUPANCY-001",
+                "DOB-ASSEMBLY-001",
+              ],
               minSlackDays: null,
               atRiskFindingName: null,
             },
@@ -999,6 +1004,7 @@ describe("F-102 · CONDITIONAL branch table and INFEASIBLE rescope ladder", () =
               change: { field: "street_event_size", value: "medium" },
               reevaluatedVerdict: "FEASIBLE_AT_RISK",
               droppedRuleIds: ["SAPO-STREET-LARGE-001"],
+              introducedRuleIds: ["SAPO-STREET-MEDIUM-001"],
               minSlackDays: 5,
               atRiskFindingName: "Street Activity Permit — Medium",
             },
@@ -1006,6 +1012,7 @@ describe("F-102 · CONDITIONAL branch table and INFEASIBLE rescope ladder", () =
               change: { field: "street_event_size", value: "small" },
               reevaluatedVerdict: "FEASIBLE_AT_RISK",
               droppedRuleIds: ["SAPO-STREET-LARGE-001"],
+              introducedRuleIds: ["SAPO-STREET-SMALL-001"],
               minSlackDays: null,
               atRiskFindingName: "Organizer notification to DOHMH",
             },
@@ -1028,6 +1035,8 @@ describe("F-102 · CONDITIONAL branch table and INFEASIBLE rescope ladder", () =
     expect(suggestions[0]?.textContent).toContain("on Street Activity Permit — Medium");
     expect(suggestions[1]?.textContent).toContain("small");
     expect(suggestions[2]?.textContent).toContain("private venue");
+    expect(suggestions[2]?.textContent).toContain("would newly apply");
+    expect(suggestions[2]?.textContent).toContain("DOB-ASSEMBLY-001");
     expect(screen.getByTestId("rescope-at-risk-buffer").textContent).toContain(
       "PopEngine's internal planning buffer",
     );
@@ -1094,6 +1103,35 @@ describe("F-102 · CONDITIONAL branch table and INFEASIBLE rescope ladder", () =
     expect(section.textContent).toContain("keeps the verdict conditional");
     expect(section.textContent).toContain("DOHMH-ORGANIZER-NOTIFY-001");
     expect(section.textContent).toContain("Organizer notification to DOHMH");
+  });
+
+  it("lists a multi-rule may-be-required miss once, not once per rule id", async () => {
+    stubApi(
+      plan({
+        verdict: "CONDITIONAL",
+        findings: [
+          finding({
+            ruleIds: ["DOB-TENT-001", "DOB-TALL-STRUCTURE-001"],
+            name: "Temporary structure filing",
+            disposition: "may_be_required",
+            deadlineStatus: "published_deadline_missed",
+            latestApplyDate: "2026-07-01",
+          }),
+        ],
+        verdictDetail: {
+          ...emptyVerdictDetail,
+          missedRuleIds: ["DOB-TENT-001", "DOB-TALL-STRUCTURE-001"],
+        },
+      }),
+    );
+    renderPlan();
+    await screen.findByTestId("missed-may-be-required");
+
+    const section = screen.getByTestId("missed-may-be-required");
+    expect(section.querySelectorAll("li")).toHaveLength(1);
+    expect(section.textContent).toContain("Temporary structure filing");
+    expect(section.textContent).toContain("DOB-TENT-001");
+    expect(section.textContent).toContain("DOB-TALL-STRUCTURE-001");
   });
 
   it("shows nothing under a FEASIBLE verdict that has no branch or rescope work", async () => {

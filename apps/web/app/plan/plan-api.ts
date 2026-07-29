@@ -154,6 +154,8 @@ export type ConsumedRescopeSuggestion = {
   readonly change: RescopeSuggestion["change"];
   readonly reevaluatedVerdict: RescopeSuggestion["reevaluatedVerdict"];
   readonly droppedRuleIds: RescopeSuggestion["droppedRuleIds"];
+  /** Empty when omitted on a historical three-field suggestion. */
+  readonly introducedRuleIds: readonly string[];
   /** Null when omitted on a historical three-field suggestion or when not at-risk. */
   readonly minSlackDays: number | null;
   readonly atRiskFindingName: string | null;
@@ -321,6 +323,8 @@ const RESCOPE_CHECKS: FieldChecks<ConsumedRescopeSuggestion> = {
   reevaluatedVerdict: isToken(VERDICTS),
   droppedRuleIds: arrayOf(isString),
   // Pre-enrichment stored plans omit these; accept absence and normalize below.
+  introducedRuleIds: (value: unknown): value is readonly string[] | undefined =>
+    value === undefined || arrayOf(isString)(value),
   minSlackDays: optionalNullNumber,
   atRiskFindingName: optionalNullString,
 };
@@ -375,6 +379,7 @@ function normalizePlan(plan: PlanResponse): PlanResponse {
       })),
       rescopeSuggestions: plan.verdictDetail.rescopeSuggestions.map((suggestion) => ({
         ...suggestion,
+        introducedRuleIds: suggestion.introducedRuleIds ?? [],
         minSlackDays: suggestion.minSlackDays ?? null,
         atRiskFindingName: suggestion.atRiskFindingName ?? null,
       })),
