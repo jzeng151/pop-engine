@@ -14,6 +14,7 @@ import { InsurancePanel } from "./insurance-panel";
 import { PlanLine } from "./plan-line";
 import { compareToPinned, SnapshotBanner } from "./snapshot-banner";
 import { AT_RISK_BUFFER_NOTE, verdictCopy } from "./verdict-copy";
+import { hasOnlyUndatedDeadlines, NO_DATED_DEADLINES_NOTE } from "./undated-deadlines";
 import { VerdictDetailPanel } from "./verdict-detail";
 import { type FieldChecks, isNumber, readChecked } from "./validated";
 
@@ -346,6 +347,13 @@ export function PlanView({ apiBaseUrl, eventId }: { apiBaseUrl: string; eventId:
           {plan.verdict === "FEASIBLE_AT_RISK" && (
             <p className="plan__buffer" role="note">
               {AT_RISK_BUFFER_NOTE}
+            </p>
+          )}
+
+          {/* F-102 Edge Cases: only undated deadlines → FEASIBLE with this note. */}
+          {plan.verdict === "FEASIBLE" && hasOnlyUndatedDeadlines(plan.findings) && (
+            <p className="plan__undated" role="note" data-testid="no-dated-deadlines">
+              {NO_DATED_DEADLINES_NOTE}
             </p>
           )}
 

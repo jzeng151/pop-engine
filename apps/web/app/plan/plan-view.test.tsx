@@ -894,6 +894,36 @@ describe("the verdict's approved copy", () => {
 });
 
 
+describe("F-102 · undated deadlines note", () => {
+  it("notes FEASIBLE when every deadline is undated", async () => {
+    stubApi(
+      plan({
+        verdict: "FEASIBLE",
+        findings: [
+          finding({ deadlineStatus: "not_applicable" }),
+          finding({ ruleIds: ["Y"], deadlineStatus: "not_calculable" }),
+        ],
+      }),
+    );
+    renderPlan();
+    expect((await screen.findByTestId("no-dated-deadlines")).textContent).toBe(
+      "No dated deadlines identified.",
+    );
+  });
+
+  it("does not claim undated deadlines when any dated status appears", async () => {
+    stubApi(
+      plan({
+        verdict: "FEASIBLE",
+        findings: [finding({ deadlineStatus: "on_track" })],
+      }),
+    );
+    renderPlan();
+    await screen.findByRole("complementary", { name: "Rules snapshot" });
+    expect(screen.queryByTestId("no-dated-deadlines")).toBeNull();
+  });
+});
+
 describe("F-102 · CONDITIONAL branch table and INFEASIBLE rescope ladder", () => {
   it("renders each missing fact's branch outcomes for CONDITIONAL", async () => {
     stubApi(
