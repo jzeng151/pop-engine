@@ -1599,6 +1599,15 @@ const f203Artifacts = [
 ];
 const f203Capabilities =
   /\b(?:alert )?escalations,\s+digests,\s+team reminders,\s+and per-user preferences\b/i;
+const f203ListScope = new RegExp(
+  `—\\s+${f203Capabilities.source};\\s+planned,\\s+(?:not scheduled|unscheduled)\\.?$`,
+  "i",
+);
+const f203BaselineScope = new RegExp(
+  `\\bF-203\\b\\s+(?:keeps|retains)\\s+${f203Capabilities.source}\\s+as its planned,`,
+  "i",
+);
+const f203SpecScope = new RegExp(`${f203Capabilities.source}\\s+remain\\b`, "i");
 const f203CapabilityNames = ["escalations", "digests", "team reminders", "per-user preferences"];
 const f203Planning = /\bplanned,\s+(?:not scheduled|unscheduled)\b/i;
 const f203Negation =
@@ -1625,6 +1634,7 @@ function activeMarkdown(markdown) {
         fence = null;
         return "";
       }
+      if (fence === null && /^(?: {4}|\t)/.test(line)) return "";
       return fence === null ? line : "";
     })
     .join("\n");
@@ -1664,14 +1674,17 @@ for (const relative of f203Artifacts) {
     if (!f203Capabilities.test(normalized) || !f203Planning.test(normalized)) return true;
     if (f203Negation.test(normalized)) return true;
     if (relative === "docs/ROADMAP.md" || relative === "docs/PRD.md") {
-      return !/^\s*(?:[-*+]|\d+\.)\s+(?:\*\*)?F-203\b/i.test(raw);
-    }
-    if (relative === "docs/BASELINE.md") {
-      return !/\bF-203\b[^.]*\b(?:alert )?escalations,\s+digests,\s+team reminders,\s+and per-user preferences\b/i.test(
-        normalized,
+      return (
+        !/^\s*(?:[-*+]|\d+\.)\s+(?:\*\*)?F-203\b/i.test(raw) || !f203ListScope.test(normalized)
       );
     }
-    return !/\bper-user preferences\b[^.]*\bunder F-203\b/i.test(normalized);
+    if (relative === "docs/BASELINE.md") {
+      return !f203BaselineScope.test(normalized);
+    }
+    return (
+      !f203SpecScope.test(normalized) ||
+      !/\bper-user preferences\b[^.]*\bunder F-203\b/i.test(normalized)
+    );
   });
   if (scopeStatements.length === 0 || invalidAssignment) {
     f203Failures.push(

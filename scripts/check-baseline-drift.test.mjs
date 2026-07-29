@@ -1882,6 +1882,7 @@ describe.concurrent("F-203 Phase 2 scope agreement (SPEC-CONFLICT #127 item 1)",
   it.each([
     ["an HTML comment", "<!--\n", "\n-->"],
     ["a fenced example", "```md\n", "\n```"],
+    ["indented Markdown code", "    ", ""],
   ])("ignores the F-203 assignment inside %s", async (_label, open, close) => {
     const assignment =
       "- **F-203 (full)** — alert escalations, digests, team reminders, and per-user preferences; " +
@@ -1890,6 +1891,18 @@ describe.concurrent("F-203 Phase 2 scope agreement (SPEC-CONFLICT #127 item 1)",
       "docs/ROADMAP.md": SQUARE_RECONCILED["docs/ROADMAP.md"].replace(
         assignment,
         `${open}${assignment}${close}`,
+      ),
+    });
+
+    expect(status).toBe(1);
+    expect(output).toContain("docs/ROADMAP.md must affirmatively assign");
+  });
+
+  it("rejects capabilities appended to the F-203 assignment", async () => {
+    const { status, output } = await runOn({
+      "docs/ROADMAP.md": SQUARE_RECONCILED["docs/ROADMAP.md"].replace(
+        "per-user preferences; planned",
+        "per-user preferences, and automatic permit filing; planned",
       ),
     });
 
