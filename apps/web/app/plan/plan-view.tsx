@@ -80,6 +80,11 @@ const eventStateFrom = (result: LoadResult): EventState => {
   return { status: "found", revision: event.revision_counter };
 };
 
+const isNearEmpty = (findings: PlanResponse["findings"]): boolean =>
+  findings.every(
+    ({ disposition }) => disposition !== "required" && disposition !== "prohibited_or_ineligible",
+  );
+
 /**
  * Why regenerating this plan is refused, or null when it is safe to offer.
  *
@@ -353,16 +358,12 @@ export function PlanView({ apiBaseUrl, eventId }: { apiBaseUrl: string; eventId:
               (AC 3) — that silence is `InsurancePanel`'s own, not a state this page decides. */}
           <InsurancePanel findings={plan.findings} eventId={eventId} />
 
-          {plan.findings.length === 0 ? (
-            /* F-201 AC 4 and ARCHITECTURE both make the near-empty result first-class, in those
-               words. An empty container under a verdict reads as an evaluation that failed or was
-               dropped; the sentence is what says the evaluation ran and found nothing. (The
-               ruleset's engine_conventions phrases the same statement "from the provided facts";
-               the spec governs this feature's acceptance, so its wording is the one rendered.) */
+          {isNearEmpty(plan.findings) && (
             <p className="plan__empty">
-              No new city event requirement identified from your answers.
+              No definite city event requirement identified from your answers.
             </p>
-          ) : (
+          )}
+          {plan.findings.length > 0 && (
             <div className="plan__lines">
               {plan.findings.map((finding) => (
                 <PlanLine key={finding.ruleIds.join("+")} finding={finding} />
