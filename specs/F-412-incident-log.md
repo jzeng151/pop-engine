@@ -56,7 +56,7 @@ Exact HTTP, JSON Schema, migration, job, and provider shapes belong in their rev
 
 ## Acceptance Criteria
 
-1. **F412-AC-01:** An authorized staff member can record one incident with server timestamp/actor and retrieve it only inside the correct event/workspace.
+1. **F412-AC-01:** An authorized staff member records staff-confirmed occurrence time separately from immutable server recorded-at time/actor and retrieves the incident only inside the correct event/workspace. Occurrence time may be explicitly unknown; both values are displayed without substituting one for the other.
 2. **F412-AC-02:** Correction or follow-up appends a timestamped addendum and cannot rewrite the original account.
 3. **F412-AC-03:** Unknown/conflicting details remain labeled and the system never generates a legal, medical, or emergency classification.
 4. **F412-AC-04:** Unsafe/unauthorized files remain unavailable and do not erase the text incident.

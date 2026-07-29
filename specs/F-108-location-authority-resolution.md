@@ -60,7 +60,7 @@ Exact HTTP, JSON Schema, migration, job, and provider shapes belong in their rev
 2. **F108-AC-02:** Ambiguous, low-confidence, no-match, unsupported-jurisdiction, and provider-failure states require manual resolution and cannot evaluate as confirmed.
 3. **F108-AC-03:** Manual correction records actor/time and the selected authoritative reference without changing provider history.
 4. **F108-AC-04:** The engine consumes only the confirmed registry-compatible value and treats the provider result as non-authoritative.
-5. **F108-AC-05:** A later reference/provider version cannot silently alter an immutable event revision or plan.
+5. **F108-AC-05:** Confirmation compare-and-swaps the current provider/reference version pinned by the proposal; a version change rejects confirmation unless an explicit reviewed historical-version exception is recorded before creating the immutable revision. A later version cannot silently alter an existing revision or plan.
 
 ## Fixtures and Verification
 

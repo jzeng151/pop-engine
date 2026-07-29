@@ -56,7 +56,7 @@ Exact HTTP, JSON Schema, migration, job, and provider shapes belong in their rev
 
 ## Acceptance Criteria
 
-1. **F105-AC-01:** An organizer can create, update, archive, and list only their workspace's venue candidates.
+1. **F105-AC-01:** A venue candidate is owned by its creating user within the workspace authorization boundary; only that user can create, update, archive, or list their personal candidates, and other workspace members cannot read or alter them.
 2. **F105-AC-02:** Preview pins the exact candidate and target-draft versions; apply compare-and-swaps both versions and changes only the reviewed F-101 mapping, rejecting and rebuilding the preview if either changed or the candidate was archived.
 3. **F105-AC-03:** Missing, unknown, or incompatible facts remain unanswered and cannot be inferred from notes or tags.
 4. **F105-AC-04:** Prefill updates the mutable event draft; normal intake submission creates the immutable revision, marks prior plans stale, and triggers normal evaluation.

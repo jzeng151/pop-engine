@@ -62,9 +62,9 @@ Exact HTTP, JSON Schema, migration, job, and provider shapes belong in their rev
 4. **F308-AC-04:** Provider/webhook data cannot create payment, consent, or authoritative RSVP state in PopEngine.
 5. **F308-AC-05:** Disconnecting revokes future calls and leaves PopEngine event/registration data intact.
 6. **F308-AC-06:** When the provider is unavailable, an authorized workspace member can download a short-lived CSV containing only the approved allow-listed preview fields; cells beginning with any spreadsheet-dangerous prefix (`=`, `+`, `-`, `@`, tab, carriage return, or line feed) are escaped, including control-prefixed formulas, no provider credential is included, and expiry or revocation makes the download unavailable.
-7. **F308-AC-07:** Transfer atomically claims a non-cancellable `sending` state after the final generation check; cancellation serializes against claims, cancels only work not yet sending, accounts for every in-flight claim, and never reports transferred work as cancelled.
+7. **F308-AC-07:** Transfer atomically claims a non-cancellable `sending` state after the final generation and eligibility check; cancellation, consent withdrawal, suppression, and deletion serialize against claims, prevent only work not yet sending, report already-sending work explicitly, and account for every in-flight claim.
 8. **F308-AC-08:** Every queued or leased record rechecks current transfer basis, suppression, and deletion state immediately before the provider call; a contact that is no longer eligible is excluded and reported without transfer.
-9. **F308-AC-09:** CSV artifacts pin source contact/eligibility versions; deletion, suppression, or loss of transfer basis revokes every not-yet-downloaded staged artifact containing that record and requires regeneration.
+9. **F308-AC-09:** CSV artifacts pin source contact/eligibility versions; deletion, suppression, or loss of transfer basis revokes every server-controlled staged artifact and signed URL containing that record and requires regeneration. Already saved local copies cannot be recalled.
 
 ## Fixtures and Verification
 

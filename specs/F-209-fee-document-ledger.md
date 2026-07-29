@@ -59,7 +59,7 @@ Exact HTTP, JSON Schema, migration, job, and provider shapes belong in their rev
 
 1. **F209-AC-01:** Estimated, invoiced, and paid amounts remain separate, preserve source/currency, and roll up without floating-point error.
 2. **F209-AC-02:** Unknown or research-required fees render as unknown and are excluded from known totals with an explicit incomplete-total warning.
-3. **F209-AC-03:** Required and submitted document lists reconcile without marking an uploaded file agency-accepted unless a user records that state.
+3. **F209-AC-03:** Required and submitted document lists reconcile without treating upload or organizer assertion as agency acceptance. Organizer-recorded acceptance remains visibly user-recorded and non-authoritative; agency-accepted requires an immutable authoritative decision/portal record with exact provenance.
 4. **F209-AC-04:** Final permit and expiration metadata retain history and never overwrite the source finding or application history.
 5. **F209-AC-05:** Unauthorized, oversized, disallowed, checksum-mismatched, or unsafe uploads are unavailable and create no accepted document state.
 6. **F209-AC-06:** Replanning marks every superseded or removed rule-derived estimate stale and excludes it from current totals; refresh creates source-linked current entries without overwriting old estimates, invoices, payments, or document history.

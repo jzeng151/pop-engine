@@ -31,7 +31,7 @@ An organizer can print a clear event flyer or poster whose QR sends attendees to
 ## Inputs, Outputs, State, Validation, and Errors
 
 - Input is one published event page; output is one printable page with an SVG or equally lossless QR and human-readable fallback URL.
-- Asset state is unavailable while unpublished, ready while the slug is active, and stale after slug rotation until regenerated.
+- Asset state is unavailable while unpublished or blocked by the effective public-route gate, ready only while the slug and anonymous route are active, and stale after slug rotation until regenerated.
 - The QR payload is the canonical HTTPS public URL only; user text cannot alter its host or route.
 - Missing or unresolved material data stays visibly unset, unknown, pending, or failed as appropriate; it never becomes a successful or complete result.
 - Invalid input produces a field or action-specific error without partial mutation. Retriable external failures preserve the user's confirmed state and expose a safe retry.
@@ -58,7 +58,7 @@ Exact HTTP, JSON Schema, migration, job, and provider shapes belong in their rev
 
 1. **F303-AC-01:** The generated QR decodes to the event's canonical HTTPS public-page URL and no other host, route, or organizer-only data.
 2. **F303-AC-02:** A standard phone camera scans the printed asset from the approved rehearsal distance and opens the correct published event.
-3. **F303-AC-03:** An unpublished, expired, malformed, or rotated public URL cannot produce a falsely current asset.
+3. **F303-AC-03:** An unpublished, expired, malformed, rotated, or currently access-gated public URL cannot produce or retain a falsely ready asset; readiness follows F-301's effective anonymous-route exposure.
 4. **F303-AC-04:** The print view contains event name, concise call to action, QR, and readable fallback URL without clipped content at the approved paper size.
 5. **F303-AC-05:** Printing or regenerating the asset does not mutate the event, public page, or QR destination.
 

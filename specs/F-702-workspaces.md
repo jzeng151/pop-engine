@@ -56,7 +56,7 @@ Exact HTTP, JSON Schema, migration, job, and provider shapes belong in their rev
 
 ## Acceptance Criteria
 
-1. **F702-AC-01:** An authenticated actor can create a workspace and becomes its active owner membership atomically.
+1. **F702-AC-01:** Workspace creation and active-owner membership insertion are atomic and bind a stable request identity to the original result; replay returns that workspace and membership without creating another.
 2. **F702-AC-02:** Acceptance atomically compare-and-swaps the invitation from pending to accepted together with membership creation; revocation competes on the same row/version, so exactly one terminal transition wins. Expired, revoked, reused, or mismatched invitations create no membership.
 3. **F702-AC-03:** Every workspace-owned aggregate rejects cross-workspace reads, writes, identifier guessing, exports, uploads, and job execution.
 4. **F702-AC-04:** Owner removal/leave serializes on the workspace (or uses an equivalent database invariant) so the last active owner cannot be removed under concurrent requests; the concurrent two-owner removal fixture leaves at least one owner.

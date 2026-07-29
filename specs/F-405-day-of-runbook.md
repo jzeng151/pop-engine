@@ -61,6 +61,7 @@ Exact HTTP, JSON Schema, migration, job, and provider shapes belong in their rev
 3. **F405-AC-03:** Missing, unknown, conflict, research-required, expired, or stale values are visibly labeled and prevent a complete/ready claim.
 4. **F405-AC-04:** Changing a source record marks the prior runbook stale; regeneration creates current output without rewriting source history.
 5. **F405-AC-05:** The approved print viewport produces readable ordering and no clipped critical content.
+6. **F405-AC-06:** Generation pins the complete permit, contact, assignment, and other source-version set; publication compare-and-swaps that set, so a concurrent source correction rejects the stale in-flight snapshot.
 
 ## Fixtures and Verification
 
