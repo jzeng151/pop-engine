@@ -1957,6 +1957,21 @@ describe.concurrent("F-203 Phase 2 scope agreement (SPEC-CONFLICT #127 item 1)",
     },
   );
 
+  it.each([
+    ["docs/BASELINE.md", "unscheduled Phase 2 depth."],
+    ["specs/F-203-deadline-alerts.md", "Phase 2 depth retained under F-203 without scheduling it."],
+  ])("rejects a conflicting phase appended to the %s decision", async (relative, decision) => {
+    const { status, output } = await runOn({
+      [relative]: SQUARE_RECONCILED[relative].replace(
+        decision,
+        `${decision.slice(0, -1)}, but it is Phase 3 depth.`,
+      ),
+    });
+
+    expect(status).toBe(1);
+    expect(output).toContain(`${relative} must assign its F-203 full scope to Phase 2`);
+  });
+
   it("rejects Phase 2 acceptance criteria while the scope remains unscheduled", async () => {
     const { status, output } = await runOn({
       "specs/F-203-deadline-alerts.md":
@@ -2273,6 +2288,19 @@ describe.concurrent("F-203 Phase 2 scope agreement (SPEC-CONFLICT #127 item 1)",
     expect(status).toBe(1);
     expect(output).toContain("docs/ROADMAP.md must affirmatively assign");
   });
+
+  it.each(["docs/ROADMAP.md", "docs/PRD.md"])(
+    "accepts an F-203 plumbing reference in another feature's %s entry",
+    async (relative) => {
+      const { status, output } = await runOn({
+        [relative]:
+          SQUARE_RECONCILED[relative] + "\n- **F-305** — digests reuse F-203 delivery plumbing.\n",
+      });
+
+      expect(status, output).toBe(0);
+      expect(output).toContain("F-203 scope check passed");
+    },
+  );
 
   it.each(["docs/ROADMAP.md", "docs/PRD.md"])(
     "rejects an additional owner on the F-203 assignment in %s",

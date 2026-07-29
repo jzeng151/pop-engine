@@ -1764,7 +1764,8 @@ for (const relative of f203Artifacts) {
           relative === "docs/ROADMAP.md" &&
           /^\s*[-*+]\s+\*\*F-203\s+·\s+Deadline Alerts\*\*/i.test(raw);
         if (isRoadmapCore) return namesScope;
-        return isListAssignment && (ownsF203 || (namesScope && lower.includes("f-203")));
+        const ownerNamesF203 = /\bF-203\b/i.test(raw.split("—", 1)[0]);
+        return isListAssignment && (ownsF203 || (namesScope && ownerNamesF203));
       }
       if (relative === "docs/BASELINE.md") {
         return f203BaselineDecision.test(raw) && lower.includes("f-203") && addressesScope;
@@ -1825,10 +1826,12 @@ for (const relative of f203Artifacts) {
         "per-user preferences to F-203 as planned, unscheduled Phase 2 scope",
     );
   } else if (relative === "docs/BASELINE.md" || relative === "specs/F-203-deadline-alerts.md") {
-    const bindsPhase2 = scopeStatements.every(({ normalized }) =>
-      relative === "docs/BASELINE.md"
-        ? /\bplanned,\s+(?:not scheduled|unscheduled)\s+Phase 2\b/i.test(normalized)
-        : /\bPhase 2\b[^.]*\bunder F-203\b/i.test(normalized),
+    const bindsPhase2 = scopeStatements.every(
+      ({ normalized }) =>
+        !hasF203ConflictingPhase(normalized) &&
+        (relative === "docs/BASELINE.md"
+          ? /\bplanned,\s+(?:not scheduled|unscheduled)\s+Phase 2\b/i.test(normalized)
+          : /\bPhase 2\b[^.]*\bunder F-203\b/i.test(normalized)),
     );
     if (!bindsPhase2) {
       f203Failures.push(`${relative} must assign its F-203 full scope to Phase 2`);
