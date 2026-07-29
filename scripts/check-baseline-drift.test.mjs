@@ -1917,6 +1917,32 @@ describe.concurrent("F-203 Phase 2 scope agreement (SPEC-CONFLICT #127 item 1)",
     expect(output).toContain("docs/PRD.md must affirmatively assign");
   });
 
+  it("rejects a conflicting PRD status", async () => {
+    const { status, output } = await runOn({
+      "docs/PRD.md":
+        SQUARE_RECONCILED["docs/PRD.md"] +
+        "\n**Status:** F-203 is now unplanned and assigned to Phase 3.\n",
+    });
+
+    expect(status).toBe(1);
+    expect(output).toContain("docs/PRD.md must affirmatively assign");
+  });
+
+  it.each(["docs/ROADMAP.md", "docs/PRD.md"])(
+    "rejects scope appended to the %s decision",
+    async (relative) => {
+      const { status, output } = await runOn({
+        [relative]: SQUARE_RECONCILED[relative].replace(
+          "unscheduled Phase 2 depth.",
+          "unscheduled Phase 2 depth. F-203 also includes automatic permit filing.",
+        ),
+      });
+
+      expect(status).toBe(1);
+      expect(output).toContain(`${relative} must affirmatively assign`);
+    },
+  );
+
   it("accepts an unrelated F-203 Roadmap status", async () => {
     const { status, output } = await runOn({
       "docs/ROADMAP.md":
@@ -2324,6 +2350,20 @@ describe.concurrent("F-203 Phase 2 scope agreement (SPEC-CONFLICT #127 item 1)",
     expect(status).toBe(1);
     expect(output).toContain("docs/ROADMAP.md must affirmatively assign");
   });
+
+  it.each(["docs/ROADMAP.md", "docs/PRD.md"])(
+    "rejects an F-203 add-on using a parenthesized ordered marker in %s",
+    async (relative) => {
+      const { status, output } = await runOn({
+        [relative]:
+          SQUARE_RECONCILED[relative] +
+          "\n1) **F-203 add-on** — automatic permit filing; planned, not scheduled.\n",
+      });
+
+      expect(status).toBe(1);
+      expect(output).toContain(`${relative} must affirmatively assign`);
+    },
+  );
 
   it("rejects a deferred capability added to the Phase 1 F-203 entry", async () => {
     const { status, output } = await runOn({

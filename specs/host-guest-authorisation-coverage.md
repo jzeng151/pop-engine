@@ -1378,9 +1378,9 @@ of work are already promised the next ruleset version, and a fourth wants a publ
    into **F-108 · Location & Authority Resolution**, whose subject is already which authority governs
    a given location, of which "which of this venue's authorisations reach my activity" is a
    specialisation. The alternative is a new id past the stated range, which extends Stage 1 beyond
-   F-109 and needs the policy amended rather than stretched. This is the same class of problem as
-   SPEC-CONFLICT #127, which is open on exactly this question of colliding and unassigned feature
-   ids. **The product owner assigns; this spec does not.**
+   F-109 and needs the policy amended rather than stretched. This is the same class of problem
+   SPEC-CONFLICT #127 resolved: colliding and unassigned feature ids require an explicit scope
+   decision rather than an inferred new id. **The product owner assigns; this spec does not.**
 2. **DEPENDENCY. Issue #89** is open on this field, which is where the collected-but-unread state is
    tracked. Recorded so the two are read together; nobody owes this spec anything for it, and publishing
    the rules is what would close it.
