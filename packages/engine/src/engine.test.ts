@@ -1076,6 +1076,31 @@ describe("ruleset parsing rejects anything it cannot evaluate", () => {
       ruleset.rules.filter((rule) => rule.userSummary === null).map((rule) => rule.id),
     ).toEqual([]);
   });
+
+  it("keeps organizer summary wording and links aligned with the published facts", () => {
+    const assembly = ruleset.rules.find((rule) => rule.id === "DOB-ASSEMBLY-001");
+    expect(assembly?.userSummary?.points.find((point) => point.kind === "deadline")?.text).toBe(
+      "File 10 or more business days before the event to avoid DOB's late surcharge.",
+    );
+
+    const exemption = ruleset.rules.find((rule) => rule.id === "DOHMH-EXEMPTION-001");
+    expect(
+      exemption?.userSummary?.points.find((point) => point.kind === "warning")?.sources,
+    ).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          url: "https://www.nyc.gov/assets/doh/downloads/pdf/rii/temp-vendors.pdf",
+        }),
+        expect.objectContaining({
+          url: "https://www.nyc.gov/site/doh/business/food-operators/temporary-food-service-establishments.page",
+        }),
+      ]),
+    );
+
+    expect(rawRuleset.status).toContain(
+      "plain-language organizer summaries across all 42 rules and four advisories",
+    );
+  });
 });
 
 describe("asked_when scoping", () => {
