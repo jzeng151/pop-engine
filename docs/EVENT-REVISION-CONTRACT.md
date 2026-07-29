@@ -52,6 +52,19 @@ Once an Event carries `jurisdiction_code`, every revision save and persisted rev
 same jurisdiction. A mismatch is rejected. Changing an Event's jurisdiction requires a separately
 approved atomic transition; a revision save cannot change it by itself.
 
+Stable Event metadata, such as the organizer-facing name or title, is not questionnaire data and a
+metadata-only update does not append an Event Revision. Every stable-metadata update supplies the
+opaque Event concurrency token returned by the Event read. In one transaction, the server locks the
+Event, compares that token, validates and applies the metadata, and advances the token. A stale token
+rejects the whole update; it never becomes a last-write-wins overwrite. A command that changes both
+stable metadata and questionnaire answers checks the Event token and `base_revision_id` under the
+same lock and commits both changes or neither.
+
+At cutover, the Phase 1 `PATCH /api/events/:id` path must either be disabled or route stable metadata
+and questionnaire changes through that combined transaction; it cannot remain an independent writer
+to compatibility projections. The exact token representation, HTTP request, and error schemas
+belong in the reviewed OpenAPI contract.
+
 Other target fields in `docs/ARCHITECTURE-FUTURE.md` remain deferred until a scheduled feature consumes them.
 
 ### 2.3 Event Revisions are append-only
@@ -114,6 +127,10 @@ The exact HTTP request and error schemas belong in the reviewed OpenAPI contract
   approved lossless transform into it and then pass complete validation under the target schema.
   Missing compatibility, transform loss, or incomplete validation rejects generation; it never
   interprets an older answer under changed field or enum semantics.
+- Every plan persists the exact canonical engine input it evaluated. When a compatibility transform
+  is used, that transform is an immutable approved artifact whose version and checksum are also
+  persisted on the plan. Replay uses the persisted engine-input snapshot; it never reruns whichever
+  transform is current later.
 - The selected ruleset pins the exact calendar artifact used for evaluation. Generation resolves
   that artifact and rejects a calendar whose ID, version, checksum, or jurisdiction does not match
   the ruleset's declaration. Persisting calendar provenance does not substitute for validating the
@@ -243,9 +260,9 @@ aborts.
   `unresolvedTimelines`, and `rescopeSuggestions` (including `change`, `reevaluatedVerdict`, and
   `droppedRuleIds`).
 - The diff separately reports changed plan provenance when any persisted ruleset, rules-schema,
-  Event Input schema, engine, or calendar version/checksum differs, when `snapshot_date` differs,
-  or when the recorded `today` evaluation input differs. This applies even when every finding and
-  plan outcome matches.
+  Event Input schema, compatibility-transform, engine, or calendar version/checksum differs, when
+  the persisted canonical engine input differs, when `snapshot_date` differs, or when the recorded
+  `today` evaluation input differs. This applies even when every finding and plan outcome matches.
 - Database IDs, plan IDs, created/generated/updated timestamps, row order, workflow status, and the
   debugging-only evaluation `trace` do not make a regulatory finding, plan outcome, or provenance
   changed.
@@ -281,6 +298,11 @@ Before activation, the consuming implementation must prove:
   committed through the revision transaction, never lost between authorities;
 - revision immutability;
 - two concurrent saves produce one success and one `revision_conflict`;
+- two concurrent stable-metadata updates from the same Event token produce one success and one
+  conflict, with no last-write-wins overwrite;
+- a combined stable-metadata and questionnaire update rejects stale Event or revision input without
+  changing either authority, and otherwise commits both atomically;
+- the Phase 1 Event edit path cannot write questionnaire projections independently after cutover;
 - a save with matching schema, jurisdiction, and answers creates no revision, while changing only
   the schema creates one and a jurisdiction mismatch is rejected;
 - every changed non-initial organizer save links the appended revision to its validated base, while
@@ -297,6 +319,8 @@ Before activation, the consuming implementation must prove:
 - plan generation and persistence reject a ruleset/revision jurisdiction mismatch;
 - plan generation rejects a revision whose Event Input schema is neither the selected evaluation
   contract's exact schema nor losslessly transformed and completely revalidated under it;
+- every plan persists the exact canonical engine input evaluated, and replay remains byte-stable
+  after the compatibility transform used at generation is replaced by another version;
 - plan generation rejects a calendar artifact whose ID, version, checksum, or jurisdiction does not
   match the selected ruleset's declaration;
 - `current_plan_id` backfills from the same-event checklist acknowledgement, or remains null when
