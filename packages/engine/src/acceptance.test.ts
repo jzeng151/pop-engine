@@ -1,5 +1,5 @@
 // The F-201 acceptance suite: the six scenarios and every boundary fixture in
-// docs/test-scenario-answer-key.md (v6), pinned to that document's clock (today = 2026-07-22)
+// docs/test-scenario-answer-key.md (v7), pinned to that document's clock (today = 2026-07-22)
 // and evaluated against the published ruleset. Expected finding sets are exact — a rule the
 // key does not list is a false addition and fails here.
 //
@@ -52,6 +52,14 @@ const expectFindings = (findings: readonly Finding[], expected: ExpectedLine[]):
   const withDates = expected.every((line) => line.latestApplyDate !== undefined);
   expect(actualLines(findings, withDates)).toEqual(expected);
 };
+
+const confirmationLine = (ruleId: string, withDate = true): ExpectedLine => ({
+  ruleIds: [ruleId],
+  kind: "note",
+  disposition: "no_new_requirement",
+  deadlineStatus: "not_applicable",
+  ...(withDate ? { latestApplyDate: null } : {}),
+});
 
 /** Fields every scenario answers the same way; each scenario overrides what it exercises. */
 const baseIntake: EventIntake = {
@@ -135,6 +143,11 @@ describe("Scenario A — Bushwick Street Activation (demo anchor)", () => {
         deadlineStatus: "deadline_approaching",
         latestApplyDate: "2026-07-27",
       },
+      confirmationLine("CONF-NO-STRUCTURE-001"),
+      confirmationLine("CONF-NO-FLAME-001"),
+      confirmationLine("CONF-NO-GENERATOR-001"),
+      confirmationLine("CONF-NO-BATTERY-001"),
+      confirmationLine("CONF-NO-ALCOHOL-001"),
     ]);
   });
 
@@ -231,6 +244,13 @@ describe("Scenario B — Gallery Pop-up (false-positive test)", () => {
         deadlineStatus: "published_deadline_missed",
         latestApplyDate: "2026-07-13",
       },
+      confirmationLine("CONF-NO-SALES-001"),
+      confirmationLine("CONF-NO-AMPLIFIED-SOUND-001"),
+      confirmationLine("CONF-NO-STRUCTURE-001"),
+      confirmationLine("CONF-NO-FLAME-001"),
+      confirmationLine("CONF-NO-GENERATOR-001"),
+      confirmationLine("CONF-NO-BATTERY-001"),
+      confirmationLine("CONF-NO-ALCOHOL-001"),
       // disposition PROPOSED (kind default: advisory -> advisory)
       {
         ruleIds: ["ADV-VENUE-OCCUPANCY-001"],
@@ -295,6 +315,13 @@ describe("Scenario C — Prospect Park Community Day (dependency chain)", () => 
         deadlineStatus: "not_applicable",
         latestApplyDate: null,
       },
+      confirmationLine("CONF-NO-FOOD-001"),
+      confirmationLine("CONF-NO-SALES-001"),
+      confirmationLine("CONF-NO-STRUCTURE-001"),
+      confirmationLine("CONF-NO-FLAME-001"),
+      confirmationLine("CONF-NO-GENERATOR-001"),
+      confirmationLine("CONF-NO-BATTERY-001"),
+      confirmationLine("CONF-NO-ALCOHOL-001"),
     ]);
   });
 
@@ -418,6 +445,13 @@ describe("Scenario D — Queens Block Party (tight but feasible)", () => {
         deadlineStatus: "not_calculable",
         latestApplyDate: null,
       },
+      confirmationLine("CONF-NO-FOOD-001"),
+      confirmationLine("CONF-NO-SALES-001"),
+      confirmationLine("CONF-NO-STRUCTURE-001"),
+      confirmationLine("CONF-NO-GENERATOR-001"),
+      confirmationLine("CONF-NO-BATTERY-001"),
+      confirmationLine("CONF-NO-ALCOHOL-001"),
+      confirmationLine("CONF-NO-BLOCK-PARTY-RIDE-001"),
     ]);
   });
 
@@ -517,6 +551,10 @@ describe("Scenario E — Plaza Brand Activation (max complexity)", () => {
         disposition: "may_be_required",
         deadlineStatus: "on_track",
       },
+      confirmationLine("CONF-NO-SALES-001", false),
+      confirmationLine("CONF-NO-FLAME-001", false),
+      confirmationLine("CONF-NO-BATTERY-001", false),
+      confirmationLine("CONF-NO-ALCOHOL-001", false),
     ]);
   });
 
@@ -546,12 +584,12 @@ describe("Scenario F — Rooftop Launch Party (conditional branches)", () => {
     event_date: "2026-08-11",
     event_open_to_public: "no",
     food_present: true,
-    food_affinity_private_exception_claimed: "unknown",
     amplified_sound: true,
     sound_audible_from_public_way: "unknown",
     alcohol: true,
     venue_license_covers_event_area: "unknown",
-    venue_has_assembly_approval: "unknown",
+    venue_paco_covers_exact_event: "unknown",
+    venue_fdny_pa_permit_current_for_event_space: "unknown",
   };
 
   it("produces the expected conditional finding set", () => {
@@ -593,6 +631,11 @@ describe("Scenario F — Rooftop Launch Party (conditional branches)", () => {
         disposition: "may_be_required",
         deadlineStatus: "published_deadline_missed",
       },
+      confirmationLine("CONF-NO-SALES-001", false),
+      confirmationLine("CONF-NO-STRUCTURE-001", false),
+      confirmationLine("CONF-NO-FLAME-001", false),
+      confirmationLine("CONF-NO-GENERATOR-001", false),
+      confirmationLine("CONF-NO-BATTERY-001", false),
       {
         ruleIds: ["ADV-NOISE-CODE-001"],
         kind: "advisory",
@@ -628,6 +671,36 @@ describe("Scenario F — Rooftop Launch Party (conditional branches)", () => {
     ]);
   });
 
+  it("keeps both assembly-document confirmations outside the verdict branches", () => {
+    const baseline = plan(intakeF);
+    for (const value of ["yes", "no"] as const) {
+      const result = plan({
+        ...intakeF,
+        venue_paco_covers_exact_event: value,
+        venue_fdny_pa_permit_current_for_event_space: value,
+      });
+      expect([result.verdict, result.findings.map((finding) => finding.ruleIds)]).toEqual([
+        baseline.verdict,
+        baseline.findings.map((finding) => finding.ruleIds),
+      ]);
+    }
+    const missingFields = baseline.verdictDetail.missingFacts.map((fact) => fact.field);
+    expect(missingFields).not.toContain("venue_paco_covers_exact_event");
+    expect(missingFields).not.toContain("venue_fdny_pa_permit_current_for_event_space");
+  });
+
+  it("never reinterprets the deprecated historical food-exception claim", () => {
+    const current = plan(intakeF);
+    for (const historicalValue of ["yes", "no", "unknown"]) {
+      expect(
+        plan({
+          ...intakeF,
+          food_affinity_private_exception_claimed: historicalValue,
+        }),
+      ).toEqual(current);
+    }
+  });
+
   it("counts real business days: 14 remain against the published 15 (AC 10)", () => {
     const oneDay = plan(intakeF).findings.find((finding) =>
       finding.ruleIds.includes("SLA-ONEDAY-001"),
@@ -636,6 +709,254 @@ describe("Scenario F — Rooftop Launch Party (conditional branches)", () => {
     expect(oneDay?.latestApplyDate).toBe("2026-07-21");
     expect(oneDay?.deadlineStatus).toBe("published_deadline_missed");
   });
+});
+
+describe("Issue #107 named confirmations", () => {
+  const cases = [
+    {
+      id: "CONF-NO-FOOD-001",
+      negative: { food_present: false },
+      positive: { food_present: true },
+      triggeredBy: [{ field: "food_present", value: false }],
+      name: "No food-service path identified",
+      noteText:
+        "From the answers recorded in this plan, the published ruleset identified no food-service path because you answered that no food applies. This is not a legal exemption and does not mean no other requirement applies.",
+      status: "SOURCE_CONFIRMED",
+      citation: "DOHMH temporary-events page + Health Code Article 88 + Event Sponsor Guidelines",
+      urls: [
+        "https://www.nyc.gov/site/doh/business/food-operators/temporary-food-service-establishments.page",
+        "https://www.nyc.gov/assets/doh/downloads/pdf/about/healthcode/health-code-article88.pdf",
+        "https://www.nyc.gov/assets/doh/downloads/pdf/rii/temp-vendors.pdf",
+      ],
+    },
+    {
+      id: "CONF-NO-SALES-001",
+      negative: { selling_anything: false },
+      positive: { selling_anything: true },
+      triggeredBy: [{ field: "selling_anything", value: false }],
+      name: "No sales-triggered path identified",
+      noteText:
+        "From the answers recorded in this plan, the published ruleset identified no sales-triggered path because you answered that nothing will be sold. Parks sources conflict over whether a Temporary Use Authorization applies to any sale or only sales at events of 500 or more people; both readings require a sale, so this no-sale confirmation is unchanged. This is not a legal exemption and does not mean no other requirement applies.",
+      status: "OFFICIAL_CONFLICT",
+      citation:
+        "CECM block-parties page; nycgovparks.org vendors + guide + large-events pages vs. FAQ",
+      urls: [
+        "https://www.nyc.gov/site/cecm/permitting/permit-types/block-parties.page",
+        "https://www.nycgovparks.org/permits/special-events/vendors",
+        "https://www.nycgovparks.org/permits/special-events/guide",
+        "https://www.nycgovparks.org/permits/special-events/large-events",
+        "https://www.nycgovparks.org/permits/special-events/faq",
+      ],
+    },
+    {
+      id: "CONF-NO-AMPLIFIED-SOUND-001",
+      negative: { amplified_sound: false },
+      positive: { amplified_sound: true },
+      triggeredBy: [{ field: "amplified_sound", value: false }],
+      name: "No amplified-sound path identified",
+      noteText:
+        "From the answers recorded in this plan, the published ruleset identified no amplified-sound path because you answered that no amplified sound applies. This is not a legal exemption and does not mean no other requirement applies.",
+      status: "SOURCE_CONFIRMED",
+      citation:
+        "NYPD permits page + NYC Admin Code §§10-108, 24-244, 24-231 + Parks special-event guide",
+      urls: [
+        "https://www.nyc.gov/site/nypd/services/law-enforcement/permits-licenses-permits.page",
+        "https://codelibrary.amlegal.com/codes/newyorkcity/latest/NYCadmin/0-0-0-6027",
+        "https://codelibrary.amlegal.com/codes/newyorkcity/latest/NYCadmin/0-0-0-209196",
+        "https://codelibrary.amlegal.com/codes/newyorkcity/latest/NYCadmin/0-0-0-209184",
+        "https://www.nycgovparks.org/permits/special-events/guide",
+      ],
+    },
+    {
+      id: "CONF-NO-STRUCTURE-001",
+      negative: { structure_types: ["none"] },
+      positive: { structure_types: ["tent_canopy"] },
+      triggeredBy: [{ field: "structure_types", value: ["none"] }],
+      name: "No temporary-structure path identified",
+      noteText:
+        "From the answers recorded in this plan, the published ruleset identified no temporary-structure path because you answered that no listed temporary structures applies. This is not a legal exemption and does not mean no other requirement applies.",
+      status: "SOURCE_CONFIRMED",
+      citation: "CECM DOB support page + DOB TUP page + CECM street-events page",
+      urls: [
+        "https://www.nyc.gov/site/cecm/support/department-of-buildings.page",
+        "https://www.nyc.gov/site/buildings/industry/tup.page",
+        "https://www.nyc.gov/site/cecm/permitting/permit-types/street-events.page",
+      ],
+    },
+    {
+      id: "CONF-NO-FLAME-001",
+      negative: { open_flame_or_cooking: ["none"] },
+      positive: { open_flame_or_cooking: ["charcoal_wood"] },
+      triggeredBy: [{ field: "open_flame_or_cooking", value: ["none"] }],
+      name: "No fuel or open-flame path identified",
+      noteText:
+        "From the answers recorded in this plan, the published ruleset identified no fuel or open-flame path because you answered that no listed flame or cooking fuels applies. This is not a legal exemption and does not mean no other requirement applies.",
+      status: "SOURCE_CONFIRMED",
+      citation: "CECM FDNY page + FDNY Open Flame page + NYC311 barbecuing article KA-02228",
+      urls: [
+        "https://www.nyc.gov/site/cecm/support/new-york-city-fire-department.page",
+        "https://www.nyc.gov/site/fdny/business/all-certifications/per-openflames.page",
+        "https://portal.311.nyc.gov/article/?kanumber=KA-02228",
+      ],
+    },
+    {
+      id: "CONF-NO-GENERATOR-001",
+      negative: { generator_present: false },
+      positive: { generator_present: true },
+      triggeredBy: [{ field: "generator_present", value: false }],
+      name: "No generator path identified",
+      noteText:
+        "From the answers recorded in this plan, the published ruleset identified no generator path because you answered that no generator applies. This is not a legal exemption and does not mean no other requirement applies.",
+      status: "SOURCE_CONFIRMED",
+      citation: "CECM FDNY and DEP pages + Parks special-event guide",
+      urls: [
+        "https://www.nyc.gov/site/cecm/support/new-york-city-fire-department.page",
+        "https://www.nyc.gov/site/cecm/support/department-of-environmental-protection.page",
+        "https://www.nycgovparks.org/permits/special-events/guide",
+      ],
+    },
+    {
+      id: "CONF-NO-BATTERY-001",
+      negative: { battery_present: false },
+      positive: { battery_present: true },
+      triggeredBy: [{ field: "battery_present", value: false }],
+      name: "No battery-system path identified",
+      noteText:
+        "From the answers recorded in this plan, the published ruleset identified no battery-system path because you answered that no event battery system applies. This is not a legal exemption and does not mean no other requirement applies.",
+      status: "SOURCE_CONFIRMED",
+      citation: "CECM FDNY page + Parks special-event guide",
+      urls: [
+        "https://www.nyc.gov/site/cecm/support/new-york-city-fire-department.page",
+        "https://www.nycgovparks.org/permits/special-events/guide",
+      ],
+    },
+    {
+      id: "CONF-NO-ALCOHOL-001",
+      negative: { alcohol: false },
+      positive: { alcohol: true },
+      triggeredBy: [{ field: "alcohol", value: false }],
+      name: "No alcohol path identified",
+      noteText:
+        "From the answers recorded in this plan, the published ruleset identified no alcohol path because you answered that no alcohol applies. This is not a legal exemption and does not mean no other requirement applies.",
+      status: "SOURCE_CONFIRMED",
+      citation: "CECM block-parties page + SLA permits page",
+      urls: [
+        "https://www.nyc.gov/site/cecm/permitting/permit-types/block-parties.page",
+        "https://sla.ny.gov/permits-available-online",
+      ],
+    },
+    {
+      id: "CONF-NO-BLOCK-PARTY-RIDE-001",
+      negative: {
+        location_type: "street",
+        obstructs_public_way: "yes",
+        sapo_event_type: "block_party",
+        has_amusement_ride: false,
+      },
+      positive: {
+        location_type: "street",
+        obstructs_public_way: "yes",
+        sapo_event_type: "block_party",
+        has_amusement_ride: true,
+      },
+      triggeredBy: [
+        { field: "sapo_event_type", value: "block_party" },
+        { field: "has_amusement_ride", value: false },
+      ],
+      name: "No block-party ride-insurance path identified",
+      noteText:
+        "From the answers recorded in this plan, the published ruleset identified no block-party ride-insurance path because you answered that the block party has no amusement ride applies. This is not a legal exemption and does not mean no other requirement applies.",
+      status: "SOURCE_CONFIRMED",
+      citation: "CECM FAQ + block-parties page",
+      urls: [
+        "https://www.nyc.gov/site/cecm/support/frequently-asked-questions.page",
+        "https://www.nyc.gov/site/cecm/permitting/permit-types/block-parties.page",
+      ],
+    },
+  ] as const;
+
+  it.each(cases)(
+    "$id emits exactly its sourced confirmation only for the approved answer",
+    (test) => {
+      const negative = plan({ ...baseIntake, ...test.negative }).findings.filter((finding) =>
+        finding.ruleIds.includes(test.id),
+      );
+      expect(negative).toHaveLength(1);
+      expect(negative[0]).toMatchObject({
+        ruleIds: [test.id],
+        kind: "note",
+        disposition: "no_new_requirement",
+        name: test.name,
+        agency: null,
+        deadline: null,
+        deadlineStatus: "not_applicable",
+        feeDisplay: null,
+        portalName: null,
+        portalUrl: null,
+        portalInstructions: null,
+        noteText: test.noteText,
+        verificationStatus: test.status,
+        triggeredBy: test.triggeredBy,
+        sources: [{ ruleId: test.id, citation: test.citation, urls: test.urls }],
+      });
+      expect(
+        plan({ ...baseIntake, ...test.positive }).findings.some((finding) =>
+          finding.ruleIds.includes(test.id),
+        ),
+      ).toBe(false);
+    },
+  );
+
+  it("does not emit the ride confirmation when the conditional gate was not asked", () => {
+    const result = plan({
+      ...baseIntake,
+      location_type: "park",
+      sapo_event_type: "block_party",
+      has_amusement_ride: false,
+    });
+    expect(
+      result.findings.some((finding) => finding.ruleIds.includes("CONF-NO-BLOCK-PARTY-RIDE-001")),
+    ).toBe(false);
+  });
+
+  it.each([
+    ["obstructs_public_way", { location_type: "street", obstructs_public_way: "unknown" }],
+    ["event_open_to_public", { event_open_to_public: "unknown" }],
+    [
+      "sound_audible_from_public_way",
+      { amplified_sound: true, sound_audible_from_public_way: "unknown" },
+    ],
+    [
+      "structure_over_10ft_tall",
+      {
+        structure_types: ["tent_canopy"],
+        tent_area_sqft: 100,
+        tent_days_in_place: 1,
+        structure_over_10ft_tall: "unknown",
+      },
+    ],
+    [
+      "venue_license_covers_event_area",
+      { alcohol: true, venue_license_covers_event_area: "unknown" },
+    ],
+    ["venue_paco_covers_exact_event", { headcount: 90, venue_paco_covers_exact_event: "unknown" }],
+    [
+      "venue_fdny_pa_permit_current_for_event_space",
+      { headcount: 90, venue_fdny_pa_permit_current_for_event_space: "unknown" },
+    ],
+  ] as const)(
+    "keeps the UNKNOWN-capable %s field out of named-confirmation provenance",
+    (field, overrides) => {
+      const confirmations = plan({ ...baseIntake, ...overrides }).findings.filter((finding) =>
+        finding.ruleIds[0]?.startsWith("CONF-"),
+      );
+      expect(
+        confirmations.some((finding) =>
+          finding.triggeredBy.some((trigger) => trigger.field === field),
+        ),
+      ).toBe(false);
+    },
+  );
 });
 
 describe("Boundary and unit fixtures (AC 8)", () => {
@@ -647,15 +968,18 @@ describe("Boundary and unit fixtures (AC 8)", () => {
     event_open_to_public: "yes",
   });
 
+  const substantiveFindings = (result: PermitPlan): readonly Finding[] =>
+    result.findings.filter((finding) => !finding.ruleIds[0]?.startsWith("CONF-"));
+
   const ruleIdsOf = (result: PermitPlan): string[] =>
-    result.findings.flatMap((finding) => finding.ruleIds);
+    substantiveFindings(result).flatMap((finding) => finding.ruleIds);
 
   // A location that triggers nothing on its own, so a structure/power fixture shows only what it tests.
   const neutralIntake: EventIntake = { ...baseIntake, location_type: "park", headcount: 10 };
 
   it("park headcount 19 identifies no new city requirement at all", () => {
     const result = plan(parkIntake(19));
-    expect(result.findings).toEqual([]);
+    expect(substantiveFindings(result)).toEqual([]);
     expect(result.verdict).toBe("FEASIBLE");
   });
 
@@ -723,10 +1047,10 @@ describe("Boundary and unit fixtures (AC 8)", () => {
 
   it("tent 399 / 400 / 401 sq ft: nothing, conditional, required", () => {
     expect(ruleIdsOf(plan(tentIntake(399)))).toEqual([]);
-    const atBoundary = plan(tentIntake(400)).findings;
+    const atBoundary = substantiveFindings(plan(tentIntake(400)));
     expect(atBoundary.map((finding) => finding.ruleIds)).toEqual([["DOB-TENT-001"]]);
     expect(atBoundary[0]?.disposition).toBe("may_be_required");
-    const over = plan(tentIntake(401)).findings;
+    const over = substantiveFindings(plan(tentIntake(401)));
     expect(over.map((finding) => finding.ruleIds)).toEqual([["DOB-TENT-001"]]);
     expect(over[0]?.disposition).toBe("required");
   });
@@ -873,9 +1197,10 @@ describe("Boundary and unit fixtures (AC 8)", () => {
       headcount: 30,
       event_open_to_public: "yes",
     });
-    expect(result.findings).toHaveLength(1);
-    expect(result.findings[0]?.ruleIds).toEqual(["SAPO-SCOPE-001"]);
-    expect(result.findings[0]?.kind).toBe("note");
-    expect(result.findings[0]?.disposition).toBe("no_new_requirement");
+    const [scope] = substantiveFindings(result);
+    expect(substantiveFindings(result)).toHaveLength(1);
+    expect(scope?.ruleIds).toEqual(["SAPO-SCOPE-001"]);
+    expect(scope?.kind).toBe("note");
+    expect(scope?.disposition).toBe("no_new_requirement");
   });
 });

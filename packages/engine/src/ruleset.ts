@@ -563,6 +563,7 @@ export function parseEngineRuleset(value: unknown): EngineRuleset {
   const config = asObject(ruleset.config, "ruleset.config");
   const slackWarning = asObject(config.slack_warning_days, "ruleset.config.slack_warning_days");
   const businessDayMath = asObject(config.business_day_math, "ruleset.config.business_day_math");
+  const rulesetVersion = asString(ruleset.ruleset_version, "ruleset.ruleset_version");
 
   const intakeFields = withParsedScoping(
     asArray(ruleset.intake_fields, "ruleset.intake_fields").map((field, index) =>
@@ -571,8 +572,7 @@ export function parseEngineRuleset(value: unknown): EngineRuleset {
   );
   // Looked up before any rule is parsed: a superseded artifact is read under the semantics of
   // its own version, not normalized into this one.
-  const legacy =
-    PRE_PUBLICATION_FACTS.get(asString(ruleset.ruleset_version, "ruleset.ruleset_version")) ?? null;
+  const legacy = PRE_PUBLICATION_FACTS.get(rulesetVersion) ?? null;
   const rules = asArray(ruleset.rules, "ruleset.rules").map((rule, index) =>
     parseRule(rule, `ruleset.rules[${index}]`, intakeFields, legacy),
   );
@@ -589,10 +589,10 @@ export function parseEngineRuleset(value: unknown): EngineRuleset {
     }
   }
   rejectMixedDedupeVerificationStatuses(published);
-  rejectUnconsumedFields(intakeFields, published);
+  rejectUnconsumedFields(intakeFields, published, rulesetVersion);
 
   return {
-    rulesetVersion: asString(ruleset.ruleset_version, "ruleset.ruleset_version"),
+    rulesetVersion,
     jurisdiction: asString(ruleset.jurisdiction, "ruleset.jurisdiction"),
     snapshotDate: asString(ruleset.snapshot_date, "ruleset.snapshot_date"),
     slackWarningDays: asNumber(slackWarning.value, "ruleset.config.slack_warning_days.value"),
@@ -632,17 +632,31 @@ function rejectMixedDedupeVerificationStatuses(published: readonly EngineRule[])
  */
 export const UNCONSUMED_INTAKE_FIELDS: Readonly<Record<string, string>> = {
   borough: "Display and future jurisdiction routing (F-207). No NYC rule varies by borough today.",
-  food_affinity_private_exception_claimed:
-    "Collected for the Health Code Art. 88 private-function exemption, which DOHMH-EXEMPTION-001 " +
-    "renders as an advisory on event_open_to_public alone. Open on issue #194.",
-  venue_has_assembly_approval:
-    "Confirms only that an assembly approval exists; it cannot establish whether the current PACO " +
-    "and PA permit cover the event's exact space, use, occupancy, and layout. Whether exact coverage " +
-    "removes the temporary filing is not published either way; confirm with DOB. Inconsistent " +
-    "conditions require amendment or separate authorization. No published rule consumes this " +
-    "coarse field, so answering it changes no output; objective coverage-specific input and rule " +
-    "modeling is open on issue #188.",
+  venue_paco_covers_exact_event:
+    "Confirmation-only F-110 input. No published rule consumes it or supports an inference that " +
+    "an exact PACO match removes a temporary filing.",
+  venue_fdny_pa_permit_current_for_event_space:
+    "Confirmation-only F-110 input. No published rule consumes it or supports an inference that " +
+    "a current FDNY Public Assembly Permit removes a temporary filing.",
 };
+
+// Replay keeps the intake contract a plan originally stored. Every corrected-subset publication
+// from v2.1 through v2.8 declared both fields; v2.9 retired them. Both sets are closed so a new
+// artifact cannot opt into the allowance merely by publishing another version.
+const RETIRED_UNCONSUMED_INTAKE_FIELDS = new Set([
+  "food_affinity_private_exception_claimed",
+  "venue_has_assembly_approval",
+]);
+const RULESET_VERSIONS_WITH_RETIRED_INTAKE_FIELDS = new Set([
+  "nyc.v2.1",
+  "nyc.v2.2",
+  "nyc.v2.3",
+  "nyc.v2.4",
+  "nyc.v2.5",
+  "nyc.v2.6",
+  "nyc.v2.7",
+  "nyc.v2.8",
+]);
 
 /**
  * The intake fields the published deadlines read.
@@ -670,6 +684,7 @@ function deadlineConsumedFields(published: readonly EngineRule[]): Set<string> {
 function rejectUnconsumedFields(
   intakeFields: readonly IntakeFieldDefinition[],
   published: readonly EngineRule[],
+  rulesetVersion: string,
 ): void {
   const consumed = new Set<string>([
     ...published.flatMap((rule) => triggerFields(rule.trigger)),
@@ -682,6 +697,11 @@ function rejectUnconsumedFields(
   for (const { field } of intakeFields) {
     if (consumed.has(field)) continue;
     if (UNCONSUMED_INTAKE_FIELDS[field] !== undefined) continue;
+    if (
+      RULESET_VERSIONS_WITH_RETIRED_INTAKE_FIELDS.has(rulesetVersion) &&
+      RETIRED_UNCONSUMED_INTAKE_FIELDS.has(field)
+    )
+      continue;
     fail(
       `intake field "${field}" is declared but no rule trigger, deadline, or scoping condition ` +
         `reads it, so answering it changes nothing. Give a rule that consumes it, or record why ` +

@@ -170,7 +170,6 @@ export const SCENARIO_INTAKE_FIXTURES: readonly ScenarioIntakeFixture[] = [
       event_open_to_public: "no",
       food_present: true,
       food_vendor_count: 1,
-      food_affinity_private_exception_claimed: "unknown",
       selling_anything: false,
       amplified_sound: true,
       sound_audible_from_public_way: "unknown",
@@ -180,7 +179,8 @@ export const SCENARIO_INTAKE_FIXTURES: readonly ScenarioIntakeFixture[] = [
       battery_present: false,
       alcohol: true,
       venue_license_covers_event_area: "unknown",
-      venue_has_assembly_approval: "unknown",
+      venue_paco_covers_exact_event: "unknown",
+      venue_fdny_pa_permit_current_for_event_space: "unknown",
     },
   },
 ];

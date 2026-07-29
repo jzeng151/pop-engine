@@ -29,8 +29,8 @@ export type PublishedRuleset = {
 };
 
 const EXPECTED_SCHEMA = "popengine-rules/v2";
-const EXPECTED_RULESET_VERSION = "nyc.v2.8";
-const EXPECTED_RULE_COUNT = 33;
+const EXPECTED_RULESET_VERSION = "nyc.v2.9";
+const EXPECTED_RULE_COUNT = 42;
 const EXPECTED_ADVISORY_COUNT = 4;
 /** Published rulesets are `nyc-rules.v<version>.json`; `rules/proposals/` is drafts and excluded. */
 const PUBLISHED_RULESET = /^nyc-rules\.v.+\.json$/;
@@ -43,7 +43,7 @@ const RULES_DIRECTORY = fileURLToPath(new URL("../../../rules/", import.meta.url
 /**
  * The published ruleset, FOUND rather than named.
  *
- * This used to spell the version — `rules/nyc-rules.v2.8.json` — and that is a landmine a bump
+ * This used to spell the versioned filename directly, and that is a landmine a bump
  * cannot see: publishing the next version deletes the file this points at, and the api then fails
  * to boot on a path nobody remembered to update. Reading the directory means a bump changes one
  * artifact and nothing else has to be swept.
@@ -52,11 +52,11 @@ const RULES_DIRECTORY = fileURLToPath(new URL("../../../rules/", import.meta.url
  * an arbitrary one of two rulesets is the failure this whole file exists to prevent — every permit
  * fact the product states would come from an artifact nobody chose.
  *
- * NOTE ON `EXPECTED_RULESET_VERSION` ABOVE, which deliberately still names nyc.v2.8: the two are
+ * NOTE ON `EXPECTED_RULESET_VERSION` ABOVE, which deliberately still names nyc.v2.9: the two are
  * not redundant and this change does not weaken it. The PATH says which file to read; the VERSION
  * says which content is approved to boot on, and a mismatch is a hard boot failure on purpose
  * (AD-2, and the check further down this file). Finding the file does not decide whether its
- * contents are the ratified ones, so a bump that publishes v2.9 without updating that constant
+ * contents are the ratified ones, so a bump that publishes v2.10 without updating that constant
  * still fails loudly at boot — which is the intended behaviour, not a gap.
  */
 /**
@@ -275,7 +275,7 @@ export const MAX_REPRESENTABLE_DAYS_BEFORE = 719_528;
  * whole number of days from 1 to 3650." That spec is the approved artifact this constant enforces —
  * change it there first, then here, and it is deliberately alone on this line. Rationale, from the
  * spec: an offset counts days back from a filing deadline, and the longest window published in
- * nyc.v2.8 is 60 days, so 3,650 never binds on anything real while still refusing nonsense. It is
+ * nyc.v2.9 is 60 days, so 3,650 never binds on anything real while still refusing nonsense. It is
  * ~200× smaller than `MAX_REPRESENTABLE_DAYS_BEFORE`, so in practice
  * this is the bound that does the work; the representable one documents the mechanical ceiling and
  * catches the case where this is ever raised past what the arithmetic can take.
@@ -321,7 +321,7 @@ function requireDaysBefore(value: unknown, label: string): void {
     if (day > MAX_PRODUCT_DAYS_BEFORE) {
       validationError(
         `${at} is ${day}, beyond the ${MAX_PRODUCT_DAYS_BEFORE}-day maximum reminder offset; the ` +
-          `longest window nyc.v2.8 publishes is 60 days`,
+          `longest window nyc.v2.9 publishes is 60 days`,
       );
     }
     if (seen.has(day)) {
@@ -614,7 +614,7 @@ export async function syncPermitRules(client: Client, ruleset: PublishedRuleset)
       ruleset.rulesetVersion,
     ]);
 
-    // ponytail: 37 boot-time rows; use one bulk insert only if ruleset size grows materially.
+    // ponytail: 46 boot-time rows; use one bulk insert only if ruleset size grows materially.
     for (const rule of [...ruleset.rules, ...ruleset.advisories]) {
       await client.query(
         `INSERT INTO permit_rules

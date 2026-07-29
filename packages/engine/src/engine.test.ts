@@ -1,6 +1,7 @@
 // Engine behaviors the scenario fixtures do not reach: determinism, dedupe merging, the
 // tri-state rules, business-day arithmetic, and every way evaluation can fail loudly.
 
+import { execFileSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
@@ -34,11 +35,12 @@ const parkIntake: EventIntake = {
   structure_types: ["none"],
   open_flame_or_cooking: ["none"],
   generator_present: false,
+  battery_present: false,
   battery_system_kwh: 0,
   alcohol: false,
 };
 
-/** A two-rule ruleset in the published shape, for behaviors nyc.v2.8 does not exercise. */
+/** A two-rule ruleset in the published shape, for behaviors the current publication does not exercise. */
 function syntheticRuleset(rules: unknown[]): ReturnType<typeof parseEngineRuleset> {
   return parseEngineRuleset({
     ruleset_version: "test.v1",
@@ -1009,9 +1011,9 @@ describe("ruleset parsing rejects anything it cannot evaluate", () => {
   });
 
   it("accepts the published ruleset unchanged", () => {
-    expect(ruleset.rulesetVersion).toBe("nyc.v2.8");
+    expect(ruleset.rulesetVersion).toBe("nyc.v2.9");
     expect(ruleset.slackWarningDays).toBe(14);
-    expect(ruleset.rules).toHaveLength(37);
+    expect(ruleset.rules).toHaveLength(46);
   });
 });
 
@@ -1349,6 +1351,44 @@ describe("facts the ruleset publishes rather than the engine assuming (nyc.v2.4)
     ).toThrow(/boundary does not apply to the "gte" operator/);
   });
 
+  it("loads every preserved v2 ruleset without weakening active unconsumed-field validation", () => {
+    const superseded = [
+      ["nyc.v2.1", "b0214b4"],
+      ["nyc.v2.2", "3a1b7ba"],
+      ["nyc.v2.3", "5f32040"],
+      ["nyc.v2.4", "98dc5f8"],
+      ["nyc.v2.5", "81320c7"],
+      ["nyc.v2.6", "0122eca"],
+      ["nyc.v2.7", "e4f04b1"],
+      ["nyc.v2.8", "7a16461"],
+    ] as const;
+
+    expect(
+      superseded.map(([version, revision]) => {
+        const artifactPath = `rules/nyc-rules.${version.replace("nyc.", "")}.json`;
+        const document = JSON.parse(
+          execFileSync("git", ["show", `${revision}:${artifactPath}`], { encoding: "utf8" }),
+        );
+        return parseEngineRuleset(document).rulesetVersion;
+      }),
+    ).toEqual(superseded.map(([version]) => version));
+
+    expect(() =>
+      parseEngineRuleset({
+        ...rawRuleset,
+        intake_fields: [
+          ...(rawRuleset.intake_fields as unknown[]),
+          {
+            field: "venue_has_assembly_approval",
+            type: "enum",
+            values: ["yes", "no", "unknown"],
+            asked_when: "location_type = private_venue AND headcount gte 75",
+          },
+        ],
+      }),
+    ).toThrow(/intake field "venue_has_assembly_approval" is declared but no rule/);
+  });
+
   it("still reads nyc.v2.3 under nyc.v2.3 semantics, so its plans replay", () => {
     // A plan pins ruleset_version and intake_snapshot in order to be re-evaluated later: AD-7
     // says history stays reproducible after rules change, AD-13 has two versions coexisting, and
@@ -1368,36 +1408,42 @@ describe("facts the ruleset publishes rather than the engine assuming (nyc.v2.4)
     const replays = (intake: EventIntake) => {
       const before = evaluate(intake, v23, TODAY, calendar);
       const after = evaluate(intake, ruleset, TODAY, calendar);
-      const reached = (plan: PermitPlan) => [...plan.findings.flatMap((f) => f.ruleIds)].sort();
+      const afterFindings = after.findings.filter(
+        (finding) => !finding.ruleIds[0]?.startsWith("CONF-"),
+      );
+      const reached = (findings: PermitPlan["findings"]) =>
+        [...findings.flatMap((f) => f.ruleIds)].sort();
       // Every published filing window in the plan. Keyed by the window rather than by rule,
       // because a merged line carries one deadline for both of its rules — DOB-TALL-STRUCTURE-001
       // publishes none of its own, so nothing is being hidden by not attributing the tent's date
       // to it. `rulesMatch` already pins rule identity; this pins that no window moved or vanished.
-      const windows = (plan: PermitPlan) =>
-        plan.findings
+      const windows = (findings: PermitPlan["findings"]) =>
+        findings
           .filter((f) => f.latestApplyDate !== null)
           .map((f) => `${f.latestApplyDate}:${f.deadlineStatus}`)
           .sort();
       return {
         verdictMatches: before.verdict === after.verdict,
-        findingsMatch: JSON.stringify(before.findings) === JSON.stringify(after.findings),
+        findingsMatch: JSON.stringify(before.findings) === JSON.stringify(afterFindings),
         // What must hold across ANY publish, grouping aside: the same rules are reached, and each
         // one keeps its date and status. A rule appearing, vanishing or moving its deadline between
         // eras is drift; two rules being rendered as one line is a published grouping decision.
-        rulesMatch: JSON.stringify(reached(before)) === JSON.stringify(reached(after)),
-        windowsMatch: JSON.stringify(windows(before)) === JSON.stringify(windows(after)),
+        rulesMatch:
+          JSON.stringify(reached(before.findings)) === JSON.stringify(reached(afterFindings)),
+        windowsMatch:
+          JSON.stringify(windows(before.findings)) === JSON.stringify(windows(afterFindings)),
         verdict: before.verdict,
         // Exposed so a window that DOES move can be named rather than waved through by flipping
         // `windowsMatch` to false. A bare `windowsMatch: false` would accept any movement at all,
         // including a rule silently losing its date, which is the drift this whole block guards.
         windowFor: (ruleId: string) => {
-          const pick = (plan: PermitPlan) => {
-            const finding = plan.findings.find((f) => f.ruleIds.includes(ruleId));
+          const pick = (findings: PermitPlan["findings"]) => {
+            const finding = findings.find((f) => f.ruleIds.includes(ruleId));
             return finding === undefined
               ? "no finding"
               : `${finding.latestApplyDate}:${finding.deadlineStatus}`;
           };
-          return { before: pick(before), after: pick(after) };
+          return { before: pick(before.findings), after: pick(afterFindings) };
         },
       };
     };
