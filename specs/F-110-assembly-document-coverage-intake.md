@@ -1,7 +1,7 @@
 # F-110 · Assembly Document Coverage Intake
 
 **Status:** APPROVED (2026-07-29) · **Reviewer/approver:** product owner acting in the product, architecture, database, F-101, F-102, F-201, affected-lane, and all-lane capacities (issue #188; decision gate `msg_bed16d397a64`) · **Owner/Lane:** Dev 2, coordinated with Dev 1 and Dev 4.
-**Phase:** 1 (core) · **Depends on:** F-101, F-102, F-201, ruleset nyc.v2.10, and events migration 012 · **Feeds:** saved intake and immutable plan snapshots.
+**Phase:** 1 (core) · **Depends on:** F-101, F-102, F-201, ruleset nyc.v2.11, and events migration 012 · **Feeds:** saved intake and immutable plan snapshots.
 
 ## User Story
 

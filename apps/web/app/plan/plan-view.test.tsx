@@ -513,7 +513,7 @@ describe("per-line citations and status (AC 2, AC 3)", () => {
     expect(line.queryAllByRole("link")).toEqual([]);
     expect(line.getByText("COVERAGE GAP")).toBeDefined();
     expect(line.getByText(NOT_COVERED_BY_RULESET)).toBeDefined();
-    expect(line.getByText(/Source: not available in this ruleset/)).toBeDefined();
+    expect(line.queryByText(/Source: not available in this ruleset/)).toBeNull();
   });
 
   it("omits the agency label on findings that publish no agency", async () => {
@@ -2202,6 +2202,7 @@ describe("a scannable line (progressive disclosure)", () => {
     ).toBeDefined();
     expect(line.getByRole("list").querySelectorAll("li")).toHaveLength(3);
     expect(line.getByText(/File at least 10 business days/)).toBeDefined();
+    expect(line.getByText("may be required")).toBeDefined();
     expect(
       line
         .getAllByRole("link", { name: "DOB TPA filing page" })
@@ -2222,6 +2223,31 @@ describe("a scannable line (progressive disclosure)", () => {
     expect(line.getByText(/Published legal deadline text/)).toBeDefined();
     expect(line.getByText("Published legal fee text.")).toBeDefined();
     expect(line.getByText("Long legal qualification.")).toBeDefined();
+  });
+
+  it("preserves the published finding text inside summarized legal details", async () => {
+    const publishedText =
+      "Known published deadlines: production 10 days; open culture 15 days; street festival Dec 31.";
+    const line = await collapsedLine(
+      finding({
+        name: publishedText,
+        kind: "advisory",
+        disposition: "advisory",
+        agency: null,
+        userSummary: {
+          heading: "SAPO event type not covered",
+          points: [{ kind: "warning", text: "Confirm the deadline with SAPO.", sources: [] }],
+        },
+      }),
+    );
+
+    expect(line.queryByText(publishedText)).toBeNull();
+    await userEvent.click(
+      line.getByRole("button", {
+        name: "Legal details and all sources for SAPO event type not covered",
+      }),
+    );
+    expect(line.getByText(publishedText)).toBeDefined();
   });
 
   it("shows exactly the summary fields before the line is expanded", async () => {

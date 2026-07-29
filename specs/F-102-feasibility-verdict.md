@@ -2,7 +2,7 @@
 
 **Status:** APPROVED (2026-07-24) · **Reviewer/approver:** product owner · **Owner:** see Lane below · see `docs/BASELINE.md`.
 **Phase:** 1 (core, week 1) · **Lane:** Dev 1 · **Depends on:** F-201 (same engine invocation) · **Feeds:** plan UI, F-203 slack warnings
-**Updated:** 2026-07-22 against nyc.v2.1; retargeted through nyc.v2.8 for the changes recorded in `docs/BASELINE.md`, to nyc.v2.9 on 2026-07-29, and to nyc.v2.10 the same day for issue #181's citation-only correction. v2.9 adds `no_new_requirement` confirmation findings and changes the active intake registry for F-110 and issue #194 without changing a verdict. v2.10 changes no finding, status, or verdict. The plan renderer's separate near-empty predicate is disposition-based: a `required + not_calculable` finding remains definite and suppresses near-empty copy.
+**Updated:** 2026-07-22 against nyc.v2.1; retargeted through nyc.v2.8 for the changes recorded in `docs/BASELINE.md`, to nyc.v2.9 on 2026-07-29, to nyc.v2.10 the same day for issue #181's citation-only correction, and to nyc.v2.11 for organizer summaries. v2.9 adds `no_new_requirement` confirmation findings and changes the active intake registry for F-110 and issue #194 without changing a verdict. v2.10 and v2.11 change no finding, status, or verdict. The plan renderer's separate near-empty predicate is disposition-based: a `required + not_calculable` finding remains definite and suppresses near-empty copy.
 
 ## User Story
 

@@ -142,9 +142,7 @@ const SUMMARY_LABEL = {
 } as const;
 
 function SummarySources({ sources }: { sources: readonly SummarySourceLink[] }) {
-  if (sources.length === 0) {
-    return <span className="line__point-sources"> Source: not available in this ruleset.</span>;
-  }
+  if (sources.length === 0) return null;
   return (
     <span className="line__point-sources">
       {" "}
@@ -233,6 +231,13 @@ export function PlanLine({ finding }: { finding: ConsumedFinding }) {
         <VerificationBadge status={finding.verificationStatus} />
       </div>
 
+      {hasUserSummary && (
+        <p className="line__meta">
+          {finding.agency !== null && <span className="line__agency">{finding.agency}</span>}
+          <span className="line__disposition">{humanize(finding.disposition)}</span>
+        </p>
+      )}
+
       {hasUserSummary ? (
         <ul className="line__summary">
           {userSummary?.points.map((point, index) => (
@@ -281,7 +286,7 @@ export function PlanLine({ finding }: { finding: ConsumedFinding }) {
         )}
 
       {/* COVERAGE_GAP means this ruleset version does not model the combination, not that a
-          source is missing (published legend, rules/nyc-rules.v2.10.json). Saying "no source" here
+          source is missing (published legend, rules/nyc-rules.v2.11.json). Saying "no source" here
           would state RESEARCH_REQUIRED's meaning, which renders CONFIRM_WITH_AGENCY above. Also a
           summary field, because it too explains why no citation follows. */}
       {finding.verificationStatus === "COVERAGE_GAP" && finding.sources.length === 0 && (
@@ -308,12 +313,6 @@ export function PlanLine({ finding }: { finding: ConsumedFinding }) {
         onOpenChange={setDetailsOpen}
       >
         <p className="line__meta">
-          {hasUserSummary && finding.agency !== null && (
-            <span className="line__agency">{finding.agency}</span>
-          )}
-          {hasUserSummary && (
-            <span className="line__disposition">{humanize(finding.disposition)}</span>
-          )}
           <span className="line__rule-ids">{ruleIds}</span>
           {finding.lastVerifiedDate !== null && (
             <span className="line__verified-date">last verified {finding.lastVerifiedDate}</span>
@@ -323,6 +322,9 @@ export function PlanLine({ finding }: { finding: ConsumedFinding }) {
         {hasUserSummary && <PublishedDeadline finding={finding} />}
         {hasUserSummary && finding.feeDisplay !== null && (
           <p className="line__fee">{finding.feeDisplay}</p>
+        )}
+        {hasUserSummary && finding.name !== null && finding.name !== name && (
+          <p className="line__note">{finding.name}</p>
         )}
 
         {/* Both readings of an official conflict, verbatim. The badge in the summary already

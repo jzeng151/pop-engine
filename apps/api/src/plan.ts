@@ -256,6 +256,7 @@ export function createPlanService(
           ...plan,
           findings: plan.findings.map((finding) => ({
             ...finding,
+            userSummary: finding.userSummary ?? null,
             lastVerifiedDate: finding.lastVerifiedDate ?? null,
           })),
         };

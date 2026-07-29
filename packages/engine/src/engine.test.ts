@@ -130,6 +130,7 @@ describe("provenance (AC 1)", () => {
       "citation A",
       "citation B",
     ]);
+    expect("userSummary" in (merged.findings[0] as object)).toBe(false);
   });
 
   it("keeps the earliest verification date only when every merged rule publishes one", () => {

@@ -114,6 +114,15 @@ function buildFinding(
 function mergeFindings(first: Finding, second: Finding): Finding {
   const firstSummary = first.userSummary ?? null;
   const secondSummary = second.userSummary ?? null;
+  const userSummary =
+    firstSummary === null
+      ? secondSummary
+      : secondSummary === null
+        ? firstSummary
+        : {
+            heading: firstSummary.heading,
+            points: [...firstSummary.points, ...secondSummary.points],
+          };
   const carriesVerificationDate =
     first.lastVerifiedDate !== undefined || second.lastVerifiedDate !== undefined;
   const lastVerifiedDate =
@@ -130,15 +139,7 @@ function mergeFindings(first: Finding, second: Finding): Finding {
     ruleIds: [...first.ruleIds, ...second.ruleIds],
     notes: [...first.notes, ...second.notes],
     sources: [...first.sources, ...second.sources],
-    userSummary:
-      firstSummary === null
-        ? secondSummary
-        : secondSummary === null
-          ? firstSummary
-          : {
-              heading: firstSummary.heading,
-              points: [...firstSummary.points, ...secondSummary.points],
-            },
+    ...(userSummary === null ? {} : { userSummary }),
     triggeredBy: [...first.triggeredBy, ...second.triggeredBy],
     deadlineUnknownFields: [...first.deadlineUnknownFields, ...second.deadlineUnknownFields],
     timelineUnresolvedReason: first.timelineUnresolvedReason ?? second.timelineUnresolvedReason,
