@@ -1109,6 +1109,8 @@ describe("F-102 · CONDITIONAL branch table and INFEASIBLE rescope ladder", () =
               introducedRuleIds,
               // This is the stored shape from before introduced finding metadata was snapshotted.
               // The page may use its deployed references because the versions match exactly.
+              remainingMissingFields: ["sound_audible_from_public_way"],
+              remainingTimelineReasons: [],
               minSlackDays: null,
               atRiskFindingName: null,
             },
@@ -1162,9 +1164,19 @@ describe("F-102 · CONDITIONAL branch table and INFEASIBLE rescope ladder", () =
     ).toContain("Apply through E-Apply");
     expect(suggestions[0]?.textContent).toContain("At risk — apply within 5 days");
     expect(suggestions[0]?.textContent).toContain("on Street Activity Permit — Medium");
+    expect(suggestions[0]?.textContent).toContain(
+      "Why this helps: This removes Street Activity Permit — Large",
+    );
     expect(suggestions[1]?.textContent).toContain("small");
     expect(suggestions[1]?.textContent).not.toContain("SAPO-STREET-SMALL-001");
     expect(suggestions[2]?.textContent).toContain("private venue");
+    expect(suggestions[2]?.textContent).toContain(
+      "Still conditional — needs answers about sound audible from public way",
+    );
+    expect(suggestions[2]?.textContent).not.toContain("Depends on");
+    expect(suggestions[2]?.textContent).toContain(
+      "Why this helps: This removes Street Activity Permit — Large",
+    );
     expect(suggestions[2]?.textContent).toContain("would newly appear");
     expect(suggestions[2]?.textContent).toContain("Findings that would newly appear");
     const introduced = suggestions[2]?.querySelector(".verdict-detail__rescope-introduced");
@@ -1184,11 +1196,16 @@ describe("F-102 · CONDITIONAL branch table and INFEASIBLE rescope ladder", () =
         verdict: "INFEASIBLE",
         verdictDetail: {
           ...emptyVerdictDetail,
+          blockingFinding: {
+            ruleIds: ["PARKS-EVENT-001"],
+            name: "NYC Parks special event permit",
+          },
+          missedRuleIds: ["PARKS-EVENT-001"],
           rescopeSuggestions: [
             {
               change: { field: "location_type", value: "street" },
               reevaluatedVerdict: "CONDITIONAL",
-              droppedRuleIds: [],
+              droppedRuleIds: ["PARKS-EVENT-001"],
               introducedRuleIds: ["SAPO-SCOPE-001"],
             },
           ],
@@ -1200,6 +1217,11 @@ describe("F-102 · CONDITIONAL branch table and INFEASIBLE rescope ladder", () =
 
     expect(ladder.textContent).toContain(publishedHeading("SAPO-SCOPE-001"));
     expect(ladder.textContent).not.toContain("SAPO-SCOPE-001");
+    expect(ladder.textContent).toContain(
+      "Still conditional — review the newly introduced findings below",
+    );
+    expect(ladder.textContent).not.toContain("Depends on");
+    expect(ladder.textContent).toContain("Why this helps: This removes Special Event Permit");
     expect(
       ladder.querySelector(`a[href="${publishedSource("SAPO-SCOPE-001").url}"]`),
     ).not.toBeNull();

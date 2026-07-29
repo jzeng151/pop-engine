@@ -152,6 +152,7 @@ function BranchTable({
 
 function rescopeVerdictLine(
   suggestion: ConsumedVerdictDetail["rescopeSuggestions"][number],
+  rulesetReferences: readonly FindingReference[],
 ): string {
   if (suggestion.reevaluatedVerdict === "FEASIBLE_AT_RISK") {
     const base = verdictCopy("FEASIBLE_AT_RISK", {
@@ -166,15 +167,66 @@ function rescopeVerdictLine(
       ? `${base} · on ${suggestion.atRiskFindingName}`
       : base;
   }
+  if (suggestion.reevaluatedVerdict === "CONDITIONAL") {
+    const remaining = [
+      suggestion.remainingMissingFields.length > 0
+        ? `needs answers about ${suggestion.remainingMissingFields.map(humanize).join(", ")}`
+        : null,
+      suggestion.remainingTimelineReasons.length > 0
+        ? `timeline still unresolved: ${suggestion.remainingTimelineReasons
+            .map((reason) => humanizeRuleCodes(reason, rulesetReferences))
+            .join("; ")}`
+        : null,
+    ].filter((reason): reason is string => reason !== null);
+    if (remaining.length > 0) return `Still conditional — ${remaining.join("; ")}`;
+    return suggestion.introducedRuleIds.length > 0
+      ? "Still conditional — review the newly introduced findings below"
+      : "Still conditional — more event details are needed";
+  }
   return verdictCopy(suggestion.reevaluatedVerdict);
+}
+
+function RescopeReason({
+  suggestion,
+  blockingFinding,
+  findings,
+  rulesetReferences,
+}: {
+  suggestion: ConsumedVerdictDetail["rescopeSuggestions"][number];
+  blockingFinding: ConsumedVerdictDetail["blockingFinding"];
+  findings: readonly ConsumedFinding[];
+  rulesetReferences: readonly FindingReference[];
+}) {
+  if (blockingFinding === null) return null;
+  const removesBlocker = suggestion.droppedRuleIds.some((ruleId) =>
+    blockingFinding.ruleIds.includes(ruleId),
+  );
+  return (
+    <p className="verdict-detail__rescope-reason">
+      Why this helps:{" "}
+      {removesBlocker ? (
+        <>
+          This removes{" "}
+          <FindingReferences
+            references={referencesForRuleIds(blockingFinding.ruleIds, findings, rulesetReferences)}
+          />{" "}
+          — the missed-deadline finding that blocks the current event date.
+        </>
+      ) : (
+        "A full re-evaluation under this change no longer returns the current missed-deadline result."
+      )}
+    </p>
+  );
 }
 
 function RescopeLadder({
   suggestions,
+  blockingFinding,
   findings,
   rulesetReferences,
 }: {
   suggestions: ConsumedVerdictDetail["rescopeSuggestions"];
+  blockingFinding: ConsumedVerdictDetail["blockingFinding"];
   findings: readonly ConsumedFinding[];
   rulesetReferences: readonly FindingReference[];
 }) {
@@ -217,8 +269,14 @@ function RescopeLadder({
               <strong>{humanize(suggestion.change.value)}</strong>
             </p>
             <p className="verdict-detail__rescope-verdict">
-              Re-evaluated verdict: {rescopeVerdictLine(suggestion)}
+              Re-evaluated result: {rescopeVerdictLine(suggestion, rulesetReferences)}
             </p>
+            <RescopeReason
+              suggestion={suggestion}
+              blockingFinding={blockingFinding}
+              findings={findings}
+              rulesetReferences={rulesetReferences}
+            />
             {suggestion.droppedRuleIds.length > 0 && (
               <p className="verdict-detail__rescope-dropped">
                 Findings that would no longer appear:{" "}
@@ -501,6 +559,7 @@ export function VerdictDetailPanel({
         )}
         <RescopeLadder
           suggestions={detail.rescopeSuggestions}
+          blockingFinding={blocker}
           findings={findings}
           rulesetReferences={rulesetReferences}
         />

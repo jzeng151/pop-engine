@@ -475,6 +475,10 @@ function buildRescopeSuggestions(
               portalUrl: finding.portalUrl,
             }))
           : null;
+      const remainingMissingFields = candidate.missingFacts.map((fact) => fact.field);
+      const remainingTimelineReasons = candidate.unresolvedTimelines.map(
+        (timeline) => timeline.reason,
+      );
       if (candidate.verdict === "FEASIBLE_AT_RISK") {
         const minSlackDays = candidate.window.minSlackDays;
         const atRiskFinding =
@@ -485,6 +489,8 @@ function buildRescopeSuggestions(
           ...suggestion,
           introducedRuleIds,
           ...(introducedFindings === null ? {} : { introducedFindings }),
+          remainingMissingFields,
+          remainingTimelineReasons,
           minSlackDays,
           atRiskFindingName: atRiskFinding?.name ?? null,
         });
@@ -493,6 +499,8 @@ function buildRescopeSuggestions(
           ...suggestion,
           introducedRuleIds,
           ...(introducedFindings === null ? {} : { introducedFindings }),
+          remainingMissingFields,
+          remainingTimelineReasons,
         });
       }
     }

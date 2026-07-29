@@ -165,6 +165,10 @@ export type ConsumedRescopeSuggestion = {
   readonly introducedRuleIds: readonly string[];
   /** Empty when omitted on a plan generated before human-readable rescope labels. */
   readonly introducedFindings: NonNullable<RescopeSuggestion["introducedFindings"]>;
+  /** Empty when omitted on a historical rescope. */
+  readonly remainingMissingFields: readonly string[];
+  /** Empty when omitted on a historical rescope. */
+  readonly remainingTimelineReasons: readonly string[];
   /** Null when omitted on a historical three-field suggestion or when not at-risk. */
   readonly minSlackDays: number | null;
   readonly atRiskFindingName: string | null;
@@ -372,6 +376,10 @@ const RESCOPE_CHECKS: FieldChecks<ConsumedRescopeSuggestion> = {
     value === undefined || arrayOf(isString)(value),
   introducedFindings: (value: unknown): value is readonly IntroducedFinding[] =>
     value === undefined || arrayOf(shapedLike(INTRODUCED_FINDING_CHECKS))(value),
+  remainingMissingFields: (value: unknown): value is readonly string[] =>
+    value === undefined || arrayOf(isString)(value),
+  remainingTimelineReasons: (value: unknown): value is readonly string[] =>
+    value === undefined || arrayOf(isString)(value),
   minSlackDays: optionalNullNumber,
   atRiskFindingName: optionalNullString,
 };
@@ -434,6 +442,8 @@ function normalizePlan(plan: PlanResponse): PlanResponse {
         ...suggestion,
         introducedRuleIds: suggestion.introducedRuleIds ?? [],
         introducedFindings: suggestion.introducedFindings ?? [],
+        remainingMissingFields: suggestion.remainingMissingFields ?? [],
+        remainingTimelineReasons: suggestion.remainingTimelineReasons ?? [],
         minSlackDays: suggestion.minSlackDays ?? null,
         atRiskFindingName: suggestion.atRiskFindingName ?? null,
       })),
