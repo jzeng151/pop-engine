@@ -2,6 +2,10 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import request from "supertest";
 import { Pool } from "pg";
 import { parseIntakeContract } from "@pop-engine/engine";
+
+const createClient = vi.hoisted(() => vi.fn());
+vi.mock("@supabase/supabase-js", () => ({ createClient }));
+
 import { createApp } from "./app";
 import {
   createAccessTokenVerifier,
@@ -16,7 +20,18 @@ const baseDependencies = {
   today: () => "2026-07-28",
 };
 
-afterEach(() => vi.restoreAllMocks());
+const settingsUrl = new URL("https://project.supabase.co/auth/v1/settings");
+const settingsResponse = (settings: unknown, status = 200) =>
+  new Response(JSON.stringify(settings), {
+    status,
+    headers: { "Content-Type": "application/json" },
+  });
+
+afterEach(() => {
+  vi.clearAllMocks();
+  vi.restoreAllMocks();
+  vi.unstubAllGlobals();
+});
 
 describe("Supabase bearer authentication", () => {
   it("resolves a verified Supabase subject without exposing its token", async () => {
@@ -74,22 +89,25 @@ describe("Supabase bearer authentication", () => {
     expect(response.body.error).toMatch(/not configured/i);
   });
 
-  it("keeps the API available when the provider URL is malformed", async () => {
-    const verifyAccessToken = supabaseAccessTokenVerifier({
-      SUPABASE_URL: "https://<project-ref>.supabase.co",
-      SUPABASE_PUBLISHABLE_KEY: "sb_publishable_placeholder",
-    });
-    expect(verifyAccessToken).toBeNull();
+  it.each(["https://<project-ref>.supabase.co", "ftp://project.supabase.co"])(
+    "keeps the API available when the provider URL is invalid: %s",
+    async (url) => {
+      const verifyAccessToken = supabaseAccessTokenVerifier({
+        SUPABASE_URL: url,
+        SUPABASE_PUBLISHABLE_KEY: "sb_publishable_placeholder",
+      });
+      expect(verifyAccessToken).toBeNull();
 
-    const app = createApp(baseDependencies);
-    const [session, publicRoute] = await Promise.all([
-      request(app).get("/api/session"),
-      request(app).post("/api/events/not-a-uuid/rsvps").send({}),
-    ]);
+      const app = createApp(baseDependencies);
+      const [session, publicRoute] = await Promise.all([
+        request(app).get("/api/session"),
+        request(app).post("/api/events/not-a-uuid/rsvps").send({}),
+      ]);
 
-    expect(session.status).toBe(503);
-    expect(publicRoute.status).toBe(400);
-  });
+      expect(session.status).toBe(503);
+      expect(publicRoute.status).toBe(400);
+    },
+  );
 
   it("uses the provider claims verifier and ignores failed claims", async () => {
     const getClaims = vi
@@ -99,13 +117,98 @@ describe("Supabase bearer authentication", () => {
         error: null,
       })
       .mockResolvedValueOnce({ data: null, error: new Error("bad token") });
-    const verify = createAccessTokenVerifier({ auth: { getClaims } });
+    const fetchSettings = vi
+      .fn<typeof fetch>()
+      .mockResolvedValue(settingsResponse({ mailer_autoconfirm: false }));
+    const verify = createAccessTokenVerifier(
+      { auth: { getClaims } },
+      settingsUrl,
+      "sb_publishable_placeholder",
+      fetchSettings,
+    );
 
     await expect(verify("valid")).resolves.toEqual({
       id: "actor-2",
       email: "verified@example.com",
     });
     await expect(verify("invalid")).resolves.toBeNull();
+    expect(fetchSettings).toHaveBeenCalledOnce();
+    expect(fetchSettings).toHaveBeenCalledWith(settingsUrl, {
+      headers: {
+        apikey: "sb_publishable_placeholder",
+        "Cache-Control": "no-store",
+      },
+    });
+  });
+
+  it("detects mailer autoconfirm drift in the production bearer verifier", async () => {
+    const getClaims = vi.fn().mockResolvedValue({
+      data: { claims: { sub: "actor-2", email: "verified@example.com" } },
+      error: null,
+    });
+    const fetchSettings = vi
+      .fn<typeof fetch>()
+      .mockResolvedValueOnce(settingsResponse({ mailer_autoconfirm: false }))
+      .mockResolvedValueOnce(settingsResponse({ mailer_autoconfirm: true }));
+    createClient.mockReturnValue({ auth: { getClaims } });
+    vi.stubGlobal("fetch", fetchSettings);
+    const verify = supabaseAccessTokenVerifier({
+      SUPABASE_URL: "https://project.supabase.co",
+      SUPABASE_PUBLISHABLE_KEY: "sb_publishable_placeholder",
+    });
+
+    expect(verify).not.toBeNull();
+
+    await expect(verify?.("verified")).resolves.toEqual({
+      id: "actor-2",
+      email: "verified@example.com",
+    });
+    await expect(verify?.("direct-signup")).resolves.toBeNull();
+    expect(fetchSettings).toHaveBeenCalledTimes(2);
+  });
+
+  it("rejects identity when provider settings are malformed or unavailable", async () => {
+    const getClaims = vi.fn().mockResolvedValue({
+      data: { claims: { sub: "actor-2" } },
+      error: null,
+    });
+    const fetchSettings = vi
+      .fn<typeof fetch>()
+      .mockResolvedValueOnce(settingsResponse({}))
+      .mockResolvedValueOnce(settingsResponse({}, 503))
+      .mockRejectedValueOnce(new Error("provider unavailable"));
+    const verify = createAccessTokenVerifier(
+      { auth: { getClaims } },
+      settingsUrl,
+      "sb_publishable_placeholder",
+      fetchSettings,
+    );
+
+    await expect(verify("malformed-settings")).resolves.toBeNull();
+    await expect(verify("failed-settings")).resolves.toBeNull();
+    await expect(verify("unavailable-settings")).resolves.toBeNull();
+  });
+
+  it("keeps public routes available when settings verification fails", async () => {
+    const getClaims = vi.fn().mockResolvedValue({
+      data: { claims: { sub: "actor-2" } },
+      error: null,
+    });
+    const verifyAccessToken = createAccessTokenVerifier(
+      { auth: { getClaims } },
+      settingsUrl,
+      "sb_publishable_placeholder",
+      vi.fn<typeof fetch>().mockRejectedValue(new Error("provider unavailable")),
+    );
+    const app = createApp({ ...baseDependencies, verifyAccessToken });
+
+    const [session, publicRoute] = await Promise.all([
+      request(app).get("/api/session").set("Authorization", "Bearer signed.jwt.value"),
+      request(app).post("/api/events/not-a-uuid/rsvps").send({}),
+    ]);
+
+    expect(session.status).toBe(401);
+    expect(publicRoute.status).toBe(400);
   });
 
   it("does not apply the auth boundary to public RSVP or check-in routes", async () => {

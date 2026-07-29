@@ -58,4 +58,17 @@ describe("Supabase SSR session refresh", () => {
     expect(response.status).toBe(200);
     expect(createServerClient).not.toHaveBeenCalled();
   });
+
+  it.each(["https://<project-ref>.supabase.co", "ftp://project.supabase.co"])(
+    "leaves public routes available when the provider URL is invalid: %s",
+    async (url) => {
+      vi.stubEnv("NEXT_PUBLIC_SUPABASE_URL", url);
+      vi.stubEnv("NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY", "sb_publishable_placeholder");
+
+      const response = await middleware(new NextRequest("https://web.example.com/e/public-event"));
+
+      expect(response.status).toBe(200);
+      expect(createServerClient).not.toHaveBeenCalled();
+    },
+  );
 });

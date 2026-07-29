@@ -23,6 +23,20 @@ describe("Supabase web configuration", () => {
     });
   });
 
+  it.each([
+    "https://<project-ref>.supabase.co",
+    "not a URL",
+    "ftp://project.supabase.co",
+    "javascript:alert(1)",
+  ])("rejects a malformed or non-HTTP(S) provider URL: %s", (url) => {
+    expect(
+      supabaseBrowserConfig({
+        NEXT_PUBLIC_SUPABASE_URL: url,
+        NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY: "sb_publishable_placeholder",
+      }),
+    ).toBeNull();
+  });
+
   it("requires a plain HTTP(S) site origin for callback construction", () => {
     expect(siteUrl({ NEXT_PUBLIC_SITE_URL: "https://web.example.com/" })).toBe(
       "https://web.example.com",
