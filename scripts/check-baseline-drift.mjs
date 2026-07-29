@@ -1688,8 +1688,10 @@ for (const relative of f203Artifacts) {
           (ownsF203 || (namesScope && lower.includes("f-203")))
         );
       }
+      if (relative === "docs/BASELINE.md") {
+        return /^\s*\*\*Decision\b/i.test(raw) && lower.includes("f-203");
+      }
       if (!namesScope || !lower.includes("f-203")) return false;
-      if (relative === "docs/BASELINE.md") return /^\s*\*\*Decision\b/i.test(raw);
       return (
         /\bF-203\b[^.]*\b(?:keeps|retains|owns|includes)\b/i.test(normalized) ||
         /\b(?:remain|remains|are)\b[^.]*\bunder F-203\b/i.test(normalized)
@@ -1751,7 +1753,7 @@ for (const relative of f203Artifacts) {
         .slice(0, offset)
         .split(/\r?\n/)
         .findLast((line) => headingPattern.test(line));
-      return /\bPhase 2\b/i.test(heading ?? "");
+      return /\bPhase\s+(\d+)\b/i.exec(heading ?? "")?.[1] === "2";
     });
     if (!underPhase2) {
       f203Failures.push(`${relative} must keep its F-203 full-scope assignment under Phase 2`);

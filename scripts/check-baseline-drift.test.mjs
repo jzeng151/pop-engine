@@ -1799,6 +1799,34 @@ describe.concurrent("F-203 Phase 2 scope agreement (SPEC-CONFLICT #127 item 1)",
     expect(output).toContain("specs/F-203-deadline-alerts.md is missing");
   });
 
+  it("rejects a conflicting whole-feature baseline decision", async () => {
+    const { status, output } = await runOn({
+      "docs/BASELINE.md":
+        SQUARE_RECONCILED["docs/BASELINE.md"] +
+        "\n**Decision:** F-203 is now unplanned and assigned to Phase 3.\n",
+    });
+
+    expect(status).toBe(1);
+    expect(output).toContain("docs/BASELINE.md must affirmatively assign");
+  });
+
+  it.each([
+    ["docs/ROADMAP.md", "## Phase 2 — Execution Hardening", "## Phase 3 — moved from Phase 2"],
+    ["docs/PRD.md", "### Execution Hardening (Phase 2)", "### Phase 3 — moved from Phase 2"],
+  ])(
+    "uses the assigned phase rather than historical text in the %s heading",
+    async (relative, from, to) => {
+      const { status, output } = await runOn({
+        [relative]: SQUARE_RECONCILED[relative].replace(from, to),
+      });
+
+      expect(status).toBe(1);
+      expect(output).toContain(
+        `${relative} must keep its F-203 full-scope assignment under Phase 2`,
+      );
+    },
+  );
+
   it("fails when the unchanged Roadmap assignment moves out of Phase 2", async () => {
     const { status, output } = await runOn({
       "docs/ROADMAP.md": SQUARE_RECONCILED["docs/ROADMAP.md"].replace(
