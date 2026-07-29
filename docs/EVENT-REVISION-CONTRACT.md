@@ -135,6 +135,9 @@ The exact HTTP request and error schemas belong in the reviewed OpenAPI contract
   that artifact and rejects a calendar whose ID, version, checksum, or jurisdiction does not match
   the ruleset's declaration. Persisting calendar provenance does not substitute for validating the
   binding before evaluation.
+- Generation resolves the exact IANA `jurisdictionTimezone`, requires it to match the Event and the
+  selected jurisdiction's approved timezone binding, passes that exact value to the engine, and
+  persists it on the plan. A mismatch rejects generation.
 - Plans, findings, traces, and their regulatory snapshots remain immutable.
 - A plan is stale when its revision differs from `events.current_revision_id`.
 - Generating a candidate does not move `current_plan_id`.
@@ -145,13 +148,18 @@ The exact HTTP request and error schemas belong in the reviewed OpenAPI contract
   reviewed. A prior non-default workflow status carries only through that reviewed mapping; an
   omitted or explicitly reset item starts in its default state. The server never invents a mapping
   or automatically attaches an old approval to a materially different finding, and it validates the
-  supplied mapping against the canonical plan diff before applying it.
+  supplied mapping against the canonical plan diff before applying it. The request also supplies the
+  optimistic-concurrency token the organizer reviewed for every source workflow item the
+  reconciliation would carry, reset, or omit to its default state.
 - Accepting a candidate locks the Event and rechecks that the candidate belongs to it, that
   `candidate.event_revision_id === events.current_revision_id`, and that
   `base_plan_id === events.current_plan_id`. While holding that lock, acceptance also derives the
-  current calendar date in the candidate's jurisdiction timezone and requires it to equal the
-  candidate's recorded `today`; otherwise it rejects the candidate and requires regeneration. Only
-  then may the same transaction move `current_plan_id`, apply the approved deterministic workflow
+  current calendar date in the candidate's persisted `jurisdictionTimezone`, after rechecking that
+  timezone against the Event and jurisdiction binding, and requires it to equal the candidate's
+  recorded `today`; otherwise it rejects the candidate and requires regeneration. The same
+  transaction locks every source workflow item covered by that token set in a deterministic order
+  and rechecks its concurrency token. A workflow mismatch rejects acceptance as a conflict.
+  Only then may the transaction move `current_plan_id`, apply the approved deterministic workflow
   reconciliation, and persist obsolete message-job cancellations plus any required replacement
   job/outbox rows. The transaction also appends the plan-acceptance audit event with the actor, base
   plan, candidate plan, accepted Event Revision, and server-recorded acceptance time. A mismatch,
@@ -275,7 +283,8 @@ aborts.
 - The diff separately reports changed plan provenance when any persisted ruleset, rules-schema,
   Event Input schema, compatibility-transform, engine, or calendar version/checksum differs, when
   the persisted canonical engine input differs, when `snapshot_date` differs, or when the recorded
-  `today` evaluation input differs. This applies even when every finding and plan outcome matches.
+  `today` or `jurisdictionTimezone` evaluation input differs. This applies even when every finding
+  and plan outcome matches.
 - Database IDs, plan IDs, created/generated/updated timestamps, row order, workflow status, and the
   debugging-only evaluation `trace` do not make a regulatory finding, plan outcome, or provenance
   changed.
@@ -336,6 +345,8 @@ Before activation, the consuming implementation must prove:
   after the compatibility transform used at generation is replaced by another version;
 - plan generation rejects a calendar artifact whose ID, version, checksum, or jurisdiction does not
   match the selected ruleset's declaration;
+- plan generation rejects a `jurisdictionTimezone` that does not match the Event and selected
+  jurisdiction's approved binding, and the plan persists the exact timezone passed to the engine;
 - `current_plan_id` backfills from the same-event checklist acknowledgement, or remains null when
   none exists, regardless of newer generated plans;
 - while legacy and new acceptance paths coexist, accepting through either path atomically leaves
@@ -348,11 +359,15 @@ Before activation, the consuming implementation must prove:
 - accepting a candidate races safely with a revision save and rejects the stale candidate;
 - accepting a candidate after its jurisdiction-local evaluation date has passed rejects it and
   requires regeneration;
+- accepting a candidate whose persisted `jurisdictionTimezone` no longer matches the Event or
+  jurisdiction binding rejects it and requires regeneration;
 - two candidates accepted concurrently from the same accepted base produce one success and one
   conflict;
 - a non-default workflow status carries only through the deterministic mapping the organizer
   reviewed, while an omitted or reset item starts in its default state and a materially changed
   finding never receives an old approval automatically;
+- a checklist status or notes update committed after the organizer reviewed the reconciliation makes
+  acceptance conflict without changing the plan pointer, workflow, jobs, or audit log;
 - an acceptance reconciliation or job/outbox failure leaves the plan pointer, workflow, and jobs
   unchanged;
 - plan acceptance appends its actor, base plan, candidate plan, accepted Event Revision, and
@@ -375,7 +390,7 @@ Before activation, the consuming implementation must prove:
 - a verdict or user-visible `verdictDetail`-only change, including a `rescopeSuggestions`-only
   change, is reported when every finding rendering matches;
 - a plan-provenance-only change is reported when every finding and plan outcome matches, including
-  when only the recorded `today` evaluation input differs;
+  when only the recorded `today` or `jurisdictionTimezone` evaluation input differs;
 - diff identity and output are byte-stable; and
 - cross-workspace reads and writes fail after tenancy activation.
 
