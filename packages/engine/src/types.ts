@@ -329,6 +329,14 @@ export type RescopeSuggestion = {
    * superseded era so AD-7 replay keeps the historical three-field suggestion shape.
    */
   readonly introducedRuleIds?: readonly string[];
+  /** Published organizer-facing labels for the findings behind `introducedRuleIds`. */
+  readonly introducedFindings?: readonly {
+    readonly ruleIds: readonly string[];
+    readonly label: string | null;
+    readonly source: SummarySourceLink | null;
+    readonly portalName: string | null;
+    readonly portalUrl: string | null;
+  }[];
   /**
    * Present on at-risk re-evaluations when enrichment is emitted. Omitted on other suggestions and
    * on three-field historical eras.

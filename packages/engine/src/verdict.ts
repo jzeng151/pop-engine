@@ -91,10 +91,12 @@ function describeDifference(base: readonly Finding[], candidate: readonly Findin
   const candidateIds = new Set(ruleIdsOf(candidate));
   const added = [...candidateIds].filter((id) => !baseIds.has(id));
   const dropped = [...baseIds].filter((id) => !candidateIds.has(id));
+  const label = (finding: Finding | undefined, id: string): string =>
+    finding?.userSummary?.heading ?? id;
   const describeMissed = (finding: Finding, id: string): string =>
     finding.deadlineStatus === "published_deadline_missed"
-      ? `${id} (published deadline missed as scoped)`
-      : id;
+      ? `${label(finding, id)} (published deadline missed as scoped)`
+      : label(finding, id);
   const describeAdded = (id: string): string => {
     const finding = candidate.find((entry) => entry.ruleIds.includes(id));
     // F-102 AC 6: the no-license branch must surface the missed-window reason, not only the rule id.
@@ -117,17 +119,30 @@ function describeDifference(base: readonly Finding[], candidate: readonly Findin
       continue;
     }
     if (finding.deadlineStatus === "published_deadline_missed") {
-      tightened.push(`${finding.ruleIds.join(", ")} (published deadline missed as scoped)`);
+      tightened.push(
+        `${finding.userSummary?.heading ?? finding.ruleIds.join(", ")} (published deadline missed as scoped)`,
+      );
       continue;
     }
     if (prior.disposition !== finding.disposition) {
-      tightened.push(`${finding.ruleIds.join(", ")} becomes ${finding.disposition}`);
+      tightened.push(
+        `${finding.userSummary?.heading ?? finding.ruleIds.join(", ")} becomes ${finding.disposition}`,
+      );
     }
   }
 
   const parts = [
     added.length > 0 ? `adds ${added.map(describeAdded).join(", ")}` : null,
-    dropped.length > 0 ? `drops ${dropped.join(", ")}` : null,
+    dropped.length > 0
+      ? `drops ${dropped
+          .map((id) =>
+            label(
+              base.find((finding) => finding.ruleIds.includes(id)),
+              id,
+            ),
+          )
+          .join(", ")}`
+      : null,
     ...tightened,
   ].filter((part): part is string => part !== null);
   return parts.length > 0 ? parts.join("; ") : "same findings, re-dated";
@@ -193,23 +208,25 @@ function emitsF102DetailEnrichment(rulesetVersion: string): boolean {
 function publishedThresholds(field: string, ruleset: EngineRuleset): string | null {
   const described: string[] = [];
   const enrichBoundary = emitsF102DetailEnrichment(ruleset.rulesetVersion);
-  const walk = (node: TriggerNode, ruleId: string): void => {
+  const walk = (node: TriggerNode, ruleLabel: string): void => {
     if ("field" in node) {
       if (node.field !== field || typeof node.value !== "number") return;
       const comparison = node.op === "gt" ? "above" : node.op === "gte" ? "at or above" : null;
       if (comparison === null) return;
       if (enrichBoundary && node.boundary === "conditional") {
         described.push(
-          `${ruleId} applies ${comparison} ${node.value}; exactly ${node.value} is a conditional boundary (confirm with the publishing agency)`,
+          `${ruleLabel} applies ${comparison} ${node.value}; exactly ${node.value} is a conditional boundary (confirm with the publishing agency)`,
         );
       } else {
-        described.push(`${ruleId} applies ${comparison} ${node.value}`);
+        described.push(`${ruleLabel} applies ${comparison} ${node.value}`);
       }
       return;
     }
-    for (const child of "all" in node ? node.all : node.any) walk(child, ruleId);
+    for (const child of "all" in node ? node.all : node.any) walk(child, ruleLabel);
   };
-  for (const rule of ruleset.rules) walk(rule.trigger, rule.id);
+  for (const rule of ruleset.rules) {
+    walk(rule.trigger, enrichBoundary ? (rule.userSummary?.heading ?? rule.id) : rule.id);
+  }
   return described.length === 0 ? null : described.join("; ");
 }
 
@@ -448,6 +465,16 @@ function buildRescopeSuggestions(
       const introducedRuleIds = [...candidateIds]
         .filter((ruleId) => !baseRuleIds.has(ruleId))
         .sort();
+      const introducedFindings =
+        introduced.length > 0 && introduced.every((finding) => finding.userSummary != null)
+          ? introduced.map((finding) => ({
+              ruleIds: finding.ruleIds,
+              label: finding.userSummary?.heading ?? null,
+              source: finding.userSummary?.points.flatMap((point) => point.sources)[0] ?? null,
+              portalName: finding.portalName,
+              portalUrl: finding.portalUrl,
+            }))
+          : null;
       if (candidate.verdict === "FEASIBLE_AT_RISK") {
         const minSlackDays = candidate.window.minSlackDays;
         const atRiskFinding =
@@ -457,11 +484,16 @@ function buildRescopeSuggestions(
         suggestions.push({
           ...suggestion,
           introducedRuleIds,
+          ...(introducedFindings === null ? {} : { introducedFindings }),
           minSlackDays,
           atRiskFindingName: atRiskFinding?.name ?? null,
         });
       } else {
-        suggestions.push({ ...suggestion, introducedRuleIds });
+        suggestions.push({
+          ...suggestion,
+          introducedRuleIds,
+          ...(introducedFindings === null ? {} : { introducedFindings }),
+        });
       }
     }
   }

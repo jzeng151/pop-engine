@@ -8,6 +8,79 @@ import { AT_RISK_BUFFER_NOTE, verdictCopy } from "./verdict-copy";
 
 const humanize = (token: string): string => token.replace(/_/g, " ");
 
+type FindingReference = {
+  readonly ruleIds: readonly string[];
+  readonly label: string;
+  readonly source: { readonly label: string; readonly url: string } | null;
+  readonly portalName: string | null;
+  readonly portalUrl: string | null;
+};
+
+const referenceFromFinding = (finding: ConsumedFinding): FindingReference => {
+  const summarySource = finding.userSummary?.points.flatMap((point) => point.sources)[0];
+  const fallbackSource = finding.sources.find((source) => source.urls.length > 0);
+  return {
+    ruleIds: finding.ruleIds,
+    label: finding.userSummary?.heading ?? finding.name ?? finding.ruleIds.join(", "),
+    source:
+      summarySource ??
+      (fallbackSource === undefined
+        ? null
+        : { label: fallbackSource.citation, url: fallbackSource.urls[0] as string }),
+    portalName: finding.portalName,
+    portalUrl: finding.portalUrl,
+  };
+};
+
+function referencesForRuleIds(
+  ruleIds: readonly string[],
+  findings: readonly ConsumedFinding[],
+): FindingReference[] {
+  const references: FindingReference[] = [];
+  const seen = new Set<string>();
+  for (const ruleId of ruleIds) {
+    const finding = findings.find((candidate) => candidate.ruleIds.includes(ruleId));
+    const key = finding?.ruleIds.join("|") ?? ruleId;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    references.push(
+      finding === undefined
+        ? { ruleIds: [ruleId], label: ruleId, source: null, portalName: null, portalUrl: null }
+        : referenceFromFinding(finding),
+    );
+  }
+  return references;
+}
+
+function FindingReferences({ references }: { references: readonly FindingReference[] }) {
+  return references.map((reference, index) => {
+    const showSource = reference.source !== null && reference.source.url !== reference.portalUrl;
+    return (
+      <span key={reference.ruleIds.join("|")}>
+        {index > 0 ? ", " : ""}
+        {reference.label}
+        {(showSource || reference.portalUrl !== null) && (
+          <>
+            {" ("}
+            {showSource && (
+              <a href={reference.source?.url} target="_blank" rel="noreferrer">
+                More information
+              </a>
+            )}
+            {showSource && reference.portalUrl !== null ? " · " : ""}
+            {reference.portalUrl !== null && (
+              <a href={reference.portalUrl} target="_blank" rel="noreferrer">
+                Apply{reference.portalName === null ? "" : ` through ${reference.portalName}`}
+              </a>
+            )}
+            {")"}
+          </>
+        )}
+      </span>
+    );
+  });
+}
+
 function BranchTable({
   field,
   branches,
@@ -78,8 +151,10 @@ function rescopeVerdictLine(
 
 function RescopeLadder({
   suggestions,
+  findings,
 }: {
   suggestions: ConsumedVerdictDetail["rescopeSuggestions"];
+  findings: readonly ConsumedFinding[];
 }) {
   if (suggestions.length === 0) return null;
   // F-102 AC 7: Medium → Small → private venue, even when a stored plan serialized field order.
@@ -125,17 +200,24 @@ function RescopeLadder({
             {suggestion.droppedRuleIds.length > 0 && (
               <p className="verdict-detail__rescope-dropped">
                 Findings that would no longer appear:{" "}
-                <span className="verdict-detail__rule-ids">
-                  {suggestion.droppedRuleIds.join(", ")}
-                </span>
+                <FindingReferences
+                  references={referencesForRuleIds(suggestion.droppedRuleIds, findings)}
+                />
               </p>
             )}
             {suggestion.introducedRuleIds.length > 0 && (
               <p className="verdict-detail__rescope-introduced">
                 Findings that would newly appear under this change:{" "}
-                <span className="verdict-detail__rule-ids">
-                  {suggestion.introducedRuleIds.join(", ")}
-                </span>
+                {suggestion.introducedFindings.length > 0 ? (
+                  <FindingReferences
+                    references={suggestion.introducedFindings.map((finding) => ({
+                      ...finding,
+                      label: finding.label ?? finding.ruleIds.join(", "),
+                    }))}
+                  />
+                ) : (
+                  suggestion.introducedRuleIds.join(", ")
+                )}
               </p>
             )}
           </li>
@@ -154,23 +236,33 @@ function MissedMayBeRequiredSection({
 }) {
   // One finding can carry multiple contributing rule ids; list each finding once.
   const missed: {
-    readonly ruleIds: readonly string[];
-    readonly name: string | null;
+    readonly reference: FindingReference;
     readonly disposition: ConsumedFinding["disposition"] | null;
   }[] = [];
   const seenFindingKeys = new Set<string>();
   for (const ruleId of missedRuleIds) {
     const finding = findings.find((entry) => entry.ruleIds.includes(ruleId));
     if (finding === undefined) {
-      missed.push({ ruleIds: [ruleId], name: null, disposition: null });
+      missed.push({
+        reference: {
+          ruleIds: [ruleId],
+          label: ruleId,
+          source: null,
+          portalName: null,
+          portalUrl: null,
+        },
+        disposition: null,
+      });
       continue;
     }
     const key = finding.ruleIds.join("|");
     if (seenFindingKeys.has(key)) continue;
     seenFindingKeys.add(key);
     missed.push({
-      ruleIds: finding.ruleIds.filter((id) => missedRuleIds.includes(id)),
-      name: finding.name,
+      reference: {
+        ...referenceFromFinding(finding),
+        ruleIds: finding.ruleIds.filter((id) => missedRuleIds.includes(id)),
+      },
       disposition: finding.disposition,
     });
   }
@@ -187,9 +279,8 @@ function MissedMayBeRequiredSection({
       </p>
       <ul>
         {missed.map((entry) => (
-          <li key={entry.ruleIds.join("|")}>
-            <span className="verdict-detail__rule-ids">{entry.ruleIds.join(", ")}</span>
-            {entry.name !== null ? ` — ${entry.name}` : ""}
+          <li key={entry.reference.ruleIds.join("|")}>
+            <FindingReferences references={[entry.reference]} />
             {entry.disposition !== null ? ` (${humanize(entry.disposition)})` : ""}
           </li>
         ))}
@@ -232,7 +323,7 @@ export function VerdictDetailPanel({
             <ul>
               {detail.unresolvedTimelines.map((entry) => (
                 <li key={entry.ruleIds.join("+")}>
-                  <span className="verdict-detail__rule-ids">{entry.ruleIds.join(", ")}</span>
+                  <FindingReferences references={referencesForRuleIds(entry.ruleIds, findings)} />
                   {": "}
                   {entry.reason}
                 </li>
@@ -268,7 +359,7 @@ export function VerdictDetailPanel({
           <ul>
             {detail.unresolvedTimelines.map((entry) => (
               <li key={entry.ruleIds.join("+")}>
-                <span className="verdict-detail__rule-ids">{entry.ruleIds.join(", ")}</span>
+                <FindingReferences references={referencesForRuleIds(entry.ruleIds, findings)} />
                 {": "}
                 {entry.reason}
               </li>
@@ -293,6 +384,24 @@ export function VerdictDetailPanel({
 
   if (verdict === "INFEASIBLE") {
     const blocker = detail.blockingFinding;
+    const blockerFinding =
+      blocker === null
+        ? undefined
+        : findings.find((finding) =>
+            finding.ruleIds.some((ruleId) => blocker.ruleIds.includes(ruleId)),
+          );
+    const blockerReference =
+      blocker === null
+        ? null
+        : blockerFinding === undefined
+          ? {
+              ruleIds: blocker.ruleIds,
+              label: blocker.name ?? blocker.ruleIds.join(", "),
+              source: null,
+              portalName: null,
+              portalUrl: null,
+            }
+          : referenceFromFinding(blockerFinding);
     // One finding can carry multiple rule ids; count findings, not provenance ids (F-102 edge case).
     const missedFindings = findings.filter((finding) =>
       finding.ruleIds.some((ruleId) => detail.missedRuleIds.includes(ruleId)),
@@ -303,18 +412,21 @@ export function VerdictDetailPanel({
           <section className="verdict-detail__blocker" data-testid="blocking-finding">
             <h2 className="verdict-detail__section-title">What blocks this date as scoped</h2>
             <p className="verdict-detail__blocker-name">
-              {blocker.name ?? blocker.ruleIds.join(", ")}
+              {blockerReference === null ? null : (
+                <FindingReferences references={[blockerReference]} />
+              )}
             </p>
-            <p className="verdict-detail__rule-ids">{blocker.ruleIds.join(", ")}</p>
             {missedFindings.length > 1 && (
               <p className="verdict-detail__missed">
                 All published deadlines missed as scoped:{" "}
-                <span className="verdict-detail__rule-ids">{detail.missedRuleIds.join(", ")}</span>
+                <FindingReferences
+                  references={referencesForRuleIds(detail.missedRuleIds, findings)}
+                />
               </p>
             )}
           </section>
         )}
-        <RescopeLadder suggestions={detail.rescopeSuggestions} />
+        <RescopeLadder suggestions={detail.rescopeSuggestions} findings={findings} />
       </div>
     );
   }

@@ -365,6 +365,32 @@ describe("coverage of every field this feature reads", () => {
     });
   });
 
+  it("refuses a malformed human-readable rescope finding", async () => {
+    await expectRefused({
+      ...storedPlan,
+      verdictDetail: {
+        ...storedPlan.verdictDetail,
+        rescopeSuggestions: [
+          {
+            change: { field: "location_type", value: "private_venue" },
+            reevaluatedVerdict: "CONDITIONAL",
+            droppedRuleIds: [],
+            introducedRuleIds: ["DOB-ASSEMBLY-001"],
+            introducedFindings: [
+              {
+                ruleIds: ["DOB-ASSEMBLY-001"],
+                label: WRONG,
+                source: null,
+                portalName: null,
+                portalUrl: null,
+              },
+            ],
+          },
+        ],
+      },
+    });
+  });
+
   // Cases the derived sweep cannot express, kept for the reasoning rather than the coverage.
   it("refuses a verdict token the approved copy does not cover", async () => {
     // A string that is not one of the four renders an empty verdict line and silently drops the

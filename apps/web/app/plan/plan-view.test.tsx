@@ -19,24 +19,53 @@ import { NOT_COVERED_BY_RULESET } from "../verification-copy";
 const publishedRuleset: {
   ruleset_version: string;
   snapshot_date: string;
-  rules: {
-    id: string;
-    output: {
-      permit_name?: string;
-      note_text?: string;
-      portal?: { name?: string; url?: string | null; instructions?: string };
-      [key: string]: unknown;
-    };
-    source?: { citation: string; urls: string[] };
-    verification: { status: string; qualification?: string };
-  }[];
+  rules: PublishedRule[];
+  advisories: PublishedRule[];
 } = JSON.parse(readFileSync(resolve(publishedRulesFileIn("rules")), "utf8"));
 
+type PublishedRule = {
+  id: string;
+  output: {
+    permit_name?: string;
+    note_text?: string;
+    user_summary?: {
+      heading: string;
+      points: { sources: { label: string; url: string }[] }[];
+    };
+    portal?: { name?: string; url?: string | null; instructions?: string };
+    [key: string]: unknown;
+  };
+  source?: { citation: string; urls: string[] };
+  verification: { status: string; qualification?: string };
+};
+
 const publishedRule = (id: string) => {
-  const rule = publishedRuleset.rules.find((candidate) => candidate.id === id);
+  const rule = [...publishedRuleset.rules, ...publishedRuleset.advisories].find(
+    (candidate) => candidate.id === id,
+  );
   if (rule === undefined) throw new Error(`ruleset has no rule ${id}`);
   return rule;
 };
+
+const publishedHeading = (id: string): string => {
+  const heading = publishedRule(id).output.user_summary?.heading;
+  if (heading === undefined) throw new Error(`ruleset has no organizer heading for ${id}`);
+  return heading;
+};
+
+const publishedSource = (id: string): { label: string; url: string } => {
+  const source = publishedRule(id).output.user_summary?.points.flatMap((point) => point.sources)[0];
+  if (source === undefined) throw new Error(`ruleset has no organizer source for ${id}`);
+  return source;
+};
+
+const introducedFinding = (ruleId: string) => ({
+  ruleIds: [ruleId],
+  label: publishedHeading(ruleId),
+  source: publishedSource(ruleId),
+  portalName: publishedRule(ruleId).output.portal?.name ?? null,
+  portalUrl: publishedRule(ruleId).output.portal?.url ?? null,
+});
 
 /** The exactly-20 conflict: two official readings, three pages between them. */
 const CONFLICT_RULE = publishedRule("PARKS-EVENT-EXACTLY-20-001");
@@ -996,8 +1025,7 @@ describe("F-102 · CONDITIONAL branch table and INFEASIBLE rescope ladder", () =
             {
               field: "tent_area_sqft",
               branches: [],
-              thresholds:
-                "DOB-TENT-001 applies above 400; exactly 400 is a conditional boundary (confirm with the publishing agency)",
+              thresholds: `${publishedHeading("DOB-TENT-001")} applies above 400; exactly 400 is a conditional boundary (confirm with the publishing agency)`,
             },
           ],
         },
@@ -1015,9 +1043,26 @@ describe("F-102 · CONDITIONAL branch table and INFEASIBLE rescope ladder", () =
   });
 
   it("names the blocking finding and lists each re-evaluated rescope for INFEASIBLE", async () => {
+    const introducedRuleIds = [
+      "ADV-VENUE-OCCUPANCY-001",
+      "DOB-ASSEMBLY-001",
+      "SLA-CATERING-001",
+      "SLA-ONEDAY-001",
+      "SLA-VENUE-LICENSE-001",
+    ];
     stubApi(
       plan({
         verdict: "INFEASIBLE",
+        findings: [
+          finding({
+            ruleIds: ["SAPO-STREET-LARGE-001"],
+            name: "Street Activity Permit — Large",
+          }),
+          finding({
+            ruleIds: ["SAPO-INSURANCE-001"],
+            name: "Street event insurance",
+          }),
+        ],
         verdictDetail: {
           ...emptyVerdictDetail,
           blockingFinding: {
@@ -1030,11 +1075,8 @@ describe("F-102 · CONDITIONAL branch table and INFEASIBLE rescope ladder", () =
               change: { field: "location_type", value: "private_venue" },
               reevaluatedVerdict: "CONDITIONAL",
               droppedRuleIds: ["SAPO-INSURANCE-001", "SAPO-STREET-LARGE-001"],
-              introducedRuleIds: [
-                "ADV-NOISE-CODE-001",
-                "ADV-VENUE-OCCUPANCY-001",
-                "DOB-ASSEMBLY-001",
-              ],
+              introducedRuleIds,
+              introducedFindings: introducedRuleIds.map(introducedFinding),
               minSlackDays: null,
               atRiskFindingName: null,
             },
@@ -1043,6 +1085,7 @@ describe("F-102 · CONDITIONAL branch table and INFEASIBLE rescope ladder", () =
               reevaluatedVerdict: "FEASIBLE_AT_RISK",
               droppedRuleIds: ["SAPO-STREET-LARGE-001"],
               introducedRuleIds: ["SAPO-STREET-MEDIUM-001"],
+              introducedFindings: [introducedFinding("SAPO-STREET-MEDIUM-001")],
               minSlackDays: 5,
               atRiskFindingName: "Street Activity Permit — Medium",
             },
@@ -1051,6 +1094,7 @@ describe("F-102 · CONDITIONAL branch table and INFEASIBLE rescope ladder", () =
               reevaluatedVerdict: "FEASIBLE_AT_RISK",
               droppedRuleIds: ["SAPO-STREET-LARGE-001"],
               introducedRuleIds: ["SAPO-STREET-SMALL-001"],
+              introducedFindings: [introducedFinding("SAPO-STREET-SMALL-001")],
               minSlackDays: null,
               atRiskFindingName: "Organizer notification to DOHMH",
             },
@@ -1069,13 +1113,25 @@ describe("F-102 · CONDITIONAL branch table and INFEASIBLE rescope ladder", () =
     expect(suggestions).toHaveLength(3);
     // AC 7 ladder order even when the wire arrives in field-discovery order.
     expect(suggestions[0]?.textContent).toContain("medium");
+    expect(suggestions[0]?.textContent).not.toContain("SAPO-STREET-MEDIUM-001");
+    expect(
+      suggestions[0]?.querySelector(
+        `a[href="${publishedRule("SAPO-STREET-MEDIUM-001").output.portal?.url}"]`,
+      )?.textContent,
+    ).toContain("Apply through E-Apply");
     expect(suggestions[0]?.textContent).toContain("At risk — apply within 5 days");
     expect(suggestions[0]?.textContent).toContain("on Street Activity Permit — Medium");
     expect(suggestions[1]?.textContent).toContain("small");
+    expect(suggestions[1]?.textContent).not.toContain("SAPO-STREET-SMALL-001");
     expect(suggestions[2]?.textContent).toContain("private venue");
     expect(suggestions[2]?.textContent).toContain("would newly appear");
-    expect(suggestions[2]?.textContent).toContain("DOB-ASSEMBLY-001");
     expect(suggestions[2]?.textContent).toContain("Findings that would newly appear");
+    const introduced = suggestions[2]?.querySelector(".verdict-detail__rescope-introduced");
+    for (const ruleId of introducedRuleIds) {
+      expect(introduced?.textContent).toContain(publishedHeading(ruleId));
+      expect(introduced?.textContent).not.toContain(ruleId);
+      expect(introduced?.querySelector(`a[href="${publishedSource(ruleId).url}"]`)).not.toBeNull();
+    }
     expect(screen.getByTestId("rescope-at-risk-buffer").textContent).toContain(
       "PopEngine's internal planning buffer",
     );
@@ -1140,8 +1196,9 @@ describe("F-102 · CONDITIONAL branch table and INFEASIBLE rescope ladder", () =
     expect(section.textContent).toContain("past only if the requirement applies");
     expect(section.textContent).toContain("may-be-required");
     expect(section.textContent).toContain("keeps the verdict conditional");
-    expect(section.textContent).toContain("DOHMH-ORGANIZER-NOTIFY-001");
     expect(section.textContent).toContain("Organizer notification to DOHMH");
+    expect(section.textContent).not.toContain("DOHMH-ORGANIZER-NOTIFY-001");
+    expect(section.querySelector("a")?.textContent).toBe("More information");
   });
 
   it("lists a multi-rule may-be-required miss once, not once per rule id", async () => {
@@ -1169,8 +1226,8 @@ describe("F-102 · CONDITIONAL branch table and INFEASIBLE rescope ladder", () =
     const section = screen.getByTestId("missed-may-be-required");
     expect(section.querySelectorAll("li")).toHaveLength(1);
     expect(section.textContent).toContain("Temporary structure filing");
-    expect(section.textContent).toContain("DOB-TENT-001");
-    expect(section.textContent).toContain("DOB-TALL-STRUCTURE-001");
+    expect(section.textContent).not.toContain("DOB-TENT-001");
+    expect(section.textContent).not.toContain("DOB-TALL-STRUCTURE-001");
   });
 
   it("shows nothing under a FEASIBLE verdict that has no branch or rescope work", async () => {
