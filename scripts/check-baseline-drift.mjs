@@ -1637,11 +1637,13 @@ const f203CapabilityMention =
   /\b(?:escalations?|digests?|team reminders?|per-user preferences?)\b/i;
 const f203CriterionCapabilityList = `${f203CapabilityMention.source}(?:\\s+(?:and|or)\\s+${f203CapabilityMention.source})*`;
 const f203CriterionNonGoal = new RegExp(
-  `(?:\\b(?:must|shall|should|does|do|will)\\s+not\\s+` +
+  `^\\s*(?:#{1,6}\\s+|(?:[-*+]|\\d+[.)])\\s+)?` +
+    `(?:(?!${f203CapabilityMention.source})[^;.!?])*` +
+    `(?:\\b(?:must|shall|should|does|do|will)\\s+not\\s+` +
     `(?:send|provide|implement|schedule|deliver|support|include|offer|enable)\\s+` +
-    `${f203CriterionCapabilityList}\\s*[.!]?\\s*$|` +
+    `${f203CriterionCapabilityList}|` +
     `\\b${f203CriterionCapabilityList}\\s+(?:is|are)\\s+` +
-    `(?:a\\s+)?(?:non-goals?|out of scope|excluded)\\b)`,
+    `(?:a\\s+)?(?:non-goals?|out of scope|excluded)\\b)\\s*[.!]?\\s*$`,
   "i",
 );
 const f203DecisionScope =
@@ -1917,7 +1919,14 @@ for (const relative of f203Artifacts) {
             : f203PrdDecision.test(raw),
         ))) ||
     (relative === "docs/BASELINE.md" &&
-      scopeStatements.filter(({ raw }) => f203BaselineManifestRow.test(raw)).length !== 3);
+      scopeStatements.filter(({ raw }) => f203BaselineManifestRow.test(raw)).length !== 3) ||
+    (relative === "specs/F-203-deadline-alerts.md" &&
+      !scopeStatements.some(
+        ({ raw, normalized }) =>
+          !f203SpecDecision.test(raw) &&
+          f203SpecScope.test(normalized) &&
+          hasAllF203Capabilities(normalized),
+      ));
   if (scopeStatements.length === 0 || missingRequiredAssignment || invalidAssignment) {
     f203Failures.push(
       `${relative} must affirmatively assign escalations, digests, team reminders, and ` +

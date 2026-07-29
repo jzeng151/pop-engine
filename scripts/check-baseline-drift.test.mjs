@@ -2189,6 +2189,20 @@ describe.concurrent("F-203 Phase 2 scope agreement (SPEC-CONFLICT #127 item 1)",
     expect(output).toContain("F-203 scope check passed");
   });
 
+  it("rejects a positive criterion mixed with a non-goal clause", async () => {
+    const { status, output } = await runOn({
+      "specs/F-203-deadline-alerts.md":
+        SQUARE_RECONCILED["specs/F-203-deadline-alerts.md"] +
+        "\n## Acceptance Criteria\n\n" +
+        "8. Weekly digests are delivered every Monday; per-user preferences are excluded.\n",
+    });
+
+    expect(status).toBe(1);
+    expect(output).toContain(
+      "specs/F-203-deadline-alerts.md must not define Phase 2 acceptance criteria",
+    );
+  });
+
   it("rejects a delivery constraint for an unscheduled capability", async () => {
     const { status, output } = await runOn({
       "specs/F-203-deadline-alerts.md":
@@ -2207,6 +2221,19 @@ describe.concurrent("F-203 Phase 2 scope agreement (SPEC-CONFLICT #127 item 1)",
       "specs/F-203-deadline-alerts.md":
         SQUARE_RECONCILED["specs/F-203-deadline-alerts.md"] +
         "\nAutomatic permit filing remains planned, unscheduled Phase 2 depth under F-203.\n",
+    });
+
+    expect(status).toBe(1);
+    expect(output).toContain("specs/F-203-deadline-alerts.md must affirmatively assign");
+  });
+
+  it("requires a concrete four-capability assignment in the spec", async () => {
+    const { status, output } = await runOn({
+      "specs/F-203-deadline-alerts.md": SQUARE_RECONCILED["specs/F-203-deadline-alerts.md"].replace(
+        "\nEscalations, digests, team reminders, and per-user preferences remain Phase 2 depth " +
+          "under F-203; planned, not scheduled.\n",
+        "\n",
+      ),
     });
 
     expect(status).toBe(1);
