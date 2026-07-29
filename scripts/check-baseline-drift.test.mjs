@@ -59,10 +59,11 @@ const SQUARE_RECONCILED = {
     "planned, not scheduled.\n\n## Phase 4 — Platform\n\n" +
     "- **F-408 · Inventory Low-Stock Alerts** — manual counts or Square webhook.\n",
   "docs/PRD.md":
-    "# PRD\n\n- **F-308 / F-408** — ticketing integration/export; inventory low-stock alerts " +
-    "(manual counts or Square webhook).\n" +
+    "# PRD\n\n### Execution Hardening (Phase 2)\n\n" +
     "- **F-203 (full)** — alert escalations, digests, team reminders, and per-user preferences; " +
-    "planned, not scheduled.\n",
+    "planned, not scheduled.\n\n### Platform (Phase 4)\n\n" +
+    "- **F-308 / F-408** — ticketing integration/export; inventory low-stock alerts " +
+    "(manual counts or Square webhook).\n",
   "docs/ARCHITECTURE-FUTURE.md":
     "# Architecture\n\n| External integrations | F-108, F-212, F-308, F-408 | webhook events |\n",
   "specs/F-203-deadline-alerts.md":
@@ -1802,6 +1803,28 @@ describe.concurrent("F-203 Phase 2 scope agreement (SPEC-CONFLICT #127 item 1)",
       "docs/ROADMAP.md must keep its F-203 full-scope assignment under Phase 2",
     );
   });
+
+  it("fails when the unchanged PRD assignment moves out of Phase 2", async () => {
+    const { status, output } = await runOn({
+      "docs/PRD.md": SQUARE_RECONCILED["docs/PRD.md"].replace(
+        "### Execution Hardening (Phase 2)",
+        "### Differentiation (Phase 3)",
+      ),
+    });
+
+    expect(status).toBe(1);
+    expect(output).toContain("docs/PRD.md must keep its F-203 full-scope assignment under Phase 2");
+  });
+
+  it("fails when the spec assigns the unchanged scope to Phase 3", async () => {
+    const relative = "specs/F-203-deadline-alerts.md";
+    const { status, output } = await runOn({
+      [relative]: SQUARE_RECONCILED[relative].replace("Phase 2", "Phase 3"),
+    });
+
+    expect(status).toBe(1);
+    expect(output).toContain(`${relative} must assign its F-203 full scope to Phase 2`);
+  });
 });
 
 // The SPEC-CONFLICT #127 item 2 rule (governance §5 step 7). The reconciliation dropped a
@@ -1844,7 +1867,7 @@ describe.concurrent("Square/POS scope agreement (SPEC-CONFLICT #127 item 2)", ()
     );
 
     expect(status).toBe(1);
-    expect(output).toContain("docs/PRD.md:5 asserts the broader standalone Square/POS");
+    expect(output).toContain("docs/PRD.md:10 asserts the broader standalone Square/POS");
   });
 
   // THE WIDENING BRANCH, which the first version of this rule permitted and which is the branch the

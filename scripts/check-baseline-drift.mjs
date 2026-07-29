@@ -1616,9 +1616,15 @@ for (const relative of f203Artifacts) {
       `${relative} must assign escalations, digests, team reminders, and per-user preferences ` +
         "to F-203 as planned, not scheduled",
     );
-  } else if (relative === "docs/ROADMAP.md") {
-    const heading = lines.slice(0, assignmentIndex).findLast((line) => /^##\s+/.test(line));
-    if (!/^##\s+Phase 2\b/i.test(heading ?? "")) {
+  } else if (relative === "specs/F-203-deadline-alerts.md") {
+    if (!/\bPhase 2\b/i.test(lines[assignmentIndex])) {
+      f203Failures.push(`${relative} must assign its F-203 full scope to Phase 2`);
+    }
+  } else {
+    const heading = lines
+      .slice(0, assignmentIndex)
+      .findLast((line) => /^#{2,3}\s+.*\bPhase \d+\b/i.test(line));
+    if (!/\bPhase 2\b/i.test(heading ?? "")) {
       f203Failures.push(`${relative} must keep its F-203 full-scope assignment under Phase 2`);
     }
   }
