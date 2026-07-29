@@ -1648,10 +1648,16 @@ for (const relative of f203Artifacts) {
     })
     .filter(({ raw, normalized }) => {
       const lower = normalized.toLowerCase();
-      const namesScope = f203CapabilityNames.every((capability) => lower.includes(capability));
+      const namesScope = f203CapabilityNames.some((capability) => lower.includes(capability));
       const requiresListAssignment = relative === "docs/ROADMAP.md" || relative === "docs/PRD.md";
       const isListAssignment = requiresListAssignment && /^\s*(?:[-*+]|\d+\.)\s+/.test(raw);
-      return namesScope && (!requiresListAssignment || isListAssignment);
+      if (!namesScope || !lower.includes("f-203")) return false;
+      if (requiresListAssignment) return isListAssignment;
+      if (relative === "docs/BASELINE.md") return /^\s*\*\*Decision\b/i.test(raw);
+      return (
+        /\bF-203\b[^.]*\b(?:keeps|retains|owns|includes)\b/i.test(normalized) ||
+        /\b(?:remain|remains|are)\b[^.]*\bunder F-203\b/i.test(normalized)
+      );
     });
 
   const invalidAssignment = scopeStatements.find(({ raw, normalized }) => {
@@ -1683,10 +1689,11 @@ for (const relative of f203Artifacts) {
     }
   } else {
     const underPhase2 = scopeStatements.every(({ offset }) => {
+      const headingPattern = relative === "docs/ROADMAP.md" ? /^#{1,2}\s+/ : /^#{1,3}\s+/;
       const heading = contents
         .slice(0, offset)
         .split(/\r?\n/)
-        .findLast((line) => /^#{2,3}\s+.*\bPhase \d+\b/i.test(line));
+        .findLast((line) => headingPattern.test(line));
       return /\bPhase 2\b/i.test(heading ?? "");
     });
     if (!underPhase2) {

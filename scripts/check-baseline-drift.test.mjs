@@ -1908,6 +1908,50 @@ describe.concurrent("F-203 Phase 2 scope agreement (SPEC-CONFLICT #127 item 1)",
     expect(status).toBe(1);
     expect(output).toContain("docs/ROADMAP.md must affirmatively assign");
   });
+
+  it("rejects a conflicting partial F-203 assignment", async () => {
+    const { status, output } = await runOn({
+      "docs/ROADMAP.md":
+        SQUARE_RECONCILED["docs/ROADMAP.md"] +
+        "\n## Phase 3 — Differentiation\n\n" +
+        "- **F-203 preferences** — per-user preferences; planned, not scheduled.\n",
+    });
+
+    expect(status).toBe(1);
+    expect(output).toContain("docs/ROADMAP.md must affirmatively assign");
+  });
+
+  it.each([
+    ["docs/ROADMAP.md", "## Phase 2 — Execution Hardening", "## Unscheduled backlog"],
+    ["docs/PRD.md", "### Execution Hardening (Phase 2)", "### Unscheduled backlog"],
+  ])(
+    "stops the phase lookup at an intervening peer heading in %s",
+    async (relative, phase, peer) => {
+      const { status, output } = await runOn({
+        [relative]: SQUARE_RECONCILED[relative].replace(phase, `${phase}\n\n${peer}`),
+      });
+
+      expect(status).toBe(1);
+      expect(output).toContain(
+        `${relative} must keep its F-203 full-scope assignment under Phase 2`,
+      );
+    },
+  );
+
+  it.each(["docs/BASELINE.md", "specs/F-203-deadline-alerts.md"])(
+    "accepts consistent explanatory F-203 prose in %s",
+    async (relative) => {
+      const { status, output } = await runOn({
+        [relative]:
+          SQUARE_RECONCILED[relative] +
+          "\nF-203's Phase 2 depth covers alert escalations, digests, team reminders, and " +
+          "per-user preferences.\n",
+      });
+
+      expect(status).toBe(0);
+      expect(output).toContain("F-203 scope check passed");
+    },
+  );
 });
 
 // The SPEC-CONFLICT #127 item 2 rule (governance §5 step 7). The reconciliation dropped a
