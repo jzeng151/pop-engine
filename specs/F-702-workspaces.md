@@ -57,7 +57,7 @@ Exact HTTP, JSON Schema, migration, job, and provider shapes belong in their rev
 ## Acceptance Criteria
 
 1. **F702-AC-01:** An authenticated actor can create a workspace and becomes its active owner membership atomically.
-2. **F702-AC-02:** A valid invitation can be accepted once by the intended identity; expired, revoked, reused, or mismatched invitations create no membership.
+2. **F702-AC-02:** Acceptance atomically compare-and-swaps the invitation from pending to accepted together with membership creation; revocation competes on the same row/version, so exactly one terminal transition wins. Expired, revoked, reused, or mismatched invitations create no membership.
 3. **F702-AC-03:** Every workspace-owned aggregate rejects cross-workspace reads, writes, identifier guessing, exports, uploads, and job execution.
 4. **F702-AC-04:** Owner removal/leave serializes on the workspace (or uses an equivalent database invariant) so the last active owner cannot be removed under concurrent requests; the concurrent two-owner removal fixture leaves at least one owner.
 5. **F702-AC-05:** No authenticated user-owned product data or external beta is enabled before F-703 is also deployed and verified.
@@ -65,6 +65,7 @@ Exact HTTP, JSON Schema, migration, job, and provider shapes belong in their rev
 ## Fixtures and Verification
 
 - Planned automated fixture IDs are the acceptance IDs above; each must map one-to-one to a runnable test before approval can claim implementation readiness.
+- F702-AC-02 includes a concurrent accept-versus-revoke fixture that proves a revoked invitation cannot create a membership.
 - Regulatory fixtures: none; this feature does not define regulatory ground truth.
 - Security-sensitive and cross-workspace paths require negative authorization tests; provider paths require success, duplicate-delivery, retry, invalid-signature, and permanent-failure tests where applicable.
 

@@ -47,7 +47,7 @@ An organizer can apply limited, accessible branding to the public event page wit
 | Concern              | Proposed impact                                                                                                                                              |
 | -------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | API                  | Brand settings and controlled logo upload require approved OpenAPI contracts.                                                                                |
-| Schema               | Forward migration for minimal brand settings and private-to-public approved asset reference.                                                                 |
+| Schema               | Forward migration for minimal brand settings and a private approved logo-asset reference.                                                                    |
 | Jobs                 | File scanning/normalization only if required by the upload ADR.                                                                                              |
 | Providers            | Private storage/scanning adapter.                                                                                                                            |
 | Privacy and security | Validate file signatures, strip active metadata/content, prohibit SVG script risk unless sanitized policy explicitly approves it, and prevent CSS injection. |
@@ -61,6 +61,7 @@ Exact HTTP, JSON Schema, migration, job, and provider shapes belong in their rev
 3. **F309-AC-03:** Organizer input cannot inject HTML, script, CSS, external font, tracking pixel, or arbitrary URL.
 4. **F309-AC-04:** Consent copy, status labels, errors, PopEngine attribution, and page structure remain unchanged.
 5. **F309-AC-05:** Reset removes branding and restores the default page without changing event/RSVP data.
+6. **F309-AC-06:** The logo remains in private storage; public rendering issues only a short-lived signed URL for the currently published asset. Reset or replacement stops issuing URLs for the prior asset, and any already issued URL has only its disclosed bounded validity until expiry.
 
 ## Fixtures and Verification
 
