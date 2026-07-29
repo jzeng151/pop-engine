@@ -13,6 +13,7 @@ import {
   s3SettingsFromEnv,
   unconfiguredDocumentStorage,
 } from "./storage";
+import { supabaseAccessTokenVerifier } from "./auth";
 
 // Long-lived process (ARCHITECTURE.md AD-1). This server also hosts the in-process
 // 60s alert poller once F-203 (issue #8) lands, which is why the api must stay on an
@@ -85,7 +86,17 @@ const alertPool = new Pool({
   connectionString: databaseUrl,
   max: ALERT_POLLER_CONNECTIONS,
 });
-const alertPoller = createAlertPoller({ database: alertPool, senders, jurisdiction: engineRuleset.jurisdiction });
+const alertPoller = createAlertPoller({
+  database: alertPool,
+  senders,
+  jurisdiction: engineRuleset.jurisdiction,
+});
+const verifyAccessToken = supabaseAccessTokenVerifier();
+if (verifyAccessToken === null) {
+  console.warn(
+    "SUPABASE_URL / SUPABASE_PUBLISHABLE_KEY is not configured; /api/session returns 503",
+  );
+}
 
 createApp({
   database: pool,
@@ -95,6 +106,7 @@ createApp({
   checklist: { database: pool, storage: documentStorage, scheduleAlerts },
   alerts: { jurisdiction: engineRuleset.jurisdiction, database: pool, senders },
   rulesMeta: { rulesetVersion: ruleset.rulesetVersion, snapshotDate: ruleset.snapshotDate },
+  ...(verifyAccessToken ? { verifyAccessToken } : {}),
 }).listen(PORT, () => {
   console.log(`pop-engine-api listening on :${PORT}`);
   // In-process, in the long-lived api (AD-1/AD-4): no queue, no second service.
