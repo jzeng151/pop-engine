@@ -59,7 +59,7 @@ Exact HTTP, JSON Schema, migration, job, and provider shapes belong in their rev
 1. **F212-AC-01:** Export includes each selected confirmed milestone once with the correct title, source link, date/time, timezone, and stable identifier.
 2. **F212-AC-02:** Research-required, unknown, or unresolved dependency dates are excluded with an explicit reason and never guessed.
 3. **F212-AC-03:** Repeated sync creates no duplicate; source changes update the mapped entry and source removal cancels only that entry. Jobs carry and recheck the source generation before the provider call, provider mutations for one mapping are generation-ordered, and a stale or out-of-order completion cannot overwrite the latest mapping or leave the provider on the obsolete source value.
-4. **F212-AC-04:** Revoking or disconnecting credentials stops future provider calls and leaves PopEngine source data intact.
+4. **F212-AC-04:** Each provider call atomically claims a non-cancellable in-flight state after its final source-generation and credential check. Disconnect serializes with claims, blocks new claims immediately, and does not report credentials revoked until every existing claim is durably accounted for; PopEngine source data remains intact.
 5. **F212-AC-05:** Provider timeout, rate limit, expired credential, duplicate webhook, and permanent rejection produce deterministic retry or repair states.
 
 ## Fixtures and Verification

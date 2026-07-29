@@ -62,6 +62,7 @@ Exact HTTP, JSON Schema, migration, job, and provider shapes belong in their rev
 4. **F715-AC-04:** Duplicate/link handling preserves each report and cannot inflate evidence or erase reporter context.
 5. **F715-AC-05:** Unauthorized, abusive, oversized, unsafe, or cross-workspace submissions are rejected/quarantined without exposing private plan data.
 6. **F715-AC-06:** Successful submission returns an opaque receipt; an authenticated reporter uses their identity, while any separately approved anonymous mode issues an additional unguessable status credential shown once. Only that reporter/credential or an authorized triage actor can retrieve bounded non-authoritative status, with no private plan, queue, other-reporter, or internal triage context.
+7. **F715-AC-07:** When the separately approved attachment mode is enabled, attachments remain in private storage; every download issuance rechecks current reporter/triage authorization and scan state and returns only a short-lived signed URL. Authorization loss blocks new URLs, and an issued direct-storage URL has only its disclosed bounded validity until expiry.
 
 ## Fixtures and Verification
 

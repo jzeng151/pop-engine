@@ -61,6 +61,7 @@ Exact HTTP, JSON Schema, migration, job, and provider shapes belong in their rev
 3. **F104-AC-03:** User lines validate currency and minor units and produce deterministic category, known-total, and target-variance calculations.
 4. **F104-AC-04:** Plan regeneration marks imported lines stale; refresh creates a new budget version and preserves prior values.
 5. **F104-AC-05:** Deleting or editing a user line never changes the immutable plan or a rule-derived fee.
+6. **F104-AC-06:** User-line create/edit/delete operations bind a stable request identity to the original result; replay returns that result without duplicating lines, versions, or totals.
 
 ## Fixtures and Verification
 

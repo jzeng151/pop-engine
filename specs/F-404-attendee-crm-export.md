@@ -61,7 +61,7 @@ Exact HTTP, JSON Schema, migration, job, and provider shapes belong in their rev
 3. **F404-AC-03:** Consent and suppression are displayed by purpose/channel and are not inferred from RSVP or attendance.
 4. **F404-AC-04:** CSV rows match the active filters, use the approved minimal columns, escape cells beginning with `=`, `+`, `-`, `@`, tab, carriage return, or line feed (including control-prefixed formulas), and expire under the retention policy.
 5. **F404-AC-05:** Correction/deletion and ambiguous-identity changes are reflected consistently in list, detail, repeat flag, and future exports.
-6. **F404-AC-06:** Contact/check-in source versions are pinned to each export; a correction or deletion invalidates queued jobs and unexpired staged downloads containing superseded data, requiring regeneration. Already downloaded copies cannot be recalled and remain subject to the approved retention notice.
+6. **F404-AC-06:** Contact/check-in source versions and their generation are pinned to each export; artifact publication compare-and-swaps that generation and serializes with correction/deletion, so stale in-flight work cannot publish superseded data. A correction or deletion invalidates queued jobs and unexpired staged downloads containing superseded data, requiring regeneration. Already downloaded copies cannot be recalled and remain subject to the approved retention notice.
 
 ## Fixtures and Verification
 
