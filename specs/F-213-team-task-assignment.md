@@ -59,7 +59,7 @@ Exact HTTP, JSON Schema, migration, job, and provider shapes belong in their rev
 1. **F213-AC-01:** Only an authorized actor can assign an open task to an eligible active member of the same workspace.
 2. **F213-AC-02:** Reassign, unassign, complete, cancel, and approved reopen actions preserve actor/timestamp history.
 3. **F213-AC-03:** Completing a task does not mark a permit, application, document, or regulatory finding complete.
-4. **F213-AC-04:** Member removal cannot leave an invisible active assignment or erase historical attribution.
+4. **F213-AC-04:** Assignment and member removal serialize on membership (or use an equivalent database invariant), so their race cannot leave an open task assigned to an inactive member; historical attribution remains.
 5. **F213-AC-05:** Concurrent stale updates are rejected rather than silently losing a status or assignee change.
 
 ## Fixtures and Verification

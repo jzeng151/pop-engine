@@ -56,7 +56,7 @@ Exact HTTP, JSON Schema, migration, job, and provider shapes belong in their rev
 
 ## Acceptance Criteria
 
-1. **F103-AC-01:** Both configurations evaluate with byte-identical ruleset, calendar, and `today` inputs, producing normal immutable plans.
+1. **F103-AC-01:** Both configurations evaluate with byte-identical engine version/checksum, ruleset, calendar, and `today` inputs, producing normal immutable plans; otherwise they are incomparable.
 2. **F103-AC-02:** The comparison identifies each added, removed, and materially changed finding without hiding deduplicated source facets.
 3. **F103-AC-03:** Permit burden is derived from typed plan output, and earliest feasible dates come only from F-106 candidate-date evaluations for the same explicit shared target month and engine context; neither value comes from prose parsing or a second rules implementation.
 4. **F103-AC-04:** Unknown, conflict, research-required, or evaluation failure remains visible and cannot make a configuration appear better by omission.

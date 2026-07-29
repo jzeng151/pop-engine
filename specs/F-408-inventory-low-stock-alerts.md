@@ -56,7 +56,7 @@ Exact HTTP, JSON Schema, migration, job, and provider shapes belong in their rev
 
 ## Acceptance Criteria
 
-1. **F408-AC-01:** Manual integer adjustments deterministically derive current count and retain actor/time/reason/source history.
+1. **F408-AC-01:** Manual integer adjustments bind a stable operation identity to actor/time/reason/source history, deterministically derive current count, and return the original result without reapplying on replay.
 2. **F408-AC-02:** A count or threshold edit that changes a known item from above threshold to at/below creates one low-stock transition/alert; the reverse change records one recovery transition, and retries/repeated reads do not duplicate either.
 3. **F408-AC-03:** Unknown or stale count is labeled and cannot appear in-stock.
 4. **F408-AC-04:** Invalid, replayed, duplicate, out-of-scope, or unverified Square events cannot change inventory.

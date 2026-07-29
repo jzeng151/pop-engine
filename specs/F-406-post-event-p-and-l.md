@@ -56,7 +56,7 @@ Exact HTTP, JSON Schema, migration, job, and provider shapes belong in their rev
 
 ## Acceptance Criteria
 
-1. **F406-AC-01:** Actual entries use integer minor units and one currency and deterministically calculate revenue, cost, profit/loss, margin, and budget variance.
+1. **F406-AC-01:** Actual entries use integer minor units and one currency and deterministically calculate revenue, cost, profit/loss, margin, and budget variance; margin is unavailable (not zero) when revenue is zero, with zero/positive-revenue boundary fixtures.
 2. **F406-AC-02:** Unknown/missing actuals are not zero and produce an incomplete-result warning.
 3. **F406-AC-03:** Mapping or unmapping an actual changes rollups without mutating the referenced budget line.
 4. **F406-AC-04:** Confirmation atomically compare-and-swaps the complete current budget-mapping and actual-ledger version set; any mismatch rejects confirmation and requires a rebuilt preview. Success creates an immutable snapshot tied to those exact versions, and correction creates a new snapshot.

@@ -56,7 +56,7 @@ Exact HTTP, JSON Schema, migration, job, and provider shapes belong in their rev
 
 ## Acceptance Criteria
 
-1. **F605-AC-01:** The organizer sees and confirms every source fact before generation, and the result records exact source/prompt/model versions.
+1. **F605-AC-01:** The organizer sees and confirms every source fact before generation, and the result records exact source/prompt/model versions; copy/download rechecks current source versions and visibly blocks or requires reconfirmation when any selected fact changed.
 2. **F605-AC-02:** The draft cannot send, schedule, connect a mailbox, or mutate application/ledger state.
 3. **F605-AC-03:** No generated deadline, fee, agency, permit, status, completeness, or legal claim may exceed approved selected source facts.
 4. **F605-AC-04:** Unknown/conflicting facts remain omitted or explicitly unresolved and never become confident prose.

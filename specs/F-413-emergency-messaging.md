@@ -61,7 +61,7 @@ Exact HTTP, JSON Schema, migration, job, and provider shapes belong in their rev
 3. **F413-AC-03:** Only contacts eligible under the approved emergency purpose/channel policy and not suppressed receive jobs.
 4. **F413-AC-04:** Retries/duplicate claims create at most one accepted provider delivery per contact/send/channel and preserve every attempt.
 5. **F413-AC-05:** Provider failure or partial delivery reports exact known counts and never claims all attendees were reached.
-6. **F413-AC-06:** Cancelling a send atomically marks its generation cancelled and stops unclaimed jobs; already claimed or leased jobs recheck cancellation and eligibility immediately before the provider call, abort when stale, preserve every attempt, and keep sent/cancelled counts accurate under races.
+6. **F413-AC-06:** Delivery atomically claims a non-cancellable `sending` state after its final eligibility/generation check; cancellation serializes against that claim, cancels only work not yet `sending`, reports already-sending attempts separately, preserves every attempt, and keeps sent/cancelled counts accurate.
 
 ## Fixtures and Verification
 
