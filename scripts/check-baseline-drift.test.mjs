@@ -1811,6 +1811,17 @@ describe.concurrent("F-203 Phase 2 scope agreement (SPEC-CONFLICT #127 item 1)",
     expect(output).toContain("docs/BASELINE.md must affirmatively assign");
   });
 
+  it("accepts an unrelated F-203 baseline decision", async () => {
+    const { status, output } = await runOn({
+      "docs/BASELINE.md":
+        SQUARE_RECONCILED["docs/BASELINE.md"] +
+        "\n**Decision:** F-203 lane ownership transfers to Dev 2.\n",
+    });
+
+    expect(status).toBe(0);
+    expect(output).toContain("F-203 scope check passed");
+  });
+
   it("rejects a conflicting phase decision in the spec status", async () => {
     const { status, output } = await runOn({
       "specs/F-203-deadline-alerts.md": SQUARE_RECONCILED["specs/F-203-deadline-alerts.md"].replace(
@@ -1823,6 +1834,17 @@ describe.concurrent("F-203 Phase 2 scope agreement (SPEC-CONFLICT #127 item 1)",
     expect(output).toContain(
       "specs/F-203-deadline-alerts.md must assign its F-203 full scope to Phase 2",
     );
+  });
+
+  it("rejects a spec decision that schedules the retained Phase 2 depth", async () => {
+    const { status, output } = await runOn({
+      "specs/F-203-deadline-alerts.md":
+        SQUARE_RECONCILED["specs/F-203-deadline-alerts.md"] +
+        "\n**Decision:** Phase 2 depth is retained under F-203 and is now scheduled.\n",
+    });
+
+    expect(status).toBe(1);
+    expect(output).toContain("specs/F-203-deadline-alerts.md must affirmatively assign");
   });
 
   it("rejects Phase 2 acceptance criteria while the scope remains unscheduled", async () => {

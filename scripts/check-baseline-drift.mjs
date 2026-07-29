@@ -1616,9 +1616,13 @@ const f203RetainedScope = new RegExp(
 );
 const f203SpecScope = new RegExp(`${f203Capabilities.source}\\s+remain\\b`, "i");
 const f203CapabilityNames = ["escalations", "digests", "team reminders", "per-user preferences"];
+const f203DecisionScope =
+  /\b(?:scope|depth|phase\s+\d+|planned|unplanned|scheduled|unscheduled|scheduling|acceptance criteria)\b/i;
 const f203Planning = /\bplanned,\s+(?:not scheduled|unscheduled)\b/i;
 const f203Negation =
   /\bnot planned\b|\b(?:no|without)\s+(?:alert )?(?:escalations|digests|team reminders|per-user preferences)\b/i;
+const f203SchedulingConflict =
+  /\b(?:(?:is|are|was|were|has been|have been|will be|must be|may be|can be)\s+(?:now\s+)?scheduled|now scheduled)\b/i;
 const f203Failures = [];
 
 function activeMarkdown(markdown) {
@@ -1681,6 +1685,7 @@ for (const relative of f203Artifacts) {
     .filter(({ raw, normalized }) => {
       const lower = normalized.toLowerCase();
       const namesScope = f203CapabilityNames.some((capability) => lower.includes(capability));
+      const addressesScope = namesScope || f203DecisionScope.test(normalized);
       const requiresListAssignment = relative === "docs/ROADMAP.md" || relative === "docs/PRD.md";
       const isListAssignment = requiresListAssignment && /^\s*(?:[-*+]|\d+\.)\s+/.test(raw);
       if (requiresListAssignment) {
@@ -1701,9 +1706,9 @@ for (const relative of f203Artifacts) {
         );
       }
       if (relative === "docs/BASELINE.md") {
-        return /^\s*\*\*Decision\b/i.test(raw) && lower.includes("f-203");
+        return /^\s*\*\*Decision\b/i.test(raw) && lower.includes("f-203") && addressesScope;
       }
-      if (f203SpecDecision.test(raw)) return lower.includes("f-203");
+      if (f203SpecDecision.test(raw)) return lower.includes("f-203") && addressesScope;
       if (!namesScope || !lower.includes("f-203")) return false;
       return (
         /\bF-203\b[^.]*\b(?:keeps|retains|owns|includes)\b/i.test(normalized) ||
@@ -1719,7 +1724,7 @@ for (const relative of f203Artifacts) {
       return !f203RetainedScope.test(normalized);
     }
     if (relative === "specs/F-203-deadline-alerts.md" && f203SpecDecision.test(raw)) {
-      return false;
+      return f203SchedulingConflict.test(normalized);
     }
     if (!f203Capabilities.test(normalized) || !f203Planning.test(normalized)) return true;
     if (f203Negation.test(normalized)) return true;
