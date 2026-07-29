@@ -164,20 +164,41 @@ function alternativeValues(
 }
 
 /**
+ * Closed set of ruleset eras whose stored plans serialized pre-F-102 detail shapes (three-field
+ * rescopes; threshold prose without conditional-boundary enrichment). Evaluating those artifacts
+ * must keep that shape for AD-7 replay; nyc.v2.8+ emits the enriched fields.
+ */
+const PRE_F102_DETAIL_ERAS: ReadonlySet<string> = new Set([
+  "nyc.v2.1",
+  "nyc.v2.2",
+  "nyc.v2.3",
+  "nyc.v2.4",
+  "nyc.v2.5",
+  "nyc.v2.6",
+  "nyc.v2.7",
+]);
+
+function emitsF102DetailEnrichment(rulesetVersion: string): boolean {
+  return !PRE_F102_DETAIL_ERAS.has(rulesetVersion);
+}
+
+/**
  * The published thresholds that decide a field the engine cannot enumerate, so a numeric unknown
  * still tells a client what to ask for instead of leaving an empty branch table (P2).
  *
  * When a condition declares `boundary: "conditional"`, the exact threshold is unresolved (not
  * "below the line"), so the description must say so — e.g. DOB-TENT-001 at exactly 400 sq ft.
+ * That clause is current-line enrichment only; superseded eras keep the shorter historical prose.
  */
 function publishedThresholds(field: string, ruleset: EngineRuleset): string | null {
   const described: string[] = [];
+  const enrichBoundary = emitsF102DetailEnrichment(ruleset.rulesetVersion);
   const walk = (node: TriggerNode, ruleId: string): void => {
     if ("field" in node) {
       if (node.field !== field || typeof node.value !== "number") return;
       const comparison = node.op === "gt" ? "above" : node.op === "gte" ? "at or above" : null;
       if (comparison === null) return;
-      if (node.boundary === "conditional") {
+      if (enrichBoundary && node.boundary === "conditional") {
         described.push(
           `${ruleId} applies ${comparison} ${node.value}; exactly ${node.value} is a conditional boundary (confirm with the publishing agency)`,
         );
@@ -192,23 +213,9 @@ function publishedThresholds(field: string, ruleset: EngineRuleset): string | nu
   return described.length === 0 ? null : described.join("; ");
 }
 
-/**
- * Closed set of ruleset eras whose stored plans serialized three-field rescopes (change,
- * reevaluatedVerdict, droppedRuleIds) before F-102 enrichment. Evaluating those artifacts must
- * keep that shape for AD-7 replay; nyc.v2.8+ emits the enriched suggestion fields.
- */
-const RESCOPE_THREE_FIELD_ERAS: ReadonlySet<string> = new Set([
-  "nyc.v2.1",
-  "nyc.v2.2",
-  "nyc.v2.3",
-  "nyc.v2.4",
-  "nyc.v2.5",
-  "nyc.v2.6",
-  "nyc.v2.7",
-]);
-
-function emitsRescopeEnrichment(rulesetVersion: string): boolean {
-  return !RESCOPE_THREE_FIELD_ERAS.has(rulesetVersion);
+/** True when not_calculable is solely from an unpublished holiday list (SPEC-CONFLICT #130). */
+function isUnpublishedCalendarUnresolved(reason: string | null): boolean {
+  return reason !== null && reason.includes("holiday list; no list is published");
 }
 
 type ConditionalEvaluation = {
@@ -405,10 +412,9 @@ function buildRescopeSuggestions(
         finding.ruleIds.every((ruleId) => !baseRuleIds.has(ruleId)),
       );
       // R3 (proposals §6): a coverage gap asserts nothing, another agency's permit is not
-      // relief, and a scope the engine cannot date because an intake fact was never asked is
-      // not a scope it can recommend (e.g. plaza level). An undated window solely because the
-      // holiday calendar is unpublished (timelineUnresolvedReason / SPEC-CONFLICT #130) must
-      // not erase F-102 AC 7's private-venue ladder step — CONDITIONAL already surfaces it.
+      // relief, and a scope whose timeline is unresolved is not a scope it can recommend —
+      // except when the only block is an unpublished holiday calendar (SPEC-CONFLICT #130),
+      // which must not erase F-102 AC 7's private-venue ladder step.
       if (introduced.some((finding) => finding.verificationStatus === "COVERAGE_GAP")) continue;
       if (
         introduced.some(
@@ -420,7 +426,8 @@ function buildRescopeSuggestions(
       if (
         introduced.some(
           (finding) =>
-            finding.deadlineStatus === "not_calculable" && finding.deadlineUnknownFields.length > 0,
+            finding.deadlineStatus === "not_calculable" &&
+            !isUnpublishedCalendarUnresolved(finding.timelineUnresolvedReason),
         )
       ) {
         continue;
@@ -434,7 +441,7 @@ function buildRescopeSuggestions(
       };
       // Superseded eras keep the historical three-field shape. Current-line enrichment carries
       // introduced rule ids on every suggestion, plus at-risk slack/name only when at risk.
-      if (!emitsRescopeEnrichment(ruleset.rulesetVersion)) {
+      if (!emitsF102DetailEnrichment(ruleset.rulesetVersion)) {
         suggestions.push(suggestion);
         continue;
       }
@@ -460,7 +467,7 @@ function buildRescopeSuggestions(
   }
   // F-102 AC 7 demonstration ladder on the current ruleset line only. Historical eras keep
   // discovery order so AD-7 replay stays byte-stable with their original suggestion sequence.
-  if (!emitsRescopeEnrichment(ruleset.rulesetVersion)) {
+  if (!emitsF102DetailEnrichment(ruleset.rulesetVersion)) {
     return suggestions;
   }
   return [...suggestions].sort((left, right) => rescopeLadderRank(left) - rescopeLadderRank(right));

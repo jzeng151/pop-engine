@@ -124,7 +124,7 @@ function RescopeLadder({
             </p>
             {suggestion.droppedRuleIds.length > 0 && (
               <p className="verdict-detail__rescope-dropped">
-                Requirements that would no longer apply:{" "}
+                Findings that would no longer appear:{" "}
                 <span className="verdict-detail__rule-ids">
                   {suggestion.droppedRuleIds.join(", ")}
                 </span>

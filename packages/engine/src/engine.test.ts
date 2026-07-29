@@ -1695,6 +1695,34 @@ describe("facts the ruleset publishes rather than the engine assuming (nyc.v2.4)
     ]);
   });
 
+  it("omits conditional-boundary threshold enrichment on nyc.v2.3", () => {
+    const v23 = parseEngineRuleset(
+      JSON.parse(
+        readFileSync(
+          fileURLToPath(new URL("./__fixtures__/nyc-rules.v2.3.json", import.meta.url)),
+          "utf8",
+        ),
+      ),
+    );
+    const result = evaluate(
+      {
+        ...parkIntake,
+        location_type: "private_venue",
+        amplified_sound: false,
+        structure_types: ["tent_canopy"],
+        tent_area_sqft: null,
+        tent_days_in_place: 3,
+        structure_over_10ft_tall: false,
+      } as EventIntake,
+      v23,
+      TODAY,
+      calendar,
+    );
+    const tentFact = result.verdictDetail.missingFacts.find((fact) => fact.field === "tent_area_sqft");
+    expect(tentFact?.thresholds).toContain("DOB-TENT-001 applies above 400");
+    expect(tentFact?.thresholds ?? "").not.toContain("conditional boundary");
+  });
+
   it("requires the binding of any version that could have published it", () => {
     // The compatibility record is closed, not a default: a version not in it must declare the
     // fields. Without this the record would be the live constant the bump deleted, reachable by
