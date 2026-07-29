@@ -63,6 +63,7 @@ Exact HTTP, JSON Schema, migration, job, and provider shapes belong in their rev
 5. **F413-AC-05:** Provider failure or partial delivery reports exact known counts and never claims all attendees were reached.
 6. **F413-AC-06:** Delivery atomically claims a non-cancellable `sending` state after its final eligibility/generation check; cancellation, consent withdrawal, and suppression serialize against that claim, prevent only work not yet `sending`, report already-sending attempts separately, preserve every attempt, and keep sent/cancelled counts accurate.
 7. **F413-AC-07:** Confirmation freezes the approved explicit validity deadline and send generation. Every retry and delivery claim rejects expired or explicitly superseded generations, cancels their work before `sending`, and preserves their attempt history; the spec does not invent a default validity duration.
+8. **F413-AC-08:** Confirmation transactionally freezes the exact eligible contact and channel-endpoint version set, not only its selector/count, and fan-out creates jobs only from that snapshot. Delivery-time eligibility checks may remove newly ineligible snapshot members but cannot add a contact or endpoint that was not confirmed.
 
 ## Fixtures and Verification
 

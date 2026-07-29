@@ -60,7 +60,7 @@ Exact HTTP, JSON Schema, migration, job, and provider shapes belong in their rev
 2. **F501-AC-02:** Late submission, revision, and delay classifications use only approved definitions and confirmed source facts; unexpected-requirement classification uses only F-208 records created through its explicit user-confirmed unexpected-requirement path with source provenance.
 3. **F501-AC-03:** Missing/unknown/conflicting data cannot silently enter the favorable denominator or appear as zero.
 4. **F501-AC-04:** Cross-workspace queries, filters, exports, cached results, and drill-downs disclose no foreign record.
-5. **F501-AC-05:** Source correction changes a new report/snapshot and preserves the prior version when retention is enabled.
+5. **F501-AC-05:** A refresh pins the complete source-version set and generation it reads; snapshot publication compare-and-swaps that generation, rejecting an obsolete refresh so it cannot replace a newer correction-derived snapshot. A source correction creates a new report/snapshot and preserves the prior version when retention is enabled.
 6. **F501-AC-06:** Every staged analytics export remains private; each download issuance rechecks current workspace membership/role and returns only an authorized streaming response or short-lived signed URL. Authorization loss blocks new access, and an issued direct-storage URL has only bounded validity until expiry.
 
 ## Fixtures and Verification
