@@ -182,6 +182,15 @@ describe("conditional reveal follows the registry (spec #2)", () => {
     expect(questionsOnScreen()).toContain("Venue license covers event area");
   });
 
+  it("never asks the deprecated food-exception claim", async () => {
+    const user = renderForm();
+    await chooseOption(user, "food_present", "true");
+    await chooseOption(user, "event_open_to_public", "no");
+    expect(
+      document.querySelector('input[name="food_affinity_private_exception_claimed"]'),
+    ).toBeNull();
+  });
+
   it("renders the registry's published note as the question's help text", async () => {
     const user = renderForm();
     await chooseOption(user, "location_type", "street");
