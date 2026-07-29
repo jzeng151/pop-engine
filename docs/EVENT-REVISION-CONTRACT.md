@@ -43,14 +43,18 @@ The stable Event container gains fields only with their consuming feature:
 | Field                 | Owner and invariant                                                                            |
 | --------------------- | ---------------------------------------------------------------------------------------------- |
 | `workspace_id`        | F-702. Backfilled before authenticated user-owned data is enabled, then required.              |
+| `jurisdiction_code`   | F-107. Backfilled before any revision exists and immutable without an approved transition.     |
 | `current_revision_id` | F-107. Points to the latest saved revision for the same event.                                 |
 | `current_plan_id`     | Plan-acceptance work. Points to the explicitly accepted plan, not merely the newest candidate. |
 
 The database must reject a current revision or current plan that belongs to another event.
 
-Once an Event carries `jurisdiction_code`, every revision save and persisted revision must use that
-same jurisdiction. A mismatch is rejected. Changing an Event's jurisdiction requires a separately
-approved atomic transition; a revision save cannot change it by itself.
+Before F-107 creates or accepts any revision, it backfills each Phase 1 Event's
+`jurisdiction_code` from the compatibility package's approved exact cutover value. For this ratified
+single-jurisdiction Phase 1 contract that value is `US-NY-NYC`; it comes from the approved Event and
+ruleset scope, never display text, a plan, or client input. Every revision save and persisted revision
+must use the Event's jurisdiction. A mismatch is rejected. Changing an Event's jurisdiction requires
+a separately approved atomic transition; a revision save cannot change it by itself.
 
 Stable Event metadata, such as the organizer-facing name or title, is not questionnaire data and a
 metadata-only update does not append an Event Revision. Every stable-metadata update supplies the
@@ -130,14 +134,19 @@ The exact HTTP request and error schemas belong in the reviewed OpenAPI contract
   mismatch.
 - The selected published evaluation contract names the exact Event Input schema it accepts. Before
   evaluation, the referenced revision must either use that `input_schema_version` or pass an
-  approved lossless transform into it and then pass complete validation under the target schema.
-  Missing compatibility, transform loss, or incomplete validation rejects generation; it never
+  approved lossless transform into it. In both paths, generation reruns complete validation under the
+  target schema using the candidate's exact jurisdiction-local `today`; the revision's saved
+  `complete` state records save-time validation and never substitutes for generation-time validation.
+  Missing compatibility, transform loss, or failed validation rejects generation; it never
   interprets an older answer under changed field or enum semantics.
 - Every plan persists the exact canonical engine input it evaluated. When a compatibility transform
   is used, that transform is an immutable approved artifact whose version and checksum are also
   persisted on the plan. When no transform is needed, the plan persists the explicit non-null
   provenance state `not_applicable`; it does not use the legacy sentinel for a known absence. Replay
   uses the persisted engine-input snapshot; it never reruns whichever transform is current later.
+- The approved evaluation binding identifies the exact engine, rules-schema, and target Event Input
+  schema versions and checksums plus the applicable compatibility-transform provenance. Every new
+  plan persists that complete binding.
 - The selected ruleset pins the exact calendar artifact used for evaluation. Generation resolves
   that artifact and rejects a calendar whose ID, version, checksum, or jurisdiction does not match
   the ruleset's declaration. Persisting calendar provenance does not substitute for validating the
@@ -170,11 +179,12 @@ The exact HTTP request and error schemas belong in the reviewed OpenAPI contract
   provenance unchanged. A trackable replacement is appended in its default state; a non-trackable
   replacement remains read-only context. The server rejects any organizer-supplied mapping that
   attempts to reuse, reset, or carry the old task onto the replacement.
-- Acceptance and ruleset publication are serialized against the selected jurisdiction's publication
-  authority. At the acceptance linearization point, the candidate's persisted ruleset version and
-  checksum must equal the current published artifact's version and checksum. If publication wins,
-  acceptance rejects the candidate and requires regeneration; if acceptance wins, a later publication
-  makes the accepted plan outdated without rewriting it.
+- Acceptance, ruleset publication, and evaluation-binding activation are serialized against the
+  selected jurisdiction's publication authority. At the acceptance linearization point, the
+  candidate's persisted ruleset version/checksum and complete evaluation binding must equal the
+  current published artifact and its approved binding. If either publication or binding activation
+  wins, acceptance rejects the candidate and requires regeneration; if acceptance wins, a later
+  change makes the accepted plan outdated without rewriting it.
 - Accepting a candidate locks the Event and rechecks that the candidate belongs to it, that
   `candidate.event_revision_id === events.current_revision_id`, and that
   `base_plan_id === events.current_plan_id`. While holding that lock, acceptance also derives the
@@ -231,7 +241,8 @@ Before mutation, F-107's approved compatibility package must define:
   a historical plan evaluated;
 - one exact `input_schema_version` and `jurisdiction_code` for the Phase 1 Event row at cutover,
   including an Event with no historical plan. This mapping is explicit and does not derive either
-  value from a latest plan, display text, or migration time;
+  value from a latest plan, display text, or migration time. F-107 writes that same jurisdiction to
+  the stable Event before creating or binding any revision;
 - validation and a lossless canonical comparison transform for every mapped schema. Omission,
   legacy unanswered/`NULL`, explicit `unknown`, `false`, and other concrete values remain distinct
   unless recorded source data makes a conversion lossless; and
@@ -343,13 +354,13 @@ aborts.
 
 ## 3. Implementation Ownership
 
-| Work                                                                                     | Owning feature or gate                                          |
-| ---------------------------------------------------------------------------------------- | --------------------------------------------------------------- |
-| `workspace_id` and legacy workspace backfill                                             | F-702                                                           |
-| `event_revisions`, `current_revision_id`, append/conflict behavior, and plan revision FK | F-107                                                           |
-| `current_plan_id`, acknowledgement backfill, acceptance, and workflow reconciliation     | Approved plan-acceptance contract                               |
-| Finding diff API or stored diff                                                          | First approved consumer, such as F-103 or F-503                 |
-| OpenAPI/JSON Schema and generated-type handoff                                           | Architecture decision gate; separate from this logical approval |
+| Work                                                                                   | Owning feature or gate                                          |
+| -------------------------------------------------------------------------------------- | --------------------------------------------------------------- |
+| `workspace_id` and legacy workspace backfill                                           | F-702                                                           |
+| `jurisdiction_code` backfill, Event Revisions, revision pointer/conflicts, and plan FK | F-107                                                           |
+| `current_plan_id`, acknowledgement backfill, acceptance, and workflow reconciliation   | Approved plan-acceptance contract                               |
+| Finding diff API or stored diff                                                        | First approved consumer, such as F-103 or F-503                 |
+| OpenAPI/JSON Schema and generated-type handoff                                         | Architecture decision gate; separate from this logical approval |
 
 No feature may bundle another row's work merely because this contract names the shared boundary.
 
@@ -391,11 +402,18 @@ Before activation, the consuming implementation must prove:
   binds the plan to a later current revision;
 - a revision save rejects a jurisdiction different from the Event's jurisdiction, and an Event
   jurisdiction change cannot occur through the revision-save path;
+- F-107 backfills every Phase 1 Event to the compatibility package's exact `US-NY-NYC` jurisdiction
+  before creating or binding revisions, including an Event with no historical plan;
 - plan generation and persistence reject a ruleset/revision jurisdiction mismatch;
 - plan generation rejects a revision whose Event Input schema is neither the selected evaluation
-  contract's exact schema nor losslessly transformed and completely revalidated under it;
+  contract's exact schema nor losslessly transformed into it, and both paths rerun complete
+  validation using the candidate's exact jurisdiction-local `today`;
+- an exact-schema revision saved as complete while its `event_date` was valid is rejected at
+  generation when that date is before the candidate's `today`;
 - every plan persists the exact canonical engine input evaluated, and replay remains byte-stable
   after the compatibility transform used at generation is replaced by another version;
+- every new plan persists the complete approved evaluation binding's engine, rules-schema, target
+  Event Input schema, and compatibility-transform provenance;
 - plan generation rejects a calendar artifact whose ID, version, checksum, or jurisdiction does not
   match the selected ruleset's declaration;
 - plan generation rejects a `jurisdictionTimezone` that does not match the selected jurisdiction's
@@ -412,9 +430,9 @@ Before activation, the consuming implementation must prove:
   remains below the current-row revision, and the first live append exceeds every backfilled
   revision;
 - accepting a candidate races safely with a revision save and rejects the stale candidate;
-- accepting a candidate races safely with ruleset publication: publication first rejects the
-  candidate's superseded version/checksum, while acceptance first leaves a subsequently outdated but
-  immutable accepted plan;
+- accepting a candidate races safely with ruleset publication or evaluation-binding activation: a
+  superseding change first rejects the candidate's pinned artifact/binding, while acceptance first
+  leaves a subsequently outdated but immutable accepted plan;
 - accepting a candidate after its jurisdiction-local evaluation date has passed rejects it and
   requires regeneration;
 - accepting a candidate whose persisted `jurisdictionTimezone` no longer matches the jurisdiction
