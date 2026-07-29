@@ -10,7 +10,7 @@
 
 This contract does two things:
 
-1. ratifies the cumulative Phase 1 `events` shape produced by migrations `001`, `005`, and `006`, independent of the later migration head; and
+1. ratifies the cumulative Phase 1 `events` shape produced by migrations `001`, `005`, `006`, and the separately approved F-110 amendment in `012`, independent of unrelated later migrations; and
 2. fixes the logical Event Revision contract that Phase 2 features must express in reviewed OpenAPI, JSON Schema, and forward migrations.
 
 It resolves `OPEN-QUESTIONS` B-3 under the approval record above. It does not activate Phase 2, approve F-107, create an endpoint or table, amend a merged migration, or change a regulatory rule, fixture, verdict, deadline, or finding.
@@ -22,8 +22,9 @@ It resolves `OPEN-QUESTIONS` B-3 under the approval record above. It does not ac
 - The merged `events` schema is the cumulative result of:
   - `apps/api/migrations/001_initial_schema.ts`;
   - `apps/api/migrations/005_event_public_page_fields.ts`; and
-  - `apps/api/migrations/006_events_battery_present.ts`.
-- Later migrations do not change which migrations define this ratified `events` shape.
+  - `apps/api/migrations/006_events_battery_present.ts`; and
+  - `apps/api/migrations/012_events_assembly_document_coverage.ts`, the separately approved F-110 amendment.
+- Unrelated later migrations do not change which migrations define this ratified `events` shape.
 - These merged migrations are immutable. Corrections or future fields use new ordered migrations.
 - Through Phase 1.5, the `events` row remains the authoritative intake record and `revision_counter` remains the plan-staleness mechanism.
 - Ratification does not approve another column. Every later shared/core-table change still requires the approvals in `docs/DOCUMENTATION-GOVERNANCE.md` §6.
@@ -46,6 +47,10 @@ The stable Event container gains fields only with their consuming feature:
 | `current_plan_id`     | Plan-acceptance work. Points to the explicitly accepted plan, not merely the newest candidate. |
 
 The database must reject a current revision or current plan that belongs to another event.
+
+Once an Event carries `jurisdiction_code`, every revision save and persisted revision must use that
+same jurisdiction. A mismatch is rejected. Changing an Event's jurisdiction requires a separately
+approved atomic transition; a revision save cannot change it by itself.
 
 Other target fields in `docs/ARCHITECTURE-FUTURE.md` remain deferred until a scheduled feature consumes them.
 
@@ -70,8 +75,9 @@ Required invariants:
 - Completeness is validation state, not an organizer-visible submission workflow. Explicit `unknown` counts as answered where the schema permits it.
 - SQL `NULL` never means unknown.
 - Organizer-created revisions have non-null `created_by` and `created_at`. Deterministic legacy
-  backfill sets both to `NULL`; a null `created_at` means the source recorded no revision-creation
-  time and is never replaced with a plan, Event, or migration timestamp.
+  backfill sets `created_by`, `created_at`, and `supersedes_revision_id` to `NULL`; the source
+  recorded neither a revision-creation time nor a predecessor, so neither is inferred from plan
+  order, Event data, or migration time.
 - Derived authority or classification output is not accepted from the browser as regulatory truth.
 
 ### 2.4 Reject stale writes; do not merge them silently
@@ -79,10 +85,12 @@ Required invariants:
 - A save names the `base_revision_id` it was edited from. `null` is valid only when the event has no revision.
 - In one transaction, the server locks the Event, compares `base_revision_id` with `current_revision_id`, validates the proposed answers, appends the revision, and advances the pointer.
 - A changed save appends exactly one revision. Its `supersedes_revision_id` equals the validated
-  `base_revision_id`; only the first revision has `supersedes_revision_id = NULL`.
+  `base_revision_id`; only the first organizer-created revision and the deterministic legacy
+  backfill described in §2.3 have `supersedes_revision_id = NULL`.
 - A save is a no-op only when its `input_schema_version`, `jurisdiction_code`, and
   schema-canonical `answers_json` match the current revision. It returns that revision and appends
-  nothing; changing any member of that tuple appends a revision.
+  nothing. Changing the schema or answers appends a revision; a jurisdiction different from the
+  Event is rejected under §2.2 unless a separately approved atomic jurisdiction transition applies.
 - A stale base returns HTTP `409` with stable code `revision_conflict` and the current revision identifier.
 - The server never performs an automatic field merge. The user reloads and explicitly reconciles.
 - Plans evaluate `complete` revisions only. F-107 may save `incomplete` revisions but does not add a separate submission transition.
@@ -156,7 +164,8 @@ The F-107 forward migration must then:
 3. create one `complete` legacy revision for each distinct
    `(event_id, event_revision, input_schema_version, canonical answer set)` and bind every matching
    plan to it. Plans generated before and after a schema change therefore retain exact, separate
-   inputs even when the old numeric `event_revision` did not change;
+   inputs even when the old numeric `event_revision` did not change. Every migration-created
+   revision, including the current-row revision, has `supersedes_revision_id = NULL`;
 4. assign those backfilled revisions a deterministic, strictly increasing order defined and tested
    by F-107. It must not infer schema order from version-string sorting or migration execution time;
 5. always build the current Event/current revision from the Phase 1 row under the compatibility
@@ -180,10 +189,11 @@ reserved for deterministic legacy backfill together with `created_at = NULL`; th
 no demo or system actor. Every organizer-created revision requires the authenticated actor and
 server-recorded creation time.
 
-During compatibility rollout, every successful revision transaction must update old `events`
-projections in the same transaction while any deployed Phase 1 reader still uses them. Projection
-updates may stop only after every reader has atomically cut over to Event Revisions. Event Revision
-remains the only write authority.
+During compatibility rollout, every successful changed revision transaction must update old
+`events` projections and increment `events.revision_counter` in the same transaction while any
+deployed Phase 1 reader still uses them. A true no-op changes neither the projections nor
+`revision_counter`. Projection and counter updates may stop only after every reader has atomically
+cut over to Event Revisions. Event Revision remains the only write authority.
 
 While any Phase 1 reader uses those projections, a revision save succeeds only when the revision can
 be projected losslessly and satisfies every legacy column constraint. The server rejects an
@@ -219,8 +229,9 @@ aborts.
   `unresolvedTimelines`, and `rescopeSuggestions` (including `change`, `reevaluatedVerdict`, and
   `droppedRuleIds`).
 - The diff separately reports changed plan provenance when any persisted ruleset, rules-schema,
-  Event Input schema, engine, or calendar version/checksum differs, or when `snapshot_date` differs.
-  This applies even when every finding and plan outcome matches.
+  Event Input schema, engine, or calendar version/checksum differs, when `snapshot_date` differs,
+  or when the recorded `today` evaluation input differs. This applies even when every finding and
+  plan outcome matches.
 - Database IDs, plan IDs, created/generated/updated timestamps, row order, workflow status, and the
   debugging-only evaluation `trace` do not make a regulatory finding, plan outcome, or provenance
   changed.
@@ -245,22 +256,27 @@ Before activation, the consuming implementation must prove:
 
 - migration and deterministic backfill on empty, current, and historical-plan databases;
 - lossless backfill across an input-schema change that did not increment the legacy revision;
-- preservation of current Phase 1 questionnaire values absent from historical plan snapshots;
+- preservation of current Phase 1 questionnaire values absent from historical plan snapshots,
+  including `venue_paco_covers_exact_event` and
+  `venue_fdny_pa_permit_current_for_event_space` from migration `012`;
 - mismatch abort with no partial mutation;
-- every legacy backfilled revision has null actor/time sentinels, while every organizer-created
-  revision records both;
+- every migration-created revision has null actor/time/predecessor sentinels, while every
+  organizer-created revision records actor/time and every changed organizer save records its
+  validated base as predecessor;
 - a legacy write racing the backfill is either included in the resulting current revision or
   committed through the revision transaction, never lost between authorities;
 - revision immutability;
 - two concurrent saves produce one success and one `revision_conflict`;
 - a save with matching schema, jurisdiction, and answers creates no revision, while changing only
-  the schema or jurisdiction creates one;
-- every changed non-initial save links the appended revision to its validated base, while the first
-  revision has no predecessor;
+  the schema creates one and a jurisdiction mismatch is rejected;
+- every changed non-initial organizer save links the appended revision to its validated base, while
+  the first organizer revision has no predecessor;
 - legacy backfill is the only path to `created_by = NULL`; organizer saves reject a missing
   authenticated actor;
 - missing and explicit `unknown` remain distinct;
 - plans reference exact revisions and staleness is server-derived;
+- a revision save rejects a jurisdiction different from the Event's jurisdiction, and an Event
+  jurisdiction change cannot occur through the revision-save path;
 - plan generation and persistence reject a ruleset/revision jurisdiction mismatch;
 - `current_plan_id` backfills from the same-event checklist acknowledgement, or remains null when
   none exists, regardless of newer generated plans;
@@ -277,6 +293,8 @@ Before activation, the consuming implementation must prove:
   unchanged;
 - while a Phase 1 reader remains, a revision save and subsequent plan generation cannot observe
   different questionnaire answers;
+- while a Phase 1 reader remains, a changed save atomically increments
+  `events.revision_counter` with its compatibility projections, while a true no-op changes neither;
 - while a Phase 1 reader remains, an incomplete save that omits a legacy-required projected value
   is rejected without appending a revision or changing any projection;
 - a `note_text`-only finding change is reported as `changed`;
@@ -287,7 +305,8 @@ Before activation, the consuming implementation must prove:
   rendering matches;
 - a verdict or user-visible `verdictDetail`-only change, including a `rescopeSuggestions`-only
   change, is reported when every finding rendering matches;
-- a plan-provenance-only change is reported when every finding and plan outcome matches;
+- a plan-provenance-only change is reported when every finding and plan outcome matches, including
+  when only the recorded `today` evaluation input differs;
 - diff identity and output are byte-stable; and
 - cross-workspace reads and writes fail after tenancy activation.
 
