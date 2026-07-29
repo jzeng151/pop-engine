@@ -91,11 +91,46 @@ function describeDifference(base: readonly Finding[], candidate: readonly Findin
   const candidateIds = new Set(ruleIdsOf(candidate));
   const added = [...candidateIds].filter((id) => !baseIds.has(id));
   const dropped = [...baseIds].filter((id) => !candidateIds.has(id));
+  const describeMissed = (finding: Finding, id: string): string =>
+    finding.deadlineStatus === "published_deadline_missed"
+      ? `${id} (published deadline missed as scoped)`
+      : id;
+  const describeAdded = (id: string): string => {
+    const finding = candidate.find((entry) => entry.ruleIds.includes(id));
+    // F-102 AC 6: the no-license branch must surface the missed-window reason, not only the rule id.
+    return finding === undefined ? id : describeMissed(finding, id);
+  };
+
+  // Same rule ids can still tighten: Scenario F's unresolved base already carries SLA-ONEDAY /
+  // SLA-CATERING as may_be_required, and the no-license branch makes them required with a missed
+  // window. Report that even when another finding is merely dropped (AC 6).
+  const tightened: string[] = [];
+  for (const finding of candidate) {
+    const prior = base.find((entry) =>
+      entry.ruleIds.some((ruleId) => finding.ruleIds.includes(ruleId)),
+    );
+    if (prior === undefined) continue;
+    if (
+      prior.disposition === finding.disposition &&
+      prior.deadlineStatus === finding.deadlineStatus
+    ) {
+      continue;
+    }
+    if (finding.deadlineStatus === "published_deadline_missed") {
+      tightened.push(`${finding.ruleIds.join(", ")} (published deadline missed as scoped)`);
+      continue;
+    }
+    if (prior.disposition !== finding.disposition) {
+      tightened.push(`${finding.ruleIds.join(", ")} becomes ${finding.disposition}`);
+    }
+  }
+
   const parts = [
-    added.length > 0 ? `adds ${added.join(", ")}` : null,
+    added.length > 0 ? `adds ${added.map(describeAdded).join(", ")}` : null,
     dropped.length > 0 ? `drops ${dropped.join(", ")}` : null,
+    ...tightened,
   ].filter((part): part is string => part !== null);
-  return parts.length === 0 ? "same findings, re-dated" : parts.join("; ");
+  return parts.length > 0 ? parts.join("; ") : "same findings, re-dated";
 }
 
 type BranchValue = { readonly display: string; readonly value: IntakeValue };
@@ -129,22 +164,58 @@ function alternativeValues(
 }
 
 /**
+ * Closed set of ruleset eras whose stored plans serialized pre-F-102 detail shapes (three-field
+ * rescopes; threshold prose without conditional-boundary enrichment). Evaluating those artifacts
+ * must keep that shape for AD-7 replay; nyc.v2.8+ emits the enriched fields.
+ */
+const PRE_F102_DETAIL_ERAS: ReadonlySet<string> = new Set([
+  "nyc.v2.1",
+  "nyc.v2.2",
+  "nyc.v2.3",
+  "nyc.v2.4",
+  "nyc.v2.5",
+  "nyc.v2.6",
+  "nyc.v2.7",
+]);
+
+function emitsF102DetailEnrichment(rulesetVersion: string): boolean {
+  return !PRE_F102_DETAIL_ERAS.has(rulesetVersion);
+}
+
+/**
  * The published thresholds that decide a field the engine cannot enumerate, so a numeric unknown
  * still tells a client what to ask for instead of leaving an empty branch table (P2).
+ *
+ * When a condition declares `boundary: "conditional"`, the exact threshold is unresolved (not
+ * "below the line"), so the description must say so — e.g. DOB-TENT-001 at exactly 400 sq ft.
+ * That clause is current-line enrichment only; superseded eras keep the shorter historical prose.
  */
 function publishedThresholds(field: string, ruleset: EngineRuleset): string | null {
   const described: string[] = [];
+  const enrichBoundary = emitsF102DetailEnrichment(ruleset.rulesetVersion);
   const walk = (node: TriggerNode, ruleId: string): void => {
     if ("field" in node) {
       if (node.field !== field || typeof node.value !== "number") return;
       const comparison = node.op === "gt" ? "above" : node.op === "gte" ? "at or above" : null;
-      if (comparison !== null) described.push(`${ruleId} applies ${comparison} ${node.value}`);
+      if (comparison === null) return;
+      if (enrichBoundary && node.boundary === "conditional") {
+        described.push(
+          `${ruleId} applies ${comparison} ${node.value}; exactly ${node.value} is a conditional boundary (confirm with the publishing agency)`,
+        );
+      } else {
+        described.push(`${ruleId} applies ${comparison} ${node.value}`);
+      }
       return;
     }
     for (const child of "all" in node ? node.all : node.any) walk(child, ruleId);
   };
   for (const rule of ruleset.rules) walk(rule.trigger, rule.id);
   return described.length === 0 ? null : described.join("; ");
+}
+
+/** True when not_calculable is solely from an unpublished holiday list (SPEC-CONFLICT #130). */
+function isUnpublishedCalendarUnresolved(reason: string | null): boolean {
+  return reason !== null && reason.includes("holiday list; no list is published");
 }
 
 type ConditionalEvaluation = {
@@ -341,7 +412,9 @@ function buildRescopeSuggestions(
         finding.ruleIds.every((ruleId) => !baseRuleIds.has(ruleId)),
       );
       // R3 (proposals §6): a coverage gap asserts nothing, another agency's permit is not
-      // relief, and a scope the engine cannot date is not a scope it can recommend.
+      // relief, and a scope whose timeline is unresolved is not a scope it can recommend —
+      // except when the only block is an unpublished holiday calendar (SPEC-CONFLICT #130),
+      // which must not erase F-102 AC 7's private-venue ladder step.
       if (introduced.some((finding) => finding.verificationStatus === "COVERAGE_GAP")) continue;
       if (
         introduced.some(
@@ -350,17 +423,66 @@ function buildRescopeSuggestions(
       ) {
         continue;
       }
-      if (introduced.some((finding) => finding.deadlineStatus === "not_calculable")) continue;
+      if (
+        introduced.some(
+          (finding) =>
+            finding.deadlineStatus === "not_calculable" &&
+            !isUnpublishedCalendarUnresolved(finding.timelineUnresolvedReason),
+        )
+      ) {
+        continue;
+      }
 
       const candidateIds = new Set(ruleIdsOf(candidate.findings));
-      suggestions.push({
+      const suggestion: RescopeSuggestion = {
         change: { field: definition.field, value: candidateValue.display },
         reevaluatedVerdict: candidate.verdict,
         droppedRuleIds: [...baseRuleIds].filter((ruleId) => !candidateIds.has(ruleId)),
-      });
+      };
+      // Superseded eras keep the historical three-field shape. Current-line enrichment carries
+      // introduced rule ids on every suggestion, plus at-risk slack/name only when at risk.
+      if (!emitsF102DetailEnrichment(ruleset.rulesetVersion)) {
+        suggestions.push(suggestion);
+        continue;
+      }
+      const introducedRuleIds = [...candidateIds]
+        .filter((ruleId) => !baseRuleIds.has(ruleId))
+        .sort();
+      if (candidate.verdict === "FEASIBLE_AT_RISK") {
+        const minSlackDays = candidate.window.minSlackDays;
+        const atRiskFinding =
+          minSlackDays !== null
+            ? (candidate.findings.find((finding) => finding.slackDays === minSlackDays) ?? null)
+            : null;
+        suggestions.push({
+          ...suggestion,
+          introducedRuleIds,
+          minSlackDays,
+          atRiskFindingName: atRiskFinding?.name ?? null,
+        });
+      } else {
+        suggestions.push({ ...suggestion, introducedRuleIds });
+      }
     }
   }
-  return suggestions;
+  // F-102 AC 7 demonstration ladder on the current ruleset line only. Historical eras keep
+  // discovery order so AD-7 replay stays byte-stable with their original suggestion sequence.
+  if (!emitsF102DetailEnrichment(ruleset.rulesetVersion)) {
+    return suggestions;
+  }
+  return [...suggestions].sort((left, right) => rescopeLadderRank(left) - rescopeLadderRank(right));
+}
+
+/**
+ * Preferred display order for Scenario A's approved ladder. Unknown suggestions keep engine
+ * discovery order after the named steps.
+ */
+function rescopeLadderRank(suggestion: RescopeSuggestion): number {
+  const key = `${suggestion.change.field}:${suggestion.change.value}`;
+  if (key === "street_event_size:medium") return 0;
+  if (key === "street_event_size:small") return 1;
+  if (key === "location_type:private_venue") return 2;
+  return 100;
 }
 
 export function computeVerdict(

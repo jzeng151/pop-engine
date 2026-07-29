@@ -160,7 +160,26 @@ describe("Scenario A — Bushwick Street Activation (demo anchor)", () => {
 
   it("produces the three rescopes by full re-evaluation, not static text (AC 9)", () => {
     const suggestions = plan(intakeA).verdictDetail.rescopeSuggestions;
-    expect(suggestions).toEqual([
+    // F-102 AC 7 ladder order: Medium → Small → private venue.
+    expect(suggestions.map((suggestion) => suggestion.change.value)).toEqual([
+      "medium",
+      "small",
+      "private_venue",
+    ]);
+    expect(suggestions).toMatchObject([
+      // (a) size=medium: 30-day deadline = 2026-07-27, five days out
+      {
+        change: { field: "street_event_size", value: "medium" },
+        reevaluatedVerdict: "FEASIBLE_AT_RISK",
+        droppedRuleIds: ["SAPO-STREET-LARGE-001"],
+        minSlackDays: 5,
+      },
+      // (b) size=small: 14-day deadline clears; the DOHMH notification is the tight one
+      {
+        change: { field: "street_event_size", value: "small" },
+        reevaluatedVerdict: "FEASIBLE_AT_RISK",
+        droppedRuleIds: ["SAPO-STREET-LARGE-001"],
+      },
       // (c) private venue: SAPO permit + SAPO insurance drop. Conditional rather than at-risk
       // because moving indoors opens a question the street version never asked — whether the
       // amplified sound carries to a public way (§10-108(b)(3)) — and that decides a permit.
@@ -169,19 +188,40 @@ describe("Scenario A — Bushwick Street Activation (demo anchor)", () => {
         reevaluatedVerdict: "CONDITIONAL",
         droppedRuleIds: ["SAPO-INSURANCE-001", "SAPO-STREET-LARGE-001"],
       },
-      // (b) size=small: 14-day deadline clears; the DOHMH notification is the tight one
-      {
-        change: { field: "street_event_size", value: "small" },
-        reevaluatedVerdict: "FEASIBLE_AT_RISK",
-        droppedRuleIds: ["SAPO-STREET-LARGE-001"],
-      },
-      // (a) size=medium: 30-day deadline = 2026-07-27, five days out
-      {
-        change: { field: "street_event_size", value: "medium" },
-        reevaluatedVerdict: "FEASIBLE_AT_RISK",
-        droppedRuleIds: ["SAPO-STREET-LARGE-001"],
-      },
     ]);
+    const medium = suggestions.find((s) => s.change.value === "medium");
+    const small = suggestions.find((s) => s.change.value === "small");
+    const privateVenue = suggestions.find((s) => s.change.value === "private_venue");
+    expect(medium?.minSlackDays).toBe(5);
+    expect(small?.atRiskFindingName ?? small?.minSlackDays).toBeTruthy();
+    // Current-line enrichment names findings the private-venue re-evaluation introduces.
+    expect(privateVenue?.introducedRuleIds).toEqual(
+      expect.arrayContaining([
+        "ADV-NOISE-CODE-001",
+        "ADV-VENUE-OCCUPANCY-001",
+        "DOB-ASSEMBLY-001",
+      ]),
+    );
+    // Non-at-risk suggestions omit at-risk-only enrichment keys (null would still change shape).
+    expect(privateVenue !== undefined && !("minSlackDays" in privateVenue)).toBe(true);
+    expect(privateVenue !== undefined && !("atRiskFindingName" in privateVenue)).toBe(true);
+  });
+
+  it("keeps the private-venue ladder step when the holiday calendar is unpublished", () => {
+    // Deployed API pins holidays: null (SPEC-CONFLICT #130). AC 7 still requires the third step.
+    const unpublished = { id: ruleset.calendarId, holidays: null };
+    const suggestions = evaluate(intakeA, ruleset, TODAY, unpublished).verdictDetail
+      .rescopeSuggestions;
+    expect(suggestions.map((suggestion) => suggestion.change.value)).toEqual([
+      "medium",
+      "small",
+      "private_venue",
+    ]);
+    const privateVenue = suggestions.find((suggestion) => suggestion.change.value === "private_venue");
+    expect(privateVenue?.reevaluatedVerdict).toBe("CONDITIONAL");
+    expect(privateVenue?.introducedRuleIds).toEqual(
+      expect.arrayContaining(["DOB-ASSEMBLY-001"]),
+    );
   });
 
   it("re-evaluates rescope (a) to the 30-day deadline and five days of slack", () => {
@@ -575,6 +615,13 @@ describe("Scenario E — Plaza Brand Activation (max complexity)", () => {
     expect(tent?.disposition).toBe("may_be_required");
     expect(tent?.notes.join(" ")).toContain("confirm footprint calculation with DOB");
   });
+
+  it("names the conditional boundary when tent area is unanswered", () => {
+    const result = plan({ ...intakeE, tent_area_sqft: null, structure_over_10ft_tall: false });
+    const tentFact = result.verdictDetail.missingFacts.find((fact) => fact.field === "tent_area_sqft");
+    expect(tentFact?.thresholds).toContain("DOB-TENT-001 applies above 400");
+    expect(tentFact?.thresholds).toContain("exactly 400 is a conditional boundary");
+  });
 });
 
 describe("Scenario F — Rooftop Launch Party (conditional branches)", () => {
@@ -665,6 +712,11 @@ describe("Scenario F — Rooftop Launch Party (conditional branches)", () => {
       ["yes", "CONDITIONAL"],
       ["no", "INFEASIBLE"],
     ]);
+    const noLicense = licenseFact?.branches.find((branch) => branch.value === "no");
+    // AC 6: the closed SLA window is named even when the rule ids were already on the unresolved base.
+    expect(noLicense?.reason).toContain("published deadline missed as scoped");
+    expect(noLicense?.reason).not.toBe("same findings, re-dated");
+    // Approved Scenario F branch table is two facts (license + sound); assembly approval is confirmation context only (#89).
     expect(result.verdictDetail.missingFacts.map((fact) => fact.field).sort()).toEqual([
       "sound_audible_from_public_way",
       "venue_license_covers_event_area",

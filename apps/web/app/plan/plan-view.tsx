@@ -14,11 +14,13 @@ import { InsurancePanel } from "./insurance-panel";
 import { PlanLine } from "./plan-line";
 import { compareToPinned, SnapshotBanner } from "./snapshot-banner";
 import { AT_RISK_BUFFER_NOTE, verdictCopy } from "./verdict-copy";
+import { hasOnlyUndatedDeadlines, NO_DATED_DEADLINES_NOTE } from "./undated-deadlines";
+import { VerdictDetailPanel } from "./verdict-detail";
 import { type FieldChecks, isNumber, readChecked } from "./validated";
 
 // The plan view. F-206 owns what this page is for: the snapshot banner and the per-line citation
 // and verification-status rendering. The verdict is shown in its approved copy; F-102's branch
-// tables and rescope ladder are its own feature.
+// tables and rescope ladder render under that line from `verdictDetail`.
 //
 // What this page can be showing is written down once, as two states, rather than inferred from a
 // handful of booleans. Three review findings in a row were "a failure path was not considered",
@@ -353,6 +355,19 @@ export function PlanView({ apiBaseUrl, eventId }: { apiBaseUrl: string; eventId:
               {AT_RISK_BUFFER_NOTE}
             </p>
           )}
+
+          {/* F-102 Edge Cases: only undated deadlines → FEASIBLE with this note. */}
+          {plan.verdict === "FEASIBLE" && hasOnlyUndatedDeadlines(plan.findings) && (
+            <p className="plan__undated" role="note" data-testid="no-dated-deadlines">
+              {NO_DATED_DEADLINES_NOTE}
+            </p>
+          )}
+
+          <VerdictDetailPanel
+            verdict={plan.verdict}
+            detail={plan.verdictDetail}
+            findings={plan.findings}
+          />
 
           {/* F-205: a dedicated card for R10/R11's insurance findings, above the line items each
               still renders from (AC 5). Nothing at all when none of the three rules triggered
