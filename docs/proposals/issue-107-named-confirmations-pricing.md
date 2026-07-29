@@ -11,14 +11,23 @@ spec, answer key, BASELINE row or engine file is changed by this document.
 **Headline, up front.** The proposed line largely does not reproduce Scenario B, the issue's own worked
 example: three of the four absences that scenario names sit on a different axis from the one the line
 measures, and one, sound, genuinely overlaps. It also makes the near-empty case noisier on every
-measure. Separately, and possibly the largest item here, confirmation rules on the two motivating
-fields cannot boot without an approved regulatory source, and none is recorded in this repository today,
-which makes the next step verification research rather than engineering. All three are reasons to revisit the framing before deciding, and they are in
-sections 1, 3 and 5.
+measure. The API still requires a source snapshot, but the repository already records
+SOURCE_CONFIRMED generator, battery and DEP threshold sources on FDNY-GENERATOR-001 and
+DEP-GENERATOR-REG-001, backed by `VERIFICATION-SOURCES.md` Round 2 #10. Reuse, status and exact
+confirmation text still need regulatory approval; source discovery for those thresholds is not an
+unpaid cost. The framing and noise findings remain reasons to revisit the proposal; the source
+correction reduces its cost.
+
+**Seventh revision.** Four findings applied. The measured shape now carries all five qualifying
+unknown-valued fields across Scenarios E and F and all seventeen implementation rules. The approval
+path has three independent classes, not four: the UI-copy row routes regulatory claims to the
+regulatory-content class rather than adding another approval. Existing SOURCE_CONFIRMED threshold
+sources remove the proposed source-research cost. Editing `deadline.qualification` moves evaluated
+`notes`, even though it moves no date, status or verdict.
 
 **Sixth revision.** Two findings applied. The safe restriction covers TEN of seventeen rather than eight, which corrects a figure used in the decision recorded on issue #107. And consuming two of the seventeen fields fails API boot rather than a test, the second engine dependency found hiding inside a rules publication; a third is now named.
 
-**Fifth revision.** Four further findings applied. One is NOT adopted as stated, and the document says why: the two conditionally asked booleans are safe, because a not-asked field makes its condition false rather than unknown, so nothing is emitted. One of my own sentences is withdrawn as having priced a field the registry does not contain. The 17-field inventory is now propagated to every downstream total with each derivation stated. A universal negative about agency publication is restated as what was searched and what was found, and the approval list goes from two owner sets to four, cited by row content rather than by a section number.
+**Fifth revision.** Four further findings applied. One is NOT adopted as stated, and the document says why: the two conditionally asked booleans are safe, because a not-asked field makes its condition false rather than unknown, so nothing is emitted. One of my own sentences is withdrawn as having priced a field the registry does not contain. The 17-field inventory is now propagated to every downstream total with each derivation stated. A universal negative about agency publication is restated as what was searched and what was found, and the approval list is expanded beyond two, cited by row content rather than by a section number. The seventh revision corrects its final count to three.
 
 **Fourth revision.** Four further findings applied, all verified through the guards named in section 3.
 Two change conclusions: the count tables now describe the shape actually measured rather than a remedied
@@ -57,10 +66,11 @@ For an enum gate, `"unknown"` makes an `eq "no"` condition evaluate tri-state UN
 | `"unknown"` | yes | **yes**, stating "You told us this event is not open to the public" |
 | `"yes"` | yes | no, correctly |
 
-**Not hypothetical for the approved suite.** Three fields in the corrected inventory are answered
+**Not hypothetical for the approved suite.** Five fields in the corrected inventory are answered
 `"unknown"` by the fixtures: `structure_over_10ft_tall` in Scenario E, and
-`sound_audible_from_public_way` and `venue_license_covers_event_area` in Scenario F. A confirmation
-rule on any of them would state a false absence in those two approved scenarios today.
+`food_affinity_private_exception_claimed`, `sound_audible_from_public_way`,
+`venue_license_covers_event_area` and `venue_has_assembly_approval` in Scenario F. A confirmation rule
+on any of them would state a false absence in those two approved scenarios today.
 
 Options, unpriced and listed rather than recommended: an engine change so a classification emits only
 on a TRUE trigger, which touches `resolveFindings` for every rule kind and needs the engine owner; a
@@ -241,7 +251,7 @@ Under the **seventeen-field** reading:
 | B | alcohol, selling, amplified sound, structures, open flame, generator, battery | 7 |
 | C | alcohol, food, selling, structures, open flame, generator, battery | 7 |
 | D | alcohol, food, selling, structures, generator, battery, **amusement ride** | 7 |
-| E | alcohol, selling, open flame, battery | 4 |
+| E | alcohol, selling, open flame, battery, **multiple plaza blocks** | 5 |
 | F | selling, structures, open flame, generator, battery, **not open to the public** | 6 |
 
 **Corrected in review, and this is the correction that matters most for the noise argument.** The
@@ -274,15 +284,14 @@ predated the 17-field inventory; E gains `plaza_multiple_blocks` and F gains `ev
 true confirmations. It is **conditional on a remedy nobody has chosen** and is labelled that
 way rather than presented as the measurement.
 
-**The three fields added in this round do not change those counts, and that is the point of separating
-two numbers.** The fixtures answer `structure_over_10ft_tall`, `sound_audible_from_public_way` and
-`venue_license_covers_event_area` as `"unknown"`, so they contribute no confirmation in any scenario.
-The count an implementation must carry is therefore FOURTEEN rules, while the count a fixture displays
-is 5 to 10 in the measured shape and 5 to 7 in a remedied one. Corrected in review: this said 14 rules
-and 4 to 7 lines, both pre-correction. Derivation: the rule count is the inclusion test's 17; the line
-counts are the totals column and the true column of the table above. The gap matters twice: it is
-unmeasured noise for any real organizer who answers those fields negatively, and under section 0 it is exactly where a false confirmation would be stated in Scenarios E
-and F.
+**The rule count and fixture count are different numbers.** Five qualifying fields are answered
+`"unknown"` across Scenarios E and F, so they contribute five false confirmations in the measured
+unsafe shape and no confirmations in a remedied shape. An implementation of the full inclusion test
+must carry SEVENTEEN rules, while the fixtures display 5 to 10 lines in the measured shape and 5 to 7
+in a remedied one. Derivation: the rule count is the inclusion test's 17; the line counts are the
+totals column and the true column of the table above. The gap matters twice: it is unmeasured noise for
+any real organizer who answers those fields negatively, and under section 0 it is exactly where a
+false confirmation would be stated in Scenarios E and F.
 
 Under the issue's **four-field** reading:
 
@@ -439,47 +448,32 @@ Four costs are registered rather than automatic, and each is a deliberate guard:
 3. **`apps/api/src/ruleset.test.ts` pins `rules` at 33 and `advisories` at 4.**
 4. **The fixture-agreement guard checks `exercised_by_scenarios` both ways**, as above.
 
-### The largest single cost, and my SAPO experiment could not have caught it
+### Source boot cost: required, but the relevant source research is already on file
 
 **These rules cannot boot without an approved regulatory source.** `apps/api/src/ruleset.ts` refuses a
 rule whose `source` is absent unless its verification status is COVERAGE_GAP, and `parseSource`
 requires a nonempty `citation` string plus a `urls` array with at least one non-empty entry. F-201
 permits an empty source snapshot only for a source-less coverage gap.
 
-**Corrected in review: what follows is what was searched and what was found, not a universal claim.**
-An earlier version said "no agency publishes" such guidance. The repository search cannot establish
-that, and using a universal negative to identify the brief's largest cost is the same failure as
-inventing a permit fact in the other direction.
+The earlier version priced source discovery for `generator_present` and `battery_present`. That cost
+is already paid for the threshold paths the confirmations summarize:
 
-What was searched: this repository's `rules/nyc-rules.v2.8.json`, every rule's `source` and
-`verification` block, and `docs/VERIFICATION-SOURCES.md`. What was found: `generator_present` and
-`battery_present` are read by no trigger and **no approved source is currently recorded for an absence
-claim about either**. Whether an agency publishes guidance that would support one is unknown and
-unsearched here; settling it is verification research, and the research itself is a cost:
+- FDNY-GENERATOR-001 publishes SOURCE_CONFIRMED gasoline, diesel and battery thresholds with a source
+  snapshot and evidence `VS Round2 #10`;
+- DEP-GENERATOR-REG-001 publishes the SOURCE_CONFIRMED 40 kW registration threshold with the same
+  evidence; and
+- `docs/VERIFICATION-SOURCES.md` Round 2 #10 records the fetched FDNY, battery and DEP threshold text.
 
-- two fetch-confirmed passes are this repository's standard for a regulatory fact, per the Round 1 and
-  Round 2 structure of `VERIFICATION-SOURCES.md`, and a NOT PUBLISHED conclusion has previously been
-  recorded only after both;
-- the outcome is genuinely open in both directions, so the cost is the research whether or not it finds
-  a source, and a NOT PUBLISHED result still has to be recorded as evidence rather than assumed;
-- it is verification-owner work under the "Regulatory source/status/content" row quoted above, so it
-  cannot be absorbed by an engineering lane.
+Those records do not make arbitrary absence copy safe. They do mean a cautiously bounded
+"no published generator/battery path identified from these answers" classification can reuse existing
+source work rather than commissioning new threshold research. The verification owner and rules
+reviewer still must approve the exact source reuse, verification state and organizer-visible text. A
+broader exemption claim would exceed those sources and require separate evidence.
 
-Given only that no approved source is recorded today, a confirmation rule on either field needs one of:
-
-- a source and verification state obtained and approved by the verification owner, which is
-  regulatory-source work and not engineering work;
-- publication as COVERAGE_GAP, which is the only status exempt from the source requirement, and which
-  the published legend defines as a combination the ruleset does not model whose advisory asserts
-  nothing, so it would say the wrong thing and it lands inside SPEC-CONFLICT #144's live half;
-- an approved contract change permitting a source-less classification.
-
-**This may be the largest single item in the brief, and it is a verification-owner cost on a v2.9
-rather than an engineering one.** It was missing from the earlier version, and the reason is worth
-recording: the SAPO experiment in this section used `parseEngineRuleset`, and the engine's own
-`parseSource` returns null for an absent source rather than refusing it. The engine is laxer than the
-API, so the experiment exercised the path that cannot fail and proved less than it appeared to. The
-refusal is at API boot.
+The SAPO experiment still exposes a real engineering constraint: it used `parseEngineRuleset`, whose
+`parseSource` accepts an absent source, while API boot rejects one. Confirmation rules therefore must
+carry the approved snapshot; the correction is that suitable source records already exist, not that
+the API requirement disappears.
 
 **Corrected in review: each confirmation renders its sentence TWICE.** The parser sets both `name` and
 `noteText` from `output.note_text`, verified on the corrected experiment above where `name === noteText`
@@ -493,8 +487,8 @@ measurement reported:
 | B | 7 | 14 |
 | C | 7 | 14 |
 | D | 7 | 14 |
-| E | 4 | 8 |
-| F | 6 | 12 |
+| E | 6 | 12 |
+| F | 10 | 20 |
 
 Scenario B therefore carries **14 rendered absence sentences beside 3 substantive findings** unless the
 rule shape or the renderer changes, which compounds rather than qualifies the noise finding in section 5.
@@ -593,17 +587,18 @@ Three changes are pending for one bump.
 
 | Change | Adds or edits | Moves evaluated output? | Needs a decision first? |
 |---|---|---|---|
-| TPA source re-attribution on DOB-ASSEMBLY-001 | edits `deadline.qualification` | no date, status or verdict moves; the qualification is rendered, so organizer-visible text changes | **yes**: regulatory source and content, needing the verification owner plus rules reviewer |
+| TPA source re-attribution on DOB-ASSEMBLY-001 | edits `deadline.qualification` | **yes**: `buildFinding` copies the qualification into evaluated `notes`, which are persisted and rendered; no date, status or verdict moves | **yes**: evaluated regulatory source and content, needing the verification owner plus rules reviewer |
 | `DEPENDENCY_SEQUENCING_BINDINGS` into the ruleset | adds published data, removes an engine constant | only if the published table differs from the constant | **yes**: `proposals.ts` carries an explicit "PROPOSAL — NOT YET APPROVED" header requiring verification-owner plus engine-owner sign-off, and publishing the machine-readable binding IS approving the sequencing semantics |
-| Named confirmations | adds N rules | **yes, moves approved answer-key output** | **yes, undecided, and FOUR owner sets rather than two** |
+| Named confirmations | adds N rules | **yes, moves approved answer-key output** | **yes, undecided, and THREE independent approval classes rather than two** |
 
 **Corrected in review: none of the three is decision-free, so there are no ready passengers.** An
 earlier version of this brief described the first two that way, and I relayed it. What is true is
 weaker: the first two are decided in principle and not yet approved as publications. The
-re-attribution changes organizer-visible regulatory text, which is governance's
-"Regulatory source/status/content" row, verification owner plus rules reviewer. The binding sits under
-a file-level header naming its own approval class as verification owner plus engine owner, and
-publishing it is the approval, not a consequence of one.
+re-attribution changes evaluated `notes` through `ruleNotes`; those notes are persisted and rendered
+as organizer-visible regulatory text, which is governance's "Regulatory source/status/content" row,
+verification owner plus rules reviewer. The binding sits under a file-level header naming its own
+approval class as verification owner plus engine owner, and publishing it is the approval, not a
+consequence of one.
 
 Nothing about the three conflicts technically: one edits a field, one adds a root key, one adds rules,
 and the provenance block already separates per-change consequences this way for v2.6 and v2.7. The
@@ -612,22 +607,23 @@ The confirmations need two calls that have not been made at all, the rules-owner
 the product-owner call on moving approved output, so bundling them still makes the other two wait on
 the least settled item.
 
-**Corrected in review: two owner sets were listed and four are required.** Governance's
+**Corrected in review: two owner sets were listed and three independent approval classes are
+required.** Governance's
 "Change classes and approvals" table is cited here by the row rather than by a section number, because
 a number behind a sigil is the citation shape this session has had to correct four times. Every named
-confirmation adds a rule trigger AND organizer-visible regulatory text, so it lands on four rows at
-once:
+confirmation adds a rule trigger and organizer-visible regulatory text, so it lands on three rows:
 
 | Change class row | Required approval, quoted from the row |
 |---|---|
 | Product scope, feature meaning, phase | "Product owner/team decision" |
 | Rule trigger, dedupe, branch, deadline, or formula semantics | "Verification owner plus engine owner" |
 | Regulatory source/status/content | "Verification owner plus rules reviewer" |
-| UI copy only | "Feature owner, unless it makes a regulatory claim", and a confirmation does make one, so this row routes to the two above rather than standing alone |
 
-Listing only the rules-owner and product-owner calls understated the critical path and could let a v2.9
-publication proceed without the engine and verification reviews. The engine owner is reachable here in
-particular because section 0's remedies include changing `resolveFindings`.
+The "UI copy only" row does not add a fourth class: its own exception routes a regulatory claim to the
+regulatory source/content approval above. Listing only the rules-owner and product-owner calls still
+understated the critical path and could let a v2.9 publication proceed without the engine and
+verification reviews. The engine owner is reachable here in particular because section 0's remedies
+include changing `resolveFindings`.
 
 Two specifics worth having:
 
