@@ -59,7 +59,7 @@ Exact HTTP, JSON Schema, migration, job, and provider shapes belong in their rev
 1. **F104-AC-01:** Known rule-derived fees import once with exact finding/source/version linkage and cannot be edited as if user-entered.
 2. **F104-AC-02:** Research-required, variable, missing, or conflicting fees remain unknown and trigger an incomplete-total warning.
 3. **F104-AC-03:** User lines validate currency and minor units and produce deterministic category, known-total, and target-variance calculations.
-4. **F104-AC-04:** Plan regeneration marks imported lines stale; refresh creates a new budget version and preserves prior values.
+4. **F104-AC-04:** Plan regeneration marks imported lines stale; refresh compare-and-swaps the current plan/finding versions at commit, rejects an in-flight stale refresh, creates a new budget version, and preserves prior values.
 5. **F104-AC-05:** Deleting or editing a user line never changes the immutable plan or a rule-derived fee.
 6. **F104-AC-06:** User-line create/edit/delete operations bind a stable request identity to the original result; replay returns that result without duplicating lines, versions, or totals.
 

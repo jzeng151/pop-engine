@@ -61,6 +61,7 @@ Exact HTTP, JSON Schema, migration, job, and provider shapes belong in their rev
 3. **F501-AC-03:** Missing/unknown/conflicting data cannot silently enter the favorable denominator or appear as zero.
 4. **F501-AC-04:** Cross-workspace queries, filters, exports, cached results, and drill-downs disclose no foreign record.
 5. **F501-AC-05:** Source correction changes a new report/snapshot and preserves the prior version when retention is enabled.
+6. **F501-AC-06:** Every staged analytics export remains private; each download issuance rechecks current workspace membership/role and returns only an authorized streaming response or short-lived signed URL. Authorization loss blocks new access, and an issued direct-storage URL has only bounded validity until expiry.
 
 ## Fixtures and Verification
 

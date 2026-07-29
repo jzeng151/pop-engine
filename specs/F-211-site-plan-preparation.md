@@ -62,6 +62,7 @@ Exact HTTP, JSON Schema, migration, job, and provider shapes belong in their rev
 4. **F211-AC-04:** Unknown/conflicting elements remain visible and prevent the interface from claiming the site plan complete.
 5. **F211-AC-05:** Unauthorized, unsafe, oversized, or mismatched files cannot be viewed or marked available.
 6. **F211-AC-06:** Each download issuance rechecks workspace role, ownership, and scan state and returns only a short-lived signed URL; authorization loss blocks new URLs and issued direct-storage URLs retain only bounded validity until expiry.
+7. **F211-AC-07:** Every preparation element, dimension set, and uploaded plan pins the exact finding/plan version; supersession or removal marks the preparation visibly stale and prevents a current/complete claim without rewriting its history.
 
 ## Fixtures and Verification
 
