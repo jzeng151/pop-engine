@@ -17,6 +17,9 @@ export default async function AccountPage({ searchParams }: AccountPageProps) {
         <p className="auth__notice" role="alert">
           Authentication is not configured for this environment.
         </p>
+        <p>
+          <a href="/">Return home</a>
+        </p>
       </main>
     );
   }

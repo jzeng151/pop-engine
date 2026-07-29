@@ -39,10 +39,14 @@ export function supabaseAccessTokenVerifier(
   const publishableKey = env.SUPABASE_PUBLISHABLE_KEY ?? env.SUPABASE_ANON_KEY;
   if (!url || !publishableKey) return null;
 
-  const client = createClient(url, publishableKey, {
-    auth: { autoRefreshToken: false, detectSessionInUrl: false, persistSession: false },
-  });
-  return createAccessTokenVerifier(client);
+  try {
+    const client = createClient(url, publishableKey, {
+      auth: { autoRefreshToken: false, detectSessionInUrl: false, persistSession: false },
+    });
+    return createAccessTokenVerifier(client);
+  } catch {
+    return null;
+  }
 }
 
 export function requireSupabaseAuth(verifyAccessToken: VerifyAccessToken): RequestHandler {

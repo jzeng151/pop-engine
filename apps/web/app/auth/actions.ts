@@ -2,7 +2,7 @@
 
 import { redirect } from "next/navigation";
 import { createServerSupabaseClient } from "../../lib/supabase/server";
-import { siteUrl } from "../../lib/supabase/config";
+import { siteUrl, supabaseBrowserConfig } from "../../lib/supabase/config";
 import { hasRecoveryAuthentication } from "./recovery";
 import { safeReturnPath, type AuthReturnPath } from "./return-path";
 
@@ -35,11 +35,35 @@ function callbackUrl(next: AuthReturnPath): string {
   return `${origin}/auth/callback?next=${encodeURIComponent(next)}`;
 }
 
+async function requiresEmailConfirmation(): Promise<boolean> {
+  const config = supabaseBrowserConfig();
+  if (config === null) return false;
+  try {
+    const response = await fetch(new URL("/auth/v1/settings", config.url), {
+      headers: { apikey: config.publishableKey },
+      cache: "no-store",
+    });
+    if (!response.ok) return false;
+    const settings: unknown = await response.json();
+    return (
+      typeof settings === "object" &&
+      settings !== null &&
+      "mailer_autoconfirm" in settings &&
+      settings.mailer_autoconfirm === false
+    );
+  } catch {
+    return false;
+  }
+}
+
 export async function signUp(formData: FormData): Promise<never> {
   const values = credentials(formData);
   if (values === null) authRedirect("error", "Email and password are required.");
 
   const supabase = await configuredClient();
+  if (!(await requiresEmailConfirmation())) {
+    authRedirect("error", "Email verification is not configured correctly for this environment.");
+  }
   const { data, error } = await supabase.auth.signUp({
     ...values,
     options: { emailRedirectTo: callbackUrl("/account") },
@@ -59,6 +83,10 @@ export async function signIn(formData: FormData): Promise<never> {
   const supabase = await configuredClient();
   const { error } = await supabase.auth.signInWithPassword(values);
   if (error) authRedirect("error", error.message);
+  if (!(await requiresEmailConfirmation())) {
+    await supabase.auth.signOut({ scope: "local" });
+    authRedirect("error", "Email verification is not configured correctly for this environment.");
+  }
   redirect(safeReturnPath(formData.get("next") as string | null));
 }
 

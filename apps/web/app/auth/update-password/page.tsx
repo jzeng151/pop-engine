@@ -14,6 +14,9 @@ export default async function UpdatePasswordPage() {
         <p className="auth__notice" role="alert">
           Authentication is not configured for this environment.
         </p>
+        <p>
+          <a href="/">Return home</a>
+        </p>
       </main>
     );
   }

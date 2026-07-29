@@ -6,13 +6,20 @@ const mocks = vi.hoisted(() => ({
     throw new Error(`redirect:${target}`);
   }),
   siteUrl: vi.fn<() => string | null>(() => "https://web.example.com"),
+  supabaseBrowserConfig: vi.fn(() => ({
+    url: "https://project.supabase.co",
+    publishableKey: "sb_publishable_placeholder",
+  })),
 }));
 
 vi.mock("next/navigation", () => ({ redirect: mocks.redirect }));
 vi.mock("../../lib/supabase/server", () => ({
   createServerSupabaseClient: mocks.createServerSupabaseClient,
 }));
-vi.mock("../../lib/supabase/config", () => ({ siteUrl: mocks.siteUrl }));
+vi.mock("../../lib/supabase/config", () => ({
+  siteUrl: mocks.siteUrl,
+  supabaseBrowserConfig: mocks.supabaseBrowserConfig,
+}));
 
 import {
   requestPasswordReset,
@@ -30,6 +37,8 @@ const form = (values: Record<string, string>) => {
   return data;
 };
 
+const fetchSettings = vi.fn();
+
 const client = {
   auth: {
     getClaims: vi.fn(),
@@ -43,8 +52,18 @@ const client = {
 };
 
 beforeEach(() => {
+  vi.stubGlobal("fetch", fetchSettings);
+  fetchSettings.mockReset();
+  fetchSettings.mockResolvedValue({
+    ok: true,
+    json: vi.fn().mockResolvedValue({ mailer_autoconfirm: false }),
+  });
   mocks.createServerSupabaseClient.mockResolvedValue(client);
   mocks.siteUrl.mockReturnValue("https://web.example.com");
+  mocks.supabaseBrowserConfig.mockReturnValue({
+    url: "https://project.supabase.co",
+    publishableKey: "sb_publishable_placeholder",
+  });
   client.auth.getClaims.mockResolvedValue({
     data: {
       claims: {
@@ -65,7 +84,10 @@ beforeEach(() => {
   client.auth.updateUser.mockResolvedValue({ error: null });
 });
 
-afterEach(() => vi.clearAllMocks());
+afterEach(() => {
+  vi.unstubAllGlobals();
+  vi.clearAllMocks();
+});
 
 describe("email authentication actions", () => {
   it("starts email verification through the cookie-backed PKCE callback", async () => {
@@ -97,6 +119,19 @@ describe("email authentication actions", () => {
     expect(mocks.redirect).not.toHaveBeenCalledWith("/account");
   });
 
+  it("does not create an account when email confirmation is disabled", async () => {
+    fetchSettings.mockResolvedValueOnce({
+      ok: true,
+      json: vi.fn().mockResolvedValue({ mailer_autoconfirm: true }),
+    });
+
+    await expect(
+      signUp(form({ email: "person@example.com", password: "provider-policy-password" })),
+    ).rejects.toThrow(/verification%20is%20not%20configured%20correctly/);
+
+    expect(client.auth.signUp).not.toHaveBeenCalled();
+  });
+
   it("signs in with email and restores the allowed account destination", async () => {
     await expect(
       signIn(
@@ -112,6 +147,33 @@ describe("email authentication actions", () => {
       email: "person@example.com",
       password: "password",
     });
+    expect(fetchSettings).toHaveBeenCalledWith(
+      new URL("https://project.supabase.co/auth/v1/settings"),
+      {
+        headers: { apikey: "sb_publishable_placeholder" },
+        cache: "no-store",
+      },
+    );
+  });
+
+  it("clears and rejects password sign-in when email confirmation is disabled", async () => {
+    fetchSettings.mockResolvedValueOnce({
+      ok: true,
+      json: vi.fn().mockResolvedValue({ mailer_autoconfirm: true }),
+    });
+
+    await expect(
+      signIn(
+        form({
+          email: "person@example.com",
+          password: "password",
+          next: "/account",
+        }),
+      ),
+    ).rejects.toThrow(/verification%20is%20not%20configured%20correctly/);
+
+    expect(client.auth.signOut).toHaveBeenCalledWith({ scope: "local" });
+    expect(mocks.redirect).not.toHaveBeenCalledWith("/account");
   });
 
   it("starts password recovery and updates a recovered password", async () => {

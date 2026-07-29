@@ -45,6 +45,7 @@ describe("protected account session", () => {
     mocks.createServerSupabaseClient.mockResolvedValueOnce(null);
     render(await AccountPage({ searchParams: Promise.resolve({}) }));
     expect(screen.getByRole("alert").textContent).toMatch(/not configured/i);
+    expect(screen.getByRole("link", { name: "Return home" }).getAttribute("href")).toBe("/");
     cleanup();
 
     mocks.createServerSupabaseClient.mockResolvedValueOnce({

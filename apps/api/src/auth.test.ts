@@ -74,6 +74,23 @@ describe("Supabase bearer authentication", () => {
     expect(response.body.error).toMatch(/not configured/i);
   });
 
+  it("keeps the API available when the provider URL is malformed", async () => {
+    const verifyAccessToken = supabaseAccessTokenVerifier({
+      SUPABASE_URL: "https://<project-ref>.supabase.co",
+      SUPABASE_PUBLISHABLE_KEY: "sb_publishable_placeholder",
+    });
+    expect(verifyAccessToken).toBeNull();
+
+    const app = createApp(baseDependencies);
+    const [session, publicRoute] = await Promise.all([
+      request(app).get("/api/session"),
+      request(app).post("/api/events/not-a-uuid/rsvps").send({}),
+    ]);
+
+    expect(session.status).toBe(503);
+    expect(publicRoute.status).toBe(400);
+  });
+
   it("uses the provider claims verifier and ignores failed claims", async () => {
     const getClaims = vi
       .fn()
