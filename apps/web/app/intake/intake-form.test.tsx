@@ -43,9 +43,14 @@ const echoSavedEvent = (
     ...savedEvent({ ...JSON.parse(String(init.body)), ...overrides }),
   });
 
-/** The questions on screen, by their legend, in the order they are asked. */
+/** The questions on screen, by their legend label, in the order they are asked. */
 const questionsOnScreen = (): string[] =>
-  screen.getAllByRole("group").map((group) => group.querySelector("legend")?.textContent ?? "");
+  screen.getAllByRole("group").map(
+    (group) =>
+      group.querySelector("legend .intake__label")?.textContent ??
+      group.querySelector("legend")?.textContent ??
+      "",
+  );
 
 const renderForm = (eventId?: string) => {
   const user = userEvent.setup();

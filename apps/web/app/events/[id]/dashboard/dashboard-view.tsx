@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type CSSProperties } from "react";
 import {
   loadEventStats,
   STATS_FETCH_TIMEOUT_MS,
@@ -25,23 +25,31 @@ export type DashboardViewProps = {
 };
 
 /**
- * Capacity gauge copy. Never invents a percentage when capacity is unset — that would be
- * inventing a number from an unknown denominator (F-402 edge case / same class as AC 3).
+ * Capacity gauge copy + measuring-strip fill. Never invents a percentage when capacity is unset —
+ * that would be inventing a number from an unknown denominator (F-402 / same class as AC 3).
  */
 export function capacitySummary(stats: EventStats): {
   label: string;
   overCapacity: boolean;
   percentLabel: string | null;
+  /** 0–100 strip width; null when capacity is unset (no fill). */
+  fillPercent: number | null;
 } {
   if (stats.capacity === null) {
-    return { label: "capacity not set", overCapacity: false, percentLabel: null };
+    return {
+      label: "capacity not set",
+      overCapacity: false,
+      percentLabel: null,
+      fillPercent: null,
+    };
   }
+  const raw = (stats.checkins_total / stats.capacity) * 100;
   const overCapacity = stats.checkins_total > stats.capacity;
-  const percent = Math.round((stats.checkins_total / stats.capacity) * 100);
   return {
     label: `${stats.checkins_total} of ${stats.capacity} capacity`,
     overCapacity,
-    percentLabel: `${percent}%`,
+    percentLabel: `${Math.round(raw)}%`,
+    fillPercent: Math.min(100, Math.max(0, raw)),
   };
 }
 
@@ -49,6 +57,13 @@ export function capacitySummary(stats: EventStats): {
 export function lastUpdatedLabel(lastSuccessAt: number, nowMs: number): string {
   const seconds = Math.max(0, Math.floor((nowMs - lastSuccessAt) / 1000));
   return `last updated ${seconds}s ago`;
+}
+
+function prefersReducedMotion(): boolean {
+  if (typeof window === "undefined" || typeof window.matchMedia !== "function") {
+    return false;
+  }
+  return window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 }
 
 export function DashboardView({
@@ -62,14 +77,18 @@ export function DashboardView({
   const [failure, setFailure] = useState<string | null>(null);
   const [lastSuccessAt, setLastSuccessAt] = useState<number | null>(null);
   const [staleTick, setStaleTick] = useState(0);
+  const [countTicking, setCountTicking] = useState(false);
   const nowRef = useRef(now);
   nowRef.current = now;
+  const previousTotal = useRef<number | null>(null);
 
   useEffect(() => {
     // Drop the previous event's totals immediately so a slow/failed fetch cannot leave them up.
     setStats(null);
     setFailure(null);
     setLastSuccessAt(null);
+    previousTotal.current = null;
+    setCountTicking(false);
 
     if (!UUID.test(eventId)) {
       setFailure("That event link is not valid.");
@@ -122,9 +141,23 @@ export function DashboardView({
     };
   }, [apiBaseUrl, eventId, fetchTimeoutMs, pollMs]);
 
+  // Signature motion: one mechanical counter tick when check-ins rise (skipped for reduced motion).
+  useEffect(() => {
+    if (stats === null) return;
+    const prior = previousTotal.current;
+    previousTotal.current = stats.checkins_total;
+    if (prior === null || stats.checkins_total <= prior || prefersReducedMotion()) {
+      return;
+    }
+    setCountTicking(true);
+    const clear = window.setTimeout(() => setCountTicking(false), 280);
+    return () => window.clearTimeout(clear);
+  }, [stats]);
+
   if (failure !== null && stats === null) {
     return (
       <div className="ops">
+        <p className="pe-eyebrow">Door</p>
         <h1>Live ops</h1>
         <p className="ops__error" role="alert">
           {failure}
@@ -148,16 +181,31 @@ export function DashboardView({
   // staleTick forces a re-render each second so the age label advances while polling is down.
   void staleTick;
 
+  const gaugeClass = [
+    "ops__gauge",
+    gauge.overCapacity ? "ops__gauge--over" : "",
+    gauge.fillPercent === null ? "ops__gauge--unset" : "",
+  ]
+    .filter(Boolean)
+    .join(" ");
+
   return (
     <div className="ops">
-      <p className="ops__eyebrow">Door</p>
+      <p className="pe-eyebrow">Door</p>
       <h1>Live ops</h1>
       <p className="ops__lede">
-        Arrivals only — labeled check-ins, not how many people are still on site.
+        Arrivals only — labeled check-ins, not how many people are still on site. Capacity is the
+        confirmed value from intake when you set one.
       </p>
 
       <p className="ops__total" data-testid="checkins-total">
-        <span className="ops__total-number">{stats.checkins_total}</span>
+        <span
+          className={
+            countTicking ? "ops__total-number ops__total-number--tick" : "ops__total-number"
+          }
+        >
+          {stats.checkins_total}
+        </span>
         <span className="ops__total-label"> check-ins</span>
       </p>
 
@@ -171,15 +219,23 @@ export function DashboardView({
         {stats.checkins_last_10min} check-ins in the last 10 minutes
       </p>
 
-      <section
-        className={gauge.overCapacity ? "ops__gauge ops__gauge--over" : "ops__gauge"}
-        aria-label="Capacity"
-        data-testid="capacity-gauge"
-      >
+      <section className={gaugeClass} aria-label="Capacity" data-testid="capacity-gauge">
         <p className="ops__gauge-label">{gauge.label}</p>
         {gauge.percentLabel !== null && (
           <p className="ops__gauge-percent">{gauge.percentLabel}</p>
         )}
+        <div
+          className="ops__rule"
+          data-testid="capacity-rule"
+          style={
+            gauge.fillPercent === null
+              ? undefined
+              : ({ "--ops-fill": `${gauge.fillPercent}%` } as CSSProperties)
+          }
+          aria-hidden={gauge.fillPercent === null}
+        >
+          <div className="ops__rule-fill" />
+        </div>
         {gauge.overCapacity && (
           <p className="ops__warning" role="status">
             Check-ins are over the confirmed capacity.

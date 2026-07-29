@@ -1,4 +1,8 @@
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 import { defineConfig } from "vitest/config";
+
+const repoRoot = path.dirname(fileURLToPath(import.meta.url));
 
 // Single root config runs every workspace test suite (`pnpm test`).
 // Coverage is enforced at 90% per CONTRIBUTING.md across the engine, the api, and the
@@ -7,6 +11,12 @@ export default defineConfig({
   // React components are transformed by esbuild's automatic JSX runtime. Tests need no
   // React import and the app keeps Next's own build untouched (`jsx: preserve`).
   esbuild: { jsx: "automatic" },
+  resolve: {
+    // next/font/google is a Next build-time loader; vitest cannot call it.
+    alias: {
+      "next/font/google": path.join(repoRoot, "apps/web/test/next-font-google-mock.ts"),
+    },
+  },
   test: {
     // The default stays node: the engine and api suites are pure and must stay fast.
     // Component tests opt into jsdom per file with a `@vitest-environment jsdom`

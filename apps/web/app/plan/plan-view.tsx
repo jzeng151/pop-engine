@@ -245,6 +245,7 @@ export function PlanView({ apiBaseUrl, eventId }: { apiBaseUrl: string; eventId:
 
   return (
     <main className="plan">
+      <p className="pe-eyebrow">PopEngine · Plan</p>
       <h1>Your permit plan</h1>
 
       {plan !== null && (

@@ -49,6 +49,7 @@ export function PromoteView({ eventId, apiBaseUrl, webOrigin }: PromoteViewProps
   if (failure !== null && state === null) {
     return (
       <div className="promote">
+        <p className="pe-eyebrow">PopEngine · Promote</p>
         <h1>Promote</h1>
         <p className="promote__error" role="alert">
           {failure}
@@ -60,6 +61,7 @@ export function PromoteView({ eventId, apiBaseUrl, webOrigin }: PromoteViewProps
   if (state === null) {
     return (
       <div className="promote">
+        <p className="pe-eyebrow">PopEngine · Promote</p>
         <p className="promote__lede" role="status">
           Loading promote controls…
         </p>
@@ -95,6 +97,7 @@ export function PromoteView({ eventId, apiBaseUrl, webOrigin }: PromoteViewProps
 
   return (
     <div className="promote">
+      <p className="pe-eyebrow">PopEngine · Promote</p>
       <h1>{state.title}</h1>
       <p className="promote__lede">
         Public event page · {state.event_date}

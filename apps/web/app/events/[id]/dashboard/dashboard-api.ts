@@ -1,6 +1,6 @@
 // Organizer live-ops stats for F-402. Credentialed for Cloudflare Access (AD-12).
 
-export const CREDENTIALED = {
+const CREDENTIALED = {
   credentials: "include",
   headers: { "Content-Type": "application/json" },
 } as const satisfies RequestInit;
@@ -16,7 +16,7 @@ export type EventStats = {
 
 export type StatsResult = { ok: true; stats: EventStats } | { ok: false; message: string };
 
-export type LoadEventStatsOptions = {
+type LoadEventStatsOptions = {
   /** Abort when the caller unmounts or switches events. */
   signal?: AbortSignal;
   /** Bound a hung fetch so serialized polling can resume (default STATS_FETCH_TIMEOUT_MS). */

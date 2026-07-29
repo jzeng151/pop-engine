@@ -306,9 +306,12 @@ export function IntakeForm({
 
   if (loading) {
     return (
-      <p className="intake__lede" role="status">
-        Loading your event…
-      </p>
+      <div className="intake">
+        <p className="pe-eyebrow">PopEngine · Survey</p>
+        <p className="intake__lede" role="status">
+          Loading your event…
+        </p>
+      </div>
     );
   }
 
@@ -316,9 +319,13 @@ export function IntakeForm({
   // second event rather than edit the one asked for.
   if (loadFailure !== null) {
     return (
-      <p className="intake__error" role="alert">
-        {loadFailure}
-      </p>
+      <div className="intake">
+        <p className="pe-eyebrow">PopEngine · Survey</p>
+        <h1>Edit your event</h1>
+        <p className="intake__error" role="alert">
+          {loadFailure}
+        </p>
+      </div>
     );
   }
 
@@ -330,6 +337,7 @@ export function IntakeForm({
         void save();
       }}
     >
+      <p className="pe-eyebrow">PopEngine · Survey</p>
       <h1>{eventId === undefined ? "Describe your event" : "Edit your event"}</h1>
       <p className="intake__lede">
         Answer what applies to your event. Questions appear as your answers make them relevant, and
@@ -339,9 +347,14 @@ export function IntakeForm({
 
       {DESCRIPTIVE_QUESTIONS.map((question) => (
         <div className="intake__question" key={question.field}>
-          <label className="intake__label" htmlFor={`intake-${question.field}`}>
-            {question.label}
-          </label>
+          <span className="intake__question-head">
+            <label className="intake__label" htmlFor={`intake-${question.field}`}>
+              {question.label}
+            </label>
+            <span className="intake__tag" aria-hidden="true">
+              {question.field}
+            </span>
+          </span>
           <input
             id={`intake-${question.field}`}
             ref={question.field === "location_name" ? locationNameInput : undefined}
@@ -526,7 +539,12 @@ function Question({
 }) {
   return (
     <fieldset className="intake__question">
-      <legend className="intake__label">{humanize(field.field)}</legend>
+      <legend className="intake__question-head">
+        <span className="intake__label">{humanize(field.field)}</span>
+        <span className="intake__tag" aria-hidden="true">
+          {field.field}
+        </span>
+      </legend>
       {field.note !== null && <p className="intake__note">{field.note}</p>}
       <Control field={field} value={value} onAnswer={onAnswer} />
       <FieldError issue={issue} />
