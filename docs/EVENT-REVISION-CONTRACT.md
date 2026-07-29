@@ -141,6 +141,11 @@ The exact HTTP request and error schemas belong in the reviewed OpenAPI contract
 - Every candidate records the exact `today` engine input used to evaluate it.
 - An acceptance request names the accepted `base_plan_id` against which the candidate was presented;
   `null` is valid only when the Event has no accepted plan.
+- The acceptance request includes the explicit deterministic reconciliation mapping the organizer
+  reviewed. A prior non-default workflow status carries only through that reviewed mapping; an
+  omitted or explicitly reset item starts in its default state. The server never invents a mapping
+  or automatically attaches an old approval to a materially different finding, and it validates the
+  supplied mapping against the canonical plan diff before applying it.
 - Accepting a candidate locks the Event and rechecks that the candidate belongs to it, that
   `candidate.event_revision_id === events.current_revision_id`, and that
   `base_plan_id === events.current_plan_id`. While holding that lock, acceptance also derives the
@@ -148,10 +153,15 @@ The exact HTTP request and error schemas belong in the reviewed OpenAPI contract
   candidate's recorded `today`; otherwise it rejects the candidate and requires regeneration. Only
   then may the same transaction move `current_plan_id`, apply the approved deterministic workflow
   reconciliation, and persist obsolete message-job cancellations plus any required replacement
-  job/outbox rows. A mismatch or failure rolls back all of those changes. External delivery occurs
-  only after commit. A later edit may make an accepted plan stale, but an already-stale candidate, a
-  candidate evaluated on an obsolete local date, or a candidate based on a superseded accepted plan
-  is never accepted.
+  job/outbox rows. The transaction also appends the plan-acceptance audit event with the actor, base
+  plan, candidate plan, accepted Event Revision, and server-recorded acceptance time. A mismatch,
+  reconciliation failure, job/outbox failure, or audit failure rolls back all of those changes.
+  External delivery occurs only after commit.
+- Cancelling a pending job is insufficient when a worker has already leased it. Claim/cancel
+  serialization or a mandatory current-plan and cancellation-state recheck at the provider-delivery
+  boundary must prevent a leased job made obsolete by acceptance from being sent.
+- A later edit may make an accepted plan stale, but an already-stale candidate, a candidate evaluated
+  on an obsolete local date, or a candidate based on a superseded accepted plan is never accepted.
 - The migration that introduces `current_plan_id` sets it from the same-event
   `checklist_acknowledgements.plan_id` when an acknowledgement exists and to `NULL` otherwise. It
   never treats the latest generated plan as accepted.
@@ -198,7 +208,10 @@ The F-107 forward migration must then:
    inputs even when the old numeric `event_revision` did not change. Every migration-created
    revision, including the current-row revision, has `supersedes_revision_id = NULL`;
 4. assign those backfilled revisions a deterministic, strictly increasing order defined and tested
-   by F-107. It must not infer schema order from version-string sorting or migration execution time;
+   by F-107. Every distinct plan-snapshot revision created in step 3 precedes the current-row
+   revision, which receives the greatest backfilled revision number; every later live append receives
+   a greater number. The order must not be inferred from version-string sorting or migration
+   execution time;
 5. always build the current Event/current revision from the Phase 1 row under the compatibility
    package's exact cutover `input_schema_version` and `jurisdiction_code`, even when a plan has the
    same legacy revision number. Stable values such as the Event name and questionnaire values such
@@ -329,13 +342,24 @@ Before activation, the consuming implementation must prove:
   `checklist_acknowledgements.plan_id` and `events.current_plan_id` naming the same plan;
 - an Event with no historical plan backfills its current revision under the exact cutover Event
   Input schema and jurisdiction named by the compatibility package;
+- every distinct plan-snapshot revision created during backfill has a lower revision number than the
+  current-row revision, and the first live append has a greater revision number than every backfilled
+  revision;
 - accepting a candidate races safely with a revision save and rejects the stale candidate;
 - accepting a candidate after its jurisdiction-local evaluation date has passed rejects it and
   requires regeneration;
 - two candidates accepted concurrently from the same accepted base produce one success and one
   conflict;
+- a non-default workflow status carries only through the deterministic mapping the organizer
+  reviewed, while an omitted or reset item starts in its default state and a materially changed
+  finding never receives an old approval automatically;
 - an acceptance reconciliation or job/outbox failure leaves the plan pointer, workflow, and jobs
   unchanged;
+- plan acceptance appends its actor, base plan, candidate plan, accepted Event Revision, and
+  server-recorded time to the activity log atomically with the plan pointer, and an audit-write
+  failure rolls back acceptance;
+- a worker that leased an obsolete message job before plan acceptance cannot send it after acceptance
+  commits;
 - while a Phase 1 reader remains, a revision save and subsequent plan generation cannot observe
   different questionnaire answers;
 - while a Phase 1 reader remains, a changed save atomically increments
