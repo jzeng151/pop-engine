@@ -4,7 +4,7 @@
 **AMENDMENT:** Amended 2026-07-29 for the Warm & Authentic visual foundation (this PR).
 **AUTHORITATIVE FOR:** visual foundations and intake-card design language. Approved feature specs remain authoritative for feature behavior, regulatory/safety copy, and required UI states.
 
-**Governance gate:** This is a baseline design-system amendment, not a roadmap F-id. Visual tokens and shared CSS land only while `docs/DESIGN-SYSTEM.md` remains `APPROVED` in `docs/BASELINE.md` (documentation governance). Do not invent a product F-id for theme work; feature behavior still requires an approved `specs/F-xxx-*.md`. Scope of this amendment is presentation only — no new endpoints, tables, regulatory copy, or feature acceptance criteria.
+**Governance gate:** This is a baseline design-system amendment, not a roadmap F-id. Visual tokens and shared CSS land only while `docs/DESIGN-SYSTEM.md` remains `APPROVED` in `docs/BASELINE.md` (documentation governance). Do not invent a product F-id for theme work; feature behavior still requires an approved `specs/F-xxx-*.md`. Scope of this amendment is presentation only — tokens, type, color, spacing, and existing-route chrome. It must not add endpoints, tables, regulatory copy, feature acceptance criteria, or new cross-feature navigation / workflow shortcuts.
 
 This document describes the Warm & Authentic CSS foundation in `apps/web/app/globals.css`. It does not add a CSS framework. Display, body, and mono faces are self-hosted through `next/font/google` in `apps/web/app/layout.tsx` (no runtime request to fonts.googleapis.com).
 

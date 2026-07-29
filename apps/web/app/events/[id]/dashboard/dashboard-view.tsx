@@ -250,14 +250,6 @@ export function DashboardView({
         {stats.checkins_registered} registered check-ins · {stats.checkins_walk_in} walk-in check-ins
       </p>
 
-      <p className="ops__links">
-        <a href={`/events/${eventId}/guests`}>Guest list</a>
-        {" · "}
-        <a href={`/events/${eventId}/promote`}>Promote</a>
-        {" · "}
-        <a href={`/e/${eventId}/checkin`}>Door check-in</a>
-      </p>
-
       {showStale && lastSuccessAt !== null && (
         <p className="ops__stale" role="status" data-testid="stale-indicator">
           {lastUpdatedLabel(lastSuccessAt, now())}
