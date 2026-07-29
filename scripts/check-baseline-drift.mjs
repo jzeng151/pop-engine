@@ -1689,14 +1689,13 @@ for (const relative of f203Artifacts) {
   if (relative === "specs/F-203-deadline-alerts.md") {
     const acceptanceCriteriaSections = [
       ...contents.matchAll(/^(#{1,6})\s+.*\bAcceptance Criteria\b.*$/gim),
-    ]
-      .map((heading) => {
-        const remainder = contents.slice((heading.index ?? 0) + heading[0].length);
-        const nextPeerHeading = new RegExp(`^#{1,${heading[1].length}}\\s+`, "m").exec(remainder);
-        return remainder.slice(0, nextPeerHeading?.index ?? remainder.length);
-      })
-      .join("\n");
-    const addsUnscheduledCriterion = acceptanceCriteriaSections
+    ].map((heading) => {
+      const remainder = contents.slice((heading.index ?? 0) + heading[0].length);
+      const nextPeerHeading = new RegExp(`^#{1,${heading[1].length}}\\s+`, "m").exec(remainder);
+      return remainder.slice(0, nextPeerHeading?.index ?? remainder.length);
+    });
+    const acceptanceCriteriaText = acceptanceCriteriaSections.join("\n");
+    const addsUnscheduledCriterion = acceptanceCriteriaText
       .split(/\r?\n(?=\s*(?:[-*+]|\d+\.)\s+)/)
       .some(
         (criterion) =>
@@ -1704,7 +1703,7 @@ for (const relative of f203Artifacts) {
           f203CapabilityMention.test(criterion) &&
           !f203CriterionNonGoal.test(criterion),
       );
-    const tableLines = acceptanceCriteriaSections.split(/\r?\n/);
+    const tableLines = acceptanceCriteriaText.split(/\r?\n/);
     const tableDelimiter = /^\s*\|(?:\s*:?-+:?\s*\|)+\s*$/;
     const addsUnscheduledTableCriterion = tableLines.some((row, index) => {
       if (
@@ -1717,9 +1716,31 @@ for (const relative of f203Artifacts) {
       const criterion = row.replace(/^\s*\|\s*|\s*\|\s*$/g, "");
       return f203CapabilityMention.test(criterion) && !f203CriterionNonGoal.test(criterion);
     });
+    const addsHeadingScopedCriterion = acceptanceCriteriaSections.some((section) => {
+      const lines = section.split(/\r?\n/);
+      let capabilityHeadingLevel = null;
+      return lines.some((line, index) => {
+        const heading = /^(#{1,6})\s+/.exec(line);
+        if (heading) {
+          if (f203CapabilityMention.test(line)) capabilityHeadingLevel = heading[1].length;
+          else if (capabilityHeadingLevel !== null && heading[1].length <= capabilityHeadingLevel) {
+            capabilityHeadingLevel = null;
+          }
+          return false;
+        }
+        if (capabilityHeadingLevel === null) return false;
+        const isListCriterion = /^\s*(?:[-*+]|\d+\.)\s+/.test(line);
+        const isTableCriterion =
+          /^\s*\|/.test(line) &&
+          !tableDelimiter.test(line) &&
+          !tableDelimiter.test(lines[index + 1] ?? "");
+        return (isListCriterion || isTableCriterion) && !f203CriterionNonGoal.test(line);
+      });
+    });
     if (
       addsUnscheduledCriterion ||
       addsUnscheduledTableCriterion ||
+      addsHeadingScopedCriterion ||
       /^#{1,6}\s+(?:Phase 2\b.*\bAcceptance Criteria|Acceptance Criteria\b.*\bPhase 2)\b/im.test(
         contents,
       )
@@ -1743,13 +1764,21 @@ for (const relative of f203Artifacts) {
     .filter(({ raw, normalized }) => {
       const lower = normalized.toLowerCase();
       const namesScope = f203CapabilityNames.some((capability) => lower.includes(capability));
-      const addressesScope = normalized
-        .split(/(?<=[.!?])\s+/)
-        .some(
+      const sentences = normalized.split(/(?<=[.!?])\s+/);
+      const addressesScope =
+        sentences.some(
           (sentence) =>
             sentence.toLowerCase().includes("f-203") &&
             (f203CapabilityMention.test(sentence) || f203DecisionScope.test(sentence)),
-        );
+        ) ||
+        sentences.some((sentence, index) => {
+          const continuation = sentences[index + 1] ?? "";
+          return (
+            sentence.toLowerCase().includes("f-203") &&
+            /^(?:It|Its|This|That|The (?:feature|scope))\b/i.test(continuation) &&
+            f203DecisionScope.test(continuation)
+          );
+        });
       const requiresListAssignment = relative === "docs/ROADMAP.md" || relative === "docs/PRD.md";
       const isListAssignment = requiresListAssignment && /^\s*(?:[-*+]|\d+\.)\s+/.test(raw);
       if (requiresListAssignment) {

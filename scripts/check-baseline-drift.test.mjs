@@ -1822,6 +1822,20 @@ describe.concurrent("F-203 Phase 2 scope agreement (SPEC-CONFLICT #127 item 1)",
     expect(output).toContain("docs/BASELINE.md must affirmatively assign");
   });
 
+  it.each(["docs/BASELINE.md", "docs/PRD.md"])(
+    "rejects a multi-sentence F-203 scope decision in %s",
+    async (relative) => {
+      const { status, output } = await runOn({
+        [relative]:
+          SQUARE_RECONCILED[relative] +
+          "\n**Decision:** F-203. Its scope is now unplanned and assigned to Phase 3.\n",
+      });
+
+      expect(status).toBe(1);
+      expect(output).toContain(`${relative} must affirmatively assign`);
+    },
+  );
+
   it("accepts an unrelated F-203 baseline decision", async () => {
     const { status, output } = await runOn({
       "docs/BASELINE.md":
@@ -2029,6 +2043,19 @@ describe.concurrent("F-203 Phase 2 scope agreement (SPEC-CONFLICT #127 item 1)",
       "specs/F-203-deadline-alerts.md":
         SQUARE_RECONCILED["specs/F-203-deadline-alerts.md"] +
         "\n## Additional Acceptance Criteria\n\n### Digest delivery\n\n1. Send a weekly digest.\n",
+    });
+
+    expect(status).toBe(1);
+    expect(output).toContain(
+      "specs/F-203-deadline-alerts.md must not define Phase 2 acceptance criteria",
+    );
+  });
+
+  it("carries a capability subsection heading into its acceptance criteria", async () => {
+    const { status, output } = await runOn({
+      "specs/F-203-deadline-alerts.md":
+        SQUARE_RECONCILED["specs/F-203-deadline-alerts.md"] +
+        "\n## Additional Acceptance Criteria\n\n### Weekly digests\n\n1. They are sent every Monday.\n",
     });
 
     expect(status).toBe(1);
