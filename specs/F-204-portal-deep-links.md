@@ -38,7 +38,7 @@ On each plan/checklist item that carries portal fields: a portal block with link
 - C (Parks portal + precinct instructions, sequenced).
 - E (published portals among multi-agency findings: SAPO, FDNY Business, precinct — not invented DOHMH/SLA portals).
 
-## Published on nyc.v2.8
+## Published on nyc.v2.9
 
 Eleven rules carry `output.portal` (name / url / optional instructions): six SAPO E-Apply classes, `PARKS-EVENT-001`, three FDNY Business rules, and `NYPD-SOUND-001` (`url: null` + in-person instructions). That subset is the acceptance surface above.
 

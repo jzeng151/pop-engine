@@ -1,7 +1,7 @@
 // The published ruleset's path, found rather than named, for the suites that evaluate against the
 // real artifact.
 //
-// WHY THIS EXISTS. Four engine suites used to hard-code `rules/nyc-rules.v2.8.json`, and each read
+// WHY THIS EXISTS. Four engine suites used to hard-code a published ruleset filename, and each read
 // it at MODULE SCOPE. A version bump deletes the file the old name points at, so the read throws
 // during import and the whole file fails to collect: vitest reports "no tests" for it rather than a
 // red assertion. That is how #128 took main down without anyone noticing — a suite that stops

@@ -402,10 +402,14 @@ describe.runIf(databaseUrl.length > 0)("F-202 compliance checklist", () => {
         ["SAPO-INSURANCE-001"],
       ]);
       expect(items.every((item) => ["permit", "insurance"].includes(item.kind))).toBe(true);
-      // The notification line is real work but not a trackable task per the spec; it renders
-      // as context so it cannot silently disappear either.
+      // Notification and named-confirmation lines are real context, not trackable tasks.
       expect((body.contextItems as { ruleIds: string[] }[]).map((item) => item.ruleIds)).toEqual([
         ["DOHMH-ORGANIZER-NOTIFY-001"],
+        ["CONF-NO-ALCOHOL-001"],
+        ["CONF-NO-BATTERY-001"],
+        ["CONF-NO-FLAME-001"],
+        ["CONF-NO-GENERATOR-001"],
+        ["CONF-NO-STRUCTURE-001"],
       ]);
     });
 

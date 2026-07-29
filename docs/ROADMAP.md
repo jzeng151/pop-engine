@@ -9,7 +9,7 @@
 Prerequisites, not features:
 
 - Agree the `events` schema (the team's single integration point) — approved by all four devs before any lane codes.
-- Ratify `rules/nyc-rules.v2.8.json` (33 rules + 4 advisories: verification-owner sign-off + team approval per `BASELINE.md`); boot validation loads it.
+- Ratify `rules/nyc-rules.v2.9.json` (42 rules + 4 advisories: verification-owner sign-off + team approval per `BASELINE.md`); boot validation loads it.
 - Repo scaffold, deploy target, Twilio account + A2P registration started.
 
 ## Phase 1 — MVP Core (capstone; iron-clad, no mocks)
@@ -19,6 +19,7 @@ The permit-planning spine. Must pass all 6 answer-key scenarios; "iron-clad" is 
 **Week 1:**
 
 - **F-101 · Event Intake Questionnaire** — conditional intake mirroring the ruleset's field registry (location/obstruction, SAPO class + size/plaza level, headcount, date, audience, food, sales, sound, structures, fuel, generator/battery, alcohol/license, assembly); contradiction checks; "I don't know" on branching facts.
+- **F-110 · Assembly Document Coverage Intake** — at private venues with headcount 75+, replace the coarse assembly-approval question with explicit tri-state PACO exact-event coverage and current FDNY Public Assembly Permit confirmations; persist through plan snapshots without adding a regulatory or verdict branch.
 - **F-201 · Permit Plan Generator** — rules-engine output: typed findings (permits, insurance, notifications, registrations, eligibility, prohibitions, advisories) with agencies, typed deadlines, fees, portals, citations + verification statuses; ruleset version stored per plan.
 - **F-102 · Feasibility Verdict** — backward-computed timeline; per-finding deadline statuses under a four-state verdict (FEASIBLE / FEASIBLE-AT-RISK / CONDITIONAL / INFEASIBLE); INFEASIBLE = "published deadline missed as scoped"; rescopes are full re-evaluations; unknowns propagate to CONDITIONAL.
 - **F-206 · Rules Snapshot Banner** — "Rules snapshot [version] · published [date]" in-product (never "verified as of"); per-line citations + verification status.

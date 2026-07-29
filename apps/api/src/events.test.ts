@@ -89,7 +89,8 @@ describe.runIf(databaseUrl.length > 0)("F-101 event intake endpoints", () => {
       const rooftop = scenario("F");
       const { body } = await post({ ...rooftop });
       expect(body.event.venue_license_covers_event_area).toBe("unknown");
-      expect(body.event.venue_has_assembly_approval).toBe("unknown");
+      expect(body.event.venue_paco_covers_exact_event).toBe("unknown");
+      expect(body.event.venue_fdny_pa_permit_current_for_event_space).toBe("unknown");
       expect(body.event.sound_audible_from_public_way).toBe("unknown");
 
       const plaza = scenario("E");
@@ -238,12 +239,16 @@ describe.runIf(databaseUrl.length > 0)("F-101 event intake endpoints", () => {
                   // F-301 promotion fields — not intake; re-sending them is unknown_field.
                   "description",
                   "public_page_published",
+                  // F-110 keeps the replaced coarse answer as historical storage only.
+                  "venue_has_assembly_approval",
+                  // #194 keeps the removed claim as historical storage only.
+                  "food_affinity_private_exception_claimed",
                 ].includes(column),
             ),
           ),
         );
 
-      expect(resaved.status).toBe(200);
+      expect(resaved.status, JSON.stringify(resaved.body)).toBe(200);
       expect(resaved.body.event.revision_counter).toBe(1);
       expect(resaved.body.plan_stale).toBe(false);
       expect(resaved.body.event.updated_at).toBe(stored.body.event.updated_at);
@@ -276,6 +281,10 @@ describe.runIf(databaseUrl.length > 0)("F-101 event intake endpoints", () => {
               "updated_at",
               "description",
               "public_page_published",
+              // F-110 keeps the replaced coarse answer as historical storage only.
+              "venue_has_assembly_approval",
+              // #194 keeps the removed claim as historical storage only.
+              "food_affinity_private_exception_claimed",
             ].includes(column),
         ),
       );
@@ -311,7 +320,7 @@ describe.runIf(databaseUrl.length > 0)("F-101 event intake endpoints", () => {
 
       // The answer describes the row as it stands after the concurrent edit, never the
       // one this request would have read had it not waited.
-      expect(resaved.status).toBe(200);
+      expect(resaved.status, JSON.stringify(resaved.body)).toBe(200);
       expect(resaved.body.event.revision_counter).toBeGreaterThan(1);
       expect(resaved.body.plan_stale).toBe(true);
       const afterwards = await request(api).get(`/api/events/${event.id}`);
@@ -412,18 +421,21 @@ describe.runIf(databaseUrl.length > 0)("F-101 event intake endpoints", () => {
       expect(missing.status).toBe(400);
       expect(errorCodes(missing.body)).toEqual({
         sound_audible_from_public_way: "required",
-        venue_has_assembly_approval: "required",
+        venue_paco_covers_exact_event: "required",
+        venue_fdny_pa_permit_current_for_event_space: "required",
       });
 
       const response = await request(api).patch(`/api/events/${event.id}`).send({
         location_type: "private_venue",
         sound_audible_from_public_way: "unknown",
-        venue_has_assembly_approval: "unknown",
+        venue_paco_covers_exact_event: "unknown",
+        venue_fdny_pa_permit_current_for_event_space: "unknown",
       });
       expect(response.status).toBe(200);
       expect(response.body.event.location_type).toBe("private_venue");
       expect(response.body.event.street_event_size).toBeNull();
-      expect(response.body.event.venue_has_assembly_approval).toBe("unknown");
+      expect(response.body.event.venue_paco_covers_exact_event).toBe("unknown");
+      expect(response.body.event.venue_fdny_pa_permit_current_for_event_space).toBe("unknown");
       expect(response.body.event.revision_counter).toBe(2);
     });
 

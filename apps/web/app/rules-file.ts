@@ -1,7 +1,7 @@
 // Where the published ruleset is, found rather than named — and a check that what was found is
 // actually a ruleset.
 //
-// WHY THIS EXISTS. `rules/nyc-rules.v2.8.json` was spelled out in four places in this app — the
+// WHY THIS EXISTS. A published ruleset filename was once spelled out in four places in this app — the
 // intake page's production read, two suites that read it at module scope, and one that pointed
 // `RULES_FILE` at it. A version bump deletes the file every one of those names, and the two
 // module-scope reads fail during IMPORT, so vitest reports "no tests" for those files rather than a
