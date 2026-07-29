@@ -45,12 +45,14 @@ const echoSavedEvent = (
 
 /** The questions on screen, by their legend label, in the order they are asked. */
 const questionsOnScreen = (): string[] =>
-  screen.getAllByRole("group").map(
-    (group) =>
-      group.querySelector("legend .intake__label")?.textContent ??
-      group.querySelector("legend")?.textContent ??
-      "",
-  );
+  screen
+    .getAllByRole("group")
+    .map(
+      (group) =>
+        group.querySelector("legend .intake__label")?.textContent ??
+        group.querySelector("legend")?.textContent ??
+        "",
+    );
 
 const renderForm = (eventId?: string, activeContract = contract) => {
   const user = userEvent.setup();
@@ -168,16 +170,14 @@ describe("conditional reveal follows the registry (spec #2)", () => {
     const user = renderForm();
     await chooseOption(user, "location_type", "private_venue");
     await fillField(user, "headcount", "74");
-    expect(questionsOnScreen()).not.toContain("Do the PACO materials cover this exact event?");
-    expect(questionsOnScreen()).not.toContain(
-      "Is the FDNY Public Assembly Permit current for this event space?",
-    );
+    expect(questionsOnScreen()).not.toContain("Venue paco covers exact event");
+    expect(questionsOnScreen()).not.toContain("Venue fdny pa permit current for event space");
 
     await fillField(user, "headcount", "75");
     expect(questionsOnScreen()).toEqual(
       expect.arrayContaining([
-        "Do the PACO materials cover this exact event?",
-        "Is the FDNY Public Assembly Permit current for this event space?",
+        "Venue paco covers exact event",
+        "Venue fdny pa permit current for event space",
       ]),
     );
 
@@ -197,7 +197,12 @@ describe("conditional reveal follows the registry (spec #2)", () => {
   });
 
   it("renders PACO evidence guidance from the active registry instead of web copy", async () => {
-    const alternateGuidance = "Alternate published PACO evidence guidance.";
+    const alternateGuidance = [
+      "Alternate published introduction.",
+      "- First active-contract check.",
+      "- Second active-contract check.",
+      "Alternate published fold guidance.",
+    ].join("\n");
     const activeContract = {
       ...contract,
       fields: contract.fields.map((field) =>
@@ -210,10 +215,40 @@ describe("conditional reveal follows the registry (spec #2)", () => {
     await chooseOption(user, "location_type", "private_venue");
     await fillField(user, "headcount", "75");
 
-    expect(screen.getByText(alternateGuidance)).toBeDefined();
+    expect(screen.getByText("Alternate published introduction.").tagName).toBe("P");
+    expect(screen.getByText("Alternate published fold guidance.").tagName).toBe("P");
+    const list = screen.getByRole("list");
+    expect(
+      within(list)
+        .getAllByRole("listitem")
+        .map((item) => item.textContent),
+    ).toEqual(["First active-contract check.", "Second active-contract check."]);
     expect(screen.queryByText(/The documents identify the exact event space/)).toBeNull();
-    expect(screen.getByText(/published conditions above as the evidence checklist/)).toBeDefined();
-    expect(screen.getByText(/only the answer below is saved/)).toBeDefined();
+  });
+
+  it("renders all published PACO checks and tri-state fold instructions", async () => {
+    const user = renderForm();
+    await chooseOption(user, "location_type", "private_venue");
+    await fillField(user, "headcount", "75");
+
+    const question = screen.getByRole("group", { name: "Venue paco covers exact event" });
+    expect(
+      within(question)
+        .getAllByRole("listitem")
+        .map((item) => item.textContent),
+    ).toEqual([
+      "Identifies the exact event space.",
+      "Authorizes the event use and assembly classification.",
+      "Allows the event's maximum occupant load.",
+      "Matches the event's seating, furnishings, and layout.",
+    ]);
+    for (const instruction of [
+      "Answer No if any checklist item has a proved mismatch.",
+      "Answer Yes if all checklist items are proved.",
+      "Answer I don't know otherwise.",
+    ]) {
+      expect(within(question).getByText(instruction).tagName).toBe("P");
+    }
   });
 
   it("renders the registry's published note as the question's help text", async () => {

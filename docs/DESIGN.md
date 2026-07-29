@@ -77,7 +77,8 @@ Track B staffing is the team's kickoff call (default suggestion: Dev 3 → F-301
 ## Dependency Graph (build-order constraints)
 
 - F-101 → everything (single source of truth)
-- F-110 → F-101 persistence and F-201 immutable intake snapshots; no F-102 rule or verdict dependency until separately approved semantics exist
+- F-101, F-102, F-201 → F-110 (approved feature prerequisites)
+- F-110 fields are consumed by F-101 persistence and F-201 immutable intake snapshots; no F-102 rule or verdict semantics change until separately approved semantics exist
 - F-201 → F-102, F-202, F-203, F-204, F-205, F-208, F-405; ruleset versioning (F-201) → F-503, F-712, F-713, F-714
 - F-201 → F-206 plan rendering; F-202 → F-206 checklist rendering
 - F-301 → F-302 → F-306/F-307; F-302 optionally enriches F-401 with pre-registered lookup

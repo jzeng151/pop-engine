@@ -49,12 +49,6 @@ const humanize = (token: string): string =>
 const optionLabel = (value: string): string =>
   value === "unknown" ? "I don't know" : humanize(value);
 
-const QUESTION_LABELS: Readonly<Record<string, string>> = {
-  venue_paco_covers_exact_event: "Do the PACO materials cover this exact event?",
-  venue_fdny_pa_permit_current_for_event_space:
-    "Is the FDNY Public Assembly Permit current for this event space?",
-};
-
 const isBlank = (value: IntakeValue): boolean =>
   value === null || value === undefined || value === "";
 
@@ -532,6 +526,33 @@ function FieldError({ issue }: { issue: IntakeIssue | undefined }) {
   );
 }
 
+function Guidance({ note }: { note: string }) {
+  const blocks: ({ text: string } | { items: string[] })[] = [];
+  for (const line of note.split("\n").filter((part) => part.length > 0)) {
+    if (line.startsWith("- ")) {
+      const previous = blocks.at(-1);
+      if (previous !== undefined && "items" in previous) previous.items.push(line.slice(2));
+      else blocks.push({ items: [line.slice(2)] });
+    } else {
+      blocks.push({ text: line });
+    }
+  }
+
+  return blocks.map((block, index) =>
+    "items" in block ? (
+      <ul className="intake__note" key={index}>
+        {block.items.map((item) => (
+          <li key={item}>{item}</li>
+        ))}
+      </ul>
+    ) : (
+      <p className="intake__note" key={index}>
+        {block.text}
+      </p>
+    ),
+  );
+}
+
 function Question({
   field,
   value,
@@ -543,7 +564,6 @@ function Question({
   issue: IntakeIssue | undefined;
   onAnswer: (value: IntakeValue) => void;
 }) {
-  const label = QUESTION_LABELS[field.field] ?? humanize(field.field);
   return (
     <fieldset className="intake__question">
       <legend className="intake__question-head">
@@ -552,13 +572,7 @@ function Question({
           {field.field}
         </span>
       </legend>
-      {field.note !== null && <p className="intake__note">{field.note}</p>}
-      {field.field === "venue_paco_covers_exact_event" && (
-        <p className="intake__note">
-          Use the published conditions above as the evidence checklist; only the answer below is
-          saved.
-        </p>
-      )}
+      {field.note !== null && <Guidance note={field.note} />}
       <Control field={field} value={value} onAnswer={onAnswer} />
       <FieldError issue={issue} />
     </fieldset>
