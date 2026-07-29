@@ -2001,6 +2001,17 @@ describe.concurrent("F-203 Phase 2 scope agreement (SPEC-CONFLICT #127 item 1)",
     expect(output).toContain("specs/F-203-deadline-alerts.md must affirmatively assign");
   });
 
+  it("rejects a spec decision that narrows the retained capability set", async () => {
+    const { status, output } = await runOn({
+      "specs/F-203-deadline-alerts.md":
+        SQUARE_RECONCILED["specs/F-203-deadline-alerts.md"] +
+        "\n**Decision:** Phase 2 depth under F-203 now consists only of digests.\n",
+    });
+
+    expect(status).toBe(1);
+    expect(output).toContain("specs/F-203-deadline-alerts.md must affirmatively assign");
+  });
+
   it.each(["docs/BASELINE.md", "docs/ROADMAP.md", "docs/PRD.md"])(
     "rejects a scheduling conflict appended to the %s decision",
     async (relative) => {
@@ -2392,6 +2403,21 @@ describe.concurrent("F-203 Phase 2 scope agreement (SPEC-CONFLICT #127 item 1)",
     },
   );
 
+  it.each(["docs/ROADMAP.md", "docs/PRD.md"])(
+    "rejects an F-203 assignment in a table row in %s",
+    async (relative) => {
+      const { status, output } = await runOn({
+        [relative]:
+          SQUARE_RECONCILED[relative] +
+          "\n| Feature | Scope | Phase |\n| --- | --- | --- |\n" +
+          "| F-203 | automatic permit filing | Phase 3 |\n",
+      });
+
+      expect(status).toBe(1);
+      expect(output).toContain(`${relative} must affirmatively assign`);
+    },
+  );
+
   it("rejects a deferred capability added to the Phase 1 F-203 entry", async () => {
     const { status, output } = await runOn({
       "docs/ROADMAP.md": SQUARE_RECONCILED["docs/ROADMAP.md"].replace(
@@ -2603,6 +2629,23 @@ describe.concurrent("F-203 Phase 2 scope agreement (SPEC-CONFLICT #127 item 1)",
     async (relative, phase, peer) => {
       const { status, output } = await runOn({
         [relative]: SQUARE_RECONCILED[relative].replace(phase, `${phase}\n\n${peer}`),
+      });
+
+      expect(status).toBe(1);
+      expect(output).toContain(
+        `${relative} must keep its F-203 full-scope assignment under Phase 2`,
+      );
+    },
+  );
+
+  it.each(["docs/ROADMAP.md", "docs/PRD.md"])(
+    "recognizes a Setext phase heading before the F-203 assignment in %s",
+    async (relative) => {
+      const { status, output } = await runOn({
+        [relative]: SQUARE_RECONCILED[relative].replace(
+          "\n- **F-203 (full)**",
+          "\nPhase 3 — moved assignment\n--------------------------\n\n- **F-203 (full)**",
+        ),
       });
 
       expect(status).toBe(1);

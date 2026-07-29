@@ -1690,6 +1690,23 @@ function activeMarkdown(markdown) {
     .join("\n");
 }
 
+function parseMarkdownHeadings(markdown) {
+  return [
+    ...[...markdown.matchAll(/^(#{1,6})[ \t]+(.+?)[ \t]*#*[ \t]*$/gm)].map((heading) => ({
+      index: heading.index ?? 0,
+      end: (heading.index ?? 0) + heading[0].length,
+      level: heading[1].length,
+      title: heading[2],
+    })),
+    ...[...markdown.matchAll(/^(.+\S)[ \t]*\r?\n(=+|-+)[ \t]*$/gm)].map((heading) => ({
+      index: heading.index ?? 0,
+      end: (heading.index ?? 0) + heading[0].length,
+      level: heading[2][0] === "=" ? 1 : 2,
+      title: heading[1],
+    })),
+  ].sort((left, right) => left.index - right.index);
+}
+
 for (const relative of f203Artifacts) {
   const full = join(repoRoot, relative);
   if (!existsSync(full)) {
@@ -1698,25 +1715,12 @@ for (const relative of f203Artifacts) {
   }
 
   const contents = activeMarkdown(readFileSync(full, "utf8"));
+  const headings = parseMarkdownHeadings(contents);
   if (relative === "specs/F-203-deadline-alerts.md") {
-    const markdownHeadings = [
-      ...[...contents.matchAll(/^(#{1,6})[ \t]+(.+?)[ \t]*#*[ \t]*$/gm)].map((heading) => ({
-        index: heading.index ?? 0,
-        end: (heading.index ?? 0) + heading[0].length,
-        level: heading[1].length,
-        title: heading[2],
-      })),
-      ...[...contents.matchAll(/^(.+\S)[ \t]*\r?\n(=+|-+)[ \t]*$/gm)].map((heading) => ({
-        index: heading.index ?? 0,
-        end: (heading.index ?? 0) + heading[0].length,
-        level: heading[2][0] === "=" ? 1 : 2,
-        title: heading[1],
-      })),
-    ].sort((left, right) => left.index - right.index);
-    const acceptanceCriteriaSections = markdownHeadings
+    const acceptanceCriteriaSections = headings
       .filter(({ title }) => /\bAcceptance Criteria\b/i.test(title))
       .map((heading) => {
-        const nextPeerHeading = markdownHeadings.find(
+        const nextPeerHeading = headings.find(
           (candidate) => candidate.index > heading.index && candidate.level <= heading.level,
         );
         return contents.slice(heading.end, nextPeerHeading?.index ?? contents.length);
@@ -1789,7 +1793,7 @@ for (const relative of f203Artifacts) {
       addsUnscheduledProseCriterion ||
       addsUnscheduledTableCriterion ||
       addsHeadingScopedCriterion ||
-      markdownHeadings.some(({ title }) =>
+      headings.some(({ title }) =>
         /(?:Phase 2\b.*\bAcceptance Criteria|Acceptance Criteria\b.*\bPhase 2)\b/i.test(title),
       )
     ) {
@@ -1829,6 +1833,7 @@ for (const relative of f203Artifacts) {
         });
       const requiresListAssignment = relative === "docs/ROADMAP.md" || relative === "docs/PRD.md";
       const isListAssignment = requiresListAssignment && /^\s*(?:[-*+]|\d+[.)])\s+/.test(raw);
+      const isTableAssignment = requiresListAssignment && /^\s*\|/.test(raw);
       if (requiresListAssignment) {
         if (relative === "docs/ROADMAP.md" && f203RoadmapDecision.test(raw)) {
           return lower.includes("f-203") && addressesScope;
@@ -1837,7 +1842,11 @@ for (const relative of f203Artifacts) {
           return lower.includes("f-203") && addressesScope;
         }
         if (!isListAssignment) {
-          return lower.includes("f-203") && addressesScope && f203SpecAssignment.test(normalized);
+          return (
+            lower.includes("f-203") &&
+            addressesScope &&
+            (isTableAssignment || f203SpecAssignment.test(normalized))
+          );
         }
         const ownsF203 = f203ListOwner.test(raw);
         const isRoadmapCore =
@@ -1875,7 +1884,15 @@ for (const relative of f203Artifacts) {
       );
     }
     if (relative === "specs/F-203-deadline-alerts.md" && f203SpecDecision.test(raw)) {
-      return f203Negation.test(normalized) || f203SchedulingConflict.test(normalized);
+      if (f203Negation.test(normalized) || f203SchedulingConflict.test(normalized)) return true;
+      if (!f203CapabilityMention.test(normalized)) return false;
+      const hasCompleteScope =
+        f203RetainedScope.test(normalized) ||
+        (f203SpecScope.test(normalized) &&
+          hasAllF203Capabilities(normalized) &&
+          f203Planning.test(normalized));
+      const remaining = normalized.replace(f203RetainedScope, "").replace(f203SpecScope, "");
+      return !hasCompleteScope || f203SpecAssignment.test(remaining);
     }
     const ownerSeparator = normalized.indexOf("—");
     const assignedScope =
@@ -1951,12 +1968,11 @@ for (const relative of f203Artifacts) {
       if (isScopeDecision) {
         return /\bunscheduled\s+Phase 2\s+depth\b/i.test(normalized);
       }
-      const headingPattern = relative === "docs/ROADMAP.md" ? /^#{1,2}\s+/ : /^#{1,3}\s+/;
-      const heading = contents
-        .slice(0, offset)
-        .split(/\r?\n/)
-        .findLast((line) => headingPattern.test(line));
-      return /\bPhase\s+(\d+)\b/i.exec(heading ?? "")?.[1] === "2";
+      const maxHeadingLevel = relative === "docs/ROADMAP.md" ? 2 : 3;
+      const heading = headings.findLast(
+        (candidate) => candidate.index < offset && candidate.level <= maxHeadingLevel,
+      );
+      return /\bPhase\s+(\d+)\b/i.exec(heading?.title ?? "")?.[1] === "2";
     });
     if (!underPhase2) {
       f203Failures.push(`${relative} must keep its F-203 full-scope assignment under Phase 2`);
