@@ -360,20 +360,32 @@ describe("per-line citations and status (AC 2, AC 3)", () => {
   );
 
   it.each(["Published output note", "Published verification qualification"])(
-    "does not repeat confirmation from a %s",
+    "keeps one confirmation visible before and after expanding a %s",
     async (publishedProse) => {
       const note = `${publishedProse}: ${CONFIRM_WITH_AGENCY}`;
-      const line = await lineFor(
-        finding({
-          verificationStatus: "RESEARCH_REQUIRED",
-          notes: [note],
+      stubApi(
+        plan({
+          findings: [
+            finding({
+              verificationStatus: "RESEARCH_REQUIRED",
+              notes: [note],
+            }),
+          ],
         }),
       );
+      renderPlan();
+      const article = await screen.findByRole("article");
+      const line = within(article);
 
-      expect(
-        (screen.getByRole("article").textContent ?? "").split(CONFIRM_WITH_AGENCY),
-      ).toHaveLength(2);
+      expect(line.getByRole("note").textContent).toBe(CONFIRM_WITH_AGENCY);
+      expect(line.queryByText(note)).toBeNull();
+      expect((article.textContent ?? "").split(CONFIRM_WITH_AGENCY)).toHaveLength(2);
+
+      await userEvent.click(line.getByRole("button", { name: /^Details for/ }));
+
+      expect(line.queryByRole("note")).toBeNull();
       expect(line.getByText(note)).toBeDefined();
+      expect((article.textContent ?? "").split(CONFIRM_WITH_AGENCY)).toHaveLength(2);
       expect(line.getByText("RESEARCH REQUIRED")).toBeDefined();
     },
   );

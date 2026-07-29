@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { CONFIRM_WITH_AGENCY, type FindingSource } from "@pop-engine/engine";
 import { Disclosure } from "../disclosure";
 import { PortalBlock } from "../portal-block";
@@ -132,11 +132,12 @@ function Citation({ source }: { source: FindingSource }) {
 export function PlanLine({ finding }: { finding: ConsumedFinding }) {
   const ruleIds = finding.ruleIds.join(", ");
   const isResearchRequired = finding.verificationStatus === "RESEARCH_REQUIRED";
-  const findingShowsResearchTreatment =
+  const [detailsOpen, setDetailsOpen] = useState(false);
+  const summaryShowsResearchTreatment =
+    isResearchRequired && includesAgencyConfirmation([finding.deadlineDisplay, finding.feeDisplay]);
+  const detailsShowResearchTreatment =
     isResearchRequired &&
     includesAgencyConfirmation([
-      finding.deadlineDisplay,
-      finding.feeDisplay,
       finding.conflictText,
       finding.noteText,
       finding.timelineUnresolvedReason,
@@ -202,11 +203,13 @@ export function PlanLine({ finding }: { finding: ConsumedFinding }) {
 
       {/* A RESEARCH_REQUIRED line has no located primary source, which the organizer has to see
           on the line itself rather than discover behind an expand: the absence IS the finding. */}
-      {isResearchRequired && !findingShowsResearchTreatment && (
-        <p className="line__research" role="note">
-          {CONFIRM_WITH_AGENCY}
-        </p>
-      )}
+      {isResearchRequired &&
+        !summaryShowsResearchTreatment &&
+        !(detailsOpen && detailsShowResearchTreatment) && (
+          <p className="line__research" role="note">
+            {CONFIRM_WITH_AGENCY}
+          </p>
+        )}
 
       {/* COVERAGE_GAP means this ruleset version does not model the combination, not that a
           source is missing (published legend, rules/nyc-rules.v2.8.json). Saying "no source" here
@@ -229,7 +232,11 @@ export function PlanLine({ finding }: { finding: ConsumedFinding }) {
           exactly that shape: one source, no notes, no portal, no conflict. Rendering the panel
           always means no field moved into it can disappear with it, for any finding shape, rather
           than that one hole being patched. */}
-      <Disclosure label={`Details for ${name}`} className="line__detail">
+      <Disclosure
+        label={`Details for ${name}`}
+        className="line__detail"
+        onOpenChange={setDetailsOpen}
+      >
         <p className="line__meta">
           <span className="line__rule-ids">{ruleIds}</span>
           {finding.lastVerifiedDate !== null && (

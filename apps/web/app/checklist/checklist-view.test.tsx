@@ -857,7 +857,7 @@ describe("AC 5 · deadline context lives where the work happens", () => {
   );
 
   it.each(["Published output note", "Published verification qualification"])(
-    "does not repeat confirmation from a %s",
+    "keeps one confirmation visible before and after expanding a %s",
     async (publishedProse) => {
       const note = `${publishedProse}: ${CONFIRM_WITH_AGENCY}`;
       stubApi({
@@ -873,9 +873,16 @@ describe("AC 5 · deadline context lives where the work happens", () => {
       });
       await renderView();
 
-      const row = await expandedRowFor(SOUND_DEPENDENCY);
+      const row = rowFor(SOUND_DEPENDENCY);
+      expect(within(row).getByRole("note").textContent).toBe(CONFIRM_WITH_AGENCY);
+      expect(within(row).queryByText(note)).toBeNull();
       expect(row.textContent?.split(CONFIRM_WITH_AGENCY)).toHaveLength(2);
+
+      await userEvent.click(within(row).getByRole("button", { name: /^Details for/ }));
+
+      expect(within(row).queryByRole("note")).toBeNull();
       expect(within(row).getByText(note)).toBeDefined();
+      expect(row.textContent?.split(CONFIRM_WITH_AGENCY)).toHaveLength(2);
       expect(within(row).getByText("RESEARCH REQUIRED")).toBeDefined();
     },
   );
