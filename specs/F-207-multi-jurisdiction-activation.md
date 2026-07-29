@@ -25,7 +25,7 @@ PopEngine can activate a second approved jurisdiction by publishing data and fix
 
 - Approved jurisdiction selection/input contracts, F-108/F-109 behavior as required, and the complete rules publication process.
 - Verification owner plus engine owner review; exact city and source set are TBD and block approval.
-- Baseline at draft time: PRD, Roadmap, Design, and Phase 0–1.5 Architecture approved 2026-07-22; `ARCHITECTURE-FUTURE.md` approved as a planning target 2026-07-25; NYC ruleset `nyc.v2.7`, rules schema `popengine-rules/v2`, and scenario fixtures v5 where regulatory output is consumed.
+- Baseline at review time: PRD, Roadmap, Design, and Phase 0–1.5 Architecture approved 2026-07-22; `ARCHITECTURE-FUTURE.md` approved as a planning target 2026-07-25; NYC ruleset `nyc.v2.9` checksum `4c1a5db24c699c51e6dcfc27a8804ba09ee69314f241a329505158e0c115c4fb`, rules schema `popengine-rules/v2`, and scenario fixtures v7 where regulatory output is consumed.
 - The approval PR must re-pin any baseline version that changes before approval. A proposed or superseded input blocks implementation.
 
 ## Inputs, Outputs, State, Validation, and Errors
@@ -60,12 +60,12 @@ Exact HTTP, JSON Schema, migration, job, and provider shapes belong in their rev
 2. **F207-AC-02:** The unchanged generic engine passes every approved second-jurisdiction scenario and boundary fixture with deterministic byte-stable output.
 3. **F207-AC-03:** The implementation adds no jurisdiction-named calculator, package, condition evaluator, or runtime branch.
 4. **F207-AC-04:** If a required classification cannot be represented by the approved AST, publication stops and a separate architecture/schema decision is opened.
-5. **F207-AC-05:** NYC v2.7 replay and the full existing fixture suite remain unchanged and green.
+5. **F207-AC-05:** The checksummed current NYC v2.9 artifact and full scenario fixtures v7 remain unchanged and green; older NYC artifacts run only as explicitly versioned historical replay cases.
 
 ## Fixtures and Verification
 
 - Planned automated fixture IDs are the acceptance IDs above; each must map one-to-one to a runnable test before approval can claim implementation readiness.
-- Regulatory fixtures: A complete new jurisdiction suite with named scenario and below/at/above boundary IDs must be independently approved; NYC v5 remains a regression suite.
+- Regulatory fixtures: A complete new jurisdiction suite with named scenario and below/at/above boundary IDs must be independently approved; NYC scenario fixtures v7 against the checksummed v2.9 artifact remain the current regression suite, with older versions labeled historical replay only.
 - Security-sensitive and cross-workspace paths require negative authorization tests; provider paths require success, duplicate-delivery, retry, invalid-signature, and permanent-failure tests where applicable.
 
 ## Allowed Footprint and Coordination

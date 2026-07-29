@@ -12,7 +12,7 @@ An organizer can generate one current event-day sheet containing confirmed permi
 
 **In scope**
 
-- Assemble a versioned runbook from current confirmed checklist/application data, organizer-entered load-in tasks/contacts, and available staff assignments.
+- Own minimal organizer-entered load-in task and operational-contact records and assemble them with current confirmed checklist/application data and the approved staff-assignment source into a versioned runbook.
 - Preview, refresh, and print the runbook with source timestamps and incomplete/conflict warnings.
 - Keep regulatory wording and statuses sourced from the approved plan/findings.
 
@@ -44,13 +44,13 @@ An organizer can generate one current event-day sheet containing confirmed permi
 
 ## System Impact
 
-| Concern              | Proposed impact                                                                                                                             |
-| -------------------- | ------------------------------------------------------------------------------------------------------------------------------------------- |
-| API                  | Runbook preview/generate/read operations require an approved OpenAPI contract if snapshots are persisted.                                   |
-| Schema               | Use existing source records; add only a minimal immutable runbook snapshot/reference by forward migration if approval requires persistence. |
-| Jobs                 | None for the minimal synchronous runbook; asynchronous document rendering requires a separately approved job.                               |
-| Providers            | None.                                                                                                                                       |
-| Privacy and security | Organizer-only/private by default; printed/downloaded output is explicitly warned as containing contacts and operational details.           |
+| Concern              | Proposed impact                                                                                                                                    |
+| -------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------- |
+| API                  | Minimal load-in task/operational-contact CRUD plus runbook preview/generate/read operations require approved OpenAPI contracts.                    |
+| Schema               | Forward migration for minimal F-405-owned load-in task/contact records; add an immutable runbook snapshot/reference only if retention is approved. |
+| Jobs                 | None for the minimal synchronous runbook; asynchronous document rendering requires a separately approved job.                                      |
+| Providers            | None.                                                                                                                                              |
+| Privacy and security | Organizer-only/private by default; printed/downloaded output is explicitly warned as containing contacts and operational details.                  |
 
 Exact HTTP, JSON Schema, migration, job, and provider shapes belong in their reviewed machine contracts; this proposal does not authorize parallel local types or edits to merged migrations.
 
@@ -83,5 +83,5 @@ Exact HTTP, JSON Schema, migration, job, and provider shapes belong in their rev
 ## Approval Blockers
 
 - Resolve [SPEC-CONFLICT #207](https://github.com/jzeng151/pop-engine/issues/207) and approve the resulting staff-assignment source without omitting the Roadmap-required field or silently changing phase order.
-- Approve included fields, ready/incomplete wording, privacy handling, and whether snapshots require persistence.
+- Approve minimal load-in task/contact fields and lifecycle, included runbook fields, ready/incomplete wording, privacy handling, and whether snapshots require persistence.
 - Assign the owner and independent reviewer, approve this spec, and add it to `docs/BASELINE.md`.

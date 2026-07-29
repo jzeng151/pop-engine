@@ -12,8 +12,7 @@ An organizer can combine published permit-fee information with their own budget 
 
 **In scope**
 
-- Import known fee facets from the immutable plan and add/edit/remove user-entered estimated line items.
-- Optionally import organizer-selected eligible cost lines from a confirmed F-407 snapshot as proposed user estimates under an approved category/currency mapping, preserving snapshot provenance.
+- Import known fee facets from the immutable plan and add/edit/remove user-entered estimated line items with optional source provenance.
 - Calculate known total, unknown-fee warning, target variance, and category subtotals in one currency.
 - Preserve source and verification status for every rule-derived fee.
 
@@ -25,13 +24,13 @@ An organizer can combine published permit-fee information with their own budget 
 ## Dependencies and Baseline
 
 - F-201 typed findings and approved money/source contracts.
-- F-406 consumes the approved budget snapshot for actuals comparison; confirmed F-407 snapshots may seed a later event's proposed estimates through the approved mapping.
+- F-406 consumes the approved budget snapshot for actuals comparison; later integrations may submit organizer-confirmed proposals through F-104's existing user-line contract without becoming F-104 prerequisites.
 - Baseline at draft time: PRD, Roadmap, Design, and Phase 0–1.5 Architecture approved 2026-07-22; `ARCHITECTURE-FUTURE.md` approved as a planning target 2026-07-25; NYC ruleset `nyc.v2.7`, rules schema `popengine-rules/v2`, and scenario fixtures v5 where regulatory output is consumed.
 - The approval PR must re-pin any baseline version that changes before approval. A proposed or superseded input blocks implementation.
 
 ## Inputs, Outputs, State, Validation, and Errors
 
-- Inputs are one immutable plan, target budget, user lines, and an optional confirmed F-407 snapshot; output is a versioned budget with known totals and explicit unknown coverage.
+- Inputs are one immutable plan, target budget, and user lines with optional provenance; output is a versioned budget with known totals and explicit unknown coverage.
 - Budget state is draft → saved; plan regeneration makes imported rule lines stale and requires explicit refresh into a new budget version.
 - Amounts use integer minor units, one explicit currency, and nonnegative validation unless an approved revenue line belongs in later F-406.
 - Missing or unresolved material data stays visibly unset, unknown, pending, or failed as appropriate; it never becomes a successful or complete result.
@@ -62,7 +61,6 @@ Exact HTTP, JSON Schema, migration, job, and provider shapes belong in their rev
 3. **F104-AC-03:** User lines validate currency and minor units and produce deterministic category, known-total, and target-variance calculations.
 4. **F104-AC-04:** Plan regeneration marks imported lines stale; refresh creates a new budget version and preserves prior values.
 5. **F104-AC-05:** Deleting or editing a user line never changes the immutable plan or a rule-derived fee.
-6. **F104-AC-06:** Import from F-407 accepts only a confirmed snapshot, maps only approved same-currency cost lines, preserves snapshot/line provenance, and presents them as editable proposed user estimates requiring confirmation; missing, incompatible, revenue, and rule-derived lines are not guessed or overwritten.
 
 ## Fixtures and Verification
 
@@ -84,5 +82,5 @@ Exact HTTP, JSON Schema, migration, job, and provider shapes belong in their rev
 
 ## Approval Blockers
 
-- Approve money precision, category list, version/refresh semantics, exact known-total wording, and the F-407 snapshot-to-estimate mapping/provenance contract.
+- Approve money precision, category list, version/refresh semantics, exact known-total wording, and optional user-line provenance.
 - Assign the owner and independent reviewer, approve this spec, and add it to `docs/BASELINE.md`.

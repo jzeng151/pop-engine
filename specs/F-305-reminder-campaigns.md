@@ -56,7 +56,7 @@ Exact HTTP, JSON Schema, migration, job, and provider shapes belong in their rev
 
 ## Acceptance Criteria
 
-1. **F305-AC-01:** T-7, T-1, and day-of schedules resolve from the pinned event revision in the event timezone and reject a send time already invalid under the approved immediate-send policy; when a new revision changes the event date, one transaction marks the old send generation cancelled and schedules its replacements while preserving sent attempts and history.
+1. **F305-AC-01:** T-7, T-1, and day-of schedules resolve from the pinned event revision in the event timezone and reject a send time already invalid under the approved immediate-send policy; when a new revision changes any approved message-relevant field, one transaction marks the old send generation cancelled and schedules replacements pinned to the new revision, recomputing times when date/time changed and otherwise preserving them, while retaining sent attempts/history.
 2. **F305-AC-02:** Only RSVP contacts with the required channel consent and no active suppression receive a job.
 3. **F305-AC-03:** A consent withdrawal, suppression, stale pinned revision, reschedule, or cancellation after scheduling prevents delivery when every claimed or leased job rechecks eligibility and its campaign generation immediately before the provider call.
 4. **F305-AC-04:** Retries, worker crashes, and duplicate claims do not create more than one accepted provider delivery per recipient/campaign/channel.

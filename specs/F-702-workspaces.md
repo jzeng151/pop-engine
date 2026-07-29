@@ -59,7 +59,7 @@ Exact HTTP, JSON Schema, migration, job, and provider shapes belong in their rev
 1. **F702-AC-01:** An authenticated actor can create a workspace and becomes its active owner membership atomically.
 2. **F702-AC-02:** A valid invitation can be accepted once by the intended identity; expired, revoked, reused, or mismatched invitations create no membership.
 3. **F702-AC-03:** Every workspace-owned aggregate rejects cross-workspace reads, writes, identifier guessing, exports, uploads, and job execution.
-4. **F702-AC-04:** The last active owner cannot leave or be removed until ownership is transferred.
+4. **F702-AC-04:** Owner removal/leave serializes on the workspace (or uses an equivalent database invariant) so the last active owner cannot be removed under concurrent requests; the concurrent two-owner removal fixture leaves at least one owner.
 5. **F702-AC-05:** No authenticated user-owned product data or external beta is enabled before F-703 is also deployed and verified.
 
 ## Fixtures and Verification

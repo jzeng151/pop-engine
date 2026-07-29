@@ -60,7 +60,7 @@ Exact HTTP, JSON Schema, migration, job, and provider shapes belong in their rev
 2. **F407-AC-02:** Attendance-versus-RSVP never becomes occupancy unless F-410 both-direction data is the selected source.
 3. **F407-AC-03:** Missing/partial data remains labeled and cannot silently change a denominator or appear as zero.
 4. **F407-AC-04:** Confirmation atomically compares the complete source-version set and rejects any mismatch; the organizer must rebuild the draft before confirmation. A successful confirmation freezes the report, and later source changes require a new report version.
-5. **F407-AC-05:** F-104/F-502 consume only confirmed snapshots and cannot mutate them; F-104 imports only the eligible cost lines defined by its approved snapshot-to-estimate mapping, with exact snapshot/line provenance.
+5. **F407-AC-05:** F-502 consumes only confirmed snapshots and cannot mutate them; F-407 may present eligible same-currency cost lines as organizer-confirmable proposals in F-104's existing user-line shape with exact snapshot/line provenance, without making F-407 an F-104 prerequisite.
 
 ## Fixtures and Verification
 

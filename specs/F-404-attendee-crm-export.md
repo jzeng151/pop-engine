@@ -59,7 +59,7 @@ Exact HTTP, JSON Schema, migration, job, and provider shapes belong in their rev
 1. **F404-AC-01:** An authorized user sees only contacts and event history belonging to the active workspace.
 2. **F404-AC-02:** Repeat-attendee status is true only for one resolved contact linked to accepted F-401 check-ins at at least two distinct events; RSVP or consent alone never counts, and check-in/contact correction or deletion recomputes the flag.
 3. **F404-AC-03:** Consent and suppression are displayed by purpose/channel and are not inferred from RSVP or attendance.
-4. **F404-AC-04:** CSV rows match the active filters, use the approved minimal columns, escape formula-leading values, and expire under the retention policy.
+4. **F404-AC-04:** CSV rows match the active filters, use the approved minimal columns, escape cells beginning with `=`, `+`, `-`, `@`, tab, carriage return, or line feed (including control-prefixed formulas), and expire under the retention policy.
 5. **F404-AC-05:** Correction/deletion and ambiguous-identity changes are reflected consistently in list, detail, repeat flag, and future exports.
 6. **F404-AC-06:** Contact/check-in source versions are pinned to each export; a correction or deletion invalidates queued jobs and unexpired staged downloads containing superseded data, requiring regeneration. Already downloaded copies cannot be recalled and remain subject to the approved retention notice.
 

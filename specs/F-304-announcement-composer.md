@@ -30,8 +30,8 @@ An organizer can generate editable Instagram, email, and SMS drafts from confirm
 
 ## Inputs, Outputs, State, Validation, and Errors
 
-- Inputs are organizer-selected confirmed public facts and tone; outputs are non-authoritative editable drafts labeled as AI-generated.
-- Draft state is requested → generated, failed, or rejected by policy; generation never mutates event data or publishes content.
+- Inputs are organizer-selected confirmed public facts from an exact event revision and tone; outputs are non-authoritative editable drafts labeled as AI-generated and pinned to that revision.
+- Draft state is requested → generated, stale, failed, or rejected by policy; a source-revision change makes the draft visibly stale before copy, and generation never mutates event data or publishes content.
 - Unsupported, unknown, private, and regulatory-sensitive fields are excluded or represented only by approved plan wording.
 - Missing or unresolved material data stays visibly unset, unknown, pending, or failed as appropriate; it never becomes a successful or complete result.
 - Invalid input produces a field or action-specific error without partial mutation. Retriable external failures preserve the user's confirmed state and expose a safe retry.
@@ -56,7 +56,7 @@ Exact HTTP, JSON Schema, migration, job, and provider shapes belong in their rev
 
 ## Acceptance Criteria
 
-1. **F304-AC-01:** For one confirmed event snapshot, the composer returns distinct Instagram, email, and SMS drafts tied to the exact prompt/model version.
+1. **F304-AC-01:** For one confirmed event snapshot, the composer returns distinct Instagram, email, and SMS drafts tied to the exact event revision and prompt/model version; a newer source revision visibly invalidates or warns on those drafts before copy.
 2. **F304-AC-02:** The provider receives only the organizer-approved public fields shown in the preview; private documents, contacts, and hidden intake values are absent.
 3. **F304-AC-03:** Drafts cannot send or publish, and copying/editing a draft does not mutate the event or approved plan.
 4. **F304-AC-04:** Generated text cannot add a regulatory deadline, fee, agency, permit, completeness claim, or requirement not present in approved source wording.

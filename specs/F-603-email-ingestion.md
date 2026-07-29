@@ -61,7 +61,7 @@ Exact HTTP, JSON Schema, migration, job, and provider shapes belong in their rev
 3. **F603-AC-03:** Event/application matching remains pending until an authorized user confirms or reassigns it.
 4. **F603-AC-04:** Ambiguous, unmatched, quarantined, unsafe, or failed messages cannot trigger extraction/reconciliation or workflow mutation.
 5. **F603-AC-05:** Email authentication results are displayed as evidence limits and never represented as regulatory or sender authority.
-6. **F603-AC-06:** Confirming or reassigning a match atomically links the exact immutable message and each safe document version to the application and makes each eligible document available to F-602 exactly once; retries do not duplicate source links or downstream extraction work.
+6. **F603-AC-06:** Confirming or reassigning compare-and-swaps the expected pending match version and atomically commits the winning application link, exact immutable message/safe document versions, and F-602 outbox work; a conflicting terminal decision is rejected, and retries do not duplicate links or extraction work.
 
 ## Fixtures and Verification
 

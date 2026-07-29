@@ -60,7 +60,7 @@ Exact HTTP, JSON Schema, migration, job, and provider shapes belong in their rev
 2. **F409-AC-02:** After reconnection, repeated sync of the same operation creates at most one server check-in and returns the same acknowledgment.
 3. **F409-AC-03:** Concurrent devices and preexisting check-ins resolve through F-401 identity rules without losing an operation silently.
 4. **F409-AC-04:** Acknowledged data is removed locally; rejected/pending data remains visible until resolved or explicitly discarded with confirmation/audit.
-5. **F409-AC-05:** Offline storage contains only the approved minimal fields. Event close, staff sign-out, or retention expiry clears it only when no pending or rejected operation remains; otherwise sign-out is blocked or requires an explicit confirmed and audited discard or secure handoff.
+5. **F409-AC-05:** Offline storage contains only approved minimal encrypted fields. Before event close, sign-out, or hard retention expiry, pending/rejected operations require resolution, confirmed audited discard, or secure server handoff; at hard expiry the contact payload is cleared without user interaction, retaining at most a non-sensitive operation/conflict tombstone so an abandoned shared device cannot keep attendee data indefinitely.
 
 ## Fixtures and Verification
 

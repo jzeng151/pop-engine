@@ -30,7 +30,7 @@ An organizer can compare two event configurations using two complete engine eval
 
 ## Inputs, Outputs, State, Validation, and Errors
 
-- Inputs are two complete revision snapshots plus identical evaluation context; outputs are two immutable plans and a derived comparison.
+- Inputs are two complete revision snapshots, one organizer-selected shared target month, and identical evaluation context; outputs are two immutable plans and a derived comparison.
 - Comparison state is unevaluated → evaluating → comparable, conditional, or failed; one failed evaluation never becomes a favorable comparison.
 - Unknown/conflict/research-required findings remain visible on their respective side and in the difference summary.
 - Missing or unresolved material data stays visibly unset, unknown, pending, or failed as appropriate; it never becomes a successful or complete result.
@@ -58,7 +58,7 @@ Exact HTTP, JSON Schema, migration, job, and provider shapes belong in their rev
 
 1. **F103-AC-01:** Both configurations evaluate with byte-identical ruleset, calendar, and `today` inputs, producing normal immutable plans.
 2. **F103-AC-02:** The comparison identifies each added, removed, and materially changed finding without hiding deduplicated source facets.
-3. **F103-AC-03:** Permit burden is derived from typed plan output, and earliest feasible dates come only from F-106 candidate-date evaluations using the same engine context; neither value comes from prose parsing or a second rules implementation.
+3. **F103-AC-03:** Permit burden is derived from typed plan output, and earliest feasible dates come only from F-106 candidate-date evaluations for the same explicit shared target month and engine context; neither value comes from prose parsing or a second rules implementation.
 4. **F103-AC-04:** Unknown, conflict, research-required, or evaluation failure remains visible and cannot make a configuration appear better by omission.
 5. **F103-AC-05:** Swapping left and right preserves each plan and reverses only directional comparison labels.
 
