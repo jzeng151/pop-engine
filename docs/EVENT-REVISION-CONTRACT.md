@@ -100,10 +100,24 @@ The exact HTTP request and error schemas belong in the reviewed OpenAPI contract
 ### 2.5 Plans bind to exact revisions
 
 - Every new plan references one `event_revision_id`.
+- After Event Revisions are enabled, every plan-generation path, including a still-deployed Phase 1
+  path, must read `current_revision_id` in the same consistency boundary as the exact answers it
+  evaluates and persist that captured revision ID on the plan. It never attaches whatever revision
+  is current after evaluation. Alternatively, deployment must atomically disable the legacy
+  generator before enabling Event Revisions.
 - The database must reject a plan whose `event_id` and revision belong to different events.
 - Before evaluation and persistence, the selected published ruleset's jurisdiction must exactly
   equal the referenced revision's `jurisdiction_code`. Generation and persistence reject a
   mismatch.
+- The selected published evaluation contract names the exact Event Input schema it accepts. Before
+  evaluation, the referenced revision must either use that `input_schema_version` or pass an
+  approved lossless transform into it and then pass complete validation under the target schema.
+  Missing compatibility, transform loss, or incomplete validation rejects generation; it never
+  interprets an older answer under changed field or enum semantics.
+- The selected ruleset pins the exact calendar artifact used for evaluation. Generation resolves
+  that artifact and rejects a calendar whose ID, version, checksum, or jurisdiction does not match
+  the ruleset's declaration. Persisting calendar provenance does not substitute for validating the
+  binding before evaluation.
 - Plans, findings, traces, and their regulatory snapshots remain immutable.
 - A plan is stale when its revision differs from `events.current_revision_id`.
 - Generating a candidate does not move `current_plan_id`.
@@ -275,9 +289,16 @@ Before activation, the consuming implementation must prove:
   authenticated actor;
 - missing and explicit `unknown` remain distinct;
 - plans reference exact revisions and staleness is server-derived;
+- a legacy generation path racing a revision save either persists the revision ID captured with the
+  exact projected answers it evaluated or is disabled before Event Revisions activate; it never
+  binds the plan to a later current revision;
 - a revision save rejects a jurisdiction different from the Event's jurisdiction, and an Event
   jurisdiction change cannot occur through the revision-save path;
 - plan generation and persistence reject a ruleset/revision jurisdiction mismatch;
+- plan generation rejects a revision whose Event Input schema is neither the selected evaluation
+  contract's exact schema nor losslessly transformed and completely revalidated under it;
+- plan generation rejects a calendar artifact whose ID, version, checksum, or jurisdiction does not
+  match the selected ruleset's declaration;
 - `current_plan_id` backfills from the same-event checklist acknowledgement, or remains null when
   none exists, regardless of newer generated plans;
 - while legacy and new acceptance paths coexist, accepting through either path atomically leaves
