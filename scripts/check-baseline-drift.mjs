@@ -1624,11 +1624,13 @@ const hasAllF203Capabilities = (text) =>
   f203CapabilityNames.every((capability) => text.toLowerCase().includes(capability));
 const f203CapabilityMention =
   /\b(?:escalations?|digests?|team reminders?|per-user preferences?)\b/i;
+const f203CriterionNonGoal =
+  /\b(?:must|shall|should|does|do|will|is|are)\s+not\b|\b(?:non-goal|out of scope|excluded)\b/i;
 const f203DecisionScope =
   /\b(?:scope|depth|phase\s+\d+|planned|unplanned|scheduled|unscheduled|scheduling|acceptance criteria)\b/i;
 const f203Planning = /\bplanned,\s+(?:not scheduled|unscheduled)\b/i;
 const f203Negation =
-  /\bnot planned\b|\b(?:no|without)\s+(?:alert )?(?:escalations|digests|team reminders|per-user preferences)\b/i;
+  /\b(?:not planned|unplanned)\b|\b(?:no|without)\s+(?:alert )?(?:escalations|digests|team reminders|per-user preferences)\b/i;
 const f203SchedulingConflict =
   /\b(?:(?:is|are|was|were|has been|have been|will be|must be|may be|can be)\s+(?:now\s+)?scheduled|now scheduled)\b/i;
 const f203Failures = [];
@@ -1679,7 +1681,9 @@ for (const relative of f203Artifacts) {
       .split(/\r?\n(?=\s*(?:[-*+]|\d+\.)\s+)/)
       .some(
         (criterion) =>
-          /^\s*(?:[-*+]|\d+\.)\s+/.test(criterion) && f203CapabilityMention.test(criterion),
+          /^\s*(?:[-*+]|\d+\.)\s+/.test(criterion) &&
+          f203CapabilityMention.test(criterion) &&
+          !f203CriterionNonGoal.test(criterion),
       );
     if (
       addsUnscheduledCriterion ||
@@ -1747,7 +1751,7 @@ for (const relative of f203Artifacts) {
       );
     }
     if (relative === "specs/F-203-deadline-alerts.md" && f203SpecDecision.test(raw)) {
-      return f203SchedulingConflict.test(normalized);
+      return f203Negation.test(normalized) || f203SchedulingConflict.test(normalized);
     }
     if (
       !f203Capabilities.test(normalized) ||

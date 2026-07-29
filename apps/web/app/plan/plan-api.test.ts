@@ -31,7 +31,14 @@ const storedPlan = {
   rulesetVersion: "nyc.v2.3",
   snapshotDate: "2026-07-25",
   verdict: "CONDITIONAL",
-  verdictDetail: { minSlackDays: null, missingFacts: [] },
+  verdictDetail: {
+    blockingFinding: null,
+    missedRuleIds: [],
+    minSlackDays: null,
+    missingFacts: [],
+    unresolvedTimelines: [],
+    rescopeSuggestions: [],
+  },
   today: "2026-07-25",
   generatedAt: "2026-07-25T12:00:00.000Z",
   findings: [],
@@ -371,3 +378,21 @@ describe("coverage of every field this feature reads", () => {
     });
   });
 });
+
+
+  it("accepts a conditional missingFact that omits thresholds (pre-field stored plans)", async () => {
+    stubFetch(async () =>
+      jsonResponse(200, {
+        ...storedPlan,
+        verdict: "CONDITIONAL",
+        verdictDetail: {
+          ...storedPlan.verdictDetail,
+          missingFacts: [{ field: "venue_license_covers_event_area", branches: [] }],
+        },
+      }),
+    );
+    const result = await loadPlan("http://api.test", "event-1");
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.plan.verdictDetail.missingFacts[0]?.thresholds).toBeNull();
+  });

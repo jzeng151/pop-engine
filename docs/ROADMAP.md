@@ -8,7 +8,7 @@
 
 Prerequisites, not features:
 
-- Agree the `events` schema (the team's single integration point) — approved by all four devs before any lane codes.
+- Ratify the `events` schema (the team's single integration point) — completed for the access-gated demo 2026-07-27 through PR #137's recorded overwrite; strict production ratification and later shared/core-table changes remain team decisions.
 - Ratify `rules/nyc-rules.v2.10.json` (42 rules + 4 advisories: verification-owner sign-off + team approval per `BASELINE.md`); boot validation loads it.
 - Repo scaffold, deploy target, Twilio account + A2P registration started.
 

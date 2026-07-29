@@ -304,6 +304,17 @@ export type RescopeSuggestion = {
   readonly change: { readonly field: string; readonly value: string };
   readonly reevaluatedVerdict: Verdict;
   readonly droppedRuleIds: readonly string[];
+  /**
+   * F-102 enrichment on the current ruleset line (nyc.v2.8+). Omitted entirely when evaluating a
+   * superseded era so AD-7 replay keeps the historical three-field suggestion shape.
+   */
+  readonly introducedRuleIds?: readonly string[];
+  /**
+   * Present on at-risk re-evaluations when enrichment is emitted. Omitted on other suggestions and
+   * on three-field historical eras.
+   */
+  readonly minSlackDays?: number | null;
+  readonly atRiskFindingName?: string | null;
 };
 
 export type EvaluationTraceEntry = { readonly ruleId: string; readonly result: Tristate };

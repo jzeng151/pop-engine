@@ -78,7 +78,6 @@ const emptyVerdictDetail = {
   missingFacts: [],
   unresolvedTimelines: [],
   rescopeSuggestions: [],
-  trace: [],
 };
 
 const plan = (overrides: Record<string, unknown> = {}) => ({
@@ -904,6 +903,271 @@ describe("the verdict's approved copy", () => {
     await screen.findByRole("complementary", { name: "Rules snapshot" });
 
     expect(screen.queryByText(/internal planning buffer/)).toBeNull();
+  });
+});
+
+
+describe("F-102 · undated deadlines note", () => {
+  it("notes FEASIBLE when every deadline is undated", async () => {
+    stubApi(
+      plan({
+        verdict: "FEASIBLE",
+        findings: [
+          finding({ deadlineStatus: "not_applicable" }),
+          finding({ ruleIds: ["Y"], deadlineStatus: "not_calculable" }),
+        ],
+      }),
+    );
+    renderPlan();
+    expect((await screen.findByTestId("no-dated-deadlines")).textContent).toBe(
+      "No dated deadlines identified.",
+    );
+  });
+
+  it("does not claim undated deadlines when any dated status appears", async () => {
+    stubApi(
+      plan({
+        verdict: "FEASIBLE",
+        findings: [finding({ deadlineStatus: "on_track" })],
+      }),
+    );
+    renderPlan();
+    await screen.findByRole("complementary", { name: "Rules snapshot" });
+    expect(screen.queryByTestId("no-dated-deadlines")).toBeNull();
+  });
+});
+
+describe("F-102 · CONDITIONAL branch table and INFEASIBLE rescope ladder", () => {
+  it("renders each missing fact's branch outcomes for CONDITIONAL", async () => {
+    stubApi(
+      plan({
+        verdict: "CONDITIONAL",
+        verdictDetail: {
+          ...emptyVerdictDetail,
+          missingFacts: [
+            {
+              field: "venue_license_covers_event_area",
+              thresholds: null,
+              branches: [
+                {
+                  value: "yes",
+                  verdict: "CONDITIONAL",
+                  reason: "sound audibility still open",
+                },
+                {
+                  value: "no",
+                  verdict: "INFEASIBLE",
+                  reason: "SLA one-day window missed",
+                },
+              ],
+            },
+          ],
+        },
+      }),
+    );
+    renderPlan();
+    await screen.findByTestId("verdict-detail");
+
+    const fact = screen.getByTestId("missing-fact");
+    expect(fact.textContent).toContain("venue license covers event area");
+    expect(within(fact).getByText("Depends on")).toBeDefined();
+    expect(within(fact).getByText("Published deadline missed as scoped")).toBeDefined();
+    expect(within(fact).getByText("sound audibility still open")).toBeDefined();
+    expect(within(fact).getByText("SLA one-day window missed")).toBeDefined();
+  });
+
+  it("does not claim exhaustive branching when a numeric fact has only thresholds", async () => {
+    stubApi(
+      plan({
+        verdict: "CONDITIONAL",
+        verdictDetail: {
+          ...emptyVerdictDetail,
+          missingFacts: [
+            {
+              field: "tent_area_sqft",
+              branches: [],
+              thresholds:
+                "DOB-TENT-001 applies above 400; exactly 400 is a conditional boundary (confirm with the publishing agency)",
+            },
+          ],
+        },
+      }),
+    );
+    renderPlan();
+    await screen.findByTestId("verdict-detail");
+
+    expect(screen.getByTestId("verdict-detail").textContent).toContain(
+      "cannot be exhaustively branched",
+    );
+    expect(screen.getByTestId("verdict-detail").textContent).not.toContain(
+      "evaluated on every published answer",
+    );
+  });
+
+  it("names the blocking finding and lists each re-evaluated rescope for INFEASIBLE", async () => {
+    stubApi(
+      plan({
+        verdict: "INFEASIBLE",
+        verdictDetail: {
+          ...emptyVerdictDetail,
+          blockingFinding: {
+            ruleIds: ["SAPO-STREET-LARGE-001"],
+            name: "Street Activity Permit — Large",
+          },
+          missedRuleIds: ["SAPO-STREET-LARGE-001"],
+          rescopeSuggestions: [
+            {
+              change: { field: "location_type", value: "private_venue" },
+              reevaluatedVerdict: "CONDITIONAL",
+              droppedRuleIds: ["SAPO-INSURANCE-001", "SAPO-STREET-LARGE-001"],
+              introducedRuleIds: [
+                "ADV-NOISE-CODE-001",
+                "ADV-VENUE-OCCUPANCY-001",
+                "DOB-ASSEMBLY-001",
+              ],
+              minSlackDays: null,
+              atRiskFindingName: null,
+            },
+            {
+              change: { field: "street_event_size", value: "medium" },
+              reevaluatedVerdict: "FEASIBLE_AT_RISK",
+              droppedRuleIds: ["SAPO-STREET-LARGE-001"],
+              introducedRuleIds: ["SAPO-STREET-MEDIUM-001"],
+              minSlackDays: 5,
+              atRiskFindingName: "Street Activity Permit — Medium",
+            },
+            {
+              change: { field: "street_event_size", value: "small" },
+              reevaluatedVerdict: "FEASIBLE_AT_RISK",
+              droppedRuleIds: ["SAPO-STREET-LARGE-001"],
+              introducedRuleIds: ["SAPO-STREET-SMALL-001"],
+              minSlackDays: null,
+              atRiskFindingName: "Organizer notification to DOHMH",
+            },
+          ],
+        },
+      }),
+    );
+    renderPlan();
+    await screen.findByTestId("verdict-detail");
+
+    expect(screen.getByTestId("blocking-finding").textContent).toContain(
+      "Street Activity Permit — Large",
+    );
+    expect(screen.getByTestId("rescope-ladder")).toBeDefined();
+    const suggestions = screen.getAllByTestId("rescope-suggestion");
+    expect(suggestions).toHaveLength(3);
+    // AC 7 ladder order even when the wire arrives in field-discovery order.
+    expect(suggestions[0]?.textContent).toContain("medium");
+    expect(suggestions[0]?.textContent).toContain("At risk — apply within 5 days");
+    expect(suggestions[0]?.textContent).toContain("on Street Activity Permit — Medium");
+    expect(suggestions[1]?.textContent).toContain("small");
+    expect(suggestions[2]?.textContent).toContain("private venue");
+    expect(suggestions[2]?.textContent).toContain("would newly appear");
+    expect(suggestions[2]?.textContent).toContain("DOB-ASSEMBLY-001");
+    expect(suggestions[2]?.textContent).toContain("Findings that would newly appear");
+    expect(screen.getByTestId("rescope-at-risk-buffer").textContent).toContain(
+      "PopEngine's internal planning buffer",
+    );
+  });
+
+  it("does not treat one multi-rule finding as multiple missed deadlines", async () => {
+    stubApi(
+      plan({
+        verdict: "INFEASIBLE",
+        findings: [
+          finding({
+            ruleIds: ["DOB-TENT-001", "DOB-TALL-STRUCTURE-001"],
+            name: "Temporary structure filing",
+            deadlineStatus: "published_deadline_missed",
+            latestApplyDate: "2026-07-01",
+          }),
+        ],
+        verdictDetail: {
+          ...emptyVerdictDetail,
+          blockingFinding: {
+            ruleIds: ["DOB-TENT-001", "DOB-TALL-STRUCTURE-001"],
+            name: "Temporary structure filing",
+          },
+          missedRuleIds: ["DOB-TENT-001", "DOB-TALL-STRUCTURE-001"],
+        },
+      }),
+    );
+    renderPlan();
+    await screen.findByTestId("verdict-detail");
+
+    expect(screen.getByTestId("blocking-finding").textContent).toContain(
+      "Temporary structure filing",
+    );
+    expect(screen.getByTestId("blocking-finding").textContent).not.toContain(
+      "All published deadlines missed as scoped",
+    );
+  });
+
+  it("explains a conditional miss on may-be-required published windows", async () => {
+    stubApi(
+      plan({
+        verdict: "CONDITIONAL",
+        findings: [
+          finding({
+            ruleIds: ["DOHMH-ORGANIZER-NOTIFY-001"],
+            name: "Organizer notification to DOHMH",
+            disposition: "may_be_required",
+            deadlineStatus: "published_deadline_missed",
+            latestApplyDate: "2026-07-13",
+          }),
+        ],
+        verdictDetail: {
+          ...emptyVerdictDetail,
+          missedRuleIds: ["DOHMH-ORGANIZER-NOTIFY-001"],
+        },
+      }),
+    );
+    renderPlan();
+    await screen.findByTestId("verdict-detail");
+
+    const section = screen.getByTestId("missed-may-be-required");
+    expect(section.textContent).toContain("past only if the requirement applies");
+    expect(section.textContent).toContain("may-be-required");
+    expect(section.textContent).toContain("keeps the verdict conditional");
+    expect(section.textContent).toContain("DOHMH-ORGANIZER-NOTIFY-001");
+    expect(section.textContent).toContain("Organizer notification to DOHMH");
+  });
+
+  it("lists a multi-rule may-be-required miss once, not once per rule id", async () => {
+    stubApi(
+      plan({
+        verdict: "CONDITIONAL",
+        findings: [
+          finding({
+            ruleIds: ["DOB-TENT-001", "DOB-TALL-STRUCTURE-001"],
+            name: "Temporary structure filing",
+            disposition: "may_be_required",
+            deadlineStatus: "published_deadline_missed",
+            latestApplyDate: "2026-07-01",
+          }),
+        ],
+        verdictDetail: {
+          ...emptyVerdictDetail,
+          missedRuleIds: ["DOB-TENT-001", "DOB-TALL-STRUCTURE-001"],
+        },
+      }),
+    );
+    renderPlan();
+    await screen.findByTestId("missed-may-be-required");
+
+    const section = screen.getByTestId("missed-may-be-required");
+    expect(section.querySelectorAll("li")).toHaveLength(1);
+    expect(section.textContent).toContain("Temporary structure filing");
+    expect(section.textContent).toContain("DOB-TENT-001");
+    expect(section.textContent).toContain("DOB-TALL-STRUCTURE-001");
+  });
+
+  it("shows nothing under a FEASIBLE verdict that has no branch or rescope work", async () => {
+    stubApi(plan({ verdict: "FEASIBLE" }));
+    renderPlan();
+    await screen.findByRole("complementary", { name: "Rules snapshot" });
+    expect(screen.queryByTestId("verdict-detail")).toBeNull();
   });
 });
 
