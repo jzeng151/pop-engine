@@ -67,6 +67,22 @@ const introducedFinding = (ruleId: string) => ({
   portalUrl: publishedRule(ruleId).output.portal?.url ?? null,
 });
 
+const rulesetReferences = {
+  rulesetVersion: publishedRuleset.ruleset_version,
+  findings: [...publishedRuleset.rules, ...publishedRuleset.advisories].flatMap((rule) => {
+    if (rule.output.user_summary === undefined) return [];
+    return [
+      {
+        ruleIds: [rule.id],
+        label: rule.output.user_summary.heading,
+        source: rule.output.user_summary.points.flatMap((point) => point.sources)[0] ?? null,
+        portalName: rule.output.portal?.name ?? null,
+        portalUrl: rule.output.portal?.url ?? null,
+      },
+    ];
+  }),
+};
+
 /** The exactly-20 conflict: two official readings, three pages between them. */
 const CONFLICT_RULE = publishedRule("PARKS-EVENT-EXACTLY-20-001");
 
@@ -157,7 +173,13 @@ const stubApi = (
 };
 
 const renderPlan = () =>
-  render(<PlanView apiBaseUrl="https://api.example.com" eventId="event-1" />);
+  render(
+    <PlanView
+      apiBaseUrl="https://api.example.com"
+      eventId="event-1"
+      rulesetReferences={rulesetReferences}
+    />,
+  );
 
 beforeEach(() => {
   stubApi(plan());
@@ -706,6 +728,7 @@ describe("the plan route", () => {
   it("renders the plan for the event in the path", async () => {
     stubApi(plan());
     vi.stubEnv("NEXT_PUBLIC_API_BASE_URL", "https://api.example.com");
+    vi.stubEnv("RULES_FILE", publishedRulesFileIn("rules"));
     render(await PlanPage({ params: Promise.resolve({ id: "event-1" }) }));
 
     await waitFor(() =>
@@ -1025,7 +1048,8 @@ describe("F-102 · CONDITIONAL branch table and INFEASIBLE rescope ladder", () =
             {
               field: "tent_area_sqft",
               branches: [],
-              thresholds: `${publishedHeading("DOB-TENT-001")} applies above 400; exactly 400 is a conditional boundary (confirm with the publishing agency)`,
+              thresholds:
+                "DOB-TENT-001 applies above 400; exactly 400 is a conditional boundary (confirm with the publishing agency)",
             },
           ],
         },
@@ -1040,6 +1064,10 @@ describe("F-102 · CONDITIONAL branch table and INFEASIBLE rescope ladder", () =
     expect(screen.getByTestId("verdict-detail").textContent).not.toContain(
       "evaluated on every published answer",
     );
+    expect(screen.getByTestId("verdict-detail").textContent).toContain(
+      publishedHeading("DOB-TENT-001"),
+    );
+    expect(screen.getByTestId("verdict-detail").textContent).not.toContain("DOB-TENT-001");
   });
 
   it("names the blocking finding and lists each re-evaluated rescope for INFEASIBLE", async () => {
@@ -1076,7 +1104,8 @@ describe("F-102 · CONDITIONAL branch table and INFEASIBLE rescope ladder", () =
               reevaluatedVerdict: "CONDITIONAL",
               droppedRuleIds: ["SAPO-INSURANCE-001", "SAPO-STREET-LARGE-001"],
               introducedRuleIds,
-              introducedFindings: introducedRuleIds.map(introducedFinding),
+              // This is the stored shape from before introduced finding metadata was snapshotted.
+              // The page may use its deployed references because the versions match exactly.
               minSlackDays: null,
               atRiskFindingName: null,
             },
@@ -1135,6 +1164,56 @@ describe("F-102 · CONDITIONAL branch table and INFEASIBLE rescope ladder", () =
     expect(screen.getByTestId("rescope-at-risk-buffer").textContent).toContain(
       "PopEngine's internal planning buffer",
     );
+  });
+
+  it("humanizes a code-only rescope from a matching stored rules snapshot", async () => {
+    stubApi(
+      plan({
+        verdict: "INFEASIBLE",
+        verdictDetail: {
+          ...emptyVerdictDetail,
+          rescopeSuggestions: [
+            {
+              change: { field: "location_type", value: "street" },
+              reevaluatedVerdict: "CONDITIONAL",
+              droppedRuleIds: [],
+              introducedRuleIds: ["SAPO-SCOPE-001"],
+            },
+          ],
+        },
+      }),
+    );
+    renderPlan();
+    const ladder = await screen.findByTestId("rescope-ladder");
+
+    expect(ladder.textContent).toContain(publishedHeading("SAPO-SCOPE-001"));
+    expect(ladder.textContent).not.toContain("SAPO-SCOPE-001");
+    expect(
+      ladder.querySelector(`a[href="${publishedSource("SAPO-SCOPE-001").url}"]`),
+    ).not.toBeNull();
+  });
+
+  it("does not relabel a stored plan from a different ruleset version", async () => {
+    stubApi(
+      plan({
+        rulesetVersion: "nyc.v2.10",
+        verdict: "INFEASIBLE",
+        verdictDetail: {
+          ...emptyVerdictDetail,
+          rescopeSuggestions: [
+            {
+              change: { field: "location_type", value: "street" },
+              reevaluatedVerdict: "CONDITIONAL",
+              droppedRuleIds: [],
+              introducedRuleIds: ["SAPO-SCOPE-001"],
+            },
+          ],
+        },
+      }),
+    );
+    renderPlan();
+
+    expect((await screen.findByTestId("rescope-ladder")).textContent).toContain("SAPO-SCOPE-001");
   });
 
   it("does not treat one multi-rule finding as multiple missed deadlines", async () => {

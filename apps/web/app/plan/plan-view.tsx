@@ -15,7 +15,7 @@ import { PlanLine } from "./plan-line";
 import { compareToPinned, SnapshotBanner } from "./snapshot-banner";
 import { AT_RISK_BUFFER_NOTE, verdictCopy } from "./verdict-copy";
 import { hasOnlyUndatedDeadlines, NO_DATED_DEADLINES_NOTE } from "./undated-deadlines";
-import { VerdictDetailPanel } from "./verdict-detail";
+import { type FindingReference, VerdictDetailPanel } from "./verdict-detail";
 import { type FieldChecks, isNumber, readChecked } from "./validated";
 
 // The plan view. F-206 owns what this page is for: the snapshot banner and the per-line citation
@@ -126,7 +126,18 @@ function regenerationRefusal(
   );
 }
 
-export function PlanView({ apiBaseUrl, eventId }: { apiBaseUrl: string; eventId: string }) {
+export function PlanView({
+  apiBaseUrl,
+  eventId,
+  rulesetReferences,
+}: {
+  apiBaseUrl: string;
+  eventId: string;
+  rulesetReferences?: {
+    readonly rulesetVersion: string;
+    readonly findings: readonly FindingReference[];
+  };
+}) {
   const [planState, setPlanState] = useState<PlanState>({ status: "loading" });
   const [eventState, setEventState] = useState<EventState>({ status: "loading" });
   const [meta, setMeta] = useState<RulesMetaResponse | null>(null);
@@ -406,6 +417,11 @@ export function PlanView({ apiBaseUrl, eventId }: { apiBaseUrl: string; eventId:
                 verdict={plan.verdict}
                 detail={plan.verdictDetail}
                 findings={plan.findings}
+                rulesetReferences={
+                  rulesetReferences?.rulesetVersion === plan.rulesetVersion
+                    ? rulesetReferences.findings
+                    : []
+                }
               />
 
               {/* F-205: a dedicated card for R10/R11's insurance findings, above the line items each
