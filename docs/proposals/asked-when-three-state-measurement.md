@@ -618,13 +618,13 @@ corrected price:
 4. **Every fixture that submits one of these fields as a boolean, which must land BEFORE the
    answer-key impact can be measured at all.** `readFieldValue` accepts an enum only as a declared
    string (`validate.ts:85`), so `food_present: true` stops validating the moment the type changes.
-   This is 127 boolean literals across 9 files: `scenario-intake-fixtures.ts` (30),
+   This is 132 boolean literals across 9 files: `scenario-intake-fixtures.ts` (30),
    `acceptance.test.ts` (19), `engine.test.ts` (17), `intake/intake.test.ts` (14),
    `plan.test.ts` (11), `rules-snapshot.test.ts` (10), `intake-form.test.tsx` (8) and
-   `events.test.ts` (3), plus 15 positional SQL values across five event inserts in
-   `ruleset.test.ts`. Those inserts name `food_present`, `amplified_sound`, and
-   `generator_present` as columns but supply their values positionally, so a scan for named fixture
-   literals misses them.
+   `events.test.ts` (3), plus 20 positional SQL values across five event inserts in
+   `ruleset.test.ts`. Those inserts name `food_present`, `amplified_sound`,
+   `generator_present`, and `alcohol` as columns but supply their values positionally, so a scan for
+   named fixture literals misses them.
 
    **`apps/api/migrations/006_events_battery_present.ts` is deliberately NOT in that list**, and it
    was until this round. It is a migration, not a fixture and not an enum submission: it adds
@@ -682,7 +682,7 @@ What it still does not reach: route 5, and any gate whose unanswered state arriv
 migration to write into.
 
 **On the corrected inventory this option is still broad.** It is 8 regulatory decisions, 11
-published objects and 2 validator checks at risk of silent non-matching, 127 fixture inputs, a
+published objects and 2 validator checks at risk of silent non-matching, 132 fixture inputs, a
 ruleset publication, a migration, an unmeasured answer key, and it reaches only five of the eight
 gates that need it. Attempt 3's two-file throwaway diff is not a reliable implementation estimate
 for the engine option because its resolver is order-dependent. I am still not recommending either.
@@ -851,7 +851,7 @@ Four, and the first is the second round in which the headline's reproducibility 
     round 5 and the analysis feeding it had not been updated. The other two route claims in the
     document were checked and both already say routes 1 and 2.
 21. **The enum option omitted the fixture input migrations** (section 6), which are the item that
-    gates the rest: `readFieldValue` rejects a boolean for an enum, so 127 boolean literals across
+    gates the rest: `readFieldValue` rejects a boolean for an enum, so 113 boolean literals across
     9 files stop validating, and the answer-key impact this document flags as unmeasured cannot be
     measured until they are converted.
 22. **"What v2.5 changed, in full" was too strong** (section 5). It omitted schema acceptance of
@@ -889,8 +889,8 @@ Issue #174 corrected three remaining findings:
     incorrect `false AND unknown` handling. The 1163/1163 result is now scoped to that throwaway
     patch's existing evaluation order; correct answer-key impact and implementation size are
     explicitly unmeasured.
-25. **The enum fixture inventory missed five positional SQL inserts.** Their three converted gate
-    values add 15 literals in `ruleset.test.ts`, bringing the inventory to 127 literals across nine
+25. **The enum fixture inventory missed five positional SQL inserts.** Their four converted gate
+    values add 20 literals in `ruleset.test.ts`, bringing the inventory to 132 literals across nine
     files.
 26. **The enum option priced a form-control change that does not exist.** The shared `Control`
     already renders declared enum values and returns the selected string, so the cost is removed.
