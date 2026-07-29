@@ -142,7 +142,9 @@ const SUMMARY_LABEL = {
 } as const;
 
 function SummarySources({ sources }: { sources: readonly SummarySourceLink[] }) {
-  if (sources.length === 0) return null;
+  if (sources.length === 0) {
+    return <span className="line__point-sources"> Source: not available in this ruleset.</span>;
+  }
   return (
     <span className="line__point-sources">
       {" "}
@@ -300,7 +302,8 @@ export function PlanLine({ finding }: { finding: ConsumedFinding }) {
           always means no field moved into it can disappear with it, for any finding shape, rather
           than that one hole being patched. */}
       <Disclosure
-        label={hasUserSummary ? `Legal details and all sources for ${name}` : `Details for ${name}`}
+        label={hasUserSummary ? "Legal details and all sources" : `Details for ${name}`}
+        ariaLabel={hasUserSummary ? `Legal details and all sources for ${name}` : undefined}
         className="line__detail"
         onOpenChange={setDetailsOpen}
       >

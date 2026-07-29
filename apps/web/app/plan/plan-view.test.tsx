@@ -497,12 +497,23 @@ describe("per-line citations and status (AC 2, AC 3)", () => {
         agency: null,
         sources: [],
         verificationStatus: "COVERAGE_GAP",
+        userSummary: {
+          heading: "Public-space alcohol needs agency review",
+          points: [
+            {
+              kind: "warning",
+              text: "This ruleset cannot determine the correct alcohol path.",
+              sources: [],
+            },
+          ],
+        },
       }),
     );
 
     expect(line.queryAllByRole("link")).toEqual([]);
     expect(line.getByText("COVERAGE GAP")).toBeDefined();
     expect(line.getByText(NOT_COVERED_BY_RULESET)).toBeDefined();
+    expect(line.getByText(/Source: not available in this ruleset/)).toBeDefined();
   });
 
   it("omits the agency label on findings that publish no agency", async () => {

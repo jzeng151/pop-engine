@@ -17,7 +17,7 @@
     "nyc.v2.10"
   ],
   "status": "APPROVED — team ratification 2026-07-22 (docs/BASELINE.md); republished through nyc.v2.9 for the changes recorded in their provenance, as nyc.v2.10 on 2026-07-29 for issue #181's citation-attribution correction, and as nyc.v2.11 on 2026-07-29 for the PACO/TPA organizer summary. Published artifact for the capstone build. Per-fact promotion SOURCE_CONFIRMED → VERIFIED continues during the build via each rule's verification block (OPEN-QUESTIONS §2); only the verification owner (Dev 4) changes a per-fact verification status (CONTRIBUTING Golden Rule 2). The full 59-rule draft remains in rules/proposals/ as the post-capstone target.",
-  "provenance": "CHANGE FROM nyc.v2.10. PACO/TPA ORGANIZER SUMMARY. Adds optional output.user_summary only to DOB-ASSEMBLY-001 with plain-language points and fact-specific links drawn from that rule source.urls. No trigger, deadline, fee, portal, verification status, expected finding, or verdict changes. CARRIED FORWARD FROM nyc.v2.10. CHANGE FROM nyc.v2.9. ISSUE #181 CITATION-LABEL NARROWING. SAPO-BLOCK-PARTY-ELIG-001's source.urls already points only to the CECM block-parties page, and that page publishes the rule's no-sales and alcohol/vendor/branding/sponsorship prohibitions. Its source.citation additionally named the CECM FAQ without carrying a corresponding FAQ URL. The citation now names only the block-parties page, removing a redundant, unlinked attribution so the label matches the artifact's source list. This does not claim that the FAQ lacked the prohibition: a 2026-07-28 fetch found that the current FAQ carries it, while its historical state remains indeterminable. No source URL, rule trigger, output, disposition, deadline, fee, portal, verification status, evidence reference, expected finding, or verdict changes. The verification status remains SOURCE_CONFIRMED: this publication records no AI-originated promotion and invents no last_verified_date. snapshot_date remains 2026-07-29 because this publication occurs on the same day as nyc.v2.9. CARRIED FORWARD FROM nyc.v2.9. CHANGE FROM nyc.v2.8. SHARED ISSUE #178 PUBLICATION. This atomic publication batches three separately approved deltas. F-110 removes venue_has_assembly_approval from active intake and adds venue_paco_covers_exact_event and venue_fdny_pa_permit_current_for_event_space, each using the existing yes/no/unknown enum values, collected for private venues at headcount 75 or more. Their approved notes require exact PACO space, use, assembly classification, occupant load and layout coverage, and a current unexpired FDNY Public Assembly Permit for the same space, PACO and plan. No published rule consumes either field or supports a temporary-filing inference. Issue #194 removes food_affinity_private_exception_claimed from active intake without changing any rule, finding, or historical replay. Migration 012 adds the two active F-110 storage columns while retaining both superseded columns as historical storage. ISSUE #107 NAMED CONFIRMATIONS. Adds exactly nine ordinary classification rules for approved negative answers: CONF-NO-FOOD-001, CONF-NO-SALES-001, CONF-NO-AMPLIFIED-SOUND-001, CONF-NO-STRUCTURE-001, CONF-NO-FLAME-001, CONF-NO-GENERATOR-001, CONF-NO-BATTERY-001, CONF-NO-ALCOHOL-001, and CONF-NO-BLOCK-PARTY-RIDE-001. Each emits NO_NEW_REQUIREMENT_IDENTIFIED through the existing classification contract, carries its exact triggering answer, approved cautious note_text, official source snapshot, verification status, and exercised scenario list, and publishes no agency, deadline, fee, or portal. CONF-NO-SALES-001 remains OFFICIAL_CONFLICT because the Parks sale threshold sources conflict; the other eight are SOURCE_CONFIRMED. The product owner approved the nine-gate set, meaning boundary, near-empty predicate and copy, and Scenario B low-burden correction; decision gate msg_68b1f57ec560 separately records approval of source, status, and text by the verification owner and rules reviewer, and of triggers by the verification owner and engine owner. This records one person in four capacities rather than implying independent approvals. This publication changes the active intake registry, asked_when conditions, and events storage through migration 012; beyond the nine approved confirmation triggers, it changes no rule trigger, deadline, threshold, substantive requirement, verification status, or verdict. snapshot_date is the 2026-07-29 publication date; no per-fact last_verified_date is invented. CARRIED FORWARD FROM nyc.v2.8. Demo-scoped corrected subset. Structure follows the nyc.v2 draft (rules/proposals/); every fact carries a verification status and an evidence reference into docs/VERIFICATION-SOURCES.md. CHANGE FROM nyc.v2.7. THIS BUMP CARRIES A REGULATORY CORRECTION AND MOVES EVALUATED OUTPUT. It changes exactly one rule, DOB-ASSEMBLY-001, and its deadline only. UNIT. The TPA filing lead moves from published_minimum / calendar_days 10 to business_days_minimum / business_days 10. The unit is BUSINESS days on two independent primary sources: TPPN #07/96, 'at least ten (10) business days in advance of the planned event', and NYC Admin Code Table 28-112.8, 'at least ten work days prior to the event'. The calendar reading it replaces came from one weaker source, DOB Code Notes (12.2016): that document says '10 days' and never says 'calendar', disclaims itself as 'only a summary and overview ... not intended to substitute for the full text and meaning of any law, rule or regulation', names TPPN #07/96 as the governing notice, and describes the pre-DOB-NOW borough-office filing process. DOB's bulletin index annotates other 1996 notices RESCINDED or superseded; #07/96 carries no such annotation, so it was not treated as withdrawn. No new deadline type was invented: business_days_minimum already exists and DOB-TENT-001, SLA-ONEDAY-001 and SLA-CATERING-001 already use it. BOUNDARY. exclusive becomes inclusive. 'At least ten (10)' admits day ten, and DOB's current filing page adds that the filing date of the online request counts as one of the days. WHY THEY LAND TOGETHER, which is the load-bearing part of this bump. Measured on Scenario F (event 2026-08-11) against the fixture calendar: the value this file previously published dated the deadline 2026-07-31; the boundary correction ALONE would date it 2026-08-01; both corrections together date it 2026-07-28. Publishing the boundary by itself would therefore have moved the deadline one day LATER than a value already known to be wrong, in the direction that tells an organizer they have more time than they do, while the sources put it three days EARLIER. Splitting this into two bumps would have shipped a strictly worse artifact in between, and BASELINE.md's immutability rule means each would have been its own published version with its own row. So they are one publish. THE THREE-BUSINESS-DAY FLOOR IS PUBLISHED AS TEXT, NOT AS MATH. deadline.display now carries both constraints and distinguishes them: ten business days is the FEE trigger (filing inside it adds the per-day surcharge), while three business days or less before the EVENT is whether the filing is processed at all. The floor is anchored to the event and not to the ten-day deadline. It is prose in display, following PARKS-EVENT-001's single-string precedent, because no deadline type in popengine-rules/v2 expresses a business-day floor; adding a field or a type to express one is a schema change and needs its own approved spec, so this file states the fact rather than inventing a shape for it. NOTES. The old note described a branch on venue_has_assembly_approval that no trigger evaluates. It is replaced by the statute the coverage question actually rests on, AC 28-117.1.3 (Local Law 2/2013), quoted rather than paraphrased, together with an explicit statement that whether an existing place-of-assembly certificate removes the temporary filing is NOT PUBLISHED in either direction. The note asserts no exemption and no requirement-by-implication; the unknown-collapse claim the old note carried had no source and is removed rather than softened. The trigger still reads location_type and headcount only, so venue_has_assembly_approval remains collected and unread (issue #89, reopened). VERIFICATION. DOB-ASSEMBLY-001's verification.qualification no longer says 'lead wording variance', because the variance is resolved; it now states only what remains unestablished, which is narrower: whether a TPA is required at all at a venue that already holds a place-of-assembly certificate, and whether the 75-on-a-roof-terrace threshold reaches TEMPORARY filings specifically. Both are silence in the sources, not conflict between them. SLA-ONEDAY-001 AND SLA-CATERING-001: RECORDED, NOT CHANGED. Both carried an UNQUALIFIED SOURCE_CONFIRMED while three official sources disagree on the unit — sla.ny.gov's permit page says 15 BUSINESS days (docs/VERIFICATION-SOURCES.md line 61), businessexpress.ny.gov says 15 DAYS, and an SLA-hosted, still-linked legacy PDF says 15 DAYS; ABC Law §97 and §98 and the located parts of 9 NYCRR Part 29 are silent. Each verification block now records that conflict. No type, value or boundary moves on either rule: 15 business_days is kept because it comes from the agency's own current page for the current instrument, and because it is the longer and therefore safer window. WHAT THIS DEADLINE NOW RENDERS IN PRODUCTION. business_days_minimum needs the holiday list config.business_day_math pins, and that list is deliberately unpublished (SPEC-CONFLICT #130; the decision and its evidence are recorded in apps/api/src/calendar.ts), so DOB-ASSEMBLY-001 renders NOT_CALCULABLE with a null latest_apply_date and 'confirm with agency' wherever the api evaluates it. The fixture suite injects an empty holiday list and therefore computes 2026-07-28 for Scenario F. That divergence is by design and is stated here so nobody reads a green suite as evidence that this rule dates correctly in the running product. It errs toward under-claiming rather than over-claiming: NOT_CALCULABLE never counts toward FEASIBLE. THE FEE LINE STATED A VENUE'S ANNUAL PERMIT AS IF IT WERE AN EVENT COST. fee.display read 'TPA min $250; FDNY assembly permit from $415 (75-149 occupancy)'. The $415 is real and correctly cited — 2022 Fire Code Appendix A, FC A03.1(4), 'Occupancy 75 to 149 $415.00' — but FC 105.6 attaches it to the permit 'to establish and operate a place of assembly', term 'not to exceed 1 year'. That is the party operating the space, not the organizer booking it for one night, so publishing it beside the TPA presented a venue's recurring cost as part of this event's price. The Fire Code's temporary-event line is a different item, A03.1(68) 'Street fairs and other public gatherings or gathering places' at $210 per hour, and DOB's page links the terminology ('also referred to in the Fire Code as a public gathering'). WHICH LINE FDNY BILLS FOR A ONE-OFF TPA EVENT IS NOT PUBLISHED — not in Appendix A, not in Fire Code Chapter 1, and not on FDNY's Public Assembly Permit page, which says only 'Fee varies based on the number of occupants'. So the fee was NOT corrected by swapping one amount for another: it now publishes the DOB amounts, which are established, and states that FDNY's charge for a one-off event is not published as an amount. A NOTE ON THE PERIODICITY ARGUMENT, recorded because it is weaker than it first appears: A03.1's preamble says 'All such fees are per year, except when based on frequency of inspection or hourly rate, as indicated', and item (4)'s own sub-label is 'Fire safety inspection/permit (frequency of inspection as required by code or rule)' — which falls inside that exception. So the preamble does not establish that $415 is annual; FC 105.6's one-year permit term is what carries the point, and the note says so rather than asserting the stronger reading. Citations move to the 2022 Fire Code throughout: Local Law 47 of 2022 took effect 2022-04-15, FDNY states the 2014 edition is no longer in effect, and the 2014 appendix numbered these rows item (3). THE $250 IS DOB'S PUBLISHED FIGURE AND THE STATUTE LABELS IT DIFFERENTLY, which the file now records. In Table 28-112.8 the row literally named 'Temporary place of assembly certificate of operation' is $130, while the $250, the $100-per-day late fee AND the 'at least ten work days prior to the event' comment all sit together on the adjacent row named 'Temporary use letter for place of assembly'. Which row DOB NOW bills, or whether one filing draws both, is NOT ESTABLISHED; no 1 RCNY rule reconciling them was located, and AC 28-112.1 leaves room for one ('prescribed herein or in rules'). DOB's public TPA page publishes $250 as the fee an applicant pays and that is what this file displays. The same row-label caveat is now recorded against this rule's second source for the ten-day unit, because the 'ten work days' comment is on the 'Temporary use letter' row rather than the row bearing the TPA's own name — TPPN #07/96 is unaffected and remains an independent source for the unit. THE ROOF-TERRACE THRESHOLD CARRIED NO 20-FOOT QUALIFIER AND OVERCLAIMED. The note read 'Thresholds: 75+ indoors OR ON ROOF TERRACES; 200+ outdoors', which follows DOB's webpage bullet. The code does not: BC 303.7(1) sweeps in 'open spaces at 20 feet (6096 mm) or more above or below grade plane, such as roofs or roof terraces', so a roof under 20 feet above grade plane is not on the 75-person indoor side at all and BC 303.7(2)'s 200-person outdoor threshold governs it. The qualifier is now quoted in the note. THE REACH TO THE TEMPORARY INSTRUMENT IS ALSO NOW ESTABLISHED IN CODE TEXT rather than resting on a DOB webpage sentence, which is what this rule's verification block previously listed as unestablished: AC 28-111.6 states the TPA trigger as 'the temporary use of space as a place of assembly', the 2022 Building Code Chapter 2 definition of PLACE OF ASSEMBLY resolves that term 'when such use requires a place of assembly Certificate of Operation pursuant to Section 303.7', and 303.7 classifies the SPACE with no permanent/temporary distinction. The Fire Code adopts the same definition ('as regulated by the Building Code'). That qualification is therefore withdrawn as resolved rather than left standing. WHAT THE 20-FOOT QUALIFIER MEANS FOR THE TRIGGER, AND WHY THIS BUMP DOES NOT ACT ON IT. The qualifier makes the rooftop threshold conditional on height above grade plane, which this ruleset does not collect and no trigger reads: the trigger is location_type and headcount only, so any rooftop is treated as indoor. That is correct for a typical multi-storey roof and over-inclusive for a terrace under 20 feet. Narrowing it is a TRIGGER change and probably an intake-registry change, which is a product decision and not a note edit, so it is recorded in the note and in verification.qualification and deliberately NOT made here. No trigger, no intake field and no scenario output moves: the full suite is 808 tests before and after these three text edits. snapshot_date stays 2026-07-26: this artifact is published on the same day v2.7 was. The primary sources behind the unit correction were re-fetched on 2026-07-26, and that is recorded per rule in verification.evidence rather than here; last_verified_date remains null throughout. CARRIED FORWARD FROM nyc.v2.7. PUBLICATION ONLY: that bump MOVES NO EVALUATED OUTPUT and no expected output. It adds one config key and changes no rule, threshold, trigger, deadline or verification status. CONFIG: config.alert_offsets publishes the deadline_reminder offsets F-203 states as config rather than code (specs/F-203-deadline-alerts.md Outputs: latest_apply_date minus 7 days and minus 1 day). The values were already decided in F-203's own table, so this is publication rather than a product decision; what this file settles is the shape. It is keyed by alerts.alert_type and each type holds an object, so a later reminder kind and a later scheduling mechanism are both data additions to this file rather than changes to its schema. That is scoped to config on purpose: migration 001 constrains alerts.alert_type, so a new kind needs a forward migration too, and the note says so rather than promising data-only extensibility the persistence contract does not give. The offsets are PopEngine policy and the note says so in the same terms slack_warning_days uses, because presenting an internal reminder cadence as an agency deadline is the overclaiming failure F-102's verdict labelling exists to prevent. No engine code reads this key; the engine reads config by explicit lookup (slack_warning_days, business_day_math) and ignores the rest, which is already true of assembly_thresholds, so publishing it cannot move a verdict. PUBLICATION DATE: snapshot_date is 2026-07-26, the day this artifact was published. Every bump from v2.2 to v2.6 carried 2026-07-25 with the note \"no source was re-fetched\", which was consistent only because those republications happened on the same day; v2.7 is the first on a later day, and that justification turns out to have been reading snapshot_date as a source-fetch date. It is not one. F-206 defines it as published-on and not all-facts-verified-on, and F-206 Acceptance Criterion 5 keeps the snapshot publication date and the per-line verification date distinct, so this repo dates three different things separately: source fetches in docs/VERIFICATION-SOURCES.md (Rounds 1-2, 2026-07-22), artifact publication here, and per-fact verification in each rule's last_verified_date, still null throughout. Leaving 2026-07-25 while the status said published 2026-07-26 made the artifact contradict itself, and because plans persist snapshot_date immutably and F-206 forbids backfilling one, every plan generated from v2.7 would have displayed a publication date this file denies. No source was re-fetched and nothing here claims one was: that claim lives in the evidence record and in last_verified_date, neither of which moves. CARRIED FORWARD FROM nyc.v2.6: Like v2.5 this one CHANGES EVALUATED OUTPUT, and unlike v2.5 it MOVES APPROVED EXPECTED OUTPUT — it brings the plan into line with what the answer key already documents. DEDUPE: DOB-TENT-001 gains output.dedupe_key \"dob-structure\". DOB-TALL-STRUCTURE-001 already declared that key and its own note_text already said \"Deduplicates with the area/duration-based DOB rules\", but no other rule carried it, so the key paired with nothing and the two rules emitted two findings for one DOB temporary-structure permit. Three published sources agree they are one finding: that note_text; the nyc.v2 full draft, where all five temporary-structure rules (DOB-TENT-AREA-001, DOB-TENT-DURATION-001, DOB-STAGE-001, DOB-STRUCTURE-DURATION-001, DOB-TRUSS-001) share a single dob_temporary_structure key; and docs/test-scenario-answer-key.md, whose Scenario E block folds both rule ids into its item 8 and states eight findings. The published subset collapsed the draft's five rules into two and the key was transcribed onto one of them only — a dangling reference, the same shape as an intake field no trigger consumes (#89 item 4). ON AUTHORITY ORDER: the answer key's hierarchy says a fixture that disagrees with the published rule is the wrong one, so this is deliberately NOT a rule bent to match a fixture. The contradiction is inside this file — note_text says the rules deduplicate and the key wiring does not do it — and it is resolved toward the rule's own published statement of intent, quoting a primary source (CECM permit-type pages) that describes one DOB permit for over-height temporary structures. The fixture already agreed; it is corroboration, not the authority. Scenario E now yields eight findings, the merged line retaining both rule ids and both notes, which is what the approved key documents; this closes #89 item 6. No threshold, deadline, trigger or verification status moves, and no rule is added or removed. snapshot_date stays 2026-07-25: no source was re-fetched. CARRIED FORWARD FROM nyc.v2.5: Unlike v2.2–v2.4 this one CHANGES EVALUATED OUTPUT; it does not move approved answer-key output. The answer key lists FDNY-GENERATOR-001 in Scenario E only, so the engine was emitting a finding the approved key does not document, and this bump removes that false addition (F-201 AC 7). No expected-finding block changes. (1) SCOPING: a new collected boolean battery_present gates battery_system_kwh, which previously had no asked_when and is nullable, so it was in scope and unanswered for every event. That made FDNY-GENERATOR-001's battery disjunct tri-state unknown and the whole any(...) unknown, and the rule was reported as MAY_BE_REQUIRED in the five approved scenarios that have no generator at all (A, B, C, D, F). Over-prescribing is a named failure mode (F-201 AC 4). battery_present = false now resolves that disjunct to false through the not-asked path, and the five scenarios stop reporting a finding their expected-findings blocks never listed. No threshold moves: 2.5 gallons, 10 gallons and 20 kWh are unchanged, and Scenario E still fires the rule on gasoline alone. The alternative of gating battery_system_kwh on generator_present was rejected: it would stop a battery-only event being asked at all, turning an over-prescription into a false omission, which F-201 AC 7 ranks worse. The mechanism, recorded here rather than in the questionnaire an organizer reads: battery_system_kwh had no asked_when and is nullable, so it was in scope and unanswered for every event; that made the battery arm of FDNY-GENERATOR-001's any(...) tri-state unknown and the whole trigger with it. (2) METADATA: ADV-VENUE-OCCUPANCY-001, DOB-ASSEMBLY-001 and ADV-NOISE-CODE-001 gain \"A-rescope\" in exercised_by_scenarios. Scenario A's private-venue rescope reaches all three, and the answer key already documents that at line 37 (\"venue-occupancy advisory + DOHMH findings remain\"), so this makes the metadata match a claim the approved key already makes. exercised_by_scenarios is test-coverage metadata: no engine code reads it — only the fixture-agreement guard does — so it moves no verdict and no regulatory content. Published under v2.5 because it lives in this file. (3) SCHEMA: verification.last_verified_date is accepted as an optional per-rule field, restoring a field the nyc.v1 schema carried (docs/VERIFICATION-SOURCES.md §next steps) and the v2 schema dropped. permit_plan_items.last_verified_date and F-206's per-line date have had a column and a writer since migration 001 with no source to read. It is populated for NO rule here: every fact is still pre-VERIFIED and a date this repo cannot evidence would be an invented permit fact. The schema can carry it when verification rounds resume. CARRIED FORWARD from nyc.v2.4: SAPO-PLAZA-001's by-level deadline publishes level_field and multi_block_field, and DOB-TENT-001's 400 sq ft threshold publishes boundary \"conditional\". From nyc.v2.3: DOB-ASSEMBLY-001 publishes boundary \"exclusive\". From nyc.v2.2: DOHMH-ORGANIZER-NOTIFY-001 publishes output.disposition MAY_BE_REQUIRED. snapshot_date stays 2026-07-25: no source was re-fetched.",
+  "provenance": "CHANGE FROM nyc.v2.10. FULL PLAIN-LANGUAGE ORGANIZER SUMMARY. Adds optional output.user_summary to every published rule and advisory, with concise organizer-facing points and fact-specific links drawn only from each rule's source.urls. The two COVERAGE_GAP advisories remain visibly source-less rather than inventing support. No trigger, deadline, fee, portal, verification status, expected finding, or verdict changes. CARRIED FORWARD FROM nyc.v2.10. CHANGE FROM nyc.v2.9. ISSUE #181 CITATION-LABEL NARROWING. SAPO-BLOCK-PARTY-ELIG-001's source.urls already points only to the CECM block-parties page, and that page publishes the rule's no-sales and alcohol/vendor/branding/sponsorship prohibitions. Its source.citation additionally named the CECM FAQ without carrying a corresponding FAQ URL. The citation now names only the block-parties page, removing a redundant, unlinked attribution so the label matches the artifact's source list. This does not claim that the FAQ lacked the prohibition: a 2026-07-28 fetch found that the current FAQ carries it, while its historical state remains indeterminable. No source URL, rule trigger, output, disposition, deadline, fee, portal, verification status, evidence reference, expected finding, or verdict changes. The verification status remains SOURCE_CONFIRMED: this publication records no AI-originated promotion and invents no last_verified_date. snapshot_date remains 2026-07-29 because this publication occurs on the same day as nyc.v2.9. CARRIED FORWARD FROM nyc.v2.9. CHANGE FROM nyc.v2.8. SHARED ISSUE #178 PUBLICATION. This atomic publication batches three separately approved deltas. F-110 removes venue_has_assembly_approval from active intake and adds venue_paco_covers_exact_event and venue_fdny_pa_permit_current_for_event_space, each using the existing yes/no/unknown enum values, collected for private venues at headcount 75 or more. Their approved notes require exact PACO space, use, assembly classification, occupant load and layout coverage, and a current unexpired FDNY Public Assembly Permit for the same space, PACO and plan. No published rule consumes either field or supports a temporary-filing inference. Issue #194 removes food_affinity_private_exception_claimed from active intake without changing any rule, finding, or historical replay. Migration 012 adds the two active F-110 storage columns while retaining both superseded columns as historical storage. ISSUE #107 NAMED CONFIRMATIONS. Adds exactly nine ordinary classification rules for approved negative answers: CONF-NO-FOOD-001, CONF-NO-SALES-001, CONF-NO-AMPLIFIED-SOUND-001, CONF-NO-STRUCTURE-001, CONF-NO-FLAME-001, CONF-NO-GENERATOR-001, CONF-NO-BATTERY-001, CONF-NO-ALCOHOL-001, and CONF-NO-BLOCK-PARTY-RIDE-001. Each emits NO_NEW_REQUIREMENT_IDENTIFIED through the existing classification contract, carries its exact triggering answer, approved cautious note_text, official source snapshot, verification status, and exercised scenario list, and publishes no agency, deadline, fee, or portal. CONF-NO-SALES-001 remains OFFICIAL_CONFLICT because the Parks sale threshold sources conflict; the other eight are SOURCE_CONFIRMED. The product owner approved the nine-gate set, meaning boundary, near-empty predicate and copy, and Scenario B low-burden correction; decision gate msg_68b1f57ec560 separately records approval of source, status, and text by the verification owner and rules reviewer, and of triggers by the verification owner and engine owner. This records one person in four capacities rather than implying independent approvals. This publication changes the active intake registry, asked_when conditions, and events storage through migration 012; beyond the nine approved confirmation triggers, it changes no rule trigger, deadline, threshold, substantive requirement, verification status, or verdict. snapshot_date is the 2026-07-29 publication date; no per-fact last_verified_date is invented. CARRIED FORWARD FROM nyc.v2.8. Demo-scoped corrected subset. Structure follows the nyc.v2 draft (rules/proposals/); every fact carries a verification status and an evidence reference into docs/VERIFICATION-SOURCES.md. CHANGE FROM nyc.v2.7. THIS BUMP CARRIES A REGULATORY CORRECTION AND MOVES EVALUATED OUTPUT. It changes exactly one rule, DOB-ASSEMBLY-001, and its deadline only. UNIT. The TPA filing lead moves from published_minimum / calendar_days 10 to business_days_minimum / business_days 10. The unit is BUSINESS days on two independent primary sources: TPPN #07/96, 'at least ten (10) business days in advance of the planned event', and NYC Admin Code Table 28-112.8, 'at least ten work days prior to the event'. The calendar reading it replaces came from one weaker source, DOB Code Notes (12.2016): that document says '10 days' and never says 'calendar', disclaims itself as 'only a summary and overview ... not intended to substitute for the full text and meaning of any law, rule or regulation', names TPPN #07/96 as the governing notice, and describes the pre-DOB-NOW borough-office filing process. DOB's bulletin index annotates other 1996 notices RESCINDED or superseded; #07/96 carries no such annotation, so it was not treated as withdrawn. No new deadline type was invented: business_days_minimum already exists and DOB-TENT-001, SLA-ONEDAY-001 and SLA-CATERING-001 already use it. BOUNDARY. exclusive becomes inclusive. 'At least ten (10)' admits day ten, and DOB's current filing page adds that the filing date of the online request counts as one of the days. WHY THEY LAND TOGETHER, which is the load-bearing part of this bump. Measured on Scenario F (event 2026-08-11) against the fixture calendar: the value this file previously published dated the deadline 2026-07-31; the boundary correction ALONE would date it 2026-08-01; both corrections together date it 2026-07-28. Publishing the boundary by itself would therefore have moved the deadline one day LATER than a value already known to be wrong, in the direction that tells an organizer they have more time than they do, while the sources put it three days EARLIER. Splitting this into two bumps would have shipped a strictly worse artifact in between, and BASELINE.md's immutability rule means each would have been its own published version with its own row. So they are one publish. THE THREE-BUSINESS-DAY FLOOR IS PUBLISHED AS TEXT, NOT AS MATH. deadline.display now carries both constraints and distinguishes them: ten business days is the FEE trigger (filing inside it adds the per-day surcharge), while three business days or less before the EVENT is whether the filing is processed at all. The floor is anchored to the event and not to the ten-day deadline. It is prose in display, following PARKS-EVENT-001's single-string precedent, because no deadline type in popengine-rules/v2 expresses a business-day floor; adding a field or a type to express one is a schema change and needs its own approved spec, so this file states the fact rather than inventing a shape for it. NOTES. The old note described a branch on venue_has_assembly_approval that no trigger evaluates. It is replaced by the statute the coverage question actually rests on, AC 28-117.1.3 (Local Law 2/2013), quoted rather than paraphrased, together with an explicit statement that whether an existing place-of-assembly certificate removes the temporary filing is NOT PUBLISHED in either direction. The note asserts no exemption and no requirement-by-implication; the unknown-collapse claim the old note carried had no source and is removed rather than softened. The trigger still reads location_type and headcount only, so venue_has_assembly_approval remains collected and unread (issue #89, reopened). VERIFICATION. DOB-ASSEMBLY-001's verification.qualification no longer says 'lead wording variance', because the variance is resolved; it now states only what remains unestablished, which is narrower: whether a TPA is required at all at a venue that already holds a place-of-assembly certificate, and whether the 75-on-a-roof-terrace threshold reaches TEMPORARY filings specifically. Both are silence in the sources, not conflict between them. SLA-ONEDAY-001 AND SLA-CATERING-001: RECORDED, NOT CHANGED. Both carried an UNQUALIFIED SOURCE_CONFIRMED while three official sources disagree on the unit — sla.ny.gov's permit page says 15 BUSINESS days (docs/VERIFICATION-SOURCES.md line 61), businessexpress.ny.gov says 15 DAYS, and an SLA-hosted, still-linked legacy PDF says 15 DAYS; ABC Law §97 and §98 and the located parts of 9 NYCRR Part 29 are silent. Each verification block now records that conflict. No type, value or boundary moves on either rule: 15 business_days is kept because it comes from the agency's own current page for the current instrument, and because it is the longer and therefore safer window. WHAT THIS DEADLINE NOW RENDERS IN PRODUCTION. business_days_minimum needs the holiday list config.business_day_math pins, and that list is deliberately unpublished (SPEC-CONFLICT #130; the decision and its evidence are recorded in apps/api/src/calendar.ts), so DOB-ASSEMBLY-001 renders NOT_CALCULABLE with a null latest_apply_date and 'confirm with agency' wherever the api evaluates it. The fixture suite injects an empty holiday list and therefore computes 2026-07-28 for Scenario F. That divergence is by design and is stated here so nobody reads a green suite as evidence that this rule dates correctly in the running product. It errs toward under-claiming rather than over-claiming: NOT_CALCULABLE never counts toward FEASIBLE. THE FEE LINE STATED A VENUE'S ANNUAL PERMIT AS IF IT WERE AN EVENT COST. fee.display read 'TPA min $250; FDNY assembly permit from $415 (75-149 occupancy)'. The $415 is real and correctly cited — 2022 Fire Code Appendix A, FC A03.1(4), 'Occupancy 75 to 149 $415.00' — but FC 105.6 attaches it to the permit 'to establish and operate a place of assembly', term 'not to exceed 1 year'. That is the party operating the space, not the organizer booking it for one night, so publishing it beside the TPA presented a venue's recurring cost as part of this event's price. The Fire Code's temporary-event line is a different item, A03.1(68) 'Street fairs and other public gatherings or gathering places' at $210 per hour, and DOB's page links the terminology ('also referred to in the Fire Code as a public gathering'). WHICH LINE FDNY BILLS FOR A ONE-OFF TPA EVENT IS NOT PUBLISHED — not in Appendix A, not in Fire Code Chapter 1, and not on FDNY's Public Assembly Permit page, which says only 'Fee varies based on the number of occupants'. So the fee was NOT corrected by swapping one amount for another: it now publishes the DOB amounts, which are established, and states that FDNY's charge for a one-off event is not published as an amount. A NOTE ON THE PERIODICITY ARGUMENT, recorded because it is weaker than it first appears: A03.1's preamble says 'All such fees are per year, except when based on frequency of inspection or hourly rate, as indicated', and item (4)'s own sub-label is 'Fire safety inspection/permit (frequency of inspection as required by code or rule)' — which falls inside that exception. So the preamble does not establish that $415 is annual; FC 105.6's one-year permit term is what carries the point, and the note says so rather than asserting the stronger reading. Citations move to the 2022 Fire Code throughout: Local Law 47 of 2022 took effect 2022-04-15, FDNY states the 2014 edition is no longer in effect, and the 2014 appendix numbered these rows item (3). THE $250 IS DOB'S PUBLISHED FIGURE AND THE STATUTE LABELS IT DIFFERENTLY, which the file now records. In Table 28-112.8 the row literally named 'Temporary place of assembly certificate of operation' is $130, while the $250, the $100-per-day late fee AND the 'at least ten work days prior to the event' comment all sit together on the adjacent row named 'Temporary use letter for place of assembly'. Which row DOB NOW bills, or whether one filing draws both, is NOT ESTABLISHED; no 1 RCNY rule reconciling them was located, and AC 28-112.1 leaves room for one ('prescribed herein or in rules'). DOB's public TPA page publishes $250 as the fee an applicant pays and that is what this file displays. The same row-label caveat is now recorded against this rule's second source for the ten-day unit, because the 'ten work days' comment is on the 'Temporary use letter' row rather than the row bearing the TPA's own name — TPPN #07/96 is unaffected and remains an independent source for the unit. THE ROOF-TERRACE THRESHOLD CARRIED NO 20-FOOT QUALIFIER AND OVERCLAIMED. The note read 'Thresholds: 75+ indoors OR ON ROOF TERRACES; 200+ outdoors', which follows DOB's webpage bullet. The code does not: BC 303.7(1) sweeps in 'open spaces at 20 feet (6096 mm) or more above or below grade plane, such as roofs or roof terraces', so a roof under 20 feet above grade plane is not on the 75-person indoor side at all and BC 303.7(2)'s 200-person outdoor threshold governs it. The qualifier is now quoted in the note. THE REACH TO THE TEMPORARY INSTRUMENT IS ALSO NOW ESTABLISHED IN CODE TEXT rather than resting on a DOB webpage sentence, which is what this rule's verification block previously listed as unestablished: AC 28-111.6 states the TPA trigger as 'the temporary use of space as a place of assembly', the 2022 Building Code Chapter 2 definition of PLACE OF ASSEMBLY resolves that term 'when such use requires a place of assembly Certificate of Operation pursuant to Section 303.7', and 303.7 classifies the SPACE with no permanent/temporary distinction. The Fire Code adopts the same definition ('as regulated by the Building Code'). That qualification is therefore withdrawn as resolved rather than left standing. WHAT THE 20-FOOT QUALIFIER MEANS FOR THE TRIGGER, AND WHY THIS BUMP DOES NOT ACT ON IT. The qualifier makes the rooftop threshold conditional on height above grade plane, which this ruleset does not collect and no trigger reads: the trigger is location_type and headcount only, so any rooftop is treated as indoor. That is correct for a typical multi-storey roof and over-inclusive for a terrace under 20 feet. Narrowing it is a TRIGGER change and probably an intake-registry change, which is a product decision and not a note edit, so it is recorded in the note and in verification.qualification and deliberately NOT made here. No trigger, no intake field and no scenario output moves: the full suite is 808 tests before and after these three text edits. snapshot_date stays 2026-07-26: this artifact is published on the same day v2.7 was. The primary sources behind the unit correction were re-fetched on 2026-07-26, and that is recorded per rule in verification.evidence rather than here; last_verified_date remains null throughout. CARRIED FORWARD FROM nyc.v2.7. PUBLICATION ONLY: that bump MOVES NO EVALUATED OUTPUT and no expected output. It adds one config key and changes no rule, threshold, trigger, deadline or verification status. CONFIG: config.alert_offsets publishes the deadline_reminder offsets F-203 states as config rather than code (specs/F-203-deadline-alerts.md Outputs: latest_apply_date minus 7 days and minus 1 day). The values were already decided in F-203's own table, so this is publication rather than a product decision; what this file settles is the shape. It is keyed by alerts.alert_type and each type holds an object, so a later reminder kind and a later scheduling mechanism are both data additions to this file rather than changes to its schema. That is scoped to config on purpose: migration 001 constrains alerts.alert_type, so a new kind needs a forward migration too, and the note says so rather than promising data-only extensibility the persistence contract does not give. The offsets are PopEngine policy and the note says so in the same terms slack_warning_days uses, because presenting an internal reminder cadence as an agency deadline is the overclaiming failure F-102's verdict labelling exists to prevent. No engine code reads this key; the engine reads config by explicit lookup (slack_warning_days, business_day_math) and ignores the rest, which is already true of assembly_thresholds, so publishing it cannot move a verdict. PUBLICATION DATE: snapshot_date is 2026-07-26, the day this artifact was published. Every bump from v2.2 to v2.6 carried 2026-07-25 with the note \"no source was re-fetched\", which was consistent only because those republications happened on the same day; v2.7 is the first on a later day, and that justification turns out to have been reading snapshot_date as a source-fetch date. It is not one. F-206 defines it as published-on and not all-facts-verified-on, and F-206 Acceptance Criterion 5 keeps the snapshot publication date and the per-line verification date distinct, so this repo dates three different things separately: source fetches in docs/VERIFICATION-SOURCES.md (Rounds 1-2, 2026-07-22), artifact publication here, and per-fact verification in each rule's last_verified_date, still null throughout. Leaving 2026-07-25 while the status said published 2026-07-26 made the artifact contradict itself, and because plans persist snapshot_date immutably and F-206 forbids backfilling one, every plan generated from v2.7 would have displayed a publication date this file denies. No source was re-fetched and nothing here claims one was: that claim lives in the evidence record and in last_verified_date, neither of which moves. CARRIED FORWARD FROM nyc.v2.6: Like v2.5 this one CHANGES EVALUATED OUTPUT, and unlike v2.5 it MOVES APPROVED EXPECTED OUTPUT — it brings the plan into line with what the answer key already documents. DEDUPE: DOB-TENT-001 gains output.dedupe_key \"dob-structure\". DOB-TALL-STRUCTURE-001 already declared that key and its own note_text already said \"Deduplicates with the area/duration-based DOB rules\", but no other rule carried it, so the key paired with nothing and the two rules emitted two findings for one DOB temporary-structure permit. Three published sources agree they are one finding: that note_text; the nyc.v2 full draft, where all five temporary-structure rules (DOB-TENT-AREA-001, DOB-TENT-DURATION-001, DOB-STAGE-001, DOB-STRUCTURE-DURATION-001, DOB-TRUSS-001) share a single dob_temporary_structure key; and docs/test-scenario-answer-key.md, whose Scenario E block folds both rule ids into its item 8 and states eight findings. The published subset collapsed the draft's five rules into two and the key was transcribed onto one of them only — a dangling reference, the same shape as an intake field no trigger consumes (#89 item 4). ON AUTHORITY ORDER: the answer key's hierarchy says a fixture that disagrees with the published rule is the wrong one, so this is deliberately NOT a rule bent to match a fixture. The contradiction is inside this file — note_text says the rules deduplicate and the key wiring does not do it — and it is resolved toward the rule's own published statement of intent, quoting a primary source (CECM permit-type pages) that describes one DOB permit for over-height temporary structures. The fixture already agreed; it is corroboration, not the authority. Scenario E now yields eight findings, the merged line retaining both rule ids and both notes, which is what the approved key documents; this closes #89 item 6. No threshold, deadline, trigger or verification status moves, and no rule is added or removed. snapshot_date stays 2026-07-25: no source was re-fetched. CARRIED FORWARD FROM nyc.v2.5: Unlike v2.2–v2.4 this one CHANGES EVALUATED OUTPUT; it does not move approved answer-key output. The answer key lists FDNY-GENERATOR-001 in Scenario E only, so the engine was emitting a finding the approved key does not document, and this bump removes that false addition (F-201 AC 7). No expected-finding block changes. (1) SCOPING: a new collected boolean battery_present gates battery_system_kwh, which previously had no asked_when and is nullable, so it was in scope and unanswered for every event. That made FDNY-GENERATOR-001's battery disjunct tri-state unknown and the whole any(...) unknown, and the rule was reported as MAY_BE_REQUIRED in the five approved scenarios that have no generator at all (A, B, C, D, F). Over-prescribing is a named failure mode (F-201 AC 4). battery_present = false now resolves that disjunct to false through the not-asked path, and the five scenarios stop reporting a finding their expected-findings blocks never listed. No threshold moves: 2.5 gallons, 10 gallons and 20 kWh are unchanged, and Scenario E still fires the rule on gasoline alone. The alternative of gating battery_system_kwh on generator_present was rejected: it would stop a battery-only event being asked at all, turning an over-prescription into a false omission, which F-201 AC 7 ranks worse. The mechanism, recorded here rather than in the questionnaire an organizer reads: battery_system_kwh had no asked_when and is nullable, so it was in scope and unanswered for every event; that made the battery arm of FDNY-GENERATOR-001's any(...) tri-state unknown and the whole trigger with it. (2) METADATA: ADV-VENUE-OCCUPANCY-001, DOB-ASSEMBLY-001 and ADV-NOISE-CODE-001 gain \"A-rescope\" in exercised_by_scenarios. Scenario A's private-venue rescope reaches all three, and the answer key already documents that at line 37 (\"venue-occupancy advisory + DOHMH findings remain\"), so this makes the metadata match a claim the approved key already makes. exercised_by_scenarios is test-coverage metadata: no engine code reads it — only the fixture-agreement guard does — so it moves no verdict and no regulatory content. Published under v2.5 because it lives in this file. (3) SCHEMA: verification.last_verified_date is accepted as an optional per-rule field, restoring a field the nyc.v1 schema carried (docs/VERIFICATION-SOURCES.md §next steps) and the v2 schema dropped. permit_plan_items.last_verified_date and F-206's per-line date have had a column and a writer since migration 001 with no source to read. It is populated for NO rule here: every fact is still pre-VERIFIED and a date this repo cannot evidence would be an invented permit fact. The schema can carry it when verification rounds resume. CARRIED FORWARD from nyc.v2.4: SAPO-PLAZA-001's by-level deadline publishes level_field and multi_block_field, and DOB-TENT-001's 400 sq ft threshold publishes boundary \"conditional\". From nyc.v2.3: DOB-ASSEMBLY-001 publishes boundary \"exclusive\". From nyc.v2.2: DOHMH-ORGANIZER-NOTIFY-001 publishes output.disposition MAY_BE_REQUIRED. snapshot_date stays 2026-07-25: no source was re-fetched.",
   "status_legend": {
     "SOURCE_CONFIRMED": "fetch-confirmed primary-source quote on file in VERIFICATION-SOURCES.md; pending verification-owner promotion to VERIFIED",
     "VERIFIED": "verification owner confirmed against primary source (none at publication; only the verification owner assigns this)",
@@ -301,7 +301,32 @@
       },
       "output": {
         "disposition": "NO_NEW_REQUIREMENT_IDENTIFIED",
-        "note_text": "SAPO permits attach to activity that interferes with or obstructs the regular use of the street, curb lane, sidewalk, or plaza (50 RCNY §1-01). An activity with no obstruction may not require a street activity permit — confirm scope with SAPO for borderline setups."
+        "note_text": "SAPO permits attach to activity that interferes with or obstructs the regular use of the street, curb lane, sidewalk, or plaza (50 RCNY §1-01). An activity with no obstruction may not require a street activity permit — confirm scope with SAPO for borderline setups.",
+        "user_summary": {
+          "heading": "Street Activity Permit Office (SAPO) scope",
+          "points": [
+            {
+              "kind": "overview",
+              "text": "Because you said the event will not block normal use of the street, sidewalk, curb lane, or plaza, this plan did not identify a SAPO street-activity permit.",
+              "sources": [
+                {
+                  "label": "SAPO rules",
+                  "url": "https://www.nyc.gov/assets/cecm/downloads/pdf/newyorkcity-sapo-rules-2026.pdf"
+                }
+              ]
+            },
+            {
+              "kind": "warning",
+              "text": "This is not an exemption. Confirm with SAPO if any equipment, crowd, or activity could obstruct the public way.",
+              "sources": [
+                {
+                  "label": "SAPO rules",
+                  "url": "https://www.nyc.gov/assets/cecm/downloads/pdf/newyorkcity-sapo-rules-2026.pdf"
+                }
+              ]
+            }
+          ]
+        }
       },
       "source": {
         "citation": "50 RCNY §1-01, §1-03(a) (2026 SAPO rules PDF); CECM FAQ",
@@ -343,6 +368,51 @@
         "portal": {
           "name": "E-Apply",
           "url": "https://nyceventpermits.nyc.gov/cems/Login"
+        },
+        "user_summary": {
+          "heading": "Small street event permit",
+          "points": [
+            {
+              "kind": "overview",
+              "text": "Apply to the Street Activity Permit Office (SAPO) for a small street event permit.",
+              "sources": [
+                {
+                  "label": "Street event rules",
+                  "url": "https://www.nyc.gov/site/cecm/permitting/permit-types/street-events.page"
+                }
+              ]
+            },
+            {
+              "kind": "deadline",
+              "text": "File at least 14 calendar days before the event.",
+              "sources": [
+                {
+                  "label": "SAPO deadlines",
+                  "url": "https://www.nyc.gov/site/cecm/permitting/permit-deadlines.page"
+                }
+              ]
+            },
+            {
+              "kind": "fee",
+              "text": "The published fee is $3,100 per location per day, plus a nonrefundable $25 processing fee.",
+              "sources": [
+                {
+                  "label": "Street event fees",
+                  "url": "https://www.nyc.gov/site/cecm/permitting/permit-types/street-events.page"
+                }
+              ]
+            },
+            {
+              "kind": "action",
+              "text": "Submit the application through E-Apply.",
+              "sources": [
+                {
+                  "label": "Street event application",
+                  "url": "https://www.nyc.gov/site/cecm/permitting/permit-types/street-events.page"
+                }
+              ]
+            }
+          ]
         }
       },
       "source": {
@@ -388,6 +458,51 @@
         "portal": {
           "name": "E-Apply",
           "url": "https://nyceventpermits.nyc.gov/cems/Login"
+        },
+        "user_summary": {
+          "heading": "Medium street event permit",
+          "points": [
+            {
+              "kind": "overview",
+              "text": "Apply to the Street Activity Permit Office (SAPO) for a medium street event permit.",
+              "sources": [
+                {
+                  "label": "Street event rules",
+                  "url": "https://www.nyc.gov/site/cecm/permitting/permit-types/street-events.page"
+                }
+              ]
+            },
+            {
+              "kind": "deadline",
+              "text": "File at least 30 calendar days before the event.",
+              "sources": [
+                {
+                  "label": "SAPO deadlines",
+                  "url": "https://www.nyc.gov/site/cecm/permitting/permit-deadlines.page"
+                }
+              ]
+            },
+            {
+              "kind": "fee",
+              "text": "The published fee is $11,000 per location per day, plus a nonrefundable $25 processing fee.",
+              "sources": [
+                {
+                  "label": "Street event fees",
+                  "url": "https://www.nyc.gov/site/cecm/permitting/permit-types/street-events.page"
+                }
+              ]
+            },
+            {
+              "kind": "action",
+              "text": "Submit the application through E-Apply.",
+              "sources": [
+                {
+                  "label": "Street event application",
+                  "url": "https://www.nyc.gov/site/cecm/permitting/permit-types/street-events.page"
+                }
+              ]
+            }
+          ]
         }
       },
       "source": {
@@ -433,6 +548,51 @@
         "portal": {
           "name": "E-Apply",
           "url": "https://nyceventpermits.nyc.gov/cems/Login"
+        },
+        "user_summary": {
+          "heading": "Large street event permit",
+          "points": [
+            {
+              "kind": "overview",
+              "text": "Apply to the Street Activity Permit Office (SAPO) for a large street event permit.",
+              "sources": [
+                {
+                  "label": "Street event rules",
+                  "url": "https://www.nyc.gov/site/cecm/permitting/permit-types/street-events.page"
+                }
+              ]
+            },
+            {
+              "kind": "deadline",
+              "text": "File at least 45 calendar days before the event.",
+              "sources": [
+                {
+                  "label": "SAPO deadlines",
+                  "url": "https://www.nyc.gov/site/cecm/permitting/permit-deadlines.page"
+                }
+              ]
+            },
+            {
+              "kind": "fee",
+              "text": "The published fee is $25,000 per location per day, plus a nonrefundable $25 processing fee.",
+              "sources": [
+                {
+                  "label": "Street event fees",
+                  "url": "https://www.nyc.gov/site/cecm/permitting/permit-types/street-events.page"
+                }
+              ]
+            },
+            {
+              "kind": "action",
+              "text": "Submit the application through E-Apply.",
+              "sources": [
+                {
+                  "label": "Street event application",
+                  "url": "https://www.nyc.gov/site/cecm/permitting/permit-types/street-events.page"
+                }
+              ]
+            }
+          ]
         }
       },
       "source": {
@@ -479,6 +639,51 @@
         "portal": {
           "name": "E-Apply",
           "url": "https://nyceventpermits.nyc.gov/cems/Login"
+        },
+        "user_summary": {
+          "heading": "Extra-large street event permit",
+          "points": [
+            {
+              "kind": "overview",
+              "text": "Apply to the Street Activity Permit Office (SAPO) for an extra-large street event permit.",
+              "sources": [
+                {
+                  "label": "SAPO permit deadlines",
+                  "url": "https://www.nyc.gov/site/cecm/permitting/permit-deadlines.page"
+                }
+              ]
+            },
+            {
+              "kind": "deadline",
+              "text": "Allow up to 60 calendar days; the exact deadline can depend on any plaza level involved.",
+              "sources": [
+                {
+                  "label": "SAPO permit deadlines",
+                  "url": "https://www.nyc.gov/site/cecm/permitting/permit-deadlines.page"
+                }
+              ]
+            },
+            {
+              "kind": "fee",
+              "text": "The published fee is up to $66,000 per location per day, plus a $25 processing fee.",
+              "sources": [
+                {
+                  "label": "SAPO permit deadlines",
+                  "url": "https://www.nyc.gov/site/cecm/permitting/permit-deadlines.page"
+                }
+              ]
+            },
+            {
+              "kind": "action",
+              "text": "Submit the application through E-Apply.",
+              "sources": [
+                {
+                  "label": "SAPO permit deadlines",
+                  "url": "https://www.nyc.gov/site/cecm/permitting/permit-deadlines.page"
+                }
+              ]
+            }
+          ]
         }
       },
       "source": {
@@ -519,7 +724,52 @@
         },
         "notes": [
           "Community-board recommendation precedes SAPO administration (SAPO rules §1-04(h))."
-        ]
+        ],
+        "user_summary": {
+          "heading": "Block party permit",
+          "points": [
+            {
+              "kind": "overview",
+              "text": "Apply to the Street Activity Permit Office (SAPO) for a block party permit.",
+              "sources": [
+                {
+                  "label": "Block party guidance",
+                  "url": "https://www.nyc.gov/site/cecm/permitting/permit-types/block-parties.page"
+                }
+              ]
+            },
+            {
+              "kind": "deadline",
+              "text": "File at least 60 calendar days before the event.",
+              "sources": [
+                {
+                  "label": "Block party guidance",
+                  "url": "https://www.nyc.gov/site/cecm/permitting/permit-types/block-parties.page"
+                }
+              ]
+            },
+            {
+              "kind": "fee",
+              "text": "The published cost is a $25 processing fee.",
+              "sources": [
+                {
+                  "label": "Block party guidance",
+                  "url": "https://www.nyc.gov/site/cecm/permitting/permit-types/block-parties.page"
+                }
+              ]
+            },
+            {
+              "kind": "action",
+              "text": "Submit through E-Apply; the community board makes a recommendation before SAPO decides.",
+              "sources": [
+                {
+                  "label": "Block party guidance",
+                  "url": "https://www.nyc.gov/site/cecm/permitting/permit-types/block-parties.page"
+                }
+              ]
+            }
+          ]
+        }
       },
       "source": {
         "citation": "CECM block-parties page + FAQ + permit-deadlines page",
@@ -561,7 +811,32 @@
         "disposition": "PROHIBITED_OR_INELIGIBLE",
         "requirement_name": "Block party eligibility conflict",
         "agency": "SAPO (Mayor's Office CECM)",
-        "note_text": "A block party is a community-sponsored public event with no sales of goods or services; alcohol, vendors, commercial branding, and sponsorships are not permitted. This event's inputs conflict with block-party eligibility — rescope or apply under a different SAPO class."
+        "note_text": "A block party is a community-sponsored public event with no sales of goods or services; alcohol, vendors, commercial branding, and sponsorships are not permitted. This event's inputs conflict with block-party eligibility — rescope or apply under a different SAPO class.",
+        "user_summary": {
+          "heading": "Block party eligibility problem",
+          "points": [
+            {
+              "kind": "warning",
+              "text": "A block party cannot include alcohol, sales, vendors, commercial branding, or sponsorships.",
+              "sources": [
+                {
+                  "label": "Block party rules",
+                  "url": "https://www.nyc.gov/site/cecm/permitting/permit-types/block-parties.page"
+                }
+              ]
+            },
+            {
+              "kind": "action",
+              "text": "Change the event plan or apply under a different Street Activity Permit Office (SAPO) event type.",
+              "sources": [
+                {
+                  "label": "Block party rules",
+                  "url": "https://www.nyc.gov/site/cecm/permitting/permit-types/block-parties.page"
+                }
+              ]
+            }
+          ]
+        }
       },
       "source": {
         "citation": "CECM block-parties page",
@@ -589,7 +864,32 @@
         "disposition": "MAY_BE_REQUIRED",
         "requirement_name": "Block association sponsorship + neighbor permission",
         "agency": "SAPO (Mayor's Office CECM)",
-        "note_text": "Applicants must be a member of a block association and have permission from their neighbors. Confirm before applying."
+        "note_text": "Applicants must be a member of a block association and have permission from their neighbors. Confirm before applying.",
+        "user_summary": {
+          "heading": "Block association and neighbor approval",
+          "points": [
+            {
+              "kind": "overview",
+              "text": "The applicant must belong to a block association and have permission from the neighbors.",
+              "sources": [
+                {
+                  "label": "Block party rules",
+                  "url": "https://www.nyc.gov/site/cecm/permitting/permit-types/block-parties.page"
+                }
+              ]
+            },
+            {
+              "kind": "action",
+              "text": "Confirm both requirements before applying.",
+              "sources": [
+                {
+                  "label": "Block party rules",
+                  "url": "https://www.nyc.gov/site/cecm/permitting/permit-types/block-parties.page"
+                }
+              ]
+            }
+          ]
+        }
       },
       "source": {
         "citation": "CECM block-parties page",
@@ -644,6 +944,51 @@
         "portal": {
           "name": "E-Apply",
           "url": "https://nyceventpermits.nyc.gov/cems/Login"
+        },
+        "user_summary": {
+          "heading": "Plaza event permit",
+          "points": [
+            {
+              "kind": "overview",
+              "text": "Apply to the Street Activity Permit Office (SAPO) for a plaza event permit.",
+              "sources": [
+                {
+                  "label": "SAPO permit deadlines",
+                  "url": "https://www.nyc.gov/site/cecm/permitting/permit-deadlines.page"
+                }
+              ]
+            },
+            {
+              "kind": "deadline",
+              "text": "File 14 to 60 calendar days ahead, depending on the plaza level and whether the event spans multiple blocks.",
+              "sources": [
+                {
+                  "label": "SAPO permit deadlines",
+                  "url": "https://www.nyc.gov/site/cecm/permitting/permit-deadlines.page"
+                }
+              ]
+            },
+            {
+              "kind": "fee",
+              "text": "Published plaza fees range from $1,000 to $31,000 by event level and size, plus a $25 processing fee.",
+              "sources": [
+                {
+                  "label": "Plaza fee schedule",
+                  "url": "https://www.nyc.gov/site/cecm/permitting/plaza-fees.page"
+                }
+              ]
+            },
+            {
+              "kind": "action",
+              "text": "Submit the application through E-Apply.",
+              "sources": [
+                {
+                  "label": "SAPO permit deadlines",
+                  "url": "https://www.nyc.gov/site/cecm/permitting/permit-deadlines.page"
+                }
+              ]
+            }
+          ]
         }
       },
       "source": {
@@ -683,7 +1028,52 @@
         "notes": [
           "Exceptions in the rule text: block parties and press conferences/rallies/stationary demonstrations; hardship waiver at SAPO's discretion.",
           "Exact certificate-holder wording per class: confirm (VS Round2 unresolved list)."
-        ]
+        ],
+        "user_summary": {
+          "heading": "Liability insurance for a street or plaza permit",
+          "points": [
+            {
+              "kind": "overview",
+              "text": "Obtain liability coverage of at least $1 million per occurrence and name the City of New York as an additional insured.",
+              "sources": [
+                {
+                  "label": "50 RCNY §1-08(b)",
+                  "url": "https://codelibrary.amlegal.com/codes/newyorkcity/latest/NYCrules/0-0-0-84731"
+                }
+              ]
+            },
+            {
+              "kind": "deadline",
+              "text": "Provide the insurance before SAPO issues the permit.",
+              "sources": [
+                {
+                  "label": "50 RCNY §1-08(b)",
+                  "url": "https://codelibrary.amlegal.com/codes/newyorkcity/latest/NYCrules/0-0-0-84731"
+                }
+              ]
+            },
+            {
+              "kind": "fee",
+              "text": "The insurance premium depends on the insurer and event.",
+              "sources": [
+                {
+                  "label": "50 RCNY §1-08(b)",
+                  "url": "https://codelibrary.amlegal.com/codes/newyorkcity/latest/NYCrules/0-0-0-84731"
+                }
+              ]
+            },
+            {
+              "kind": "warning",
+              "text": "Block parties and certain demonstrations are exceptions; SAPO may also grant a hardship waiver.",
+              "sources": [
+                {
+                  "label": "50 RCNY §1-08(b)",
+                  "url": "https://codelibrary.amlegal.com/codes/newyorkcity/latest/NYCrules/0-0-0-84731"
+                }
+              ]
+            }
+          ]
+        }
       },
       "source": {
         "citation": "50 RCNY §1-08(b) (current) + CECM per-type pages",
@@ -715,7 +1105,32 @@
       "output": {
         "requirement_name": "Insurance required (block party WITH ride)",
         "agency": "SAPO (Mayor's Office CECM)",
-        "note_text": "Block parties are exempt from the baseline $1M requirement, but 'block parties wishing to have rides must also provide insurance' (CECM FAQ); rides/inflatables also need a DOB inspection certificate."
+        "note_text": "Block parties are exempt from the baseline $1M requirement, but 'block parties wishing to have rides must also provide insurance' (CECM FAQ); rides/inflatables also need a DOB inspection certificate.",
+        "user_summary": {
+          "heading": "Insurance for a block party with a ride",
+          "points": [
+            {
+              "kind": "overview",
+              "text": "A block party with an amusement ride or inflatable must provide insurance.",
+              "sources": [
+                {
+                  "label": "CECM frequently asked questions",
+                  "url": "https://www.nyc.gov/site/cecm/support/frequently-asked-questions.page"
+                }
+              ]
+            },
+            {
+              "kind": "warning",
+              "text": "The ride or inflatable also needs a Department of Buildings (DOB) inspection certificate.",
+              "sources": [
+                {
+                  "label": "CECM frequently asked questions",
+                  "url": "https://www.nyc.gov/site/cecm/support/frequently-asked-questions.page"
+                }
+              ]
+            }
+          ]
+        }
       },
       "source": {
         "citation": "CECM FAQ + block-parties page",
@@ -785,7 +1200,56 @@
         },
         "notes": [
           "Scope reaches sound projected outside a building or through openings, audible on a public street/park/place (Admin Code §10-108(b)(3)). Fully-indoor non-projecting sound is out of scope; the noise code still applies (§24-244, §24-231)."
-        ]
+        ],
+        "user_summary": {
+          "heading": "NYPD sound device permit",
+          "points": [
+            {
+              "kind": "overview",
+              "text": "You need an NYPD permit for amplified sound projected into or audible from a public street, park, or other public place.",
+              "sources": [
+                {
+                  "label": "NYPD permit guidance",
+                  "url": "https://www.nyc.gov/site/nypd/services/law-enforcement/permits-licenses-permits.page"
+                },
+                {
+                  "label": "NYC Administrative Code §10-108",
+                  "url": "https://codelibrary.amlegal.com/codes/newyorkcity/latest/NYCadmin/0-0-0-6027"
+                }
+              ]
+            },
+            {
+              "kind": "deadline",
+              "text": "File at least five calendar days before using the sound device.",
+              "sources": [
+                {
+                  "label": "NYPD permit guidance",
+                  "url": "https://www.nyc.gov/site/nypd/services/law-enforcement/permits-licenses-permits.page"
+                }
+              ]
+            },
+            {
+              "kind": "fee",
+              "text": "The fee is $45 per device for the first day, then $5 per additional day for up to four more days.",
+              "sources": [
+                {
+                  "label": "NYPD permit guidance",
+                  "url": "https://www.nyc.gov/site/nypd/services/law-enforcement/permits-licenses-permits.page"
+                }
+              ]
+            },
+            {
+              "kind": "action",
+              "text": "File form PD 656-041A in person at the precinct where the device will be used; payment must be by certified check or money order.",
+              "sources": [
+                {
+                  "label": "NYPD permit guidance",
+                  "url": "https://www.nyc.gov/site/nypd/services/law-enforcement/permits-licenses-permits.page"
+                }
+              ]
+            }
+          ]
+        }
       },
       "source": {
         "citation": "NYPD permits page + Admin Code §10-108",
@@ -821,7 +1285,32 @@
         "disposition": "MAY_BE_REQUIRED",
         "requirement_name": "Parks amplified-sound permission precedes NYPD pursuit",
         "agency": "NYC Parks",
-        "note_text": "NYC Parks controls amplified-sound permission through its event review; obtain it before pursuing the NYPD sound permit. A strict issued-before-filed sequence is not confirmed by located primary text — confirm exact sequencing with the Parks permit office or precinct."
+        "note_text": "NYC Parks controls amplified-sound permission through its event review; obtain it before pursuing the NYPD sound permit. A strict issued-before-filed sequence is not confirmed by located primary text — confirm exact sequencing with the Parks permit office or precinct.",
+        "user_summary": {
+          "heading": "Parks approval before the NYPD sound permit",
+          "points": [
+            {
+              "kind": "overview",
+              "text": "For amplified sound in a park, get Parks permission through the event review before pursuing the NYPD sound permit.",
+              "sources": [
+                {
+                  "label": "Parks special-event guide",
+                  "url": "https://www.nycgovparks.org/permits/special-events/guide"
+                }
+              ]
+            },
+            {
+              "kind": "warning",
+              "text": "The exact filing sequence is not confirmed; check it with the Parks permit office or local precinct.",
+              "sources": [
+                {
+                  "label": "Parks special-event guide",
+                  "url": "https://www.nycgovparks.org/permits/special-events/guide"
+                }
+              ]
+            }
+          ]
+        }
       },
       "source": {
         "citation": "nycgovparks.org special event guidance",
@@ -869,7 +1358,52 @@
         },
         "notes": [
           "Runway shorter than the processing range renders FEASIBLE-AT-RISK ('processing may not complete before event') — encoding interpretation I-5, unchanged."
-        ]
+        ],
+        "user_summary": {
+          "heading": "NYC Parks special event permit",
+          "points": [
+            {
+              "kind": "overview",
+              "text": "Apply for a Parks special event permit because the event has more than 20 attendees.",
+              "sources": [
+                {
+                  "label": "Parks permit FAQ",
+                  "url": "https://www.nycgovparks.org/permits/special-events/faq"
+                }
+              ]
+            },
+            {
+              "kind": "deadline",
+              "text": "Apply at least 21 calendar days ahead. Parks does not accept applications inside that window, and processing can take 21 to 30 days.",
+              "sources": [
+                {
+                  "label": "Parks permit FAQ",
+                  "url": "https://www.nycgovparks.org/permits/special-events/faq"
+                }
+              ]
+            },
+            {
+              "kind": "fee",
+              "text": "The published nonrefundable fee is $25.",
+              "sources": [
+                {
+                  "label": "Parks permit FAQ",
+                  "url": "https://www.nycgovparks.org/permits/special-events/faq"
+                }
+              ]
+            },
+            {
+              "kind": "action",
+              "text": "Apply through the NYC Parks event-permit portal.",
+              "sources": [
+                {
+                  "label": "Parks permit portal",
+                  "url": "https://nyceventpermits.nyc.gov/parks"
+                }
+              ]
+            }
+          ]
+        }
       },
       "source": {
         "citation": "Parks FAQ + portal + NYC311",
@@ -905,7 +1439,48 @@
         "disposition": "MAY_BE_REQUIRED",
         "permit_name": "Special Event Permit (threshold conflict at exactly 20)",
         "agency": "NYC Parks",
-        "note_text": "OFFICIAL CONFLICT: the Parks FAQ requires a permit for 'twenty or more people'; the application portal and NYC311 say 'more than 20'. At exactly 20 attendees, confirm with Parks — or plan for the permit to be safe."
+        "note_text": "OFFICIAL CONFLICT: the Parks FAQ requires a permit for 'twenty or more people'; the application portal and NYC311 say 'more than 20'. At exactly 20 attendees, confirm with Parks — or plan for the permit to be safe.",
+        "user_summary": {
+          "heading": "Parks permit question at exactly 20 people",
+          "points": [
+            {
+              "kind": "warning",
+              "text": "Official Parks sources disagree: one says a permit starts at 20 people, while others say more than 20.",
+              "sources": [
+                {
+                  "label": "Parks permit FAQ",
+                  "url": "https://www.nycgovparks.org/permits/special-events/faq"
+                },
+                {
+                  "label": "Parks permit portal",
+                  "url": "https://nyceventpermits.nyc.gov/parks"
+                },
+                {
+                  "label": "NYC311",
+                  "url": "https://portal.311.nyc.gov/article/?kanumber=KA-02071"
+                }
+              ]
+            },
+            {
+              "kind": "action",
+              "text": "Confirm with Parks, or plan for the permit to be safe.",
+              "sources": [
+                {
+                  "label": "Parks permit FAQ",
+                  "url": "https://www.nycgovparks.org/permits/special-events/faq"
+                },
+                {
+                  "label": "Parks permit portal",
+                  "url": "https://nyceventpermits.nyc.gov/parks"
+                },
+                {
+                  "label": "NYC311",
+                  "url": "https://portal.311.nyc.gov/article/?kanumber=KA-02071"
+                }
+              ]
+            }
+          ]
+        }
       },
       "source": {
         "citation": "Parks FAQ vs. portal vs. NYC311 KA-02071",
@@ -939,7 +1514,32 @@
         ]
       },
       "output": {
-        "note_text": "Insurance determined by borough office at review — not automatically required for parks events."
+        "note_text": "Insurance determined by borough office at review — not automatically required for parks events.",
+        "user_summary": {
+          "heading": "Parks event insurance review",
+          "points": [
+            {
+              "kind": "overview",
+              "text": "Insurance is not automatically required for every Parks event.",
+              "sources": [
+                {
+                  "label": "Parks permit FAQ",
+                  "url": "https://www.nycgovparks.org/permits/special-events/faq"
+                }
+              ]
+            },
+            {
+              "kind": "action",
+              "text": "The Parks borough office will decide during its review whether your event needs insurance.",
+              "sources": [
+                {
+                  "label": "Parks permit FAQ",
+                  "url": "https://www.nycgovparks.org/permits/special-events/faq"
+                }
+              ]
+            }
+          ]
+        }
       },
       "source": {
         "citation": "nycgovparks.org FAQ",
@@ -980,7 +1580,68 @@
         "fee": {
           "display": "$50–$150 per vendor (2026)"
         },
-        "note_text": "OFFICIAL CONFLICT on the trigger: three Parks pages state any sale on parkland requires a TUA ('In order to sell anything on parkland, you'll need a Temporary Use Authorization'); the FAQ ties it to events over 500 attendance ('may need'). Encoded leaning any-sale; confirm with the Revenue Division, (212) 360-1397."
+        "note_text": "OFFICIAL CONFLICT on the trigger: three Parks pages state any sale on parkland requires a TUA ('In order to sell anything on parkland, you'll need a Temporary Use Authorization'); the FAQ ties it to events over 500 attendance ('may need'). Encoded leaning any-sale; confirm with the Revenue Division, (212) 360-1397.",
+        "user_summary": {
+          "heading": "Temporary Use Authorization for park sales",
+          "points": [
+            {
+              "kind": "warning",
+              "text": "Official Parks pages disagree about the trigger: several say any sale needs a TUA, while the FAQ links it to events with more than 500 people.",
+              "sources": [
+                {
+                  "label": "Parks vendor guidance",
+                  "url": "https://www.nycgovparks.org/permits/special-events/vendors"
+                },
+                {
+                  "label": "Parks special-event guide",
+                  "url": "https://www.nycgovparks.org/permits/special-events/guide"
+                },
+                {
+                  "label": "Parks large-event guidance",
+                  "url": "https://www.nycgovparks.org/permits/special-events/large-events"
+                },
+                {
+                  "label": "Parks permit FAQ",
+                  "url": "https://www.nycgovparks.org/permits/special-events/faq"
+                }
+              ]
+            },
+            {
+              "kind": "deadline",
+              "text": "Submit vendor information at least 14 calendar days before the event.",
+              "sources": [
+                {
+                  "label": "Parks vendor guidance",
+                  "url": "https://www.nycgovparks.org/permits/special-events/vendors"
+                }
+              ]
+            },
+            {
+              "kind": "fee",
+              "text": "The 2026 fee is $50 to $150 per vendor.",
+              "sources": [
+                {
+                  "label": "Parks vendor guidance",
+                  "url": "https://www.nycgovparks.org/permits/special-events/vendors"
+                }
+              ]
+            },
+            {
+              "kind": "action",
+              "text": "Confirm whether a TUA is required with the Parks Revenue Division.",
+              "sources": [
+                {
+                  "label": "Parks vendor guidance",
+                  "url": "https://www.nycgovparks.org/permits/special-events/vendors"
+                },
+                {
+                  "label": "Parks permit FAQ",
+                  "url": "https://www.nycgovparks.org/permits/special-events/faq"
+                }
+              ]
+            }
+          ]
+        }
       },
       "source": {
         "citation": "nycgovparks.org vendors + guide + large-events pages vs. FAQ",
@@ -1027,7 +1688,60 @@
         "notes": [
           "Applies whether food is sold, sampled, or given away; on private property, a public street, or in a park (DOHMH temporary-events page; Health Code Art. 88).",
           "There is no separate 'sampling permit' class in located sources — free sampling is food service requiring an acceptable vendor permit."
-        ]
+        ],
+        "user_summary": {
+          "heading": "NYC Health Department food-vendor permits",
+          "points": [
+            {
+              "kind": "overview",
+              "text": "Each participating food vendor needs an acceptable NYC Health Department (DOHMH) permit, whether food is sold, sampled, or given away.",
+              "sources": [
+                {
+                  "label": "DOHMH temporary-event guidance",
+                  "url": "https://www.nyc.gov/site/doh/business/food-operators/temporary-food-service-establishments.page"
+                },
+                {
+                  "label": "Health Code Article 88",
+                  "url": "https://www.nyc.gov/assets/doh/downloads/pdf/about/healthcode/health-code-article88.pdf"
+                }
+              ]
+            },
+            {
+              "kind": "deadline",
+              "text": "The published sources do not give one reliable lead time; confirm timing with DOHMH.",
+              "sources": [
+                {
+                  "label": "DOHMH temporary-event guidance",
+                  "url": "https://www.nyc.gov/site/doh/business/food-operators/temporary-food-service-establishments.page"
+                }
+              ]
+            },
+            {
+              "kind": "fee",
+              "text": "A Temporary Food Service Establishment permit is published at $70 per year.",
+              "sources": [
+                {
+                  "label": "DOHMH temporary-event guidance",
+                  "url": "https://www.nyc.gov/site/doh/business/food-operators/temporary-food-service-establishments.page"
+                }
+              ]
+            },
+            {
+              "kind": "warning",
+              "text": "There is no separate sampling-permit path in the located sources; free samples still count as food service.",
+              "sources": [
+                {
+                  "label": "DOHMH temporary-event guidance",
+                  "url": "https://www.nyc.gov/site/doh/business/food-operators/temporary-food-service-establishments.page"
+                },
+                {
+                  "label": "Health Code Article 88",
+                  "url": "https://www.nyc.gov/assets/doh/downloads/pdf/about/healthcode/health-code-article88.pdf"
+                }
+              ]
+            }
+          ]
+        }
       },
       "source": {
         "citation": "DOHMH temporary-events page + Health Code Article 88",
@@ -1077,7 +1791,56 @@
         "notes": [
           "Submit the participating-vendor list with each TFSE permit number, expiration date, and food type.",
           "On privately owned property: also provide a signed contract with the property owner."
-        ]
+        ],
+        "user_summary": {
+          "heading": "Organizer notice to the NYC Health Department",
+          "points": [
+            {
+              "kind": "overview",
+              "text": "As the event organizer, you may need to notify the NYC Health Department (DOHMH) about the participating food vendors.",
+              "sources": [
+                {
+                  "label": "DOHMH sponsor guidelines",
+                  "url": "https://www.nyc.gov/assets/doh/downloads/pdf/rii/temp-vendors.pdf"
+                },
+                {
+                  "label": "DOHMH temporary-event guidance",
+                  "url": "https://www.nyc.gov/site/doh/business/food-operators/temporary-food-service-establishments.page"
+                }
+              ]
+            },
+            {
+              "kind": "deadline",
+              "text": "Send the notice at least 30 calendar days before the event.",
+              "sources": [
+                {
+                  "label": "DOHMH sponsor guidelines",
+                  "url": "https://www.nyc.gov/assets/doh/downloads/pdf/rii/temp-vendors.pdf"
+                }
+              ]
+            },
+            {
+              "kind": "action",
+              "text": "Include each vendor's permit number, expiration date, and food type.",
+              "sources": [
+                {
+                  "label": "DOHMH sponsor guidelines",
+                  "url": "https://www.nyc.gov/assets/doh/downloads/pdf/rii/temp-vendors.pdf"
+                }
+              ]
+            },
+            {
+              "kind": "action",
+              "text": "For privately owned property, also include a signed contract with the property owner.",
+              "sources": [
+                {
+                  "label": "DOHMH sponsor guidelines",
+                  "url": "https://www.nyc.gov/assets/doh/downloads/pdf/rii/temp-vendors.pdf"
+                }
+              ]
+            }
+          ]
+        }
       },
       "source": {
         "citation": "DOHMH Event Sponsor Guidelines PDF + DOHMH temporary-events page",
@@ -1111,7 +1874,42 @@
       },
       "output": {
         "disposition": "MAY_BE_REQUIRED",
-        "advisory_text": "Health Code Art. 88 exempts genuinely private affinity-group functions and certain govt/nonprofit education events where the public is not invited. If this event is open to the public in practice, vendor permits and the 30-day organizer notification apply. Confirm which side of the exemption this event falls on."
+        "advisory_text": "Health Code Art. 88 exempts genuinely private affinity-group functions and certain govt/nonprofit education events where the public is not invited. If this event is open to the public in practice, vendor permits and the 30-day organizer notification apply. Confirm which side of the exemption this event falls on.",
+        "user_summary": {
+          "heading": "Possible private-event food exemption",
+          "points": [
+            {
+              "kind": "overview",
+              "text": "A genuinely private affinity-group function, or certain government or nonprofit educational events, may be exempt when the public is not invited.",
+              "sources": [
+                {
+                  "label": "Health Code Article 88",
+                  "url": "https://www.nyc.gov/assets/doh/downloads/pdf/about/healthcode/health-code-article88.pdf"
+                }
+              ]
+            },
+            {
+              "kind": "warning",
+              "text": "If the event is open to the public in practice, food-vendor permits and the 30-day organizer notice apply.",
+              "sources": [
+                {
+                  "label": "Health Code Article 88",
+                  "url": "https://www.nyc.gov/assets/doh/downloads/pdf/about/healthcode/health-code-article88.pdf"
+                }
+              ]
+            },
+            {
+              "kind": "action",
+              "text": "Confirm with the NYC Health Department (DOHMH) which side of the exemption your event falls on.",
+              "sources": [
+                {
+                  "label": "Health Code Article 88",
+                  "url": "https://www.nyc.gov/assets/doh/downloads/pdf/about/healthcode/health-code-article88.pdf"
+                }
+              ]
+            }
+          ]
+        }
       },
       "source": {
         "citation": "Health Code §88.03(f)(2)-(4) + DOHMH page",
@@ -1154,7 +1952,62 @@
         "notes": [
           "LPG at street fairs requires certificate-of-fitness supervision (FC 6101.5.6).",
           "Charcoal grilling is a FUEL permit matter, not an Open Flame Permit (CECM FDNY page distinguishes the categories)."
-        ]
+        ],
+        "user_summary": {
+          "heading": "Fire Department (FDNY) fuel permit",
+          "points": [
+            {
+              "kind": "overview",
+              "text": "Cooking or equipment that uses charcoal, wood, propane, or kerosene may need an FDNY fuel permit.",
+              "sources": [
+                {
+                  "label": "CECM fire-safety guidance",
+                  "url": "https://www.nyc.gov/site/cecm/support/new-york-city-fire-department.page"
+                }
+              ]
+            },
+            {
+              "kind": "deadline",
+              "text": "The published source does not give one reliable lead time; confirm timing with FDNY.",
+              "sources": [
+                {
+                  "label": "CECM fire-safety guidance",
+                  "url": "https://www.nyc.gov/site/cecm/support/new-york-city-fire-department.page"
+                }
+              ]
+            },
+            {
+              "kind": "fee",
+              "text": "The fee varies; confirm the amount with FDNY.",
+              "sources": [
+                {
+                  "label": "CECM fire-safety guidance",
+                  "url": "https://www.nyc.gov/site/cecm/support/new-york-city-fire-department.page"
+                }
+              ]
+            },
+            {
+              "kind": "warning",
+              "text": "LPG at a street fair needs certificate-of-fitness supervision. Charcoal grilling follows the fuel-permit path, not the open-flame permit path.",
+              "sources": [
+                {
+                  "label": "CECM fire-safety guidance",
+                  "url": "https://www.nyc.gov/site/cecm/support/new-york-city-fire-department.page"
+                }
+              ]
+            },
+            {
+              "kind": "action",
+              "text": "Apply through FDNY Business.",
+              "sources": [
+                {
+                  "label": "CECM fire-safety guidance",
+                  "url": "https://www.nyc.gov/site/cecm/support/new-york-city-fire-department.page"
+                }
+              ]
+            }
+          ]
+        }
       },
       "source": {
         "citation": "CECM FDNY page + 2022 Fire Code ch. 61/FC 105.6",
@@ -1192,6 +2045,51 @@
         "portal": {
           "name": "FDNY Business",
           "url": "https://fires.fdnycloud.org/CitizenAccess/Default.aspx"
+        },
+        "user_summary": {
+          "heading": "Fire Department (FDNY) open-flame permit",
+          "points": [
+            {
+              "kind": "overview",
+              "text": "Candles, sternos, and café heaters may need an FDNY open-flame permit.",
+              "sources": [
+                {
+                  "label": "FDNY open-flame permit page",
+                  "url": "https://www.nyc.gov/site/fdny/business/all-certifications/per-openflames.page"
+                }
+              ]
+            },
+            {
+              "kind": "deadline",
+              "text": "The published source does not give one reliable lead time; confirm timing with FDNY.",
+              "sources": [
+                {
+                  "label": "FDNY open-flame permit page",
+                  "url": "https://www.nyc.gov/site/fdny/business/all-certifications/per-openflames.page"
+                }
+              ]
+            },
+            {
+              "kind": "fee",
+              "text": "The published fee is $210 per setup or vendor.",
+              "sources": [
+                {
+                  "label": "FDNY open-flame permit page",
+                  "url": "https://www.nyc.gov/site/fdny/business/all-certifications/per-openflames.page"
+                }
+              ]
+            },
+            {
+              "kind": "action",
+              "text": "Apply through FDNY Business.",
+              "sources": [
+                {
+                  "label": "FDNY open-flame permit page",
+                  "url": "https://www.nyc.gov/site/fdny/business/all-certifications/per-openflames.page"
+                }
+              ]
+            }
+          ]
         }
       },
       "source": {
@@ -1225,7 +2123,32 @@
       "output": {
         "disposition": "PROHIBITED_OR_INELIGIBLE",
         "agency": "NYC Parks",
-        "note_text": "Propane grills are prohibited in NYC parks. Barbecuing is limited to designated areas in certain parks and beaches; cooking outside designated areas is not allowed."
+        "note_text": "Propane grills are prohibited in NYC parks. Barbecuing is limited to designated areas in certain parks and beaches; cooking outside designated areas is not allowed.",
+        "user_summary": {
+          "heading": "Propane is not allowed in NYC parks",
+          "points": [
+            {
+              "kind": "warning",
+              "text": "Do not use a propane grill in an NYC park.",
+              "sources": [
+                {
+                  "label": "NYC311 park-barbecue rules",
+                  "url": "https://portal.311.nyc.gov/article/?kanumber=KA-02228"
+                }
+              ]
+            },
+            {
+              "kind": "action",
+              "text": "If cooking is planned, use only an allowed method in a designated barbecue area at a participating park or beach.",
+              "sources": [
+                {
+                  "label": "NYC311 park-barbecue rules",
+                  "url": "https://portal.311.nyc.gov/article/?kanumber=KA-02228"
+                }
+              ]
+            }
+          ]
+        }
       },
       "source": {
         "citation": "NYC311 barbecuing article KA-02228",
@@ -1275,7 +2198,70 @@
         },
         "notes": [
           "Thresholds: aggregate fuel storage exceeding 2.5 gal gasoline and/or 10 gal diesel; outdoor battery systems exceeding 20 kWh aggregate rated capacity. Site inspection may apply."
-        ]
+        ],
+        "user_summary": {
+          "heading": "Fire Department (FDNY) generator or battery-system permit",
+          "points": [
+            {
+              "kind": "overview",
+              "text": "An FDNY permit may apply when stored fuel exceeds 2.5 gallons of gasoline or 10 gallons of diesel, or when outdoor batteries exceed 20 kWh in total capacity.",
+              "sources": [
+                {
+                  "label": "CECM fire-safety guidance",
+                  "url": "https://www.nyc.gov/site/cecm/support/new-york-city-fire-department.page"
+                },
+                {
+                  "label": "Parks special-event guide",
+                  "url": "https://www.nycgovparks.org/permits/special-events/guide"
+                }
+              ]
+            },
+            {
+              "kind": "deadline",
+              "text": "No universal lead time is confirmed; ask FDNY when to file.",
+              "sources": [
+                {
+                  "label": "CECM fire-safety guidance",
+                  "url": "https://www.nyc.gov/site/cecm/support/new-york-city-fire-department.page"
+                }
+              ]
+            },
+            {
+              "kind": "fee",
+              "text": "A fee applies, but the amount is not confirmed; ask FDNY.",
+              "sources": [
+                {
+                  "label": "CECM fire-safety guidance",
+                  "url": "https://www.nyc.gov/site/cecm/support/new-york-city-fire-department.page"
+                }
+              ]
+            },
+            {
+              "kind": "warning",
+              "text": "FDNY may require a site inspection.",
+              "sources": [
+                {
+                  "label": "CECM fire-safety guidance",
+                  "url": "https://www.nyc.gov/site/cecm/support/new-york-city-fire-department.page"
+                },
+                {
+                  "label": "Parks special-event guide",
+                  "url": "https://www.nycgovparks.org/permits/special-events/guide"
+                }
+              ]
+            },
+            {
+              "kind": "action",
+              "text": "Apply through FDNY Business.",
+              "sources": [
+                {
+                  "label": "CECM fire-safety guidance",
+                  "url": "https://www.nyc.gov/site/cecm/support/new-york-city-fire-department.page"
+                }
+              ]
+            }
+          ]
+        }
       },
       "source": {
         "citation": "CECM FDNY page + Parks special event guide",
@@ -1310,7 +2296,32 @@
           "type": "research_required",
           "display": "register before use — timing: confirm with DEP"
         },
-        "fee": null
+        "fee": null,
+        "user_summary": {
+          "heading": "Environmental Protection generator registration",
+          "points": [
+            {
+              "kind": "overview",
+              "text": "A generator rated at 40 kW or more must be registered with the NYC Department of Environmental Protection (DEP).",
+              "sources": [
+                {
+                  "label": "CECM DEP guidance",
+                  "url": "https://www.nyc.gov/site/cecm/support/department-of-environmental-protection.page"
+                }
+              ]
+            },
+            {
+              "kind": "deadline",
+              "text": "Register before using the generator; confirm the filing timing with DEP.",
+              "sources": [
+                {
+                  "label": "CECM DEP guidance",
+                  "url": "https://www.nyc.gov/site/cecm/support/department-of-environmental-protection.page"
+                }
+              ]
+            }
+          ]
+        }
       },
       "source": {
         "citation": "CECM DEP page + Parks guide",
@@ -1366,7 +2377,66 @@
           "Exactly 400 sq ft (e.g. 20x20) sits ON the published 'more than 400' boundary → engine renders CONDITIONAL, not REQUIRED, with 'confirm footprint calculation with DOB'.",
           "v1's '10x10' threshold removed: it matches NY STATE parks rules, not NYC."
         ],
-        "dedupe_key": "dob-structure"
+        "dedupe_key": "dob-structure",
+        "user_summary": {
+          "heading": "Buildings Department approval for a tent or canopy",
+          "points": [
+            {
+              "kind": "overview",
+              "text": "NYC Department of Buildings (DOB) approval may apply when a tent or canopy is larger than 400 gross square feet or stays in place for 30 days or more.",
+              "sources": [
+                {
+                  "label": "CECM DOB guidance",
+                  "url": "https://www.nyc.gov/site/cecm/support/department-of-buildings.page"
+                }
+              ]
+            },
+            {
+              "kind": "deadline",
+              "text": "If the Temporary Use Permit path applies, a registered design professional must file at least 15 business days before the event.",
+              "sources": [
+                {
+                  "label": "DOB Temporary Use Permit page",
+                  "url": "https://www.nyc.gov/site/buildings/industry/tup.page"
+                }
+              ]
+            },
+            {
+              "kind": "fee",
+              "text": "Published Temporary Use Permit fees are $100 for the first 30 days and $130 for each additional period.",
+              "sources": [
+                {
+                  "label": "DOB Temporary Use Permit page",
+                  "url": "https://www.nyc.gov/site/buildings/industry/tup.page"
+                }
+              ]
+            },
+            {
+              "kind": "warning",
+              "text": "Exactly 400 square feet is on the published boundary, so confirm the footprint calculation with DOB.",
+              "sources": [
+                {
+                  "label": "CECM DOB guidance",
+                  "url": "https://www.nyc.gov/site/cecm/support/department-of-buildings.page"
+                }
+              ]
+            },
+            {
+              "kind": "action",
+              "text": "Confirm whether this setup needs an Alteration permit or a Temporary Use Permit.",
+              "sources": [
+                {
+                  "label": "CECM DOB guidance",
+                  "url": "https://www.nyc.gov/site/cecm/support/department-of-buildings.page"
+                },
+                {
+                  "label": "DOB Temporary Use Permit page",
+                  "url": "https://www.nyc.gov/site/buildings/industry/tup.page"
+                }
+              ]
+            }
+          ]
+        }
       },
       "source": {
         "citation": "CECM DOB support page + DOB TUP page + DOB TPA code notes",
@@ -1413,6 +2483,41 @@
         },
         "fee": {
           "display": "varies"
+        },
+        "user_summary": {
+          "heading": "Buildings Department permit for a stage or platform",
+          "points": [
+            {
+              "kind": "overview",
+              "text": "A stage, press platform, or scaffold over two feet high and covering at least 120 square feet needs a Department of Buildings (DOB) Alteration Type 2 or 3 permit.",
+              "sources": [
+                {
+                  "label": "CECM DOB guidance",
+                  "url": "https://www.nyc.gov/site/cecm/support/department-of-buildings.page"
+                }
+              ]
+            },
+            {
+              "kind": "deadline",
+              "text": "Confirm the filing timeline with DOB.",
+              "sources": [
+                {
+                  "label": "CECM DOB guidance",
+                  "url": "https://www.nyc.gov/site/cecm/support/department-of-buildings.page"
+                }
+              ]
+            },
+            {
+              "kind": "fee",
+              "text": "The fee varies; confirm the amount with DOB.",
+              "sources": [
+                {
+                  "label": "CECM DOB guidance",
+                  "url": "https://www.nyc.gov/site/cecm/support/department-of-buildings.page"
+                }
+              ]
+            }
+          ]
         }
       },
       "source": {
@@ -1441,7 +2546,32 @@
         "disposition": "MAY_BE_REQUIRED",
         "permit_name": "DOB permit — prop or truss higher than 10 ft",
         "agency": "DOB",
-        "note_text": "Confirm the prop/truss height; over 10 feet requires a DOB permit."
+        "note_text": "Confirm the prop/truss height; over 10 feet requires a DOB permit.",
+        "user_summary": {
+          "heading": "Buildings Department permit for a tall prop or truss",
+          "points": [
+            {
+              "kind": "overview",
+              "text": "A prop or truss taller than 10 feet needs a Department of Buildings (DOB) permit.",
+              "sources": [
+                {
+                  "label": "CECM DOB guidance",
+                  "url": "https://www.nyc.gov/site/cecm/support/department-of-buildings.page"
+                }
+              ]
+            },
+            {
+              "kind": "action",
+              "text": "Confirm the final height with DOB before installation.",
+              "sources": [
+                {
+                  "label": "CECM DOB guidance",
+                  "url": "https://www.nyc.gov/site/cecm/support/department-of-buildings.page"
+                }
+              ]
+            }
+          ]
+        }
       },
       "source": {
         "citation": "CECM DOB support page",
@@ -1476,7 +2606,32 @@
         "permit_name": "DOB permit — structure over 10 feet tall",
         "agency": "DOB",
         "note_text": "CECM permit-type pages: 'Structures such as tents, canopies, stage platforms, bleachers, or inflatables over 10 feet tall require a permit from the Department of Buildings.' Deduplicates with the area/duration-based DOB rules.",
-        "dedupe_key": "dob-structure"
+        "dedupe_key": "dob-structure",
+        "user_summary": {
+          "heading": "Buildings Department permit for a structure over 10 feet",
+          "points": [
+            {
+              "kind": "overview",
+              "text": "A tent, canopy, stage, bleacher, inflatable, or similar structure over 10 feet tall needs a Department of Buildings (DOB) permit.",
+              "sources": [
+                {
+                  "label": "CECM street-event guidance",
+                  "url": "https://www.nyc.gov/site/cecm/permitting/permit-types/street-events.page"
+                }
+              ]
+            },
+            {
+              "kind": "action",
+              "text": "Confirm the final height and permit path with DOB before installation.",
+              "sources": [
+                {
+                  "label": "CECM street-event guidance",
+                  "url": "https://www.nyc.gov/site/cecm/permitting/permit-types/street-events.page"
+                }
+              ]
+            }
+          ]
+        }
       },
       "source": {
         "citation": "CECM street-events / plaza-events pages",
@@ -1524,7 +2679,7 @@
           "points": [
             {
               "kind": "overview",
-              "text": "You may need DOB and FDNY place-of-assembly approvals for this event.",
+              "text": "You may need NYC Buildings Department (DOB) and Fire Department (FDNY) place-of-assembly approvals for this event.",
               "sources": [
                 {
                   "label": "DOB PACO overview",
@@ -1668,7 +2823,42 @@
       },
       "output": {
         "disposition": "NO_NEW_REQUIREMENT_IDENTIFIED",
-        "advisory_text": "Venue's existing on-premises license governs. Confirm the license covers the exact event area (e.g. the rooftop) — alcohol must stay within the licensed area."
+        "advisory_text": "Venue's existing on-premises license governs. Confirm the license covers the exact event area (e.g. the rooftop) — alcohol must stay within the licensed area.",
+        "user_summary": {
+          "heading": "Alcohol under the venue's existing license",
+          "points": [
+            {
+              "kind": "overview",
+              "text": "This plan did not identify a new alcohol permit because the venue's existing on-premises license may cover the event.",
+              "sources": [
+                {
+                  "label": "State Liquor Authority permit guidance",
+                  "url": "https://sla.ny.gov/permits-available-online"
+                }
+              ]
+            },
+            {
+              "kind": "action",
+              "text": "Confirm that the license covers the exact event area, including any rooftop or outdoor space, and keep alcohol inside that area.",
+              "sources": [
+                {
+                  "label": "State Liquor Authority permit guidance",
+                  "url": "https://sla.ny.gov/permits-available-online"
+                }
+              ]
+            },
+            {
+              "kind": "warning",
+              "text": "Coverage of the exact event area is an inference that must be checked against the venue's license documents.",
+              "sources": [
+                {
+                  "label": "State Liquor Authority permit guidance",
+                  "url": "https://sla.ny.gov/permits-available-online"
+                }
+              ]
+            }
+          ]
+        }
       },
       "source": {
         "citation": "SLA licensing structure (inference flagged; confirm against venue license documents)",
@@ -1717,7 +2907,52 @@
         "notes": [
           "Covers sale/service of beer, wine, cider, and liquor for 24 hours.",
           "Alternative path: a currently licensed caterer under a Catering Permit — see SLA-CATERING-001."
-        ]
+        ],
+        "user_summary": {
+          "heading": "One-day alcohol event permit",
+          "points": [
+            {
+              "kind": "overview",
+              "text": "Apply for a one-day permit to sell or serve beer, wine, cider, or liquor when the venue's license does not cover the event area.",
+              "sources": [
+                {
+                  "label": "State Liquor Authority permit guidance",
+                  "url": "https://sla.ny.gov/permits-available-online"
+                }
+              ]
+            },
+            {
+              "kind": "deadline",
+              "text": "The State Liquor Authority's current permit page says the application must be received at least 15 business days before the event.",
+              "sources": [
+                {
+                  "label": "State Liquor Authority permit guidance",
+                  "url": "https://sla.ny.gov/permits-available-online"
+                }
+              ]
+            },
+            {
+              "kind": "fee",
+              "text": "The published fee is $36 per point of sale, per day.",
+              "sources": [
+                {
+                  "label": "State Liquor Authority permit guidance",
+                  "url": "https://sla.ny.gov/permits-available-online"
+                }
+              ]
+            },
+            {
+              "kind": "action",
+              "text": "A currently licensed caterer may offer an alternative permit path.",
+              "sources": [
+                {
+                  "label": "State Liquor Authority permit guidance",
+                  "url": "https://sla.ny.gov/permits-available-online"
+                }
+              ]
+            }
+          ]
+        }
       },
       "source": {
         "citation": "sla.ny.gov permits page",
@@ -1765,7 +3000,52 @@
         },
         "notes": [
           "Only a currently licensed on-premises retailer may hold it; the applicant must provide real food (salads, soups, sandwiches — pretzels/chips do not qualify); private events only."
-        ]
+        ],
+        "user_summary": {
+          "heading": "Licensed-caterer alcohol permit",
+          "points": [
+            {
+              "kind": "overview",
+              "text": "A currently licensed on-premises caterer may use a catering permit for a private event.",
+              "sources": [
+                {
+                  "label": "State Liquor Authority permit guidance",
+                  "url": "https://sla.ny.gov/permits-available-online"
+                }
+              ]
+            },
+            {
+              "kind": "deadline",
+              "text": "The State Liquor Authority's current permit page says to file at least 15 business days before the event.",
+              "sources": [
+                {
+                  "label": "State Liquor Authority permit guidance",
+                  "url": "https://sla.ny.gov/permits-available-online"
+                }
+              ]
+            },
+            {
+              "kind": "fee",
+              "text": "The published fee is $48 per point of sale, per day.",
+              "sources": [
+                {
+                  "label": "State Liquor Authority permit guidance",
+                  "url": "https://sla.ny.gov/permits-available-online"
+                }
+              ]
+            },
+            {
+              "kind": "warning",
+              "text": "The permit holder must be a currently licensed on-premises retailer and serve real food; snacks such as chips or pretzels do not qualify.",
+              "sources": [
+                {
+                  "label": "State Liquor Authority permit guidance",
+                  "url": "https://sla.ny.gov/permits-available-online"
+                }
+              ]
+            }
+          ]
+        }
       },
       "source": {
         "citation": "sla.ny.gov permits page",
@@ -1789,7 +3069,36 @@
       "output": {
         "disposition": "NO_NEW_REQUIREMENT_IDENTIFIED",
         "requirement_name": "No food-service path identified",
-        "note_text": "From the answers recorded in this plan, the published ruleset identified no food-service path because you answered that no food applies. This is not a legal exemption and does not mean no other requirement applies."
+        "note_text": "From the answers recorded in this plan, the published ruleset identified no food-service path because you answered that no food applies. This is not a legal exemption and does not mean no other requirement applies.",
+        "user_summary": {
+          "heading": "Food-service check",
+          "points": [
+            {
+              "kind": "overview",
+              "text": "Because you answered that no food will be served, this plan did not identify a food-service requirement.",
+              "sources": [
+                {
+                  "label": "DOHMH temporary-event guidance",
+                  "url": "https://www.nyc.gov/site/doh/business/food-operators/temporary-food-service-establishments.page"
+                },
+                {
+                  "label": "Health Code Article 88",
+                  "url": "https://www.nyc.gov/assets/doh/downloads/pdf/about/healthcode/health-code-article88.pdf"
+                }
+              ]
+            },
+            {
+              "kind": "warning",
+              "text": "This is not a legal exemption and does not rule out unrelated event requirements.",
+              "sources": [
+                {
+                  "label": "DOHMH temporary-event guidance",
+                  "url": "https://www.nyc.gov/site/doh/business/food-operators/temporary-food-service-establishments.page"
+                }
+              ]
+            }
+          ]
+        }
       },
       "source": {
         "citation": "DOHMH temporary-events page + Health Code Article 88 + Event Sponsor Guidelines",
@@ -1816,7 +3125,58 @@
       "output": {
         "disposition": "NO_NEW_REQUIREMENT_IDENTIFIED",
         "requirement_name": "No sales-triggered path identified",
-        "note_text": "From the answers recorded in this plan, the published ruleset identified no sales-triggered path because you answered that nothing will be sold. Parks sources conflict over whether a Temporary Use Authorization applies to any sale or only sales at events of 500 or more people; both readings require a sale, so this no-sale confirmation is unchanged. This is not a legal exemption and does not mean no other requirement applies."
+        "note_text": "From the answers recorded in this plan, the published ruleset identified no sales-triggered path because you answered that nothing will be sold. Parks sources conflict over whether a Temporary Use Authorization applies to any sale or only sales at events of 500 or more people; both readings require a sale, so this no-sale confirmation is unchanged. This is not a legal exemption and does not mean no other requirement applies.",
+        "user_summary": {
+          "heading": "Sales-related permit check",
+          "points": [
+            {
+              "kind": "overview",
+              "text": "Because you answered that nothing will be sold, this plan did not identify a sales-triggered requirement.",
+              "sources": [
+                {
+                  "label": "CECM block-party guidance",
+                  "url": "https://www.nyc.gov/site/cecm/permitting/permit-types/block-parties.page"
+                },
+                {
+                  "label": "Parks vendor guidance",
+                  "url": "https://www.nycgovparks.org/permits/special-events/vendors"
+                }
+              ]
+            },
+            {
+              "kind": "warning",
+              "text": "Parks sources disagree about when sales require a TUA, but both readings require a sale, so the conflict does not change this result.",
+              "sources": [
+                {
+                  "label": "Parks vendor guidance",
+                  "url": "https://www.nycgovparks.org/permits/special-events/vendors"
+                },
+                {
+                  "label": "Parks special-event guide",
+                  "url": "https://www.nycgovparks.org/permits/special-events/guide"
+                },
+                {
+                  "label": "Parks large-event guidance",
+                  "url": "https://www.nycgovparks.org/permits/special-events/large-events"
+                },
+                {
+                  "label": "Parks permit FAQ",
+                  "url": "https://www.nycgovparks.org/permits/special-events/faq"
+                }
+              ]
+            },
+            {
+              "kind": "warning",
+              "text": "This is not a legal exemption and does not rule out unrelated event requirements.",
+              "sources": [
+                {
+                  "label": "CECM block-party guidance",
+                  "url": "https://www.nyc.gov/site/cecm/permitting/permit-types/block-parties.page"
+                }
+              ]
+            }
+          ]
+        }
       },
       "source": {
         "citation": "CECM block-parties page; nycgovparks.org vendors + guide + large-events pages vs. FAQ",
@@ -1845,7 +3205,36 @@
       "output": {
         "disposition": "NO_NEW_REQUIREMENT_IDENTIFIED",
         "requirement_name": "No amplified-sound path identified",
-        "note_text": "From the answers recorded in this plan, the published ruleset identified no amplified-sound path because you answered that no amplified sound applies. This is not a legal exemption and does not mean no other requirement applies."
+        "note_text": "From the answers recorded in this plan, the published ruleset identified no amplified-sound path because you answered that no amplified sound applies. This is not a legal exemption and does not mean no other requirement applies.",
+        "user_summary": {
+          "heading": "Amplified-sound permit check",
+          "points": [
+            {
+              "kind": "overview",
+              "text": "Because you answered that there will be no amplified sound, this plan did not identify an amplified-sound permit path.",
+              "sources": [
+                {
+                  "label": "NYPD permit guidance",
+                  "url": "https://www.nyc.gov/site/nypd/services/law-enforcement/permits-licenses-permits.page"
+                },
+                {
+                  "label": "NYC Administrative Code §10-108",
+                  "url": "https://codelibrary.amlegal.com/codes/newyorkcity/latest/NYCadmin/0-0-0-6027"
+                }
+              ]
+            },
+            {
+              "kind": "warning",
+              "text": "This is not a legal exemption and does not rule out unrelated event requirements.",
+              "sources": [
+                {
+                  "label": "NYPD permit guidance",
+                  "url": "https://www.nyc.gov/site/nypd/services/law-enforcement/permits-licenses-permits.page"
+                }
+              ]
+            }
+          ]
+        }
       },
       "source": {
         "citation": "NYPD permits page + NYC Admin Code §§10-108, 24-244, 24-231 + Parks special-event guide",
@@ -1874,7 +3263,36 @@
       "output": {
         "disposition": "NO_NEW_REQUIREMENT_IDENTIFIED",
         "requirement_name": "No temporary-structure path identified",
-        "note_text": "From the answers recorded in this plan, the published ruleset identified no temporary-structure path because you answered that no listed temporary structures applies. This is not a legal exemption and does not mean no other requirement applies."
+        "note_text": "From the answers recorded in this plan, the published ruleset identified no temporary-structure path because you answered that no listed temporary structures applies. This is not a legal exemption and does not mean no other requirement applies.",
+        "user_summary": {
+          "heading": "Temporary-structure permit check",
+          "points": [
+            {
+              "kind": "overview",
+              "text": "Because you answered that there will be no listed temporary structure, this plan did not identify a temporary-structure permit path.",
+              "sources": [
+                {
+                  "label": "CECM DOB guidance",
+                  "url": "https://www.nyc.gov/site/cecm/support/department-of-buildings.page"
+                },
+                {
+                  "label": "DOB Temporary Use Permit page",
+                  "url": "https://www.nyc.gov/site/buildings/industry/tup.page"
+                }
+              ]
+            },
+            {
+              "kind": "warning",
+              "text": "This is not a legal exemption and does not rule out unrelated event requirements.",
+              "sources": [
+                {
+                  "label": "CECM DOB guidance",
+                  "url": "https://www.nyc.gov/site/cecm/support/department-of-buildings.page"
+                }
+              ]
+            }
+          ]
+        }
       },
       "source": {
         "citation": "CECM DOB support page + DOB TUP page + CECM street-events page",
@@ -1901,7 +3319,36 @@
       "output": {
         "disposition": "NO_NEW_REQUIREMENT_IDENTIFIED",
         "requirement_name": "No fuel or open-flame path identified",
-        "note_text": "From the answers recorded in this plan, the published ruleset identified no fuel or open-flame path because you answered that no listed flame or cooking fuels applies. This is not a legal exemption and does not mean no other requirement applies."
+        "note_text": "From the answers recorded in this plan, the published ruleset identified no fuel or open-flame path because you answered that no listed flame or cooking fuels applies. This is not a legal exemption and does not mean no other requirement applies.",
+        "user_summary": {
+          "heading": "Fuel and open-flame permit check",
+          "points": [
+            {
+              "kind": "overview",
+              "text": "Because you answered that there will be no listed flame or cooking fuel, this plan did not identify a fuel or open-flame permit path.",
+              "sources": [
+                {
+                  "label": "CECM fire-safety guidance",
+                  "url": "https://www.nyc.gov/site/cecm/support/new-york-city-fire-department.page"
+                },
+                {
+                  "label": "FDNY open-flame permit page",
+                  "url": "https://www.nyc.gov/site/fdny/business/all-certifications/per-openflames.page"
+                }
+              ]
+            },
+            {
+              "kind": "warning",
+              "text": "This is not a legal exemption and does not rule out unrelated event requirements.",
+              "sources": [
+                {
+                  "label": "CECM fire-safety guidance",
+                  "url": "https://www.nyc.gov/site/cecm/support/new-york-city-fire-department.page"
+                }
+              ]
+            }
+          ]
+        }
       },
       "source": {
         "citation": "CECM FDNY page + FDNY Open Flame page + NYC311 barbecuing article KA-02228",
@@ -1928,7 +3375,36 @@
       "output": {
         "disposition": "NO_NEW_REQUIREMENT_IDENTIFIED",
         "requirement_name": "No generator path identified",
-        "note_text": "From the answers recorded in this plan, the published ruleset identified no generator path because you answered that no generator applies. This is not a legal exemption and does not mean no other requirement applies."
+        "note_text": "From the answers recorded in this plan, the published ruleset identified no generator path because you answered that no generator applies. This is not a legal exemption and does not mean no other requirement applies.",
+        "user_summary": {
+          "heading": "Generator permit check",
+          "points": [
+            {
+              "kind": "overview",
+              "text": "Because you answered that there will be no generator, this plan did not identify a generator permit or registration path.",
+              "sources": [
+                {
+                  "label": "CECM fire-safety guidance",
+                  "url": "https://www.nyc.gov/site/cecm/support/new-york-city-fire-department.page"
+                },
+                {
+                  "label": "CECM DEP guidance",
+                  "url": "https://www.nyc.gov/site/cecm/support/department-of-environmental-protection.page"
+                }
+              ]
+            },
+            {
+              "kind": "warning",
+              "text": "This is not a legal exemption and does not rule out unrelated event requirements.",
+              "sources": [
+                {
+                  "label": "CECM fire-safety guidance",
+                  "url": "https://www.nyc.gov/site/cecm/support/new-york-city-fire-department.page"
+                }
+              ]
+            }
+          ]
+        }
       },
       "source": {
         "citation": "CECM FDNY and DEP pages + Parks special-event guide",
@@ -1955,7 +3431,36 @@
       "output": {
         "disposition": "NO_NEW_REQUIREMENT_IDENTIFIED",
         "requirement_name": "No battery-system path identified",
-        "note_text": "From the answers recorded in this plan, the published ruleset identified no battery-system path because you answered that no event battery system applies. This is not a legal exemption and does not mean no other requirement applies."
+        "note_text": "From the answers recorded in this plan, the published ruleset identified no battery-system path because you answered that no event battery system applies. This is not a legal exemption and does not mean no other requirement applies.",
+        "user_summary": {
+          "heading": "Battery-system permit check",
+          "points": [
+            {
+              "kind": "overview",
+              "text": "Because you answered that there will be no event battery system, this plan did not identify a battery-system permit path.",
+              "sources": [
+                {
+                  "label": "CECM fire-safety guidance",
+                  "url": "https://www.nyc.gov/site/cecm/support/new-york-city-fire-department.page"
+                },
+                {
+                  "label": "Parks special-event guide",
+                  "url": "https://www.nycgovparks.org/permits/special-events/guide"
+                }
+              ]
+            },
+            {
+              "kind": "warning",
+              "text": "This is not a legal exemption and does not rule out unrelated event requirements.",
+              "sources": [
+                {
+                  "label": "CECM fire-safety guidance",
+                  "url": "https://www.nyc.gov/site/cecm/support/new-york-city-fire-department.page"
+                }
+              ]
+            }
+          ]
+        }
       },
       "source": {
         "citation": "CECM FDNY page + Parks special-event guide",
@@ -1981,7 +3486,36 @@
       "output": {
         "disposition": "NO_NEW_REQUIREMENT_IDENTIFIED",
         "requirement_name": "No alcohol path identified",
-        "note_text": "From the answers recorded in this plan, the published ruleset identified no alcohol path because you answered that no alcohol applies. This is not a legal exemption and does not mean no other requirement applies."
+        "note_text": "From the answers recorded in this plan, the published ruleset identified no alcohol path because you answered that no alcohol applies. This is not a legal exemption and does not mean no other requirement applies.",
+        "user_summary": {
+          "heading": "Alcohol permit check",
+          "points": [
+            {
+              "kind": "overview",
+              "text": "Because you answered that no alcohol will be served, this plan did not identify an alcohol permit path.",
+              "sources": [
+                {
+                  "label": "CECM block-party guidance",
+                  "url": "https://www.nyc.gov/site/cecm/permitting/permit-types/block-parties.page"
+                },
+                {
+                  "label": "State Liquor Authority permit guidance",
+                  "url": "https://sla.ny.gov/permits-available-online"
+                }
+              ]
+            },
+            {
+              "kind": "warning",
+              "text": "This is not a legal exemption and does not rule out unrelated event requirements.",
+              "sources": [
+                {
+                  "label": "State Liquor Authority permit guidance",
+                  "url": "https://sla.ny.gov/permits-available-online"
+                }
+              ]
+            }
+          ]
+        }
       },
       "source": {
         "citation": "CECM block-parties page + SLA permits page",
@@ -2016,7 +3550,36 @@
       "output": {
         "disposition": "NO_NEW_REQUIREMENT_IDENTIFIED",
         "requirement_name": "No block-party ride-insurance path identified",
-        "note_text": "From the answers recorded in this plan, the published ruleset identified no block-party ride-insurance path because you answered that the block party has no amusement ride applies. This is not a legal exemption and does not mean no other requirement applies."
+        "note_text": "From the answers recorded in this plan, the published ruleset identified no block-party ride-insurance path because you answered that the block party has no amusement ride applies. This is not a legal exemption and does not mean no other requirement applies.",
+        "user_summary": {
+          "heading": "Block-party ride insurance check",
+          "points": [
+            {
+              "kind": "overview",
+              "text": "Because you answered that the block party will not have an amusement ride, this plan did not identify the ride-specific insurance requirement.",
+              "sources": [
+                {
+                  "label": "CECM frequently asked questions",
+                  "url": "https://www.nyc.gov/site/cecm/support/frequently-asked-questions.page"
+                },
+                {
+                  "label": "Block-party guidance",
+                  "url": "https://www.nyc.gov/site/cecm/permitting/permit-types/block-parties.page"
+                }
+              ]
+            },
+            {
+              "kind": "warning",
+              "text": "This is not a legal exemption and does not rule out unrelated event requirements.",
+              "sources": [
+                {
+                  "label": "CECM frequently asked questions",
+                  "url": "https://www.nyc.gov/site/cecm/support/frequently-asked-questions.page"
+                }
+              ]
+            }
+          ]
+        }
       },
       "source": {
         "citation": "CECM FAQ + block-parties page",
@@ -2051,7 +3614,22 @@
         ]
       },
       "output": {
-        "advisory_text": "Alcohol in public space is outside this ruleset version's validated coverage (SAPO prohibits alcohol at block parties, street events, festivals, and parades per the CECM FAQ; other paths not evaluated). Confirm with the relevant agency."
+        "advisory_text": "Alcohol in public space is outside this ruleset version's validated coverage (SAPO prohibits alcohol at block parties, street events, festivals, and parades per the CECM FAQ; other paths not evaluated). Confirm with the relevant agency.",
+        "user_summary": {
+          "heading": "Public-space alcohol needs agency review",
+          "points": [
+            {
+              "kind": "warning",
+              "text": "This ruleset cannot determine the correct alcohol path for this public-space event. Block parties and some other SAPO event types prohibit alcohol.",
+              "sources": []
+            },
+            {
+              "kind": "action",
+              "text": "Confirm the event plan with the agency that controls the location before including alcohol.",
+              "sources": []
+            }
+          ]
+        }
       },
       "verification": {
         "status": "COVERAGE_GAP",
@@ -2072,7 +3650,22 @@
         ]
       },
       "output": {
-        "advisory_text": "This SAPO class (e.g. street festival, single block festival, production event, open culture, plaza-and-street extra large) is outside this ruleset version's validated coverage. Known published deadlines for reference: production 10 days; open culture 15 days; street festival Dec 31 of prior year; single block festival OFFICIAL CONFLICT (90 days vs Dec 31 of prior year). Confirm with SAPO."
+        "advisory_text": "This SAPO class (e.g. street festival, single block festival, production event, open culture, plaza-and-street extra large) is outside this ruleset version's validated coverage. Known published deadlines for reference: production 10 days; open culture 15 days; street festival Dec 31 of prior year; single block festival OFFICIAL CONFLICT (90 days vs Dec 31 of prior year). Confirm with SAPO.",
+        "user_summary": {
+          "heading": "SAPO event type not covered",
+          "points": [
+            {
+              "kind": "warning",
+              "text": "This ruleset does not validate the selected SAPO event type, so it cannot give you a complete deadline or fee.",
+              "sources": []
+            },
+            {
+              "kind": "action",
+              "text": "Confirm the permit type, deadline, and fee directly with SAPO.",
+              "sources": []
+            }
+          ]
+        }
       },
       "verification": {
         "status": "COVERAGE_GAP",
@@ -2103,7 +3696,46 @@
         ]
       },
       "output": {
-        "advisory_text": "No NYPD sound permit identified for fully-indoor, non-projecting amplified sound — the NYC noise code still applies (Admin Code §24-244; commercial music 42 dB(A) limit inside receiving dwellings, §24-231). If sound will be audible on an adjacent street, park, or public place, the sound-device permit is in scope."
+        "advisory_text": "No NYPD sound permit identified for fully-indoor, non-projecting amplified sound — the NYC noise code still applies (Admin Code §24-244; commercial music 42 dB(A) limit inside receiving dwellings, §24-231). If sound will be audible on an adjacent street, park, or public place, the sound-device permit is in scope.",
+        "user_summary": {
+          "heading": "Indoor amplified sound and the noise code",
+          "points": [
+            {
+              "kind": "overview",
+              "text": "This plan did not identify an NYPD sound-device permit for fully indoor sound that is not projected into a public place.",
+              "sources": [
+                {
+                  "label": "NYC noise-code device rule",
+                  "url": "https://codelibrary.amlegal.com/codes/newyorkcity/latest/NYCadmin/0-0-0-209196"
+                }
+              ]
+            },
+            {
+              "kind": "warning",
+              "text": "The NYC noise code still applies, including the published 42 dB(A) limit for commercial music measured inside a receiving dwelling.",
+              "sources": [
+                {
+                  "label": "NYC noise-code device rule",
+                  "url": "https://codelibrary.amlegal.com/codes/newyorkcity/latest/NYCadmin/0-0-0-209196"
+                },
+                {
+                  "label": "NYC commercial-music limit",
+                  "url": "https://codelibrary.amlegal.com/codes/newyorkcity/latest/NYCadmin/0-0-0-209184"
+                }
+              ]
+            },
+            {
+              "kind": "warning",
+              "text": "If the sound will be audible on an adjacent street, park, or public place, the NYPD sound permit is in scope.",
+              "sources": [
+                {
+                  "label": "NYC noise-code device rule",
+                  "url": "https://codelibrary.amlegal.com/codes/newyorkcity/latest/NYCadmin/0-0-0-209196"
+                }
+              ]
+            }
+          ]
+        }
       },
       "source": {
         "citation": "NYC Admin Code §24-244 (sound reproduction devices) + §24-231 (commercial music limit)",
@@ -2131,7 +3763,42 @@
         ]
       },
       "output": {
-        "advisory_text": "The venue's certificate of occupancy / legal use governs capacity regardless of permits. Below 75 indoors, ordinary assembly certification is typically not triggered [thresholds source-confirmed]; confirm the venue's permitted use and occupancy."
+        "advisory_text": "The venue's certificate of occupancy / legal use governs capacity regardless of permits. Below 75 indoors, ordinary assembly certification is typically not triggered [thresholds source-confirmed]; confirm the venue's permitted use and occupancy.",
+        "user_summary": {
+          "heading": "Check the venue's legal capacity",
+          "points": [
+            {
+              "kind": "overview",
+              "text": "The venue's certificate of occupancy and approved use control its legal capacity, even when no new event permit is identified.",
+              "sources": [
+                {
+                  "label": "DOB place-of-assembly guidance",
+                  "url": "https://www.nyc.gov/site/buildings/dob/project-categories-paco.page"
+                }
+              ]
+            },
+            {
+              "kind": "warning",
+              "text": "Below 75 people indoors, ordinary place-of-assembly certification is typically not triggered.",
+              "sources": [
+                {
+                  "label": "DOB place-of-assembly guidance",
+                  "url": "https://www.nyc.gov/site/buildings/dob/project-categories-paco.page"
+                }
+              ]
+            },
+            {
+              "kind": "action",
+              "text": "Confirm that the venue's permitted use and occupancy cover this event.",
+              "sources": [
+                {
+                  "label": "DOB place-of-assembly guidance",
+                  "url": "https://www.nyc.gov/site/buildings/dob/project-categories-paco.page"
+                }
+              ]
+            }
+          ]
+        }
       },
       "source": {
         "citation": "DOB Place of Assembly Certificate of Operation (PACO) thresholds",

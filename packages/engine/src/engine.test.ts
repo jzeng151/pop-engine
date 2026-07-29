@@ -1069,6 +1069,12 @@ describe("ruleset parsing rejects anything it cannot evaluate", () => {
     expect(ruleset.slackWarningDays).toBe(14);
     expect(ruleset.rules).toHaveLength(46);
   });
+
+  it("publishes a plain-language summary for every rule and advisory", () => {
+    expect(
+      ruleset.rules.filter((rule) => rule.userSummary === null).map((rule) => rule.id),
+    ).toEqual([]);
+  });
 });
 
 describe("asked_when scoping", () => {
@@ -1465,6 +1471,8 @@ describe("facts the ruleset publishes rather than the engine assuming (nyc.v2.4)
       const afterFindings = after.findings.filter(
         (finding) => !finding.ruleIds[0]?.startsWith("CONF-"),
       );
+      const withoutPresentation = (findings: PermitPlan["findings"]) =>
+        findings.map(({ userSummary: _userSummary, ...finding }) => finding);
       const reached = (findings: PermitPlan["findings"]) =>
         [...findings.flatMap((f) => f.ruleIds)].sort();
       // Every published filing window in the plan. Keyed by the window rather than by rule,
@@ -1478,7 +1486,9 @@ describe("facts the ruleset publishes rather than the engine assuming (nyc.v2.4)
           .sort();
       return {
         verdictMatches: before.verdict === after.verdict,
-        findingsMatch: JSON.stringify(before.findings) === JSON.stringify(afterFindings),
+        findingsMatch:
+          JSON.stringify(withoutPresentation(before.findings)) ===
+          JSON.stringify(withoutPresentation(afterFindings)),
         // What must hold across ANY publish, grouping aside: the same rules are reached, and each
         // one keeps its date and status. A rule appearing, vanishing or moving its deadline between
         // eras is drift; two rules being rendered as one line is a published grouping decision.
