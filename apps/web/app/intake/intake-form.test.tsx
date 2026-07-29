@@ -9,6 +9,9 @@ import { parseIntakeContract } from "@pop-engine/engine";
 import { publishedRulesFileIn } from "../rules-file";
 import { IntakeForm } from "./intake-form";
 
+const router = vi.hoisted(() => ({ push: vi.fn() }));
+vi.mock("next/navigation", () => ({ useRouter: () => router }));
+
 // Component tests for the questionnaire. The contract is parsed from the published
 // ruleset, not a stub, so a registry change moves these tests the same way it moves the
 // screen. Only `fetch` is faked: the api's own behavior is covered by the integration
@@ -113,6 +116,7 @@ const requestBody = (fetchMock: ReturnType<typeof vi.fn>, call = 0): Record<stri
 let fetchMock: ReturnType<typeof vi.fn>;
 
 beforeEach(() => {
+  router.push.mockReset();
   fetchMock = vi.fn(async (_url: string, init: RequestInit) => echoSavedEvent(201, init));
   vi.stubGlobal("fetch", fetchMock);
 });
@@ -446,6 +450,7 @@ describe("loading a saved event to edit it", () => {
     expect(url).toBe("https://api.example.com/api/events/event-9");
     expect(init.method).toBe("PATCH");
     expect(requestBody(fetchMock, 1).headcount).toBe(151);
+    expect(router.push).not.toHaveBeenCalled();
   });
 
   it("carries a standing plan-stale flag through the load", async () => {
@@ -674,12 +679,13 @@ describe("inline warnings render the published text (spec #4, #5)", () => {
 });
 
 describe("saving and per-field errors", () => {
-  it("posts the intake and reports the revision it was saved as", async () => {
+  it("posts the intake and opens its overview", async () => {
     const user = renderForm();
     await answerParkEvent(user);
     await save(user);
 
     await waitFor(() => expect(screen.getByText(/Saved as revision 1/)).toBeDefined());
+    expect(router.push).toHaveBeenCalledWith("/events/event-1");
     const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
     expect(url).toBe("https://api.example.com/api/events");
     expect(init.method).toBe("POST");
