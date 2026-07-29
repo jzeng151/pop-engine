@@ -2149,3 +2149,132 @@ describe("the checklist's expand control matches what is behind it", () => {
     expect(row.querySelectorAll(".check-item__rule-ids")).toHaveLength(1);
   });
 });
+
+describe("F-202 AC 9 · moved-deadline notice", () => {
+  it("renders previous and current dates with full previous provenance", async () => {
+    stubApi({
+      [GET_CHECKLIST]: checklistOf({
+        created: true,
+        planChanged: true,
+        items: [
+          trackedItem(STREET_MEDIUM, {
+            latestApplyDate: "2026-08-30",
+            deadlineNotice: {
+              dateChange: {
+                kind: "both",
+                previous: "2026-07-12",
+                current: "2026-08-30",
+              },
+              stateChange: null,
+              previousProvenance: {
+                verificationStatus: "SOURCE_CONFIRMED",
+                lastVerifiedDate: "2026-07-01",
+                sources: [
+                  {
+                    ruleId: STREET_MEDIUM,
+                    citation: "CECM permit-deadlines page",
+                    urls: ["https://example.gov/a", "https://example.gov/b"],
+                  },
+                ],
+                sourceUrl: "https://example.gov/a",
+                conflictText: null,
+                rulesetVersion: "test.v1",
+                snapshotDate: "2026-07-20",
+              },
+              rulesetVersionsDiffer: true,
+              previousRulesetVersion: "test.v1",
+              currentRulesetVersion: "test.v2",
+            },
+          }),
+        ],
+        statusRollup: { not_started: 1, in_progress: 0, submitted: 0, approved: 0, rejected: 0 },
+      }),
+    });
+    await renderView();
+
+    const notice = await screen.findByTestId("moved-deadline-notice");
+    expect(notice.textContent).toContain("Previous: 2026-07-12");
+    expect(notice.textContent).toContain("Current: 2026-08-30");
+    expect(notice.textContent).toContain(
+      "does not by itself establish anything about a filed application",
+    );
+    expect(notice.textContent?.toLowerCase()).not.toContain("amend");
+    expect(screen.getByTestId("previous-verification-status").textContent).toContain(
+      "SOURCE CONFIRMED",
+    );
+    expect(screen.getByTestId("previous-sources").textContent).toContain(
+      "CECM permit-deadlines page",
+    );
+    expect(
+      within(screen.getByTestId("previous-sources"))
+        .getByRole("link", { name: "source 1" })
+        .getAttribute("href"),
+    ).toBe("https://example.gov/a");
+    expect(notice.textContent).toContain("https://example.gov/a");
+  });
+
+  it("states an unresolved-deadline delta when the status remains not calculable", async () => {
+    stubApi({
+      [GET_CHECKLIST]: checklistOf({
+        created: true,
+        planChanged: true,
+        items: [
+          trackedItem(STREET_MEDIUM, {
+            deadlineNotice: {
+              dateChange: null,
+              stateChange: {
+                previous: {
+                  deadlineStatus: "not_calculable",
+                  deadline: {
+                    type: "business_days_minimum",
+                    businessDays: 10,
+                    display: "published filing window",
+                    boundary: "inclusive",
+                    qualification: null,
+                  },
+                  deadlineDisplay: "published filing window",
+                  timelineUnresolvedReason: "holiday calendar was unavailable",
+                  deadlineUnknownFields: [],
+                  gated: false,
+                },
+                current: {
+                  deadlineStatus: "not_calculable",
+                  deadline: {
+                    type: "business_days_minimum",
+                    businessDays: 10,
+                    display: "published filing window",
+                    boundary: "inclusive",
+                    qualification: null,
+                  },
+                  deadlineDisplay: "published filing window",
+                  timelineUnresolvedReason: "processing time is unavailable",
+                  deadlineUnknownFields: [],
+                  gated: false,
+                },
+              },
+              previousProvenance: {
+                verificationStatus: "SOURCE_CONFIRMED",
+                lastVerifiedDate: null,
+                sources: [],
+                sourceUrl: null,
+                conflictText: null,
+                rulesetVersion: "test.v1",
+                snapshotDate: "2026-07-20",
+              },
+              rulesetVersionsDiffer: false,
+              previousRulesetVersion: "test.v1",
+              currentRulesetVersion: "test.v1",
+            },
+          }),
+        ],
+      }),
+    });
+    await renderView();
+
+    const notice = await screen.findByTestId("moved-deadline-notice");
+    expect(notice.textContent).toContain(
+      "Timeline unresolved reason: previous holiday calendar was unavailable; current processing time is unavailable.",
+    );
+    expect(notice.textContent).not.toContain("previous not calculable; current not calculable");
+  });
+});

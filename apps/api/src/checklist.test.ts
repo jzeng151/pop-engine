@@ -100,6 +100,18 @@ type ChecklistItemView = {
   status: string;
   notes: string | null;
   struckThrough: boolean;
+  deadlineNotice: {
+    dateChange: { kind: string; previous?: string; current?: string } | null;
+    previousProvenance: {
+      rulesetVersion: string;
+      verificationStatus?: string;
+      sources?: unknown[];
+      sourceUrl?: string | null;
+      conflictText?: string | null;
+      snapshotDate?: string;
+    };
+    rulesetVersionsDiffer?: boolean;
+  } | null;
   latestApplyDate: string | null;
   applyAfterDate: string | null;
   agency: string | null;
@@ -520,6 +532,21 @@ describe.runIf(databaseUrl.length > 0)("F-202 compliance checklist", () => {
       expect(after?.latestApplyDate).toBe("2026-08-30");
       // ...so it must say the new plan is where that date came from.
       expect(after?.sourcePlan).toEqual({ rulesetVersion: "test.v2", snapshotDate: "2026-07-21" });
+      // F-202 AC 9: the previous date travels with the notice until a review re-points the row.
+      expect(after?.deadlineNotice?.dateChange).toEqual({
+        kind: "both",
+        previous: "2026-07-12",
+        current: "2026-08-30",
+      });
+      expect(after?.deadlineNotice?.previousProvenance.rulesetVersion).toBe("test.v1");
+      expect(after?.deadlineNotice?.previousProvenance).toMatchObject({
+        verificationStatus: "SOURCE_CONFIRMED",
+        sources: [],
+        sourceUrl: null,
+        conflictText: null,
+        snapshotDate: "2026-07-20",
+      });
+      expect(after?.deadlineNotice?.rulesetVersionsDiffer).toBe(true);
     });
 
     it("carries the apply_after date of a dependency-gated item (AC 5, Scenario C)", async () => {

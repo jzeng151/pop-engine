@@ -143,6 +143,7 @@ export const trackedItem = (
   notes: null,
   updatedAt: "2026-07-26T09:00:00.000Z",
   struckThrough: false,
+  deadlineNotice: null,
   documents: [],
   ...overrides,
 });
