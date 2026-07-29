@@ -1,6 +1,7 @@
 import { redirect } from "next/navigation";
 import { createServerSupabaseClient } from "../../../lib/supabase/server";
 import { updatePassword } from "../actions";
+import { hasRecoveryAuthentication } from "../recovery";
 
 export const dynamic = "force-dynamic";
 
@@ -18,7 +19,7 @@ export default async function UpdatePasswordPage() {
   }
 
   const { data, error } = await supabase.auth.getClaims();
-  if (error || !data?.claims.sub) {
+  if (error || !data?.claims.sub || !hasRecoveryAuthentication(data.claims)) {
     redirect("/auth?error=The%20password%20reset%20link%20is%20invalid%20or%20expired.");
   }
 

@@ -3,6 +3,7 @@
 import { redirect } from "next/navigation";
 import { createServerSupabaseClient } from "../../lib/supabase/server";
 import { siteUrl } from "../../lib/supabase/config";
+import { hasRecoveryAuthentication } from "./recovery";
 import { safeReturnPath, type AuthReturnPath } from "./return-path";
 
 function authRedirect(kind: "error" | "message", text: string): never {
@@ -77,10 +78,12 @@ export async function requestPasswordReset(formData: FormData): Promise<never> {
     authRedirect("error", "Email is required.");
   }
   const supabase = await configuredClient();
-  const { error } = await supabase.auth.resetPasswordForEmail(email.trim(), {
-    redirectTo: callbackUrl("/auth/update-password"),
-  });
-  if (error) authRedirect("error", error.message);
+  const redirectTo = callbackUrl("/auth/update-password");
+  try {
+    await supabase.auth.resetPasswordForEmail(email.trim(), { redirectTo });
+  } catch {
+    // Recovery initiation must not disclose provider or account-specific failure details.
+  }
   authRedirect("message", "If that address has an account, a password reset link is on its way.");
 }
 
@@ -90,6 +93,10 @@ export async function updatePassword(formData: FormData): Promise<never> {
     authRedirect("error", "A new password is required.");
   }
   const supabase = await configuredClient();
+  const { data: claims, error: claimsError } = await supabase.auth.getClaims();
+  if (claimsError || !claims?.claims.sub || !hasRecoveryAuthentication(claims.claims)) {
+    authRedirect("error", "The password reset link is invalid or expired.");
+  }
   const { error } = await supabase.auth.updateUser({ password });
   if (error) authRedirect("error", error.message);
   redirect("/account?message=Password%20updated.");
@@ -97,7 +104,7 @@ export async function updatePassword(formData: FormData): Promise<never> {
 
 export async function signOut(): Promise<never> {
   const supabase = await configuredClient();
-  const { error } = await supabase.auth.signOut();
+  const { error } = await supabase.auth.signOut({ scope: "local" });
   if (error) authRedirect("error", error.message);
   authRedirect("message", "You are signed out.");
 }

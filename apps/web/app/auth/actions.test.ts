@@ -32,6 +32,7 @@ const form = (values: Record<string, string>) => {
 
 const client = {
   auth: {
+    getClaims: vi.fn(),
     resetPasswordForEmail: vi.fn(),
     signInWithOAuth: vi.fn(),
     signInWithPassword: vi.fn(),
@@ -44,6 +45,15 @@ const client = {
 beforeEach(() => {
   mocks.createServerSupabaseClient.mockResolvedValue(client);
   mocks.siteUrl.mockReturnValue("https://web.example.com");
+  client.auth.getClaims.mockResolvedValue({
+    data: {
+      claims: {
+        sub: "actor-1",
+        amr: [{ method: "recovery", timestamp: 1_775_000_000 }],
+      },
+    },
+    error: null,
+  });
   client.auth.resetPasswordForEmail.mockResolvedValue({ error: null });
   client.auth.signInWithOAuth.mockResolvedValue({
     data: { url: "https://project.supabase.co/auth/v1/authorize" },
@@ -103,6 +113,45 @@ describe("email authentication actions", () => {
     );
     expect(client.auth.updateUser).toHaveBeenCalledWith({ password: "new-password" });
   });
+
+  it("returns the same public recovery response when the provider fails", async () => {
+    await expect(requestPasswordReset(form({ email: "person@example.com" }))).rejects.toThrow(
+      "redirect:",
+    );
+    const successRedirect = mocks.redirect.mock.calls.at(-1)?.[0];
+
+    client.auth.resetPasswordForEmail.mockResolvedValueOnce({
+      error: new Error("account-specific provider detail"),
+    });
+    await expect(requestPasswordReset(form({ email: "person@example.com" }))).rejects.toThrow(
+      "redirect:",
+    );
+
+    expect(mocks.redirect.mock.calls.at(-1)?.[0]).toBe(successRedirect);
+    client.auth.resetPasswordForEmail.mockRejectedValueOnce(new Error("provider unavailable"));
+    await expect(requestPasswordReset(form({ email: "person@example.com" }))).rejects.toThrow(
+      "redirect:",
+    );
+    expect(mocks.redirect.mock.calls.at(-1)?.[0]).toBe(successRedirect);
+    expect(successRedirect).not.toContain("provider");
+  });
+
+  it("rejects password updates from an ordinary or refreshed login session", async () => {
+    client.auth.getClaims.mockResolvedValueOnce({
+      data: {
+        claims: {
+          sub: "actor-1",
+          amr: ["token_refresh"],
+        },
+      },
+      error: null,
+    });
+
+    await expect(updatePassword(form({ password: "new-password" }))).rejects.toThrow(
+      /reset%20link%20is%20invalid%20or%20expired/,
+    );
+    expect(client.auth.updateUser).not.toHaveBeenCalled();
+  });
 });
 
 describe("Google and session actions", () => {
@@ -123,7 +172,7 @@ describe("Google and session actions", () => {
 
   it("signs out the Supabase session", async () => {
     await expect(signOut()).rejects.toThrow("redirect:");
-    expect(client.auth.signOut).toHaveBeenCalledOnce();
+    expect(client.auth.signOut).toHaveBeenCalledWith({ scope: "local" });
     expect(mocks.redirect).toHaveBeenCalledWith(expect.stringContaining("signed%20out"));
   });
 
