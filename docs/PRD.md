@@ -128,7 +128,7 @@ Independent NYC event organizers who can't afford production agencies use PopEng
 
 ## 3. REQUIREMENTS — MVP CORE (iron-clad; Phase 1)
 
-The seven features below must be complete, real, and demoable. No mocks in this path. Acceptance detail lives in `/specs`; the scenario + boundary fixtures in `test-scenario-answer-key.md` (v7, derived from ruleset nyc.v2.9) are the acceptance suite for F-201/F-102.
+The eight features below must be complete, real, and demoable. No mocks in this path. Acceptance detail lives in `/specs`; the scenario + boundary fixtures in `test-scenario-answer-key.md` (v7, derived from ruleset nyc.v2.9) are the acceptance suite for F-201/F-102.
 
 ### F-101 · Event Intake Questionnaire [P0]
 
@@ -138,6 +138,13 @@ The seven features below must be complete, real, and demoable. No mocks in this 
 - Contradictory inputs are challenged, not silently resolved (e.g., tent dimensions without a tent; a block party plus sales).
 - Coverage warning: alcohol in public space triggers an inline "not covered by this ruleset version" warning (plus advisory ADV-ALCOHOL-PUBLIC-001 on the plan).
 - Intake works on mobile and desktop.
+
+### F-110 · Assembly Document Coverage Intake [P0]
+
+- At a private venue with headcount 75+, intake records two explicit `yes / no / unknown` facts: whether the PACO materials cover this event's exact space, use, occupant load, and layout, and whether the FDNY Public Assembly Permit is current for the same event space.
+- The PACO question presents the four approved component checks as an evidence checklist. Any proved mismatch means no; all four proved matches mean yes; otherwise the organizer answers “I don't know.” The component checks are not separately persisted.
+- These facts replace the active coarse `venue_has_assembly_approval` question. Its database column remains deprecated history, and no old value is used to infer either answer.
+- Both answers persist through create, edit, reload, and immutable plan regeneration, but remain confirmation context only. They add no rule trigger, finding, deadline, branch, verdict, remedy, or temporary-filing inference.
 
 ### F-201 · Permit Plan Generator [P0]
 

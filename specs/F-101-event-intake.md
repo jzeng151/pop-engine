@@ -35,7 +35,7 @@ The field list, enums, and asked-when conditions come from the ruleset's `intake
 4. Contradiction checks block submission with a specific message, never silently resolve:
    - dimensions entered for an unselected structure type
    - sapo_event_type = block_party while selling_anything or alcohol is true → warn inline that this conflicts with block-party eligibility (submission allowed; the plan will show PROHIBITED_OR_INELIGIBLE)
-   - generator specs without generator_present; a battery kWh without battery_present; license/assembly answers without their trigger conditions
+   - generator specs without generator_present; a battery kWh without battery_present; license/assembly-document answers without their trigger conditions
    - event_date in the past; headcount ≤ 0
 5. Coverage warning (inline, non-blocking): alcohol + public location renders `ADV-ALCOHOL-PUBLIC-001`'s published `advisory_text` verbatim, alongside its `verification.status`. The rule is the source of the wording; this spec does not paraphrase it (authority order: primary source → published rule → fixture → engine → UI). The plan additionally carries the same advisory.
 6. Intake completes in under 2 minutes for a typical event (rehearsal-timed; PRD metric).

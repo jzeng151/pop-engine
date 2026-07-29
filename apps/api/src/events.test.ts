@@ -470,6 +470,24 @@ describe.runIf(databaseUrl.length > 0)("F-101 event intake endpoints", () => {
       expect(response.body.event.revision_counter).toBe(2);
     });
 
+    it("edits and reloads both assembly-document tri-states without changing their values", async () => {
+      const created = await post(scenario("F"));
+      const id = created.body.event.id as string;
+      const edited = await request(api).patch(`/api/events/${id}`).send({
+        venue_paco_covers_exact_event: "yes",
+        venue_fdny_pa_permit_current_for_event_space: "no",
+      });
+      expect(edited.status).toBe(200);
+      expect(edited.body.event.revision_counter).toBe(2);
+
+      const reloaded = await request(api).get(`/api/events/${id}`);
+      expect(reloaded.status).toBe(200);
+      expect(reloaded.body.event).toMatchObject({
+        venue_paco_covers_exact_event: "yes",
+        venue_fdny_pa_permit_current_for_event_space: "no",
+      });
+    });
+
     it("warns inline on an edit that creates a coverage gap", async () => {
       const park = scenario("C");
       const created = await post({ ...park });

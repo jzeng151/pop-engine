@@ -9,7 +9,7 @@
 7. **Verdict model:** the four-state verdict stays as the top-level summary, computed from per-finding deadline statuses (ON_TRACK / DEADLINE_APPROACHING / PUBLISHED_DEADLINE_MISSED / NOT_CALCULABLE / NOT_APPLICABLE). INFEASIBLE copy = "published deadline missed as scoped." The 14-day slack threshold is labeled as internal policy.
 8. **Real business-day math** against a pinned holiday calendar replaces the calendar approximation (fixture dates are pinned, so determinism holds).
 9. **Governance adopted:** `DOCUMENTATION-GOVERNANCE.md` (authority-by-concern + conflict protocol), `AGENTS.md`, and `BASELINE.md` are in force. Authority for regulatory facts: primary source → published rule → approved fixture → engine output → UI copy.
-10. **Two parallel tracks (supersedes the stretch-after-gate rule):** the MVP core (Track A: F-101, F-201, F-102, F-206, F-202, F-203, F-204) and the stretch set (Track B: F-301, F-302, F-401, F-402, F-205) are worked separately, so Track B doubles as the demo fallback if the core runs out of time. Invariants: core blockers always outrank stretch work for whoever holds them; Track B never touches core-path files; the green gate now gates the demo-narrative decision, not stretch start. F-205 remains Track B scope but starts only after the F-201/F-202 plan and checklist views merge because its dedicated card integrates into those core-path files.
+10. **Two parallel tracks (supersedes the stretch-after-gate rule):** the MVP core (Track A: F-101, F-110, F-201, F-102, F-206, F-202, F-203, F-204) and the stretch set (Track B: F-301, F-302, F-401, F-402, F-205) are worked separately, so Track B doubles as the demo fallback if the core runs out of time. Invariants: core blockers always outrank stretch work for whoever holds them; Track B never touches core-path files; the green gate now gates the demo-narrative decision, not stretch start. F-205 remains Track B scope but starts only after the F-201/F-202 plan and checklist views merge because its dedicated card integrates into those core-path files.
 
 ## Decisions of 2026-07-21
 
@@ -68,7 +68,7 @@ Permitted demo fallbacks for stretch features: seeded RSVP data, simulated email
 One integration point (the `events` schema — agreed by all four devs before any lane codes); four lanes with minimal merge conflicts:
 
 - **Dev 1 — Rules engine + verdict:** F-201, F-102; owns engine fidelity to `rules/nyc-rules.v2.9.json` and the fixture suite. Verify: full fixture suite (scenarios + boundaries) passes as automated tests.
-- **Dev 2 — Intake + plan UI:** F-101 (incl. contradiction checks, "I don't know"), F-206, plan rendering. Verify: Scenario A renders end-to-end with citations + snapshot banner.
+- **Dev 2 — Intake + plan UI:** F-101 (incl. contradiction checks, "I don't know"), F-110, F-206, plan rendering. Verify: Scenario A renders end-to-end with citations + snapshot banner; Scenario F records and reloads both assembly-document confirmations.
 - **Dev 3 — Checklist + portals:** F-202, F-204. Verify: plan converts to checklist; every permit links to its portal with its document list.
 - **Dev 4 — Alerts + platform:** F-203, DB migrations, deploy, demo environment; **owns verification sign-off**: confirms the ruleset's SOURCE_CONFIRMED facts in a browser (evidence pre-collected in `VERIFICATION-SOURCES.md`) and works the open research items (OPEN-QUESTIONS §2). Verify: a seeded deadline fires a real email/SMS; browser-confirmed facts are promoted per fact from SOURCE_CONFIRMED to VERIFIED.
 
@@ -77,6 +77,7 @@ Track B staffing is the team's kickoff call (default suggestion: Dev 3 → F-301
 ## Dependency Graph (build-order constraints)
 
 - F-101 → everything (single source of truth)
+- F-110 → F-101 persistence and F-201 immutable intake snapshots; no F-102 rule or verdict dependency until separately approved semantics exist
 - F-201 → F-102, F-202, F-203, F-204, F-205, F-208, F-405; ruleset versioning (F-201) → F-503, F-712, F-713, F-714
 - F-201 → F-206 plan rendering; F-202 → F-206 checklist rendering
 - F-301 → F-302 → F-306/F-307; F-302 optionally enriches F-401 with pre-registered lookup

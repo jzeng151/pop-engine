@@ -1,5 +1,5 @@
 // Intake inputs for the six approved scenario fixtures (docs/test-scenario-answer-key.md
-// v6, the green-gate acceptance suite). Only the intake half lives here — expected
+// v7, the green-gate acceptance suite). Only the intake half lives here — expected
 // findings and verdicts belong to the rules engine (F-201).
 //
 // Values are transcribed from the answer key, using the registry's field names. "No

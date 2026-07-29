@@ -45,20 +45,16 @@ const echoSavedEvent = (
 
 /** The questions on screen, by their legend label, in the order they are asked. */
 const questionsOnScreen = (): string[] =>
-  screen
-    .getAllByRole("group")
-    .map(
-      (group) =>
-        group.querySelector("legend .intake__label")?.textContent ??
-        group.querySelector("legend")?.textContent ??
-        "",
-    );
-
-const renderForm = (eventId?: string, activeContract = contract) => {
-  const user = userEvent.setup();
-  render(
-    <IntakeForm contract={activeContract} apiBaseUrl="https://api.example.com" eventId={eventId} />,
+  screen.getAllByRole("group").map(
+    (group) =>
+      group.querySelector("legend .intake__label")?.textContent ??
+      group.querySelector("legend")?.textContent ??
+      "",
   );
+
+const renderForm = (eventId?: string) => {
+  const user = userEvent.setup();
+  render(<IntakeForm contract={contract} apiBaseUrl="https://api.example.com" eventId={eventId} />);
   return user;
 };
 
@@ -170,18 +166,16 @@ describe("conditional reveal follows the registry (spec #2)", () => {
     const user = renderForm();
     await chooseOption(user, "location_type", "private_venue");
     await fillField(user, "headcount", "74");
-    expect(questionsOnScreen()).not.toEqual(
-      expect.arrayContaining([
-        "Venue paco covers exact event",
-        "Venue fdny pa permit current for event space",
-      ]),
+    expect(questionsOnScreen()).not.toContain("Do the PACO materials cover this exact event?");
+    expect(questionsOnScreen()).not.toContain(
+      "Is the FDNY Public Assembly Permit current for this event space?",
     );
 
     await fillField(user, "headcount", "75");
     expect(questionsOnScreen()).toEqual(
       expect.arrayContaining([
-        "Venue paco covers exact event",
-        "Venue fdny pa permit current for event space",
+        "Do the PACO materials cover this exact event?",
+        "Is the FDNY Public Assembly Permit current for this event space?",
       ]),
     );
 
@@ -200,59 +194,21 @@ describe("conditional reveal follows the registry (spec #2)", () => {
     ).toBeNull();
   });
 
-  it("renders PACO evidence guidance from the active registry instead of web copy", async () => {
-    const alternateGuidance = [
-      "Alternate published introduction.",
-      "- First active-contract check.",
-      "- Second active-contract check.",
-      "Alternate published fold guidance.",
-    ].join("\n");
-    const activeContract = {
-      ...contract,
-      fields: contract.fields.map((field) =>
-        field.field === "venue_paco_covers_exact_event"
-          ? { ...field, note: alternateGuidance }
-          : field,
-      ),
-    };
-    const user = renderForm(undefined, activeContract);
-    await chooseOption(user, "location_type", "private_venue");
-    await fillField(user, "headcount", "75");
-
-    expect(screen.getByText("Alternate published introduction.").tagName).toBe("P");
-    expect(screen.getByText("Alternate published fold guidance.").tagName).toBe("P");
-    const list = screen.getByRole("list");
-    expect(
-      within(list)
-        .getAllByRole("listitem")
-        .map((item) => item.textContent),
-    ).toEqual(["First active-contract check.", "Second active-contract check."]);
-    expect(screen.queryByText(/The documents identify the exact event space/)).toBeNull();
-  });
-
-  it("renders all published PACO checks and tri-state fold instructions", async () => {
+  it("shows the four PACO evidence checks and the approved fold guidance", async () => {
     const user = renderForm();
     await chooseOption(user, "location_type", "private_venue");
     await fillField(user, "headcount", "75");
 
-    const question = screen.getByRole("group", { name: "Venue paco covers exact event" });
-    expect(
-      within(question)
-        .getAllByRole("listitem")
-        .map((item) => item.textContent),
-    ).toEqual([
-      "Identifies the exact event space.",
-      "Authorizes the event use and assembly classification.",
-      "Allows the event's maximum occupant load.",
-      "Matches the event's seating, furnishings, and layout.",
-    ]);
-    for (const instruction of [
-      "Answer No if any checklist item has a proved mismatch.",
-      "Answer Yes if all checklist items are proved.",
-      "Answer I don't know otherwise.",
+    for (const check of [
+      "The documents identify the exact event space.",
+      "They authorize the event use and assembly classification.",
+      "They allow the event's maximum occupant load.",
+      "The seating, furnishings, and layout match an approved primary or alternate plan.",
     ]) {
-      expect(within(question).getByText(instruction).tagName).toBe("P");
+      expect(screen.getByText(check)).toBeDefined();
     }
+    expect(screen.getByText(/Answer No if any check mismatches/)).toBeDefined();
+    expect(screen.getByText(/only the answer below is saved/)).toBeDefined();
   });
 
   it("renders the registry's published note as the question's help text", async () => {
@@ -300,6 +256,22 @@ describe("'I don't know' is a real answer (spec #3)", () => {
 
     await waitFor(() => expect(fetchMock).toHaveBeenCalled());
     expect(requestBody(fetchMock).event_open_to_public).toBe("unknown");
+  });
+
+  it("submits both assembly-document answers as explicit tri-states", async () => {
+    const user = renderForm();
+    await answerParkEvent(user);
+    await chooseOption(user, "location_type", "private_venue");
+    await chooseOption(user, "sound_audible_from_public_way", "unknown");
+    await chooseOption(user, "venue_paco_covers_exact_event", "unknown");
+    await chooseOption(user, "venue_fdny_pa_permit_current_for_event_space", "no");
+    await save(user);
+
+    await waitFor(() => expect(fetchMock).toHaveBeenCalled());
+    expect(requestBody(fetchMock)).toMatchObject({
+      venue_paco_covers_exact_event: "unknown",
+      venue_fdny_pa_permit_current_for_event_space: "no",
+    });
   });
 
   it("sends a blank optional quantity as null rather than zero", async () => {
@@ -384,6 +356,35 @@ describe("loading a saved event to edit it", () => {
     expect(document.querySelector('input[name="status"]')).toBeNull();
     // A park is not asked the SAPO questions, so the null column stays unanswered.
     expect(questionsOnScreen()).not.toContain("Obstructs public way");
+  });
+
+  it("reloads both assembly-document answers for editing", async () => {
+    fetchMock.mockResolvedValueOnce(
+      jsonResponse(200, {
+        event: {
+          ...storedEvent,
+          location_type: "private_venue",
+          headcount: 75,
+          venue_paco_covers_exact_event: "no",
+          venue_fdny_pa_permit_current_for_event_space: "unknown",
+        },
+        warnings: [],
+        plan_stale: false,
+      }),
+    );
+    renderForm("event-9");
+
+    await waitFor(() => expect(screen.getByText(/Saved as revision 4/)).toBeDefined());
+    expect(
+      document.querySelector<HTMLInputElement>(
+        'input[name="venue_paco_covers_exact_event"][value="no"]',
+      )?.checked,
+    ).toBe(true);
+    expect(
+      document.querySelector<HTMLInputElement>(
+        'input[name="venue_fdny_pa_permit_current_for_event_space"][value="unknown"]',
+      )?.checked,
+    ).toBe(true);
   });
 
   it("edits the loaded event rather than creating a second one", async () => {
