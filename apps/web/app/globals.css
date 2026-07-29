@@ -799,6 +799,11 @@ a.pe-link:hover,
   gap: 0.85rem;
 }
 
+.line--blocker {
+  border-color: var(--error, #9b2d1f);
+  background: color-mix(in srgb, var(--error, #9b2d1f) 8%, transparent);
+}
+
 .line {
   padding: var(--pe-card-pad);
   border: var(--pe-border);

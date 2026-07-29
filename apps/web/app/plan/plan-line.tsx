@@ -152,7 +152,17 @@ export function PlanLine({ finding }: { finding: ConsumedFinding }) {
   return (
     /* An article rather than a list item: each finding is a self-contained requirement, and its
        citations are the list inside it. */
-    <article className="line" aria-labelledby={`line-${finding.ruleIds.join("-")}`}>
+    <article
+      className={
+        finding.disposition === "prohibited_or_ineligible"
+          ? "line line--blocker"
+          : "line"
+      }
+      data-testid={
+        finding.disposition === "prohibited_or_ineligible" ? "prohibited-finding" : undefined
+      }
+      aria-labelledby={`line-${finding.ruleIds.join("-")}`}
+    >
       <div className="line__head">
         <h3 className="line__name" id={`line-${finding.ruleIds.join("-")}`}>
           {name}
