@@ -76,9 +76,7 @@ const emptyVerdictDetail = {
   missedRuleIds: [],
   minSlackDays: null,
   missingFacts: [],
-  unresolvedTimelines: [],
   rescopeSuggestions: [],
-  trace: [],
 };
 
 const plan = (overrides: Record<string, unknown> = {}) => ({
@@ -892,6 +890,96 @@ describe("the verdict's approved copy", () => {
     await screen.findByRole("complementary", { name: "Rules snapshot" });
 
     expect(screen.queryByText(/internal planning buffer/)).toBeNull();
+  });
+});
+
+
+describe("F-102 · CONDITIONAL branch table and INFEASIBLE rescope ladder", () => {
+  it("renders each missing fact's branch outcomes for CONDITIONAL", async () => {
+    stubApi(
+      plan({
+        verdict: "CONDITIONAL",
+        verdictDetail: {
+          ...emptyVerdictDetail,
+          missingFacts: [
+            {
+              field: "venue_license_covers_event_area",
+              thresholds: null,
+              branches: [
+                {
+                  value: "yes",
+                  verdict: "CONDITIONAL",
+                  reason: "sound audibility still open",
+                },
+                {
+                  value: "no",
+                  verdict: "INFEASIBLE",
+                  reason: "SLA one-day window missed",
+                },
+              ],
+            },
+          ],
+        },
+      }),
+    );
+    renderPlan();
+    await screen.findByTestId("verdict-detail");
+
+    const fact = screen.getByTestId("missing-fact");
+    expect(fact.textContent).toContain("venue license covers event area");
+    expect(within(fact).getByText("Depends on")).toBeDefined();
+    expect(within(fact).getByText("Published deadline missed as scoped")).toBeDefined();
+    expect(within(fact).getByText("sound audibility still open")).toBeDefined();
+    expect(within(fact).getByText("SLA one-day window missed")).toBeDefined();
+  });
+
+  it("names the blocking finding and lists each re-evaluated rescope for INFEASIBLE", async () => {
+    stubApi(
+      plan({
+        verdict: "INFEASIBLE",
+        verdictDetail: {
+          ...emptyVerdictDetail,
+          blockingFinding: {
+            ruleIds: ["SAPO-STREET-LARGE-001"],
+            name: "Street Activity Permit — Large",
+          },
+          missedRuleIds: ["SAPO-STREET-LARGE-001"],
+          rescopeSuggestions: [
+            {
+              change: { field: "street_event_size", value: "medium" },
+              reevaluatedVerdict: "FEASIBLE_AT_RISK",
+              droppedRuleIds: ["SAPO-STREET-LARGE-001"],
+            },
+            {
+              change: { field: "location_type", value: "private_venue" },
+              reevaluatedVerdict: "CONDITIONAL",
+              droppedRuleIds: ["SAPO-INSURANCE-001", "SAPO-STREET-LARGE-001"],
+            },
+          ],
+        },
+      }),
+    );
+    renderPlan();
+    await screen.findByTestId("verdict-detail");
+
+    expect(screen.getByTestId("blocking-finding").textContent).toContain(
+      "Street Activity Permit — Large",
+    );
+    expect(screen.getByTestId("rescope-ladder")).toBeDefined();
+    const suggestions = screen.getAllByTestId("rescope-suggestion");
+    expect(suggestions).toHaveLength(2);
+    expect(suggestions[0]?.textContent).toContain("street event size");
+    expect(suggestions[0]?.textContent).toContain("medium");
+    expect(suggestions[0]?.textContent).toContain("At risk");
+    expect(suggestions[1]?.textContent).toContain("private venue");
+    expect(suggestions[1]?.textContent).toContain("Depends on");
+  });
+
+  it("shows nothing under a FEASIBLE verdict that has no branch or rescope work", async () => {
+    stubApi(plan({ verdict: "FEASIBLE" }));
+    renderPlan();
+    await screen.findByRole("complementary", { name: "Rules snapshot" });
+    expect(screen.queryByTestId("verdict-detail")).toBeNull();
   });
 });
 

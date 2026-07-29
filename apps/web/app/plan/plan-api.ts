@@ -4,6 +4,7 @@
 // every call sends credentials and the api answers with `Access-Control-Allow-Credentials`.
 
 import type {
+  BranchOutcome,
   Deadline,
   DeadlineStatus,
   Disposition,
@@ -11,6 +12,7 @@ import type {
   FindingSource,
   MissingFact,
   PermitPlan,
+  RescopeSuggestion,
   Verdict,
   VerdictDetail,
   VerificationStatus,
@@ -134,16 +136,32 @@ export type ConsumedDeadline = {
 };
 
 /**
- * The `verdictDetail` members the approved verdict copy fills its slots from, projected out of the
- * engine's `VerdictDetail` and `MissingFact` rather than restated. Restating them was the one place
- * in this feature where an upstream rename or retype left the web build green, which is exactly the
- * drift everything else here is built to stop.
+ * The `verdictDetail` members the plan page reads for F-102 copy and the branch/rescope panels.
+ * Projected from the engine's `VerdictDetail` rather than restated, so an upstream rename fails
+ * the typecheck instead of leaving the web build green against a silent empty panel.
  */
-export type ConsumedVerdictDetail = Omit<
-  Pick<VerdictDetail, "minSlackDays" | "missingFacts">,
-  "missingFacts"
-> & {
-  readonly missingFacts: readonly Pick<MissingFact, "field">[];
+export type ConsumedBranchOutcome = Pick<BranchOutcome, "value" | "verdict" | "reason">;
+
+export type ConsumedMissingFact = {
+  readonly field: MissingFact["field"];
+  readonly branches: readonly ConsumedBranchOutcome[];
+  readonly thresholds: MissingFact["thresholds"];
+};
+
+export type ConsumedRescopeSuggestion = {
+  readonly change: RescopeSuggestion["change"];
+  readonly reevaluatedVerdict: RescopeSuggestion["reevaluatedVerdict"];
+  readonly droppedRuleIds: RescopeSuggestion["droppedRuleIds"];
+};
+
+export type ConsumedBlockingFinding = NonNullable<VerdictDetail["blockingFinding"]>;
+
+export type ConsumedVerdictDetail = {
+  readonly minSlackDays: VerdictDetail["minSlackDays"];
+  readonly missingFacts: readonly ConsumedMissingFact[];
+  readonly blockingFinding: ConsumedBlockingFinding | null;
+  readonly missedRuleIds: VerdictDetail["missedRuleIds"];
+  readonly rescopeSuggestions: readonly ConsumedRescopeSuggestion[];
 };
 
 /**
@@ -266,11 +284,40 @@ const FINDING_CHECKS: FieldChecks<ConsumedFinding> = {
   lastVerifiedDate: nullOr(isString),
 };
 
-const MISSING_FACT_CHECKS: FieldChecks<Pick<MissingFact, "field">> = { field: isString };
+const BRANCH_OUTCOME_CHECKS: FieldChecks<ConsumedBranchOutcome> = {
+  value: isString,
+  verdict: isToken(VERDICTS),
+  reason: isString,
+};
+
+const MISSING_FACT_CHECKS: FieldChecks<ConsumedMissingFact> = {
+  field: isString,
+  branches: arrayOf(shapedLike(BRANCH_OUTCOME_CHECKS)),
+  thresholds: nullOr(isString),
+};
+
+const RESCOPE_CHANGE_CHECKS: FieldChecks<RescopeSuggestion["change"]> = {
+  field: isString,
+  value: isString,
+};
+
+const RESCOPE_CHECKS: FieldChecks<ConsumedRescopeSuggestion> = {
+  change: shapedLike(RESCOPE_CHANGE_CHECKS),
+  reevaluatedVerdict: isToken(VERDICTS),
+  droppedRuleIds: arrayOf(isString),
+};
+
+const BLOCKING_FINDING_CHECKS: FieldChecks<ConsumedBlockingFinding> = {
+  ruleIds: arrayOf(isString),
+  name: nullOr(isString),
+};
 
 const VERDICT_DETAIL_CHECKS: FieldChecks<ConsumedVerdictDetail> = {
   minSlackDays: nullOr(isNumber),
   missingFacts: arrayOf(shapedLike(MISSING_FACT_CHECKS)),
+  blockingFinding: nullOr(shapedLike(BLOCKING_FINDING_CHECKS)),
+  missedRuleIds: arrayOf(isString),
+  rescopeSuggestions: arrayOf(shapedLike(RESCOPE_CHECKS)),
 };
 
 const PLAN_CHECKS: FieldChecks<PlanResponse> = {
