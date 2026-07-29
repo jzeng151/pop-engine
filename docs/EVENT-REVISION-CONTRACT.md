@@ -60,6 +60,12 @@ rejects the whole update; it never becomes a last-write-wins overwrite. A comman
 stable metadata and questionnaire answers checks the Event token and `base_revision_id` under the
 same lock and commits both changes or neither.
 
+The deferred `starts_at` field is not eligible for that revision-free path because
+`docs/ARCHITECTURE-FUTURE.md` derives regulatory `event_date` from it. A consuming feature must
+either reject a `starts_at` change or, in the combined transaction above, update `starts_at`, append
+the revision containing its newly derived `event_date`, and advance both authorities atomically.
+This contract does not authorize the field or its endpoint.
+
 At cutover, the Phase 1 `PATCH /api/events/:id` path must either be disabled or route stable metadata
 and questionnaire changes through that combined transaction; it cannot remain an independent writer
 to compatibility projections. The exact token representation, HTTP request, and error schemas
@@ -228,9 +234,11 @@ The F-107 forward migration must then:
    package's approved recovery entries, using the `legacy_unrecorded` null sentinel for every
    unrecoverable field. New plan writes reject that sentinel;
 5. assign those backfilled revisions a deterministic, strictly increasing order defined and tested
-   by F-107. Every distinct plan-snapshot revision created in step 3 precedes the current-row
-   revision, which receives the greatest backfilled revision number; every later live append receives
-   a greater number. The order must not be inferred from version-string sorting or migration
+   by F-107. The original numeric `permit_plans.event_revision` is the primary ascending order;
+   F-107 defines a deterministic tie-breaker only among distinct snapshots sharing one legacy
+   counter. Every distinct plan-snapshot revision created in step 3 precedes the current-row revision,
+   which receives the greatest backfilled revision number; every later live append receives a greater
+   number. A tie-breaker must not infer schema order from version-string sorting or migration
    execution time;
 6. always build the current Event/current revision from the Phase 1 row under the compatibility
    package's exact cutover `input_schema_version` and `jurisdiction_code`, even when a plan has the
@@ -339,6 +347,9 @@ Before activation, the consuming implementation must prove:
   conflict, with no last-write-wins overwrite;
 - a combined stable-metadata and questionnaire update rejects stale Event or revision input without
   changing either authority, and otherwise commits both atomically;
+- after `starts_at` is introduced, changing it either appends a revision with the newly derived
+  `event_date` in the same transaction or is rejected; it never leaves the current revision or
+  accepted plan current against the old regulatory date;
 - the Phase 1 Event edit path cannot write questionnaire projections independently after cutover;
 - a save with matching schema, jurisdiction, and answers creates no revision, while changing only
   the schema creates one and a jurisdiction mismatch is rejected;
@@ -369,8 +380,9 @@ Before activation, the consuming implementation must prove:
   `checklist_acknowledgements.plan_id` and `events.current_plan_id` naming the same plan;
 - an Event with no historical plan backfills its current revision under the exact cutover Event
   Input schema and jurisdiction named by the compatibility package;
-- every distinct plan-snapshot revision created during backfill has a lower revision number than the
-  current-row revision, and the first live append has a greater revision number than every backfilled
+- plan-backed revisions with legacy counters 2 and 5 preserve that order after backfill, distinct
+  snapshots sharing one counter use F-107's deterministic tie-breaker, every plan-snapshot revision
+  remains below the current-row revision, and the first live append exceeds every backfilled
   revision;
 - accepting a candidate races safely with a revision save and rejects the stale candidate;
 - accepting a candidate after its jurisdiction-local evaluation date has passed rejects it and
