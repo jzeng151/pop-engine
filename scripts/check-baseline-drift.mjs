@@ -1613,7 +1613,7 @@ const f203BaselineScope = new RegExp(
 );
 const f203RoadmapDecision = /(?:^|\r?\n)\s*\*\*(?:Status|(?:Later\s+)?Decisions?)\b/i;
 const f203PrdDecision = /(?:^|\r?\n)\s*\*\*(?:Issue #127 amendment|(?:Later\s+)?Decisions?)\b/i;
-const f203BaselineDecision = /^\s*\*\*(?:Later\s+)?Decisions?\b/i;
+const f203BaselineDecision = /^\s*\*\*(?:Status|(?:Later\s+)?Decisions?)\b/i;
 const f203SpecDecision = /^\s*\*\*(?:Status|(?:Later\s+)?Decisions?)\b/i;
 const f203RetainedScope = new RegExp(
   `\\bF-203\\b\\s+retains\\s+${f203Capabilities.source}\\s+as planned,\\s+unscheduled\\b`,
@@ -1749,7 +1749,11 @@ for (const relative of f203Artifacts) {
           /^\s*\|/.test(line) &&
           !tableDelimiter.test(line) &&
           !tableDelimiter.test(lines[index + 1] ?? "");
-        return (isListCriterion || isTableCriterion) && !f203CriterionNonGoal.test(line);
+        const isProseCriterion = line.trim() !== "" && !isListCriterion && !/^\s*\|/.test(line);
+        return (
+          (isListCriterion || isTableCriterion || isProseCriterion) &&
+          !f203CriterionNonGoal.test(line)
+        );
       });
     });
     if (
