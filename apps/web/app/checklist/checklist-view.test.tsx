@@ -106,22 +106,6 @@ const renderView = async () => {
 const rowFor = (ruleId: string) => screen.getByRole("article", { name: nameOf(ruleId) });
 
 /**
- * One row with its detail expanded when it has any.
- *
- * The row is progressively disclosed: the summary carries the status badge, agency, disposition,
- * the deadline including `apply_after_date` (F-202 AC 5 requires it here even though the plan line
- * keeps it behind the expand), the fee, the verification badge and the primary citation. These
- * cases assert a field renders with the right content, which the split does not change, so the
- * helper opens the panel first.
- */
-const expandedRowFor = async (ruleId: string): Promise<HTMLElement> => {
-  const row = rowFor(ruleId);
-  const toggle = within(row).queryByRole("button", { name: /^Details for/ });
-  if (toggle !== null) await userEvent.click(toggle);
-  return row;
-};
-
-/**
  * The status badge on a row. Read by class rather than by text: the status control lists every
  * status as an option, so "submitted" as text matches the badge and the option alike.
  */
@@ -176,10 +160,8 @@ describe("AC 1 · one click converts the latest plan into a checklist", () => {
     });
     await renderView();
 
-    const row = await expandedRowFor(STREET_MEDIUM);
-    // By class, not by text: the rule id is the display name here, so it also appears in the
-    // heading and in the expand control's label, which names what it expands.
-    expect(row.querySelector(".check-item__rule-ids")?.textContent).toBe(STREET_MEDIUM);
+    const row = rowFor(STREET_MEDIUM);
+    expect(within(row).getByText(STREET_MEDIUM)).toBeDefined();
     expect(within(row).getByText(/apply by 2026-08-01/)).toBeDefined();
     expect(within(row).getByText(citationOf(STREET_MEDIUM))).toBeDefined();
     expect(within(row).getByText(feeOf(STREET_MEDIUM) as string)).toBeDefined();
@@ -326,7 +308,7 @@ describe("AC 2 · statuses, any transition, and the api's rollup", () => {
         items: [
           trackedItem(STREET_MEDIUM, { status: "submitted" }),
           trackedItem(SOUND, { status: "approved" }),
-          trackedItem(STREET_LARGE, { status: "approved", struckThrough: true }),
+          trackedItem(STREET_LARGE, { status: "approved", inLatestPlan: false }),
         ],
       }),
     });
@@ -344,7 +326,7 @@ describe("AC 2 · statuses, any transition, and the api's rollup", () => {
       [GET_CHECKLIST]: checklistOf({
         created: true,
         statusRollup: rollupOf({}),
-        items: [trackedItem(STREET_LARGE, { struckThrough: true })],
+        items: [trackedItem(STREET_LARGE, { inLatestPlan: false })],
       }),
     });
     await renderView();
@@ -824,7 +806,7 @@ describe("AC 5 · deadline context lives where the work happens", () => {
     });
     await renderView();
 
-    const row = await expandedRowFor(SOUND_DEPENDENCY);
+    const row = rowFor(SOUND_DEPENDENCY);
     expect(within(row).getByText("the processing time is not published")).toBeDefined();
     expect(within(row).getByText("depends on: structure types")).toBeDefined();
     // The dependency rule's published note is what says the sequencing is unconfirmed.
@@ -839,16 +821,13 @@ describe("AC 5 · deadline context lives where the work happens", () => {
 
     // NYPD-SOUND-001 publishes a precinct and a form number instead of a URL, and that text is
     // the entire filing route for the row (F-204 AC 1).
-    const row = await expandedRowFor(SOUND);
+    const row = rowFor(SOUND);
     const portalName = portalNameOf(SOUND) as string;
     expect(portalUrlOf(SOUND)).toBeNull();
     expect(within(row).queryByRole("link", { name: portalName })).toBeNull();
     expect(
       within(row).getByText((_content, element) => {
-        return (
-          element?.tagName === "P" &&
-          (element.textContent ?? "").startsWith(`apply at ${portalName}`)
-        );
+        return element?.tagName === "P" && (element.textContent ?? "").startsWith(`apply at ${portalName}`);
       }),
     ).toBeDefined();
   });
@@ -862,14 +841,14 @@ describe("AC 5 · deadline context lives where the work happens", () => {
     });
     await renderView();
 
-    const parks = await expandedRowFor("PARKS-EVENT-001");
+    const parks = rowFor("PARKS-EVENT-001");
     expect(
       within(parks)
         .getByRole("link", { name: portalNameOf("PARKS-EVENT-001") as string })
         .getAttribute("href"),
     ).toBe(portalUrlOf("PARKS-EVENT-001"));
 
-    const sound = await expandedRowFor(SOUND);
+    const sound = rowFor(SOUND);
     expect(within(sound).queryByRole("link", { name: portalNameOf(SOUND) as string })).toBeNull();
     expect(
       within(sound).getByText((_content, element) => {
@@ -918,7 +897,7 @@ describe("F-206 AC 2 · every row shows its verification status", () => {
     });
     await renderView();
 
-    const row = await expandedRowFor(PARKS_TUA);
+    const row = rowFor(PARKS_TUA);
     expect(within(row).getByTestId("verification-status").textContent).toBe("OFFICIAL CONFLICT");
     // Both readings, verbatim, never resolved to one.
     expect(within(row).getByText(noteTextOf(PARKS_TUA) as string)).toBeDefined();
@@ -990,7 +969,7 @@ describe("AC 6 · a regenerated plan is reviewed, never silently applied", () =>
         statusRollup: rollupOf({ not_started: 1 }),
         items: [
           trackedItem(STREET_LARGE, {
-            struckThrough: true,
+            inLatestPlan: false,
             status: "submitted",
             notes: "filed on the 3rd",
             documents: [{ id: "doc-1", filename: "receipt.pdf" }],
@@ -1005,7 +984,7 @@ describe("AC 6 · a regenerated plan is reviewed, never silently applied", () =>
 
     const dropped = rowFor(STREET_LARGE);
     expect(dropped.className).toContain("check-item--dropped");
-    expect(within(dropped).getByRole("note").textContent).toContain("earlier task has ended");
+    expect(within(dropped).getByRole("note").textContent).toContain("no longer raises");
     // Nothing was deleted: the status, the note and the document are all still on the row.
     expect(badgeOf(dropped)).toBe("submitted");
     expect((within(dropped).getByRole("textbox") as HTMLTextAreaElement).value).toBe(
@@ -1018,7 +997,7 @@ describe("AC 6 · a regenerated plan is reviewed, never silently applied", () =>
     let current = checklistBody({
       created: true,
       planChanged: true,
-      items: [trackedItem(STREET_LARGE, { struckThrough: true })],
+      items: [trackedItem(STREET_LARGE, { inLatestPlan: false })],
     });
     const calls = stubApi({
       [GET_CHECKLIST]: () => jsonResponse(200, current),
@@ -1026,7 +1005,7 @@ describe("AC 6 · a regenerated plan is reviewed, never silently applied", () =>
         current = checklistBody({
           created: true,
           planChanged: false,
-          items: [trackedItem(STREET_LARGE, { struckThrough: true }), trackedItem(SOUND)],
+          items: [trackedItem(STREET_LARGE, { inLatestPlan: false }), trackedItem(SOUND)],
         });
         return jsonResponse(201, current);
       },
@@ -1374,9 +1353,7 @@ describe("F-203 · a channel that failed to deliver is reported to the organizer
     await renderView();
 
     const notice = screen.getByText(/not been confirmed as delivered/);
-    expect(notice.textContent).toContain(
-      "2 email alerts for this event have not been confirmed as delivered.",
-    );
+    expect(notice.textContent).toContain("2 email alerts for this event have not been confirmed as delivered.");
     expect(notice.textContent).toContain(
       "Retrying is paused because this event changed after their plan was made: regenerate the " +
         "plan and review the checklist to start it again.",
@@ -1626,7 +1603,7 @@ describe("AC 8 · each row is attributed to the plan its values came from", () =
         created: true,
         items: [
           trackedItem(STREET_LARGE, {
-            struckThrough: true,
+            inLatestPlan: false,
             // A superseded published version, paired with the date that version carried.
             sourcePlan: { rulesetVersion: "nyc.v2.5", snapshotDate: "2026-06-01" },
           }),
@@ -1650,7 +1627,7 @@ describe("AC 8 · each row is attributed to the plan its values came from", () =
         created: true,
         items: [
           trackedItem(STREET_LARGE, {
-            struckThrough: true,
+            inLatestPlan: false,
             sourcePlan: { rulesetVersion: "nyc.v2.3", snapshotDate: null },
           }),
         ],
@@ -1676,7 +1653,7 @@ describe("AC 8 · each row is attributed to the plan its values came from", () =
         snapshotDate: "2026-06-01",
         items: [
           trackedItem(STREET_MEDIUM, {
-            struckThrough: true,
+            inLatestPlan: false,
             sourcePlan: { rulesetVersion: "nyc.v2.1", snapshotDate: "2026-01-01" },
           }),
         ],

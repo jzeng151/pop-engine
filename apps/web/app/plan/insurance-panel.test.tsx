@@ -56,6 +56,7 @@ const findingFor = (
   overrides: Partial<ConsumedFinding> = {},
 ): ConsumedFinding => ({
   ruleIds: [rule.id],
+  kind: rule.kind === "insurance" ? "insurance" : "permit",
   disposition: DEFAULT_DISPOSITION_BY_RULE_KIND[rule.kind],
   name: rule.output.requirement_name ?? null,
   agency: rule.output.agency ?? null,
@@ -87,6 +88,7 @@ const findingFor = (
  */
 const nonInsuranceFinding = (ruleId: string, name: string): ConsumedFinding => ({
   ruleIds: [ruleId],
+  kind: "permit",
   disposition: "required",
   name,
   agency: "NYPD",

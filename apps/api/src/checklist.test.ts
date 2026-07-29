@@ -102,7 +102,15 @@ type ChecklistItemView = {
   inLatestPlan: boolean;
   deadlineNotice: {
     dateChange: { kind: string; previous?: string; current?: string } | null;
-    previousProvenance: { rulesetVersion: string };
+    previousProvenance: {
+      rulesetVersion: string;
+      verificationStatus?: string;
+      sources?: unknown[];
+      sourceUrl?: string | null;
+      conflictText?: string | null;
+      snapshotDate?: string;
+    };
+    rulesetVersionsDiffer?: boolean;
   } | null;
   latestApplyDate: string | null;
   applyAfterDate: string | null;
@@ -519,7 +527,7 @@ describe.runIf(databaseUrl.length > 0)("F-202 compliance checklist", () => {
       // Still the row the organizer has been working: same checklist item, same persisted link.
       expect(after?.id).toBe(before?.id);
       expect(after?.planItemId).toBe(before?.planItemId);
-      expect(after?.struckThrough).toBe(false);
+      expect(after?.inLatestPlan).toBe(true);
       // Showing the new plan's date...
       expect(after?.latestApplyDate).toBe("2026-08-30");
       // ...so it must say the new plan is where that date came from.
@@ -636,7 +644,7 @@ describe.runIf(databaseUrl.length > 0)("F-202 compliance checklist", () => {
       const items = second.body.items as ChecklistItemView[];
       expect(items).toHaveLength(1);
       expect(items[0]?.id).toBe((first.body.items as ChecklistItemView[])[0]?.id);
-      expect(items[0]?.struckThrough).toBe(false);
+      expect(items[0]?.inLatestPlan).toBe(true);
     });
 
     it("keeps and strikes a merged line when a later plan splits it, appending both new lines", async () => {
@@ -666,13 +674,13 @@ describe.runIf(databaseUrl.length > 0)("F-202 compliance checklist", () => {
       expect(items).toHaveLength(3);
       const [kept, ...appended] = items;
       expect(kept?.id).toBe(mergedItemId);
-      expect(kept?.struckThrough).toBe(true);
+      expect(kept?.inLatestPlan).toBe(false);
       expect(kept?.status).toBe("submitted");
       expect(kept?.notes).toBe("one filing covered both");
       expect(appended.map((item) => item.ruleIds).sort()).toEqual(
         MERGED.map((ruleId) => [ruleId]).sort(),
       );
-      expect(appended.every((item) => !item.struckThrough && item.status === "not_started")).toBe(
+      expect(appended.every((item) => item.inLatestPlan && item.status === "not_started")).toBe(
         true,
       );
     });
@@ -704,13 +712,13 @@ describe.runIf(databaseUrl.length > 0)("F-202 compliance checklist", () => {
       expect(items).toHaveLength(3);
       const struck = items.filter((item) => trackedIds.includes(item.id));
       expect(struck).toHaveLength(2);
-      expect(struck.every((item) => item.struckThrough)).toBe(true);
+      expect(struck.every((item) => !item.inLatestPlan)).toBe(true);
       // Neither was re-pointed: they still hold the rows of the plan that raised them.
       expect(struck.map((item) => item.planItemId).sort()).toEqual(
         (separate.body.items as ChecklistItemView[]).map((item) => item.planItemId).sort(),
       );
       expect(items.at(-1)?.ruleIds.slice().sort()).toEqual([...MERGED].sort());
-      expect(items.at(-1)?.struckThrough).toBe(false);
+      expect(items.at(-1)?.inLatestPlan).toBe(true);
       // Cleared by this POST: the merged row is now tracked and the two struck rows are history.
       expect(merged.body.planChanged).toBe(false);
 
@@ -1212,12 +1220,12 @@ describe.runIf(databaseUrl.length > 0)("F-202 compliance checklist", () => {
       // Nothing is deleted: the large-event line survives with its status and note intact,
       // marked as no longer in the plan so the UI can strike it through.
       const dropped = items.find((item) => item.ruleIds[0] === "SAPO-STREET-LARGE-001");
-      expect(dropped?.struckThrough).toBe(true);
+      expect(dropped?.inLatestPlan).toBe(false);
       expect(dropped?.status).toBe("submitted");
       expect(dropped?.notes).toBe("filed 2026-07-10");
       // The new requirement is appended rather than inserted among the tracked work.
       expect(items.at(-1)?.ruleIds).toEqual(["SAPO-STREET-MEDIUM-001"]);
-      expect(items.at(-1)?.struckThrough).toBe(false);
+      expect(items.at(-1)?.inLatestPlan).toBe(true);
       // Requirements the rescope did not change keep their identity, not a duplicate row.
       expect(items.filter((item) => item.ruleIds[0] === "NYPD-SOUND-001")).toHaveLength(1);
       // A struck item is not current work, so it does not count toward the rollup.
@@ -1239,7 +1247,7 @@ describe.runIf(databaseUrl.length > 0)("F-202 compliance checklist", () => {
       );
       expect(after?.id).toBe(before?.id);
       expect(after?.latestApplyDate).not.toBe(before?.latestApplyDate);
-      expect(after?.struckThrough).toBe(false);
+      expect(after?.inLatestPlan).toBe(true);
     });
 
     it("flags a plan change before the new items are materialized", async () => {
@@ -1505,7 +1513,7 @@ describe.runIf(databaseUrl.length > 0)("F-202 compliance checklist", () => {
       expect(item?.documents).toHaveLength(1);
       // Re-pointed at the current plan's row, so the deadline it shows is the recalculated one.
       expect(item?.planItemId).not.toBe(body.items[0]?.planItemId);
-      expect(item?.struckThrough).toBe(false);
+      expect(item?.inLatestPlan).toBe(true);
     });
   });
 
@@ -1690,7 +1698,7 @@ describe.runIf(databaseUrl.length > 0)("F-202 compliance checklist", () => {
       const items = (await request(api).get(`/api/events/${eventId}/checklist`)).body
         .items as ChecklistItemView[];
       expect(items).toHaveLength(2);
-      expect(items.find((item) => item.ruleIds[0] === B)?.struckThrough).toBe(true);
+      expect(items.find((item) => item.ruleIds[0] === B)?.inLatestPlan).toBe(false);
     });
 
     it("rises for a merge, and clears on re-materialize with both retained rows struck", async () => {
@@ -1768,7 +1776,7 @@ describe.runIf(databaseUrl.length > 0)("F-202 compliance checklist", () => {
       const items = reviewed.body.items as ChecklistItemView[];
       expect(items.map((item) => item.ruleIds[0])).toEqual([B, A, C]);
       // A is the struck one, and it did not move: it is history in place, not a new first row.
-      expect(items.find((item) => item.ruleIds[0] === A)?.struckThrough).toBe(true);
+      expect(items.find((item) => item.ruleIds[0] === A)?.inLatestPlan).toBe(false);
       const read = await request(api).get(`/api/events/${eventId}/checklist`);
       expect((read.body.items as ChecklistItemView[]).map((item) => item.ruleIds[0])).toEqual([
         B,
@@ -1819,8 +1827,8 @@ describe.runIf(databaseUrl.length > 0)("F-202 compliance checklist", () => {
       expect(after).toEqual([A, B]);
       expect(
         (reviewed.body.items as ChecklistItemView[]).find((item) => item.ruleIds[0] === A)
-          ?.struckThrough,
-      ).toBe(true);
+          ?.inLatestPlan,
+      ).toBe(false);
     });
 
     it("does not reshuffle the list when the organizer works an item", async () => {
@@ -1890,7 +1898,7 @@ describe.runIf(databaseUrl.length > 0)("F-202 compliance checklist", () => {
       const items = (await request(api).get(`/api/events/${eventId}/checklist`)).body
         .items as ChecklistItemView[];
       expect(items).toHaveLength(2);
-      expect(items.every((item) => item.struckThrough)).toBe(true);
+      expect(items.every((item) => !item.inLatestPlan)).toBe(true);
 
       expect((await review(api, eventId)).body.planChanged).toBe(false);
       expect(await flagOn(api, eventId)).toBe(false);
