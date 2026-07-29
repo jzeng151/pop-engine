@@ -5,20 +5,17 @@ const mocks = vi.hoisted(() => ({
   redirect: vi.fn((target: string) => {
     throw new Error(`redirect:${target}`);
   }),
+  requiresEmailConfirmation: vi.fn<() => Promise<boolean>>(),
   siteUrl: vi.fn<() => string | null>(() => "https://web.example.com"),
-  supabaseBrowserConfig: vi.fn(() => ({
-    url: "https://project.supabase.co",
-    publishableKey: "sb_publishable_placeholder",
-  })),
 }));
 
 vi.mock("next/navigation", () => ({ redirect: mocks.redirect }));
 vi.mock("../../lib/supabase/server", () => ({
   createServerSupabaseClient: mocks.createServerSupabaseClient,
+  requiresEmailConfirmation: mocks.requiresEmailConfirmation,
 }));
 vi.mock("../../lib/supabase/config", () => ({
   siteUrl: mocks.siteUrl,
-  supabaseBrowserConfig: mocks.supabaseBrowserConfig,
 }));
 
 import {
@@ -37,8 +34,6 @@ const form = (values: Record<string, string>) => {
   return data;
 };
 
-const fetchSettings = vi.fn();
-
 const client = {
   auth: {
     getClaims: vi.fn(),
@@ -52,18 +47,9 @@ const client = {
 };
 
 beforeEach(() => {
-  vi.stubGlobal("fetch", fetchSettings);
-  fetchSettings.mockReset();
-  fetchSettings.mockResolvedValue({
-    ok: true,
-    json: vi.fn().mockResolvedValue({ mailer_autoconfirm: false }),
-  });
   mocks.createServerSupabaseClient.mockResolvedValue(client);
+  mocks.requiresEmailConfirmation.mockResolvedValue(true);
   mocks.siteUrl.mockReturnValue("https://web.example.com");
-  mocks.supabaseBrowserConfig.mockReturnValue({
-    url: "https://project.supabase.co",
-    publishableKey: "sb_publishable_placeholder",
-  });
   client.auth.getClaims.mockResolvedValue({
     data: {
       claims: {
@@ -85,7 +71,6 @@ beforeEach(() => {
 });
 
 afterEach(() => {
-  vi.unstubAllGlobals();
   vi.clearAllMocks();
 });
 
@@ -120,10 +105,7 @@ describe("email authentication actions", () => {
   });
 
   it("does not create an account when email confirmation is disabled", async () => {
-    fetchSettings.mockResolvedValueOnce({
-      ok: true,
-      json: vi.fn().mockResolvedValue({ mailer_autoconfirm: true }),
-    });
+    mocks.requiresEmailConfirmation.mockResolvedValueOnce(false);
 
     await expect(
       signUp(form({ email: "person@example.com", password: "provider-policy-password" })),
@@ -147,20 +129,11 @@ describe("email authentication actions", () => {
       email: "person@example.com",
       password: "password",
     });
-    expect(fetchSettings).toHaveBeenCalledWith(
-      new URL("https://project.supabase.co/auth/v1/settings"),
-      {
-        headers: { apikey: "sb_publishable_placeholder" },
-        cache: "no-store",
-      },
-    );
+    expect(mocks.requiresEmailConfirmation).toHaveBeenCalledOnce();
   });
 
   it("clears and rejects password sign-in when email confirmation is disabled", async () => {
-    fetchSettings.mockResolvedValueOnce({
-      ok: true,
-      json: vi.fn().mockResolvedValue({ mailer_autoconfirm: true }),
-    });
+    mocks.requiresEmailConfirmation.mockResolvedValueOnce(false);
 
     await expect(
       signIn(
@@ -185,7 +158,7 @@ describe("email authentication actions", () => {
     });
 
     await expect(updatePassword(form({ password: "new-password" }))).rejects.toThrow(
-      "redirect:/account",
+      "redirect:/account?message=Password%20updated.",
     );
     expect(client.auth.updateUser).toHaveBeenCalledWith({ password: "new-password" });
   });
@@ -227,6 +200,20 @@ describe("email authentication actions", () => {
       /reset%20link%20is%20invalid%20or%20expired/,
     );
     expect(client.auth.updateUser).not.toHaveBeenCalled();
+  });
+
+  it("keeps password validation and provider policy failures on the update form", async () => {
+    await expect(updatePassword(form({}))).rejects.toThrow(
+      "redirect:/auth/update-password?error=A%20new%20password%20is%20required.",
+    );
+    expect(client.auth.getClaims).not.toHaveBeenCalled();
+
+    client.auth.updateUser.mockResolvedValueOnce({
+      error: new Error("Password must include & and +"),
+    });
+    await expect(updatePassword(form({ password: "weak" }))).rejects.toThrow(
+      "redirect:/auth/update-password?error=Password%20must%20include%20%26%20and%20%2B",
+    );
   });
 });
 

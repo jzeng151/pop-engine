@@ -1,5 +1,5 @@
 import { redirect } from "next/navigation";
-import { createServerSupabaseClient } from "../../lib/supabase/server";
+import { createServerSupabaseClient, requiresEmailConfirmation } from "../../lib/supabase/server";
 import { signOut } from "../auth/actions";
 
 export const dynamic = "force-dynamic";
@@ -27,6 +27,18 @@ export default async function AccountPage({ searchParams }: AccountPageProps) {
   const { data, error } = await supabase.auth.getClaims();
   if (error || !data?.claims.sub) {
     redirect("/auth?error=Your%20session%20is%20missing%20or%20expired.%20Please%20sign%20in.");
+  }
+  if (!(await requiresEmailConfirmation())) {
+    try {
+      await supabase.auth.signOut({ scope: "local" });
+    } catch {
+      // The provider configuration error remains the actionable failure.
+    }
+    redirect(
+      `/auth?error=${encodeURIComponent(
+        "Email verification is not configured correctly for this environment.",
+      )}`,
+    );
   }
 
   const { message } = await searchParams;

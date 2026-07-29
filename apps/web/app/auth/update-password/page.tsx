@@ -5,7 +5,11 @@ import { hasRecoveryAuthentication } from "../recovery";
 
 export const dynamic = "force-dynamic";
 
-export default async function UpdatePasswordPage() {
+type UpdatePasswordPageProps = {
+  searchParams: Promise<{ error?: string }>;
+};
+
+export default async function UpdatePasswordPage({ searchParams }: UpdatePasswordPageProps) {
   const supabase = await createServerSupabaseClient();
   if (supabase === null) {
     return (
@@ -26,9 +30,15 @@ export default async function UpdatePasswordPage() {
     redirect("/auth?error=The%20password%20reset%20link%20is%20invalid%20or%20expired.");
   }
 
+  const { error: updateError } = await searchParams;
   return (
     <main className="auth">
       <h1>Choose a new password</h1>
+      {updateError && (
+        <p className="auth__error" role="alert">
+          {updateError}
+        </p>
+      )}
       <form action={updatePassword} className="auth__form auth__panel">
         <label>
           New password

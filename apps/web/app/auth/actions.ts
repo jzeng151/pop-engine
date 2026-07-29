@@ -1,8 +1,8 @@
 "use server";
 
 import { redirect } from "next/navigation";
-import { createServerSupabaseClient } from "../../lib/supabase/server";
-import { siteUrl, supabaseBrowserConfig } from "../../lib/supabase/config";
+import { createServerSupabaseClient, requiresEmailConfirmation } from "../../lib/supabase/server";
+import { siteUrl } from "../../lib/supabase/config";
 import { hasRecoveryAuthentication } from "./recovery";
 import { safeReturnPath, type AuthReturnPath } from "./return-path";
 
@@ -33,27 +33,6 @@ function callbackUrl(next: AuthReturnPath): string {
     authRedirect("error", "Authentication callback URL is not configured for this environment.");
   }
   return `${origin}/auth/callback?next=${encodeURIComponent(next)}`;
-}
-
-async function requiresEmailConfirmation(): Promise<boolean> {
-  const config = supabaseBrowserConfig();
-  if (config === null) return false;
-  try {
-    const response = await fetch(new URL("/auth/v1/settings", config.url), {
-      headers: { apikey: config.publishableKey },
-      cache: "no-store",
-    });
-    if (!response.ok) return false;
-    const settings: unknown = await response.json();
-    return (
-      typeof settings === "object" &&
-      settings !== null &&
-      "mailer_autoconfirm" in settings &&
-      settings.mailer_autoconfirm === false
-    );
-  } catch {
-    return false;
-  }
 }
 
 export async function signUp(formData: FormData): Promise<never> {
@@ -121,7 +100,7 @@ export async function requestPasswordReset(formData: FormData): Promise<never> {
 export async function updatePassword(formData: FormData): Promise<never> {
   const password = formData.get("password");
   if (typeof password !== "string" || !password) {
-    authRedirect("error", "A new password is required.");
+    redirect(`/auth/update-password?error=${encodeURIComponent("A new password is required.")}`);
   }
   const supabase = await configuredClient();
   const { data: claims, error: claimsError } = await supabase.auth.getClaims();
@@ -129,7 +108,9 @@ export async function updatePassword(formData: FormData): Promise<never> {
     authRedirect("error", "The password reset link is invalid or expired.");
   }
   const { error } = await supabase.auth.updateUser({ password });
-  if (error) authRedirect("error", error.message);
+  if (error) {
+    redirect(`/auth/update-password?error=${encodeURIComponent(error.message)}`);
+  }
   redirect("/account?message=Password%20updated.");
 }
 
