@@ -1,4 +1,5 @@
-import type { MovedDeadlineNotice } from "./checklist-api";
+import type { Deadline, DeadlineStatus } from "@pop-engine/engine";
+import type { DeadlineStateSide, MovedDeadlineNotice } from "./checklist-api";
 import { formatSnapshotDate } from "../plan/snapshot-banner";
 
 // F-202 AC 9: the moved-deadline notice. Copy is deliberately narrow — it states what PopEngine
@@ -6,6 +7,71 @@ import { formatSnapshotDate } from "../plan/snapshot-banner";
 // values carry their full provenance floor (verification, sources, conflict text, pinned pair).
 
 const humanize = (token: string): string => token.replace(/_/g, " ");
+
+const sameJson = (left: unknown, right: unknown): boolean =>
+  JSON.stringify(left) === JSON.stringify(right);
+
+/**
+ * Countdown statuses among dated findings are not a state change here — each plan computes them
+ * against its own `today`. What the notice compares and names is dated vs not_calculable vs
+ * not_applicable (F-202 AC 9).
+ */
+const coarseStatus = (status: DeadlineStatus): "dated" | "not_calculable" | "not_applicable" =>
+  status === "not_calculable" || status === "not_applicable" ? status : "dated";
+
+/**
+ * Stored deadline fields AC 9 names for comparison. Mirrors the api's snapshot so the notice
+ * names the same moves the server detected.
+ */
+function deadlineSnapshot(deadline: Deadline | null): Record<string, unknown> | null {
+  if (deadline === null) return null;
+  const base: Record<string, unknown> = {
+    type: deadline.type,
+    qualification: "qualification" in deadline ? deadline.qualification : null,
+    display: "display" in deadline ? deadline.display : null,
+  };
+  if ("boundary" in deadline) base.boundary = deadline.boundary;
+  if ("calendarDays" in deadline) base.calendarDays = deadline.calendarDays;
+  if ("businessDays" in deadline) base.businessDays = deadline.businessDays;
+  if ("levels" in deadline) base.levels = deadline.levels;
+  if ("unknownLevelBehavior" in deadline) {
+    base.unknownLevelBehavior = deadline.unknownLevelBehavior;
+  }
+  if ("hardFloorDays" in deadline) base.hardFloorDays = deadline.hardFloorDays;
+  if ("processingRangeDays" in deadline) {
+    base.processingRangeDays = deadline.processingRangeDays;
+  }
+  return base;
+}
+
+const formatSnapshotValue = (value: unknown): string => {
+  if (value === null || value === undefined) return "none";
+  if (typeof value === "string") return value.length > 0 ? value : "none";
+  if (typeof value === "number" || typeof value === "boolean") return String(value);
+  return JSON.stringify(value);
+};
+
+function deadlineFieldCopy(previous: Deadline | null, current: Deadline | null): string | null {
+  const prev = deadlineSnapshot(previous);
+  const curr = deadlineSnapshot(current);
+  if (sameJson(prev, curr)) return null;
+  if (prev === null || curr === null) {
+    return `Published deadline: previous ${
+      prev === null ? "none" : formatSnapshotValue(prev)
+    }; current ${curr === null ? "none" : formatSnapshotValue(curr)}.`;
+  }
+  const keys = new Set([...Object.keys(prev), ...Object.keys(curr)]);
+  const parts: string[] = [];
+  for (const key of keys) {
+    if (sameJson(prev[key], curr[key])) continue;
+    parts.push(
+      `${humanize(key)}: previous ${formatSnapshotValue(prev[key])}; current ${formatSnapshotValue(
+        curr[key],
+      )}`,
+    );
+  }
+  return parts.length === 0 ? null : `Published deadline fields — ${parts.join("; ")}.`;
+}
 
 function dateChangeCopy(notice: MovedDeadlineNotice): string | null {
   const change = notice.dateChange;
@@ -37,17 +103,21 @@ function stateChangeCopy(notice: MovedDeadlineNotice): string | null {
   const change = notice.stateChange;
   if (change === null) return null;
   const changes: string[] = [];
-  const previous = change.previous;
-  const current = change.current;
+  const previous: DeadlineStateSide = change.previous;
+  const current: DeadlineStateSide = change.current;
 
-  if (previous.deadlineStatus !== current.deadlineStatus) {
+  const previousCoarse = coarseStatus(previous.deadlineStatus);
+  const currentCoarse = coarseStatus(current.deadlineStatus);
+  if (previousCoarse !== currentCoarse) {
     changes.push(
-      `Deadline state: previous ${humanize(previous.deadlineStatus)}; current ${humanize(
-        current.deadlineStatus,
-      )}.`,
+      `Deadline state: previous ${humanize(previousCoarse)}; current ${humanize(currentCoarse)}.`,
     );
   }
-  if (previous.deadlineDisplay !== null || current.deadlineDisplay !== null) {
+
+  const deadlineFields = deadlineFieldCopy(previous.deadline, current.deadline);
+  if (deadlineFields !== null) changes.push(deadlineFields);
+
+  if (previous.deadlineDisplay !== current.deadlineDisplay) {
     changes.push(
       `Published deadline details: previous ${previous.deadlineDisplay ?? "none"}; current ${
         current.deadlineDisplay ?? "none"
@@ -76,7 +146,7 @@ function stateChangeCopy(notice: MovedDeadlineNotice): string | null {
     );
   }
 
-  return changes.join(" ");
+  return changes.length > 0 ? changes.join(" ") : null;
 }
 
 /**

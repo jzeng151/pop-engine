@@ -2218,6 +2218,13 @@ describe("F-202 AC 9 · moved-deadline notice", () => {
               stateChange: {
                 previous: {
                   deadlineStatus: "not_calculable",
+                  deadline: {
+                    type: "business_days_minimum",
+                    businessDays: 10,
+                    display: "published filing window",
+                    boundary: "inclusive",
+                    qualification: null,
+                  },
                   deadlineDisplay: "published filing window",
                   timelineUnresolvedReason: "holiday calendar was unavailable",
                   deadlineUnknownFields: [],
@@ -2225,6 +2232,13 @@ describe("F-202 AC 9 · moved-deadline notice", () => {
                 },
                 current: {
                   deadlineStatus: "not_calculable",
+                  deadline: {
+                    type: "business_days_minimum",
+                    businessDays: 10,
+                    display: "published filing window",
+                    boundary: "inclusive",
+                    qualification: null,
+                  },
                   deadlineDisplay: "published filing window",
                   timelineUnresolvedReason: "processing time is unavailable",
                   deadlineUnknownFields: [],

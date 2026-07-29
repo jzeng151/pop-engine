@@ -140,6 +140,12 @@ export type DateChange =
 
 export type DeadlineStateSide = {
   readonly deadlineStatus: DeadlineStatus;
+  /**
+   * Full stored deadline object AC 9 compares. Wider than PlanContext's ConsumedDeadline: the
+   * notice must name field-level moves (calendarDays, businessDays, boundary, levels, …), not
+   * only the type token the row head humanises.
+   */
+  readonly deadline: Deadline | null;
   readonly deadlineDisplay: string | null;
   readonly timelineUnresolvedReason: string | null;
   readonly deadlineUnknownFields: readonly string[];
@@ -396,8 +402,19 @@ const isDateChange = (value: unknown): value is DateChange => {
   return false;
 };
 
+/**
+ * Accepts the engine's Deadline union without pinning every variant field. Variants differ by
+ * which keys are present; refusing a body over an unread key would reject a checklist the notice
+ * can otherwise render. A non-object or typeless value is still refused.
+ */
+const isDeadline = (value: unknown): value is Deadline => {
+  const record = asRecord(value);
+  return record !== null && isString(record.type);
+};
+
 const STATE_SIDE_CHECKS: FieldChecks<DeadlineStateSide> = {
   deadlineStatus: isToken(DEADLINE_STATUSES),
+  deadline: nullOr(isDeadline),
   deadlineDisplay: nullOr(isString),
   timelineUnresolvedReason: nullOr(isString),
   deadlineUnknownFields: arrayOf(isString),
