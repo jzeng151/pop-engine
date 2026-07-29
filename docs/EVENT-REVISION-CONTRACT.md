@@ -135,8 +135,9 @@ The exact HTTP request and error schemas belong in the reviewed OpenAPI contract
   interprets an older answer under changed field or enum semantics.
 - Every plan persists the exact canonical engine input it evaluated. When a compatibility transform
   is used, that transform is an immutable approved artifact whose version and checksum are also
-  persisted on the plan. Replay uses the persisted engine-input snapshot; it never reruns whichever
-  transform is current later.
+  persisted on the plan. When no transform is needed, the plan persists the explicit non-null
+  provenance state `not_applicable`; it does not use the legacy sentinel for a known absence. Replay
+  uses the persisted engine-input snapshot; it never reruns whichever transform is current later.
 - The selected ruleset pins the exact calendar artifact used for evaluation. Generation resolves
   that artifact and rejects a calendar whose ID, version, checksum, or jurisdiction does not match
   the ruleset's declaration. Persisting calendar provenance does not substitute for validating the
@@ -158,6 +159,13 @@ The exact HTTP request and error schemas belong in the reviewed OpenAPI contract
   supplied mapping against the canonical plan diff before applying it. The request also supplies the
   optimistic-concurrency token the organizer reviewed for every source workflow item the
   reconciliation would carry, reset, or omit to its default state.
+- Reconciliation cannot override F-202's workflow identity or terminal lifecycle. Checklist workflow
+  identity is the finding kind plus its complete sorted `rule_ids`, even though §2.7 uses the
+  `rule_ids` alone to align regulatory findings for a diff. When aligned findings have different
+  kinds, the old task remains terminal with its status, notes, documents, values, and source-plan
+  provenance unchanged. A trackable replacement is appended in its default state; a non-trackable
+  replacement remains read-only context. The server rejects any organizer-supplied mapping that
+  attempts to reuse, reset, or carry the old task onto the replacement.
 - Accepting a candidate locks the Event and rechecks that the candidate belongs to it, that
   `candidate.event_revision_id === events.current_revision_id`, and that
   `base_plan_id === events.current_plan_id`. While holding that lock, acceptance also derives the
@@ -172,9 +180,13 @@ The exact HTTP request and error schemas belong in the reviewed OpenAPI contract
   plan, candidate plan, accepted Event Revision, and server-recorded acceptance time. A mismatch,
   reconciliation failure, job/outbox failure, or audit failure rolls back all of those changes.
   External delivery occurs only after commit.
-- Cancelling a pending job is insufficient when a worker has already leased it. Claim/cancel
-  serialization or a mandatory current-plan and cancellation-state recheck at the provider-delivery
-  boundary must prevent a leased job made obsolete by acceptance from being sent.
+- Cancelling a pending job is insufficient when a worker has already leased it. Plan acceptance and
+  the worker's irreversible provider handoff must be linearizable through one shared claim/acceptance
+  fence whose authority remains effective from the worker's final eligibility check until the
+  provider has accepted delivery or the handoff can still be cancelled. If acceptance wins the
+  fence, the obsolete job cannot cross the handoff; if delivery wins it, acceptance observes that
+  ordering rather than committing first. A current-plan or cancellation-state recheck followed by an
+  unfenced provider call is insufficient.
 - A later edit may make an accepted plan stale, but an already-stale candidate, a candidate evaluated
   on an obsolete local date, or a candidate based on a superseded accepted plan is never accepted.
 - The migration that introduces `current_plan_id` sets it from the same-event
@@ -203,8 +215,10 @@ Before mutation, F-107's approved compatibility package must define:
 - for every engine, calendar, rules-schema, Event Input schema, compatibility-transform,
   `jurisdictionTimezone`, and other required provenance field absent from a pre-cutover plan, either
   one exact value recovered from approved immutable historical evidence or SQL `NULL` with the sole
-  meaning `legacy_unrecorded`. A current artifact, deployment state, display text, `generated_at`, or
-  migration time is not evidence of what a historical plan evaluated;
+  meaning `legacy_unrecorded`. For compatibility-transform provenance, evidence that no transform was
+  used recovers the explicit non-null state `not_applicable`; it is not unknown provenance. A current
+  artifact, deployment state, display text, `generated_at`, or migration time is not evidence of what
+  a historical plan evaluated;
 - one exact `input_schema_version` and `jurisdiction_code` for the Phase 1 Event row at cutover,
   including an Event with no historical plan. This mapping is explicit and does not derive either
   value from a latest plan, display text, or migration time;
@@ -231,8 +245,9 @@ The F-107 forward migration must then:
    inputs even when the old numeric `event_revision` did not change. Every migration-created
    revision, including the current-row revision, has `supersedes_revision_id = NULL`;
 4. populate each preserved plan's newly introduced provenance fields only from the compatibility
-   package's approved recovery entries, using the `legacy_unrecorded` null sentinel for every
-   unrecoverable field. New plan writes reject that sentinel;
+   package's approved recovery entries, using explicit `not_applicable` for a transform proven not to
+   have been used and the `legacy_unrecorded` null sentinel for every unrecoverable field. New plan
+   writes reject the legacy sentinel;
 5. assign those backfilled revisions a deterministic, strictly increasing order defined and tested
    by F-107. The original numeric `permit_plans.event_revision` is the primary ascending order;
    F-107 defines a deterministic tie-breaker only among distinct snapshots sharing one legacy
@@ -308,6 +323,8 @@ aborts.
 - For each provenance field, `legacy_unrecorded` compares equal only to the same sentinel and differs
   from every concrete value. A diff retains the complete list of unrecorded provenance fields, and a
   plan with any such field cannot claim exact replay; replay never substitutes a current artifact.
+- Compatibility-transform `not_applicable` compares equal only to itself and differs from
+  `legacy_unrecorded` and every concrete transform version/checksum.
 - Database IDs, plan IDs, created/generated/updated timestamps, row order, workflow status, and the
   debugging-only evaluation `trace` do not make a regulatory finding, plan outcome, or provenance
   changed.
@@ -394,6 +411,9 @@ Before activation, the consuming implementation must prove:
 - a non-default workflow status carries only through the deterministic mapping the organizer
   reviewed, while an omitted or reset item starts in its default state and a materially changed
   finding never receives an old approval automatically;
+- a finding-kind change reports one changed regulatory finding but terminates the old checklist
+  workflow identity with its evidence and status untouched; any trackable replacement is appended in
+  its default state, and a mapping that attempts to reuse the old task is rejected;
 - a checklist status or notes update committed after the organizer reviewed the reconciliation makes
   acceptance conflict without changing the plan pointer, workflow, jobs, or audit log;
 - an acceptance reconciliation or job/outbox failure leaves the plan pointer, workflow, and jobs
@@ -402,7 +422,8 @@ Before activation, the consuming implementation must prove:
   server-recorded time to the activity log atomically with the plan pointer, and an audit-write
   failure rolls back acceptance;
 - a worker that leased an obsolete message job before plan acceptance cannot send it after acceptance
-  commits;
+  commits, including when it pauses after its final eligibility check and resumes at the provider
+  handoff;
 - while a Phase 1 reader remains, a revision save and subsequent plan generation cannot observe
   different questionnaire answers;
 - while a Phase 1 reader remains, a changed save atomically increments
@@ -420,10 +441,15 @@ Before activation, the consuming implementation must prove:
 - a plan-provenance-only change is reported when every finding and plan outcome matches, including
   when only the recorded `today` or `jurisdictionTimezone` evaluation input differs;
 - legacy plan backfill recovers a missing provenance value only from its approved immutable mapping,
-  uses `legacy_unrecorded` for an unrecoverable value, and never copies a current artifact into
-  historical provenance;
+  uses `not_applicable` when that evidence proves no compatibility transform was used, uses
+  `legacy_unrecorded` for an unrecoverable value, and never copies a current artifact into historical
+  provenance;
+- a newly generated no-transform plan records `not_applicable` and remains exactly replayable, while
+  a legacy plan with unknown transform provenance records `legacy_unrecorded`;
 - `legacy_unrecorded` compares equal only to itself, differs from every concrete provenance value,
   remains visible in diff output, and prevents an exact-replay claim;
+- compatibility-transform `not_applicable` differs from `legacy_unrecorded` and every concrete
+  transform version/checksum in diff output;
 - diff identity and output are byte-stable; and
 - cross-workspace reads and writes fail after tenancy activation.
 
