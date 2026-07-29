@@ -13,7 +13,7 @@
 
 ## Decisions of 2026-07-21
 
-1. **The iron-clad MVP is permit planning:** F-101, F-201, F-102, F-206, F-202, F-203, F-204. Complete, real (no mocks), demoable. Everything else is a nice-to-have.
+1. **The iron-clad MVP is permit planning:** F-101, F-110, F-201, F-102, F-206, F-202, F-203, F-204. Complete, real (no mocks), demoable. Everything else is a nice-to-have.
 2. **The demo is a permit-planning deep dive**, not a four-stage traversal. Stretch features appear only if actually built. This replaces the earlier degradation order ("F-301/302 degrade before F-401 gets cut"); check-in is now stretch, not guaranteed.
 3. **Lean-plus rigor** adopted into the core: intake contradiction checks (F-101), "I don't know" propagating to CONDITIONAL (F-101 + F-102), ruleset version stored with every plan (F-201/F-206), distinct deadline types in the rules schema (rules JSON + F-203). Location/authority resolution and scope support states are post-MVP (F-108, F-109). F-109's concept was called "coverage states" until 2026-07-26; renamed because "coverage" also names the per-rule `COVERAGE_GAP` verification status and `ARCHITECTURE-FUTURE.md` §7.1's per-result completeness.
 4. **The roadmap covers the full product vision.** Phases 2+ exist for delegation and direction, not capstone deadlines.
@@ -30,7 +30,7 @@ F-xxx IDs are permanent shared vocabulary across PRD, roadmap, specs, branches, 
 
 An **EVENT** is the core entity. It moves through four stages, and every stage-scoped feature attaches to exactly one:
 
-- **STAGE 1 — IDEATE:** concept, venue, date, budget, feasibility (F-101–F-109)
+- **STAGE 1 — IDEATE:** concept, venue, date, budget, feasibility (F-101–F-110)
 - **STAGE 2 — COMPLY:** permits, documents, deadlines, insurance (F-201–F-214)
 - **STAGE 3 — MARKET:** event page, promotion, RSVPs, reminders (F-301–F-309)
 - **STAGE 4 — OPERATE & ADMINISTER:** check-in, day-of ops, leads, money, post-mortem (F-401–F-413)
