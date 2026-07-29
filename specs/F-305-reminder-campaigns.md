@@ -60,7 +60,7 @@ Exact HTTP, JSON Schema, migration, job, and provider shapes belong in their rev
 2. **F305-AC-02:** Only RSVP contacts with the required channel consent and no active suppression receive a job.
 3. **F305-AC-03:** Delivery atomically claims a non-cancellable `sending` state after its final eligibility/generation check; consent withdrawal, suppression, reschedule, or cancellation serializes against that claim and cannot report prevention for already-sending work. Unrelated revisions do not stale the message generation.
 4. **F305-AC-04:** Retries, worker crashes, and duplicate claims do not create more than one accepted provider delivery per recipient/campaign/channel.
-5. **F305-AC-05:** Cancellation stops unclaimed jobs and causes already claimed or leased jobs to abort before provider delivery, preserves attempts/history, and reports sent, suppressed, failed, and cancelled counts accurately.
+5. **F305-AC-05:** Cancellation stops unclaimed and pre-`sending` leased jobs before provider delivery; a job that already claimed the non-cancellable `sending` state continues as accounted already-sending work under AC-03. Attempts/history remain preserved and sent, suppressed, failed, already-sending, and cancelled counts stay accurate.
 
 ## Fixtures and Verification
 

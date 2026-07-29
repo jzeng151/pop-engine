@@ -31,14 +31,14 @@ The verification team can manage source metadata, bounded excerpts, archives, an
 ## Inputs, Outputs, State, Validation, and Errors
 
 - Inputs are human-reviewed metadata/excerpt/archive; output is a versioned source record and link-check observations.
-- Source state/verification follows the approved regulatory vocabulary; link available/broken/blocked remains separate.
+- Source records carry only metadata, archival, and link-health lifecycle state. Regulatory verification exists exclusively on immutable rule-source facet decisions for exact artifact versions.
 - A metadata correction versions the record or appends history and never rewrites evidence used by a published artifact.
 - Missing or unresolved material data stays visibly unset, unknown, pending, or failed as appropriate; it never becomes a successful or complete result.
 - Invalid input produces a field or action-specific error without partial mutation. Retriable external failures preserve the user's confirmed state and expose a safe retry.
 
 ## UI and Accessibility
 
-- Source detail distinguishes verification, link health, archive availability, excerpt, linked rules, history, and reviewer authority.
+- Source detail distinguishes facet-level verification decisions, link health, archive availability, excerpt, linked rules, history, and reviewer authority.
 - The complete workflow is keyboard operable, uses programmatic labels and visible focus, does not encode status by color alone, and announces asynchronous success or failure.
 - Empty, loading, permission-denied, validation, provider-failure, and unavailable states have explicit copy and a safe next action.
 

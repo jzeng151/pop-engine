@@ -60,7 +60,7 @@ Exact HTTP, JSON Schema, migration, job, and provider shapes belong in their rev
 1. **F107-AC-01:** While its pinned registry/version is current, reopening after a successful save restores the same partial answers and registry-derived question state byte-for-byte.
 2. **F107-AC-02:** A failed save is visibly unsaved and cannot replace the last durable draft.
 3. **F107-AC-03:** No unsubmitted draft—whether incomplete or complete-unsubmitted—can create or refresh a permit plan; only explicit submission creates the immutable evaluable revision, and unanswered material values remain unknown or absent.
-4. **F107-AC-04:** Submitting a complete draft creates an immutable revision, and editing afterward creates another revision and marks prior plan output stale.
+4. **F107-AC-04:** Submitting a complete draft creates an immutable revision; later edits remain in a new mutable draft, and only its next explicit submission creates another revision and marks prior plan output stale.
 5. **F107-AC-05:** Two stale clients cannot silently overwrite each other; the later conflicting save is rejected with a reload/reconcile path.
 6. **F107-AC-06:** When the intake registry changes, reopening uses only the approved migration path, shows removed or incompatible answers for review, and cannot submit obsolete inputs or a draft that fails the current registry.
 
