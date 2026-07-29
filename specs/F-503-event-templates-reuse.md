@@ -61,6 +61,7 @@ Exact HTTP, JSON Schema, migration, job, and provider shapes belong in their rev
 3. **F503-AC-03:** Removed/incompatible registry fields are omitted with an explicit review warning, not mapped by guess.
 4. **F503-AC-04:** Submitting the complete draft creates an immutable revision, evaluates that revision with the then-current approved ruleset/calendar, and stores the exact artifact version.
 5. **F503-AC-05:** Changing the source event after duplication cannot mutate the new draft or its later plan.
+6. **F503-AC-06:** Date-, exact-event-, and document-specific answers are reset even if otherwise allow-listed, including `venue_license_covers_event_area`, `venue_paco_covers_exact_event`, and `venue_fdny_pa_permit_current_for_event_space`; the review shows them unanswered and requires new-event confirmation before submission and evaluation.
 
 ## Fixtures and Verification
 

@@ -64,6 +64,7 @@ Exact HTTP, JSON Schema, migration, job, and provider shapes belong in their rev
 5. **F714-AC-05:** Historical plans continue resolving their pinned ruleset/revision and are never silently re-evaluated after publish or rollback.
 6. **F714-AC-06:** A genuinely new publication or rollback rejects when the jurisdiction pointer no longer matches the request's expected current checksum; concurrent requests from one predecessor cannot both advance the pointer or produce a non-linear artifact history.
 7. **F714-AC-07:** After pointer commit, runtime selection uses the authoritative pointer's exact artifact checksum; if that artifact is unavailable, evaluation fails visibly rather than serving an older artifact as current, and publication cannot report effective until required evaluator/cache checks confirm the checksum.
+8. **F714-AC-08:** Publication rejects a candidate already present in the jurisdiction artifact lineage and any candidate whose declared predecessor is not the current lineage tip; selecting a prior artifact or otherwise moving the pointer backward must use the rollback path and satisfy AC-04.
 
 ## Fixtures and Verification
 

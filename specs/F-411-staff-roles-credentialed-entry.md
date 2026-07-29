@@ -57,7 +57,7 @@ Exact HTTP, JSON Schema, migration, job, and provider shapes belong in their rev
 ## Acceptance Criteria
 
 1. **F411-AC-01:** A check-in staff member can perform only the approved event-scoped door actions and no broader organizer/admin operation.
-2. **F411-AC-02:** A valid active credential returns the approved minimal category/decision for its event and records one idempotent attempt.
+2. **F411-AC-02:** Validation and its accepted attempt/entry record serialize against revocation on the same credential version, so exactly one wins: a winning validation records one idempotent entry and returns the approved minimal category/decision, while a winning revocation prevents acceptance.
 3. **F411-AC-03:** Revoked, expired, malformed, guessed, or wrong-event credentials deny without revealing identity/contact details and append one idempotent non-sensitive attempt with the denial category.
 4. **F411-AC-04:** Vendor and performer categories remain distinct from attendee and do not create RSVP, consent, or regulatory status.
 5. **F411-AC-05:** Removing a staff assignment blocks the next protected action while preserving prior attempt attribution.

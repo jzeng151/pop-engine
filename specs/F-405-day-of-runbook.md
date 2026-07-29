@@ -30,7 +30,7 @@ An organizer can generate one current event-day sheet containing confirmed permi
 
 ## Inputs, Outputs, State, Validation, and Errors
 
-- Inputs are an exact event revision plus current confirmed workflow records; output is a timestamped runbook snapshot and printable projection.
+- Inputs are an exact event revision plus current confirmed workflow records, including distinct ordinary operational contacts and emergency contacts; output is a timestamped runbook snapshot and printable projection.
 - Runbook state is generated → stale when a source changes → regenerated; prior snapshots remain identifiable if retained.
 - Unknown, conflicting, research-required, expired, or missing facts render as warnings and never as completed fields.
 - Missing or unresolved material data stays visibly unset, unknown, pending, or failed as appropriate; it never becomes a successful or complete result.
@@ -57,8 +57,8 @@ Exact HTTP, JSON Schema, migration, job, and provider shapes belong in their rev
 ## Acceptance Criteria
 
 1. **F405-AC-01:** A runbook identifies the exact event revision, plan/ruleset version, generation time, and source update times.
-2. **F405-AC-02:** Confirmed permit numbers, load-in tasks, contacts, and staff assignments appear once and link back to their source record.
-3. **F405-AC-03:** Missing, unknown, conflict, research-required, expired, or stale values are visibly labeled and prevent a complete/ready claim.
+2. **F405-AC-02:** Confirmed permit numbers, load-in tasks, ordinary operational contacts, emergency contacts, and staff assignments appear once, link back to their source record, and keep the two contact categories distinct.
+3. **F405-AC-03:** Missing, unknown, conflict, research-required, expired, or stale values are visibly labeled and prevent a complete/ready claim; no confirmed emergency contact produces an explicit unavailable warning.
 4. **F405-AC-04:** Changing a source record marks the prior runbook stale; regeneration creates current output without rewriting source history.
 5. **F405-AC-05:** The approved print viewport produces readable ordering and no clipped critical content.
 6. **F405-AC-06:** Generation pins the complete permit, contact, assignment, and other source-version set; publication compare-and-swaps that set, so a concurrent source correction rejects the stale in-flight snapshot.

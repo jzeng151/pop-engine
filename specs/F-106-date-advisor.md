@@ -56,8 +56,8 @@ Exact HTTP, JSON Schema, migration, job, and provider shapes belong in their rev
 
 ## Acceptance Criteria
 
-1. **F106-AC-01:** Every candidate date is evaluated by the same engine path and exact ruleset/calendar/`today` inputs as a normal plan.
-2. **F106-AC-02:** The earliest result in each shown verdict class is chronologically correct within the requested month.
+1. **F106-AC-01:** Every candidate date on or after explicit `today` is evaluated by the same engine path and exact ruleset/calendar/`today` inputs as a normal plan; dates before `today` are never candidates.
+2. **F106-AC-02:** The earliest result in each shown verdict class is chronologically correct within the requested month; a month with no remaining candidate dates returns an explicit unavailable result.
 3. **F106-AC-03:** Business-day, hard-floor, dependency-gated, unknown, and official-conflict behavior matches F-102 for the same date.
 4. **F106-AC-04:** An evaluation error is labeled failed and cannot be returned as feasible or silently skipped.
 5. **F106-AC-05:** Applying a suggested date creates a normal revision and plan; the advisor result itself is not authoritative plan output.

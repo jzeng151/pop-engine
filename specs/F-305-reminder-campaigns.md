@@ -61,6 +61,7 @@ Exact HTTP, JSON Schema, migration, job, and provider shapes belong in their rev
 3. **F305-AC-03:** Delivery atomically claims a non-cancellable `sending` state after its final eligibility/generation check; consent withdrawal, suppression, reschedule, or cancellation serializes against that claim and cannot report prevention for already-sending work. Unrelated revisions do not stale the message generation.
 4. **F305-AC-04:** Retries, worker crashes, and duplicate claims do not create more than one accepted provider delivery per recipient/campaign/channel.
 5. **F305-AC-05:** Cancellation stops unclaimed and pre-`sending` leased jobs before provider delivery; a job that already claimed the non-cancellable `sending` state continues as accounted already-sending work under AC-03. Attempts/history remain preserved and sent, suppressed, failed, already-sending, and cancelled counts stay accurate.
+6. **F305-AC-06:** The day-of reminder includes confirmed directions pinned and linked to their source record/version. Missing or unconfirmed directions block that reminder, and a directions-source change invalidates and replaces unsent work under AC-01.
 
 ## Fixtures and Verification
 
