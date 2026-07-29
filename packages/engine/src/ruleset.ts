@@ -563,6 +563,7 @@ export function parseEngineRuleset(value: unknown): EngineRuleset {
   const config = asObject(ruleset.config, "ruleset.config");
   const slackWarning = asObject(config.slack_warning_days, "ruleset.config.slack_warning_days");
   const businessDayMath = asObject(config.business_day_math, "ruleset.config.business_day_math");
+  const rulesetVersion = asString(ruleset.ruleset_version, "ruleset.ruleset_version");
 
   const intakeFields = withParsedScoping(
     asArray(ruleset.intake_fields, "ruleset.intake_fields").map((field, index) =>
@@ -571,8 +572,7 @@ export function parseEngineRuleset(value: unknown): EngineRuleset {
   );
   // Looked up before any rule is parsed: a superseded artifact is read under the semantics of
   // its own version, not normalized into this one.
-  const legacy =
-    PRE_PUBLICATION_FACTS.get(asString(ruleset.ruleset_version, "ruleset.ruleset_version")) ?? null;
+  const legacy = PRE_PUBLICATION_FACTS.get(rulesetVersion) ?? null;
   const rules = asArray(ruleset.rules, "ruleset.rules").map((rule, index) =>
     parseRule(rule, `ruleset.rules[${index}]`, intakeFields, legacy),
   );
@@ -589,10 +589,10 @@ export function parseEngineRuleset(value: unknown): EngineRuleset {
     }
   }
   rejectMixedDedupeVerificationStatuses(published);
-  rejectUnconsumedFields(intakeFields, published, legacy !== null);
+  rejectUnconsumedFields(intakeFields, published, rulesetVersion);
 
   return {
-    rulesetVersion: asString(ruleset.ruleset_version, "ruleset.ruleset_version"),
+    rulesetVersion,
     jurisdiction: asString(ruleset.jurisdiction, "ruleset.jurisdiction"),
     snapshotDate: asString(ruleset.snapshot_date, "ruleset.snapshot_date"),
     slackWarningDays: asNumber(slackWarning.value, "ruleset.config.slack_warning_days.value"),
@@ -640,12 +640,22 @@ export const UNCONSUMED_INTAKE_FIELDS: Readonly<Record<string, string>> = {
     "a current FDNY Public Assembly Permit removes a temporary filing.",
 };
 
-// Replay keeps the intake contract a plan originally stored. The active nyc.v2.9 registry removes
-// both coarse fields, while the unchanged nyc.v2.3 snapshot still needs its historical no-op
-// declarations. They may never become material by replaying an old organizer claim.
-const LEGACY_UNCONSUMED_INTAKE_FIELDS = new Set([
+// Replay keeps the intake contract a plan originally stored. Every corrected-subset publication
+// from v2.1 through v2.8 declared both fields; v2.9 retired them. Both sets are closed so a new
+// artifact cannot opt into the allowance merely by publishing another version.
+const RETIRED_UNCONSUMED_INTAKE_FIELDS = new Set([
   "food_affinity_private_exception_claimed",
   "venue_has_assembly_approval",
+]);
+const RULESET_VERSIONS_WITH_RETIRED_INTAKE_FIELDS = new Set([
+  "nyc.v2.1",
+  "nyc.v2.2",
+  "nyc.v2.3",
+  "nyc.v2.4",
+  "nyc.v2.5",
+  "nyc.v2.6",
+  "nyc.v2.7",
+  "nyc.v2.8",
 ]);
 
 /**
@@ -674,7 +684,7 @@ function deadlineConsumedFields(published: readonly EngineRule[]): Set<string> {
 function rejectUnconsumedFields(
   intakeFields: readonly IntakeFieldDefinition[],
   published: readonly EngineRule[],
-  isLegacyRuleset: boolean,
+  rulesetVersion: string,
 ): void {
   const consumed = new Set<string>([
     ...published.flatMap((rule) => triggerFields(rule.trigger)),
@@ -687,7 +697,11 @@ function rejectUnconsumedFields(
   for (const { field } of intakeFields) {
     if (consumed.has(field)) continue;
     if (UNCONSUMED_INTAKE_FIELDS[field] !== undefined) continue;
-    if (isLegacyRuleset && LEGACY_UNCONSUMED_INTAKE_FIELDS.has(field)) continue;
+    if (
+      RULESET_VERSIONS_WITH_RETIRED_INTAKE_FIELDS.has(rulesetVersion) &&
+      RETIRED_UNCONSUMED_INTAKE_FIELDS.has(field)
+    )
+      continue;
     fail(
       `intake field "${field}" is declared but no rule trigger, deadline, or scoping condition ` +
         `reads it, so answering it changes nothing. Give a rule that consumes it, or record why ` +
