@@ -132,6 +132,7 @@ describe("conditional reveal follows the registry (spec #2)", () => {
         .map((field) => field.field.replace(/_/g, " ").replace(/^./, (l) => l.toUpperCase())),
     );
     expect(asked).not.toContain("Obstructs public way");
+    expect(screen.getByRole("spinbutton", { name: "Headcount" })).toBeDefined();
   });
 
   it("reveals the SAPO chain one answer at a time", async () => {
@@ -707,9 +708,12 @@ describe("saving and per-field errors", () => {
 
     const alert = await screen.findByRole("alert");
     expect(alert.textContent).toBe("headcount must be at least 1");
-    expect(
-      within(screen.getByRole("group", { name: /Headcount/ })).getByRole("alert"),
-    ).toBeDefined();
+    const question = screen.getByRole("group", { name: /Headcount/ });
+    expect(within(question).getByRole("alert")).toBeDefined();
+    const headcount = screen.getByRole("spinbutton", { name: "Headcount" });
+    expect(headcount.getAttribute("aria-invalid")).toBe("true");
+    expect(headcount.getAttribute("aria-describedby")).toContain("intake-headcount-error");
+    await waitFor(() => expect(document.activeElement).toBe(headcount));
   });
 
   it("shows an error the form has no field for at the form level", async () => {

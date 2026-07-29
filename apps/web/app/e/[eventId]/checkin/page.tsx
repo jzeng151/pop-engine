@@ -1,5 +1,10 @@
 import { CheckinForm } from "./checkin-form";
+import type { Metadata } from "next";
 import "./checkin.css";
+
+export const metadata: Metadata = {
+  title: "Check in",
+};
 
 // Mobile check-in target for the printed QR (`/e/:eventId/checkin`, F-401).
 // The Access cookie is the browser's, so the form loads the event client-side.

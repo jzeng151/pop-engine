@@ -26,7 +26,10 @@ const useRepoRuleset = () => vi.stubEnv("RULES_FILE", publishedRulesFileIn("rule
 
 describe("the app shell", () => {
   it("names the product and says the demo holds synthetic data only", () => {
-    expect(metadata.title).toBe("PopEngine");
+    expect(metadata.title).toEqual({
+      default: "PopEngine",
+      template: "%s | PopEngine",
+    });
     const shell = RootLayout({ children: <p>content</p> });
     expect(shell.type).toBe("html");
     expect(shell.props.lang).toBe("en");

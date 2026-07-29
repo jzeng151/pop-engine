@@ -1,5 +1,10 @@
 import { requestPasswordReset, signIn, signInWithGoogle, signUp } from "./actions";
 import { siteUrl, supabaseBrowserConfig } from "../../lib/supabase/config";
+import type { Metadata } from "next";
+
+export const metadata: Metadata = {
+  title: "Sign in",
+};
 
 type AuthPageProps = {
   searchParams: Promise<{ error?: string; message?: string }>;

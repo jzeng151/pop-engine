@@ -43,8 +43,12 @@ describe("CheckinForm", () => {
 
     render(<CheckinForm eventId={EVENT_ID} apiBaseUrl="https://api.example.com" />);
     expect(await screen.findByRole("heading", { name: "Check in" })).toBeDefined();
+    expect(screen.getByRole("main")).toBeDefined();
     expect(screen.getByLabelText("Name")).toBeDefined();
-    expect(screen.getByLabelText("Email or phone")).toBeDefined();
+    const contact = screen.getByLabelText("Email or phone");
+    expect(contact).toBeDefined();
+    expect(contact.getAttribute("autocomplete")).toBeNull();
+    expect(contact.getAttribute("inputmode")).toBeNull();
     expect(screen.getAllByRole("textbox")).toHaveLength(2);
 
     await user.type(screen.getByLabelText("Name"), "Ada Lovelace");
@@ -56,6 +60,7 @@ describe("CheckinForm", () => {
         screen.getByRole("heading", { name: /You.re checked in, Ada Lovelace/ }),
       ).toBeDefined();
     });
+    expect(screen.getByRole("main")).toBeDefined();
     expect(screen.getByText(/Synthetic demo data only/i)).toBeDefined();
   });
 

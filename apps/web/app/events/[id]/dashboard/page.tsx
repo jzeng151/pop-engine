@@ -1,5 +1,10 @@
 import { DashboardView } from "./dashboard-view";
+import type { Metadata } from "next";
 import "./dashboard.css";
+
+export const metadata: Metadata = {
+  title: "Live ops",
+};
 
 // Organizer live-ops dashboard for F-402. Polled check-in totals (arrivals only).
 

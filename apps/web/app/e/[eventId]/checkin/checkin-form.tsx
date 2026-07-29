@@ -45,17 +45,17 @@ export function CheckinForm({ eventId, apiBaseUrl }: CheckinFormProps) {
 
   if (phase.kind === "loading") {
     return (
-      <div className="checkin">
+      <main className="checkin">
         <p className="checkin__lede" role="status">
           Opening check-in…
         </p>
-      </div>
+      </main>
     );
   }
 
   if (phase.kind === "invalid") {
     return (
-      <div className="checkin">
+      <main className="checkin">
         <h1 className="checkin__title">Check-in unavailable</h1>
         <p className="checkin__error" role="alert">
           {phase.message}
@@ -63,18 +63,18 @@ export function CheckinForm({ eventId, apiBaseUrl }: CheckinFormProps) {
         <p className="checkin__note">
           Ask a staff member for a current QR code. Demo data only (AD-12).
         </p>
-      </div>
+      </main>
     );
   }
 
   if (phase.kind === "success") {
     return (
-      <div className="checkin checkin__success" role="status">
+      <main className="checkin checkin__success" aria-live="polite">
         <p className="pe-eyebrow">{phase.eventName}</p>
         <h1>You&rsquo;re checked in, {phase.name}</h1>
         <p className="checkin__lede">Thanks for coming. Show this screen if a host asks.</p>
         <p className="checkin__note">Synthetic demo data only — not a production guest list.</p>
-      </div>
+      </main>
     );
   }
 
@@ -95,55 +95,55 @@ export function CheckinForm({ eventId, apiBaseUrl }: CheckinFormProps) {
   };
 
   return (
-    <form
-      className="checkin"
-      onSubmit={(event) => {
-        event.preventDefault();
-        void save();
-      }}
-    >
-      <p className="pe-eyebrow">{phase.eventName}</p>
-      <h1 className="checkin__title">Check in</h1>
-      <p className="checkin__lede">Two fields. No account. No app install.</p>
+    <main>
+      <form
+        className="checkin"
+        onSubmit={(event) => {
+          event.preventDefault();
+          void save();
+        }}
+      >
+        <p className="pe-eyebrow">{phase.eventName}</p>
+        <h1 className="checkin__title">Check in</h1>
+        <p className="checkin__lede">Two fields. No account. No app install.</p>
 
-      <label className="checkin__field">
-        <span className="checkin__label">Name</span>
-        <input
-          className="checkin__input"
-          name="name"
-          autoComplete="name"
-          required
-          value={name}
-          onChange={(event) => setName(event.target.value)}
-        />
-      </label>
+        <label className="checkin__field">
+          <span className="checkin__label">Name</span>
+          <input
+            className="checkin__input"
+            name="name"
+            autoComplete="name"
+            required
+            value={name}
+            onChange={(event) => setName(event.target.value)}
+          />
+        </label>
 
-      <label className="checkin__field">
-        <span className="checkin__label">Email or phone</span>
-        <input
-          className="checkin__input"
-          name="contact"
-          autoComplete="email"
-          inputMode="email"
-          required
-          value={contact}
-          onChange={(event) => setContact(event.target.value)}
-        />
-      </label>
+        <label className="checkin__field">
+          <span className="checkin__label">Email or phone</span>
+          <input
+            className="checkin__input"
+            name="contact"
+            required
+            value={contact}
+            onChange={(event) => setContact(event.target.value)}
+          />
+        </label>
 
-      {failure !== null && (
-        <p className="checkin__error" role="alert">
-          {failure}
+        {failure !== null && (
+          <p className="checkin__error" role="alert">
+            {failure}
+          </p>
+        )}
+
+        <button className="checkin__submit" type="submit" disabled={submitting}>
+          {submitting ? "Checking in…" : "Check in"}
+        </button>
+
+        <p className="checkin__note">
+          Use a synthetic name and contact for this demo (AD-12). Do not enter real attendee PII.
         </p>
-      )}
-
-      <button className="checkin__submit" type="submit" disabled={submitting}>
-        {submitting ? "Checking in…" : "Check in"}
-      </button>
-
-      <p className="checkin__note">
-        Use a synthetic name and contact for this demo (AD-12). Do not enter real attendee PII.
-      </p>
-    </form>
+      </form>
+    </main>
   );
 }

@@ -1,5 +1,10 @@
 import { EventPageView } from "./event-page-view";
+import type { Metadata } from "next";
 import "./event-page.css";
+
+export const metadata: Metadata = {
+  title: "Event",
+};
 
 // Public event page (F-301). Data from GET /e/:eventId; RSVP posts to F-302.
 

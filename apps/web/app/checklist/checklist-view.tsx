@@ -663,7 +663,10 @@ export function ChecklistView({ apiBaseUrl, eventId }: { apiBaseUrl: string; eve
       )}
 
       {checklist.items.length > 0 && (
-        <div className="checklist__items">
+        <section className="checklist__items" aria-labelledby="trackable-requirements-heading">
+          <h2 className="sr-only" id="trackable-requirements-heading">
+            Trackable requirements
+          </h2>
           {checklist.items.map((item) => (
             <ChecklistItemCard
               key={item.id}
@@ -675,7 +678,7 @@ export function ChecklistView({ apiBaseUrl, eventId }: { apiBaseUrl: string; eve
               onDownload={download}
             />
           ))}
-        </div>
+        </section>
       )}
 
       {/* Advisories, notifications and prohibitions: shown because they are part of the answer,

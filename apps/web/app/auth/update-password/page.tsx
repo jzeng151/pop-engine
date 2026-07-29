@@ -1,9 +1,13 @@
 import { redirect } from "next/navigation";
+import type { Metadata } from "next";
 import { createServerSupabaseClient } from "../../../lib/supabase/server";
 import { updatePassword } from "../actions";
 import { hasRecoveryAuthentication } from "../recovery";
 
 export const dynamic = "force-dynamic";
+export const metadata: Metadata = {
+  title: "Choose a new password",
+};
 
 type UpdatePasswordPageProps = {
   searchParams: Promise<{ error?: string }>;

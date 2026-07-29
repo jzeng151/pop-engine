@@ -222,9 +222,11 @@ export function PlanView({ apiBaseUrl, eventId }: { apiBaseUrl: string; eventId:
 
   if (planState.status === "loading") {
     return (
-      <p className="intake__lede" role="status">
-        Loading your permit plan…
-      </p>
+      <main className="plan">
+        <p className="intake__lede" role="status">
+          Loading your permit plan…
+        </p>
+      </main>
     );
   }
 
@@ -252,8 +254,19 @@ export function PlanView({ apiBaseUrl, eventId }: { apiBaseUrl: string; eventId:
 
   return (
     <main className="plan">
-      <p className="pe-eyebrow">PopEngine · Plan</p>
-      <h1>Your permit plan</h1>
+      <nav aria-label="Plan sections" className="plan__tabs">
+        <a aria-current="page" href={`/events/${eventId}/plan`}>
+          Permit plan
+        </a>
+        <span>
+          Documents <small>Planned</small>
+        </span>
+        <span>
+          Activity <small>Planned</small>
+        </span>
+      </nav>
+
+      <h1>Permit plan</h1>
 
       {plan !== null && (
         /* AC 4: the version this plan was generated from AND the publication date that version
@@ -341,10 +354,32 @@ export function PlanView({ apiBaseUrl, eventId }: { apiBaseUrl: string; eventId:
 
       {plan !== null && (
         <>
-          <p className="plan__verdict">
+          <p className={`plan__verdict plan__verdict--${plan.verdict.toLowerCase()}`} role="status">
             <strong>{verdictCopy(plan.verdict, plan.verdictDetail)}</strong> · generated{" "}
             {plan.generatedAt.slice(0, 10)} · revision {plan.eventRevision}
           </p>
+
+          <ol aria-label="Compliance workflow" className="plan__route">
+            <li className="plan__route-step plan__route-step--complete">
+              <a href={`/intake/${eventId}`}>
+                <span aria-hidden="true">✓</span>
+                <strong>Intake</strong>
+                <small>Event record</small>
+              </a>
+            </li>
+            <li aria-current="step" className="plan__route-step plan__route-step--current">
+              <span aria-hidden="true">⌕</span>
+              <strong>Review</strong>
+              <small>Current plan</small>
+            </li>
+            <li className="plan__route-step">
+              <a href={`/events/${eventId}/checklist`}>
+                <span aria-hidden="true">☑</span>
+                <strong>Checklist</strong>
+                <small>Track the work</small>
+              </a>
+            </li>
+          </ol>
 
           {/* F-102's verdict table requires the at-risk threshold to be labelled as PopEngine's
               internal planning buffer, never an official one. On screen, beside the countdown it
@@ -363,29 +398,44 @@ export function PlanView({ apiBaseUrl, eventId }: { apiBaseUrl: string; eventId:
             </p>
           )}
 
-          <VerdictDetailPanel
-            verdict={plan.verdict}
-            detail={plan.verdictDetail}
-            findings={plan.findings}
-          />
+          <section className="plan__workbench">
+            <div className="plan__review-column">
+              <h2>Review</h2>
 
-          {/* F-205: a dedicated card for R10/R11's insurance findings, above the line items each
-              still renders from (AC 5). Nothing at all when none of the three rules triggered
-              (AC 3) — that silence is `InsurancePanel`'s own, not a state this page decides. */}
-          <InsurancePanel findings={plan.findings} eventId={eventId} />
+              <VerdictDetailPanel
+                verdict={plan.verdict}
+                detail={plan.verdictDetail}
+                findings={plan.findings}
+              />
 
-          {isNearEmpty(plan.findings) && (
-            <p className="plan__empty">
-              No definite city event requirement identified from your answers.
-            </p>
-          )}
-          {plan.findings.length > 0 && (
-            <div className="plan__lines">
-              {plan.findings.map((finding) => (
-                <PlanLine key={finding.ruleIds.join("+")} finding={finding} />
-              ))}
+              {/* F-205: a dedicated card for R10/R11's insurance findings, above the line items each
+                  still renders from (AC 5). Nothing at all when none of the three rules triggered
+                  (AC 3) — that silence is `InsurancePanel`'s own, not a state this page decides. */}
+              <InsurancePanel findings={plan.findings} eventId={eventId} />
+
+              {isNearEmpty(plan.findings) && (
+                <p className="plan__empty">
+                  No definite city event requirement identified from your answers.
+                </p>
+              )}
+              {plan.findings.length > 0 && (
+                <div className="plan__lines">
+                  {plan.findings.map((finding) => (
+                    <PlanLine key={finding.ruleIds.join("+")} finding={finding} />
+                  ))}
+                </div>
+              )}
             </div>
-          )}
+
+            <aside className="plan__checklist-column">
+              <div>
+                <span aria-hidden="true">☑</span>
+                <h2>Checklist</h2>
+              </div>
+              <p>Track the supported requirements from this plan in the event checklist.</p>
+              <a href={`/events/${eventId}/checklist`}>Open event checklist</a>
+            </aside>
+          </section>
         </>
       )}
     </main>
