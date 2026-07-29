@@ -167,7 +167,8 @@ export function MovedDeadlineNoticeBlock({ notice }: { notice: MovedDeadlineNoti
       <p className="check-item__deadline-notice-provenance">
         Previous value from rules snapshot {provenance.rulesetVersion}
         {provenance.snapshotDate === null
-          ? ""
+          ? // F-206 AC 4: pre-migration-002 plans never fall back to the live file's date.
+            " · publication date not recorded for that plan"
           : ` · published ${formatSnapshotDate(provenance.snapshotDate)}`}
         {" · "}
         <span

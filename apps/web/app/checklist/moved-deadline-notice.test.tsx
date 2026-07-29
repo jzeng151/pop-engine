@@ -119,4 +119,26 @@ describe("MovedDeadlineNoticeBlock", () => {
     expect(notice.textContent).not.toContain("deadline approaching");
     expect(notice.textContent).not.toContain("Deadline state:");
   });
+
+  it("says a legacy previous plan's publication date was not recorded", () => {
+    render(
+      <MovedDeadlineNoticeBlock
+        notice={noticeOf({
+          dateChange: {
+            kind: "both",
+            previous: "2026-07-12",
+            current: "2026-08-30",
+          },
+          previousProvenance: {
+            ...provenance,
+            snapshotDate: null,
+          },
+        })}
+      />,
+    );
+
+    const notice = screen.getByTestId("moved-deadline-notice");
+    expect(notice.textContent).toContain("publication date not recorded for that plan");
+    expect(notice.textContent).not.toContain("published ");
+  });
 });
