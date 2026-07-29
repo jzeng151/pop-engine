@@ -470,6 +470,45 @@ describe.runIf(databaseUrl.length > 0)("F-101 event intake endpoints", () => {
       expect(response.body.event.revision_counter).toBe(2);
     });
 
+    it.each([
+      ["venue_paco_covers_exact_event", "venue_fdny_pa_permit_current_for_event_space", "yes"],
+      ["venue_paco_covers_exact_event", "venue_fdny_pa_permit_current_for_event_space", "no"],
+      ["venue_paco_covers_exact_event", "venue_fdny_pa_permit_current_for_event_space", "unknown"],
+      ["venue_fdny_pa_permit_current_for_event_space", "venue_paco_covers_exact_event", "yes"],
+      ["venue_fdny_pa_permit_current_for_event_space", "venue_paco_covers_exact_event", "no"],
+      ["venue_fdny_pa_permit_current_for_event_space", "venue_paco_covers_exact_event", "unknown"],
+    ] as const)(
+      "edits only %s to %s, bumps the revision, and reloads it exactly",
+      async (field, otherField, value) => {
+        const initialValue = value === "unknown" ? "yes" : "unknown";
+        const created = await post({ ...scenario("F"), [field]: initialValue });
+        expect(created.status).toBe(201);
+        expect(created.body.event).toMatchObject({
+          [field]: initialValue,
+          [otherField]: "unknown",
+        });
+        const id = created.body.event.id as string;
+
+        const edited = await request(api)
+          .patch(`/api/events/${id}`)
+          .send({ [field]: value });
+        expect(edited.status).toBe(200);
+        expect(edited.body.event).toMatchObject({
+          revision_counter: 2,
+          [field]: value,
+          [otherField]: "unknown",
+        });
+
+        const reloaded = await request(api).get(`/api/events/${id}`);
+        expect(reloaded.status).toBe(200);
+        expect(reloaded.body.event).toMatchObject({
+          revision_counter: 2,
+          [field]: value,
+          [otherField]: "unknown",
+        });
+      },
+    );
+
     it("warns inline on an edit that creates a coverage gap", async () => {
       const park = scenario("C");
       const created = await post({ ...park });

@@ -9,11 +9,11 @@
 7. **Verdict model:** the four-state verdict stays as the top-level summary, computed from per-finding deadline statuses (ON_TRACK / DEADLINE_APPROACHING / PUBLISHED_DEADLINE_MISSED / NOT_CALCULABLE / NOT_APPLICABLE). INFEASIBLE copy = "published deadline missed as scoped." The 14-day slack threshold is labeled as internal policy.
 8. **Real business-day math** against a pinned holiday calendar replaces the calendar approximation (fixture dates are pinned, so determinism holds).
 9. **Governance adopted:** `DOCUMENTATION-GOVERNANCE.md` (authority-by-concern + conflict protocol), `AGENTS.md`, and `BASELINE.md` are in force. Authority for regulatory facts: primary source → published rule → approved fixture → engine output → UI copy.
-10. **Two parallel tracks (supersedes the stretch-after-gate rule):** the MVP core (Track A: F-101, F-201, F-102, F-206, F-202, F-203, F-204) and the stretch set (Track B: F-301, F-302, F-401, F-402, F-205) are worked separately, so Track B doubles as the demo fallback if the core runs out of time. Invariants: core blockers always outrank stretch work for whoever holds them; Track B never touches core-path files; the green gate now gates the demo-narrative decision, not stretch start. F-205 remains Track B scope but starts only after the F-201/F-202 plan and checklist views merge because its dedicated card integrates into those core-path files.
+10. **Two parallel tracks (supersedes the stretch-after-gate rule):** the MVP core (Track A: F-101, F-110, F-201, F-102, F-206, F-202, F-203, F-204) and the stretch set (Track B: F-301, F-302, F-401, F-402, F-205) are worked separately, so Track B doubles as the demo fallback if the core runs out of time. Invariants: core blockers always outrank stretch work for whoever holds them; Track B never touches core-path files; the green gate now gates the demo-narrative decision, not stretch start. F-205 remains Track B scope but starts only after the F-201/F-202 plan and checklist views merge because its dedicated card integrates into those core-path files.
 
 ## Decisions of 2026-07-21
 
-1. **The iron-clad MVP is permit planning:** F-101, F-201, F-102, F-206, F-202, F-203, F-204. Complete, real (no mocks), demoable. Everything else is a nice-to-have.
+1. **The iron-clad MVP is permit planning:** F-101, F-110, F-201, F-102, F-206, F-202, F-203, F-204. Complete, real (no mocks), demoable. Everything else is a nice-to-have.
 2. **The demo is a permit-planning deep dive**, not a four-stage traversal. Stretch features appear only if actually built. This replaces the earlier degradation order ("F-301/302 degrade before F-401 gets cut"); check-in is now stretch, not guaranteed.
 3. **Lean-plus rigor** adopted into the core: intake contradiction checks (F-101), "I don't know" propagating to CONDITIONAL (F-101 + F-102), ruleset version stored with every plan (F-201/F-206), distinct deadline types in the rules schema (rules JSON + F-203). Location/authority resolution and scope support states are post-MVP (F-108, F-109). F-109's concept was called "coverage states" until 2026-07-26; renamed because "coverage" also names the per-rule `COVERAGE_GAP` verification status and `ARCHITECTURE-FUTURE.md` §7.1's per-result completeness.
 4. **The roadmap covers the full product vision.** Phases 2+ exist for delegation and direction, not capstone deadlines.
@@ -30,7 +30,7 @@ F-xxx IDs are permanent shared vocabulary across PRD, roadmap, specs, branches, 
 
 An **EVENT** is the core entity. It moves through four stages, and every stage-scoped feature attaches to exactly one:
 
-- **STAGE 1 — IDEATE:** concept, venue, date, budget, feasibility (F-101–F-109)
+- **STAGE 1 — IDEATE:** concept, venue, date, budget, feasibility (F-101–F-110)
 - **STAGE 2 — COMPLY:** permits, documents, deadlines, insurance (F-201–F-214)
 - **STAGE 3 — MARKET:** event page, promotion, RSVPs, reminders (F-301–F-309)
 - **STAGE 4 — OPERATE & ADMINISTER:** check-in, day-of ops, leads, money, post-mortem (F-401–F-413)
@@ -68,7 +68,7 @@ Permitted demo fallbacks for stretch features: seeded RSVP data, simulated email
 One integration point (the `events` schema — agreed by all four devs before any lane codes); four lanes with minimal merge conflicts:
 
 - **Dev 1 — Rules engine + verdict:** F-201, F-102; owns engine fidelity to `rules/nyc-rules.v2.9.json` and the fixture suite. Verify: full fixture suite (scenarios + boundaries) passes as automated tests.
-- **Dev 2 — Intake + plan UI:** F-101 (incl. contradiction checks, "I don't know"), F-206, plan rendering. Verify: Scenario A renders end-to-end with citations + snapshot banner.
+- **Dev 2 — Intake + plan UI:** F-101 (incl. contradiction checks, "I don't know"), F-110, F-206, plan rendering. Verify: Scenario A renders end-to-end with citations + snapshot banner; Scenario F records and reloads both assembly-document confirmations.
 - **Dev 3 — Checklist + portals:** F-202, F-204. Verify: plan converts to checklist; every permit links to its portal with its document list.
 - **Dev 4 — Alerts + platform:** F-203, DB migrations, deploy, demo environment; **owns verification sign-off**: confirms the ruleset's SOURCE_CONFIRMED facts in a browser (evidence pre-collected in `VERIFICATION-SOURCES.md`) and works the open research items (OPEN-QUESTIONS §2). Verify: a seeded deadline fires a real email/SMS; browser-confirmed facts are promoted per fact from SOURCE_CONFIRMED to VERIFIED.
 
@@ -77,6 +77,8 @@ Track B staffing is the team's kickoff call (default suggestion: Dev 3 → F-301
 ## Dependency Graph (build-order constraints)
 
 - F-101 → everything (single source of truth)
+- F-101, F-102, F-201 → F-110 (approved feature prerequisites)
+- F-110 fields are consumed by F-101 persistence and F-201 immutable intake snapshots; no F-102 rule or verdict semantics change until separately approved semantics exist
 - F-201 → F-102, F-202, F-203, F-204, F-205, F-208, F-405; ruleset versioning (F-201) → F-503, F-712, F-713, F-714
 - F-201 → F-206 plan rendering; F-202 → F-206 checklist rendering
 - F-301 → F-302 → F-306/F-307; F-302 optionally enriches F-401 with pre-registered lookup

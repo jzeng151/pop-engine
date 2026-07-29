@@ -170,12 +170,8 @@ describe("conditional reveal follows the registry (spec #2)", () => {
     const user = renderForm();
     await chooseOption(user, "location_type", "private_venue");
     await fillField(user, "headcount", "74");
-    expect(questionsOnScreen()).not.toEqual(
-      expect.arrayContaining([
-        "Venue paco covers exact event",
-        "Venue fdny pa permit current for event space",
-      ]),
-    );
+    expect(questionsOnScreen()).not.toContain("Venue paco covers exact event");
+    expect(questionsOnScreen()).not.toContain("Venue fdny pa permit current for event space");
 
     await fillField(user, "headcount", "75");
     expect(questionsOnScreen()).toEqual(
@@ -302,6 +298,22 @@ describe("'I don't know' is a real answer (spec #3)", () => {
     expect(requestBody(fetchMock).event_open_to_public).toBe("unknown");
   });
 
+  it("submits both assembly-document answers as explicit tri-states", async () => {
+    const user = renderForm();
+    await answerParkEvent(user);
+    await chooseOption(user, "location_type", "private_venue");
+    await chooseOption(user, "sound_audible_from_public_way", "unknown");
+    await chooseOption(user, "venue_paco_covers_exact_event", "unknown");
+    await chooseOption(user, "venue_fdny_pa_permit_current_for_event_space", "no");
+    await save(user);
+
+    await waitFor(() => expect(fetchMock).toHaveBeenCalled());
+    expect(requestBody(fetchMock)).toMatchObject({
+      venue_paco_covers_exact_event: "unknown",
+      venue_fdny_pa_permit_current_for_event_space: "no",
+    });
+  });
+
   it("sends a blank optional quantity as null rather than zero", async () => {
     const user = renderForm();
     await answerParkEvent(user);
@@ -384,6 +396,35 @@ describe("loading a saved event to edit it", () => {
     expect(document.querySelector('input[name="status"]')).toBeNull();
     // A park is not asked the SAPO questions, so the null column stays unanswered.
     expect(questionsOnScreen()).not.toContain("Obstructs public way");
+  });
+
+  it("reloads both assembly-document answers for editing", async () => {
+    fetchMock.mockResolvedValueOnce(
+      jsonResponse(200, {
+        event: {
+          ...storedEvent,
+          location_type: "private_venue",
+          headcount: 75,
+          venue_paco_covers_exact_event: "no",
+          venue_fdny_pa_permit_current_for_event_space: "unknown",
+        },
+        warnings: [],
+        plan_stale: false,
+      }),
+    );
+    renderForm("event-9");
+
+    await waitFor(() => expect(screen.getByText(/Saved as revision 4/)).toBeDefined());
+    expect(
+      document.querySelector<HTMLInputElement>(
+        'input[name="venue_paco_covers_exact_event"][value="no"]',
+      )?.checked,
+    ).toBe(true);
+    expect(
+      document.querySelector<HTMLInputElement>(
+        'input[name="venue_fdny_pa_permit_current_for_event_space"][value="unknown"]',
+      )?.checked,
+    ).toBe(true);
   });
 
   it("edits the loaded event rather than creating a second one", async () => {

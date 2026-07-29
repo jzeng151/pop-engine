@@ -13,6 +13,7 @@ import {
   type HolidayCalendar,
   type IntakeContract,
 } from "@pop-engine/engine";
+import { SCENARIO_INTAKE_FIXTURES, fixtureSubmission } from "@pop-engine/engine/fixtures";
 import { createApp } from "./app";
 import { holidayCalendarWarning, pinnedCalendar, todayInJurisdiction } from "./calendar";
 import { calendarDateFrom, createPlanService } from "./plan";
@@ -191,6 +192,56 @@ describe.runIf(databaseUrl.length > 0)("plan API (F-201)", () => {
     // date left NULL here is unrecoverable once the live file moves on.
     expect(rows[0]?.ruleset_version).toBe(ruleset.rulesetVersion);
     expect(rows[0]?.snapshot_date).toBe(ruleset.snapshotDate);
+  });
+
+  it("regenerates both F-110 answers into a new immutable intake snapshot only", async () => {
+    const fixture = SCENARIO_INTAKE_FIXTURES.find(({ scenario }) => scenario === "F");
+    if (fixture === undefined) throw new Error("Scenario F fixture is missing");
+    const app = appWith();
+    const created = await request(app).post("/api/events").send(fixtureSubmission(fixture));
+    expect(created.status).toBe(201);
+    const eventId = created.body.event.id as string;
+
+    const first = await request(app).post(`/api/events/${eventId}/plan`);
+    expect(first.status).toBe(201);
+    const edited = await request(app).patch(`/api/events/${eventId}`).send({
+      venue_paco_covers_exact_event: "yes",
+      venue_fdny_pa_permit_current_for_event_space: "no",
+    });
+    expect(edited.status).toBe(200);
+    expect(edited.body.plan_stale).toBe(true);
+    const regenerated = await request(app).post(`/api/events/${eventId}/plan`);
+
+    expect(regenerated.status).toBe(201);
+    expect(regenerated.body.eventRevision).toBe(2);
+    expect(regenerated.body.verdict).toBe(first.body.verdict);
+    expect(
+      regenerated.body.findings.map((finding: { ruleIds: string[] }) => finding.ruleIds),
+    ).toEqual(first.body.findings.map((finding: { ruleIds: string[] }) => finding.ruleIds));
+
+    const { rows } = await pool.query<{ event_revision: number; intake_snapshot: unknown }>(
+      `SELECT event_revision, intake_snapshot
+         FROM permit_plans
+        WHERE event_id = $1
+        ORDER BY event_revision`,
+      [eventId],
+    );
+    expect(rows).toEqual([
+      {
+        event_revision: 1,
+        intake_snapshot: expect.objectContaining({
+          venue_paco_covers_exact_event: "unknown",
+          venue_fdny_pa_permit_current_for_event_space: "unknown",
+        }),
+      },
+      {
+        event_revision: 2,
+        intake_snapshot: expect.objectContaining({
+          venue_paco_covers_exact_event: "yes",
+          venue_fdny_pa_permit_current_for_event_space: "no",
+        }),
+      },
+    ]);
   });
 
   it("persists plan items with the columns the schema requires and leaves verified_status unwritten", async () => {
