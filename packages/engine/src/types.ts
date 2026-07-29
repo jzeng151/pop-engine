@@ -195,7 +195,7 @@ export type EngineRule = {
   /**
    * The date a rule's facts were last confirmed against their sources, when one is published.
    *
-   * Optional and null throughout nyc.v2.8: every fact is still pre-VERIFIED, and a date this repo
+   * Optional and null throughout nyc.v2.9: every fact is still pre-VERIFIED, and a date this repo
    * cannot evidence would be an invented permit fact. `permit_plan_items.last_verified_date` and
    * F-206's per-line date have had a column and a writer since migration 001 with nothing to read;
    * this is what they will read when verification rounds resume.

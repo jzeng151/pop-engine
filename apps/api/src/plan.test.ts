@@ -39,6 +39,7 @@ const scenarioAEvent = {
   structure_types: ["none"],
   open_flame_or_cooking: ["none"],
   generator_present: false,
+  battery_present: false,
   battery_system_kwh: 0,
   alcohol: false,
 };
@@ -124,7 +125,7 @@ describe.runIf(databaseUrl.length > 0)("plan API (F-201)", () => {
     const response = await request(appWith()).post(`/api/events/${eventId}/plan`);
 
     expect(response.status).toBe(201);
-    expect(response.body.rulesetVersion).toBe("nyc.v2.8");
+    expect(response.body.rulesetVersion).toBe("nyc.v2.9");
     expect(response.body.eventRevision).toBe(1);
     expect(response.body.verdict).toBe("INFEASIBLE");
     expect(response.body.findings.map((finding: { ruleIds: string[] }) => finding.ruleIds)).toEqual(
@@ -134,6 +135,11 @@ describe.runIf(databaseUrl.length > 0)("plan API (F-201)", () => {
         ["NYPD-SOUND-001"],
         ["DOHMH-VENDOR-PERMIT-001"],
         ["DOHMH-ORGANIZER-NOTIFY-001"],
+        ["CONF-NO-STRUCTURE-001"],
+        ["CONF-NO-FLAME-001"],
+        ["CONF-NO-GENERATOR-001"],
+        ["CONF-NO-BATTERY-001"],
+        ["CONF-NO-ALCOHOL-001"],
       ],
     );
     const [blocking] = response.body.findings;
@@ -146,6 +152,29 @@ describe.runIf(databaseUrl.length > 0)("plan API (F-201)", () => {
       { field: "sapo_event_type", value: "street_event" },
       { field: "street_event_size", value: "large" },
     ]);
+    const noBattery = response.body.findings.find((entry: { ruleIds: string[] }) =>
+      entry.ruleIds.includes("CONF-NO-BATTERY-001"),
+    );
+    expect(noBattery).toMatchObject({
+      kind: "note",
+      disposition: "no_new_requirement",
+      agency: null,
+      deadline: null,
+      feeDisplay: null,
+      portalName: null,
+      verificationStatus: "SOURCE_CONFIRMED",
+      triggeredBy: [{ field: "battery_present", value: false }],
+      sources: [
+        {
+          ruleId: "CONF-NO-BATTERY-001",
+          citation: "CECM FDNY page + Parks special-event guide",
+          urls: [
+            "https://www.nyc.gov/site/cecm/support/new-york-city-fire-department.page",
+            "https://www.nycgovparks.org/permits/special-events/guide",
+          ],
+        },
+      ],
+    });
   });
 
   it("pins the ruleset version and its snapshot date together on the plan", async () => {
@@ -183,7 +212,7 @@ describe.runIf(databaseUrl.length > 0)("plan API (F-201)", () => {
       [eventId],
     );
 
-    expect(rows).toHaveLength(5);
+    expect(rows).toHaveLength(10);
     expect(rows.every((row) => row.verified_status === null)).toBe(true);
     const notification = rows.find((row) => row.rule_ids[0] === "DOHMH-ORGANIZER-NOTIFY-001");
     expect(notification?.kind).toBe("notification");
@@ -327,7 +356,7 @@ describe.runIf(databaseUrl.length > 0)("plan API (F-201)", () => {
 
     expect(response.status).toBe(201);
     expect(response.body.verdict).toBe("INFEASIBLE");
-    expect(response.body.findings).toHaveLength(5);
+    expect(response.body.findings).toHaveLength(10);
     expect(response.body.findings[0].latestApplyDate).toBe("2026-07-12");
     // The only undated lines are ones the ruleset itself leaves undated: insurance is owed before
     // issuance and the DOHMH vendor lead time is research-required. Neither is a calendar gap, and
@@ -407,7 +436,7 @@ describe.runIf(databaseUrl.length > 0)("plan API (F-201)", () => {
       selling_anything: false,
       // Amplified and audible from the street on purpose, to keep this test's second half alive.
       // It used to read DOB-ASSEMBLY-001 as the finding that dates normally while the calendar is
-      // unpublished; nyc.v2.8 makes that rule business-day, so without a sound permit this intake
+      // unpublished; nyc.v2.9 carries that business-day rule, so without a sound permit this intake
       // has NO calendar-dated finding left and the "everything else still dates" guarantee would
       // have silently lost its subject rather than failed. NYPD-SOUND-001 publishes 5 calendar
       // days, needs no holiday list, and is therefore the subject that survives the bump.
@@ -434,7 +463,7 @@ describe.runIf(databaseUrl.length > 0)("plan API (F-201)", () => {
         (entry: { ruleIds: string[] }) => entry.ruleIds,
       ),
     ).toContainEqual(["SLA-ONEDAY-001"]);
-    // DOB-ASSEMBLY-001 is now undatable here too, and that is the nyc.v2.8 correction rather than a
+    // DOB-ASSEMBLY-001 is now undatable here too, and that is the carried v2.8 correction rather than a
     // regression. It used to publish 10 CALENDAR days on an exclusive bound and dated to 2026-08-15
     // with no holiday list needed. v2.8 corrects the unit to 10 BUSINESS days on an inclusive bound
     // against TPPN #07/96 and AC Table 28-112.8, so it now needs the same unpublished calendar
@@ -485,7 +514,7 @@ describe.runIf(databaseUrl.length > 0)("plan API (F-201)", () => {
     const eventId = await insertEvent();
     const app = appWith();
     const generated = await request(app).post(`/api/events/${eventId}/plan`);
-    expect(generated.body.findings).toHaveLength(5);
+    expect(generated.body.findings).toHaveLength(10);
 
     // Simulate a lost child row. The insert is transactional, so this cannot happen during normal
     // generation, but nothing in the schema enforces the item count afterwards.
@@ -498,7 +527,7 @@ describe.runIf(databaseUrl.length > 0)("plan API (F-201)", () => {
     expect(fetched.status).toBe(500);
     expect(fetched.body.error).toBe("plan lookup failed");
     expect(fetched.body.detail).toContain("is incomplete");
-    // The surviving four findings are not served as if they were the whole plan.
+    // The surviving nine findings are not served as if they were the whole plan.
     expect(fetched.body.findings).toBeUndefined();
   });
 

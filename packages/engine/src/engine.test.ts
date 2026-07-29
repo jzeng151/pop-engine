@@ -34,11 +34,12 @@ const parkIntake: EventIntake = {
   structure_types: ["none"],
   open_flame_or_cooking: ["none"],
   generator_present: false,
+  battery_present: false,
   battery_system_kwh: 0,
   alcohol: false,
 };
 
-/** A two-rule ruleset in the published shape, for behaviors nyc.v2.8 does not exercise. */
+/** A two-rule ruleset in the published shape, for behaviors the current publication does not exercise. */
 function syntheticRuleset(rules: unknown[]): ReturnType<typeof parseEngineRuleset> {
   return parseEngineRuleset({
     ruleset_version: "test.v1",
@@ -1009,9 +1010,9 @@ describe("ruleset parsing rejects anything it cannot evaluate", () => {
   });
 
   it("accepts the published ruleset unchanged", () => {
-    expect(ruleset.rulesetVersion).toBe("nyc.v2.8");
+    expect(ruleset.rulesetVersion).toBe("nyc.v2.9");
     expect(ruleset.slackWarningDays).toBe(14);
-    expect(ruleset.rules).toHaveLength(37);
+    expect(ruleset.rules).toHaveLength(46);
   });
 });
 
@@ -1368,36 +1369,42 @@ describe("facts the ruleset publishes rather than the engine assuming (nyc.v2.4)
     const replays = (intake: EventIntake) => {
       const before = evaluate(intake, v23, TODAY, calendar);
       const after = evaluate(intake, ruleset, TODAY, calendar);
-      const reached = (plan: PermitPlan) => [...plan.findings.flatMap((f) => f.ruleIds)].sort();
+      const afterFindings = after.findings.filter(
+        (finding) => !finding.ruleIds[0]?.startsWith("CONF-"),
+      );
+      const reached = (findings: PermitPlan["findings"]) =>
+        [...findings.flatMap((f) => f.ruleIds)].sort();
       // Every published filing window in the plan. Keyed by the window rather than by rule,
       // because a merged line carries one deadline for both of its rules — DOB-TALL-STRUCTURE-001
       // publishes none of its own, so nothing is being hidden by not attributing the tent's date
       // to it. `rulesMatch` already pins rule identity; this pins that no window moved or vanished.
-      const windows = (plan: PermitPlan) =>
-        plan.findings
+      const windows = (findings: PermitPlan["findings"]) =>
+        findings
           .filter((f) => f.latestApplyDate !== null)
           .map((f) => `${f.latestApplyDate}:${f.deadlineStatus}`)
           .sort();
       return {
         verdictMatches: before.verdict === after.verdict,
-        findingsMatch: JSON.stringify(before.findings) === JSON.stringify(after.findings),
+        findingsMatch: JSON.stringify(before.findings) === JSON.stringify(afterFindings),
         // What must hold across ANY publish, grouping aside: the same rules are reached, and each
         // one keeps its date and status. A rule appearing, vanishing or moving its deadline between
         // eras is drift; two rules being rendered as one line is a published grouping decision.
-        rulesMatch: JSON.stringify(reached(before)) === JSON.stringify(reached(after)),
-        windowsMatch: JSON.stringify(windows(before)) === JSON.stringify(windows(after)),
+        rulesMatch:
+          JSON.stringify(reached(before.findings)) === JSON.stringify(reached(afterFindings)),
+        windowsMatch:
+          JSON.stringify(windows(before.findings)) === JSON.stringify(windows(afterFindings)),
         verdict: before.verdict,
         // Exposed so a window that DOES move can be named rather than waved through by flipping
         // `windowsMatch` to false. A bare `windowsMatch: false` would accept any movement at all,
         // including a rule silently losing its date, which is the drift this whole block guards.
         windowFor: (ruleId: string) => {
-          const pick = (plan: PermitPlan) => {
-            const finding = plan.findings.find((f) => f.ruleIds.includes(ruleId));
+          const pick = (findings: PermitPlan["findings"]) => {
+            const finding = findings.find((f) => f.ruleIds.includes(ruleId));
             return finding === undefined
               ? "no finding"
               : `${finding.latestApplyDate}:${finding.deadlineStatus}`;
           };
-          return { before: pick(before), after: pick(after) };
+          return { before: pick(before.findings), after: pick(afterFindings) };
         },
       };
     };

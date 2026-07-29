@@ -13,9 +13,9 @@
 // Everything in this file is a contract that F-201 needs and that no approved artifact
 // states. It is collected here, in one place, on purpose: when the team decides, the
 // decision moves into the ruleset's `engine_conventions` and this file shrinks or
-// disappears. That move is PENDING rather than forgotten for §7 — it lands in a v2.9
-// publication, because `rules/nyc-rules.v2.8.json` is published and immutable, and
-// rewriting a published artifact to record an approval is its own piece of work.
+// disappears. That move is PENDING rather than forgotten for §7. The issue #107 v2.9
+// publication deliberately did not carry it: moving the contract requires an engine
+// change of its own, as `docs/BASELINE.md` records.
 // Nothing here invents a regulatory fact — every value is either a vocabulary mapping
 // or a quotation of published rule text.
 //

@@ -336,9 +336,31 @@ No current 1 RCNY bridge was located:
 
 The operational question is therefore answered only to the amount DOB currently publishes and describes as the TPA application fee: `$250`, plus the published late fee when applicable. The retrieved sources do not name the Table 28-112.8 row DOB NOW maps that payment to, and none expressly says whether the `$130` certificate row can never be charged separately. Do not rewrite the statute's labels or claim that a rule reconciles them.
 
-### v2.9 follow-up flag — no v2.8 edit in this round
+### Future ruleset follow-up flag — not included in v2.9
 
-`DOB-ASSEMBLY-001.output.deadline.qualification` currently cites Table 28-112.8's “at least ten work days prior to the event” comment as one source for the ten-day unit. That comment is on the “Temporary use letter for place of assembly” row, not the “Temporary place of assembly certificate of operation” row. The current operational pages independently publish ten business days for a TPA, but the table attribution should not be presented as belonging to the TPA certificate row unless a source reconciles the labels. Correcting that attribution requires a new immutable rules publication (`nyc.v2.9` or later); it is deliberately not attempted here.
+`DOB-ASSEMBLY-001.output.deadline.qualification` currently cites Table 28-112.8's “at least ten work days prior to the event” comment as one source for the ten-day unit. That comment is on the “Temporary use letter for place of assembly” row, not the “Temporary place of assembly certificate of operation” row. The current operational pages independently publish ten business days for a TPA, but the table attribution should not be presented as belonging to the TPA certificate row unless a source reconciles the labels. Correcting that attribution requires a new immutable rules publication after `nyc.v2.9`; it is deliberately not attempted here.
+
+## Round 7 — 2026-07-29 (shared issue #178 publication)
+
+**Approval record, not a new research pass.** The product owner approved the nine-gate product set, meaning boundary, near-empty predicate/copy, and Scenario B correction. In decision gate `msg_68b1f57ec560`, the same owner separately approved the exact source/status/copy contract as verification owner and rules reviewer, and the exact triggers as verification owner and engine owner. This records one person's approvals in four named capacities; it does not imply independent reviewers.
+
+The same immutable publication carries F-110's approved assembly-document registry replacement and issue #194's approved removal of the organizer-claimed food exception from active intake. Those registry deltas change no rule, trigger, finding, deadline, branch, verdict, source, or verification status; the two F-110 fields are confirmation-only and support no temporary-filing inference, and the removed food claim remains inert in historical replay.
+
+The approved publication reuses only source URLs already published by nyc.v2.8 and the evidence sections named below. It adds no agency, deadline, fee, portal, threshold, exception, or new source:
+
+| Rule | Status | Evidence |
+| --- | --- | --- |
+| CONF-NO-FOOD-001 | SOURCE_CONFIRMED | VS §3 Round 1 + Round2 #9 |
+| CONF-NO-SALES-001 | OFFICIAL_CONFLICT | VS §8 Round 1 + Round2 #6/#12 |
+| CONF-NO-AMPLIFIED-SOUND-001 | SOURCE_CONFIRMED | VS §9-10 Round 1 + Round2 unresolved list |
+| CONF-NO-STRUCTURE-001 | SOURCE_CONFIRMED | VS §1 Round 1 + Round2 #7 |
+| CONF-NO-FLAME-001 | SOURCE_CONFIRMED | VS §2 Round 1 |
+| CONF-NO-GENERATOR-001 | SOURCE_CONFIRMED | VS Round2 #10 |
+| CONF-NO-BATTERY-001 | SOURCE_CONFIRMED | VS Round2 #10 |
+| CONF-NO-ALCOHOL-001 | SOURCE_CONFIRMED | VS §5 Round 1 + Round2 #6/#11 + Round3 unit re-verification |
+| CONF-NO-BLOCK-PARTY-RIDE-001 | SOURCE_CONFIRMED | VS §4 Round 1 |
+
+Organizer-visible text and the complete official URL snapshots are published verbatim in `rules/nyc-rules.v2.9.json`; that immutable artifact is the authoritative copy.
 
 ## Suggested Dev 4 Workflow
 

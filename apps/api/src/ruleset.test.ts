@@ -72,10 +72,18 @@ describe("ruleset validation", () => {
     const ruleset = await loadRuleset();
 
     expect(ruleset.schema).toBe("popengine-rules/v2");
-    expect(ruleset.rulesetVersion).toBe("nyc.v2.8");
-    expect(ruleset.snapshotDate).toBe("2026-07-26");
+    expect(ruleset.rulesetVersion).toBe("nyc.v2.9");
+    expect(ruleset.snapshotDate).toBe("2026-07-29");
     expect(ruleset.intakeFields).toHaveLength(33);
-    expect(ruleset.rules).toHaveLength(33);
+    expect(ruleset.intakeFields).not.toContain("food_affinity_private_exception_claimed");
+    expect(ruleset.intakeFields).not.toContain("venue_has_assembly_approval");
+    expect(ruleset.intakeFields).toEqual(
+      expect.arrayContaining([
+        "venue_paco_covers_exact_event",
+        "venue_fdny_pa_permit_current_for_event_space",
+      ]),
+    );
+    expect(ruleset.rules).toHaveLength(42);
     expect(ruleset.advisories).toHaveLength(4);
   });
 
@@ -93,6 +101,15 @@ describe("ruleset validation", () => {
       "PARKS-INSURANCE-NOTE-001",
       "DOHMH-EXEMPTION-001",
       "SLA-VENUE-LICENSE-001",
+      "CONF-NO-FOOD-001",
+      "CONF-NO-SALES-001",
+      "CONF-NO-AMPLIFIED-SOUND-001",
+      "CONF-NO-STRUCTURE-001",
+      "CONF-NO-FLAME-001",
+      "CONF-NO-GENERATOR-001",
+      "CONF-NO-BATTERY-001",
+      "CONF-NO-ALCOHOL-001",
+      "CONF-NO-BLOCK-PARTY-RIDE-001",
       "ADV-ALCOHOL-PUBLIC-001",
       "ADV-SAPO-OTHER-CLASS-001",
       "ADV-NOISE-CODE-001",
@@ -109,7 +126,7 @@ describe("ruleset validation", () => {
   it("honors RULES_FILE", async () => {
     process.env.RULES_FILE = rulesFile;
     await expect(loadRuleset()).resolves.toMatchObject({
-      rulesetVersion: "nyc.v2.8",
+      rulesetVersion: "nyc.v2.9",
     });
   });
 
@@ -367,7 +384,7 @@ describe("ruleset validation", () => {
       mutate: (ruleset) => {
         array(ruleset.rules).pop();
       },
-      error: /expected 33 rules/,
+      error: /expected 42 rules/,
     },
     {
       name: "wrong advisory count",
@@ -639,6 +656,8 @@ describe.runIf(databaseUrl.length > 0)("migration 001 and rules sync", () => {
         // F-110 migration 013 retains the coarse answer as deprecated history. It is deliberately
         // absent from the active registry and never used to infer either replacement value.
         "venue_has_assembly_approval",
+        // #194 keeps the removed organizer claim only for historical rows and replay.
+        "food_affinity_private_exception_claimed",
         // F-301 promotion fields (migration 005 / SPEC-CONFLICT #100) — not intake.
         "description",
         "public_page_published",
@@ -973,14 +992,14 @@ describe.runIf(databaseUrl.length > 0)("migration 001 and rules sync", () => {
     );
   });
 
-  it("syncs all 37 rules and repairs same-version drift", async () => {
+  it("syncs all 46 rules and repairs same-version drift", async () => {
     await syncPermitRules(database, ruleset);
 
     const count = await database.query<{ count: string }>(
       "SELECT count(*) FROM permit_rules WHERE ruleset_version = $1",
       [ruleset.rulesetVersion],
     );
-    expect(Number(count.rows[0]?.count)).toBe(37);
+    expect(Number(count.rows[0]?.count)).toBe(46);
 
     await database.query(
       `UPDATE permit_rules
@@ -1022,7 +1041,7 @@ describe.runIf(databaseUrl.length > 0)("migration 001 and rules sync", () => {
       "SELECT count(*) FROM permit_rules WHERE ruleset_version = $1",
       [ruleset.rulesetVersion],
     );
-    expect(Number(count.rows[0]?.count)).toBe(37);
+    expect(Number(count.rows[0]?.count)).toBe(46);
   });
 
   it("rolls back a failed sync without erasing the prior read model", async () => {
@@ -1038,7 +1057,7 @@ describe.runIf(databaseUrl.length > 0)("migration 001 and rules sync", () => {
       "SELECT count(*) FROM permit_rules WHERE ruleset_version = $1",
       [ruleset.rulesetVersion],
     );
-    expect(Number(count.rows[0]?.count)).toBe(37);
+    expect(Number(count.rows[0]?.count)).toBe(46);
   });
 });
 

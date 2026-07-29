@@ -1,6 +1,6 @@
 // The intake contract, derived from the published ruleset.
 //
-// `rules/nyc-rules.v2.8.json` owns the field list, the enums, and the asked-when
+// `rules/nyc-rules.v2.9.json` owns the field list, the enums, and the asked-when
 // conditions (AGENTS.md "Shared contracts"; ARCHITECTURE.md events table). Nothing here
 // restates them: this module parses the registry and the `asked_when` expressions into
 // a structure the API and the UI both consume, so there is exactly one copy of the

@@ -591,14 +591,14 @@ const scenarioIdsIn = {
 const sorted = (ids: readonly string[]): string[] => [...new Set(ids)].sort();
 
 describe("the three artifacts name the same scenarios", () => {
-  it.each(approvedFixtureConsumers)("%s selects only fixture v6", (path) => {
+  it.each(approvedFixtureConsumers)("%s selects only fixture v7", (path) => {
     const versions = [
       ...readFileSync(repoFile(path), "utf8").matchAll(
         /(?:test-scenario-answer-key\.md|Scenario fixtures)[^\n]{0,80}?\bv(\d+)\b/gi,
       ),
     ].map((match) => match[1]);
     expect(versions.length, `${path} fixture pointers`).toBeGreaterThan(0);
-    expect([...new Set(versions)]).toEqual(["6"]);
+    expect([...new Set(versions)]).toEqual(["7"]);
   });
 
   // Runs before anything parameterized: a disagreement here means every check below is looping
@@ -1109,6 +1109,8 @@ describe("the fixture suite and the published ruleset agree", () => {
         eight: 8,
         nine: 9,
         ten: 10,
+        eleven: 11,
+        twelve: 12,
       };
       const stated = new RegExp(`\\b(${Object.keys(written).join("|")}) findings\\b`).exec(
         sectionFor(scenario),
@@ -1461,12 +1463,12 @@ describe("the fixture suite and the published ruleset agree", () => {
       ),
       "outputs read out of the key per scenario",
     ).toEqual({
-      A: { findings: 5, statuses: 4, dates: 2 },
-      B: { findings: 3, statuses: 1, dates: 1 },
-      C: { findings: 4, statuses: 2, dates: 1 },
-      D: { findings: 4, statuses: 3, dates: 1 },
-      E: { findings: 8, statuses: 5, dates: 2 },
-      F: { findings: 6, statuses: 1, dates: 1 },
+      A: { findings: 6, statuses: 4, dates: 2 },
+      B: { findings: 4, statuses: 1, dates: 1 },
+      C: { findings: 5, statuses: 2, dates: 1 },
+      D: { findings: 5, statuses: 3, dates: 1 },
+      E: { findings: 9, statuses: 5, dates: 2 },
+      F: { findings: 7, statuses: 1, dates: 1 },
     });
     for (const scenario of scenarios) {
       // Throws rather than returning a default if the verdict line stops matching.

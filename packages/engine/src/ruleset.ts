@@ -589,7 +589,7 @@ export function parseEngineRuleset(value: unknown): EngineRuleset {
     }
   }
   rejectMixedDedupeVerificationStatuses(published);
-  rejectUnconsumedFields(intakeFields, published);
+  rejectUnconsumedFields(intakeFields, published, legacy !== null);
 
   return {
     rulesetVersion: asString(ruleset.ruleset_version, "ruleset.ruleset_version"),
@@ -632,17 +632,21 @@ function rejectMixedDedupeVerificationStatuses(published: readonly EngineRule[])
  */
 export const UNCONSUMED_INTAKE_FIELDS: Readonly<Record<string, string>> = {
   borough: "Display and future jurisdiction routing (F-207). No NYC rule varies by borough today.",
-  food_affinity_private_exception_claimed:
-    "Collected for the Health Code Art. 88 private-function exemption, which DOHMH-EXEMPTION-001 " +
-    "renders as an advisory on event_open_to_public alone. Open on issue #194.",
-  venue_has_assembly_approval:
-    "Confirms only that an assembly approval exists; it cannot establish whether the current PACO " +
-    "and PA permit cover the event's exact space, use, occupancy, and layout. Whether exact coverage " +
-    "removes the temporary filing is not published either way; confirm with DOB. Inconsistent " +
-    "conditions require amendment or separate authorization. No published rule consumes this " +
-    "coarse field, so answering it changes no output; objective coverage-specific input and rule " +
-    "modeling is open on issue #188.",
+  venue_paco_covers_exact_event:
+    "Confirmation-only F-110 input. No published rule consumes it or supports an inference that " +
+    "an exact PACO match removes a temporary filing.",
+  venue_fdny_pa_permit_current_for_event_space:
+    "Confirmation-only F-110 input. No published rule consumes it or supports an inference that " +
+    "a current FDNY Public Assembly Permit removes a temporary filing.",
 };
+
+// Replay keeps the intake contract a plan originally stored. The active nyc.v2.9 registry removes
+// both coarse fields, while the unchanged nyc.v2.3 snapshot still needs its historical no-op
+// declarations. They may never become material by replaying an old organizer claim.
+const LEGACY_UNCONSUMED_INTAKE_FIELDS = new Set([
+  "food_affinity_private_exception_claimed",
+  "venue_has_assembly_approval",
+]);
 
 /**
  * The intake fields the published deadlines read.
@@ -670,6 +674,7 @@ function deadlineConsumedFields(published: readonly EngineRule[]): Set<string> {
 function rejectUnconsumedFields(
   intakeFields: readonly IntakeFieldDefinition[],
   published: readonly EngineRule[],
+  isLegacyRuleset: boolean,
 ): void {
   const consumed = new Set<string>([
     ...published.flatMap((rule) => triggerFields(rule.trigger)),
@@ -682,6 +687,7 @@ function rejectUnconsumedFields(
   for (const { field } of intakeFields) {
     if (consumed.has(field)) continue;
     if (UNCONSUMED_INTAKE_FIELDS[field] !== undefined) continue;
+    if (isLegacyRuleset && LEGACY_UNCONSUMED_INTAKE_FIELDS.has(field)) continue;
     fail(
       `intake field "${field}" is declared but no rule trigger, deadline, or scoping condition ` +
         `reads it, so answering it changes nothing. Give a rule that consumes it, or record why ` +

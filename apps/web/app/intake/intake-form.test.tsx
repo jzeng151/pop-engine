@@ -166,10 +166,20 @@ describe("conditional reveal follows the registry (spec #2)", () => {
     const user = renderForm();
     await chooseOption(user, "location_type", "private_venue");
     await fillField(user, "headcount", "74");
-    expect(questionsOnScreen()).not.toContain("Venue has assembly approval");
+    expect(questionsOnScreen()).not.toEqual(
+      expect.arrayContaining([
+        "Venue paco covers exact event",
+        "Venue fdny pa permit current for event space",
+      ]),
+    );
 
     await fillField(user, "headcount", "75");
-    expect(questionsOnScreen()).toContain("Venue has assembly approval");
+    expect(questionsOnScreen()).toEqual(
+      expect.arrayContaining([
+        "Venue paco covers exact event",
+        "Venue fdny pa permit current for event space",
+      ]),
+    );
 
     await chooseOption(user, "amplified_sound", "true");
     expect(questionsOnScreen()).toContain("Sound audible from public way");
