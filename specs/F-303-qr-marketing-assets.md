@@ -64,7 +64,7 @@ Exact HTTP, JSON Schema, migration, job, and provider shapes belong in their rev
 
 ## Fixtures and Verification
 
-- Planned automated fixture IDs are the acceptance IDs above; each must map one-to-one to a runnable test before approval can claim implementation readiness.
+- Automated fixtures map F303-AC-01 and F303-AC-03–05 one-to-one to runnable tests. F303-AC-02 is a documented manual release rehearsal using the approved paper size, phone camera, and distance; automated coverage verifies the encoded URL, rendered dimensions, and decoder compatibility but cannot replace the physical rehearsal.
 - Regulatory fixtures: none; this feature does not define regulatory ground truth.
 - Security-sensitive and cross-workspace paths require negative authorization tests; provider paths require success, duplicate-delivery, retry, invalid-signature, and permanent-failure tests where applicable.
 

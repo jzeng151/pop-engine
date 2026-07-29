@@ -30,7 +30,7 @@ A workspace can review late submissions, revisions, unexpected requirements, and
 
 ## Inputs, Outputs, State, Validation, and Errors
 
-- Inputs are authorized filters plus confirmed source records; outputs are aggregates with numerator, denominator, coverage, and metric version.
+- Inputs are authorized filters plus confirmed source records, including only F-208's explicit user-confirmed unexpected-requirement records for that classification; outputs are aggregates with numerator, denominator, coverage, and metric version.
 - Reports are computed or snapshotted from immutable sources; corrected inputs produce a new result version.
 - Missing/unknown/conflicting dates are excluded or classified exactly by the metric definition, never silently treated as on time.
 - Missing or unresolved material data stays visibly unset, unknown, pending, or failed as appropriate; it never becomes a successful or complete result.
@@ -57,7 +57,7 @@ Exact HTTP, JSON Schema, migration, job, and provider shapes belong in their rev
 ## Acceptance Criteria
 
 1. **F501-AC-01:** Each metric result identifies its formula/version, numerator, denominator, source range, and data-coverage count.
-2. **F501-AC-02:** Late submission, revision, unexpected requirement, and delay classifications use only approved definitions and confirmed source facts.
+2. **F501-AC-02:** Late submission, revision, and delay classifications use only approved definitions and confirmed source facts; unexpected-requirement classification uses only F-208 records created through its explicit user-confirmed unexpected-requirement path with source provenance.
 3. **F501-AC-03:** Missing/unknown/conflicting data cannot silently enter the favorable denominator or appear as zero.
 4. **F501-AC-04:** Cross-workspace queries, filters, exports, cached results, and drill-downs disclose no foreign record.
 5. **F501-AC-05:** Source correction changes a new report/snapshot and preserves the prior version when retention is enabled.

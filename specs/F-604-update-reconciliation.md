@@ -6,13 +6,13 @@
 
 ## Purpose and User Outcome
 
-When later confirmed correspondence or a document differs from an application deadline, fee, or status, PopEngine proposes a source-linked change and waits for user confirmation.
+When a later confirmed document value differs from an application deadline, fee, or status, PopEngine proposes a source-linked change and waits for user confirmation.
 
 ## Scope
 
 **In scope**
 
-- Compare a confirmed source extraction/message against current F-208/F-209 values and create field-level reconciliation proposals.
+- Consume F-602's confirmed-but-unapplied typed proposal, compare it against current F-208/F-209 values, and create a field-level reconciliation proposal.
 - Show old/new values, sources, confidence limits, and downstream effects before accept/reject.
 - Apply accepted changes through normal append-only history and staleness behavior.
 
@@ -23,14 +23,14 @@ When later confirmed correspondence or a document differs from an application de
 
 ## Dependencies and Baseline
 
-- F-208/F-209 plus confirmed F-602 or F-603 source linkage.
+- F-208/F-209 plus F-602's confirmed-but-unapplied typed proposal contract; F-603 may supply a matched document to F-602 but does not itself produce workflow values.
 - Approved field comparison, materiality, conflict, confirmation, and downstream-staleness contract.
 - Baseline at draft time: PRD, Roadmap, Design, and Phase 0–1.5 Architecture approved 2026-07-22; `ARCHITECTURE-FUTURE.md` approved as a planning target 2026-07-25; NYC ruleset `nyc.v2.7`, rules schema `popengine-rules/v2`, and scenario fixtures v5 where regulatory output is consumed.
 - The approval PR must re-pin any baseline version that changes before approval. A proposed or superseded input blocks implementation.
 
 ## Inputs, Outputs, State, Validation, and Errors
 
-- Inputs are current confirmed field and later confirmed source proposal; output is no-change, pending reconciliation, or explicit conflict.
+- Inputs are a current confirmed field and F-602 confirmed-but-unapplied typed proposal; output is no-change, pending reconciliation, or explicit conflict.
 - Proposal state is pending → accepted/rejected/superseded; acceptance appends domain history and never overwrites the source or plan.
 - Type mismatch, ambiguous source, official conflict, or unconfirmed extraction cannot auto-resolve.
 - Missing or unresolved material data stays visibly unset, unknown, pending, or failed as appropriate; it never becomes a successful or complete result.
@@ -56,7 +56,7 @@ Exact HTTP, JSON Schema, migration, job, and provider shapes belong in their rev
 
 ## Acceptance Criteria
 
-1. **F604-AC-01:** Only a confirmed authorized source/current-record pair can create a reconciliation proposal.
+1. **F604-AC-01:** Only an authorized F-602 proposal with confirmed-but-unapplied state and an exact source/current-record pair can create a reconciliation proposal.
 2. **F604-AC-02:** Each proposal shows typed old/new values and exact source/version without changing current state.
 3. **F604-AC-03:** Accepting appends the normal F-208/F-209 history and triggers approved stale/reminder/calendar handling atomically.
 4. **F604-AC-04:** Rejecting preserves current state and source; duplicate or stale acceptance is idempotent or rejected without lost updates.

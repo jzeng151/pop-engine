@@ -31,8 +31,8 @@ An organizer can schedule consent-eligible RSVP reminders at T-7, T-1, and day-o
 ## Inputs, Outputs, State, Validation, and Errors
 
 - Inputs are an exact event revision, channel, approved template content, and one Roadmap offset; outputs are a recipient snapshot plus message jobs/attempts pinned to that revision.
-- Campaign state is draft → scheduled → sending → completed, partially failed, cancelled, or failed; cancellation prevents unclaimed sends.
-- Eligibility is rechecked immediately before provider delivery so later opt-out/suppression wins over the schedule snapshot.
+- Campaign state is draft → scheduled → sending → completed, partially failed, cancelled, or failed; cancellation marks the send generation stale and prevents unsent work from reaching a provider.
+- Eligibility, pinned revision, and campaign generation are rechecked immediately before provider delivery so later opt-out, suppression, reschedule, or cancellation wins over the schedule snapshot.
 - Missing or unresolved material data stays visibly unset, unknown, pending, or failed as appropriate; it never becomes a successful or complete result.
 - Invalid input produces a field or action-specific error without partial mutation. Retriable external failures preserve the user's confirmed state and expose a safe retry.
 
@@ -56,11 +56,11 @@ Exact HTTP, JSON Schema, migration, job, and provider shapes belong in their rev
 
 ## Acceptance Criteria
 
-1. **F305-AC-01:** T-7, T-1, and day-of schedules resolve from the pinned event revision in the event timezone and reject a send time already invalid under the approved immediate-send policy; when a new revision changes the event date, one transaction cancels unclaimed old jobs and schedules their replacements while preserving sent attempts and history.
+1. **F305-AC-01:** T-7, T-1, and day-of schedules resolve from the pinned event revision in the event timezone and reject a send time already invalid under the approved immediate-send policy; when a new revision changes the event date, one transaction marks the old send generation cancelled and schedules its replacements while preserving sent attempts and history.
 2. **F305-AC-02:** Only RSVP contacts with the required channel consent and no active suppression receive a job.
-3. **F305-AC-03:** A consent withdrawal or suppression after scheduling prevents delivery when eligibility is rechecked.
+3. **F305-AC-03:** A consent withdrawal, suppression, stale pinned revision, reschedule, or cancellation after scheduling prevents delivery when every claimed or leased job rechecks eligibility and its campaign generation immediately before the provider call.
 4. **F305-AC-04:** Retries, worker crashes, and duplicate claims do not create more than one accepted provider delivery per recipient/campaign/channel.
-5. **F305-AC-05:** Cancellation stops unclaimed jobs, preserves attempts/history, and reports sent, suppressed, failed, and cancelled counts accurately.
+5. **F305-AC-05:** Cancellation stops unclaimed jobs and causes already claimed or leased jobs to abort before provider delivery, preserves attempts/history, and reports sent, suppressed, failed, and cancelled counts accurately.
 
 ## Fixtures and Verification
 

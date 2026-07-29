@@ -23,7 +23,7 @@ An organizer can keep a private list of candidate venues and deliberately copy s
 
 ## Dependencies and Baseline
 
-- F-101 and the F-701/F-702/F-703 gate.
+- F-101, F-107 mutable draft lifecycle, and the F-701/F-702/F-703 gate.
 - Approved mapping from shortlist fields to current intake registry fields.
 - Baseline at draft time: PRD, Roadmap, Design, and Phase 0–1.5 Architecture approved 2026-07-22; `ARCHITECTURE-FUTURE.md` approved as a planning target 2026-07-25; NYC ruleset `nyc.v2.7`, rules schema `popengine-rules/v2`, and scenario fixtures v5 where regulatory output is consumed.
 - The approval PR must re-pin any baseline version that changes before approval. A proposed or superseded input blocks implementation.

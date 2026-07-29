@@ -23,7 +23,8 @@ An organizer can generate one current event-day sheet containing confirmed permi
 
 ## Dependencies and Baseline
 
-- F-202 checklist, F-208/F-209 records where present, F-213 staff assignments, and the F-701/F-702/F-703 gate.
+- F-202 checklist, F-208/F-209 records where present, an approved staff-assignment source, and the F-701/F-702/F-703 gate.
+- [SPEC-CONFLICT #207](https://github.com/jzeng151/pop-engine/issues/207) blocks approval and implementation until the product owner/team reconciles F-405's Phase 2 placement and required staff assignments with F-213's Phase 3 placement.
 - Baseline at draft time: PRD, Roadmap, Design, and Phase 0–1.5 Architecture approved 2026-07-22; `ARCHITECTURE-FUTURE.md` approved as a planning target 2026-07-25; NYC ruleset `nyc.v2.7`, rules schema `popengine-rules/v2`, and scenario fixtures v5 where regulatory output is consumed.
 - The approval PR must re-pin any baseline version that changes before approval. A proposed or superseded input blocks implementation.
 
@@ -81,5 +82,6 @@ Exact HTTP, JSON Schema, migration, job, and provider shapes belong in their rev
 
 ## Approval Blockers
 
-- Approve included fields, ready/incomplete wording, privacy handling, whether snapshots require persistence, and the F-213 assignment contract.
+- Resolve [SPEC-CONFLICT #207](https://github.com/jzeng151/pop-engine/issues/207) and approve the resulting staff-assignment source without omitting the Roadmap-required field or silently changing phase order.
+- Approve included fields, ready/incomplete wording, privacy handling, and whether snapshots require persistence.
 - Assign the owner and independent reviewer, approve this spec, and add it to `docs/BASELINE.md`.

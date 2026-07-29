@@ -30,8 +30,9 @@ An organizer can safely leave an incomplete intake and resume it later without f
 
 ## Inputs, Outputs, State, Validation, and Errors
 
-- Inputs are partial registry-backed intake values; output is a workspace-owned mutable draft with completion metadata.
+- Inputs are partial intake values pinned to an exact registry/version; output is a workspace-owned mutable draft with completion metadata and that registry/version.
 - Draft state is incomplete ↔ complete-unsubmitted; submission creates an immutable revision. Later edits occur in a new mutable draft and never rewrite a revision used by a plan.
+- Reopening against a newer registry requires an approved migration: compatible answers are mapped with provenance, removed/incompatible answers stay visible for review, and submission remains blocked until the draft validates against the current registry.
 - Conditional answers made irrelevant by a trigger change are removed or retained only as non-evaluated history according to the approved revision contract, never silently submitted.
 - Missing or unresolved material data stays visibly unset, unknown, pending, or failed as appropriate; it never becomes a successful or complete result.
 - Invalid input produces a field or action-specific error without partial mutation. Retriable external failures preserve the user's confirmed state and expose a safe retry.
@@ -56,11 +57,12 @@ Exact HTTP, JSON Schema, migration, job, and provider shapes belong in their rev
 
 ## Acceptance Criteria
 
-1. **F107-AC-01:** After any successful save, reopening the event restores the same partial answers and registry-derived question state byte-for-byte.
+1. **F107-AC-01:** While its pinned registry/version is current, reopening after a successful save restores the same partial answers and registry-derived question state byte-for-byte.
 2. **F107-AC-02:** A failed save is visibly unsaved and cannot replace the last durable draft.
 3. **F107-AC-03:** An incomplete draft cannot create or refresh a permit plan; unanswered material values remain unknown or absent.
 4. **F107-AC-04:** Submitting a complete draft creates an immutable revision, and editing afterward creates another revision and marks prior plan output stale.
 5. **F107-AC-05:** Two stale clients cannot silently overwrite each other; the later conflicting save is rejected with a reload/reconcile path.
+6. **F107-AC-06:** When the intake registry changes, reopening uses only the approved migration path, shows removed or incompatible answers for review, and cannot submit obsolete inputs or a draft that fails the current registry.
 
 ## Fixtures and Verification
 
@@ -82,6 +84,6 @@ Exact HTTP, JSON Schema, migration, job, and provider shapes belong in their rev
 
 ## Approval Blockers
 
-- Approve Event Revision schema/API and stale-write strategy.
+- Approve Event Revision schema/API, stale-write strategy, and registry-upgrade migration/review behavior.
 - Resolve any required shared events-schema change through the all-lane gate.
 - Assign the owner and independent reviewer, approve this spec, and add it to `docs/BASELINE.md`.

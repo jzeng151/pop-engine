@@ -13,7 +13,7 @@ An organizer can receive proposed application number, deadline, fee, and status 
 **In scope**
 
 - Run approved text/extraction processing on a safe uploaded document and create field-level proposals with page/snippet provenance.
-- Accept/edit/reject each proposal into F-208/F-209 through normal validation and history.
+- Accept/edit/reject each proposal through normal validation; a confirmed value for an empty field may enter F-208/F-209, while a confirmed difference from an existing value remains an unapplied typed proposal for F-604.
 - Preserve document/extractor/model/version and confirmation actor.
 
 **Non-goals**
@@ -31,7 +31,7 @@ An organizer can receive proposed application number, deadline, fee, and status 
 ## Inputs, Outputs, State, Validation, and Errors
 
 - Input is an authorized safe file; output is zero or more pending field proposals with exact source location when available.
-- Proposal state is pending → accepted/edited/rejected; later extraction creates a separate run.
+- Proposal state is pending → accepted/edited/rejected; an accepted difference from current state becomes confirmed-but-unapplied for F-604, and later extraction creates a separate run.
 - Unreadable, conflicting, ambiguous, unsupported, or low-confidence values remain pending/unavailable and never become record state.
 - Missing or unresolved material data stays visibly unset, unknown, pending, or failed as appropriate; it never becomes a successful or complete result.
 - Invalid input produces a field or action-specific error without partial mutation. Retriable external failures preserve the user's confirmed state and expose a safe retry.
@@ -58,7 +58,7 @@ Exact HTTP, JSON Schema, migration, job, and provider shapes belong in their rev
 
 1. **F602-AC-01:** Only a safe authorized document version can start extraction, and every proposal links to that exact version/run/source location.
 2. **F602-AC-02:** Application number, deadline, fee, and status remain proposals until explicit user acceptance/edit through F-208/F-209 validation.
-3. **F602-AC-03:** Existing confirmed values are never overwritten; an accepted difference appends normal history.
+3. **F602-AC-03:** Existing confirmed values are never overwritten; accepting a difference creates a source-linked, typed, confirmed-but-unapplied proposal for F-604 rather than appending domain history.
 4. **F602-AC-04:** Unreadable, ambiguous, conflicting, unsupported, or low-confidence content cannot create a confirmed workflow fact.
 5. **F602-AC-05:** Duplicate/retried extraction of the same request does not create duplicate accepted proposals or records.
 

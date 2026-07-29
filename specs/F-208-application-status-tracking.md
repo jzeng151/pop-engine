@@ -12,7 +12,7 @@ An organizer can record what happened after filing—application number, agency 
 
 **In scope**
 
-- Create a tracked application from a checklist requirement and record submitted date, agency-provided identifier/state, revisions, inspections, decision, and conditions.
+- Create a tracked application from a checklist requirement, or record an unexpected agency-requested application/requirement with explicit user confirmation and source provenance, then record submitted date, agency-provided identifier/state, revisions, inspections, decision, and conditions.
 - Preserve a timestamped history of confirmed application changes.
 - Keep agency-entered text visibly user-recorded unless backed by a published rule.
 
@@ -30,7 +30,7 @@ An organizer can record what happened after filing—application number, agency 
 
 ## Inputs, Outputs, State, Validation, and Errors
 
-- Inputs are a checklist item plus user-confirmed agency facts; outputs are an application record and append-only application events.
+- Inputs are either a checklist item or a user-confirmed unexpected agency request with source provenance, plus user-confirmed agency facts; outputs are an application record and append-only application events.
 - A correction appends a new event and preserves the prior value; deletion is archival, not history erasure.
 - Unknown agency status, missing decision date, or conflicting correspondence remains explicit and never marks a requirement complete.
 - Missing or unresolved material data stays visibly unset, unknown, pending, or failed as appropriate; it never becomes a successful or complete result.
@@ -56,7 +56,7 @@ Exact HTTP, JSON Schema, migration, job, and provider shapes belong in their rev
 
 ## Acceptance Criteria
 
-1. **F208-AC-01:** A checklist requirement can create at most the explicitly supported application records, each linked to the originating immutable finding.
+1. **F208-AC-01:** A checklist requirement can create at most the explicitly supported application records linked to its immutable finding; an application absent from the plan requires an explicit user-confirmed unexpected-requirement action with agency-source provenance, remains labeled user-recorded/non-regulatory, and cannot mutate the plan or ruleset.
 2. **F208-AC-02:** Recording or correcting an application identifier, agency state, submission, revision, inspection, decision, or condition appends a timestamped history entry and updates the current projection atomically.
 3. **F208-AC-03:** A correction preserves the previous value and actor; no edit rewrites plan evidence.
 4. **F208-AC-04:** Unknown or conflicting agency state remains visible and cannot auto-complete the checklist requirement.

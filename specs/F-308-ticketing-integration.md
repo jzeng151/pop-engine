@@ -61,6 +61,7 @@ Exact HTTP, JSON Schema, migration, job, and provider shapes belong in their rev
 3. **F308-AC-03:** Partial failures report exact record outcomes and can retry failed records without resending successful ones.
 4. **F308-AC-04:** Provider/webhook data cannot create payment, consent, or authoritative RSVP state in PopEngine.
 5. **F308-AC-05:** Disconnecting revokes future calls and leaves PopEngine event/registration data intact.
+6. **F308-AC-06:** When the provider is unavailable, an authorized workspace member can download a short-lived CSV containing only the approved allow-listed preview fields; values beginning with spreadsheet-formula characters (`=`, `+`, `-`, or `@`) are escaped, no provider credential is included, and expiry or revocation makes the download unavailable.
 
 ## Fixtures and Verification
 
@@ -83,4 +84,5 @@ Exact HTTP, JSON Schema, migration, job, and provider shapes belong in their rev
 ## Approval Blockers
 
 - Select/approve one provider and its field mapping, terms, credentials, webhook, retention, and deletion behavior.
+- Approve the CSV field allow-list, formula-escaping rule, authorization, retention, and short-lived download contract.
 - Assign the owner and independent reviewer, approve this spec, and add it to `docs/BASELINE.md`.

@@ -15,6 +15,7 @@ An organizer can describe an event in free text and receive proposed structured 
 - Send bounded organizer text through the approved AI gateway and map proposals only to current intake-registry fields/options.
 - Show evidence snippets/confidence where available, allow accept/edit/reject per field, and run F-109 scope-support classification.
 - Present a material concept with no current registry field as an unmatched-scope review item that the organizer can confirm or reject; it is never an engine answer.
+- Require the organizer to confirm that the original description is fully represented or manually add an unmatched-scope item before evaluation.
 - Create a normal event draft/revision only from explicit confirmations.
 
 **Non-goals**
@@ -59,7 +60,7 @@ Exact HTTP, JSON Schema, migration, job, and provider shapes belong in their rev
 
 1. **F601-AC-01:** The model can propose only fields/options present in the exact current intake registry and cannot create an endpoint, enum, or rule.
 2. **F601-AC-02:** No proposed field value or unmatched-scope observation reaches scope-support classification or evaluation until the user accepts, edits, or confirms it.
-3. **F601-AC-03:** A material concept with no current registry field blocks evaluation until the organizer rejects it as inapplicable or confirms it as unmatched scope; confirmed unmatched scope enters F-109, never the engine answer set, and cannot yield a complete-plan claim.
+3. **F601-AC-03:** Evaluation remains blocked until the organizer confirms the original description is fully represented and can manually add any model-omitted unmatched-scope item; every material concept with no current registry field must then be rejected as inapplicable or confirmed as unmatched scope. Confirmed unmatched scope enters F-109, never the engine answer set, and cannot yield a complete-plan claim.
 4. **F601-AC-04:** Rejecting a proposal leaves the corresponding answer absent; editing uses normal F-101 validation.
 5. **F601-AC-05:** Provider/model/prompt failure preserves the original text and offers the complete manual F-101 path.
 
