@@ -364,14 +364,14 @@ Organizer-visible text and the complete official URL snapshots are published ver
 
 ## Round 8 — 2026-07-29 (issue #181 citation attribution)
 
-**Purpose:** independently re-check the primary page already cited by `SAPO-BLOCK-PARTY-ELIG-001` before correcting its citation label. This is a publication record, not a verification pass, and it does not promote the rule from SOURCE_CONFIRMED.
+**Purpose:** independently re-check the primary page already cited by `SAPO-BLOCK-PARTY-ELIG-001` before narrowing its citation label to the source URL the artifact carries. This is a publication record, not a verification pass, and it does not promote the rule from SOURCE_CONFIRMED.
 
 - `https://www.nyc.gov/site/cecm/permitting/permit-types/block-parties.page` (retrieved 2026-07-29) publishes both parts of the encoded eligibility rule: a block party has no sales of goods or services, and alcohol, vendors, commercial branding, and sponsorships are prohibited.
-- The rule's sole URL already points to that page. Its citation label incorrectly named the CECM FAQ as carrying the alcohol prohibition. nyc.v2.10 removes only that attribution; the URL, rule, output, status, and evidence reference do not change.
+- The rule's sole URL already points to that page, while its citation label additionally named the CECM FAQ without carrying a corresponding FAQ URL. nyc.v2.10 drops that redundant, unlinked attribution so the label matches the artifact's source list. This does **not** claim that the FAQ lacked the prohibition: the 2026-07-28 fetch recorded in `docs/proposals/advisory-144-bounded-refetch-results.md` found that the current FAQ carries it, while its historical state remains indeterminable. The URL, rule, output, status, and evidence reference do not change.
 
 ## Suggested Dev 4 Workflow
 
 1. Triage the red flags (RF-1, RF-2 first: they touch Scenario E and the demo anchor). Anything that changes an expected scenario output is an answer-key change and needs a team decision, not a quiet edit.
-2. For each item: open the candidate URL in a browser, confirm the quote, then publish a new immutable ruleset version from the current artifact named in `BASELINE.md`; never edit the published file in place. Only Dev 4 updates the fact's `verification` block (facet → VERIFIED, todos cleared, `last_verified_date` set, source URL recorded). `status_verbatim` changes only on promotion.
+2. For each item: open the candidate URL in a browser, confirm the quote, then publish a new immutable ruleset version from the current artifact named in `BASELINE.md`; never edit the published file in place. Only Dev 4 updates the fact's `verification` metadata: set `status`, set `last_verified_date` when the verification date is evidenced, and update `qualification` or `evidence` when the checked record requires it. The v2 schema has no `facet`, `todos`, or `status_verbatim` fields. Source metadata is separate: update `source.citation` and `source.urls` in the same new artifact when the confirmed attribution changes; never put a URL in `verification`.
 3. Where this dossier found concrete values the rules file displays as "varies" (SAPO fee table, TFSE $70, Open Flame $210, TPA $250, SLA $36/$48), adding them is a rules-data change with the fetched URL as source — after confirmation, never from this dossier alone.
 4. Log every check: URL + date checked, per the answer key's method. Unresolvable → keep "confirm with agency."
