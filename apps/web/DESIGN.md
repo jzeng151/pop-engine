@@ -317,9 +317,11 @@ minimum interactive height of roughly 44px.
 ### Navigation
 
 The intake-orange lifecycle rail groups links under Ideate, Comply, Market, and Operate. Each target
-has an inline riso icon and a 44px minimum hit area. Hover uses a light paper wash; the active route
-switches to registration yellow with ink text and a hard offset. Mobile uses a native `details`
-disclosure, while desktop keeps the rail persistent.
+has an inline riso icon and a 44px minimum hit area. Live destinations sit on explicit paper-slip
+surfaces with ink text; light-theme links exceed 7:1 contrast, and the solid rail avoids
+texture-dependent contrast variance. Hover lifts to clean paper, while the active route switches to
+registration yellow with ink text and a hard offset. Mobile uses a native `details` disclosure,
+while desktop keeps the rail persistent.
 
 ### Theme Control
 
@@ -337,10 +339,11 @@ without implying the capability works.
 ### Permit Plan Workbench
 
 The plan keeps its live regulatory content in the review column and pairs it with a scoped checklist
-companion at desktop widths. Engine-derived verdict bands use federal blue, registration yellow, or
-intake orange by actual verdict. Ruleset snapshots, citations, verification states, unknowns,
-conflicts, research requirements, and coverage gaps remain visible and retain their source-backed
-copy.
+companion at desktop widths. Intake orange owns the page title, tabs, route ladder, and workbench
+framing. Federal blue remains only where it carries semantic information: the source snapshot and a
+feasible verdict. Other engine-derived verdict bands use registration yellow or intake orange by
+actual verdict. Ruleset snapshots, citations, verification states, unknowns, conflicts, research
+requirements, and coverage gaps remain visible and retain their source-backed copy.
 
 ### Provenance Snapshot
 

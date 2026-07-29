@@ -36,7 +36,12 @@
   --pe-on-accent: #0a0b0a;
   --pe-action-edge: #0a0b0a;
   --pe-brand-surface: #cc5500;
-  --pe-brand-on: #0a0b0a;
+  --pe-brand-on: #000000;
+  --pe-brand-link-surface: #f8e4d4;
+  --pe-brand-link-surface-hover: #fffdf6;
+  --pe-brand-link-on: #171815;
+  --pe-brand-rule: #000000;
+  --pe-brand-focus: #000000;
   --pe-info: var(--pe-blue);
   --pe-info-wash: #e2e7f0;
   --pe-info-wash-translucent: rgba(226, 231, 240, 0.78);
@@ -119,6 +124,11 @@
   --pe-action-edge: #111316;
   --pe-brand-surface: #a34400;
   --pe-brand-on: #f4eee1;
+  --pe-brand-link-surface: #3b261b;
+  --pe-brand-link-surface-hover: #4b3021;
+  --pe-brand-link-on: #f4eee1;
+  --pe-brand-rule: #f4eee1;
+  --pe-brand-focus: #f1c735;
   --pe-info-wash: #202d49;
   --pe-info-wash-translucent: rgba(32, 45, 73, 0.9);
   --pe-info-wash-strong: rgba(32, 45, 73, 0.96);
@@ -1273,7 +1283,7 @@ textarea:focus-visible {
 .riso-nav a:focus-visible,
 .riso-nav button:focus-visible,
 .riso-nav summary:focus-visible {
-  outline-color: var(--pe-focus-dark);
+  outline-color: var(--pe-brand-focus);
 }
 
 .pe-skip-link {
@@ -1378,10 +1388,7 @@ textarea:focus-visible {
   position: relative;
   z-index: 3;
   color: var(--pe-brand-on);
-  background-color: var(--pe-brand-surface);
-  background-image: url("/textures/riso-paper.webp");
-  background-size: 48rem 48rem;
-  background-blend-mode: var(--pe-texture-blend);
+  background: var(--pe-brand-surface);
   border-bottom: 3px solid var(--pe-ink);
 }
 
@@ -1406,8 +1413,9 @@ textarea:focus-visible {
 
 .riso-nav__brand > span {
   font-family: var(--pe-font-mono);
-  font-size: 0.68rem;
-  letter-spacing: 0.14em;
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.12em;
   text-transform: uppercase;
 }
 
@@ -1433,15 +1441,16 @@ textarea:focus-visible {
 
 .riso-nav__mobile summary > span:last-child {
   padding: 0.25rem 0.5rem;
-  border: 1px solid rgba(255, 253, 246, 0.65);
+  border: 1px solid var(--pe-brand-rule);
   font-family: var(--pe-font-mono);
-  font-size: 0.68rem;
+  font-size: 0.72rem;
+  font-weight: 700;
   letter-spacing: 0.12em;
   text-transform: uppercase;
 }
 
 .riso-nav__mobile[open] summary {
-  border-bottom: 1px solid rgba(255, 253, 246, 0.35);
+  border-bottom: 1px solid var(--pe-brand-rule);
 }
 
 .riso-nav__groups {
@@ -1456,9 +1465,9 @@ textarea:focus-visible {
   margin: 0 0 0.35rem;
   color: var(--pe-brand-on);
   font-family: var(--pe-font-mono);
-  font-size: 0.68rem;
-  font-weight: 600;
-  letter-spacing: 0.18em;
+  font-size: 0.75rem;
+  font-weight: 800;
+  letter-spacing: 0.12em;
   text-transform: uppercase;
 }
 
@@ -1484,8 +1493,15 @@ textarea:focus-visible {
   background: transparent;
   font: inherit;
   font-size: 0.85rem;
+  font-weight: 700;
   text-align: left;
   text-decoration: none;
+}
+
+.riso-nav__group:not(.riso-nav__group--planned) a {
+  border-color: var(--pe-brand-rule);
+  color: var(--pe-brand-link-on);
+  background: var(--pe-brand-link-surface);
 }
 
 .riso-nav__link-label {
@@ -1502,8 +1518,8 @@ textarea:focus-visible {
 }
 
 .riso-nav__group a:hover {
-  border-color: rgba(255, 253, 246, 0.55);
-  background: rgba(255, 253, 246, 0.08);
+  border-color: var(--pe-brand-rule);
+  background: var(--pe-brand-link-surface-hover);
 }
 
 .riso-nav__group a[aria-current="page"] {
@@ -1965,12 +1981,12 @@ textarea {
 }
 
 .plan > h1 {
-  color: var(--pe-blue);
+  color: var(--pe-accent);
   font-size: clamp(3.5rem, 8vw, 6.5rem);
   line-height: 0.9;
   text-shadow:
     1.5px 0 0 var(--pe-accent-soft),
-    -1px 1px 0 rgba(22, 63, 140, 0.18);
+    -1px 1px 0 var(--pe-divider);
 }
 
 .plan__tabs {
@@ -1978,7 +1994,7 @@ textarea {
   align-items: stretch;
   gap: 0;
   overflow-x: auto;
-  border-bottom: 2px solid var(--pe-blue);
+  border-bottom: 2px solid var(--pe-accent);
 }
 
 .plan__tabs a,
@@ -1988,7 +2004,7 @@ textarea {
   align-items: center;
   gap: 0.45rem;
   padding: 0.55rem 0.8rem;
-  color: var(--pe-blue);
+  color: var(--pe-accent-text);
   font-family: var(--pe-font-display);
   font-size: 1rem;
   font-weight: 800;
@@ -2075,7 +2091,7 @@ textarea {
 .plan__route-step {
   position: relative;
   min-width: 0;
-  border: 1.5px solid var(--pe-blue);
+  border: 1.5px solid var(--pe-accent);
   background: var(--pe-card-soft);
 }
 
@@ -2091,13 +2107,13 @@ textarea {
   min-height: 4.4rem;
   align-content: center;
   padding: 0.55rem 0.75rem;
-  color: var(--pe-blue);
+  color: var(--pe-accent-text);
   text-decoration: none;
 }
 
 .plan__route-step > a:hover {
-  color: var(--pe-on-info);
-  background: var(--pe-blue);
+  color: var(--pe-on-accent);
+  background: var(--pe-accent);
 }
 
 .plan__route-step span {
@@ -2141,7 +2157,7 @@ textarea {
 }
 
 .plan__route-step--complete {
-  background: var(--pe-info-wash-strong);
+  background: var(--pe-accent-wash);
 }
 
 .plan__workbench {
@@ -2154,14 +2170,14 @@ textarea {
 .plan__checklist-column {
   min-width: 0;
   padding: 1rem;
-  border: 1.5px solid var(--pe-blue);
+  border: 1.5px solid var(--pe-accent);
   background: var(--pe-card-quiet);
 }
 
 .plan__review-column > h2,
 .plan__checklist-column h2 {
   margin: 0;
-  color: var(--pe-blue);
+  color: var(--pe-accent-text);
   font-family: var(--pe-font-display);
   font-size: 2rem;
   font-weight: 800;
@@ -2171,7 +2187,7 @@ textarea {
 
 .plan__review-column > h2 {
   padding-bottom: 0.65rem;
-  border-bottom: 2px solid var(--pe-blue);
+  border-bottom: 2px solid var(--pe-accent);
 }
 
 .plan__checklist-column {
@@ -2185,7 +2201,7 @@ textarea {
   align-items: center;
   gap: 0.65rem;
   padding-bottom: 0.65rem;
-  border-bottom: 2px solid var(--pe-blue);
+  border-bottom: 2px solid var(--pe-accent);
 }
 
 .plan__checklist-column > div > span {
@@ -2193,8 +2209,8 @@ textarea {
   width: 2rem;
   height: 2rem;
   place-items: center;
-  border: 1.5px solid var(--pe-blue);
-  color: var(--pe-blue);
+  border: 1.5px solid var(--pe-accent);
+  color: var(--pe-accent-text);
   font-size: 1.2rem;
 }
 
@@ -2249,7 +2265,7 @@ textarea {
   }
 
   .plan__route-step + .plan__route-step {
-    border-top: 1.5px solid var(--pe-blue);
+    border-top: 1.5px solid var(--pe-accent);
     border-left: 0;
   }
 
@@ -2263,7 +2279,7 @@ textarea {
     width: 1.5rem;
     height: 1.5rem;
     place-items: center;
-    color: var(--pe-blue);
+    color: var(--pe-accent-text);
     background: var(--pe-paper);
     font-family: var(--pe-font-display);
     font-size: 1.25rem;
@@ -2300,7 +2316,7 @@ textarea {
   .riso-nav__brand--desktop {
     display: flex;
     padding: 1.65rem 1.35rem 1.35rem;
-    border-bottom: 2px solid rgba(255, 253, 246, 0.5);
+    border-bottom: 2px solid var(--pe-brand-rule);
   }
 
   .riso-nav__desktop {
