@@ -57,7 +57,7 @@ Exact HTTP, JSON Schema, migration, job, and provider shapes belong in their rev
 
 ## Acceptance Criteria
 
-1. **F714-AC-01:** Publication rejects unless the exact candidate checksum has required independent approvals and a passing full F-712 suite.
+1. **F714-AC-01:** Publication rejects unless the exact candidate checksum has required independent approvals and a passing full F-712 suite matching the deployed engine/schema/calendar contracts and current approved fixture set; any context change invalidates approval.
 2. **F714-AC-02:** A successful transaction stores the immutable artifact/metadata and compare-and-swap advances exactly one jurisdiction pointer from the expected current checksum atomically with an audit record.
 3. **F714-AC-03:** A recognized retry is resolved by idempotency identity before current-pointer validation and returns its original immutable result; a partial failure cannot expose an unrecorded pointer.
 4. **F714-AC-04:** Rollback rejects unless the exact prior artifact checksum has explicit authorization, the required independent approval, and a passing current F-712 compatibility/full-suite run for the deployed engine, schema, and calendar contracts (or an explicitly selected preserved compatible runtime); success records the reason/actors, moves only the pointer, and never edits or deletes either artifact.

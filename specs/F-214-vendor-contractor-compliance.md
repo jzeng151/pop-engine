@@ -57,8 +57,8 @@ Exact HTTP, JSON Schema, migration, job, and provider shapes belong in their rev
 ## Acceptance Criteria
 
 1. **F214-AC-01:** An authorized organizer can create and update an event vendor with the approved minimal fields and source-linked evidence.
-2. **F214-AC-02:** Permit, insurance, contract, and arrival states remain independent; one completed field cannot mark overall compliance complete.
-3. **F214-AC-03:** Missing, unknown, expired, or conflicting evidence remains visible and prevents a complete claim.
+2. **F214-AC-02:** Permit, insurance, contract, and arrival states remain independent; their aggregate describes workflow-record completeness only and never regulatory sufficiency or agency acceptance.
+3. **F214-AC-03:** Missing, unknown, expired, conflicting, user-recorded, or not-authoritatively-accepted evidence remains visibly distinct and prevents a regulatory compliance claim.
 4. **F214-AC-04:** Status changes and replacement documents preserve actor/time/version history.
 5. **F214-AC-05:** Vendor contacts do not enter attendee CRM, campaign eligibility, or consent records automatically.
 

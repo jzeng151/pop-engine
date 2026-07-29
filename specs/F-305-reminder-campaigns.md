@@ -58,7 +58,7 @@ Exact HTTP, JSON Schema, migration, job, and provider shapes belong in their rev
 
 1. **F305-AC-01:** T-7, T-1, and day-of schedules resolve from the pinned event revision in the event timezone and reject a send time already invalid under the approved immediate-send policy; when a new revision changes any approved message-relevant field, one transaction marks the old send generation cancelled and schedules replacements pinned to the new revision, recomputing times when date/time changed and otherwise preserving them, while retaining sent attempts/history.
 2. **F305-AC-02:** Only RSVP contacts with the required channel consent and no active suppression receive a job.
-3. **F305-AC-03:** A consent withdrawal, suppression, stale message-relevant generation, reschedule, or cancellation after scheduling prevents delivery when every claimed or leased job rechecks eligibility/generation immediately before the provider call; an unrelated revision change does not stale that generation.
+3. **F305-AC-03:** Delivery atomically claims a non-cancellable `sending` state after its final eligibility/generation check; consent withdrawal, suppression, reschedule, or cancellation serializes against that claim and cannot report prevention for already-sending work. Unrelated revisions do not stale the message generation.
 4. **F305-AC-04:** Retries, worker crashes, and duplicate claims do not create more than one accepted provider delivery per recipient/campaign/channel.
 5. **F305-AC-05:** Cancellation stops unclaimed jobs and causes already claimed or leased jobs to abort before provider delivery, preserves attempts/history, and reports sent, suppressed, failed, and cancelled counts accurately.
 

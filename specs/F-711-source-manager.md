@@ -57,7 +57,7 @@ Exact HTTP, JSON Schema, migration, job, and provider shapes belong in their rev
 ## Acceptance Criteria
 
 1. **F711-AC-01:** Every source record preserves URL, agency/title, retrieval metadata, bounded excerpt/archive reference, author/reviewer, and version history.
-2. **F711-AC-02:** Only the verification owner can change verification status, and every change records evidence/reason.
+2. **F711-AC-02:** Only the verification owner can record a review decision for an exact immutable rule-source facet and artifact version, with evidence/reason; source rows have no aggregate regulatory status, and decisions affect runtime only through publication.
 3. **F711-AC-03:** Broken, blocked, redirected, or unavailable links create health observations and never automatically invalidate or verify a rule.
 4. **F711-AC-04:** Published artifacts continue to reference immutable source versions even after metadata correction.
 5. **F711-AC-05:** Fetching cannot access private network targets, unsupported protocols, unbounded content, or execute remote content.

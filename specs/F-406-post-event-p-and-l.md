@@ -61,6 +61,7 @@ Exact HTTP, JSON Schema, migration, job, and provider shapes belong in their rev
 3. **F406-AC-03:** Mapping or unmapping an actual changes rollups without mutating the referenced budget line.
 4. **F406-AC-04:** Confirmation atomically compare-and-swaps the complete current budget-mapping and actual-ledger version set; any mismatch rejects confirmation and requires a rebuilt preview. Success creates an immutable snapshot tied to those exact versions, and correction creates a new snapshot.
 5. **F406-AC-05:** No screen or export represents the result as audited accounting, tax, or payment data.
+6. **F406-AC-06:** Actual-ledger create/edit/delete operations bind a stable request identity to the original result; replay returns that result without duplicating entries or rollups.
 
 ## Fixtures and Verification
 
