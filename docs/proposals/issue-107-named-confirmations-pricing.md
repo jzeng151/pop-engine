@@ -26,7 +26,8 @@ source correction reduced its cost without reopening the completed gate.
 
 **Eighth revision.** The current baseline is now distinguished from the pinned pricing state:
 decision gate `msg_68b1f57ec560` completed the source, status and confirmation-text approvals this
-brief historically priced as pending.
+brief historically priced as pending, and nyc.v2.9 published the approved nine-rule result now
+carried by nyc.v2.10.
 
 **Seventh revision.** Four findings applied. The historical measured shape at `46971a0` now carries
 all five qualifying unknown-valued fields across Scenarios E and F and all seventeen implementation
@@ -596,19 +597,23 @@ all. Deciding between the two axes looks like the actual decision hiding inside 
 
 ---
 
-## 6. The v2.9 question
+## 6. The v2.9 question, as priced at `46971a0`
 
-Three changes are pending for one bump.
+At the pinned commit, three changes were pending for one bump. This table preserves that historical
+pricing state. Named confirmations are no longer pending on current `main`: decision gate
+`msg_68b1f57ec560` completed the approvals, and nyc.v2.9 published nine named-confirmation rules now
+carried by nyc.v2.10.
 
 | Change | Adds or edits | Moves evaluated output? | Needs a decision first? |
 |---|---|---|---|
 | TPA source re-attribution on DOB-ASSEMBLY-001 | edits `deadline.qualification` | **yes**: `buildFinding` copies the qualification into persisted and rendered `notes`; F-202 AC 9 also compares it in the stored deadline snapshot, so an older checklist emits a moved-deadline state notice until review re-points it; no date, status or verdict moves | **yes**: evaluated regulatory source and content, needing the verification owner plus rules reviewer |
 | `DEPENDENCY_SEQUENCING_BINDINGS` into the ruleset | adds published data, removes an engine constant | only if the published table differs from the constant | **yes**: `proposals.ts` carries an explicit "PROPOSAL — NOT YET APPROVED" header requiring verification-owner plus engine-owner sign-off, and publishing the machine-readable binding IS approving the sequencing semantics |
-| Named confirmations | adds N rules | **yes, moves approved answer-key output** | **yes, undecided, and THREE independent approval classes rather than two** |
+| Named confirmations | historical proposal: adds N rules; published outcome: nine rules | **yes, moves approved answer-key output** | **historical:** undecided, with THREE independent approval classes rather than two; **current:** complete under `msg_68b1f57ec560` and published in nyc.v2.9 |
 
-**Corrected in review: none of the three is decision-free, so there are no ready passengers.** An
-earlier version of this brief described the first two that way, and I relayed it. What is true is
-weaker: the first two are decided in principle and not yet approved as publications. The
+**Corrected in review: at `46971a0`, none of the three was decision-free, so there were no ready
+passengers.** An earlier version of this brief described the first two that way, and I relayed it.
+What was true at that point was weaker: the first two were decided in principle and not yet approved
+as publications. The
 re-attribution changes evaluated `notes` through `ruleNotes`; those notes are persisted and rendered
 as organizer-visible regulatory text. It also changes the deadline snapshot F-202 AC 9 compares, so
 an existing checklist reports a deadline state change until the organizer reviews the latest plan and
@@ -619,12 +624,13 @@ verification owner plus engine owner, and publishing it is the approval, not a c
 Nothing about the three conflicts technically: one edits a field, one adds a root key, one adds rules,
 and the provenance block already separates per-change consequences this way for v2.6 and v2.7. The
 difference between them is how many owners each needs and whether the underlying question is settled.
-The confirmations need two calls that have not been made at all, the rules-owner call on the line and
-the product-owner call on moving approved output, so bundling them still makes the other two wait on
-the least settled item.
+At `46971a0`, the confirmations needed two calls that had not been made, the rules-owner call on the
+line and the product-owner call on moving approved output, so bundling them would have made the other
+two wait on the least settled item. The current baseline records those calls as complete and the
+published v2.9 outcome as nine rules; this paragraph does not reopen either.
 
 **Corrected in review: two owner sets were listed and three independent approval classes are
-required.** Governance's
+required for the proposed publication.** Governance's
 "Change classes and approvals" table is cited here by the row rather than by a section number, because
 a number behind a sigil is the citation shape this session has had to correct four times. Every named
 confirmation adds a rule trigger and organizer-visible regulatory text, so it lands on three rows:
@@ -636,10 +642,11 @@ confirmation adds a rule trigger and organizer-visible regulatory text, so it la
 | Regulatory source/status/content | "Verification owner plus rules reviewer" |
 
 The "UI copy only" row does not add a fourth class: its own exception routes a regulatory claim to the
-regulatory source/content approval above. Listing only the rules-owner and product-owner calls still
-understated the critical path and could let a v2.9 publication proceed without the engine and
-verification reviews. The engine owner is reachable here in particular because section 0's remedies
-include changing `resolveFindings`.
+regulatory source/content approval above. At the pinned commit, listing only the rules-owner and
+product-owner calls understated the critical path and could have let a v2.9 publication proceed
+without the engine and verification reviews. The completed decision gate records all three classes.
+The engine owner was reachable here in particular because section 0's remedies include changing
+`resolveFindings`.
 
 Two specifics worth having:
 
@@ -680,12 +687,12 @@ Two specifics worth having:
 
 ---
 
-## 7. What could not be established
+## 7. What could not be established at `46971a0`
 
 - Whether the published sequencing table would be byte-identical to the current constant, which is
-  what the published table would say. It has one entry today, so the comparison is small, but the
-  target shape is undecided. Note this no longer decides whether the move is publication-only: the
-  correction above establishes that it is not, whatever the table contains.
-- Whether the product owner reads Scenario B's four named absences as the specification for named
-  confirmations or as one scenario's copy. Section 5's finding depends on which, and the answer keys
-  are silent on it.
+  what the published table would say. It had one entry at that commit, so the comparison was small,
+  but the target shape was undecided. Note this no longer decides whether the move is
+  publication-only: the correction above establishes that it is not, whatever the table contains.
+- Whether the product owner at that commit read Scenario B's four named absences as the specification
+  for named confirmations or as one scenario's copy. Section 5's finding depended on which, and the
+  answer keys were silent on it.
