@@ -1659,9 +1659,25 @@ const f203Negation =
   /\b(?:not planned|unplanned)\b|\b(?:is|are|was|were|has been|have been)\s+(?:superseded|rejected)\b|\b(?:no|without)\s+(?:alert )?(?:escalations|digests|team reminders|per-user preferences)\b/i;
 const f203SchedulingConflict =
   /\b(?:(?:is|are|was|were|has been|have been|will be|must be|may be|can be)\s+(?:now\s+)?scheduled|now scheduled)\b/i;
+const f203SpecAssignment =
+  /\bF-203\b[^.]*\b(?:keeps|retains|owns|includes)\b|\b(?:remain|remains|are)\b[^.]*\bunder F-203\b/i;
+const f203Continuation = /^(?:It|Its|This|That|The (?:feature|scope))\b/i;
+function f203ScopedClauses(text) {
+  let carriesF203 = false;
+  return text.split(/[.!?;]+/).flatMap((clause) => {
+    const features = [...clause.matchAll(/\bF-\d+\b/gi)].map((match) => match[0].toUpperCase());
+    if (features.length > 0) {
+      carriesF203 = features.at(-1) === "F-203";
+      return features.includes("F-203") ? [clause] : [];
+    }
+    if (carriesF203 && f203Continuation.test(clause.trim())) return [`F-203 ${clause.trim()}`];
+    carriesF203 = false;
+    return [];
+  });
+}
 function hasF203ConflictingPhase(text) {
   const phases = [];
-  for (const clause of text.split(/[.!?;]+/)) {
+  for (const clause of f203ScopedClauses(text)) {
     const features = [...clause.matchAll(/\bF-\d+\b/gi)];
     for (const [index, feature] of features.entries()) {
       if (feature[0].toUpperCase() !== "F-203") continue;
@@ -1678,8 +1694,6 @@ function hasF203ConflictingPhase(text) {
   }
   return phases.includes("2") && phases.some((phase) => phase !== "2");
 }
-const f203SpecAssignment =
-  /\bF-203\b[^.]*\b(?:keeps|retains|owns|includes)\b|\b(?:remain|remains|are)\b[^.]*\bunder F-203\b/i;
 const f203Failures = [];
 
 function activeMarkdown(markdown) {
@@ -1745,8 +1759,15 @@ function f203OwningPhase(headings, offset) {
 }
 
 function isOnlyNonMutatingF203Reference(text) {
-  const references = text.split(/(?<=[.!?])\s+/).filter((sentence) => /\bF-203\b/i.test(sentence));
-  return references.length > 0 && references.every((sentence) => f203NoScopeChange.test(sentence));
+  const clauses = f203ScopedClauses(text);
+  return (
+    clauses.some((clause) => f203NoScopeChange.test(clause)) &&
+    clauses.every(
+      (clause) =>
+        f203NoScopeChange.test(clause) ||
+        (!f203DecisionScope.test(clause) && !f203SpecAssignment.test(clause)),
+    )
+  );
 }
 
 for (const relative of f203Artifacts) {
@@ -1859,21 +1880,9 @@ for (const relative of f203Artifacts) {
     .filter(({ raw, normalized }) => {
       const lower = normalized.toLowerCase();
       const namesScope = f203CapabilityNames.some((capability) => lower.includes(capability));
-      const sentences = normalized.split(/(?<=[.!?])\s+/);
-      const addressesScope =
-        sentences.some(
-          (sentence) =>
-            sentence.toLowerCase().includes("f-203") &&
-            (f203CapabilityMention.test(sentence) || f203DecisionScope.test(sentence)),
-        ) ||
-        sentences.some((sentence, index) => {
-          const continuation = sentences[index + 1] ?? "";
-          return (
-            sentence.toLowerCase().includes("f-203") &&
-            /^(?:It|Its|This|That|The (?:feature|scope))\b/i.test(continuation) &&
-            f203DecisionScope.test(continuation)
-          );
-        });
+      const addressesScope = f203ScopedClauses(normalized).some(
+        (clause) => f203CapabilityMention.test(clause) || f203DecisionScope.test(clause),
+      );
       const requiresListAssignment = relative === "docs/ROADMAP.md" || relative === "docs/PRD.md";
       const isListAssignment = requiresListAssignment && /^\s*(?:[-*+]|\d+[.)])\s+/.test(raw);
       const isTableAssignment = requiresListAssignment && /^\s*\|/.test(raw);

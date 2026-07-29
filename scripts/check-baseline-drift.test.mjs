@@ -1982,6 +1982,21 @@ describe.concurrent("F-203 Phase 2 scope agreement (SPEC-CONFLICT #127 item 1)",
   );
 
   it.each(["docs/ROADMAP.md", "docs/PRD.md"])(
+    "rejects a pronoun-led F-203 phase reassignment in the %s decision",
+    async (relative) => {
+      const { status, output } = await runOn({
+        [relative]: SQUARE_RECONCILED[relative].replace(
+          "unscheduled Phase 2 depth.",
+          "unscheduled Phase 2 depth. It is assigned to Phase 3.",
+        ),
+      });
+
+      expect(status).toBe(1);
+      expect(output).toContain(`${relative} must affirmatively assign`);
+    },
+  );
+
+  it.each(["docs/ROADMAP.md", "docs/PRD.md"])(
     "accepts an unrelated feature's phase assignment in the %s decision",
     async (relative) => {
       const { status, output } = await runOn({
@@ -2017,6 +2032,20 @@ describe.concurrent("F-203 Phase 2 scope agreement (SPEC-CONFLICT #127 item 1)",
 
       expect(status, output).toBe(0);
       expect(output).toContain("F-203 scope check passed");
+    },
+  );
+
+  it.each(["docs/ROADMAP.md", "docs/PRD.md", "docs/BASELINE.md"])(
+    "rejects a pronoun-led mutation after a non-mutating F-203 reference in %s",
+    async (relative) => {
+      const { status, output } = await runOn({
+        [relative]:
+          SQUARE_RECONCILED[relative] +
+          "\n**Decision:** This does not change F-203 scope. It now includes automatic permit filing.\n",
+      });
+
+      expect(status).toBe(1);
+      expect(output).toContain(`${relative} must affirmatively assign`);
     },
   );
 
