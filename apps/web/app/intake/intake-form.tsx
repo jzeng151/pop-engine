@@ -10,6 +10,7 @@ import {
   type IntakeValue,
 } from "@pop-engine/engine";
 import { CREDENTIALED, loadEvent, regeneratePlan, type SavedEvent } from "./events-api";
+import { discoverParks, parksBoroughCode, type ParkSuggestion } from "./parks-api";
 
 // The intake questionnaire. Every question, option, and asked-when condition comes from
 // the contract prop, which the server component parses from the published ruleset — this
@@ -124,11 +125,17 @@ export function IntakeForm({
   const [regeneratedRevision, setRegeneratedRevision] = useState<number | null>(null);
   const [loading, setLoading] = useState(eventId !== undefined);
   const [loadFailure, setLoadFailure] = useState<string | null>(null);
+  const [parkSuggestions, setParkSuggestions] = useState<ParkSuggestion[] | null>(null);
+  const [parkSearchFailure, setParkSearchFailure] = useState<string | null>(null);
+  const [parkSearching, setParkSearching] = useState(false);
 
   // The revision the form is currently sitting on. A ref, because an in-flight
   // regeneration has to compare against the revision as it stands when the plan lands,
   // not against the one captured when the button was clicked.
   const currentRevision = useRef<number | null>(null);
+  const parkSearchRequest = useRef(0);
+  const parkSearchController = useRef<AbortController | null>(null);
+  const locationNameInput = useRef<HTMLInputElement | null>(null);
 
   useEffect(() => {
     if (eventId === undefined) return;
@@ -155,9 +162,61 @@ export function IntakeForm({
   // submit (spec #4, #5). The same function runs server-side on save.
   const warnings = useMemo(() => intakeWarnings(contract, answers), [contract, answers]);
   const errorFor = (field: string) => errors.find((error) => error.field === field);
+  const parkBorough = parksBoroughCode(answers.borough);
+  const canSearchParks = answers.location_type === "park" && parkBorough !== null;
+
+  useEffect(() => {
+    parkSearchRequest.current += 1;
+    parkSearchController.current?.abort();
+    parkSearchController.current = null;
+    setParkSuggestions(null);
+    setParkSearchFailure(null);
+    setParkSearching(false);
+  }, [answers.location_type, parkBorough]);
+
+  useEffect(
+    () => () => {
+      parkSearchController.current?.abort();
+    },
+    [],
+  );
 
   const answer = (field: string, value: IntakeValue) => {
+    if (field === "location_name") {
+      parkSearchRequest.current += 1;
+      parkSearchController.current?.abort();
+      parkSearchController.current = null;
+      setParkSuggestions(null);
+      setParkSearchFailure(null);
+      setParkSearching(false);
+    }
     setAnswers((current) => ({ ...current, [field]: value }));
+  };
+
+  const searchParks = async () => {
+    const name = typeof answers.location_name === "string" ? answers.location_name.trim() : "";
+    if (!canSearchParks || parkBorough === null || name.length === 0) return;
+
+    const request = ++parkSearchRequest.current;
+    parkSearchController.current?.abort();
+    const controller = new AbortController();
+    parkSearchController.current = controller;
+    setParkSearching(true);
+    setParkSearchFailure(null);
+    setParkSuggestions(null);
+
+    const result = await discoverParks(apiBaseUrl, parkBorough, name, controller.signal);
+    if (parkSearchRequest.current !== request) return;
+
+    parkSearchController.current = null;
+    setParkSearching(false);
+    if (result.ok) {
+      setParkSuggestions(result.spaces);
+      return;
+    }
+    setParkSearchFailure(
+      `${result.message} You can still enter and save the location name manually.`,
+    );
   };
 
   const submission = (): Record<string, IntakeValue> => {
@@ -275,13 +334,22 @@ export function IntakeForm({
       </p>
 
       {DESCRIPTIVE_QUESTIONS.map((question) => (
-        <label className="intake__question" key={question.field}>
-          <span className="intake__label">{question.label}</span>
+        <div className="intake__question" key={question.field}>
+          <label className="intake__label" htmlFor={`intake-${question.field}`}>
+            {question.label}
+          </label>
           <input
+            id={`intake-${question.field}`}
+            ref={question.field === "location_name" ? locationNameInput : undefined}
             className="intake__input"
             name={question.field}
             type={question.type}
             required={question.required}
+            aria-describedby={
+              question.field === "location_name" && canSearchParks
+                ? "intake-park-search-note"
+                : undefined
+            }
             value={String(answers[question.field] ?? "")}
             onChange={(event) => {
               const raw = event.target.value;
@@ -291,8 +359,63 @@ export function IntakeForm({
               );
             }}
           />
+          {question.field === "location_name" && canSearchParks && (
+            <div className="intake__park-search">
+              <p className="intake__note" id="intake-park-search-note">
+                Enter part of a park name to search NYC Parks, or keep typing any venue or location
+                name manually.
+              </p>
+              <button
+                className="intake__secondary"
+                type="button"
+                aria-controls="intake-park-search-results"
+                disabled={
+                  parkSearching ||
+                  typeof answers.location_name !== "string" ||
+                  answers.location_name.trim().length === 0
+                }
+                onClick={() => void searchParks()}
+              >
+                {parkSearching ? "Searching NYC Parks…" : "Search NYC Parks"}
+              </button>
+              <div id="intake-park-search-results" aria-busy={parkSearching} aria-live="polite">
+                {parkSearchFailure !== null && <p className="intake__note">{parkSearchFailure}</p>}
+                {parkSearching === false &&
+                  parkSearchFailure === null &&
+                  parkSuggestions === null &&
+                  typeof answers.location_name === "string" &&
+                  answers.location_name.trim().length > 0 && (
+                    <p className="intake__note">Search to see matching NYC park names.</p>
+                  )}
+                {parkSearching === false &&
+                  parkSearchFailure === null &&
+                  parkSuggestions?.length === 0 && (
+                    <p className="intake__note">
+                      No matching parks found. You can still save the location name manually.
+                    </p>
+                  )}
+                {parkSuggestions !== null && parkSuggestions.length > 0 && (
+                  <ul className="intake__park-results" aria-label="NYC park suggestions">
+                    {parkSuggestions.map((park) => (
+                      <li key={park.locationId}>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            answer("location_name", park.parkName);
+                            locationNameInput.current?.focus();
+                          }}
+                        >
+                          {park.parkName}
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </div>
+            </div>
+          )}
           <FieldError issue={errorFor(question.field)} />
-        </label>
+        </div>
       ))}
 
       {questions.map((question) => (

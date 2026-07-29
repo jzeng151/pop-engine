@@ -4,6 +4,7 @@ const PARKS_ENDPOINT = "https://data.cityofnewyork.us/resource/c5vm-g2dk.json";
 const BOROUGHS = new Set(["M", "B", "Q", "X", "R"]);
 const DEFAULT_LIMIT = 10;
 const MAX_LIMIT = 50;
+const MAX_NAME_LENGTH = 80;
 const PARKS_TIMEOUT_MS = 5_000;
 
 export type ParksFetch = (input: string | URL, init?: RequestInit) => Promise<Response>;
@@ -26,10 +27,25 @@ function readLimit(value: unknown): number | null {
   return limit >= 1 && limit <= MAX_LIMIT ? limit : null;
 }
 
-function parksUrl(borough: string, limit: number): string {
+function readName(value: unknown): string | null | undefined {
+  if (value === undefined) return undefined;
+  if (typeof value !== "string") return null;
+  const name = value.trim();
+  return name.length >= 1 &&
+    name.length <= MAX_NAME_LENGTH &&
+    ![...name].some((character) => character < " " || character === "\u007f")
+    ? name
+    : null;
+}
+
+function parksUrl(borough: string, limit: number, name: string | undefined): string {
+  const where = [`borough='${borough}'`];
+  if (name !== undefined) {
+    where.push(`upper(name) LIKE '%${name.toUpperCase().replaceAll("'", "''")}%'`);
+  }
   const query = new URLSearchParams({
     $select: "system,gispropnum,name,borough,areatype,acres",
-    $where: `borough='${borough}'`,
+    $where: where.join(" AND "),
     $order: "name ASC,system ASC",
     $limit: String(limit),
   });
@@ -62,7 +78,13 @@ export function createParksRouter(fetchParks: ParksFetch = fetch): Router {
         return;
       }
 
-      const response = await fetchParks(parksUrl(borough, limit), {
+      const name = readName(req.query.name);
+      if (name === null) {
+        res.status(400).json({ error: `name must be from 1 to ${MAX_NAME_LENGTH} characters` });
+        return;
+      }
+
+      const response = await fetchParks(parksUrl(borough, limit, name), {
         signal: AbortSignal.timeout(PARKS_TIMEOUT_MS),
       });
       if (!response.ok) throw new Error("NYC Open Data request failed");

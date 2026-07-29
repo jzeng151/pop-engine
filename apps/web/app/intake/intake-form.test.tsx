@@ -400,6 +400,98 @@ describe("clearing an optional answer on an edit", () => {
   });
 });
 
+describe("NYC park-name suggestions", () => {
+  const parksResponse = (parkName: string, locationId: string) =>
+    jsonResponse(200, {
+      status: "SUCCESS",
+      spaces: [
+        {
+          locationId,
+          parkName,
+          borough: "B",
+          type: "Whole Park",
+          acres: "1",
+        },
+      ],
+    });
+
+  it("appears only for a park with a borough and selects a result into location_name", async () => {
+    const user = renderForm();
+    expect(screen.queryByRole("button", { name: "Search NYC Parks" })).toBeNull();
+
+    await chooseOption(user, "borough", "brooklyn");
+    expect(screen.queryByRole("button", { name: "Search NYC Parks" })).toBeNull();
+    await chooseOption(user, "location_type", "park");
+    const search = screen.getByRole("button", { name: "Search NYC Parks" });
+    expect(search.hasAttribute("disabled")).toBe(true);
+
+    await fillField(user, "location_name", "Prospect");
+    fetchMock.mockResolvedValueOnce(parksResponse("Prospect Park", "B073-EVENTAREA-1"));
+    await user.click(search);
+
+    const suggestion = await screen.findByRole("button", { name: "Prospect Park" });
+    const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    expect(url).toBe(
+      "https://api.example.com/api/permits/nyc/discover?borough=B&name=Prospect&limit=20",
+    );
+    expect(init.credentials).toBe("include");
+
+    await user.click(suggestion);
+    expect(document.querySelector<HTMLInputElement>('input[name="location_name"]')?.value).toBe(
+      "Prospect Park",
+    );
+  });
+
+  it("ignores an older search response after the location name changes", async () => {
+    const releases: Array<(response: Response) => void> = [];
+    fetchMock.mockImplementation(
+      () =>
+        new Promise<Response>((resolve) => {
+          releases.push(resolve);
+        }),
+    );
+    const user = renderForm();
+    await chooseOption(user, "borough", "brooklyn");
+    await chooseOption(user, "location_type", "park");
+
+    await fillField(user, "location_name", "Meadow");
+    await user.click(screen.getByRole("button", { name: "Search NYC Parks" }));
+    await waitFor(() => expect(releases).toHaveLength(1));
+
+    await fillField(user, "location_name", "Lake");
+    await user.click(screen.getByRole("button", { name: "Search NYC Parks" }));
+    await waitFor(() => expect(releases).toHaveLength(2));
+    expect(((fetchMock.mock.calls[0]?.[1] as RequestInit).signal as AbortSignal).aborted).toBe(
+      true,
+    );
+
+    releases[1]?.(parksResponse("Prospect Lake", "B073-EVENTAREA-2"));
+    expect(await screen.findByRole("button", { name: "Prospect Lake" })).toBeDefined();
+
+    releases[0]?.(parksResponse("Long Meadow", "B073-EVENTAREA-3"));
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(screen.queryByRole("button", { name: "Long Meadow" })).toBeNull();
+    expect(screen.getByRole("button", { name: "Prospect Lake" })).toBeDefined();
+  });
+
+  it("keeps manual location saving available when discovery fails", async () => {
+    fetchMock.mockResolvedValueOnce(jsonResponse(502, { error: "unavailable" }));
+    const user = renderForm();
+    await answerParkEvent(user);
+    await fillField(user, "location_name", "My neighborhood green");
+    await user.click(screen.getByRole("button", { name: "Search NYC Parks" }));
+
+    expect(
+      await screen.findByText(/You can still enter and save the location name manually/),
+    ).toBeDefined();
+    await save(user);
+
+    await waitFor(() => expect(screen.getByText(/Saved as revision 1/)).toBeDefined());
+    expect(requestBody(fetchMock, 1).location_name).toBe("My neighborhood green");
+  });
+});
+
 describe("inline warnings render the published text (spec #4, #5)", () => {
   it("warns that a selling block party conflicts with eligibility", async () => {
     const user = renderForm();

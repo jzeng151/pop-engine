@@ -58,6 +58,26 @@ describe("NYC Parks discovery", () => {
     ).toEqual(["1", "50"]);
   });
 
+  it("validates and safely escapes an optional park-name filter", async () => {
+    const fetchParks = vi.fn<ParksFetch>(async () => Response.json([]));
+    const app = createTestApp(fetchParks);
+
+    for (const name of ["", "x".repeat(81), "%0A"]) {
+      const response = await request(app).get(`/api/permits/nyc/discover?borough=B&name=${name}`);
+      expect(response.status).toBe(400);
+    }
+
+    const response = await request(app).get(
+      "/api/permits/nyc/discover?borough=B&name=O%27Brien%20Park",
+    );
+    expect(response.status).toBe(200);
+    expect(fetchParks).toHaveBeenCalledTimes(1);
+    const url = new URL(fetchParks.mock.calls[0]?.[0] as string);
+    expect(url.searchParams.get("$where")).toBe(
+      "borough='B' AND upper(name) LIKE '%O''BRIEN PARK%'",
+    );
+  });
+
   it("queries only required fields in a deterministic order and maps the response", async () => {
     const fetchParks = vi.fn<ParksFetch>(async () =>
       Response.json([
