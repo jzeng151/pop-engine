@@ -56,12 +56,13 @@ Exact HTTP, JSON Schema, migration, job, and provider shapes belong in their rev
 
 ## Acceptance Criteria
 
-1. **F210-AC-01:** A certificate version links to the exact insurance finding and preserves its own entered source, dates, coverage, and file.
+1. **F210-AC-01:** A certificate version links to the exact insurance finding and preserves its policy reference, versioned certificate status, entered source, dates, coverage, additional-insured text, and file.
 2. **F210-AC-02:** Missing or unknown coverage/additional-insured facts remain visibly unresolved and never auto-complete the requirement.
 3. **F210-AC-03:** Replacement preserves the earlier version; expiration uses the approved timezone/date rule.
 4. **F210-AC-04:** The UI never labels a certificate legally sufficient or agency accepted without an explicit authoritative record.
 5. **F210-AC-05:** Unsafe or unauthorized files are unavailable and cannot create a recorded certificate version.
 6. **F210-AC-06:** When a new plan supersedes or removes the linked F-205 finding, the prior requirement-to-certificate projection becomes stale while certificate history remains intact; a current finding requires explicit handling and is never guessed or silently remapped to old evidence.
+7. **F210-AC-07:** Every certificate stays in private storage; each download issuance rechecks workspace authorization and scan state and returns only a short-lived signed URL. Authorization loss blocks new URLs, and already issued direct-storage URLs retain only their disclosed bounded validity until expiry.
 
 ## Fixtures and Verification
 

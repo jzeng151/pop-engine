@@ -64,6 +64,7 @@ Exact HTTP, JSON Schema, migration, job, and provider shapes belong in their rev
 6. **F308-AC-06:** When the provider is unavailable, an authorized workspace member can download a short-lived CSV containing only the approved allow-listed preview fields; cells beginning with any spreadsheet-dangerous prefix (`=`, `+`, `-`, `@`, tab, carriage return, or line feed) are escaped, including control-prefixed formulas, no provider credential is included, and expiry or revocation makes the download unavailable.
 7. **F308-AC-07:** Cancelling an export atomically marks its generation cancelled and stops unclaimed jobs; claimed or leased jobs recheck the export generation immediately before the provider call, abort when stale, preserve result history, and cannot transfer records after cancellation is reported.
 8. **F308-AC-08:** Every queued or leased record rechecks current transfer basis, suppression, and deletion state immediately before the provider call; a contact that is no longer eligible is excluded and reported without transfer.
+9. **F308-AC-09:** CSV artifacts pin source contact/eligibility versions; deletion, suppression, or loss of transfer basis revokes every not-yet-downloaded staged artifact containing that record and requires regeneration.
 
 ## Fixtures and Verification
 

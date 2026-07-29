@@ -64,6 +64,7 @@ Exact HTTP, JSON Schema, migration, job, and provider shapes belong in their rev
 5. **F209-AC-05:** Unauthorized, oversized, disallowed, checksum-mismatched, or unsafe uploads are unavailable and create no accepted document state.
 6. **F209-AC-06:** Replanning marks every superseded or removed rule-derived estimate stale and excludes it from current totals; refresh creates source-linked current entries without overwriting old estimates, invoices, payments, or document history.
 7. **F209-AC-07:** Every document remains in private storage; each URL issuance rechecks workspace ownership/role and scan state and returns only a short-lived signed URL. Authorization loss blocks new URLs, while an already issued direct-storage URL retains only its disclosed bounded validity until expiry unless an approved authenticated proxy provides immediate revocation.
+8. **F209-AC-08:** Fee, estimate, invoice, payment, document-state, and final-permit mutations bind a stable request identity to the original immutable result; a lost-response retry returns that result without duplicating history or rollups.
 
 ## Fixtures and Verification
 

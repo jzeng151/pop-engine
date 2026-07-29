@@ -58,7 +58,7 @@ Exact HTTP, JSON Schema, migration, job, and provider shapes belong in their rev
 
 1. **F703-AC-01:** The approved permission matrix has a passing allow and deny test for every role/action pair in scope.
 2. **F703-AC-02:** A client cannot gain authority by changing a workspace ID, role value, URL, hidden form field, queued job, or public token.
-3. **F703-AC-03:** Role revocation prevents the next privileged request and any queued job from passing claim/execution-time authorization; the denial causes no provider side effect or data disclosure and is recorded without secret or contact content.
+3. **F703-AC-03:** Role revocation prevents the next privileged request and any queued job from passing claim/execution-time authorization; owner revoke/downgrade uses F702-AC-04's serialized workspace invariant so concurrent changes cannot remove the last owner. Denials cause no provider side effect or data disclosure and are recorded without secret/contact content.
 4. **F703-AC-04:** Rules-admin functions require the separate platform role and cannot be granted by a workspace owner.
 5. **F703-AC-05:** After F-701, F-702, and F-703 all pass security and migration checks, the production gate may be explicitly enabled; otherwise it remains closed.
 

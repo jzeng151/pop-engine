@@ -59,7 +59,7 @@ Exact HTTP, JSON Schema, migration, job, and provider shapes belong in their rev
 1. **F713-AC-01:** The comparison verifies and displays both exact versions/checksums before diffing.
 2. **F713-AC-02:** Added, removed, and changed registry/rule/advisory/source/verification/config fields are deterministically matched across versions by stable `rule_id` or the exact immutable approved lineage mapping and are path-addressable; ruleset version is not part of the cross-version match key.
 3. **F713-AC-03:** Missing, invalid, checksum-mismatched, or incompatible artifacts produce an explicit failure and never 'no changes'.
-4. **F713-AC-04:** The UI makes no evaluated/user-impact claim unless linked F-712 runs for the exact artifacts demonstrate it.
+4. **F713-AC-04:** The UI makes no evaluated/user-impact claim unless linked F-712 runs use the exact artifacts and byte-identical engine version, fixture set, calendar, `today`, and other evaluation inputs; mismatched runs are labeled incomparable with every differing input exposed.
 5. **F713-AC-05:** Swapping versions preserves changed values and reverses only before/after and add/remove direction.
 6. **F713-AC-06:** Every result/export records the lineage-mapping version/checksum; changing a mapping creates a new immutable mapping version and a separately identifiable comparison result.
 

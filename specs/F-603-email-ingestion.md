@@ -23,7 +23,7 @@ Authorized agency correspondence can be ingested and proposed for the correct ev
 
 ## Dependencies and Baseline
 
-- F-208, F-209 private documents, approved jobs/outbox, and the F-701/F-702/F-703 gate.
+- F-208, F-209 private documents, F-602 extraction handoff, approved jobs/outbox, and the F-701/F-702/F-703 gate.
 - Inbound provider/domain, authentication, retention, attachment, matching, and unmatched-message policy.
 - Baseline at draft time: PRD, Roadmap, Design, and Phase 0–1.5 Architecture approved 2026-07-22; `ARCHITECTURE-FUTURE.md` approved as a planning target 2026-07-25; NYC ruleset `nyc.v2.7`, rules schema `popengine-rules/v2`, and scenario fixtures v5 where regulatory output is consumed.
 - The approval PR must re-pin any baseline version that changes before approval. A proposed or superseded input blocks implementation.

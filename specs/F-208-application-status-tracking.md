@@ -57,7 +57,7 @@ Exact HTTP, JSON Schema, migration, job, and provider shapes belong in their rev
 ## Acceptance Criteria
 
 1. **F208-AC-01:** A checklist requirement can create at most the explicitly supported application records linked to its immutable finding; an application absent from the plan requires an explicit user-confirmed unexpected-requirement action with agency-source provenance, remains labeled user-recorded/non-regulatory, and cannot mutate the plan or ruleset.
-2. **F208-AC-02:** Recording or correcting an application identifier, agency state, agency-provided deadline, submission, revision, inspection, decision, or condition validates the typed value, appends a timestamped history entry, and updates the current projection atomically; a changed deadline triggers approved reminder/calendar staleness.
+2. **F208-AC-02:** Recording or correcting an application identifier, agency state, agency-provided deadline, submission, revision, inspection, decision, or condition validates the typed value, appends history, and updates the projection atomically. A deadline change commits its generation/transactional outbox invalidation in that transaction, and reminder/calendar workers recheck the generation before side effects.
 3. **F208-AC-03:** A correction preserves the previous value and actor; no edit rewrites plan evidence.
 4. **F208-AC-04:** Unknown or conflicting agency state remains visible and cannot auto-complete the checklist requirement.
 5. **F208-AC-05:** Cross-workspace access and unauthorized role mutations fail without disclosing record existence.
