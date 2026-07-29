@@ -1085,6 +1085,9 @@ describe("F-102 · CONDITIONAL branch table and INFEASIBLE rescope ladder", () =
           finding({
             ruleIds: ["SAPO-STREET-LARGE-001"],
             name: "Street Activity Permit — Large",
+            deadlineDisplay: "submit by December 31 of the prior year",
+            deadlineStatus: "published_deadline_missed",
+            latestApplyDate: "2025-12-31",
           }),
           finding({
             ruleIds: ["SAPO-INSURANCE-001"],
@@ -1136,6 +1139,15 @@ describe("F-102 · CONDITIONAL branch table and INFEASIBLE rescope ladder", () =
 
     expect(screen.getByTestId("blocking-finding").textContent).toContain(
       "Street Activity Permit — Large",
+    );
+    expect(screen.getByTestId("blocking-finding").textContent).toContain(
+      "published deadline was missed as scoped",
+    );
+    expect(screen.getByTestId("blocking-finding").textContent).toContain(
+      "Published timing: submit by December 31 of the prior year",
+    );
+    expect(screen.getByTestId("blocking-finding").textContent).toContain(
+      "latest published apply-by date was 2025-12-31",
     );
     expect(screen.getByTestId("rescope-ladder")).toBeDefined();
     const suggestions = screen.getAllByTestId("rescope-suggestion");

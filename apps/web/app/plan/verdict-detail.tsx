@@ -476,6 +476,15 @@ export function VerdictDetailPanel({
                 <FindingReferences references={[blockerReference]} />
               )}
             </p>
+            <p className="verdict-detail__blocker-reason">
+              This blocks the date because the published deadline was missed as scoped.
+              {blockerFinding?.deadlineDisplay !== null &&
+                blockerFinding?.deadlineDisplay !== undefined &&
+                ` Published timing: ${blockerFinding.deadlineDisplay}.`}
+              {blockerFinding?.latestApplyDate !== null &&
+                blockerFinding?.latestApplyDate !== undefined &&
+                ` The latest published apply-by date was ${blockerFinding.latestApplyDate}.`}
+            </p>
             {missedFindings.length > 1 && (
               <p className="verdict-detail__missed">
                 All published deadlines missed as scoped:{" "}
