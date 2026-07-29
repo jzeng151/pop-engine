@@ -18,9 +18,15 @@ measures, and one, sound, genuinely overlaps. It also makes the near-empty case 
 measure. The API still requires a source snapshot, but the repository already records
 SOURCE_CONFIRMED generator, battery and DEP threshold sources on FDNY-GENERATOR-001 and
 DEP-GENERATOR-REG-001, backed by `VERIFICATION-SOURCES.md` Round 2 #10. Reuse, status and exact
-confirmation text still need regulatory approval; source discovery for those thresholds is not an
-unpaid cost. The framing and noise findings remain reasons to revisit the proposal; the source
-correction reduces its cost.
+confirmation text still needed regulatory approval at the pinned commit; source discovery for those
+thresholds was not an unpaid cost. That approval has since completed: the current baseline and
+nyc.v2.10 provenance record decision gate `msg_68b1f57ec560` for the exact source, status and text
+contract. The framing and noise findings remain historical reasons to revisit the proposal; the
+source correction reduced its cost without reopening the completed gate.
+
+**Eighth revision.** The current baseline is now distinguished from the pinned pricing state:
+decision gate `msg_68b1f57ec560` completed the source, status and confirmation-text approvals this
+brief historically priced as pending.
 
 **Seventh revision.** Four findings applied. The historical measured shape at `46971a0` now carries
 all five qualifying unknown-valued fields across Scenarios E and F and all seventeen implementation
@@ -472,9 +478,12 @@ is already paid for the threshold paths the confirmations summarize:
 
 Those records do not make arbitrary absence copy safe. They do mean a cautiously bounded
 "no published generator/battery path identified from these answers" classification can reuse existing
-source work rather than commissioning new threshold research. The verification owner and rules
-reviewer still must approve the exact source reuse, verification state and organizer-visible text. A
-broader exemption claim would exceed those sources and require separate evidence.
+source work rather than commissioning new threshold research. At `46971a0`, the verification owner
+and rules reviewer still needed to approve the exact source reuse, verification state and
+organizer-visible text. That historical cost is now complete: `docs/BASELINE.md`'s 2026-07-29 issue
+#107 decision and nyc.v2.10's provenance both record decision gate `msg_68b1f57ec560`, and the
+published confirmation rules carry the approved source, status and text. A broader exemption claim
+would still exceed those sources and require separate evidence.
 
 The SAPO experiment still exposes a real engineering constraint: it used `parseEngineRuleset`, whose
 `parseSource` accepts an absent source, while API boot rejects one. Confirmation rules therefore must
