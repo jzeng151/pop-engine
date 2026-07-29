@@ -1,6 +1,6 @@
 # F-203 · Deadline Alerts
 
-**Status:** APPROVED (2026-07-25; maximum reminder offset ratified 2026-07-26, product-owner approved, resolving the P1 on PR #125; outputs amended 2026-07-27 to name `event_alert_contacts`, product-owner approved on PR #131; AC 7 and the `dependency_unlocked` row amended 2026-07-27 to carry the destination and null `latest_apply_date` qualifiers the implementation already had, product-owner approved on PR #131) · **Reviewer/approver:** product owner + affected lane owners via the approval PR · **Owner:** see Lane below · see `docs/BASELINE.md`.
+**Status:** APPROVED (2026-07-25; maximum reminder offset ratified 2026-07-26, product-owner approved, resolving the P1 on PR #125; outputs amended 2026-07-27 to name `event_alert_contacts`, product-owner approved on PR #131; AC 7 and the `dependency_unlocked` row amended 2026-07-27 to carry the destination and null `latest_apply_date` qualifiers the implementation already had, product-owner approved on PR #131; Phase 2 depth retained under F-203 on 2026-07-29 by product-owner approval, resolving SPEC-CONFLICT #127 item 1 without scheduling it) · **Reviewer/approver:** product owner + affected lane owners via the approval PR · **Owner:** see Lane below · see `docs/BASELINE.md`.
 **Phase:** 1 (core, week 2; happy path) · **Lane:** Dev 4 · **Depends on:** F-202 (scheduling happens at checklist creation) · **Feeds:** F-305/F-413 reuse the plumbing (post-MVP)
 
 ## User Story
@@ -21,7 +21,7 @@ The contact is a separate table rather than columns on an existing row because `
 `alerts` rows, by type:
 
 | alert_type          | When scheduled                                                                                      |
-|---------------------|-----------------------------------------------------------------------------------------------------|
+| ------------------- | --------------------------------------------------------------------------------------------------- |
 | deadline_reminder   | `latest_apply_date − 7 days` and `latest_apply_date − 1 day` per dated permit item                  |
 | slack_warning       | immediately at checklist creation when the plan verdict is FEASIBLE-AT-RISK ("apply within N days") |
 | dependency_unlocked | at `apply_after_date` for gated items (Parks→NYPD), null `latest_apply_date` included               |
@@ -50,7 +50,7 @@ Reminder offsets (7/1) are config, not code: they are published at `config.alert
 
 ## Phase 1 Scope Cut
 
-Happy path only. Escalations, digests, team reminders, per-user preferences: Phase 2 (F-203 full, per ROADMAP).
+Happy path only. Escalations, digests, team reminders, and per-user preferences remain Phase 2 depth under F-203 by decision; they are planned, not scheduled, and have no implementation acceptance criteria yet.
 
 ## Edge Cases
 

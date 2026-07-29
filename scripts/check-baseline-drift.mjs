@@ -338,7 +338,12 @@ const SKIPPED_DIRECTORIES = skippedDirectories();
  * scope. The template is the one that goes stale and it is still checked.
  */
 const asBasenamePattern = (pattern) =>
-  new RegExp(`^${pattern.split("*").map((part) => part.replace(/[.+^${}()|[\]\\?]/g, "\\$&")).join("[^/]*")}$`);
+  new RegExp(
+    `^${pattern
+      .split("*")
+      .map((part) => part.replace(/[.+^${}()|[\]\\?]/g, "\\$&"))
+      .join("[^/]*")}$`,
+  );
 const ignoredFiles = () => {
   const lines = gitignoreLines().filter((line) => !line.endsWith("/"));
   const patterns = (prefixed) =>
@@ -934,7 +939,10 @@ function danglingInLiterals(sourceFile, literals) {
         if (resolves(token[0], value, token.index)) continue;
         if (literal.continues && token.index + token[0].length === value.length) continue;
         const at = valueAt === -1 ? literal.index : literal.index + valueAt + token.index;
-        found.push({ line: sourceFile.getLineAndCharacterOfPosition(at).line + 1, named: token[0] });
+        found.push({
+          line: sourceFile.getLineAndCharacterOfPosition(at).line + 1,
+          named: token[0],
+        });
       }
     }
   }
@@ -1161,7 +1169,10 @@ function shellWords(command) {
     // inside a double-quoted string.
     const substitutes = character === "`" && quote !== "'";
     if (substitutes) backquoted = !backquoted;
-    if (substitutes || (quote === null && (/\s/.test(character) || SHELL_OPERATORS.has(character)))) {
+    if (
+      substitutes ||
+      (quote === null && (/\s/.test(character) || SHELL_OPERATORS.has(character)))
+    ) {
       if (word !== null) words.push(word);
       word = null;
       continue;
@@ -1578,6 +1589,37 @@ if (disagreements.length > 0) {
   process.exit(1);
 }
 
+// SPEC-CONFLICT #127 item 1: the three approved artifacts assign the same unscheduled Phase 2
+// depth to F-203. Keeping this text-level check here makes the approved reconciliation durable.
+const f203Artifacts = ["docs/ROADMAP.md", "docs/PRD.md", "specs/F-203-deadline-alerts.md"];
+const f203Capabilities = ["escalations", "digests", "team reminders", "per-user preferences"];
+const f203Failures = [];
+
+for (const relative of f203Artifacts) {
+  const full = join(repoRoot, relative);
+  if (!existsSync(full)) {
+    f203Failures.push(`${relative} is missing`);
+    continue;
+  }
+
+  const assignment = readFileSync(full, "utf8")
+    .split("\n")
+    .find((line) => {
+      const normalized = line.toLowerCase();
+      return (
+        normalized.includes("f-203") &&
+        f203Capabilities.every((capability) => normalized.includes(capability)) &&
+        normalized.includes("planned, not scheduled")
+      );
+    });
+  if (!assignment) {
+    f203Failures.push(
+      `${relative} must assign escalations, digests, team reminders, and per-user preferences ` +
+        "to F-203 as planned, not scheduled",
+    );
+  }
+}
+
 // ---------------------------------------------------------------------------------------------
 // SPEC-CONFLICT #127 item 2: Square/POS scope agreement (governance §5 step 7).
 //
@@ -1730,6 +1772,12 @@ if (posFailures.length > 0) {
   process.exit(1);
 }
 
+if (f203Failures.length > 0) {
+  console.error("F-203 Phase 2 scope disagreement (SPEC-CONFLICT #127 item 1):\n");
+  for (const failure of f203Failures) console.error("  ✗ " + failure);
+  process.exit(1);
+}
+
 if (failures.length > 0) {
   console.error("Baseline status drift detected (docs/BASELINE.md vs file headers):\n");
   for (const f of failures) console.error("  ✗ " + f);
@@ -1749,6 +1797,10 @@ console.log(
   `Square/POS scope check passed: ${posArtifacts.length} artifacts agree that the capability is `.concat(
     "F-408's and that no standalone POS entry exists (SPEC-CONFLICT #127 item 2).",
   ),
+);
+console.log(
+  `F-203 scope check passed: ${f203Artifacts.length} artifacts retain the same planned, ` +
+    "unscheduled Phase 2 capabilities (SPEC-CONFLICT #127 item 1).",
 );
 for (const c of checked) console.log("  ✓ " + c);
 

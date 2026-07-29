@@ -1,6 +1,6 @@
 # PopEngine — Roadmap (Canonical)
 
-**Status:** APPROVED (2026-07-22; F-109 retitled "Scope-Support Classification" and its concept renamed from "coverage states" to "scope support states" 2026-07-26, product-owner approved, resolving a three-way overload of "coverage"; the five state values are unchanged; standalone `Square/POS integrations` entry dropped from Phase 4 on 2026-07-28, product-owner approved, resolving SPEC-CONFLICT #127 item 2 by the narrowing branch, no F-id's meaning changed; see `docs/BASELINE.md`).
+**Status:** APPROVED (2026-07-22; F-109 retitled "Scope-Support Classification" and its concept renamed from "coverage states" to "scope support states" 2026-07-26, product-owner approved, resolving a three-way overload of "coverage"; the five state values are unchanged; SPEC-CONFLICT #127 resolved 2026-07-29 by product-owner approval: F-203 retains escalations, digests, team reminders, and per-user preferences as planned, unscheduled Phase 2 depth, while the standalone `Square/POS integrations` entry remains dropped under item 2's narrowing branch; no F-id's meaning changed; see `docs/BASELINE.md`).
 **Companion docs:** `PRD.md` (requirements) · `DESIGN.md` (lifecycle model, lanes, gates, demo plan, dependency graph) · `test-scenario-answer-key.md` (MVP ground truth).
 **Feature IDs:** F-xxx IDs are permanent shared vocabulary; once assigned, an ID's meaning never changes. Full ID policy in `DESIGN.md`.
 
@@ -55,7 +55,7 @@ Worked separately from the core per `DESIGN.md` Decision 10; doubles as the fall
 - **F-403 · Lead Capture & Consent** — check-in doubles as opt-in lead collection; entry/marketing/SMS consent kept separate.
 - **F-404 · Attendee CRM & Export** — attendee list across events; CSV export; repeat-attendee flag.
 - **F-405 · Day-of Runbook** — auto-generated event-day sheet: permit numbers, load-in checklist, contacts, staff assignments.
-- **F-203 (full)** — alert escalations, digests, team reminders.
+- **F-203 (full)** — alert escalations, digests, team reminders, and per-user preferences; planned, not scheduled.
 
 ## Phase 3 — Differentiation & Depth
 

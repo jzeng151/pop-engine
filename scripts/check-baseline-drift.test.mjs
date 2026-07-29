@@ -54,12 +54,19 @@ const ruleset = (version) => ["nyc", `rules.v${version}.json`].join("-");
  */
 const SQUARE_RECONCILED = {
   "docs/ROADMAP.md":
-    "# Roadmap\n\n- **F-408 · Inventory Low-Stock Alerts** — manual counts or Square webhook.\n",
+    "# Roadmap\n\n- **F-408 · Inventory Low-Stock Alerts** — manual counts or Square webhook.\n" +
+    "- **F-203 (full)** — alert escalations, digests, team reminders, and per-user preferences; " +
+    "planned, not scheduled.\n",
   "docs/PRD.md":
     "# PRD\n\n- **F-308 / F-408** — ticketing integration/export; inventory low-stock alerts " +
-    "(manual counts or Square webhook).\n",
+    "(manual counts or Square webhook).\n" +
+    "- **F-203 (full)** — alert escalations, digests, team reminders, and per-user preferences; " +
+    "planned, not scheduled.\n",
   "docs/ARCHITECTURE-FUTURE.md":
     "# Architecture\n\n| External integrations | F-108, F-212, F-308, F-408 | webhook events |\n",
+  "specs/F-203-deadline-alerts.md":
+    "# F-203\n\nEscalations, digests, team reminders, and per-user preferences remain Phase 2 " +
+    "depth under F-203; planned, not scheduled.\n",
 };
 
 /** The fixture ruleset's version. Synthetic on purpose, and far from any published one. */
@@ -385,8 +392,7 @@ describe.concurrent("the PR #128 break, which is the coverage floor for what get
         `import { readFileSync } from "node:fs";\n` +
         `const RULES_FILE = process.env.RULES_FILE ?? "rules/${MISSING}";\n` +
         `export const RULESET = JSON.parse(readFileSync(RULES_FILE, "utf8"));\n`,
-      "apps/web/app/checklist/checklist-view.test.tsx":
-        `import { RULESET } from "./checklist-fixtures";\nexport const value = RULESET;\n`,
+      "apps/web/app/checklist/checklist-view.test.tsx": `import { RULESET } from "./checklist-fixtures";\nexport const value = RULESET;\n`,
     });
 
     expect(status).toBe(1);
@@ -556,17 +562,20 @@ describe.concurrent("the version, which is spelled in three places", () => {
   // afterwards: a check reading only the declaration's position confirms the initial value against
   // the artifact and passes, while `validateRuleset` compares the reassigned one and rejects the
   // published ruleset at boot.
-  it.each([["let"], ["var"]])("refuses a %s pin, which the const argument does not cover", async (kind) => {
-    const { status, output } = await runOn({
-      "apps/api/src/ruleset.ts":
-        `${kind} EXPECTED_RULESET_VERSION = "${FIXTURE_VERSION}";\n` +
-        `EXPECTED_RULESET_VERSION = "nyc.v9.9";\n` +
-        `export { EXPECTED_RULESET_VERSION };\n`,
-    });
+  it.each([["let"], ["var"]])(
+    "refuses a %s pin, which the const argument does not cover",
+    async (kind) => {
+      const { status, output } = await runOn({
+        "apps/api/src/ruleset.ts":
+          `${kind} EXPECTED_RULESET_VERSION = "${FIXTURE_VERSION}";\n` +
+          `EXPECTED_RULESET_VERSION = "nyc.v9.9";\n` +
+          `export { EXPECTED_RULESET_VERSION };\n`,
+      });
 
-    expect(status).toBe(1);
-    expect(output).toContain("no longer declares EXPECTED_RULESET_VERSION");
-  });
+      expect(status).toBe(1);
+      expect(output).toContain("no longer declares EXPECTED_RULESET_VERSION");
+    },
+  );
 
   it("fails when the one constant allowed to name a version is gone", async () => {
     const { status, output } = await runOn({
@@ -782,7 +791,8 @@ describe.concurrent("round 9: valid code the check used to reject", () => {
   // Reporting `nyc-rules.v` as a missing file made ordinary dynamic selection fail CI.
   it("accepts a version interpolated into the filename", async () => {
     const { status, output } = await runOn({
-      "apps/web/app/reader.ts": "const p = `rules/" + ["nyc", "rules.v"].join("-") + "${version}.json`;\n",
+      "apps/web/app/reader.ts":
+        "const p = `rules/" + ["nyc", "rules.v"].join("-") + "${version}.json`;\n",
     });
 
     expect(status).toBe(0);
@@ -879,7 +889,8 @@ describe.concurrent("round 10: the exemption is only for files vitest runs", () 
     ["a tree no include pattern covers", "tools/reader.test.ts"],
   ])("refuses the marker in %s", async (_label, path) => {
     const { status, output } = await runOn({
-      [path]: `// baseline-check: fixture ruleset names\n` + `export const p = "rules/${MISSING}";\n`,
+      [path]:
+        `// baseline-check: fixture ruleset names\n` + `export const p = "rules/${MISSING}";\n`,
     });
 
     expect(status).toBe(1);
@@ -895,7 +906,8 @@ describe.concurrent("round 10: the exemption is only for files vitest runs", () 
     ["packages/engine/src/nested/reader.test.ts"],
   ])("still lets %s claim it", async (path) => {
     const { status } = await runOn({
-      [path]: `// baseline-check: fixture ruleset names\n` + `export const p = "rules/${MISSING}";\n`,
+      [path]:
+        `// baseline-check: fixture ruleset names\n` + `export const p = "rules/${MISSING}";\n`,
     });
 
     expect(status).toBe(0);
@@ -913,7 +925,9 @@ describe.concurrent("round 10: the exemption is only for files vitest runs", () 
       const opens = new RegExp(`${declaration}\\s*\\[`).exec(text);
       if (opens === null) return [];
       const body = text.slice(opens.index + opens[0].length);
-      return [...body.slice(0, body.indexOf("]")).matchAll(/["'`]([^"'`]+)["'`]/g)].map((m) => m[1]);
+      return [...body.slice(0, body.indexOf("]")).matchAll(/["'`]([^"'`]+)["'`]/g)].map(
+        (m) => m[1],
+      );
     };
 
     const fromConfig = arrayAfter(readFileSync(join(repo, "vitest.config.ts"), "utf8"), "include:");
@@ -975,7 +989,11 @@ describe.concurrent("round 10: package scripts are executable entry points", () 
     "fails on a stale ruleset in %s",
     async (manifest) => {
       const { status, output } = await runOn({
-        [manifest]: JSON.stringify({ name: "x", scripts: { seed: `node seed.mjs rules/${MISSING}` } }, null, 2),
+        [manifest]: JSON.stringify(
+          { name: "x", scripts: { seed: `node seed.mjs rules/${MISSING}` } },
+          null,
+          2,
+        ),
       });
 
       expect(status).toBe(1);
@@ -1054,7 +1072,8 @@ describe.concurrent("round 11: a bump does not break the guard", () => {
       for (const entry of readdirSync(join(repo, directory), { withFileTypes: true })) {
         const relative = `${directory}/${entry.name}`;
         if (entry.isDirectory()) {
-          if (!["node_modules", ".next", "dist", "coverage"].includes(entry.name)) collect(relative);
+          if (!["node_modules", ".next", "dist", "coverage"].includes(entry.name))
+            collect(relative);
         } else if (
           // The replay fixtures come too. `engine.test.ts` points at
           // `__fixtures__/nyc-rules.v2.3.json`, which is a superseded ruleset kept so old plans
@@ -1100,7 +1119,7 @@ describe.concurrent("round 11: cooked values are tokenized as values", () => {
     ["an opening brace", "{backup"],
     ["a closing brace", "}backup"],
     ["a single quote", "'backup"],
-    ['a double quote', '\\"backup'],
+    ["a double quote", '\\"backup'],
     ["a backtick", "`backup"],
   ])("fails a published name with %s in a string literal", async (_label, suffix) => {
     const { status, output } = await runOn({
@@ -1245,7 +1264,8 @@ describe.concurrent("round 12: a tagged template's value is the tag's to decide"
   // reported as missing.
   it("still accepts String.raw whose raw value is the published artifact", async () => {
     const { status, output } = await runOn({
-      "apps/web/app/reader.ts": "const p = readFileSync(String.raw`rules/" + FIXTURE_RULESET + "`);\n",
+      "apps/web/app/reader.ts":
+        "const p = readFileSync(String.raw`rules/" + FIXTURE_RULESET + "`);\n",
     });
 
     expect(status).toBe(0);
@@ -1341,14 +1361,17 @@ describe.concurrent("round 13: each format decodes by its own rules", () => {
     // and that file is not there. Unquoting has to produce the name the shell would, not a
     // convenient one.
     ["an escaped space", `cat rules/${FIXTURE_RULESET}\\ copy`],
-  ])("still fails a shell-quoted script naming a file that is not there, with %s", async (_label, command) => {
-    const { status, output } = await runOn({
-      "package.json": JSON.stringify({ name: "x", scripts: { seed: command } }, null, 2),
-    });
+  ])(
+    "still fails a shell-quoted script naming a file that is not there, with %s",
+    async (_label, command) => {
+      const { status, output } = await runOn({
+        "package.json": JSON.stringify({ name: "x", scripts: { seed: command } }, null, 2),
+      });
 
-    expect(status).toBe(1);
-    expect(output).toContain("package.json:4 names");
-  });
+      expect(status).toBe(1);
+      expect(output).toContain("package.json:4 names");
+    },
+  );
 
   // An unterminated quote is not valid shell and would not run, so there are no words to speak of.
   // Dropping the stray quote would invent a value the shell never produces, so the command is
@@ -1507,7 +1530,11 @@ describe.concurrent("round 14: shell operators, one boundary, and escaped YAML q
   // The pair for that boundary: the artifact named cleanly, with nothing after it, still passes in
   // both formats. Without this the fix above could be satisfied by reporting every value.
   it.each([
-    ["a JS literal", "apps/web/app/reader.ts", (name) => `const p = readFileSync("rules/${name}");\n`],
+    [
+      "a JS literal",
+      "apps/web/app/reader.ts",
+      (name) => `const p = readFileSync("rules/${name}");\n`,
+    ],
     ["a .env override", "apps/api/.env.example", (name) => `RULES_FILE="rules/${name}"\n`],
   ])("still accepts the published artifact named cleanly in %s", async (_label, file, shape) => {
     const { status, output } = await runOn({ [file]: shape(FIXTURE_RULESET) });
@@ -1660,17 +1687,18 @@ describe.concurrent("round 15: ignored files, substitution, and values that span
   // Verified on Node v24.18.0: a quoted .env value that LITERALLY spans lines is one value, in all
   // three quote characters. The segmenter stopped at the newline and the raw pass then validated
   // the existing first line.
-  it.each([['"', '"'], ["'", "'"], ["`", "`"]])(
-    "fails a .env value spanning lines in %s quotes",
-    async (open, close) => {
-      const { status, output } = await runOn({
-        "apps/api/.env.example": `RULES_FILE=${open}rules/${FIXTURE_RULESET}\nbackup${close}\n`,
-      });
+  it.each([
+    ['"', '"'],
+    ["'", "'"],
+    ["`", "`"],
+  ])("fails a .env value spanning lines in %s quotes", async (open, close) => {
+    const { status, output } = await runOn({
+      "apps/api/.env.example": `RULES_FILE=${open}rules/${FIXTURE_RULESET}\nbackup${close}\n`,
+    });
 
-      expect(status).toBe(1);
-      expect(output).toContain(`names ${FIXTURE_RULESET}`);
-    },
-  );
+    expect(status).toBe(1);
+    expect(output).toContain(`names ${FIXTURE_RULESET}`);
+  });
 
   // The pair for the multiline segmenter: an ordinary single-line value naming the artifact is
   // still quiet, and an UNQUOTED value still stops at its line, which is what Node does.
@@ -1730,6 +1758,34 @@ describe.concurrent("round 15: ignored files, substitution, and values that span
 
     expect(status).toBe(1);
     expect(output).toContain(`.github/workflows/ci.yml:6 names ${MISSING}`);
+  });
+});
+
+describe.concurrent("F-203 Phase 2 scope agreement (SPEC-CONFLICT #127 item 1)", () => {
+  it("passes when all three artifacts retain the approved unscheduled scope", async () => {
+    const { status, output } = await runOn({});
+
+    expect(status).toBe(0);
+    expect(output).toContain("F-203 scope check passed");
+  });
+
+  it.each(["docs/ROADMAP.md", "docs/PRD.md", "specs/F-203-deadline-alerts.md"])(
+    "fails when %s drops per-user preferences",
+    async (relative) => {
+      const { status, output } = await runOn({
+        [relative]: SQUARE_RECONCILED[relative].replace("per-user preferences", "preferences"),
+      });
+
+      expect(status).toBe(1);
+      expect(output).toContain(`${relative} must assign escalations, digests, team reminders`);
+    },
+  );
+
+  it("fails when the approved F-203 spec is missing", async () => {
+    const { status, output } = await runOn({ "specs/F-203-deadline-alerts.md": null });
+
+    expect(status).toBe(1);
+    expect(output).toContain("specs/F-203-deadline-alerts.md is missing");
   });
 });
 
