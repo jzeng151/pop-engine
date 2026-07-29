@@ -1,7 +1,6 @@
 "use client";
 
 import { useEffect, useRef, useState, type CSSProperties } from "react";
-import { rememberLastEvent } from "../../../last-event";
 import {
   loadEventDoorContext,
   loadEventStats,
@@ -105,7 +104,6 @@ export function DashboardView({
       if (!alive) return;
       if (result.ok) {
         setContext(result.context);
-        rememberLastEvent(result.context);
       }
     });
     return () => {

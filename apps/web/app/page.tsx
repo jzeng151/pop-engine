@@ -1,5 +1,3 @@
-import { RecentLiveOpsLink } from "./recent-live-ops-link";
-
 export default function Home() {
   return (
     <main className="home">
@@ -12,7 +10,6 @@ export default function Home() {
       <a className="intake__submit" href="/intake">
         Describe your event
       </a>
-      <RecentLiveOpsLink />
     </main>
   );
 }

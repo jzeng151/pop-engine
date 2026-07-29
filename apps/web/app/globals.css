@@ -596,26 +596,6 @@ a.pe-link:hover,
   margin-top: 0.75rem;
 }
 
-.home__recent {
-  margin: 0.5rem 0 0;
-}
-
-.home__recent-link {
-  font-family: var(--pe-font-mono);
-  font-size: 0.85rem;
-  font-weight: 600;
-  color: var(--pe-neon);
-  text-decoration: none;
-  border-bottom: 1px solid var(--pe-link-line);
-  text-shadow: none;
-}
-
-.home__recent-link:hover {
-  border-bottom-color: var(--pe-amber);
-  color: var(--pe-amber);
-}
-
-
 /* F-206: plan view, snapshot banner, per-line citations */
 .plan {
   display: flex;
