@@ -6,6 +6,9 @@ export default function Home() {
       <p>
         <a href="/intake">Describe your event</a>
       </p>
+      <p>
+        <a href="/auth">Authentication foundation</a>
+      </p>
     </main>
   );
 }
