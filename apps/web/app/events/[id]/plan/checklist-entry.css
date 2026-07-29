@@ -11,8 +11,6 @@
   align-items: baseline;
 }
 
-
 .plan-next a {
   font-weight: 700;
-  /* Link color from globals.css */
 }

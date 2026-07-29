@@ -10,11 +10,6 @@
   padding: 0.5rem 0 2rem;
 }
 
-.checkin__title {
-  margin: 0;
-  /* Display type from globals.css shared h1 / title block. */
-}
-
 .checkin__lede,
 .checkin__note {
   margin: 0;
@@ -42,13 +37,8 @@
   text-transform: uppercase;
 }
 
-.checkin__input {
-  /* Shared warm input styles from globals.css */
-}
-
 .checkin__submit {
   width: 100%;
-  /* Primary styles come from globals.css warm CTA block. */
 }
 
 .checkin__submit:disabled {
@@ -70,5 +60,4 @@
 
 .checkin__success h1 {
   margin: 0;
-  /* Display type from globals.css shared h1 / title block. */
 }

@@ -19,12 +19,6 @@
   gap: var(--pe-stack);
 }
 
-
-.intake h1 {
-  margin: 0;
-  /* Display type from globals.css shared h1 block. */
-}
-
 .intake__lede {
   margin: 0 0 0.35rem;
   max-width: var(--pe-lede-max);
@@ -86,7 +80,6 @@
   gap: 0.55rem;
 }
 
-/* Hover / focus-within for cards live in globals.css */
 .intake__question-head {
   display: flex;
   flex-wrap: wrap;
@@ -175,7 +168,6 @@ fieldset.intake__question::after {
 
 .intake__stale button {
   margin-top: 0.55rem;
-  /* Secondary button chrome from globals.css */
 }
 
 .intake__stale button[disabled] {

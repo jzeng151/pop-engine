@@ -519,14 +519,6 @@ fieldset.intake__question > legend {
     box-shadow 160ms ease;
 }
 
-.promote__secondary {
-  /* inherits .pe-secondary; keep !important overrides for CTA specificity */
-  background: var(--pe-card) !important;
-  border-color: var(--pe-rule) !important;
-  color: var(--pe-ink) !important;
-  box-shadow: none !important;
-}
-
 .pe-secondary:hover:not([disabled]),
 .promote__secondary:hover:not([disabled]),
 .guests__cancel:hover:not([disabled]),
@@ -535,13 +527,6 @@ fieldset.intake__question > legend {
   background: var(--pe-paper-deep);
   border-color: var(--pe-amber);
   color: var(--pe-ink);
-}
-
-.promote__secondary:hover:not([disabled]) {
-  background: var(--pe-paper-deep) !important;
-  border-color: var(--pe-amber) !important;
-  color: var(--pe-ink) !important;
-  box-shadow: none !important;
 }
 
 .pe-secondary:focus-visible,

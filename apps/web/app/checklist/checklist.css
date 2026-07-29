@@ -23,7 +23,6 @@
   gap: var(--pe-stack);
 }
 
-
 .checklist__lede,
 .checklist__rollup {
   margin: 0;
@@ -262,16 +261,11 @@
 
 .check-item__select,
 .check-item__notes {
-  /* Shared warm input styles from globals.css */
   min-width: 0;
 }
 
 .check-item__notes {
   min-width: 16rem;
-}
-
-.check-item__button {
-  /* Secondary button chrome from globals.css */
 }
 
 .check-item__button:disabled {

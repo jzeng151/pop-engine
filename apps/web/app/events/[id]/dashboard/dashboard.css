@@ -1,21 +1,6 @@
 /* F-402 live ops — field clipboard on the shared pe-shell canvas. */
 
 .ops {
-  --ops-font-display: var(--pe-font-display);
-  --ops-font-body: var(--pe-font-body);
-  --ops-font-mono: var(--pe-font-mono);
-  --ops-ink: var(--pe-ink);
-  --ops-steel: var(--pe-steel);
-  --ops-cyan: var(--pe-cyan);
-  --ops-amber: var(--pe-amber);
-  --ops-amber-deep: var(--pe-amber-deep);
-  --ops-amber-wash: var(--pe-amber-wash);
-  --ops-clear: var(--pe-clear);
-  --ops-clear-bright: var(--pe-clear-bright);
-  --ops-rose: var(--pe-rose);
-  --ops-rule: var(--pe-rule);
-  --ops-surface: var(--pe-surface);
-
   margin: 0 auto;
   display: flex;
   flex-direction: column;
@@ -68,11 +53,6 @@
   }
 }
 
-.ops h1 {
-  margin: 0;
-  /* Display type from globals.css shared h1 block. */
-}
-
 .ops__lede,
 .ops__recent,
 .ops__compare,
@@ -82,11 +62,11 @@
 .ops__event,
 .ops__links {
   margin: 0;
-  color: var(--ops-steel);
+  color: var(--pe-steel);
 }
 
 .ops__event {
-  font-family: var(--ops-font-mono);
+  font-family: var(--pe-font-mono);
   font-size: 0.84rem;
   letter-spacing: 0.01em;
 }
@@ -101,12 +81,8 @@
   display: flex;
   flex-wrap: wrap;
   gap: 0.35rem 1rem;
-  font-family: var(--ops-font-mono);
+  font-family: var(--pe-font-mono);
   font-size: 0.84rem;
-}
-
-.ops__links a {
-  /* Link color from globals.css warm nav/link block. */
 }
 
 .ops__total {
@@ -118,13 +94,13 @@
 }
 
 .ops__total-number {
-  font-family: var(--ops-font-mono);
+  font-family: var(--pe-font-mono);
   font-size: clamp(3.75rem, 16vw, 5rem);
   font-weight: 600;
   line-height: 0.95;
   letter-spacing: -0.05em;
   font-variant-numeric: tabular-nums;
-  color: var(--ops-ink);
+  color: var(--pe-ink);
   text-shadow: none;
 }
 
@@ -150,7 +126,7 @@
 .ops__total-label {
   font-size: 1.25rem;
   font-weight: 600;
-  color: var(--ops-ink);
+  color: var(--pe-ink);
 }
 
 .ops__zero {
@@ -161,7 +137,7 @@
 .ops__compare,
 .ops__split,
 .ops__stale {
-  font-family: var(--ops-font-mono);
+  font-family: var(--pe-font-mono);
   font-size: 0.84rem;
   letter-spacing: 0.01em;
 }
@@ -202,8 +178,8 @@
 }
 
 .ops__gauge--over {
-  border-color: var(--ops-amber);
-  background: var(--ops-amber-wash);
+  border-color: var(--pe-amber);
+  background: var(--pe-amber-wash);
   box-shadow: 0 14px 28px -16px rgba(204, 85, 0, 0.35),
     0 4px 0 rgba(204, 85, 0, 0.18);
 }
@@ -216,29 +192,29 @@
 .ops__gauge-label,
 .ops__gauge-percent {
   margin: 0;
-  font-family: var(--ops-font-mono);
+  font-family: var(--pe-font-mono);
   font-size: 0.92rem;
   font-weight: 600;
 }
 
 .ops__gauge-percent {
   margin-top: 0.25rem;
-  color: var(--ops-cyan);
+  color: var(--pe-cyan);
 }
 
 .ops__rule {
   margin-top: 0.85rem;
   position: relative;
   height: 0.85rem;
-  border-top: 1.5px solid var(--ops-ink);
-  border-bottom: 1.5px solid var(--ops-ink);
+  border-top: 1.5px solid var(--pe-ink);
+  border-bottom: 1.5px solid var(--pe-ink);
   background:
     repeating-linear-gradient(
       90deg,
       transparent,
       transparent calc(10% - 1.5px),
-      var(--ops-rule) calc(10% - 1.5px),
-      var(--ops-rule) 10%
+      var(--pe-rule) calc(10% - 1.5px),
+      var(--pe-rule) 10%
     );
   transform: translateZ(12px);
   overflow: hidden;
@@ -249,7 +225,7 @@
   inset: 0 auto 0 0;
   width: var(--ops-fill, 0%);
   max-width: 100%;
-  background: linear-gradient(90deg, var(--ops-clear), var(--ops-clear-bright));
+  background: linear-gradient(90deg, var(--pe-clear), var(--pe-clear-bright));
   opacity: 0.92;
   transition: width 420ms cubic-bezier(0.2, 0.8, 0.2, 1);
   box-shadow: 2px 0 10px rgba(34, 139, 34, 0.35);
@@ -267,7 +243,7 @@
 }
 
 .ops__gauge--over .ops__rule-fill {
-  background: linear-gradient(90deg, var(--ops-amber-deep), var(--ops-amber));
+  background: linear-gradient(90deg, var(--pe-amber-deep), var(--pe-amber));
   opacity: 1;
   box-shadow: 2px 0 10px var(--pe-glow);
 }
@@ -275,17 +251,17 @@
 .ops__warning {
   margin: 0.7rem 0 0;
   font-weight: 700;
-  color: var(--ops-amber);
+  color: var(--pe-amber);
 }
 
 .ops__error {
   margin: 0;
-  color: var(--ops-rose);
+  color: var(--pe-rose);
   font-weight: 700;
 }
 
 .ops__stale {
-  color: var(--ops-amber);
+  color: var(--pe-amber);
 }
 
 @media (prefers-reduced-motion: reduce) {

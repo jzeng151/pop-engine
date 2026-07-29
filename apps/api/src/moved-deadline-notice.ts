@@ -16,7 +16,7 @@ import type { FindingRendering } from "./plan";
  */
 
 /** Provenance that travels with a previous deadline value (AC 9 floor). */
-export type PreviousDeadlineProvenance = {
+type PreviousDeadlineProvenance = {
   readonly verificationStatus: VerificationStatus;
   readonly lastVerifiedDate: string | null;
   readonly sources: readonly FindingSource[];
@@ -26,7 +26,7 @@ export type PreviousDeadlineProvenance = {
   readonly snapshotDate: string | null;
 };
 
-export type DateChange =
+type DateChange =
   | { readonly kind: "both"; readonly previous: string; readonly current: string }
   | {
       readonly kind: "became_not_calculable";
@@ -36,7 +36,7 @@ export type DateChange =
   | { readonly kind: "became_not_applicable"; readonly previous: string }
   | { readonly kind: "now_computed"; readonly current: string };
 
-export type DeadlineStateSide = {
+type DeadlineStateSide = {
   readonly deadlineStatus: DeadlineStatus;
   readonly deadline: Deadline | null;
   readonly deadlineDisplay: string | null;
@@ -46,7 +46,7 @@ export type DeadlineStateSide = {
   readonly gated: boolean;
 };
 
-export type MovedDeadlineNotice = {
+type MovedDeadlineNotice = {
   readonly dateChange: DateChange | null;
   readonly stateChange: {
     readonly previous: DeadlineStateSide;

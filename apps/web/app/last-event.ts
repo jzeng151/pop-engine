@@ -1,6 +1,6 @@
 /** Browser hub: last event opened on Live ops (home deep-link). */
 
-export const LAST_EVENT_STORAGE_KEY = "popengine.lastEvent";
+const LAST_EVENT_STORAGE_KEY = "popengine.lastEvent";
 
 const asRecord = (value: unknown): Record<string, unknown> | null =>
   typeof value === "object" && value !== null && !Array.isArray(value)

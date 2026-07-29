@@ -5,7 +5,6 @@
   gap: var(--pe-stack);
 }
 
-
 .promote__lede,
 .promote__note {
   margin: 0;
@@ -43,11 +42,6 @@
   text-transform: uppercase;
 }
 
-.promote__input,
-.promote__textarea {
-  /* Shared warm input styles from globals.css */
-}
-
 .promote__textarea {
   min-height: 6rem;
   resize: vertical;
@@ -61,7 +55,6 @@
 }
 
 .promote__button {
-  /* Primary fill/border from globals.css warm CTA block. */
   min-height: 2.9rem;
 }
 
@@ -69,8 +62,6 @@
   opacity: 0.6;
   cursor: wait;
 }
-
-/* .promote__secondary overridden in globals for warm theme */
 
 .promote__share {
   font-family: var(--pe-font-mono);

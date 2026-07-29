@@ -7,7 +7,6 @@
   gap: var(--pe-stack);
 }
 
-
 .guests__lede,
 .guests__note {
   margin: 0;
@@ -76,7 +75,6 @@
 
 .guests__cancel {
   padding: 0.45rem 0.8rem;
-  /* Secondary button chrome from globals.css */
 }
 
 .guests__cancel:disabled {
@@ -89,4 +87,3 @@
   color: var(--muted);
 }
 
-/* guests a: nav link chrome from globals.css */

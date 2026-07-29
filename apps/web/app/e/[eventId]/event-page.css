@@ -10,11 +10,6 @@
   justify-content: center;
 }
 
-.event-page__title {
-  margin: 0;
-  /* Display type from globals.css shared h1 block. */
-}
-
 .event-page__lede,
 .event-page__note {
   margin: 0;
@@ -23,10 +18,6 @@
 
 .event-page__note {
   font-size: 0.9rem;
-}
-
-.event-page__map {
-  /* Link color from globals.css warm nav/link block. */
 }
 
 .event-page__field {
@@ -46,13 +37,8 @@
   text-transform: uppercase;
 }
 
-.event-page__input {
-  /* Shared warm input styles from globals.css */
-}
-
 .event-page__submit {
   width: 100%;
-  /* Primary styles come from globals.css warm CTA block. */
 }
 
 .event-page__submit:disabled {
