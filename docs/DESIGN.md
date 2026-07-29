@@ -4,7 +4,7 @@
 
 ## Decisions of 2026-07-22 (baseline correction)
 
-5. **Ruleset baseline is the corrected subset `nyc.v2.1`** (33 rules + 4 advisories, evidence-linked to `VERIFICATION-SOURCES.md`), after two fetch-confirmed verification passes contradicted several v1 facts; the pointer is now `nyc.v2.5`, retargeted 2026-07-25 with no regulatory change. The 59-rule draft stays in `rules/proposals/` as the post-capstone target. Scenario fixtures v4 derive from the ruleset.
+5. **Ruleset baseline is the corrected subset `nyc.v2.1`** (33 rules + 4 advisories, evidence-linked to `VERIFICATION-SOURCES.md`), after two fetch-confirmed verification passes contradicted several v1 facts; the pointer is now `nyc.v2.5`, retargeted 2026-07-25 with no regulatory change. The 59-rule draft stays in `rules/proposals/` as the post-capstone target. Scenario fixtures v6 derive from the ruleset.
 6. **The demo anchor is re-anchored:** a Large street event 35 days out misses its verified 45-day deadline (the universal 60-day SAPO lead was contradicted by primary sources).
 7. **Verdict model:** the four-state verdict stays as the top-level summary, computed from per-finding deadline statuses (ON_TRACK / DEADLINE_APPROACHING / PUBLISHED_DEADLINE_MISSED / NOT_CALCULABLE / NOT_APPLICABLE). INFEASIBLE copy = "published deadline missed as scoped." The 14-day slack threshold is labeled as internal policy.
 8. **Real business-day math** against a pinned holiday calendar replaces the calendar approximation (fixture dates are pinned, so determinism holds).
@@ -47,7 +47,7 @@ AI may draft and extract; it may never make the authoritative permit determinati
 
 - Deterministic engine output: same event + same ruleset + same date → same plan, every time.
 - Every plan line shows its verification status. Source-bearing lines cite an official source; a COVERAGE_GAP finding that carries no citation visibly states that the combination is not covered by this ruleset version, and never invents a citation or implies a source is merely missing (that is RESEARCH_REQUIRED's meaning; the published legend calls COVERAGE_GAP "combination not modeled by this ruleset version").
-- The full fixture suite passes (6 scenarios + boundary fixtures, `test-scenario-answer-key.md` v4): 100% of expected findings, zero false omissions, zero false additions, correct verdicts.
+- The full fixture suite passes (6 scenarios + boundary fixtures, `test-scenario-answer-key.md` v6): 100% of expected findings, zero false omissions, zero false additions, correct verdicts.
 - Zero fabricated permit facts; RESEARCH_REQUIRED renders "confirm with agency"; OFFICIAL_CONFLICT renders both readings.
 - The ruleset's SOURCE_CONFIRMED facts are signed off by the verification owner and `BASELINE.md` flips nyc.v2.8 to APPROVED before the demo.
 - Nothing in the core path is mocked, seeded, or hardcoded to look like engine output.
@@ -92,7 +92,7 @@ Track B staffing is the team's kickoff call (default suggestion: Dev 3 → F-301
 1. **Scenario A (anchor):** Bushwick street activation, 35 days out, classified Large → INFEASIBLE: "the published 45-day deadline passed July 12" → the deadline ladder renders (Small 14 / Medium 30 / Large 45) → rescope to Medium → FEASIBLE-AT-RISK, "apply within 5 days" (the DOHMH 30-day notification lands the same day) → checklist → portal links.
 2. **Scenario B (the judge test):** gallery event → "no new city event requirement identified from your answers" plus exactly two confirmations. The system that says "almost nothing, and here's what to confirm" is the system you trust.
 3. **Scenario D (the yellow state):** block party, 70 days out → FEASIBLE-AT-RISK, "apply within 10 days" — and no insurance line (block parties without rides are exempt). The absence is a credibility beat.
-4. **Scenario F (the branch):** rooftop party → CONDITIONAL branch table: license coverage, assembly approval, sound audibility; the no-license branch misses the SLA window by one business day.
+4. **Scenario F (the branch):** rooftop party → CONDITIONAL branch table: license coverage and sound audibility; the no-license branch misses the SLA window by one business day. The coarse assembly-approval answer remains confirmation context and cannot establish exact PACO/PA-permit coverage (#188).
 5. Rules snapshot banner + a live source-citation click-through; an OFFICIAL_CONFLICT rendering (Parks exactly-20 or TUA) if time allows.
 6. If stretch is green: seed synthetic guests, give audience participants organizer-provided synthetic name/contact aliases, then live QR check-in on their phones. No attendee enters personal contact data.
 
@@ -103,5 +103,5 @@ Performed manually: the rules JSON is versioned in git, the answer key is the te
 ## Spec-Driven Development
 
 - One spec per F-id in `/specs`; work follows the two-track model and dependency graph above, not a core-then-stretch sequence. F-206 plan rendering follows F-201, while its checklist integration waits for F-202. Phases 2+ get specs when scheduled, not now.
-- F-201's acceptance suite is the fixture set in `test-scenario-answer-key.md` (v4, derived from the ruleset). Authority for any disagreement: primary source → published rule → approved fixture → engine output → UI copy; fix the lower level, never bend the engine to a broken expectation.
+- F-201's acceptance suite is the fixture set in `test-scenario-answer-key.md` (v6, derived from the ruleset). Authority for any disagreement: primary source → published rule → approved fixture → engine output → UI copy; fix the lower level, never bend the engine to a broken expectation.
 - `rules/nyc-rules.v2.8.json` is the crown jewel; version it like code. No fact enters it without an evidence reference to `VERIFICATION-SOURCES.md`; gaps are RESEARCH_REQUIRED, conflicts are OFFICIAL_CONFLICT, never guesses.

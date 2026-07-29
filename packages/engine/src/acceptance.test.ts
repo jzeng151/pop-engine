@@ -1,5 +1,5 @@
 // The F-201 acceptance suite: the six scenarios and every boundary fixture in
-// docs/test-scenario-answer-key.md (v4), pinned to that document's clock (today = 2026-07-22)
+// docs/test-scenario-answer-key.md (v6), pinned to that document's clock (today = 2026-07-22)
 // and evaluated against the published ruleset. Expected finding sets are exact — a rule the
 // key does not list is a false addition and fails here.
 //
@@ -20,14 +20,7 @@ import type { EventIntake, Finding, PermitPlan, PublishedHolidayCalendar } from 
 
 const TODAY = "2026-07-22";
 
-const ruleset = parseEngineRuleset(
-  JSON.parse(
-    readFileSync(
-      PUBLISHED_RULES_FILE,
-      "utf8",
-    ),
-  ),
-);
+const ruleset = parseEngineRuleset(JSON.parse(readFileSync(PUBLISHED_RULES_FILE, "utf8")));
 
 // The pinned calendar's holiday list is unresolved upstream (config.business_day_math: "the
 // holiday list itself remains RESEARCH_REQUIRED"). Fixtures may not invent holidays, so the
@@ -629,9 +622,10 @@ describe("Scenario F — Rooftop Launch Party (conditional branches)", () => {
       ["yes", "CONDITIONAL"],
       ["no", "INFEASIBLE"],
     ]);
-    expect(result.verdictDetail.missingFacts.map((fact) => fact.field)).toContain(
+    expect(result.verdictDetail.missingFacts.map((fact) => fact.field).sort()).toEqual([
       "sound_audible_from_public_way",
-    );
+      "venue_license_covers_event_area",
+    ]);
   });
 
   it("counts real business days: 14 remain against the published 15 (AC 10)", () => {
