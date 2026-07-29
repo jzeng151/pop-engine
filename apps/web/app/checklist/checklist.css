@@ -17,12 +17,12 @@
   --badge-rose-text: var(--pe-rose);
   --badge-rose-line: var(--pe-rose);
 
-  max-width: 44rem;
   margin: 0 auto;
   display: flex;
   flex-direction: column;
-  gap: 0.85rem;
+  gap: var(--pe-stack);
 }
+
 
 .checklist__lede,
 .checklist__rollup {
@@ -40,8 +40,8 @@
   padding: 0.85rem 1rem;
   margin: 0;
   background: var(--warning-bg);
-  border: 1px solid var(--warning-line);
-  border-radius: 0.35rem;
+  border: 1.5px solid var(--warning-line);
+  border-radius: var(--pe-radius);
 }
 
 .checklist__actions {
@@ -53,9 +53,9 @@
 }
 
 .checklist__empty {
-  padding: 0.95rem 1.05rem;
-  border: 1px solid var(--line);
-  border-radius: 0.35rem;
+  padding: var(--pe-card-pad);
+  border: var(--pe-border);
+  border-radius: var(--pe-radius);
   color: var(--muted);
   background: var(--pe-surface);
 }
@@ -64,7 +64,7 @@
 .checklist__context {
   display: flex;
   flex-direction: column;
-  gap: 0.85rem;
+  gap: 1rem;
 }
 
 .checklist__context {
@@ -78,10 +78,10 @@
 }
 
 .check-item {
-  padding: 0.95rem 1.05rem;
+  padding: var(--pe-card-pad);
   background: var(--pe-card);
-  border: 1.5px solid var(--line);
-  border-radius: 0.35rem;
+  border: var(--pe-border);
+  border-radius: var(--pe-radius);
   box-shadow: var(--pe-shadow);
 }
 
@@ -109,16 +109,16 @@
   margin: 0.65rem 0 0;
   padding: 0.65rem 0.8rem;
   background: var(--warning-bg);
-  border: 1px solid var(--warning-line);
-  border-radius: 0.35rem;
+  border: 1.5px solid var(--warning-line);
+  border-radius: var(--pe-radius);
 }
 
 .check-item__deadline-notice {
   margin: 0.65rem 0 0;
   padding: 0.65rem 0.8rem;
   background: var(--warning-bg);
-  border: 1px solid var(--warning-line);
-  border-radius: 0.35rem;
+  border: 1.5px solid var(--warning-line);
+  border-radius: var(--pe-radius);
   font-size: 0.9375rem;
 }
 
@@ -143,7 +143,7 @@
   letter-spacing: 0.06em;
   text-transform: uppercase;
   padding: 0.15rem 0.45rem;
-  border-radius: 0.35rem;
+  border-radius: var(--pe-radius);
   background: var(--badge-neutral-bg);
   color: var(--badge-neutral-text);
   border: 1px solid var(--badge-neutral-line);
@@ -198,8 +198,8 @@
   margin: 0.65rem 0 0;
   padding: 0.65rem 0.8rem;
   background: var(--warning-bg);
-  border: 1px solid var(--warning-line);
-  border-radius: 0.35rem;
+  border: 1.5px solid var(--warning-line);
+  border-radius: var(--pe-radius);
 }
 
 .check-item__text,
@@ -271,30 +271,7 @@
 }
 
 .check-item__button {
-  font: inherit;
-  font-weight: 600;
-  padding: 0.55rem 1rem;
-  min-height: 2.75rem;
-  border: 1.5px solid var(--pe-rule);
-  border-radius: 0.35rem;
-  background: var(--pe-card);
-  color: var(--pe-ink);
-  cursor: pointer;
-  transition:
-    border-color 160ms ease,
-    background 160ms ease,
-    box-shadow 160ms ease;
-}
-
-.check-item__button:hover:not([disabled]) {
-  border-color: var(--pe-amber);
-  background: var(--pe-paper-deep);
-}
-
-.check-item__button:focus-visible {
-  outline: 2px solid var(--pe-amber);
-  outline-offset: 2px;
-  box-shadow: 0 0 0 3px var(--pe-amber-soft);
+  /* Secondary button chrome from globals.css */
 }
 
 .check-item__button:disabled {

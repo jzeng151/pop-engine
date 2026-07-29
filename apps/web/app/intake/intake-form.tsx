@@ -244,7 +244,7 @@ export function IntakeForm({
   if (loading) {
     return (
       <div className="intake">
-        <p className="intake__eyebrow">PopEngine · Survey</p>
+        <p className="pe-eyebrow">PopEngine · Survey</p>
         <p className="intake__lede" role="status">
           Loading your event…
         </p>
@@ -257,7 +257,7 @@ export function IntakeForm({
   if (loadFailure !== null) {
     return (
       <div className="intake">
-        <p className="intake__eyebrow">PopEngine · Survey</p>
+        <p className="pe-eyebrow">PopEngine · Survey</p>
         <h1>Edit your event</h1>
         <p className="intake__error" role="alert">
           {loadFailure}
@@ -274,7 +274,7 @@ export function IntakeForm({
         void save();
       }}
     >
-      <p className="intake__eyebrow">PopEngine · Survey</p>
+      <p className="pe-eyebrow">PopEngine · Survey</p>
       <h1>{eventId === undefined ? "Describe your event" : "Edit your event"}</h1>
       <p className="intake__lede">
         Answer what applies to your event. Questions appear as your answers make them relevant, and

@@ -86,7 +86,7 @@ export function EventPageView({ eventId, apiBaseUrl }: EventPageViewProps) {
 
   return (
     <div className="event-page">
-      <p className="event-page__eyebrow">{event.event_date}</p>
+      <p className="pe-eyebrow">{event.event_date}</p>
       <h1 className="event-page__title">{event.title}</h1>
       <p className="event-page__lede">{venueLabel}</p>
       {event.description !== null && event.description.length > 0 && (
@@ -107,7 +107,7 @@ export function EventPageView({ eventId, apiBaseUrl }: EventPageViewProps) {
             void saveRsvp();
           }}
         >
-          <h2 className="event-page__eyebrow">RSVP</h2>
+          <h2 className="pe-eyebrow">RSVP</h2>
           <label className="event-page__field">
             <span className="event-page__label">Name</span>
             <input

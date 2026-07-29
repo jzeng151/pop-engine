@@ -16,11 +16,10 @@
   --ops-rule: var(--pe-rule);
   --ops-surface: var(--pe-surface);
 
-  max-width: 24rem;
   margin: 0 auto;
   display: flex;
   flex-direction: column;
-  gap: 0.9rem;
+  gap: var(--pe-stack);
   min-height: calc(100dvh - 5rem);
   justify-content: center;
   perspective: 1100px;
@@ -69,30 +68,6 @@
   }
 }
 
-.ops__eyebrow {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.55rem;
-  margin: 0;
-  font-family: var(--pe-font-mono);
-  font-size: 0.7rem;
-  font-weight: 500;
-  letter-spacing: 0.16em;
-  text-transform: uppercase;
-  color: var(--pe-steel);
-  text-shadow: none;
-}
-
-.ops__eyebrow::before {
-  content: "";
-  width: 0.4rem;
-  height: 0.4rem;
-  flex-shrink: 0;
-  border-radius: 50%;
-  background: var(--pe-clear);
-  box-shadow: none;
-}
-
 .ops h1 {
   margin: 0;
   /* Display type from globals.css shared h1 block. */
@@ -118,7 +93,7 @@
 
 .ops__lede {
   font-size: 1rem;
-  max-width: 22rem;
+  max-width: 100%;
   line-height: 1.45;
 }
 
@@ -193,14 +168,14 @@
 
 .ops__gauge {
   margin: 0.85rem 0 0.35rem;
-  padding: 1.15rem 1.1rem 1.25rem;
-  border: 1px solid var(--ops-rule);
-  border-radius: 0.35rem;
+  padding: var(--pe-card-pad);
+  border: var(--pe-border);
+  border-radius: var(--pe-radius);
   background: var(--pe-card);
   box-shadow:
     var(--pe-shadow),
     0 10px 0 -2px var(--pe-rule),
-    0 14px 0 -2px rgba(210, 180, 140, 0.65);
+    0 14px 0 -2px rgba(210, 180, 140, 0.55);
   transform: rotateX(18deg) rotateY(-6deg) translateZ(12px);
   transform-style: preserve-3d;
   transform-origin: 50% 100%;
@@ -331,6 +306,6 @@
   .ops__gauge:hover {
     animation: none;
     transform: none;
-    box-shadow: 0 8px 18px -12px rgba(0, 0, 0, 0.55);
+    box-shadow: var(--pe-shadow);
   }
 }

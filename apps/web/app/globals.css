@@ -31,7 +31,19 @@
   --pe-rose: #9b2d1f;
   --pe-cream-text: #fffef5;
   --pe-divider: rgba(139, 69, 19, 0.14);
+  --pe-link-line: rgba(139, 69, 19, 0.35);
+  --pe-radius: 0.35rem;
+  --pe-border: 1.5px solid var(--pe-rule);
   --pe-shadow: 0 8px 20px -14px rgba(139, 69, 19, 0.35);
+
+  /* Layout scale — stretch content into the cream canvas consistently */
+  --pe-measure-narrow: 34rem; /* door / RSVP / check-in */
+  --pe-measure-wide: 48rem; /* home, intake, guests, promote */
+  --pe-measure-xl: 52rem; /* plan + checklist */
+  --pe-stack: 1.15rem;
+  --pe-card-pad: 1.1rem 1.25rem;
+  --pe-lede-max: 46rem;
+  --pe-lede-size: 1.1rem;
 
   /* Aliases for existing route CSS */
   --ink: var(--pe-ink);
@@ -62,7 +74,7 @@ body {
   position: relative;
   isolation: isolate;
   min-height: 100dvh;
-  padding: 2rem 1.25rem 4rem;
+  padding: 2rem 1.5rem 3.5rem;
   overflow-x: hidden;
   color: var(--pe-ink);
   font-family: var(--pe-font-body);
@@ -91,8 +103,43 @@ body {
 
 @media (min-width: 48rem) {
   .pe-shell {
-    padding: 3rem 2.5rem 5.5rem;
+    padding: 2.75rem 2rem 4.5rem;
   }
+}
+
+@media (min-width: 64rem) {
+  :root {
+    --pe-measure-narrow: 38rem;
+    --pe-measure-wide: 52rem;
+    --pe-measure-xl: 56rem;
+  }
+
+  .pe-shell {
+    padding: 3rem 2.5rem 5rem;
+  }
+}
+
+/* Shared page measures — one scale for the whole build */
+.home,
+.intake,
+.guests,
+.promote {
+  max-width: var(--pe-measure-wide);
+  margin-inline: auto;
+}
+
+.plan,
+.checklist,
+.plan-next {
+  max-width: var(--pe-measure-xl);
+  margin-inline: auto;
+}
+
+.ops,
+.checkin,
+.event-page {
+  max-width: var(--pe-measure-narrow);
+  margin-inline: auto;
 }
 
 /* Eyebrow — forest green mark */
@@ -133,7 +180,7 @@ body {
 .intake h1 {
   margin: 0;
   font-family: var(--pe-font-display);
-  font-size: clamp(2.1rem, 5.5vw, 2.85rem);
+  font-size: clamp(2.2rem, 5.2vw, 3.1rem);
   font-weight: 600;
   line-height: 1.08;
   letter-spacing: -0.02em;
@@ -158,9 +205,9 @@ fieldset.intake__question > legend {
 .intake__lede {
   margin: 0;
   color: var(--pe-steel);
-  font-size: 1.05rem;
+  font-size: var(--pe-lede-size);
   line-height: 1.55;
-  max-width: 34rem;
+  max-width: var(--pe-lede-max);
 }
 
 .intake__label {
@@ -185,7 +232,7 @@ fieldset.intake__question > legend {
   font-family: var(--pe-font-mono);
   font-size: 0.95rem;
   border: 1.5px solid var(--pe-rule);
-  border-radius: 0.35rem;
+  border-radius: var(--pe-radius);
   min-height: 2.85rem;
   background: var(--pe-surface);
   color: var(--pe-ink);
@@ -226,7 +273,7 @@ fieldset.intake__question > legend {
   font-size: 0.9rem;
   color: var(--pe-ink);
   max-width: 100%;
-  border-radius: 0.35rem;
+  border-radius: var(--pe-radius);
 }
 
 .check-item__file:focus-visible {
@@ -240,7 +287,8 @@ fieldset.intake__question > legend {
 .promote__field,
 .event-page__field,
 .checkin__field,
-.check-item {
+.check-item,
+.guests__row {
   transition:
     border-color 180ms ease,
     box-shadow 180ms ease,
@@ -250,15 +298,17 @@ fieldset.intake__question > legend {
 .intake__question:hover,
 .promote__field:hover,
 .event-page__field:hover,
-.checkin__field:hover {
-  border-color: rgba(139, 69, 19, 0.35);
+.checkin__field:hover,
+.guests__row:hover {
+  border-color: var(--pe-amber);
 }
 
 .intake__question:focus-within,
 .promote__field:focus-within,
 .event-page__field:focus-within,
 .checkin__field:focus-within,
-.check-item:focus-within {
+.check-item:focus-within,
+.guests__row:focus-within {
   border-color: var(--pe-amber);
   box-shadow:
     var(--pe-shadow),
@@ -285,7 +335,7 @@ fieldset.intake__question > legend {
   cursor: pointer;
   user-select: none;
   border: 1.5px solid var(--pe-rule);
-  border-radius: 0.35rem;
+  border-radius: var(--pe-radius);
   background: var(--pe-surface);
   transition:
     border-color 160ms ease,
@@ -405,7 +455,7 @@ fieldset.intake__question > legend {
   letter-spacing: 0.02em;
   min-height: 2.9rem;
   border: 1.5px solid var(--pe-amber);
-  border-radius: 0.35rem;
+  border-radius: var(--pe-radius);
   background: var(--pe-amber);
   color: var(--pe-cream-text);
   cursor: pointer;
@@ -447,11 +497,44 @@ fieldset.intake__question > legend {
   cursor: not-allowed;
 }
 
+.pe-secondary,
+.promote__secondary,
+.guests__cancel,
+.check-item__button,
+.intake__stale button {
+  font: inherit;
+  font-family: var(--pe-font-body);
+  font-weight: 600;
+  padding: 0.55rem 1rem;
+  min-height: 2.75rem;
+  border: var(--pe-border);
+  border-radius: var(--pe-radius);
+  background: var(--pe-card);
+  color: var(--pe-ink);
+  cursor: pointer;
+  box-shadow: none;
+  transition:
+    border-color 160ms ease,
+    background 160ms ease,
+    box-shadow 160ms ease;
+}
+
 .promote__secondary {
+  /* inherits .pe-secondary; keep !important overrides for CTA specificity */
   background: var(--pe-card) !important;
   border-color: var(--pe-rule) !important;
   color: var(--pe-ink) !important;
   box-shadow: none !important;
+}
+
+.pe-secondary:hover:not([disabled]),
+.promote__secondary:hover:not([disabled]),
+.guests__cancel:hover:not([disabled]),
+.check-item__button:hover:not([disabled]),
+.intake__stale button:hover:not([disabled]) {
+  background: var(--pe-paper-deep);
+  border-color: var(--pe-amber);
+  color: var(--pe-ink);
 }
 
 .promote__secondary:hover:not([disabled]) {
@@ -461,13 +544,23 @@ fieldset.intake__question > legend {
   box-shadow: none !important;
 }
 
+.pe-secondary:focus-visible,
+.promote__secondary:focus-visible,
+.guests__cancel:focus-visible,
+.check-item__button:focus-visible,
+.intake__stale button:focus-visible {
+  outline: 2px solid var(--pe-amber);
+  outline-offset: 2px;
+  box-shadow: 0 0 0 3px var(--pe-amber-soft);
+}
+
 .intake__warning {
   margin: 0;
   padding: 1rem 1.1rem;
   background: var(--pe-amber-wash);
   border: 1.5px solid var(--pe-amber);
   border-left-width: 0.3rem;
-  border-radius: 0.35rem;
+  border-radius: var(--pe-radius);
   color: var(--pe-ink);
   box-shadow: none;
 }
@@ -477,29 +570,31 @@ a.pe-link,
 .ops__links a,
 .promote a:not(.promote__button),
 .intake__saved a,
-.event-page__map {
+.event-page__map,
+.guests a,
+.plan-next a {
   color: var(--pe-neon);
   font-weight: 600;
   text-decoration: none;
-  border-bottom: 1px solid rgba(139, 69, 19, 0.35);
+  border-bottom: 1px solid var(--pe-link-line);
 }
 a.pe-link:hover,
 .home a:not(.intake__submit):hover,
 .ops__links a:hover,
 .promote a:not(.promote__button):hover,
 .intake__saved a:hover,
-.event-page__map:hover {
+.event-page__map:hover,
+.guests a:hover,
+.plan-next a:hover {
   color: var(--pe-amber);
   border-bottom-color: var(--pe-amber);
 }
 
 /* Home */
 .home {
-  max-width: 34rem;
-  margin: 0 auto;
   display: flex;
   flex-direction: column;
-  gap: 1.25rem;
+  gap: var(--pe-stack);
   min-height: calc(100dvh - 5rem);
   justify-content: center;
 }
@@ -507,9 +602,9 @@ a.pe-link:hover,
 .home__lede {
   margin: 0;
   color: var(--pe-steel);
-  font-size: 1.08rem;
-  max-width: 28rem;
-  line-height: 1.55;
+  font-size: var(--pe-lede-size);
+  max-width: var(--pe-lede-max);
+  line-height: 1.6;
 }
 
 .home a.intake__submit {
@@ -526,7 +621,7 @@ a.pe-link:hover,
   font-weight: 600;
   color: var(--pe-neon);
   text-decoration: none;
-  border-bottom: 1px solid rgba(139, 69, 19, 0.35);
+  border-bottom: 1px solid var(--pe-link-line);
   text-shadow: none;
 }
 
@@ -535,13 +630,12 @@ a.pe-link:hover,
   color: var(--pe-amber);
 }
 
+
 /* F-206: plan view, snapshot banner, per-line citations */
 .plan {
-  max-width: 44rem;
-  margin: 0 auto;
   display: flex;
   flex-direction: column;
-  gap: 0.85rem;
+  gap: var(--pe-stack);
 }
 
 .plan > h1 {
@@ -551,8 +645,8 @@ a.pe-link:hover,
 .snapshot {
   padding: 0.7rem 0.95rem;
   margin-bottom: 0.35rem;
-  border: 1px solid var(--pe-rule);
-  border-radius: 0.35rem;
+  border: var(--pe-border);
+  border-radius: var(--pe-radius);
   font-family: var(--pe-font-mono);
   font-size: 0.84rem;
   color: var(--pe-steel);
@@ -579,9 +673,9 @@ a.pe-link:hover,
 }
 
 .line {
-  padding: 0.95rem 1.05rem;
-  border: 1px solid var(--pe-rule);
-  border-radius: 0.35rem;
+  padding: var(--pe-card-pad);
+  border: var(--pe-border);
+  border-radius: var(--pe-radius);
   background: var(--pe-card);
   box-shadow: var(--pe-shadow);
 }
@@ -609,7 +703,7 @@ a.pe-link:hover,
   text-transform: uppercase;
   padding: 0.15rem 0.45rem;
   border: 1px solid var(--pe-rule);
-  border-radius: 0.35rem;
+  border-radius: var(--pe-radius);
   color: var(--pe-steel);
   background: var(--pe-card);
 }
@@ -639,7 +733,7 @@ a.pe-link:hover,
   background: var(--pe-neon-wash);
   border: 1px solid var(--pe-neon);
   border-left-width: 0.35rem;
-  border-radius: 0.35rem;
+  border-radius: var(--pe-radius);
   box-shadow: none;
 }
 
@@ -683,7 +777,7 @@ a.pe-link:hover,
   background: var(--pe-amber-wash);
   border: 1px solid var(--pe-amber-deep);
   border-left-width: 0.35rem;
-  border-radius: 0.35rem;
+  border-radius: var(--pe-radius);
 }
 
 .plan__unconfirmed {
@@ -711,9 +805,9 @@ a.pe-link:hover,
 
 .verdict-detail {
   margin: 0.85rem 0 1.1rem;
-  padding: 0.95rem 1.05rem;
-  border: 1px solid var(--pe-rule);
-  border-radius: 0.35rem;
+  padding: var(--pe-card-pad);
+  border: var(--pe-border);
+  border-radius: var(--pe-radius);
   background: var(--pe-card);
   box-shadow: var(--pe-shadow);
 }
@@ -786,7 +880,7 @@ a.pe-link:hover,
 .verdict-detail__rescope {
   padding: 0.65rem 0.75rem;
   border: 1px solid var(--pe-divider);
-  border-radius: 0.35rem;
+  border-radius: var(--pe-radius);
   background: var(--pe-card);
 }
 
@@ -803,9 +897,9 @@ a.pe-link:hover,
 }
 
 .plan__empty {
-  padding: 0.95rem 1.05rem;
+  padding: var(--pe-card-pad);
   border: 1px solid var(--pe-rule);
-  border-radius: 0.35rem;
+  border-radius: var(--pe-radius);
   color: var(--pe-steel);
   background: var(--pe-surface);
 }
@@ -819,9 +913,9 @@ a.pe-link:hover,
 }
 
 .insurance__card {
-  padding: 0.95rem 1.05rem;
-  border: 1px solid var(--pe-rule);
-  border-radius: 0.35rem;
+  padding: var(--pe-card-pad);
+  border: var(--pe-border);
+  border-radius: var(--pe-radius);
   background: var(--pe-card);
   box-shadow: var(--pe-shadow);
 }
@@ -854,7 +948,7 @@ a.pe-link:hover,
   text-transform: uppercase;
   padding: 0.15rem 0.45rem;
   border: 1px solid var(--pe-rule);
-  border-radius: 0.35rem;
+  border-radius: var(--pe-radius);
   color: var(--pe-steel);
   background: var(--pe-card);
 }

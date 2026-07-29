@@ -1,12 +1,12 @@
 /* F-302 organizer guest list. */
 
 .guests {
-  max-width: 40rem;
   margin: 0 auto;
   display: flex;
   flex-direction: column;
-  gap: 1rem;
+  gap: var(--pe-stack);
 }
+
 
 .guests__lede,
 .guests__note {
@@ -46,9 +46,9 @@
   align-items: center;
   justify-content: space-between;
   gap: 0.5rem 1rem;
-  padding: 0.85rem 1rem;
-  border: 1px solid var(--line);
-  border-radius: 0.35rem;
+  padding: var(--pe-card-pad);
+  border: var(--pe-border);
+  border-radius: var(--pe-radius);
   background: var(--pe-card);
   box-shadow: var(--pe-shadow);
 }
@@ -75,26 +75,8 @@
 }
 
 .guests__cancel {
-  font: inherit;
-  font-family: var(--pe-font-body);
-  font-weight: 600;
   padding: 0.45rem 0.8rem;
-  border: 1.5px solid var(--pe-rule);
-  border-radius: 0.35rem;
-  background: var(--pe-card);
-  color: var(--pe-ink);
-  cursor: pointer;
-  transition: border-color 160ms ease, background 160ms ease;
-}
-.guests__cancel:hover:not([disabled]) {
-  border-color: var(--pe-amber);
-  background: var(--pe-paper-deep);
-}
-
-.guests__cancel:focus-visible {
-  outline: 2px solid var(--pe-amber);
-  outline-offset: 2px;
-  box-shadow: 0 0 0 3px var(--pe-amber-soft);
+  /* Secondary button chrome from globals.css */
 }
 
 .guests__cancel:disabled {
@@ -107,13 +89,4 @@
   color: var(--muted);
 }
 
-.guests a {
-  color: var(--pe-neon);
-  font-weight: 600;
-  text-decoration: none;
-  border-bottom: 1px solid rgba(139, 69, 19, 0.35);
-}
-.guests a:hover {
-  color: var(--pe-amber);
-  border-bottom-color: var(--pe-amber);
-}
+/* guests a: nav link chrome from globals.css */

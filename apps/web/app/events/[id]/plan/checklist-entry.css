@@ -1,10 +1,9 @@
 /* The plan route's link on to the checklist (F-202 AC 1). */
 
 .plan-next {
-  max-width: 44rem;
   margin: 0 auto;
   padding-top: 1.5rem;
-  border-top: 1.5px solid var(--line);
+  border-top: var(--pe-border);
   font-size: 0.9375rem;
   display: flex;
   flex-wrap: wrap;
@@ -12,13 +11,8 @@
   align-items: baseline;
 }
 
+
 .plan-next a {
-  color: var(--pe-neon);
   font-weight: 700;
-  text-decoration: none;
-  border-bottom: 1px solid rgba(139, 69, 19, 0.35);
-}
-.plan-next a:hover {
-  color: var(--pe-amber);
-  border-bottom-color: var(--pe-amber);
+  /* Link color from globals.css */
 }

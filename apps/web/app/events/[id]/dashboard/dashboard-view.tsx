@@ -189,7 +189,7 @@ export function DashboardView({
   if (failure !== null && stats === null) {
     return (
       <div className="ops">
-        <p className="ops__eyebrow">Door</p>
+        <p className="pe-eyebrow">Door</p>
         <h1>Live ops</h1>
         <p className="ops__error" role="alert">
           {failure}
@@ -223,7 +223,7 @@ export function DashboardView({
 
   return (
     <div className="ops">
-      <p className="ops__eyebrow">Door</p>
+      <p className="pe-eyebrow">Door</p>
       <h1>{context?.name ?? "Live ops"}</h1>
       {context !== null && (
         <p className="ops__event" data-testid="event-context">

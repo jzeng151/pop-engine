@@ -13,36 +13,12 @@
   --intake-rule: var(--pe-rule);
   --intake-card: var(--pe-card);
 
-  max-width: 40rem;
   margin: 0 auto;
   display: flex;
   flex-direction: column;
-  gap: 1.25rem;
+  gap: var(--pe-stack);
 }
 
-.intake__eyebrow {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.55rem;
-  margin: 0;
-  font-family: var(--pe-font-mono);
-  font-size: 0.7rem;
-  font-weight: 500;
-  letter-spacing: 0.16em;
-  text-transform: uppercase;
-  color: var(--pe-steel);
-  text-shadow: none;
-}
-
-.intake__eyebrow::before {
-  content: "";
-  width: 0.4rem;
-  height: 0.4rem;
-  flex-shrink: 0;
-  border-radius: 50%;
-  background: var(--pe-clear);
-  box-shadow: none;
-}
 
 .intake h1 {
   margin: 0;
@@ -51,10 +27,10 @@
 
 .intake__lede {
   margin: 0 0 0.35rem;
-  max-width: 34rem;
+  max-width: var(--pe-lede-max);
   color: var(--intake-steel);
-  font-size: 1.02rem;
-  line-height: 1.45;
+  font-size: var(--pe-lede-size);
+  line-height: 1.55;
 }
 
 .intake > .intake__question,
@@ -65,7 +41,7 @@
 .intake > .intake__error,
 .intake > .intake__lede,
 .intake > h1,
-.intake > .intake__eyebrow {
+.intake > .pe-eyebrow {
   animation: intake-rise 480ms cubic-bezier(0.2, 0.85, 0.2, 1) both;
 }
 
@@ -100,9 +76,9 @@
 .intake__question {
   margin: 0;
   min-inline-size: 0;
-  padding: 1rem 1.05rem 1.1rem;
-  border: 1.5px solid var(--intake-rule);
-  border-radius: 0.35rem;
+  padding: var(--pe-card-pad);
+  border: var(--pe-border);
+  border-radius: var(--pe-radius);
   background: var(--pe-card);
   box-shadow: var(--pe-shadow);
   display: flex;
@@ -156,7 +132,7 @@ fieldset.intake__question::after {
   border: 1px solid var(--intake-rule);
   background: var(--pe-paper-deep);
   padding: 0.15rem 0.45rem;
-  border-radius: 0.35rem;
+  border-radius: var(--pe-radius);
 }
 
 .intake__note {
@@ -183,15 +159,11 @@ fieldset.intake__question::after {
 
 .intake__saved,
 .intake__stale {
-  padding: 0.95rem 1.05rem;
-  border: 1px solid var(--intake-rule);
-  border-radius: 0.35rem;
+  padding: var(--pe-card-pad);
+  border: var(--pe-border);
+  border-radius: var(--pe-radius);
   background: var(--pe-surface);
   color: var(--intake-ink);
-}
-
-.intake__saved a {
-  /* Link color from globals.css warm nav/link block. */
 }
 
 .intake__stale {
@@ -203,15 +175,7 @@ fieldset.intake__question::after {
 
 .intake__stale button {
   margin-top: 0.55rem;
-  padding: 0.55rem 1rem;
-  font: inherit;
-  font-weight: 600;
-  min-height: 2.75rem;
-  border: 1px solid var(--intake-ink);
-  border-radius: 0.35rem;
-  background: var(--intake-card);
-  color: var(--intake-ink);
-  cursor: pointer;
+  /* Secondary button chrome from globals.css */
 }
 
 .intake__stale button[disabled] {
@@ -227,7 +191,7 @@ fieldset.intake__question::after {
   .intake > .intake__error,
   .intake > .intake__lede,
   .intake > h1,
-  .intake > .intake__eyebrow {
+  .intake > .pe-eyebrow {
     animation: none;
   }
 }

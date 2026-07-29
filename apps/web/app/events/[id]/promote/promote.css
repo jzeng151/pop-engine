@@ -1,10 +1,10 @@
 .promote {
-  max-width: 40rem;
   margin: 0 auto;
   display: flex;
   flex-direction: column;
-  gap: 1rem;
+  gap: var(--pe-stack);
 }
+
 
 .promote__lede,
 .promote__note {
@@ -16,8 +16,8 @@
   margin: 0;
   padding: 0.85rem 1rem;
   background: var(--warning-bg);
-  border: 1px solid var(--warning-line);
-  border-radius: 0.35rem;
+  border: 1.5px solid var(--warning-line);
+  border-radius: var(--pe-radius);
 }
 
 .promote__error {
@@ -30,9 +30,9 @@
   display: flex;
   flex-direction: column;
   gap: 0.35rem;
-  padding: 0.95rem 1.05rem;
-  border: 1.5px solid var(--line);
-  border-radius: 0.35rem;
+  padding: var(--pe-card-pad);
+  border: var(--pe-border);
+  border-radius: var(--pe-radius);
   background: var(--pe-card);
 }
 
@@ -76,7 +76,7 @@
   font-family: var(--pe-font-mono);
   word-break: break-all;
   padding: 0.75rem 0.9rem;
-  border: 1px solid var(--line);
-  border-radius: 0.35rem;
+  border: var(--pe-border);
+  border-radius: var(--pe-radius);
   background: var(--pe-surface);
 }
