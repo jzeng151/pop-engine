@@ -856,6 +856,30 @@ describe("AC 5 · deadline context lives where the work happens", () => {
     },
   );
 
+  it.each(["Published output note", "Published verification qualification"])(
+    "does not repeat confirmation from a %s",
+    async (publishedProse) => {
+      const note = `${publishedProse}: ${CONFIRM_WITH_AGENCY}`;
+      stubApi({
+        [GET_CHECKLIST]: checklistOf({
+          created: true,
+          items: [
+            trackedItem(SOUND_DEPENDENCY, {
+              verificationStatus: "RESEARCH_REQUIRED",
+              publishedNotes: [note],
+            }),
+          ],
+        }),
+      });
+      await renderView();
+
+      const row = await expandedRowFor(SOUND_DEPENDENCY);
+      expect(row.textContent?.split(CONFIRM_WITH_AGENCY)).toHaveLength(2);
+      expect(within(row).getByText(note)).toBeDefined();
+      expect(within(row).getByText("RESEARCH REQUIRED")).toBeDefined();
+    },
+  );
+
   it("renders a portal with no published URL as text rather than a dead link", async () => {
     stubApi({ [GET_CHECKLIST]: checklistOf({ created: true, items: [trackedItem(SOUND)] }) });
     await renderView();

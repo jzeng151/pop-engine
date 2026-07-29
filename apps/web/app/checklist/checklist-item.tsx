@@ -111,9 +111,17 @@ export function PlanContextBody({
 }) {
   const ruleIds = context.ruleIds.join(", ");
   const [primarySource, ...furtherSources] = context.sources;
-  const deadlineShowsResearchTreatment =
+  const contextShowsResearchTreatment =
     context.verificationStatus === "RESEARCH_REQUIRED" &&
-    includesAgencyConfirmation(context.deadlineDisplay);
+    includesAgencyConfirmation([
+      context.deadlineDisplay,
+      context.feeDisplay,
+      context.conflictText,
+      context.noteText,
+      context.timelineUnresolvedReason,
+      context.portalInstructions,
+      ...context.publishedNotes,
+    ]);
 
   return (
     <>
@@ -146,7 +154,7 @@ export function PlanContextBody({
 
       {/* A RESEARCH_REQUIRED line has no located primary source, which the organizer has to see
           on the row itself rather than behind an expand: the absence IS the finding. */}
-      {context.verificationStatus === "RESEARCH_REQUIRED" && !deadlineShowsResearchTreatment && (
+      {context.verificationStatus === "RESEARCH_REQUIRED" && !contextShowsResearchTreatment && (
         <p className="check-item__caveat" role="note">
           {CONFIRM_WITH_AGENCY}
         </p>

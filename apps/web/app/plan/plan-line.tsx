@@ -132,8 +132,17 @@ function Citation({ source }: { source: FindingSource }) {
 export function PlanLine({ finding }: { finding: ConsumedFinding }) {
   const ruleIds = finding.ruleIds.join(", ");
   const isResearchRequired = finding.verificationStatus === "RESEARCH_REQUIRED";
-  const deadlineShowsResearchTreatment =
-    isResearchRequired && includesAgencyConfirmation(finding.deadlineDisplay);
+  const findingShowsResearchTreatment =
+    isResearchRequired &&
+    includesAgencyConfirmation([
+      finding.deadlineDisplay,
+      finding.feeDisplay,
+      finding.conflictText,
+      finding.noteText,
+      finding.timelineUnresolvedReason,
+      finding.portalInstructions,
+      ...finding.notes,
+    ]);
   const name = finding.name ?? ruleIds;
   const [primarySource, ...furtherSources] = finding.sources;
 
@@ -193,7 +202,7 @@ export function PlanLine({ finding }: { finding: ConsumedFinding }) {
 
       {/* A RESEARCH_REQUIRED line has no located primary source, which the organizer has to see
           on the line itself rather than discover behind an expand: the absence IS the finding. */}
-      {isResearchRequired && !deadlineShowsResearchTreatment && (
+      {isResearchRequired && !findingShowsResearchTreatment && (
         <p className="line__research" role="note">
           {CONFIRM_WITH_AGENCY}
         </p>

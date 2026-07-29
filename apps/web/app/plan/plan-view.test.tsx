@@ -359,6 +359,25 @@ describe("per-line citations and status (AC 2, AC 3)", () => {
     },
   );
 
+  it.each(["Published output note", "Published verification qualification"])(
+    "does not repeat confirmation from a %s",
+    async (publishedProse) => {
+      const note = `${publishedProse}: ${CONFIRM_WITH_AGENCY}`;
+      const line = await lineFor(
+        finding({
+          verificationStatus: "RESEARCH_REQUIRED",
+          notes: [note],
+        }),
+      );
+
+      expect(
+        (screen.getByRole("article").textContent ?? "").split(CONFIRM_WITH_AGENCY),
+      ).toHaveLength(2);
+      expect(line.getByText(note)).toBeDefined();
+      expect(line.getByText("RESEARCH REQUIRED")).toBeDefined();
+    },
+  );
+
   it("renders both readings of an official conflict with every source behind them", async () => {
     const conflict = finding({
       ruleIds: [CONFLICT_RULE.id],
