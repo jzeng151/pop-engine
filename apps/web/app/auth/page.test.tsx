@@ -33,5 +33,6 @@ describe("authentication page", () => {
       "disabled",
       true,
     );
+    expect(screen.getByRole("link", { name: "Return home" }).getAttribute("href")).toBe("/");
   });
 });

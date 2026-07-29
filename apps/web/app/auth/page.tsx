@@ -19,10 +19,15 @@ export default async function AuthPage({ searchParams }: AuthPageProps) {
       </p>
 
       {!isConfigured && (
-        <p className="auth__notice" role="alert">
-          Authentication is not configured for this environment. Add the documented Supabase and
-          site URL settings to enable these forms.
-        </p>
+        <>
+          <p className="auth__notice" role="alert">
+            Authentication is not configured for this environment. Add the documented Supabase and
+            site URL settings to enable these forms.
+          </p>
+          <p>
+            <a href="/">Return home</a>
+          </p>
+        </>
       )}
       {error && (
         <p className="auth__error" role="alert">

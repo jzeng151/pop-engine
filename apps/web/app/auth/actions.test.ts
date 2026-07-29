@@ -83,6 +83,20 @@ describe("email authentication actions", () => {
     expect(mocks.redirect).toHaveBeenCalledWith(expect.stringContaining("Check%20your%20email"));
   });
 
+  it("clears and rejects a signup session created before email verification", async () => {
+    client.auth.signUp.mockResolvedValueOnce({
+      data: { session: { access_token: "unverified-session" } },
+      error: null,
+    });
+
+    await expect(
+      signUp(form({ email: "person@example.com", password: "provider-policy-password" })),
+    ).rejects.toThrow(/verification%20is%20not%20configured%20correctly/);
+
+    expect(client.auth.signOut).toHaveBeenCalledWith({ scope: "local" });
+    expect(mocks.redirect).not.toHaveBeenCalledWith("/account");
+  });
+
   it("signs in with email and restores the allowed account destination", async () => {
     await expect(
       signIn(

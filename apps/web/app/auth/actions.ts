@@ -45,7 +45,10 @@ export async function signUp(formData: FormData): Promise<never> {
     options: { emailRedirectTo: callbackUrl("/account") },
   });
   if (error) authRedirect("error", error.message);
-  if (data.session) redirect("/account");
+  if (data.session) {
+    await supabase.auth.signOut({ scope: "local" });
+    authRedirect("error", "Email verification is not configured correctly for this environment.");
+  }
   authRedirect("message", "Check your email to verify your address, then return to sign in.");
 }
 
