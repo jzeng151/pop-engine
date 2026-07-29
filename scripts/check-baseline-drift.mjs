@@ -1612,7 +1612,7 @@ const f203BaselineScope = new RegExp(
   "i",
 );
 const f203RoadmapDecision = /(?:^|\r?\n)\s*\*\*Status:\*\*/i;
-const f203PrdDecision = /(?:^|\r?\n)\s*\*\*Issue #127 amendment\b/i;
+const f203PrdDecision = /(?:^|\r?\n)\s*\*\*(?:Issue #127 amendment|Decision)\b/i;
 const f203SpecDecision = /^\s*\*\*(?:Status|Decision)\b/i;
 const f203RetainedScope = new RegExp(
   `\\bF-203\\b\\s+retains\\s+${f203Capabilities.source}\\s+as planned,\\s+unscheduled\\b`,
@@ -1640,6 +1640,8 @@ const f203Negation =
   /\b(?:not planned|unplanned)\b|\b(?:no|without)\s+(?:alert )?(?:escalations|digests|team reminders|per-user preferences)\b/i;
 const f203SchedulingConflict =
   /\b(?:(?:is|are|was|were|has been|have been|will be|must be|may be|can be)\s+(?:now\s+)?scheduled|now scheduled)\b/i;
+const f203SpecAssignment =
+  /\bF-203\b[^.]*\b(?:keeps|retains|owns|includes)\b|\b(?:remain|remains|are)\b[^.]*\bunder F-203\b/i;
 const f203Failures = [];
 
 function activeMarkdown(markdown) {
@@ -1681,10 +1683,11 @@ for (const relative of f203Artifacts) {
 
   const contents = activeMarkdown(readFileSync(full, "utf8"));
   if (relative === "specs/F-203-deadline-alerts.md") {
-    const acceptanceCriteria =
-      /(?:^|\n)## Acceptance Criteria\s*\r?\n([\s\S]*?)(?=\r?\n#{1,2}\s|$)/i.exec(contents)?.[1] ??
-      "";
-    const addsUnscheduledCriterion = acceptanceCriteria
+    const acceptanceCriteriaSections = contents
+      .split(/(?=^#{1,6}\s+)/m)
+      .filter((section) => /^#{1,6}\s+.*\bAcceptance Criteria\b/im.test(section))
+      .join("\n");
+    const addsUnscheduledCriterion = acceptanceCriteriaSections
       .split(/\r?\n(?=\s*(?:[-*+]|\d+\.)\s+)/)
       .some(
         (criterion) =>
@@ -1720,10 +1723,10 @@ for (const relative of f203Artifacts) {
       const isListAssignment = requiresListAssignment && /^\s*(?:[-*+]|\d+\.)\s+/.test(raw);
       if (requiresListAssignment) {
         if (relative === "docs/ROADMAP.md" && f203RoadmapDecision.test(raw)) {
-          return lower.includes("f-203");
+          return lower.includes("f-203") && addressesScope;
         }
         if (relative === "docs/PRD.md" && f203PrdDecision.test(raw)) {
-          return lower.includes("f-203");
+          return lower.includes("f-203") && addressesScope;
         }
         const ownsF203 = f203ListOwner.test(raw);
         const isRoadmapCore =
@@ -1739,11 +1742,11 @@ for (const relative of f203Artifacts) {
         return /^\s*\*\*Decision\b/i.test(raw) && lower.includes("f-203") && addressesScope;
       }
       if (f203SpecDecision.test(raw)) return lower.includes("f-203") && addressesScope;
+      if (relative === "specs/F-203-deadline-alerts.md" && f203SpecAssignment.test(normalized)) {
+        return true;
+      }
       if (!namesScope || !lower.includes("f-203")) return false;
-      return (
-        /\bF-203\b[^.]*\b(?:keeps|retains|owns|includes)\b/i.test(normalized) ||
-        /\b(?:remain|remains|are)\b[^.]*\bunder F-203\b/i.test(normalized)
-      );
+      return f203SpecAssignment.test(normalized);
     });
 
   const invalidAssignment = scopeStatements.find(({ raw, normalized }) => {
