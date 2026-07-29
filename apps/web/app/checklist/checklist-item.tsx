@@ -4,7 +4,7 @@ import { useRef, useState } from "react";
 import { CHECKLIST_STATUSES, CONFIRM_WITH_AGENCY, type ChecklistStatus } from "@pop-engine/engine";
 import { PortalBlock } from "../portal-block";
 import { formatSnapshotDate } from "../plan/snapshot-banner";
-import { NOT_COVERED_BY_RULESET } from "../verification-copy";
+import { includesAgencyConfirmation, NOT_COVERED_BY_RULESET } from "../verification-copy";
 import {
   ACCEPTED_DOCUMENT_TYPES,
   documentRejection,
@@ -76,6 +76,16 @@ export function PlanContextBody({
   currentPlan: SourcePlan;
 }) {
   const ruleIds = context.ruleIds.join(", ");
+  // #186: do not repeat CONFIRM_WITH_AGENCY when published fields already carry it.
+  const alreadyShowsConfirmation = includesAgencyConfirmation([
+    context.deadlineDisplay,
+    context.feeDisplay,
+    context.conflictText,
+    context.noteText,
+    context.timelineUnresolvedReason,
+    context.portalInstructions,
+    ...context.publishedNotes,
+  ]);
 
   return (
     <>
@@ -107,8 +117,9 @@ export function PlanContextBody({
       </p>
 
       {/* A RESEARCH_REQUIRED line has no located primary source, which the organizer has to see
-          on the row itself rather than discover in a tooltip. */}
-      {context.verificationStatus === "RESEARCH_REQUIRED" && (
+          on the row itself rather than discover in a tooltip — unless published fields already
+          carry the confirmation (PR #186 coalescing). */}
+      {context.verificationStatus === "RESEARCH_REQUIRED" && !alreadyShowsConfirmation && (
         <p className="check-item__caveat" role="note">
           {CONFIRM_WITH_AGENCY}
         </p>

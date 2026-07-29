@@ -7,6 +7,7 @@ import ChecklistPage from "../events/[id]/checklist/page";
 import PlanPage from "../events/[id]/plan/page";
 import { ChecklistView } from "./checklist-view";
 import { NOT_COVERED_BY_RULESET } from "../verification-copy";
+import { CONFIRM_WITH_AGENCY } from "@pop-engine/engine";
 import {
   ALCOHOL_ADVISORY,
   checklistBody,
@@ -814,6 +815,57 @@ describe("AC 5 · deadline context lives where the work happens", () => {
     // A line with no located primary source says so on the row, not in a tooltip.
     expect(within(row).getByRole("note").textContent).toContain("agency");
   });
+
+  it.each([CONFIRM_WITH_AGENCY, `14–60 days depending on level; ${CONFIRM_WITH_AGENCY}`])(
+    "renders one confirmation when the deadline displays %s",
+    async (deadlineDisplay) => {
+      stubApi({
+        [GET_CHECKLIST]: checklistOf({
+          created: true,
+          items: [
+            trackedItem(SOUND_DEPENDENCY, {
+              verificationStatus: "RESEARCH_REQUIRED",
+              deadline: { type: "research_required", display: null, qualification: null },
+              deadlineDisplay,
+              deadlineStatus: "not_calculable",
+            }),
+          ],
+        }),
+      });
+      await renderView();
+
+      const row = rowFor(SOUND_DEPENDENCY);
+      expect(row.textContent?.split(CONFIRM_WITH_AGENCY)).toHaveLength(2);
+      expect(within(row).getByText("RESEARCH REQUIRED")).toBeDefined();
+    },
+  );
+
+  it.each(["Published output note", "Published verification qualification"])(
+    "renders one confirmation when a %s already carries it",
+    async (publishedProse) => {
+      const note = `${publishedProse}: ${CONFIRM_WITH_AGENCY}`;
+      stubApi({
+        [GET_CHECKLIST]: checklistOf({
+          created: true,
+          items: [
+            trackedItem(SOUND_DEPENDENCY, {
+              verificationStatus: "RESEARCH_REQUIRED",
+              publishedNotes: [note],
+            }),
+          ],
+        }),
+      });
+      await renderView();
+
+      const row = rowFor(SOUND_DEPENDENCY);
+      // Flattened checklist rows show published notes immediately, so #186 coalescing
+      // suppresses the separate caveat instead of swapping it on expand.
+      expect(within(row).queryByRole("note")).toBeNull();
+      expect(within(row).getByText(note)).toBeDefined();
+      expect(row.textContent?.split(CONFIRM_WITH_AGENCY)).toHaveLength(2);
+      expect(within(row).getByText("RESEARCH REQUIRED")).toBeDefined();
+    },
+  );
 
   it("renders a portal with no published URL as text rather than a dead link", async () => {
     stubApi({ [GET_CHECKLIST]: checklistOf({ created: true, items: [trackedItem(SOUND)] }) });
