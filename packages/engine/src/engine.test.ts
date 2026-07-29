@@ -1,6 +1,7 @@
 // Engine behaviors the scenario fixtures do not reach: determinism, dedupe merging, the
 // tri-state rules, business-day arithmetic, and every way evaluation can fail loudly.
 
+import { execFileSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
@@ -1348,6 +1349,44 @@ describe("facts the ruleset publishes rather than the engine assuming (nyc.v2.4)
     expect(
       withTrigger({ field: "headcount", op: "gte", value: 400, boundary: "conditional" }),
     ).toThrow(/boundary does not apply to the "gte" operator/);
+  });
+
+  it("loads every preserved v2 ruleset without weakening active unconsumed-field validation", () => {
+    const superseded = [
+      ["nyc.v2.1", "b0214b4"],
+      ["nyc.v2.2", "3a1b7ba"],
+      ["nyc.v2.3", "5f32040"],
+      ["nyc.v2.4", "98dc5f8"],
+      ["nyc.v2.5", "81320c7"],
+      ["nyc.v2.6", "0122eca"],
+      ["nyc.v2.7", "e4f04b1"],
+      ["nyc.v2.8", "7a16461"],
+    ] as const;
+
+    expect(
+      superseded.map(([version, revision]) => {
+        const artifactPath = `rules/nyc-rules.${version.replace("nyc.", "")}.json`;
+        const document = JSON.parse(
+          execFileSync("git", ["show", `${revision}:${artifactPath}`], { encoding: "utf8" }),
+        );
+        return parseEngineRuleset(document).rulesetVersion;
+      }),
+    ).toEqual(superseded.map(([version]) => version));
+
+    expect(() =>
+      parseEngineRuleset({
+        ...rawRuleset,
+        intake_fields: [
+          ...(rawRuleset.intake_fields as unknown[]),
+          {
+            field: "venue_has_assembly_approval",
+            type: "enum",
+            values: ["yes", "no", "unknown"],
+            asked_when: "location_type = private_venue AND headcount gte 75",
+          },
+        ],
+      }),
+    ).toThrow(/intake field "venue_has_assembly_approval" is declared but no rule/);
   });
 
   it("still reads nyc.v2.3 under nyc.v2.3 semantics, so its plans replay", () => {
