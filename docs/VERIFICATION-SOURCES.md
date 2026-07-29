@@ -1,6 +1,6 @@
 # PopEngine — Verification Source Dossier
 
-**Purpose:** Candidate primary sources for the 11 open `[VERIFY]` items in `OPEN-QUESTIONS.md` §2, collected 2026-07-22 by a four-agent research pass. **Nothing in this document is a verification.** Statuses in the answer key and `rules/nyc-rules.v1.json` are untouched; only the verification owner (Dev 4) promotes them, per the process note. SUPPORT / CONTRADICT / NOT ADDRESS labels are the researchers' candidate assessments of fetched text against the encoded claim, for triage only.
+**Purpose:** Primary-source research record for the regulatory items in `OPEN-QUESTIONS.md` §2, begun 2026-07-22. **Nothing in this document is a verification.** Only the verification owner (Dev 4) may promote a fact in a new immutable rules publication, per the process note. SUPPORT / CONTRADICT / NOT ADDRESS labels are researchers' candidate assessments of fetched text against the encoded claim, for triage only.
 
 **Method:** Every URL below was fetched on 2026-07-22 and its content read before quoting; unfetched links were excluded. Note for re-verification: most nyc.gov, nycgovparks.org, and codelibrary.amlegal.com pages block generic fetchers (HTTP 403) and were retrieved with a browser user-agent; a normal browser will open them fine. Beware stale Fire Code PDFs: URLs without "-2022" in the filename serve the 2014 code.
 
@@ -336,9 +336,9 @@ No current 1 RCNY bridge was located:
 
 The operational question is therefore answered only to the amount DOB currently publishes and describes as the TPA application fee: `$250`, plus the published late fee when applicable. The retrieved sources do not name the Table 28-112.8 row DOB NOW maps that payment to, and none expressly says whether the `$130` certificate row can never be charged separately. Do not rewrite the statute's labels or claim that a rule reconciles them.
 
-### Future ruleset follow-up flag — not included in v2.9
+### Future ruleset follow-up flag — not included in v2.10
 
-`DOB-ASSEMBLY-001.output.deadline.qualification` currently cites Table 28-112.8's “at least ten work days prior to the event” comment as one source for the ten-day unit. That comment is on the “Temporary use letter for place of assembly” row, not the “Temporary place of assembly certificate of operation” row. The current operational pages independently publish ten business days for a TPA, but the table attribution should not be presented as belonging to the TPA certificate row unless a source reconciles the labels. Correcting that attribution requires a new immutable rules publication after `nyc.v2.9`; it is deliberately not attempted here.
+`DOB-ASSEMBLY-001.output.deadline.qualification` currently cites Table 28-112.8's “at least ten work days prior to the event” comment as one source for the ten-day unit. That comment is on the “Temporary use letter for place of assembly” row, not the “Temporary place of assembly certificate of operation” row. The current operational pages independently publish ten business days for a TPA, but the table attribution should not be presented as belonging to the TPA certificate row unless a source reconciles the labels. Correcting that attribution requires a new immutable rules publication after `nyc.v2.10`; it is deliberately not attempted here.
 
 ## Round 7 — 2026-07-29 (shared issue #178 publication)
 
@@ -348,23 +348,30 @@ The same immutable publication carries F-110's approved assembly-document regist
 
 The approved publication reuses only source URLs already published by nyc.v2.8 and the evidence sections named below. It adds no agency, deadline, fee, portal, threshold, exception, or new source:
 
-| Rule | Status | Evidence |
-| --- | --- | --- |
-| CONF-NO-FOOD-001 | SOURCE_CONFIRMED | VS §3 Round 1 + Round2 #9 |
-| CONF-NO-SALES-001 | OFFICIAL_CONFLICT | VS §8 Round 1 + Round2 #6/#12 |
-| CONF-NO-AMPLIFIED-SOUND-001 | SOURCE_CONFIRMED | VS §9-10 Round 1 + Round2 unresolved list |
-| CONF-NO-STRUCTURE-001 | SOURCE_CONFIRMED | VS §1 Round 1 + Round2 #7 |
-| CONF-NO-FLAME-001 | SOURCE_CONFIRMED | VS §2 Round 1 |
-| CONF-NO-GENERATOR-001 | SOURCE_CONFIRMED | VS Round2 #10 |
-| CONF-NO-BATTERY-001 | SOURCE_CONFIRMED | VS Round2 #10 |
-| CONF-NO-ALCOHOL-001 | SOURCE_CONFIRMED | VS §5 Round 1 + Round2 #6/#11 + Round3 unit re-verification |
-| CONF-NO-BLOCK-PARTY-RIDE-001 | SOURCE_CONFIRMED | VS §4 Round 1 |
+| Rule                         | Status            | Evidence                                                    |
+| ---------------------------- | ----------------- | ----------------------------------------------------------- |
+| CONF-NO-FOOD-001             | SOURCE_CONFIRMED  | VS §3 Round 1 + Round2 #9                                   |
+| CONF-NO-SALES-001            | OFFICIAL_CONFLICT | VS §8 Round 1 + Round2 #6/#12                               |
+| CONF-NO-AMPLIFIED-SOUND-001  | SOURCE_CONFIRMED  | VS §9-10 Round 1 + Round2 unresolved list                   |
+| CONF-NO-STRUCTURE-001        | SOURCE_CONFIRMED  | VS §1 Round 1 + Round2 #7                                   |
+| CONF-NO-FLAME-001            | SOURCE_CONFIRMED  | VS §2 Round 1                                               |
+| CONF-NO-GENERATOR-001        | SOURCE_CONFIRMED  | VS Round2 #10                                               |
+| CONF-NO-BATTERY-001          | SOURCE_CONFIRMED  | VS Round2 #10                                               |
+| CONF-NO-ALCOHOL-001          | SOURCE_CONFIRMED  | VS §5 Round 1 + Round2 #6/#11 + Round3 unit re-verification |
+| CONF-NO-BLOCK-PARTY-RIDE-001 | SOURCE_CONFIRMED  | VS §4 Round 1                                               |
 
-Organizer-visible text and the complete official URL snapshots are published verbatim in `rules/nyc-rules.v2.9.json`; that immutable artifact is the authoritative copy.
+Organizer-visible text and the complete official URL snapshots are published verbatim in `rules/nyc-rules.v2.10.json`; that immutable artifact is the authoritative copy.
+
+## Round 8 — 2026-07-29 (issue #181 citation attribution)
+
+**Purpose:** independently re-check the primary page already cited by `SAPO-BLOCK-PARTY-ELIG-001` before narrowing its citation label to the source URL the artifact carries. This is a publication record, not a verification pass, and it does not promote the rule from SOURCE_CONFIRMED.
+
+- `https://www.nyc.gov/site/cecm/permitting/permit-types/block-parties.page` (retrieved 2026-07-29) publishes both parts of the encoded eligibility rule: a block party has no sales of goods or services, and alcohol, vendors, commercial branding, and sponsorships are prohibited.
+- The rule's sole URL already points to that page, while its citation label additionally named the CECM FAQ without carrying a corresponding FAQ URL. nyc.v2.10 drops that redundant, unlinked attribution so the label matches the artifact's source list. This does **not** claim that the FAQ lacked the prohibition: the 2026-07-28 fetch recorded in `docs/proposals/advisory-144-bounded-refetch-results.md` found that the current FAQ carries it, while its historical state remains indeterminable. The URL, rule, output, status, and evidence reference do not change.
 
 ## Suggested Dev 4 Workflow
 
 1. Triage the red flags (RF-1, RF-2 first: they touch Scenario E and the demo anchor). Anything that changes an expected scenario output is an answer-key change and needs a team decision, not a quiet edit.
-2. For each item: open the candidate URL in a browser, confirm the quote, then update `rules/nyc-rules.v1.json`'s `verification` block (facet → VERIFIED, todos cleared, `last_verified_date` set, source URL recorded). `status_verbatim` changes only on promotion.
+2. For each item: open the candidate URL in a browser, confirm the quote, then publish a new immutable ruleset version from the current artifact named in `BASELINE.md`; never edit the published file in place. Only Dev 4 updates the fact's `verification` metadata: set `status`, set `last_verified_date` when the verification date is evidenced, and update `qualification` or `evidence` when the checked record requires it. The v2 schema has no `facet`, `todos`, or `status_verbatim` fields. Source metadata is separate: update `source.citation` and `source.urls` in the same new artifact when the confirmed attribution changes; never put a URL in `verification`.
 3. Where this dossier found concrete values the rules file displays as "varies" (SAPO fee table, TFSE $70, Open Flame $210, TPA $250, SLA $36/$48), adding them is a rules-data change with the fetched URL as source — after confirmation, never from this dossier alone.
 4. Log every check: URL + date checked, per the answer key's method. Unresolvable → keep "confirm with agency."

@@ -1,8 +1,8 @@
 # F-101 · Event Intake Questionnaire
 
 **Status:** APPROVED (2026-07-24) · **Reviewer/approver:** product owner · **Owner:** see Lane below · see `docs/BASELINE.md`.
-**Phase:** 1 (core, week 1) · **Lane:** Dev 2 · **Depends on:** events schema (Phase 0), ruleset nyc.v2.9 ratified (BASELINE.md) · **Feeds:** everything (single source of truth)
-**Updated:** 2026-07-22 against nyc.v2.1; retargeted through nyc.v2.8 for the changes recorded in `docs/BASELINE.md`, and to nyc.v2.9 on 2026-07-29. The shared issue #178 publication adds the nine issue #107 named confirmations, replaces the coarse assembly-approval question with F-110's two document-specific tri-states under the same private-venue/headcount gate, and removes the issue #194 food-exception claim from active intake. The superseded database columns remain historical storage; no rule or verdict reinterprets them.
+**Phase:** 1 (core, week 1) · **Lane:** Dev 2 · **Depends on:** events schema (Phase 0), ruleset nyc.v2.10 ratified (BASELINE.md) · **Feeds:** everything (single source of truth)
+**Updated:** 2026-07-22 against nyc.v2.1; retargeted through nyc.v2.8 for the changes recorded in `docs/BASELINE.md`, to nyc.v2.9 on 2026-07-29, and to nyc.v2.10 the same day for issue #181's citation-only correction. The shared issue #178 publication adds the nine issue #107 named confirmations, replaces the coarse assembly-approval question with F-110's two document-specific tri-states under the same private-venue/headcount gate, and removes the issue #194 food-exception claim from active intake. The superseded database columns remain historical storage; no rule or verdict reinterprets them. The v2.10 retarget changes no field, trigger, finding, status, or verdict.
 
 ## User Story
 
@@ -10,7 +10,7 @@ As an independent organizer, I describe my event once in plain language, so PopE
 
 ## Inputs
 
-The field list, enums, and asked-when conditions come from the ruleset's `intake_fields` registry (`rules/nyc-rules.v2.9.json`) — **the registry is authoritative; do not duplicate or drift from it.** Field groups (mirrored by the `events` table in ARCHITECTURE.md):
+The field list, enums, and asked-when conditions come from the ruleset's `intake_fields` registry (`rules/nyc-rules.v2.10.json`) — **the registry is authoritative; do not duplicate or drift from it.** Field groups (mirrored by the `events` table in ARCHITECTURE.md):
 
 1. **Identity:** name, borough, location_type, location_name
 2. **SAPO classification** (public-way locations only): obstructs_public_way; sapo_event_type; street_event_size OR plaza_level + plaza_multiple_blocks; has_amusement_ride (block parties)

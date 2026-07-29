@@ -14,12 +14,12 @@ In order:
 
 ## Golden Rules (project-specific, non-negotiable)
 
-1. **Never invent a permit fact.** Every lead time, fee, agency, and requirement comes from `rules/nyc-rules.v2.9.json`. If data is missing, the UI says "confirm with agency" (RESEARCH_REQUIRED) and you flag it in `docs/OPEN-QUESTIONS.md`. Making up a plausible number is the one unforgivable failure in this project. This applies doubly to AI assistants: they will happily invent city regulations that sound real. Reject that output. (This has already happened once in this project's history; the recovery took a full day.)
+1. **Never invent a permit fact.** Every lead time, fee, agency, and requirement comes from `rules/nyc-rules.v2.10.json`. If data is missing, the UI says "confirm with agency" (RESEARCH_REQUIRED) and you flag it in `docs/OPEN-QUESTIONS.md`. Making up a plausible number is the one unforgivable failure in this project. This applies doubly to AI assistants: they will happily invent city regulations that sound real. Reject that output. (This has already happened once in this project's history; the recovery took a full day.)
 2. **Never edit verification statuses.** The `verification` blocks in the rules file (SOURCE_CONFIRMED / OFFICIAL_CONFLICT / RESEARCH_REQUIRED / VERIFIED) are changed by exactly one person (the verification owner, Dev 4) after checking a primary source. Not by you, not by your AI.
 3. **The `events` schema is ratified through issue #2, not before it.** The schema is defined and signed in the migration PR (issue #2), which needs approval from all four devs before any lane starts coding (OPEN-QUESTIONS B-3; the ⚠️ banner in ARCHITECTURE's schema section). Until #2 merges, the schema is not yet frozen: raise proposed columns on that issue. Once #2 merges, the schema is a signed contract, every later change is a team decision, and you never add a column in a feature branch.
 4. **No mocks in the core path.** F-101 through F-204 must be real. Permitted demo fallbacks for stretch features are listed in `docs/DESIGN.md`; nothing else gets faked.
 5. **Stay inside your spec.** If you notice something broken elsewhere, open an issue; don't fix it in your feature branch. PRs that touch files outside their feature's footprint get bounced back.
-6. **Authority runs downhill.** Approved primary source → published rule (`rules/nyc-rules.v2.9.json`) → fixture suite (`docs/test-scenario-answer-key.md`) → engine output → UI copy. When two levels disagree, the lower one is wrong: fix the fixture to match the rule, fix the rule to match the source (through Dev 4). Never bend the engine to reproduce a broken expectation, and never resolve a disagreement by picking the version you prefer — file a `SPEC-CONFLICT` issue (see `docs/DOCUMENTATION-GOVERNANCE.md` §5).
+6. **Authority runs downhill.** Approved primary source → published rule (`rules/nyc-rules.v2.10.json`) → fixture suite (`docs/test-scenario-answer-key.md`) → engine output → UI copy. When two levels disagree, the lower one is wrong: fix the fixture to match the rule, fix the rule to match the source (through Dev 4). Never bend the engine to reproduce a broken expectation, and never resolve a disagreement by picking the version you prefer — file a `SPEC-CONFLICT` issue (see `docs/DOCUMENTATION-GOVERNANCE.md` §5).
 
 ## Workflow
 
@@ -35,19 +35,19 @@ In order:
 
 **Semantic names.** Names must say what a thing is or does, in full words. The reviewer should understand a line without scrolling.
 
-| Bad | Good |
-|---|---|
-| `d1`, `tmp`, `data2` | `latestApplyDate`, `pendingAlerts`, `rescopedIntake` |
-| `check(e)` | `computeFeasibilityVerdict(event)` |
-| `flag`, `ok` | `isFeasible`, `hasHardFloorBreach` |
-| `proc()` | `scheduleDeadlineAlerts()` |
-| `x.filter(y => y.s === 2)` | `planItems.filter(item => item.kind === "permit")` |
+| Bad                        | Good                                                 |
+| -------------------------- | ---------------------------------------------------- |
+| `d1`, `tmp`, `data2`       | `latestApplyDate`, `pendingAlerts`, `rescopedIntake` |
+| `check(e)`                 | `computeFeasibilityVerdict(event)`                   |
+| `flag`, `ok`               | `isFeasible`, `hasHardFloorBreach`                   |
+| `proc()`                   | `scheduleDeadlineAlerts()`                           |
+| `x.filter(y => y.s === 2)` | `planItems.filter(item => item.kind === "permit")`   |
 
 Conventions: booleans read as questions (`is…`, `has…`, `needs…`); functions are verb phrases; constants that mirror rules data use the rules file's names (`slack_warning_days` → `SLACK_WARNING_DAYS`); database columns are snake_case, TypeScript is camelCase, and the mapping happens in one place (the data layer), not scattered.
 
 **Other style rules:**
 
-- Small functions that do one thing. If you need a comment to explain *what* a block does, extract it into a well-named function instead.
+- Small functions that do one thing. If you need a comment to explain _what_ a block does, extract it into a well-named function instead.
 - Comments only for things code can't say: constraints, gotchas, links to the spec or an OPEN-QUESTIONS item (e.g. `// hard floor is a cliff, not a gradient — see F-102 spec #3`).
 - No dead code, no commented-out blocks, no `console.log` left behind.
 - No new dependencies without asking the team. Beginners + AI assistants tend to accumulate packages; every dependency is a liability we all inherit.
