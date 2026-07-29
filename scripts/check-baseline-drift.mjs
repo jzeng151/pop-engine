@@ -1611,7 +1611,7 @@ const f203BaselineScope = new RegExp(
   `\\bF-203\\b\\s+(?:keeps|retains)\\s+${f203Capabilities.source}\\s+as its planned,`,
   "i",
 );
-const f203RoadmapDecision = /(?:^|\r?\n)\s*\*\*Status:\*\*/i;
+const f203RoadmapDecision = /(?:^|\r?\n)\s*\*\*(?:Status|Decision):\*\*/i;
 const f203PrdDecision = /(?:^|\r?\n)\s*\*\*(?:Issue #127 amendment|Decision)\b/i;
 const f203SpecDecision = /^\s*\*\*(?:Status|Decision)\b/i;
 const f203RetainedScope = new RegExp(
@@ -1683,9 +1683,14 @@ for (const relative of f203Artifacts) {
 
   const contents = activeMarkdown(readFileSync(full, "utf8"));
   if (relative === "specs/F-203-deadline-alerts.md") {
-    const acceptanceCriteriaSections = contents
-      .split(/(?=^#{1,6}\s+)/m)
-      .filter((section) => /^#{1,6}\s+.*\bAcceptance Criteria\b/im.test(section))
+    const acceptanceCriteriaSections = [
+      ...contents.matchAll(/^(#{1,6})\s+.*\bAcceptance Criteria\b.*$/gim),
+    ]
+      .map((heading) => {
+        const remainder = contents.slice((heading.index ?? 0) + heading[0].length);
+        const nextPeerHeading = new RegExp(`^#{1,${heading[1].length}}\\s+`, "m").exec(remainder);
+        return remainder.slice(0, nextPeerHeading?.index ?? remainder.length);
+      })
       .join("\n");
     const addsUnscheduledCriterion = acceptanceCriteriaSections
       .split(/\r?\n(?=\s*(?:[-*+]|\d+\.)\s+)/)
@@ -1732,11 +1737,8 @@ for (const relative of f203Artifacts) {
         const isRoadmapCore =
           relative === "docs/ROADMAP.md" &&
           /^\s*[-*+]\s+\*\*F-203\s+·\s+Deadline Alerts\*\*/i.test(raw);
-        return (
-          isListAssignment &&
-          !isRoadmapCore &&
-          (ownsF203 || (namesScope && lower.includes("f-203")))
-        );
+        if (isRoadmapCore) return namesScope;
+        return isListAssignment && (ownsF203 || (namesScope && lower.includes("f-203")));
       }
       if (relative === "docs/BASELINE.md") {
         return /^\s*\*\*Decision\b/i.test(raw) && lower.includes("f-203") && addressesScope;

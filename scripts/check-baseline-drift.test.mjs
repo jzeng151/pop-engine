@@ -1844,6 +1844,17 @@ describe.concurrent("F-203 Phase 2 scope agreement (SPEC-CONFLICT #127 item 1)",
     expect(output).toContain("F-203 scope check passed");
   });
 
+  it("rejects a conflicting whole-feature Roadmap decision", async () => {
+    const { status, output } = await runOn({
+      "docs/ROADMAP.md":
+        SQUARE_RECONCILED["docs/ROADMAP.md"] +
+        "\n**Decision:** F-203 is now unplanned and assigned to Phase 3.\n",
+    });
+
+    expect(status).toBe(1);
+    expect(output).toContain("docs/ROADMAP.md must affirmatively assign");
+  });
+
   it("rejects a conflicting phase decision in the spec status", async () => {
     const { status, output } = await runOn({
       "specs/F-203-deadline-alerts.md": SQUARE_RECONCILED["specs/F-203-deadline-alerts.md"].replace(
@@ -1926,6 +1937,19 @@ describe.concurrent("F-203 Phase 2 scope agreement (SPEC-CONFLICT #127 item 1)",
       "specs/F-203-deadline-alerts.md":
         SQUARE_RECONCILED["specs/F-203-deadline-alerts.md"] +
         "\n## Additional Acceptance Criteria\n\n1. Send a weekly digest.\n",
+    });
+
+    expect(status).toBe(1);
+    expect(output).toContain(
+      "specs/F-203-deadline-alerts.md must not define Phase 2 acceptance criteria",
+    );
+  });
+
+  it("rejects an unscheduled capability under a nested acceptance-criteria subsection", async () => {
+    const { status, output } = await runOn({
+      "specs/F-203-deadline-alerts.md":
+        SQUARE_RECONCILED["specs/F-203-deadline-alerts.md"] +
+        "\n## Additional Acceptance Criteria\n\n### Digest delivery\n\n1. Send a weekly digest.\n",
     });
 
     expect(status).toBe(1);
@@ -2101,6 +2125,20 @@ describe.concurrent("F-203 Phase 2 scope agreement (SPEC-CONFLICT #127 item 1)",
         SQUARE_RECONCILED["docs/ROADMAP.md"] +
         "\n## Phase 3 — Differentiation\n\n" +
         "- **F-203 add-on** — dashboard sharing; planned, not scheduled.\n",
+    });
+
+    expect(status).toBe(1);
+    expect(output).toContain("docs/ROADMAP.md must affirmatively assign");
+  });
+
+  it("rejects a deferred capability added to the Phase 1 F-203 entry", async () => {
+    const { status, output } = await runOn({
+      "docs/ROADMAP.md": SQUARE_RECONCILED["docs/ROADMAP.md"].replace(
+        "## Phase 2 — Execution Hardening",
+        "## Phase 1 — Core\n\n" +
+          "- **F-203 · Deadline Alerts** — email/SMS on computed deadlines; also sends digests.\n\n" +
+          "## Phase 2 — Execution Hardening",
+      ),
     });
 
     expect(status).toBe(1);
