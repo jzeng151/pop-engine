@@ -65,7 +65,7 @@ Permitted demo fallbacks for stretch features: seeded RSVP data, simulated email
 
 ## Team Lanes (Phase 0–1.5)
 
-One integration point (the `events` schema — agreed by all four devs before any lane codes); four lanes with minimal merge conflicts:
+One integration point (the `events` schema — ratified for the access-gated demo 2026-07-27 through PR #137's recorded overwrite; strict production ratification and later shared/core-table changes remain team decisions); four lanes with minimal merge conflicts:
 
 - **Dev 1 — Rules engine + verdict:** F-201, F-102; owns engine fidelity to `rules/nyc-rules.v2.10.json` and the fixture suite. Verify: full fixture suite (scenarios + boundaries) passes as automated tests.
 - **Dev 2 — Intake + plan UI:** F-101 (incl. contradiction checks, "I don't know"), F-110, F-206, plan rendering. Verify: Scenario A renders end-to-end with citations + snapshot banner; Scenario F records and reloads both assembly-document confirmations.

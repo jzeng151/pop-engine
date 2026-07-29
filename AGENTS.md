@@ -41,7 +41,7 @@ If a required artifact is absent, unapproved, superseded, or contradictory: stop
 
 - Phase 0–1.5: import shared types from `packages/engine`; never redefine intake, finding, verdict, or status types locally.
 - Phase 2+: `packages/engine` remains authoritative until the approved OpenAPI/JSON Schema code-generation handoff lands. That PR moves schema-derived definitions to `packages/contracts` and updates imports, this file, and `CONTRIBUTING.md` atomically; no phase may have two authoritative definitions.
-- The `events` schema migration is the four-lane contract: changes require all-lane approval (Phase 0 sign-off, then team decision per governance §6).
+- The `events` schema migration is the four-lane contract. PR #137 is the sole recorded exception: on 2026-07-27, `@jzeng151` invoked a one-time overwrite for the access-gated synthetic-data demo after the other lane owners were unavailable. That is one product-owner decision, not their approvals. Strict all-lane ratification is still required before production activation, and every later change requires the normal team decision under governance §6.
 - Never edit a merged migration; add a new ordered one.
 - _Phase 2+:_ OpenAPI and JSON Schema contracts, workspace tenancy, worker/outbox — see `docs/ARCHITECTURE-FUTURE.md`. Do not build toward them early.
 
