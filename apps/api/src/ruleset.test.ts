@@ -653,7 +653,7 @@ describe.runIf(databaseUrl.length > 0)("migration 001 and rules sync", () => {
         "revision_counter",
         "created_at",
         "updated_at",
-        // F-110 migration 013 retains the coarse answer as deprecated history. It is deliberately
+        // F-110 migration 012 retains the coarse answer as deprecated history. It is deliberately
         // absent from the active registry and never used to infer either replacement value.
         "venue_has_assembly_approval",
         // #194 keeps the removed organizer claim only for historical rows and replay.

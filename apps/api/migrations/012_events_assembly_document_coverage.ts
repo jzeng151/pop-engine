@@ -12,8 +12,7 @@ const assemblyCoverage = (column: string) => ({
  * objective document confirmations. The old column stays untouched as deprecated history; an old
  * yes cannot establish exact PACO or FDNY Public Assembly Permit coverage.
  *
- * Number 013 follows every current local and remote migration claim inspected on 2026-07-29:
- * main ends at 011 and `jzeng151/demo-obtained-permits` claims 012.
+ * Number 012 follows the current migration head inspected on 2026-07-29: main ends at 011.
  */
 export function up(pgm: MigrationBuilder): void {
   pgm.addColumns("events", {

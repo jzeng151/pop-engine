@@ -1,7 +1,7 @@
 # F-110 · Assembly Document Coverage Intake
 
 **Status:** APPROVED (2026-07-29) · **Reviewer/approver:** product owner acting in the product, architecture, database, F-101, F-102, F-201, affected-lane, and all-lane capacities (issue #188; decision gate `msg_bed16d397a64`) · **Owner/Lane:** Dev 2, coordinated with Dev 1 and Dev 4.
-**Phase:** 1 (core) · **Depends on:** F-101, F-102, F-201, ruleset nyc.v2.9, and events migration 013 · **Feeds:** saved intake and immutable plan snapshots.
+**Phase:** 1 (core) · **Depends on:** F-101, F-102, F-201, ruleset nyc.v2.9, and events migration 012 · **Feeds:** saved intake and immutable plan snapshots.
 
 ## User Story
 
@@ -21,7 +21,7 @@ The PACO question renders those four component checks as an evidence checklist. 
 - These fields replace `venue_has_assembly_approval` in the active intake registry. Its existing database column remains deprecated history and is never used to infer either new answer.
 - `POST /api/events`, `GET /api/events/:id`, and `PATCH /api/events/:id` persist and reload both values through F-101's existing registry-derived flow.
 - Editing either field increments `revision_counter`; regeneration writes both values into the new immutable plan's `intake_snapshot`.
-- Migration 013 adds the two nullable enum-constrained columns and backfills qualifying existing draft rows to explicit `unknown`. It leaves other rows null and leaves the deprecated column unchanged.
+- Migration 012 adds the two nullable enum-constrained columns and backfills qualifying existing draft rows to explicit `unknown`. It leaves other rows null and leaves the deprecated column unchanged.
 
 ## Confirmation-Only Boundary
 
@@ -35,7 +35,7 @@ The two facts change no rule trigger, finding, deadline, branch, or verdict. The
 4. Create, read, edit, and later edit-form reload preserve each tri-state exactly. Values supplied outside the gate are rejected as not applicable.
 5. Editing either answer bumps the event revision, marks an older plan stale, and regeneration stores both answers in the new plan's immutable intake snapshot without changing the finding set or verdict.
 6. Scenario F fixture v7 replaces `venue_has_assembly_approval=unknown` with both new values as unknown. Its two material verdict branches, expected findings, deadlines, and CONDITIONAL verdict remain unchanged.
-7. Migration 013 retains `venue_has_assembly_approval`, adds enum checks for both new columns, and backfills only in-scope existing drafts to unknown without deriving from the old value.
+7. Migration 012 retains `venue_has_assembly_approval`, adds enum checks for both new columns, and backfills only in-scope existing drafts to unknown without deriving from the old value.
 8. The shared nyc.v2.9 publication, baseline, PRD, roadmap, architecture, F-101, F-102, F-201, and fixture pointers move together; `nyc.v2.8` is never edited in place.
 
 ## Non-Goals
