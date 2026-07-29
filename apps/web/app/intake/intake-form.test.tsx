@@ -490,6 +490,27 @@ describe("NYC park-name suggestions", () => {
     await waitFor(() => expect(screen.getByText(/Saved as revision 1/)).toBeDefined());
     expect(requestBody(fetchMock, 1).location_name).toBe("My neighborhood green");
   });
+
+  it("explains the search limit without restricting manual location entry", async () => {
+    const user = renderForm();
+    await answerParkEvent(user);
+    const manualLocation = "x".repeat(81);
+    await fillField(user, "location_name", manualLocation);
+
+    expect(
+      screen.getByText(
+        "Park searches must be 80 characters or fewer. You can still save this location name manually.",
+      ),
+    ).toBeDefined();
+    expect(screen.getByRole("button", { name: "Search NYC Parks" }).hasAttribute("disabled")).toBe(
+      true,
+    );
+    expect(fetchMock).not.toHaveBeenCalled();
+
+    await save(user);
+    await waitFor(() => expect(screen.getByText(/Saved as revision 1/)).toBeDefined());
+    expect(requestBody(fetchMock).location_name).toBe(manualLocation);
+  });
 });
 
 describe("inline warnings render the published text (spec #4, #5)", () => {

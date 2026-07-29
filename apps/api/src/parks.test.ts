@@ -90,7 +90,6 @@ describe("NYC Parks discovery", () => {
           acres: "1.00380087",
           multipolygon: { ignored: true },
         },
-        { gispropnum: "M999" },
       ]),
     );
 
@@ -109,20 +108,45 @@ describe("NYC Parks discovery", () => {
           type: "Road",
           acres: "1.00380087",
         },
-        {
-          locationId: "M999",
-          parkName: "NYC Park Zone",
-          borough: "M",
-          type: "Special Event Area",
-          acres: "N/A",
-        },
       ],
     });
 
     const url = new URL(fetchParks.mock.calls[0]?.[0] as string);
     expect(url.origin + url.pathname).toBe("https://data.cityofnewyork.us/resource/c5vm-g2dk.json");
     expect(url.searchParams.get("$select")).toBe("system,gispropnum,name,borough,areatype,acres");
-    expect(url.searchParams.get("$order")).toBe("name ASC,system ASC");
+    expect(url.searchParams.get("$order")).toBe("name ASC,system ASC,gispropnum ASC");
+  });
+
+  it("omits rows without a non-empty official identifier and name", async () => {
+    const fetchParks = vi.fn<ParksFetch>(async () =>
+      Response.json([
+        null,
+        "not a park",
+        { name: "Missing identifier" },
+        { system: "", gispropnum: "  ", name: "Blank identifier" },
+        { system: "M001", name: "" },
+        { system: "M002", name: "  " },
+        { gispropnum: " M003 ", name: " Valid fallback park " },
+      ]),
+    );
+
+    const response = await request(createTestApp(fetchParks)).get(
+      "/api/permits/nyc/discover?borough=M",
+    );
+
+    expect(response.status).toBe(200);
+    expect(response.body).toEqual({
+      status: "SUCCESS",
+      spaces: [
+        {
+          locationId: "M003",
+          parkName: "Valid fallback park",
+          borough: "M",
+          type: "Special Event Area",
+          acres: "N/A",
+        },
+      ],
+    });
   });
 
   it("returns a generic 502 for upstream HTTP, network, and payload failures", async () => {

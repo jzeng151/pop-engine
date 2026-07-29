@@ -17,8 +17,10 @@ type ParkRow = {
   acres?: unknown;
 };
 
-const stringOr = (value: unknown, fallback: string): string =>
-  typeof value === "string" && value.length > 0 ? value : fallback;
+const nonEmptyString = (value: unknown): string | null =>
+  typeof value === "string" && value.trim().length > 0 ? value.trim() : null;
+
+const stringOr = (value: unknown, fallback: string): string => nonEmptyString(value) ?? fallback;
 
 function readLimit(value: unknown): number | null {
   if (value === undefined) return DEFAULT_LIMIT;
@@ -46,7 +48,7 @@ function parksUrl(borough: string, limit: number, name: string | undefined): str
   const query = new URLSearchParams({
     $select: "system,gispropnum,name,borough,areatype,acres",
     $where: where.join(" AND "),
-    $order: "name ASC,system ASC",
+    $order: "name ASC,system ASC,gispropnum ASC",
     $limit: String(limit),
   });
   return `${PARKS_ENDPOINT}?${query}`;
@@ -92,15 +94,21 @@ export function createParksRouter(fetchParks: ParksFetch = fetch): Router {
       const body: unknown = await response.json();
       if (!Array.isArray(body)) throw new Error("NYC Open Data response was not an array");
 
-      const spaces = body.map((value: unknown) => {
-        const park = value !== null && typeof value === "object" ? (value as ParkRow) : {};
-        return {
-          locationId: stringOr(park.system, stringOr(park.gispropnum, "")),
-          parkName: stringOr(park.name, "NYC Park Zone"),
-          borough,
-          type: stringOr(park.areatype, "Special Event Area"),
-          acres: stringOr(park.acres, "N/A"),
-        };
+      const spaces = body.flatMap((value: unknown) => {
+        if (value === null || typeof value !== "object") return [];
+        const park = value as ParkRow;
+        const locationId = nonEmptyString(park.system) ?? nonEmptyString(park.gispropnum);
+        const parkName = nonEmptyString(park.name);
+        if (locationId === null || parkName === null) return [];
+        return [
+          {
+            locationId,
+            parkName,
+            borough,
+            type: stringOr(park.areatype, "Special Event Area"),
+            acres: stringOr(park.acres, "N/A"),
+          },
+        ];
       });
 
       res.json({ status: "SUCCESS", spaces });

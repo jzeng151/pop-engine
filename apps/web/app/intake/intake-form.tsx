@@ -41,6 +41,7 @@ const DESCRIPTIVE_QUESTIONS = [
     required: false,
   },
 ];
+const MAX_PARK_SEARCH_LENGTH = 80;
 
 const humanize = (token: string): string =>
   token.replace(/_/g, " ").replace(/^./, (letter) => letter.toUpperCase());
@@ -164,6 +165,9 @@ export function IntakeForm({
   const errorFor = (field: string) => errors.find((error) => error.field === field);
   const parkBorough = parksBoroughCode(answers.borough);
   const canSearchParks = answers.location_type === "park" && parkBorough !== null;
+  const parkSearchName =
+    typeof answers.location_name === "string" ? answers.location_name.trim() : "";
+  const parkSearchTooLong = parkSearchName.length > MAX_PARK_SEARCH_LENGTH;
 
   useEffect(() => {
     parkSearchRequest.current += 1;
@@ -194,8 +198,8 @@ export function IntakeForm({
   };
 
   const searchParks = async () => {
-    const name = typeof answers.location_name === "string" ? answers.location_name.trim() : "";
-    if (!canSearchParks || parkBorough === null || name.length === 0) return;
+    if (!canSearchParks || parkBorough === null || parkSearchName.length === 0 || parkSearchTooLong)
+      return;
 
     const request = ++parkSearchRequest.current;
     parkSearchController.current?.abort();
@@ -205,7 +209,7 @@ export function IntakeForm({
     setParkSearchFailure(null);
     setParkSuggestions(null);
 
-    const result = await discoverParks(apiBaseUrl, parkBorough, name, controller.signal);
+    const result = await discoverParks(apiBaseUrl, parkBorough, parkSearchName, controller.signal);
     if (parkSearchRequest.current !== request) return;
 
     parkSearchController.current = null;
@@ -369,22 +373,24 @@ export function IntakeForm({
                 className="intake__secondary"
                 type="button"
                 aria-controls="intake-park-search-results"
-                disabled={
-                  parkSearching ||
-                  typeof answers.location_name !== "string" ||
-                  answers.location_name.trim().length === 0
-                }
+                disabled={parkSearching || parkSearchName.length === 0 || parkSearchTooLong}
                 onClick={() => void searchParks()}
               >
                 {parkSearching ? "Searching NYC Parks…" : "Search NYC Parks"}
               </button>
               <div id="intake-park-search-results" aria-busy={parkSearching} aria-live="polite">
                 {parkSearchFailure !== null && <p className="intake__note">{parkSearchFailure}</p>}
+                {parkSearchTooLong && (
+                  <p className="intake__note">
+                    Park searches must be 80 characters or fewer. You can still save this location
+                    name manually.
+                  </p>
+                )}
                 {parkSearching === false &&
                   parkSearchFailure === null &&
+                  !parkSearchTooLong &&
                   parkSuggestions === null &&
-                  typeof answers.location_name === "string" &&
-                  answers.location_name.trim().length > 0 && (
+                  parkSearchName.length > 0 && (
                     <p className="intake__note">Search to see matching NYC park names.</p>
                   )}
                 {parkSearching === false &&
