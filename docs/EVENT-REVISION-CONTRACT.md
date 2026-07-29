@@ -148,6 +148,10 @@ The exact HTTP request and error schemas belong in the reviewed OpenAPI contract
   that target field remains deferred under §2.2.
 - Plans, findings, traces, and their regulatory snapshots remain immutable.
 - A plan is stale when its revision differs from `events.current_revision_id`.
+- A plan-derived message job is delivery-eligible only while its immutable source plan is
+  `events.current_plan_id` and that plan's `event_revision_id` is
+  `events.current_revision_id`. Advancing the revision pointer therefore suppresses delivery from the
+  stale accepted plan even before a replacement plan is generated or accepted.
 - Generating a candidate does not move `current_plan_id`.
 - Every candidate records the exact `today` engine input used to evaluate it.
 - An acceptance request names the accepted `base_plan_id` against which the candidate was presented;
@@ -166,6 +170,11 @@ The exact HTTP request and error schemas belong in the reviewed OpenAPI contract
   provenance unchanged. A trackable replacement is appended in its default state; a non-trackable
   replacement remains read-only context. The server rejects any organizer-supplied mapping that
   attempts to reuse, reset, or carry the old task onto the replacement.
+- Acceptance and ruleset publication are serialized against the selected jurisdiction's publication
+  authority. At the acceptance linearization point, the candidate's persisted ruleset version and
+  checksum must equal the current published artifact's version and checksum. If publication wins,
+  acceptance rejects the candidate and requires regeneration; if acceptance wins, a later publication
+  makes the accepted plan outdated without rewriting it.
 - Accepting a candidate locks the Event and rechecks that the candidate belongs to it, that
   `candidate.event_revision_id === events.current_revision_id`, and that
   `base_plan_id === events.current_plan_id`. While holding that lock, acceptance also derives the
@@ -180,13 +189,14 @@ The exact HTTP request and error schemas belong in the reviewed OpenAPI contract
   plan, candidate plan, accepted Event Revision, and server-recorded acceptance time. A mismatch,
   reconciliation failure, job/outbox failure, or audit failure rolls back all of those changes.
   External delivery occurs only after commit.
-- Cancelling a pending job is insufficient when a worker has already leased it. Plan acceptance and
-  the worker's irreversible provider handoff must be linearizable through one shared claim/acceptance
-  fence whose authority remains effective from the worker's final eligibility check until the
-  provider has accepted delivery or the handoff can still be cancelled. If acceptance wins the
-  fence, the obsolete job cannot cross the handoff; if delivery wins it, acceptance observes that
-  ordering rather than committing first. A current-plan or cancellation-state recheck followed by an
-  unfenced provider call is insufficient.
+- Cancelling a pending job is insufficient when a worker has already leased it. Every Event operation
+  that can obsolete a plan-derived job, including a revision save or plan acceptance, and the worker's
+  irreversible provider handoff must be linearizable through one shared eligibility fence. Its
+  authority remains effective from the worker's final cancellation, current-plan, and current-revision
+  checks until the provider has accepted delivery or the handoff can still be cancelled. If an
+  obsoleting operation wins the fence, the job cannot cross the handoff; if delivery wins it, that
+  operation observes the ordering rather than committing first. A recheck followed by an unfenced
+  provider call is insufficient.
 - A later edit may make an accepted plan stale, but an already-stale candidate, a candidate evaluated
   on an obsolete local date, or a candidate based on a superseded accepted plan is never accepted.
 - The migration that introduces `current_plan_id` sets it from the same-event
@@ -402,6 +412,9 @@ Before activation, the consuming implementation must prove:
   remains below the current-row revision, and the first live append exceeds every backfilled
   revision;
 - accepting a candidate races safely with a revision save and rejects the stale candidate;
+- accepting a candidate races safely with ruleset publication: publication first rejects the
+  candidate's superseded version/checksum, while acceptance first leaves a subsequently outdated but
+  immutable accepted plan;
 - accepting a candidate after its jurisdiction-local evaluation date has passed rejects it and
   requires regeneration;
 - accepting a candidate whose persisted `jurisdictionTimezone` no longer matches the jurisdiction
@@ -424,6 +437,9 @@ Before activation, the consuming implementation must prove:
 - a worker that leased an obsolete message job before plan acceptance cannot send it after acceptance
   commits, including when it pauses after its final eligibility check and resumes at the provider
   handoff;
+- a worker that leased a plan-derived job before a changed revision save cannot send it after the save
+  advances `current_revision_id`, including when it pauses after its final eligibility check and
+  resumes at the provider handoff;
 - while a Phase 1 reader remains, a revision save and subsequent plan generation cannot observe
   different questionnaire answers;
 - while a Phase 1 reader remains, a changed save atomically increments
