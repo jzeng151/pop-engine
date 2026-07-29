@@ -12,13 +12,13 @@ An authorized rules administrator can draft and edit rules as validated data wit
 
 **In scope**
 
-- Create/edit draft rules through the approved rules JSON Schema/AST, with source links, verification state, validation, and review metadata.
+- Create/edit draft rules through the approved rules JSON Schema/AST, with source links, exact F-711 verification-decision references, validation, and review metadata.
 - Preview machine-readable diff and hand off to F-712 testing/F-714 publication.
 - Use optimistic concurrency and immutable draft versions.
 
 **Non-goals**
 
-- Publishing, runtime database rules, dynamic code/eval, bypassing primary-source review, or changing verification status without Dev 4.
+- Publishing, runtime database rules, dynamic code/eval, bypassing primary-source review, or changing verification status; F-711 exclusively owns verification decisions.
 - Editing an already published immutable artifact.
 
 ## Dependencies and Baseline
@@ -31,7 +31,7 @@ An authorized rules administrator can draft and edit rules as validated data wit
 
 ## Inputs, Outputs, State, Validation, and Errors
 
-- Inputs are schema-valid draft fields/AST and source references where the published rules contract requires them; output is a versioned non-published draft.
+- Inputs are schema-valid draft fields/AST, source references, and exact immutable F-711 facet-decision versions where the published rules contract requires them; output is a versioned non-published draft that projects those decisions.
 - Draft state is editing → ready-for-review → changes-requested/approved-for-test; publication remains separate.
 - Schema error, unsupported AST, required source missing, conflict, or stale edit blocks progression and never changes runtime output. A source-less `COVERAGE_GAP` draft is allowed only when it matches the published rules contract and asserts no regulatory fact.
 - Missing or unresolved material data stays visibly unset, unknown, pending, or failed as appropriate; it never becomes a successful or complete result.
@@ -60,7 +60,7 @@ Exact HTTP, JSON Schema, migration, job, and provider shapes belong in their rev
 1. **F710-AC-01:** The editor can represent only the approved rules schema/AST and rejects unknown fields/operators/types before save/readiness.
 2. **F710-AC-02:** Every draft version preserves author/time/base artifact/source references and cannot mutate a published artifact.
 3. **F710-AC-03:** A stale concurrent save is rejected with a diff/reload path and no lost update.
-4. **F710-AC-04:** Verification status changes require the verification owner; semantic rule changes require verification plus engine-owner review.
+4. **F710-AC-04:** F-710 exposes no verification-status mutation. Readiness pins and projects the verification owner's exact immutable F-711 decision for each rule-source facet and candidate artifact version; a missing, changed, or mismatched decision blocks progression. Semantic rule changes additionally require engine-owner review.
 5. **F710-AC-05:** No draft affects runtime evaluation until F-714 publishes a new immutable approved artifact.
 6. **F710-AC-06:** Missing source blocks readiness for every entry except a schema-valid `COVERAGE_GAP` entry that asserts no regulatory fact; that exception matches the runtime artifact validator and has a positive fixture.
 

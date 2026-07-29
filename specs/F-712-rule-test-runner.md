@@ -23,7 +23,8 @@ Rules reviewers can run affected scenarios quickly and the full approved suite b
 
 ## Dependencies and Baseline
 
-- F-710 drafts, approved engine/fixture contracts, and F-714 publish gate.
+- F-710 drafts and approved engine/fixture contracts.
+- F-714 is a downstream consumer of immutable F-712 run results, not a prerequisite for the runner.
 - Approved isolated runner, resource limits, coverage mapping, and artifact checksum contract.
 - Baseline at draft time: PRD, Roadmap, Design, and Phase 0–1.5 Architecture approved 2026-07-22; `ARCHITECTURE-FUTURE.md` approved as a planning target 2026-07-25; NYC ruleset `nyc.v2.7`, rules schema `popengine-rules/v2`, and scenario fixtures v5 where regulatory output is consumed.
 - The approval PR must re-pin any baseline version that changes before approval. A proposed or superseded input blocks implementation.

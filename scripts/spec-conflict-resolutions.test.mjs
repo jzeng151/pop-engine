@@ -35,4 +35,17 @@ describe("PR 134 SPEC-CONFLICT reconciliations", () => {
     expect(historical).toContain("consumes F-103's exact shared `permit-burden/v1`");
     expect(historical).not.toContain("Permit burden remains unavailable until SPEC-CONFLICT #208");
   });
+
+  it("keeps F-107 saves on the approved immutable Event Revision contract", () => {
+    const contract = read("docs/EVENT-REVISION-CONTRACT.md");
+    const saveResume = read("specs/F-107-save-resume.md");
+
+    expect(contract).toContain(
+      "F-107 may save `incomplete` revisions but does not add a separate submission transition",
+    );
+    expect(saveResume).toContain("Every changed save appends exactly one immutable revision");
+    expect(saveResume).toContain("F-107 does not add a separate submission transition");
+    expect(saveResume).not.toContain("complete-unsubmitted");
+    expect(saveResume).not.toContain("Mutable draft create/read/update behavior");
+  });
 });

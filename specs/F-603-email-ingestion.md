@@ -30,7 +30,7 @@ Authorized agency correspondence can be ingested and proposed for the correct ev
 
 ## Inputs, Outputs, State, Validation, and Errors
 
-- Input is a verified provider envelope and bounded message content; output is quarantined/unmatched or a pending event/application match.
+- Input is a verified provider envelope and bounded message content; output is quarantined/unmatched or a pending event/application match pinned to the target's exact F-208 application/projection version.
 - State is received → verified/quarantined → matched-pending → confirmed, reassigned, or rejected; downstream processing begins only after confirmation.
 - Ambiguous/no-match/duplicate/failed messages remain visible and never attach silently.
 - Missing or unresolved material data stays visibly unset, unknown, pending, or failed as appropriate; it never becomes a successful or complete result.
@@ -61,7 +61,7 @@ Exact HTTP, JSON Schema, migration, job, and provider shapes belong in their rev
 3. **F603-AC-03:** Event/application matching remains pending until an authorized user confirms or reassigns it.
 4. **F603-AC-04:** Ambiguous, unmatched, quarantined, unsafe, or failed messages cannot trigger extraction/reconciliation or workflow mutation.
 5. **F603-AC-05:** Email authentication results are displayed as evidence limits and never represented as regulatory or sender authority.
-6. **F603-AC-06:** Confirming or reassigning compare-and-swaps the expected pending match version and atomically commits the winning application link, exact immutable message/safe document versions, and F-602 outbox work; a conflicting terminal decision is rejected, and retries do not duplicate links or extraction work.
+6. **F603-AC-06:** Confirming or reassigning compare-and-swaps the expected pending match version and the exact active target application's F-208 application/projection version, then atomically commits the winning application link, immutable message/safe document versions, and F-602 outbox work. If archival or another application mutation wins, confirmation rejects and rebuilds the match without linking or enqueuing work; retries do not duplicate links or extraction work.
 
 ## Fixtures and Verification
 

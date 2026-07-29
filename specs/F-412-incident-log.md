@@ -32,6 +32,7 @@ Authorized event staff can record timestamped incidents and private attachments 
 
 - Inputs are staff-confirmed event/time/description and optional safe files; outputs are append-only incident and addendum records.
 - State is recorded with later addenda/correction markers; unsafe attachments remain quarantined and separate from incident status.
+- The event's incident-export source generation advances on any incident, addendum/correction, or retention removal; every queued or staged export pins that generation.
 - Unknown time/category or conflicting accounts remain explicit and are not reconciled by the system.
 - Missing or unresolved material data stays visibly unset, unknown, pending, or failed as appropriate; it never becomes a successful or complete result.
 - Invalid input produces a field or action-specific error without partial mutation. Retriable external failures preserve the user's confirmed state and expose a safe retry.
@@ -62,7 +63,7 @@ Exact HTTP, JSON Schema, migration, job, and provider shapes belong in their rev
 4. **F412-AC-04:** Unsafe/unauthorized files remain unavailable and do not erase the text incident.
 5. **F412-AC-05:** Export/retention behavior matches the approved policy and records the actor/action.
 6. **F412-AC-06:** Attachments remain in private storage; every download issuance rechecks event/workspace authorization and scan state and returns only a short-lived signed URL. Authorization loss blocks new URLs, and an issued direct-storage URL has only its disclosed bounded validity until expiry.
-7. **F412-AC-07:** Generated exports remain private; every authenticated stream or short-lived signed URL issuance rechecks current event/workspace-role authorization. Authorization loss blocks new access, and an issued direct-storage URL has only its disclosed bounded validity until expiry.
+7. **F412-AC-07:** Generated exports remain private and pin the complete incident/addendum/retention generation they read. A generation change cancels queued work, invalidates staged artifacts, and blocks new access to the obsolete export. Every authenticated stream or short-lived signed URL issuance rechecks both that generation and current event/workspace-role authorization; an already issued direct-storage URL has only its disclosed bounded validity until expiry.
 
 ## Fixtures and Verification
 
