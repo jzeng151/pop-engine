@@ -179,8 +179,12 @@ describe("Scenario A — Bushwick Street Activation (demo anchor)", () => {
     ]);
     const medium = suggestions.find((s) => s.change.value === "medium");
     const small = suggestions.find((s) => s.change.value === "small");
+    const privateVenue = suggestions.find((s) => s.change.value === "private_venue");
     expect(medium?.minSlackDays).toBe(5);
     expect(small?.atRiskFindingName ?? small?.minSlackDays).toBeTruthy();
+    // Non-at-risk suggestions keep the historical three-field shape (no null enrichment keys).
+    expect(privateVenue !== undefined && !("minSlackDays" in privateVenue)).toBe(true);
+    expect(privateVenue !== undefined && !("atRiskFindingName" in privateVenue)).toBe(true);
   });
 
   it("re-evaluates rescope (a) to the 30-day deadline and five days of slack", () => {

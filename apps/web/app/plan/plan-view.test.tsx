@@ -1005,11 +1005,43 @@ describe("F-102 · CONDITIONAL branch table and INFEASIBLE rescope ladder", () =
     expect(suggestions).toHaveLength(2);
     expect(suggestions[0]?.textContent).toContain("street event size");
     expect(suggestions[0]?.textContent).toContain("medium");
-    expect(suggestions[0]?.textContent).toContain("At risk");
-    expect(suggestions[0]?.textContent).toContain("5 days slack");
-    expect(suggestions[0]?.textContent).toContain("Street Activity Permit — Medium");
+    expect(suggestions[0]?.textContent).toContain("At risk — apply within 5 days");
+    expect(suggestions[0]?.textContent).toContain("on Street Activity Permit — Medium");
+    expect(screen.getByTestId("rescope-at-risk-buffer").textContent).toContain(
+      "PopEngine's internal planning buffer",
+    );
     expect(suggestions[1]?.textContent).toContain("private venue");
     expect(suggestions[1]?.textContent).toContain("Depends on");
+  });
+
+  it("explains a conditional miss on may-be-required published windows", async () => {
+    stubApi(
+      plan({
+        verdict: "CONDITIONAL",
+        findings: [
+          finding({
+            ruleIds: ["DOHMH-ORGANIZER-NOTIFY-001"],
+            name: "Organizer notification to DOHMH",
+            disposition: "may_be_required",
+            deadlineStatus: "published_deadline_missed",
+            latestApplyDate: "2026-07-13",
+          }),
+        ],
+        verdictDetail: {
+          ...emptyVerdictDetail,
+          missedRuleIds: ["DOHMH-ORGANIZER-NOTIFY-001"],
+        },
+      }),
+    );
+    renderPlan();
+    await screen.findByTestId("verdict-detail");
+
+    const section = screen.getByTestId("missed-may-be-required");
+    expect(section.textContent).toContain("past only if the requirement applies");
+    expect(section.textContent).toContain("may-be-required");
+    expect(section.textContent).toContain("keeps the verdict conditional");
+    expect(section.textContent).toContain("DOHMH-ORGANIZER-NOTIFY-001");
+    expect(section.textContent).toContain("Organizer notification to DOHMH");
   });
 
   it("shows nothing under a FEASIBLE verdict that has no branch or rescope work", async () => {

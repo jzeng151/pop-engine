@@ -361,18 +361,28 @@ function buildRescopeSuggestions(
       if (introduced.some((finding) => finding.deadlineStatus === "not_calculable")) continue;
 
       const candidateIds = new Set(ruleIdsOf(candidate.findings));
-      const minSlackDays = candidate.window.minSlackDays;
-      const atRiskFinding =
-        candidate.verdict === "FEASIBLE_AT_RISK" && minSlackDays !== null
-          ? (candidate.findings.find((finding) => finding.slackDays === minSlackDays) ?? null)
-          : null;
-      suggestions.push({
+      const suggestion: RescopeSuggestion = {
         change: { field: definition.field, value: candidateValue.display },
         reevaluatedVerdict: candidate.verdict,
         droppedRuleIds: [...baseRuleIds].filter((ruleId) => !candidateIds.has(ruleId)),
-        minSlackDays,
-        atRiskFindingName: atRiskFinding?.name ?? null,
-      });
+      };
+      // Enrichment is only attached for at-risk re-evaluations. Unconditionally writing
+      // `minSlackDays: null` / `atRiskFindingName: null` on every suggestion would change the
+      // historical three-field serialization that superseded-ruleset replay must reproduce.
+      if (candidate.verdict === "FEASIBLE_AT_RISK") {
+        const minSlackDays = candidate.window.minSlackDays;
+        const atRiskFinding =
+          minSlackDays !== null
+            ? (candidate.findings.find((finding) => finding.slackDays === minSlackDays) ?? null)
+            : null;
+        suggestions.push({
+          ...suggestion,
+          minSlackDays,
+          atRiskFindingName: atRiskFinding?.name ?? null,
+        });
+      } else {
+        suggestions.push(suggestion);
+      }
     }
   }
   return suggestions;

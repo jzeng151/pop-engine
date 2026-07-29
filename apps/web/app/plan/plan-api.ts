@@ -13,6 +13,7 @@ import type {
   MissingFact,
   PermitPlan,
   RescopeSuggestion,
+  UnresolvedTimeline,
   Verdict,
   VerdictDetail,
   VerificationStatus,
@@ -153,14 +154,12 @@ export type ConsumedRescopeSuggestion = {
   readonly change: RescopeSuggestion["change"];
   readonly reevaluatedVerdict: RescopeSuggestion["reevaluatedVerdict"];
   readonly droppedRuleIds: RescopeSuggestion["droppedRuleIds"];
+  /** Null when omitted on a historical three-field suggestion or when not at-risk. */
   readonly minSlackDays: number | null;
   readonly atRiskFindingName: string | null;
 };
 
-export type ConsumedUnresolvedTimeline = {
-  readonly ruleIds: readonly string[];
-  readonly reason: string;
-};
+export type ConsumedUnresolvedTimeline = Pick<UnresolvedTimeline, "ruleIds" | "reason">;
 
 export type ConsumedBlockingFinding = NonNullable<VerdictDetail["blockingFinding"]>;
 

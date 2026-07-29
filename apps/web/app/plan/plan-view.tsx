@@ -357,7 +357,11 @@ export function PlanView({ apiBaseUrl, eventId }: { apiBaseUrl: string; eventId:
             </p>
           )}
 
-          <VerdictDetailPanel verdict={plan.verdict} detail={plan.verdictDetail} />
+          <VerdictDetailPanel
+            verdict={plan.verdict}
+            detail={plan.verdictDetail}
+            findings={plan.findings}
+          />
 
           {/* F-205: a dedicated card for R10/R11's insurance findings, above the line items each
               still renders from (AC 5). Nothing at all when none of the three rules triggered

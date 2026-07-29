@@ -304,10 +304,13 @@ export type RescopeSuggestion = {
   readonly change: { readonly field: string; readonly value: string };
   readonly reevaluatedVerdict: Verdict;
   readonly droppedRuleIds: readonly string[];
-  /** Slack days from the re-evaluation window; null when the re-evaluated verdict is not at-risk. */
-  readonly minSlackDays: number | null;
-  /** Name of the tightest at-risk finding in the re-evaluation, when one exists. */
-  readonly atRiskFindingName: string | null;
+  /**
+   * Present on at-risk re-evaluations produced by the current engine. Omitted entirely on other
+   * suggestions (and on historical stored plans) so superseded-ruleset replay stays byte-stable
+   * with the three-field shape those plans serialized.
+   */
+  readonly minSlackDays?: number | null;
+  readonly atRiskFindingName?: string | null;
 };
 
 export type EvaluationTraceEntry = { readonly ruleId: string; readonly result: Tristate };

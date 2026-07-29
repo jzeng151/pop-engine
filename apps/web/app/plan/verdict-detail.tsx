@@ -1,6 +1,6 @@
 import type { Verdict } from "@pop-engine/engine";
-import type { ConsumedVerdictDetail } from "./plan-api";
-import { verdictCopy } from "./verdict-copy";
+import type { ConsumedFinding, ConsumedVerdictDetail } from "./plan-api";
+import { AT_RISK_BUFFER_NOTE, verdictCopy } from "./verdict-copy";
 
 // F-102's branch table (CONDITIONAL) and rescope ladder (INFEASIBLE). The approved verdict line
 // above this panel stays in `verdictCopy`; this panel is the detail the copy rule points at —
@@ -57,12 +57,34 @@ function BranchTable({
   );
 }
 
+function rescopeVerdictLine(
+  suggestion: ConsumedVerdictDetail["rescopeSuggestions"][number],
+): string {
+  if (suggestion.reevaluatedVerdict === "FEASIBLE_AT_RISK") {
+    const base = verdictCopy("FEASIBLE_AT_RISK", {
+      minSlackDays: suggestion.minSlackDays,
+      missingFacts: [],
+      blockingFinding: null,
+      missedRuleIds: [],
+      unresolvedTimelines: [],
+      rescopeSuggestions: [],
+    });
+    return suggestion.atRiskFindingName !== null
+      ? `${base} · on ${suggestion.atRiskFindingName}`
+      : base;
+  }
+  return verdictCopy(suggestion.reevaluatedVerdict);
+}
+
 function RescopeLadder({
   suggestions,
 }: {
   suggestions: ConsumedVerdictDetail["rescopeSuggestions"];
 }) {
   if (suggestions.length === 0) return null;
+  const hasAtRisk = suggestions.some(
+    (suggestion) => suggestion.reevaluatedVerdict === "FEASIBLE_AT_RISK",
+  );
 
   return (
     <section className="verdict-detail__rescopes" data-testid="rescope-ladder">
@@ -70,6 +92,11 @@ function RescopeLadder({
       <p className="verdict-detail__lede">
         Each suggestion is a full re-evaluation of your event under that change — not a static tip.
       </p>
+      {hasAtRisk && (
+        <p className="verdict-detail__buffer" role="note" data-testid="rescope-at-risk-buffer">
+          {AT_RISK_BUFFER_NOTE}
+        </p>
+      )}
       <ul className="verdict-detail__rescope-list">
         {suggestions.map((suggestion) => (
           <li
@@ -82,12 +109,7 @@ function RescopeLadder({
               <strong>{humanize(suggestion.change.value)}</strong>
             </p>
             <p className="verdict-detail__rescope-verdict">
-              Re-evaluated verdict: {verdictCopy(suggestion.reevaluatedVerdict)}
-              {suggestion.reevaluatedVerdict === "FEASIBLE_AT_RISK" &&
-                suggestion.minSlackDays !== null &&
-                ` · ${suggestion.minSlackDays} day${suggestion.minSlackDays === 1 ? "" : "s"} slack`}
-              {suggestion.atRiskFindingName !== null &&
-                ` · tightest: ${suggestion.atRiskFindingName}`}
+              Re-evaluated verdict: {rescopeVerdictLine(suggestion)}
             </p>
             {suggestion.droppedRuleIds.length > 0 && (
               <p className="verdict-detail__rescope-dropped">
@@ -104,6 +126,45 @@ function RescopeLadder({
   );
 }
 
+function MissedMayBeRequiredSection({
+  missedRuleIds,
+  findings,
+}: {
+  missedRuleIds: readonly string[];
+  findings: readonly ConsumedFinding[];
+}) {
+  const missed = missedRuleIds.map((ruleId) => {
+    const finding = findings.find((entry) => entry.ruleIds.includes(ruleId));
+    return {
+      ruleId,
+      name: finding?.name ?? null,
+      disposition: finding?.disposition ?? null,
+    };
+  });
+
+  return (
+    <section className="verdict-detail__missed-conditional" data-testid="missed-may-be-required">
+      <h2 className="verdict-detail__section-title">
+        Published windows that are past only if the requirement applies
+      </h2>
+      <p className="verdict-detail__lede">
+        These findings carry a may-be-required disposition, so a passed published date keeps the
+        verdict conditional rather than treating the window as a definitive miss. Each finding below
+        states its own published date and qualification on the plan line.
+      </p>
+      <ul>
+        {missed.map((entry) => (
+          <li key={entry.ruleId}>
+            <span className="verdict-detail__rule-ids">{entry.ruleId}</span>
+            {entry.name !== null ? ` — ${entry.name}` : ""}
+            {entry.disposition !== null ? ` (${humanize(entry.disposition)})` : ""}
+          </li>
+        ))}
+      </ul>
+    </section>
+  );
+}
+
 /**
  * The F-102 detail under the verdict line: CONDITIONAL → branch tables; INFEASIBLE → blocker +
  * rescope ladder. Other verdicts render nothing here — their copy (and the at-risk buffer note)
@@ -112,9 +173,12 @@ function RescopeLadder({
 export function VerdictDetailPanel({
   verdict,
   detail,
+  findings = [],
 }: {
   verdict: Verdict;
   detail: ConsumedVerdictDetail;
+  /** Needed to name missed may-be-required findings on the Scenario B conditional path. */
+  findings?: readonly ConsumedFinding[];
 }) {
   if (verdict === "CONDITIONAL" && detail.missingFacts.length > 0) {
     return (
@@ -148,6 +212,9 @@ export function VerdictDetailPanel({
             thresholds={fact.thresholds}
           />
         ))}
+        {detail.missedRuleIds.length > 0 && (
+          <MissedMayBeRequiredSection missedRuleIds={detail.missedRuleIds} findings={findings} />
+        )}
       </div>
     );
   }
@@ -172,6 +239,18 @@ export function VerdictDetailPanel({
             ))}
           </ul>
         </section>
+        {detail.missedRuleIds.length > 0 && (
+          <MissedMayBeRequiredSection missedRuleIds={detail.missedRuleIds} findings={findings} />
+        )}
+      </div>
+    );
+  }
+
+  // Scenario B / green-gate: CONDITIONAL solely because a may-be-required published window is past.
+  if (verdict === "CONDITIONAL" && detail.missedRuleIds.length > 0) {
+    return (
+      <div className="verdict-detail" data-testid="verdict-detail">
+        <MissedMayBeRequiredSection missedRuleIds={detail.missedRuleIds} findings={findings} />
       </div>
     );
   }
