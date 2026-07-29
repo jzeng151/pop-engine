@@ -32,7 +32,7 @@ Door staff can record both entry and exit so PopEngine can show current occupanc
 
 - Inputs are authenticated directional operations; outputs are append-only entry/exit history and a derived current count.
 - Attendee state alternates outside → inside → outside; invalid duplicate direction is rejected or explicitly corrected under the approved policy.
-- Occupancy is unavailable when directional history is incomplete or failed; it never falls below zero.
+- Occupancy is unavailable when directional history is incomplete, failed, or has an unresolved cross-device occurrence-order conflict; it never falls below zero.
 - Missing or unresolved material data stays visibly unset, unknown, pending, or failed as appropriate; it never becomes a successful or complete result.
 - Invalid input produces a field or action-specific error without partial mutation. Retriable external failures preserve the user's confirmed state and expose a safe retry.
 
@@ -60,7 +60,8 @@ Exact HTTP, JSON Schema, migration, job, and provider shapes belong in their rev
 2. **F410-AC-02:** Duplicate/replayed operations are idempotent and cannot double-count or drive occupancy below zero.
 3. **F410-AC-03:** An invalid direction produces a visible conflict and no silent history rewrite; authorized correction appends an auditable event.
 4. **F410-AC-04:** This feature supplies the complete accepted entry/exit data that F-402 AC 3 already names as the precondition for occupancy language ("no exit tracking in MVP; occupancy claims require F-410"). It satisfies that precondition; it does not restate or redefine F-402's criterion. Where the data is incomplete, F-402's existing rule stands unchanged and counts remain labeled check-ins.
-5. **F410-AC-05:** Concurrent door devices converge to the same derived count from the append-only event order.
+5. **F410-AC-05:** Concurrent door devices converge to the same derived count when their accepted directional order is known.
+6. **F410-AC-06:** A delayed offline direction that conflicts with a later online direction preserves both operations and puts attendee state and occupancy into a visible unresolved/unavailable state until authorized correction; the offline/out-of-order fixture cannot report a confident count from server append order alone.
 
 ## Fixtures and Verification
 

@@ -61,6 +61,7 @@ Exact HTTP, JSON Schema, migration, job, and provider shapes belong in their rev
 3. **F210-AC-03:** Replacement preserves the earlier version; expiration uses the approved timezone/date rule.
 4. **F210-AC-04:** The UI never labels a certificate legally sufficient or agency accepted without an explicit authoritative record.
 5. **F210-AC-05:** Unsafe or unauthorized files are unavailable and cannot create a recorded certificate version.
+6. **F210-AC-06:** When a new plan supersedes or removes the linked F-205 finding, the prior requirement-to-certificate projection becomes stale while certificate history remains intact; a current finding requires explicit handling and is never guessed or silently remapped to old evidence.
 
 ## Fixtures and Verification
 

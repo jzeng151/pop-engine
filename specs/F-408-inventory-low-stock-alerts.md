@@ -61,6 +61,7 @@ Exact HTTP, JSON Schema, migration, job, and provider shapes belong in their rev
 3. **F408-AC-03:** Unknown or stale count is labeled and cannot appear in-stock.
 4. **F408-AC-04:** Invalid, replayed, duplicate, out-of-scope, or unverified Square events cannot change inventory.
 5. **F408-AC-05:** The provider connection requests no payment capability and no feature surface performs POS, purchasing, or forecasting.
+6. **F408-AC-06:** For distinct verified Square events delivered out of order, the approved provider cursor/version ordering rejects or records the delayed older event without allowing it to regress current count, freshness, or low-stock state.
 
 ## Fixtures and Verification
 
