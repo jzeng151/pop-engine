@@ -12,7 +12,7 @@ A user can report a possibly wrong, missing, or outdated requirement with exact 
 
 **In scope**
 
-- Capture category, user explanation, exact jurisdiction/ruleset/revision/finding context, bounded optional contact follow-up, and safe attachment if approved.
+- Capture category, user explanation, exact jurisdiction/ruleset/plan revision, finding/rule context when the category has one, bounded optional contact follow-up, and safe attachment if approved.
 - Deduplicate/link related reports, triage, request research, close with reason, and route accepted work into F-711/F-710.
 - Show the reporter a receipt and status that makes no correction promise.
 
@@ -56,7 +56,7 @@ Exact HTTP, JSON Schema, migration, job, and provider shapes belong in their rev
 
 ## Acceptance Criteria
 
-1. **F715-AC-01:** A report captures the exact safe jurisdiction, ruleset, plan revision, finding/rule identity, category, and user explanation available at submission.
+1. **F715-AC-01:** A report captures the exact safe jurisdiction, ruleset, plan revision, category, and user explanation available at submission. Finding/rule identity is required for a report about an existing finding and absent for a missing-requirement report; the latter never fabricates or misattributes one.
 2. **F715-AC-02:** Submitting a report does not change any plan, finding, rule, verification status, current pointer, or user-visible regulatory claim.
 3. **F715-AC-03:** Every triage transition records actor/time/reason and preserves original report/context.
 4. **F715-AC-04:** Duplicate/link handling preserves each report and cannot inflate evidence or erase reporter context.
@@ -65,7 +65,7 @@ Exact HTTP, JSON Schema, migration, job, and provider shapes belong in their rev
 ## Fixtures and Verification
 
 - Planned automated fixture IDs are the acceptance IDs above; each must map one-to-one to a runnable test before approval can claim implementation readiness.
-- Regulatory fixtures: Synthetic reports attached to approved scenario findings, including wrong/missing/outdated/duplicate/abusive cases; reports are never ground truth.
+- Regulatory fixtures: Synthetic reports attached to approved scenario findings plus missing-requirement reports with no finding/rule identity, including wrong/missing/outdated/duplicate/abusive cases; reports are never ground truth.
 - Security-sensitive and cross-workspace paths require negative authorization tests; provider paths require success, duplicate-delivery, retry, invalid-signature, and permanent-failure tests where applicable.
 
 ## Allowed Footprint and Coordination

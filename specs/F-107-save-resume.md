@@ -14,7 +14,7 @@ An organizer can safely leave an incomplete intake and resume it later without f
 
 - Persist partial F-101 answers for the authenticated workspace and restore the latest confirmed draft.
 - Show completion and validation state without treating unanswered material fields as false.
-- Explicitly submit a complete revision for evaluation.
+- Explicitly submit a complete draft to create the immutable revision used for evaluation.
 
 **Non-goals**
 
@@ -30,8 +30,8 @@ An organizer can safely leave an incomplete intake and resume it later without f
 
 ## Inputs, Outputs, State, Validation, and Errors
 
-- Inputs are partial registry-backed intake values; output is a workspace-owned draft revision with completion metadata.
-- Draft state is incomplete → complete-unsubmitted → submitted; later edits create a new revision and never rewrite a revision used by a plan.
+- Inputs are partial registry-backed intake values; output is a workspace-owned mutable draft with completion metadata.
+- Draft state is incomplete ↔ complete-unsubmitted; submission creates an immutable revision. Later edits occur in a new mutable draft and never rewrite a revision used by a plan.
 - Conditional answers made irrelevant by a trigger change are removed or retained only as non-evaluated history according to the approved revision contract, never silently submitted.
 - Missing or unresolved material data stays visibly unset, unknown, pending, or failed as appropriate; it never becomes a successful or complete result.
 - Invalid input produces a field or action-specific error without partial mutation. Retriable external failures preserve the user's confirmed state and expose a safe retry.
@@ -44,13 +44,13 @@ An organizer can safely leave an incomplete intake and resume it later without f
 
 ## System Impact
 
-| Concern              | Proposed impact                                                                                                |
-| -------------------- | -------------------------------------------------------------------------------------------------------------- |
-| API                  | Draft create/read/update/submit behavior must be expressed in the approved event-revision OpenAPI contract.    |
-| Schema               | Forward migration for immutable event revisions and draft state; stable Event identity remains separate.       |
-| Jobs                 | None required; saving is a synchronous durable write.                                                          |
-| Providers            | None.                                                                                                          |
-| Privacy and security | Drafts are workspace-scoped and may contain sensitive event details; logs and analytics exclude answer values. |
+| Concern              | Proposed impact                                                                                                                |
+| -------------------- | ------------------------------------------------------------------------------------------------------------------------------ |
+| API                  | Mutable draft create/read/update behavior and submission into an immutable revision require approved OpenAPI contracts.        |
+| Schema               | Forward migration keeps mutable draft storage separate from immutable event revisions; stable Event identity remains separate. |
+| Jobs                 | None required; saving is a synchronous durable write.                                                                          |
+| Providers            | None.                                                                                                                          |
+| Privacy and security | Drafts are workspace-scoped and may contain sensitive event details; logs and analytics exclude answer values.                 |
 
 Exact HTTP, JSON Schema, migration, job, and provider shapes belong in their reviewed machine contracts; this proposal does not authorize parallel local types or edits to merged migrations.
 

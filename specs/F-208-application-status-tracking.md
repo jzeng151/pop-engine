@@ -57,7 +57,7 @@ Exact HTTP, JSON Schema, migration, job, and provider shapes belong in their rev
 ## Acceptance Criteria
 
 1. **F208-AC-01:** A checklist requirement can create at most the explicitly supported application records, each linked to the originating immutable finding.
-2. **F208-AC-02:** Recording submission, revision, inspection, decision, or condition appends a timestamped history entry and updates the current projection atomically.
+2. **F208-AC-02:** Recording or correcting an application identifier, agency state, submission, revision, inspection, decision, or condition appends a timestamped history entry and updates the current projection atomically.
 3. **F208-AC-03:** A correction preserves the previous value and actor; no edit rewrites plan evidence.
 4. **F208-AC-04:** Unknown or conflicting agency state remains visible and cannot auto-complete the checklist requirement.
 5. **F208-AC-05:** Cross-workspace access and unauthorized role mutations fail without disclosing record existence.

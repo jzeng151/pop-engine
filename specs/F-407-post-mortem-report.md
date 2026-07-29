@@ -60,7 +60,7 @@ Exact HTTP, JSON Schema, migration, job, and provider shapes belong in their rev
 2. **F407-AC-02:** Attendance-versus-RSVP never becomes occupancy unless F-410 both-direction data is the selected source.
 3. **F407-AC-03:** Missing/partial data remains labeled and cannot silently change a denominator or appear as zero.
 4. **F407-AC-04:** Confirming freezes the report; later source changes mark drafts stale and require a new report version.
-5. **F407-AC-05:** F-104/F-502 consume only confirmed snapshots and cannot mutate them.
+5. **F407-AC-05:** F-104/F-502 consume only confirmed snapshots and cannot mutate them; F-104 imports only the eligible cost lines defined by its approved snapshot-to-estimate mapping, with exact snapshot/line provenance.
 
 ## Fixtures and Verification
 
@@ -82,5 +82,5 @@ Exact HTTP, JSON Schema, migration, job, and provider shapes belong in their rev
 
 ## Approval Blockers
 
-- Approve metric formulas/denominators, source precedence, coverage wording, and snapshot retention.
+- Approve metric formulas/denominators, source precedence, coverage wording, snapshot retention, and the F-104 snapshot-to-estimate mapping/provenance contract.
 - Assign the owner and independent reviewer, approve this spec, and add it to `docs/BASELINE.md`.
