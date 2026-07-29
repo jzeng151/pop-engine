@@ -32,7 +32,7 @@ An organizer can receive proposed application number, deadline, fee, and status 
 
 - Input is an authorized safe file; output is zero or more pending field proposals with exact source location when available.
 - Proposal state is pending → accepted/edited/rejected; an accepted difference from current state becomes confirmed-but-unapplied for F-604, and later extraction creates a separate run.
-- Unreadable, conflicting, ambiguous, unsupported, or low-confidence values remain pending/unavailable and never become record state.
+- Unreadable, conflicting, ambiguous, or unsupported values remain pending/unavailable; low-confidence values remain pending for explicit review or direct the organizer to manual entry and never become record state from confidence alone.
 - Missing or unresolved material data stays visibly unset, unknown, pending, or failed as appropriate; it never becomes a successful or complete result.
 - Invalid input produces a field or action-specific error without partial mutation. Retriable external failures preserve the user's confirmed state and expose a safe retry.
 
@@ -59,7 +59,7 @@ Exact HTTP, JSON Schema, migration, job, and provider shapes belong in their rev
 1. **F602-AC-01:** Only a safe authorized document version can start extraction, and every proposal links to that exact version/run/source location.
 2. **F602-AC-02:** Application number, deadline, fee, and status remain proposals until explicit user acceptance/edit through F-208/F-209 validation.
 3. **F602-AC-03:** Existing confirmed values are never overwritten; accepting a difference creates a source-linked, typed, confirmed-but-unapplied proposal for F-604 rather than appending domain history.
-4. **F602-AC-04:** Unreadable, ambiguous, conflicting, unsupported, or low-confidence content cannot create a confirmed workflow fact.
+4. **F602-AC-04:** Unreadable, ambiguous, conflicting, or unsupported content cannot create a confirmed workflow fact; low-confidence content stays pending until an organizer verifies and accepts/edits it against the displayed source, or is suppressed as a proposal in favor of manual entry.
 5. **F602-AC-05:** Duplicate/retried extraction of the same request does not create duplicate accepted proposals or records.
 
 ## Fixtures and Verification

@@ -31,6 +31,7 @@ An organizer can reconcile estimated, invoiced, and paid fees plus required and 
 ## Inputs, Outputs, State, Validation, and Errors
 
 - Inputs are rule-derived estimates and user-confirmed invoice/payment/document facts; outputs are source-labeled ledger entries and private file references.
+- A new plan marks prior rule-derived estimates stale and excludes them from current totals; refresh appends estimates linked to the new plan/finding while preserving prior estimates and all invoice/payment history.
 - Document state is required → upload pending → submitted → accepted/rejected/expired only when the organizer records that fact; file scan state remains separate.
 - Amounts use integer minor units and one explicit currency; negative or impossible transitions are rejected.
 - Missing or unresolved material data stays visibly unset, unknown, pending, or failed as appropriate; it never becomes a successful or complete result.
@@ -61,6 +62,7 @@ Exact HTTP, JSON Schema, migration, job, and provider shapes belong in their rev
 3. **F209-AC-03:** Required and submitted document lists reconcile without marking an uploaded file agency-accepted unless a user records that state.
 4. **F209-AC-04:** Final permit and expiration metadata retain history and never overwrite the source finding or application history.
 5. **F209-AC-05:** Unauthorized, oversized, disallowed, checksum-mismatched, or unsafe uploads are unavailable and create no accepted document state.
+6. **F209-AC-06:** Replanning marks every superseded or removed rule-derived estimate stale and excludes it from current totals; refresh creates source-linked current entries without overwriting old estimates, invoices, payments, or document history.
 
 ## Fixtures and Verification
 

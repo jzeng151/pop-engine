@@ -31,7 +31,7 @@ An organizer can place confirmed deadlines, inspections, and milestones on an ex
 ## Inputs, Outputs, State, Validation, and Errors
 
 - Inputs are dated workflow milestones plus user connection and selection; outputs are a portable calendar document or provider event mappings.
-- Sync state is disconnected → connected → syncing → current, failed, or revoked; stable source IDs make retries idempotent.
+- Sync state is disconnected → connected → syncing → current, failed, or revoked; stable source IDs and a source generation make retries idempotent and order writes for each mapping.
 - A removed or changed source milestone cancels or updates the mapped provider event without touching unrelated calendar entries.
 - Missing or unresolved material data stays visibly unset, unknown, pending, or failed as appropriate; it never becomes a successful or complete result.
 - Invalid input produces a field or action-specific error without partial mutation. Retriable external failures preserve the user's confirmed state and expose a safe retry.
@@ -58,7 +58,7 @@ Exact HTTP, JSON Schema, migration, job, and provider shapes belong in their rev
 
 1. **F212-AC-01:** Export includes each selected confirmed milestone once with the correct title, source link, date/time, timezone, and stable identifier.
 2. **F212-AC-02:** Research-required, unknown, or unresolved dependency dates are excluded with an explicit reason and never guessed.
-3. **F212-AC-03:** Repeated sync creates no duplicate; source changes update the mapped entry and source removal cancels only that entry.
+3. **F212-AC-03:** Repeated sync creates no duplicate; source changes update the mapped entry and source removal cancels only that entry. Jobs carry and recheck the source generation before the provider call, provider mutations for one mapping are generation-ordered, and a stale or out-of-order completion cannot overwrite the latest mapping or leave the provider on the obsolete source value.
 4. **F212-AC-04:** Revoking or disconnecting credentials stops future provider calls and leaves PopEngine source data intact.
 5. **F212-AC-05:** Provider timeout, rate limit, expired credential, duplicate webhook, and permanent rejection produce deterministic retry or repair states.
 

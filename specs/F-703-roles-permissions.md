@@ -31,7 +31,7 @@ Workspace owners can grant only the access each collaborator needs, completing t
 ## Inputs, Outputs, State, Validation, and Errors
 
 - Inputs are an owner/admin grant or revoke request; output is an auditable role grant used by server-side policy evaluation.
-- Role grant state is active → revoked; authorization changes take effect on the next request and invalidate stale privileged context.
+- Role grant state is active → revoked; authorization changes take effect on the next request or queued-job claim/execution check and invalidate stale privileged context.
 - Unknown actions, missing membership, missing workspace, and stale grants deny by default. Platform rules-admin checks never derive from a workspace role.
 - Missing or unresolved material data stays visibly unset, unknown, pending, or failed as appropriate; it never becomes a successful or complete result.
 - Invalid input produces a field or action-specific error without partial mutation. Retriable external failures preserve the user's confirmed state and expose a safe retry.
@@ -58,7 +58,7 @@ Exact HTTP, JSON Schema, migration, job, and provider shapes belong in their rev
 
 1. **F703-AC-01:** The approved permission matrix has a passing allow and deny test for every role/action pair in scope.
 2. **F703-AC-02:** A client cannot gain authority by changing a workspace ID, role value, URL, hidden form field, queued job, or public token.
-3. **F703-AC-03:** Role revocation prevents the next privileged request and is recorded without exposing secret or contact content.
+3. **F703-AC-03:** Role revocation prevents the next privileged request and any queued job from passing claim/execution-time authorization; the denial causes no provider side effect or data disclosure and is recorded without secret or contact content.
 4. **F703-AC-04:** Rules-admin functions require the separate platform role and cannot be granted by a workspace owner.
 5. **F703-AC-05:** After F-701, F-702, and F-703 all pass security and migration checks, the production gate may be explicitly enabled; otherwise it remains closed.
 

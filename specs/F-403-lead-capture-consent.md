@@ -56,11 +56,12 @@ Exact HTTP, JSON Schema, migration, job, and provider shapes belong in their rev
 
 ## Acceptance Criteria
 
-1. **F403-AC-01:** Event entry succeeds when optional email and SMS marketing choices are declined.
+1. **F403-AC-01:** Event entry succeeds when every optional consent choice, including email marketing, SMS marketing, and emergency messaging, is declined.
 2. **F403-AC-02:** Each purpose/channel grant records exact copy/version, timestamp, source event, capture surface, and contact point without bundling another purpose.
 3. **F403-AC-03:** Withdrawal creates durable evidence and immediately suppresses later eligible sends for that purpose/channel.
 4. **F403-AC-04:** Duplicate submissions are idempotent and never manufacture a new consent grant.
 5. **F403-AC-05:** Ambiguous contact matches never merge data or transfer consent without explicit authorized resolution.
+6. **F403-AC-06:** Emergency-message consent can be granted and later withdrawn independently, with distinct evidence and immediate suppression, without changing event-entry or marketing consent.
 
 ## Fixtures and Verification
 
