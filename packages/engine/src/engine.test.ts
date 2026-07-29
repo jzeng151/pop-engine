@@ -130,6 +130,7 @@ describe("provenance (AC 1)", () => {
       "citation A",
       "citation B",
     ]);
+    expect("userSummary" in (merged.findings[0] as object)).toBe(false);
   });
 
   it("keeps the earliest verification date only when every merged rule publishes one", () => {
@@ -866,6 +867,60 @@ describe("ruleset parsing rejects anything it cannot evaluate", () => {
     );
   });
 
+  it("parses sourced user summaries and rejects links outside the rule source", () => {
+    const output = {
+      ...baseRule.output,
+      user_summary: {
+        heading: "Plain heading",
+        points: [
+          {
+            kind: "fee",
+            text: "The fee is $25.",
+            sources: [{ label: "Official fee page", url: "https://example.test" }],
+          },
+        ],
+      },
+    };
+    const parsed = syntheticRuleset([{ ...baseRule, output }]);
+    expect(parsed.rules[0]?.userSummary).toEqual(output.user_summary);
+
+    expect(() =>
+      syntheticRuleset([
+        {
+          ...baseRule,
+          output: {
+            ...output,
+            user_summary: {
+              ...output.user_summary,
+              points: [
+                {
+                  kind: "fee",
+                  text: "The fee is $25.",
+                  sources: [{ label: "Other page", url: "https://other.test" }],
+                },
+              ],
+            },
+          },
+        },
+      ]),
+    ).toThrow(/must also appear in the rule's source.urls/);
+
+    expect(() =>
+      syntheticRuleset([
+        {
+          ...baseRule,
+          output: {
+            ...output,
+            user_summary: {
+              ...output.user_summary,
+              points: [{ kind: "fee", text: "The fee is $25.", sources: [] }],
+            },
+          },
+        },
+      ]),
+    ).toThrow(/sources must not be empty for a sourced rule/);
+  });
+
   it("rejects a malformed trigger tree", () => {
     expect(withRule({ ...baseRule, trigger: { all: [] } })).toThrow(/must not be empty/);
     expect(withRule({ ...baseRule, trigger: { all: [{ any: [], field: "headcount" }] } })).toThrow(
@@ -1011,9 +1066,40 @@ describe("ruleset parsing rejects anything it cannot evaluate", () => {
   });
 
   it("accepts the published ruleset unchanged", () => {
-    expect(ruleset.rulesetVersion).toBe("nyc.v2.10");
+    expect(ruleset.rulesetVersion).toBe("nyc.v2.11");
     expect(ruleset.slackWarningDays).toBe(14);
     expect(ruleset.rules).toHaveLength(46);
+  });
+
+  it("publishes a plain-language summary for every rule and advisory", () => {
+    expect(
+      ruleset.rules.filter((rule) => rule.userSummary === null).map((rule) => rule.id),
+    ).toEqual([]);
+  });
+
+  it("keeps organizer summary wording and links aligned with the published facts", () => {
+    const assembly = ruleset.rules.find((rule) => rule.id === "DOB-ASSEMBLY-001");
+    expect(assembly?.userSummary?.points.find((point) => point.kind === "deadline")?.text).toBe(
+      "File 10 or more business days before the event to avoid DOB's late surcharge.",
+    );
+
+    const exemption = ruleset.rules.find((rule) => rule.id === "DOHMH-EXEMPTION-001");
+    expect(
+      exemption?.userSummary?.points.find((point) => point.kind === "warning")?.sources,
+    ).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          url: "https://www.nyc.gov/assets/doh/downloads/pdf/rii/temp-vendors.pdf",
+        }),
+        expect.objectContaining({
+          url: "https://www.nyc.gov/site/doh/business/food-operators/temporary-food-service-establishments.page",
+        }),
+      ]),
+    );
+
+    expect(rawRuleset.status).toContain(
+      "plain-language organizer summaries across all 42 rules and four advisories",
+    );
   });
 });
 
@@ -1411,6 +1497,8 @@ describe("facts the ruleset publishes rather than the engine assuming (nyc.v2.4)
       const afterFindings = after.findings.filter(
         (finding) => !finding.ruleIds[0]?.startsWith("CONF-"),
       );
+      const withoutPresentation = (findings: PermitPlan["findings"]) =>
+        findings.map(({ userSummary: _userSummary, ...finding }) => finding);
       const reached = (findings: PermitPlan["findings"]) =>
         [...findings.flatMap((f) => f.ruleIds)].sort();
       // Every published filing window in the plan. Keyed by the window rather than by rule,
@@ -1424,7 +1512,9 @@ describe("facts the ruleset publishes rather than the engine assuming (nyc.v2.4)
           .sort();
       return {
         verdictMatches: before.verdict === after.verdict,
-        findingsMatch: JSON.stringify(before.findings) === JSON.stringify(afterFindings),
+        findingsMatch:
+          JSON.stringify(withoutPresentation(before.findings)) ===
+          JSON.stringify(withoutPresentation(afterFindings)),
         // What must hold across ANY publish, grouping aside: the same rules are reached, and each
         // one keeps its date and status. A rule appearing, vanishing or moving its deadline between
         // eras is drift; two rules being rendered as one line is a published grouping decision.
@@ -1764,7 +1854,9 @@ describe("facts the ruleset publishes rather than the engine assuming (nyc.v2.4)
       TODAY,
       calendar,
     );
-    const tentFact = result.verdictDetail.missingFacts.find((fact) => fact.field === "tent_area_sqft");
+    const tentFact = result.verdictDetail.missingFacts.find(
+      (fact) => fact.field === "tent_area_sqft",
+    );
     expect(tentFact?.thresholds).toContain("DOB-TENT-001 applies above 400");
     expect(tentFact?.thresholds ?? "").not.toContain("conditional boundary");
   });

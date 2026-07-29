@@ -497,12 +497,23 @@ describe("per-line citations and status (AC 2, AC 3)", () => {
         agency: null,
         sources: [],
         verificationStatus: "COVERAGE_GAP",
+        userSummary: {
+          heading: "Public-space alcohol needs agency review",
+          points: [
+            {
+              kind: "warning",
+              text: "This ruleset cannot determine the correct alcohol path.",
+              sources: [],
+            },
+          ],
+        },
       }),
     );
 
     expect(line.queryAllByRole("link")).toEqual([]);
     expect(line.getByText("COVERAGE GAP")).toBeDefined();
     expect(line.getByText(NOT_COVERED_BY_RULESET)).toBeDefined();
+    expect(line.queryByText(/Source: not available in this ruleset/)).toBeNull();
   });
 
   it("omits the agency label on findings that publish no agency", async () => {
@@ -905,7 +916,6 @@ describe("the verdict's approved copy", () => {
     expect(screen.queryByText(/internal planning buffer/)).toBeNull();
   });
 });
-
 
 describe("F-102 · undated deadlines note", () => {
   it("notes FEASIBLE when every deadline is undated", async () => {
@@ -2148,6 +2158,97 @@ describe("a scannable line (progressive disclosure)", () => {
         { ruleId: "PARKS-EVENT-001", citation: "Second page", urls: ["https://example.gov/two"] },
       ],
     });
+
+  it("renders a sourced plain-language summary and keeps legal prose collapsed", async () => {
+    const line = await collapsedLine(
+      finding({
+        name: "Place of Assembly (PACO) / Temporary Place of Assembly (TPA)",
+        agency: "DOB (+ FDNY Public Assembly Permit)",
+        disposition: "may_be_required",
+        deadlineDisplay: "Published legal deadline text.",
+        deadlineStatus: "not_calculable",
+        feeDisplay: "Published legal fee text.",
+        notes: ["Long legal qualification."],
+        userSummary: {
+          heading: "Place of Assembly approval (PACO / TPA)",
+          points: [
+            {
+              kind: "deadline",
+              text: "File at least 10 business days before the event.",
+              sources: [
+                {
+                  label: "DOB TPA filing page",
+                  url: "https://example.gov/tpa",
+                },
+              ],
+            },
+            {
+              kind: "fee",
+              text: "DOB's published TPA filing fee is $250.",
+              sources: [
+                {
+                  label: "DOB fee page",
+                  url: "https://example.gov/fees",
+                },
+              ],
+            },
+          ],
+        },
+      }),
+    );
+
+    expect(
+      line.getByRole("heading", { name: "Place of Assembly approval (PACO / TPA)" }),
+    ).toBeDefined();
+    expect(line.getByRole("list").querySelectorAll("li")).toHaveLength(3);
+    expect(line.getByText(/File at least 10 business days/)).toBeDefined();
+    expect(line.getByText("may be required")).toBeDefined();
+    expect(
+      line
+        .getAllByRole("link", { name: "DOB TPA filing page" })
+        .every((link) => link.getAttribute("href") === "https://example.gov/tpa"),
+    ).toBe(true);
+    expect(line.getByRole("link", { name: "DOB fee page" }).getAttribute("href")).toBe(
+      "https://example.gov/fees",
+    );
+    expect(line.queryByText("Published legal deadline text.")).toBeNull();
+    expect(line.queryByText("Published legal fee text.")).toBeNull();
+    expect(line.queryByText("Long legal qualification.")).toBeNull();
+
+    await userEvent.click(
+      line.getByRole("button", {
+        name: "Legal details and all sources for Place of Assembly approval (PACO / TPA)",
+      }),
+    );
+    expect(line.getByText(/Published legal deadline text/)).toBeDefined();
+    expect(line.getByText("Published legal fee text.")).toBeDefined();
+    expect(line.getByText("Long legal qualification.")).toBeDefined();
+  });
+
+  it("preserves the published finding text inside summarized legal details", async () => {
+    const publishedText =
+      "Known published deadlines: production 10 days; open culture 15 days; street festival Dec 31.";
+    const line = await collapsedLine(
+      finding({
+        name: publishedText,
+        kind: "advisory",
+        disposition: "advisory",
+        agency: null,
+        userSummary: {
+          heading: "SAPO event type not covered",
+          points: [{ kind: "warning", text: "Confirm the deadline with SAPO.", sources: [] }],
+        },
+      }),
+    );
+
+    expect(line.queryByText(publishedText)).toBeNull();
+    await userEvent.click(
+      line.getByRole("button", {
+        name: "Legal details and all sources for SAPO event type not covered",
+      }),
+    );
+    expect(line.getByText(publishedText)).toBeDefined();
+  });
 
   it("shows exactly the summary fields before the line is expanded", async () => {
     const line = await collapsedLine(full());

@@ -126,7 +126,7 @@ describe.runIf(databaseUrl.length > 0)("plan API (F-201)", () => {
     const response = await request(appWith()).post(`/api/events/${eventId}/plan`);
 
     expect(response.status).toBe(201);
-    expect(response.body.rulesetVersion).toBe("nyc.v2.10");
+    expect(response.body.rulesetVersion).toBe("nyc.v2.11");
     expect(response.body.eventRevision).toBe(1);
     expect(response.body.verdict).toBe("INFEASIBLE");
     expect(response.body.findings.map((finding: { ruleIds: string[] }) => finding.ruleIds)).toEqual(
@@ -348,6 +348,23 @@ describe.runIf(databaseUrl.length > 0)("plan API (F-201)", () => {
     expect(fetched.body.verdict).toBe(generated.body.verdict);
   });
 
+  it("round-trips the PACO organizer summary through the immutable plan snapshot", async () => {
+    const eventId = await insertEvent({ location_type: "private_venue", headcount: 90 });
+    const app = appWith();
+    const generated = await request(app).post(`/api/events/${eventId}/plan`);
+    const generatedAssembly = generated.body.findings.find((finding: { ruleIds: string[] }) =>
+      finding.ruleIds.includes("DOB-ASSEMBLY-001"),
+    );
+
+    expect(generatedAssembly.userSummary.heading).toBe("Place of Assembly approval (PACO / TPA)");
+
+    const fetched = await request(app).get(`/api/events/${eventId}/plan`);
+    const fetchedAssembly = fetched.body.findings.find((finding: { ruleIds: string[] }) =>
+      finding.ruleIds.includes("DOB-ASSEMBLY-001"),
+    );
+    expect(fetchedAssembly.userSummary).toEqual(generatedAssembly.userSummary);
+  });
+
   it("keeps the official conflict and its sources readable after storage (AC 2)", async () => {
     const eventId = await insertEvent({
       location_type: "park",
@@ -487,7 +504,7 @@ describe.runIf(databaseUrl.length > 0)("plan API (F-201)", () => {
       selling_anything: false,
       // Amplified and audible from the street on purpose, to keep this test's second half alive.
       // It used to read DOB-ASSEMBLY-001 as the finding that dates normally while the calendar is
-      // unpublished; nyc.v2.10 carries that business-day rule, so without a sound permit this intake
+      // unpublished; nyc.v2.11 carries that business-day rule, so without a sound permit this intake
       // has NO calendar-dated finding left and the "everything else still dates" guarantee would
       // have silently lost its subject rather than failed. NYPD-SOUND-001 publishes 5 calendar
       // days, needs no holiday list, and is therefore the subject that survives the bump.

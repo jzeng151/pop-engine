@@ -338,7 +338,7 @@ The operational question is therefore answered only to the amount DOB currently 
 
 ### Future ruleset follow-up flag — not included in v2.10
 
-`DOB-ASSEMBLY-001.output.deadline.qualification` currently cites Table 28-112.8's “at least ten work days prior to the event” comment as one source for the ten-day unit. That comment is on the “Temporary use letter for place of assembly” row, not the “Temporary place of assembly certificate of operation” row. The current operational pages independently publish ten business days for a TPA, but the table attribution should not be presented as belonging to the TPA certificate row unless a source reconciles the labels. Correcting that attribution requires a new immutable rules publication after `nyc.v2.10`; it is deliberately not attempted here.
+`DOB-ASSEMBLY-001.output.deadline.qualification` currently cites Table 28-112.8's “at least ten work days prior to the event” comment as one source for the ten-day unit. That comment is on the “Temporary use letter for place of assembly” row, not the “Temporary place of assembly certificate of operation” row. The current operational pages independently publish ten business days for a TPA, but the table attribution should not be presented as belonging to the TPA certificate row unless a source reconciles the labels. Correcting that attribution requires a new immutable rules publication; it is deliberately not attempted here.
 
 ## Round 7 — 2026-07-29 (shared issue #178 publication)
 
@@ -360,7 +360,7 @@ The approved publication reuses only source URLs already published by nyc.v2.8 a
 | CONF-NO-ALCOHOL-001          | SOURCE_CONFIRMED  | VS §5 Round 1 + Round2 #6/#11 + Round3 unit re-verification |
 | CONF-NO-BLOCK-PARTY-RIDE-001 | SOURCE_CONFIRMED  | VS §4 Round 1                                               |
 
-Organizer-visible text and the complete official URL snapshots are published verbatim in `rules/nyc-rules.v2.10.json`; that immutable artifact is the authoritative copy.
+Organizer-visible text and the complete official URL snapshots are published verbatim in `rules/nyc-rules.v2.11.json`; that immutable artifact is the authoritative copy.
 
 ## Round 8 — 2026-07-29 (issue #181 citation attribution)
 

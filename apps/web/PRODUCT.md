@@ -41,7 +41,7 @@ The requested product shell also exposes planned lifecycle modules for execution
 ## Evidence on Hand
 
 - Approved product requirements, roadmap, delivery design, architecture, and feature specifications under `docs/` and `specs/`.
-- Published regulatory ruleset at `rules/nyc-rules.v2.10.json`.
+- Published regulatory ruleset at `rules/nyc-rules.v2.11.json`.
 - Existing Next.js organizer, public event, RSVP, check-in, and dashboard surfaces under `apps/web/app`.
 - Approved visual foundation at `docs/DESIGN-SYSTEM.md`, available as evidence but not binding for this redesign exploration.
 - No validated customer testimonials, commercial pricing, production usage metrics, or real attendee data may be invented for the interface.

@@ -20,6 +20,7 @@ import { useId, useState, type ReactNode } from "react";
  */
 export function Disclosure({
   label,
+  ariaLabel,
   children,
   className,
   defaultOpen = false,
@@ -31,6 +32,7 @@ export function Disclosure({
    * "more" name nothing.
    */
   readonly label: string;
+  readonly ariaLabel?: string;
   readonly children: ReactNode;
   readonly className?: string;
   readonly defaultOpen?: boolean;
@@ -44,6 +46,7 @@ export function Disclosure({
       <button
         type="button"
         className="disclosure__toggle"
+        aria-label={ariaLabel}
         aria-expanded={open}
         aria-controls={regionId}
         onClick={() => {

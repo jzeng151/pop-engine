@@ -879,6 +879,47 @@ a.pe-link:hover,
   font-size: 0.9375rem;
 }
 
+.line__summary {
+  display: grid;
+  gap: 0.55rem;
+  max-width: 72ch;
+  margin: 0.8rem 0 0;
+  padding-left: 1.2rem;
+}
+
+.line__point {
+  padding-left: 0.15rem;
+  font-size: 0.9375rem;
+  text-wrap: pretty;
+}
+
+.line__point strong {
+  font-weight: 700;
+}
+
+.line__point-sources {
+  color: var(--pe-steel);
+  font-size: 0.84rem;
+}
+
+.line__point-sources a {
+  color: var(--pe-cyan);
+  font-weight: 600;
+  text-decoration: underline;
+  text-decoration-color: rgba(204, 85, 0, 0.4);
+  text-underline-offset: 0.15em;
+}
+
+.line__point-sources a:hover {
+  text-decoration-color: var(--pe-neon);
+}
+
+.line__point-sources a:focus-visible {
+  outline: 2px solid var(--pe-cyan);
+  outline-offset: 0.15rem;
+  border-radius: 0.1rem;
+}
+
 .line__citations {
   list-style: none;
   margin: 0.65rem 0 0;
