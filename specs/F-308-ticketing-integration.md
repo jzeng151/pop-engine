@@ -62,6 +62,7 @@ Exact HTTP, JSON Schema, migration, job, and provider shapes belong in their rev
 4. **F308-AC-04:** Provider/webhook data cannot create payment, consent, or authoritative RSVP state in PopEngine.
 5. **F308-AC-05:** Disconnecting revokes future calls and leaves PopEngine event/registration data intact.
 6. **F308-AC-06:** When the provider is unavailable, an authorized workspace member can download a short-lived CSV containing only the approved allow-listed preview fields; values beginning with spreadsheet-formula characters (`=`, `+`, `-`, or `@`) are escaped, no provider credential is included, and expiry or revocation makes the download unavailable.
+7. **F308-AC-07:** Cancelling an export atomically marks its generation cancelled and stops unclaimed jobs; claimed or leased jobs recheck the export generation immediately before the provider call, abort when stale, preserve result history, and cannot transfer records after cancellation is reported.
 
 ## Fixtures and Verification
 

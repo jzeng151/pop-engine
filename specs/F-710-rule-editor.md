@@ -23,7 +23,8 @@ An authorized rules administrator can draft and edit rules as validated data wit
 
 ## Dependencies and Baseline
 
-- F-711 sources, F-712 tests, F-714 publish flow, F-703 separate rules-admin role, and approved schema/type authority.
+- F-711 sources, F-703 separate rules-admin role, and approved schema/type authority.
+- F-712 testing and F-714 publication are downstream consumers of immutable F-710 draft versions, not prerequisites for draft/edit implementation.
 - Verification and engine-owner review for rule semantics.
 - Baseline at draft time: PRD, Roadmap, Design, and Phase 0–1.5 Architecture approved 2026-07-22; `ARCHITECTURE-FUTURE.md` approved as a planning target 2026-07-25; NYC ruleset `nyc.v2.7`, rules schema `popengine-rules/v2`, and scenario fixtures v5 where regulatory output is consumed.
 - The approval PR must re-pin any baseline version that changes before approval. A proposed or superseded input blocks implementation.

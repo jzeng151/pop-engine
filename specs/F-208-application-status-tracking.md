@@ -12,7 +12,7 @@ An organizer can record what happened after filing—application number, agency 
 
 **In scope**
 
-- Create a tracked application from a checklist requirement, or record an unexpected agency-requested application/requirement with explicit user confirmation and source provenance, then record submitted date, agency-provided identifier/state, revisions, inspections, decision, and conditions.
+- Create a tracked application from a checklist requirement, or record an unexpected agency-requested application/requirement with explicit user confirmation and source provenance, then record submitted date, agency-provided identifier/state/deadline, revisions, inspections, decision, and conditions.
 - Preserve a timestamped history of confirmed application changes.
 - Keep agency-entered text visibly user-recorded unless backed by a published rule.
 
@@ -57,7 +57,7 @@ Exact HTTP, JSON Schema, migration, job, and provider shapes belong in their rev
 ## Acceptance Criteria
 
 1. **F208-AC-01:** A checklist requirement can create at most the explicitly supported application records linked to its immutable finding; an application absent from the plan requires an explicit user-confirmed unexpected-requirement action with agency-source provenance, remains labeled user-recorded/non-regulatory, and cannot mutate the plan or ruleset.
-2. **F208-AC-02:** Recording or correcting an application identifier, agency state, submission, revision, inspection, decision, or condition appends a timestamped history entry and updates the current projection atomically.
+2. **F208-AC-02:** Recording or correcting an application identifier, agency state, agency-provided deadline, submission, revision, inspection, decision, or condition validates the typed value, appends a timestamped history entry, and updates the current projection atomically; a changed deadline triggers approved reminder/calendar staleness.
 3. **F208-AC-03:** A correction preserves the previous value and actor; no edit rewrites plan evidence.
 4. **F208-AC-04:** Unknown or conflicting agency state remains visible and cannot auto-complete the checklist requirement.
 5. **F208-AC-05:** Cross-workspace access and unauthorized role mutations fail without disclosing record existence.

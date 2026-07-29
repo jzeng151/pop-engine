@@ -57,7 +57,7 @@ Exact HTTP, JSON Schema, migration, job, and provider shapes belong in their rev
 ## Acceptance Criteria
 
 1. **F602-AC-01:** Only a safe authorized document version can start extraction, and every proposal links to that exact version/run/source location.
-2. **F602-AC-02:** Application number, deadline, fee, and status remain proposals until explicit user acceptance/edit through F-208/F-209 validation.
+2. **F602-AC-02:** Application number, agency-provided deadline, and status remain proposals until explicit user acceptance/edit through F-208 validation; fee remains a proposal until explicit user acceptance/edit through F-209 validation.
 3. **F602-AC-03:** Existing confirmed values are never overwritten; accepting a difference creates a source-linked, typed, confirmed-but-unapplied proposal for F-604 rather than appending domain history.
 4. **F602-AC-04:** Unreadable, ambiguous, conflicting, or unsupported content cannot create a confirmed workflow fact; low-confidence content stays pending until an organizer verifies and accepts/edits it against the displayed source, or is suppressed as a proposal in favor of manual entry.
 5. **F602-AC-05:** Duplicate/retried extraction of the same request does not create duplicate accepted proposals or records.

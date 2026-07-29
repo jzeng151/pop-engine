@@ -23,7 +23,7 @@ An authorized organizer can view consent-aware attendee history across their wor
 
 ## Dependencies and Baseline
 
-- F-403 contacts/consent and the F-701/F-702/F-703 gate.
+- F-401 accepted check-ins, F-403 contacts/consent, and the F-701/F-702/F-703 gate.
 - Approved contact-resolution, retention, export, correction, deletion, and authorization policy.
 - Baseline at draft time: PRD, Roadmap, Design, and Phase 0–1.5 Architecture approved 2026-07-22; `ARCHITECTURE-FUTURE.md` approved as a planning target 2026-07-25; NYC ruleset `nyc.v2.7`, rules schema `popengine-rules/v2`, and scenario fixtures v5 where regulatory output is consumed.
 - The approval PR must re-pin any baseline version that changes before approval. A proposed or superseded input blocks implementation.
@@ -31,7 +31,7 @@ An authorized organizer can view consent-aware attendee history across their wor
 ## Inputs, Outputs, State, Validation, and Errors
 
 - Inputs are workspace-authorized filters; outputs are a paginated contact projection or bounded CSV export.
-- Repeat status derives only from confirmed links to distinct events and updates when links are corrected or deleted.
+- Repeat status derives only from an F-401 accepted check-in explicitly linked to a resolved F-403 contact and distinct event; check-in/contact corrections or deletions update the projection without rewriting source history.
 - Ambiguous identities remain separate; export state is requested → generated, failed, expired, or downloaded.
 - Missing or unresolved material data stays visibly unset, unknown, pending, or failed as appropriate; it never becomes a successful or complete result.
 - Invalid input produces a field or action-specific error without partial mutation. Retriable external failures preserve the user's confirmed state and expose a safe retry.
@@ -57,7 +57,7 @@ Exact HTTP, JSON Schema, migration, job, and provider shapes belong in their rev
 ## Acceptance Criteria
 
 1. **F404-AC-01:** An authorized user sees only contacts and event history belonging to the active workspace.
-2. **F404-AC-02:** Repeat-attendee status is true only for one resolved contact with confirmed attendance at at least two distinct events.
+2. **F404-AC-02:** Repeat-attendee status is true only for one resolved contact linked to accepted F-401 check-ins at at least two distinct events; RSVP or consent alone never counts, and check-in/contact correction or deletion recomputes the flag.
 3. **F404-AC-03:** Consent and suppression are displayed by purpose/channel and are not inferred from RSVP or attendance.
 4. **F404-AC-04:** CSV rows match the active filters, use the approved minimal columns, escape formula-leading values, and expire under the retention policy.
 5. **F404-AC-05:** Correction/deletion and ambiguous-identity changes are reflected consistently in list, detail, repeat flag, and future exports.

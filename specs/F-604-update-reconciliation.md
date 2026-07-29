@@ -58,7 +58,7 @@ Exact HTTP, JSON Schema, migration, job, and provider shapes belong in their rev
 
 1. **F604-AC-01:** Only an authorized F-602 proposal with confirmed-but-unapplied state and an exact source/current-record pair can create a reconciliation proposal.
 2. **F604-AC-02:** Each proposal shows typed old/new values and exact source/version without changing current state.
-3. **F604-AC-03:** Accepting appends the normal F-208/F-209 history and triggers approved stale/reminder/calendar handling atomically.
+3. **F604-AC-03:** Accepting an application number, agency deadline, or status appends F-208 history; accepting a fee appends F-209 history; each triggers its approved stale/reminder/calendar handling atomically.
 4. **F604-AC-04:** Rejecting preserves current state and source; duplicate or stale acceptance is idempotent or rejected without lost updates.
 5. **F604-AC-05:** Official conflict, ambiguity, type mismatch, or unconfirmed extraction remains visible and cannot be auto-resolved.
 

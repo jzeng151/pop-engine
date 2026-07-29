@@ -30,7 +30,7 @@ Rules reviewers can compare two immutable ruleset versions by stable identity an
 
 ## Inputs, Outputs, State, Validation, and Errors
 
-- Inputs are two exact immutable artifact versions/checksums; output is deterministic structured diff.
+- Inputs are two exact immutable artifact versions/checksums plus an exact immutable lineage-mapping version/checksum; output is a deterministic structured diff that records all three identities.
 - Comparison state is valid, incompatible-schema, missing-artifact, or failed; missing/invalid input never produces no changes.
 - Field changes are reported as data; user-visible/evaluated impact is shown only from an actual linked test run.
 - Missing or unresolved material data stays visibly unset, unknown, pending, or failed as appropriate; it never becomes a successful or complete result.
@@ -57,10 +57,11 @@ Exact HTTP, JSON Schema, migration, job, and provider shapes belong in their rev
 ## Acceptance Criteria
 
 1. **F713-AC-01:** The comparison verifies and displays both exact versions/checksums before diffing.
-2. **F713-AC-02:** Added, removed, and changed registry/rule/advisory/source/verification/config fields are deterministically matched across versions by stable `rule_id` or an approved lineage mapping and are path-addressable; ruleset version is not part of the cross-version match key.
+2. **F713-AC-02:** Added, removed, and changed registry/rule/advisory/source/verification/config fields are deterministically matched across versions by stable `rule_id` or the exact immutable approved lineage mapping and are path-addressable; ruleset version is not part of the cross-version match key.
 3. **F713-AC-03:** Missing, invalid, checksum-mismatched, or incompatible artifacts produce an explicit failure and never 'no changes'.
 4. **F713-AC-04:** The UI makes no evaluated/user-impact claim unless linked F-712 runs for the exact artifacts demonstrate it.
 5. **F713-AC-05:** Swapping versions preserves changed values and reverses only before/after and add/remove direction.
+6. **F713-AC-06:** Every result/export records the lineage-mapping version/checksum; changing a mapping creates a new immutable mapping version and a separately identifiable comparison result.
 
 ## Fixtures and Verification
 
