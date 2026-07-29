@@ -135,9 +135,10 @@ The exact HTTP request and error schemas belong in the reviewed OpenAPI contract
   that artifact and rejects a calendar whose ID, version, checksum, or jurisdiction does not match
   the ruleset's declaration. Persisting calendar provenance does not substitute for validating the
   binding before evaluation.
-- Generation resolves the exact IANA `jurisdictionTimezone`, requires it to match the Event and the
-  selected jurisdiction's approved timezone binding, passes that exact value to the engine, and
-  persists it on the plan. A mismatch rejects generation.
+- Generation resolves the exact IANA `jurisdictionTimezone`, requires it to match the selected
+  jurisdiction's approved timezone binding, passes that exact value to the engine, and persists it
+  on the plan. A mismatch rejects generation. This does not authorize an Event `timezone` field;
+  that target field remains deferred under §2.2.
 - Plans, findings, traces, and their regulatory snapshots remain immutable.
 - A plan is stale when its revision differs from `events.current_revision_id`.
 - Generating a candidate does not move `current_plan_id`.
@@ -155,8 +156,8 @@ The exact HTTP request and error schemas belong in the reviewed OpenAPI contract
   `candidate.event_revision_id === events.current_revision_id`, and that
   `base_plan_id === events.current_plan_id`. While holding that lock, acceptance also derives the
   current calendar date in the candidate's persisted `jurisdictionTimezone`, after rechecking that
-  timezone against the Event and jurisdiction binding, and requires it to equal the candidate's
-  recorded `today`; otherwise it rejects the candidate and requires regeneration. The same
+  timezone against the jurisdiction binding, and requires it to equal the candidate's recorded
+  `today`; otherwise it rejects the candidate and requires regeneration. The same
   transaction locks every source workflow item covered by that token set in a deterministic order
   and rechecks its concurrency token. A workflow mismatch rejects acceptance as a conflict.
   Only then may the transaction move `current_plan_id`, apply the approved deterministic workflow
@@ -182,6 +183,9 @@ The exact HTTP request and error schemas belong in the reviewed OpenAPI contract
 - For a backfilled plan, its canonical `intake_snapshot` must equal the engine-input projection of
   the revision it references under the plan's mapped schema. Questionnaire answers the engine did
   not consume may remain in that revision without being copied into the historical plan snapshot.
+- Exact provenance is mandatory for every plan generated after cutover. A preserved pre-cutover plan
+  follows §2.6's recovery-or-sentinel rule and is never represented as exactly replayable when any
+  required provenance was not recorded.
 - Existing numeric `permit_plans.event_revision` and `intake_snapshot` remain historical migration inputs, not the authority for new writes after cutover.
 
 ### 2.6 Backfill without guessing or deleting history
@@ -190,6 +194,11 @@ Before mutation, F-107's approved compatibility package must define:
 
 - one unambiguous mapping from every historical `ruleset_version` to the Event Input schema that
   produced its plan snapshot;
+- for every engine, calendar, rules-schema, Event Input schema, compatibility-transform,
+  `jurisdictionTimezone`, and other required provenance field absent from a pre-cutover plan, either
+  one exact value recovered from approved immutable historical evidence or SQL `NULL` with the sole
+  meaning `legacy_unrecorded`. A current artifact, deployment state, display text, `generated_at`, or
+  migration time is not evidence of what a historical plan evaluated;
 - one exact `input_schema_version` and `jurisdiction_code` for the Phase 1 Event row at cutover,
   including an Event with no historical plan. This mapping is explicit and does not derive either
   value from a latest plan, display text, or migration time;
@@ -215,23 +224,26 @@ The F-107 forward migration must then:
    plan to it. Plans generated before and after a schema change therefore retain exact, separate
    inputs even when the old numeric `event_revision` did not change. Every migration-created
    revision, including the current-row revision, has `supersedes_revision_id = NULL`;
-4. assign those backfilled revisions a deterministic, strictly increasing order defined and tested
+4. populate each preserved plan's newly introduced provenance fields only from the compatibility
+   package's approved recovery entries, using the `legacy_unrecorded` null sentinel for every
+   unrecoverable field. New plan writes reject that sentinel;
+5. assign those backfilled revisions a deterministic, strictly increasing order defined and tested
    by F-107. Every distinct plan-snapshot revision created in step 3 precedes the current-row
    revision, which receives the greatest backfilled revision number; every later live append receives
    a greater number. The order must not be inferred from version-string sorting or migration
    execution time;
-5. always build the current Event/current revision from the Phase 1 row under the compatibility
+6. always build the current Event/current revision from the Phase 1 row under the compatibility
    package's exact cutover `input_schema_version` and `jurisdiction_code`, even when a plan has the
    same legacy revision number. Stable values such as the Event name and questionnaire values such
    as `location_name` and `capacity` must survive through the exhaustive row mapping;
-6. set that current revision to `complete` when full validation passes, or to `incomplete` only when
+7. set that current revision to `complete` when full validation passes, or to `incomplete` only when
    F-107's partial-save validator accepts it;
-7. compare same-number plans with the current row only after projecting both through their resolved
+8. compare same-number plans with the current row only after projecting both through their resolved
    schemas. A plan may reference the current revision only when the compatibility package can
    losslessly replay that revision under the plan's mapped schema, its canonical engine inputs
    match, and the revision is `complete`; otherwise the plan remains bound to its separate legacy
    revision and is stale; and
-8. set `events.current_revision_id`, preserve every existing plan and synthetic history, and abort
+9. set `events.current_revision_id`, preserve every existing plan and synthetic history, and abort
    the transaction rather than partially mutating on any failure.
 
 Current-only Phase 1 values must not be copied backward into older plan-backed revisions.
@@ -285,6 +297,9 @@ aborts.
   the persisted canonical engine input differs, when `snapshot_date` differs, or when the recorded
   `today` or `jurisdictionTimezone` evaluation input differs. This applies even when every finding
   and plan outcome matches.
+- For each provenance field, `legacy_unrecorded` compares equal only to the same sentinel and differs
+  from every concrete value. A diff retains the complete list of unrecorded provenance fields, and a
+  plan with any such field cannot claim exact replay; replay never substitutes a current artifact.
 - Database IDs, plan IDs, created/generated/updated timestamps, row order, workflow status, and the
   debugging-only evaluation `trace` do not make a regulatory finding, plan outcome, or provenance
   changed.
@@ -345,8 +360,9 @@ Before activation, the consuming implementation must prove:
   after the compatibility transform used at generation is replaced by another version;
 - plan generation rejects a calendar artifact whose ID, version, checksum, or jurisdiction does not
   match the selected ruleset's declaration;
-- plan generation rejects a `jurisdictionTimezone` that does not match the Event and selected
-  jurisdiction's approved binding, and the plan persists the exact timezone passed to the engine;
+- plan generation rejects a `jurisdictionTimezone` that does not match the selected jurisdiction's
+  approved binding, and the plan persists the exact timezone passed to the engine without requiring
+  a deferred Event `timezone` field;
 - `current_plan_id` backfills from the same-event checklist acknowledgement, or remains null when
   none exists, regardless of newer generated plans;
 - while legacy and new acceptance paths coexist, accepting through either path atomically leaves
@@ -359,8 +375,8 @@ Before activation, the consuming implementation must prove:
 - accepting a candidate races safely with a revision save and rejects the stale candidate;
 - accepting a candidate after its jurisdiction-local evaluation date has passed rejects it and
   requires regeneration;
-- accepting a candidate whose persisted `jurisdictionTimezone` no longer matches the Event or
-  jurisdiction binding rejects it and requires regeneration;
+- accepting a candidate whose persisted `jurisdictionTimezone` no longer matches the jurisdiction
+  binding rejects it and requires regeneration;
 - two candidates accepted concurrently from the same accepted base produce one success and one
   conflict;
 - a non-default workflow status carries only through the deterministic mapping the organizer
@@ -391,6 +407,11 @@ Before activation, the consuming implementation must prove:
   change, is reported when every finding rendering matches;
 - a plan-provenance-only change is reported when every finding and plan outcome matches, including
   when only the recorded `today` or `jurisdictionTimezone` evaluation input differs;
+- legacy plan backfill recovers a missing provenance value only from its approved immutable mapping,
+  uses `legacy_unrecorded` for an unrecoverable value, and never copies a current artifact into
+  historical provenance;
+- `legacy_unrecorded` compares equal only to itself, differs from every concrete provenance value,
+  remains visible in diff output, and prevents an exact-replay claim;
 - diff identity and output are byte-stable; and
 - cross-workspace reads and writes fail after tenancy activation.
 
