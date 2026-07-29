@@ -340,6 +340,56 @@ describe("per-line citations and status (AC 2, AC 3)", () => {
     expect(line.getByText("RESEARCH REQUIRED")).toBeDefined();
   });
 
+  it.each([CONFIRM_WITH_AGENCY, `14–60 days depending on level; ${CONFIRM_WITH_AGENCY}`])(
+    "renders one confirmation when the deadline displays %s",
+    async (deadlineDisplay) => {
+      const line = await lineFor(
+        finding({
+          verificationStatus: "RESEARCH_REQUIRED",
+          deadline: { type: "research_required", display: null, qualification: null },
+          deadlineDisplay,
+          deadlineStatus: "not_calculable",
+        }),
+      );
+
+      expect(
+        (screen.getByRole("article").textContent ?? "").split(CONFIRM_WITH_AGENCY),
+      ).toHaveLength(2);
+      expect(line.getByText("RESEARCH REQUIRED")).toBeDefined();
+    },
+  );
+
+  it.each(["Published output note", "Published verification qualification"])(
+    "keeps one confirmation visible before and after expanding a %s",
+    async (publishedProse) => {
+      const note = `${publishedProse}: ${CONFIRM_WITH_AGENCY}`;
+      stubApi(
+        plan({
+          findings: [
+            finding({
+              verificationStatus: "RESEARCH_REQUIRED",
+              notes: [note],
+            }),
+          ],
+        }),
+      );
+      renderPlan();
+      const article = await screen.findByRole("article");
+      const line = within(article);
+
+      expect(line.getByRole("note").textContent).toBe(CONFIRM_WITH_AGENCY);
+      expect(line.queryByText(note)).toBeNull();
+      expect((article.textContent ?? "").split(CONFIRM_WITH_AGENCY)).toHaveLength(2);
+
+      await userEvent.click(line.getByRole("button", { name: /^Details for/ }));
+
+      expect(line.queryByRole("note")).toBeNull();
+      expect(line.getByText(note)).toBeDefined();
+      expect((article.textContent ?? "").split(CONFIRM_WITH_AGENCY)).toHaveLength(2);
+      expect(line.getByText("RESEARCH REQUIRED")).toBeDefined();
+    },
+  );
+
   it("renders both readings of an official conflict with every source behind them", async () => {
     const conflict = finding({
       ruleIds: [CONFLICT_RULE.id],
