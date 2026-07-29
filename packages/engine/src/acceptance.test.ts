@@ -202,6 +202,14 @@ describe("Scenario A — Bushwick Street Activation (demo anchor)", () => {
         "DOB-ASSEMBLY-001",
       ]),
     );
+    const assemblyRule = ruleset.rules.find((rule) => rule.id === "DOB-ASSEMBLY-001");
+    expect(privateVenue?.introducedFindings).toContainEqual({
+      ruleIds: ["DOB-ASSEMBLY-001"],
+      label: assemblyRule?.userSummary?.heading,
+      source: assemblyRule?.userSummary?.points[0]?.sources[0],
+      portalName: null,
+      portalUrl: null,
+    });
     // Non-at-risk suggestions omit at-risk-only enrichment keys (null would still change shape).
     expect(privateVenue !== undefined && !("minSlackDays" in privateVenue)).toBe(true);
     expect(privateVenue !== undefined && !("atRiskFindingName" in privateVenue)).toBe(true);
@@ -619,7 +627,10 @@ describe("Scenario E — Plaza Brand Activation (max complexity)", () => {
   it("names the conditional boundary when tent area is unanswered", () => {
     const result = plan({ ...intakeE, tent_area_sqft: null, structure_over_10ft_tall: false });
     const tentFact = result.verdictDetail.missingFacts.find((fact) => fact.field === "tent_area_sqft");
-    expect(tentFact?.thresholds).toContain("DOB-TENT-001 applies above 400");
+    const tentHeading = ruleset.rules.find((rule) => rule.id === "DOB-TENT-001")?.userSummary
+      ?.heading;
+    expect(tentFact?.thresholds).toContain(`${tentHeading} applies above 400`);
+    expect(tentFact?.thresholds).not.toContain("DOB-TENT-001");
     expect(tentFact?.thresholds).toContain("exactly 400 is a conditional boundary");
   });
 });

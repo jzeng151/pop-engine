@@ -163,6 +163,8 @@ export type ConsumedRescopeSuggestion = {
   readonly droppedRuleIds: RescopeSuggestion["droppedRuleIds"];
   /** Empty when omitted on a historical three-field suggestion. */
   readonly introducedRuleIds: readonly string[];
+  /** Empty when omitted on a plan generated before human-readable rescope labels. */
+  readonly introducedFindings: NonNullable<RescopeSuggestion["introducedFindings"]>;
   /** Null when omitted on a historical three-field suggestion or when not at-risk. */
   readonly minSlackDays: number | null;
   readonly atRiskFindingName: string | null;
@@ -351,6 +353,16 @@ const RESCOPE_CHANGE_CHECKS: FieldChecks<RescopeSuggestion["change"]> = {
   value: isString,
 };
 
+type IntroducedFinding = ConsumedRescopeSuggestion["introducedFindings"][number];
+
+const INTRODUCED_FINDING_CHECKS: FieldChecks<IntroducedFinding> = {
+  ruleIds: arrayOf(isString),
+  label: nullOr(isString),
+  source: nullOr(shapedLike(SUMMARY_SOURCE_CHECKS)),
+  portalName: nullOr(isString),
+  portalUrl: nullOr(isString),
+};
+
 const RESCOPE_CHECKS: FieldChecks<ConsumedRescopeSuggestion> = {
   change: shapedLike(RESCOPE_CHANGE_CHECKS),
   reevaluatedVerdict: isToken(VERDICTS),
@@ -358,6 +370,8 @@ const RESCOPE_CHECKS: FieldChecks<ConsumedRescopeSuggestion> = {
   // Pre-enrichment stored plans omit these; accept absence and normalize below.
   introducedRuleIds: (value: unknown): value is readonly string[] =>
     value === undefined || arrayOf(isString)(value),
+  introducedFindings: (value: unknown): value is readonly IntroducedFinding[] =>
+    value === undefined || arrayOf(shapedLike(INTRODUCED_FINDING_CHECKS))(value),
   minSlackDays: optionalNullNumber,
   atRiskFindingName: optionalNullString,
 };
@@ -419,6 +433,7 @@ function normalizePlan(plan: PlanResponse): PlanResponse {
       rescopeSuggestions: plan.verdictDetail.rescopeSuggestions.map((suggestion) => ({
         ...suggestion,
         introducedRuleIds: suggestion.introducedRuleIds ?? [],
+        introducedFindings: suggestion.introducedFindings ?? [],
         minSlackDays: suggestion.minSlackDays ?? null,
         atRiskFindingName: suggestion.atRiskFindingName ?? null,
       })),
