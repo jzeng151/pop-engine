@@ -1638,7 +1638,7 @@ const f203DecisionScope =
   /\b(?:scope|depth|phase\s+\d+|planned|unplanned|scheduled|unscheduled|scheduling|acceptance criteria)\b/i;
 const f203Planning = /\bplanned,\s+(?:not scheduled|unscheduled)\b/i;
 const f203Negation =
-  /\b(?:not planned|unplanned)\b|\b(?:no|without)\s+(?:alert )?(?:escalations|digests|team reminders|per-user preferences)\b/i;
+  /\b(?:not planned|unplanned)\b|\b(?:is|are|was|were|has been|have been)\s+(?:superseded|rejected)\b|\b(?:no|without)\s+(?:alert )?(?:escalations|digests|team reminders|per-user preferences)\b/i;
 const f203SchedulingConflict =
   /\b(?:(?:is|are|was|were|has been|have been|will be|must be|may be|can be)\s+(?:now\s+)?scheduled|now scheduled)\b/i;
 const f203ConflictingPhase = /\bPhase\s+(?!2\b)\d+\s+(?:scope|depth)\b/i;
@@ -1703,6 +1703,21 @@ for (const relative of f203Artifacts) {
           f203CapabilityMention.test(criterion) &&
           !f203CriterionNonGoal.test(criterion),
       );
+    const addsUnscheduledProseCriterion = acceptanceCriteriaSections
+      .flatMap((section) => section.split(/\r?\n\s*\r?\n/))
+      .some((paragraph) => {
+        const prose = paragraph
+          .split(/\r?\n/)
+          .filter((line) => !/^#{1,6}\s+/.test(line))
+          .join(" ")
+          .trim();
+        return (
+          prose !== "" &&
+          !/^(?:[-*+]|\d+\.)\s+|\|/.test(prose) &&
+          f203CapabilityMention.test(prose) &&
+          !f203CriterionNonGoal.test(prose)
+        );
+      });
     const tableLines = acceptanceCriteriaText.split(/\r?\n/);
     const tableDelimiter = /^\s*\|(?:\s*:?-+:?\s*\|)+\s*$/;
     const addsUnscheduledTableCriterion = tableLines.some((row, index) => {
@@ -1739,6 +1754,7 @@ for (const relative of f203Artifacts) {
     });
     if (
       addsUnscheduledCriterion ||
+      addsUnscheduledProseCriterion ||
       addsUnscheduledTableCriterion ||
       addsHeadingScopedCriterion ||
       /^#{1,6}\s+(?:Phase 2\b.*\bAcceptance Criteria|Acceptance Criteria\b.*\bPhase 2)\b/im.test(
@@ -1815,6 +1831,7 @@ for (const relative of f203Artifacts) {
       return (
         !f203RetainedScope.test(normalized) ||
         !hasAllF203Capabilities(normalized) ||
+        f203Negation.test(normalized) ||
         f203SchedulingConflict.test(normalized) ||
         hasF203ConflictingPhase(normalized)
       );
