@@ -145,13 +145,21 @@ export type ConsumedBranchOutcome = Pick<BranchOutcome, "value" | "verdict" | "r
 export type ConsumedMissingFact = {
   readonly field: MissingFact["field"];
   readonly branches: readonly ConsumedBranchOutcome[];
-  readonly thresholds: MissingFact["thresholds"];
+  /** Null when unpublished or when a pre-thresholds stored plan omitted the key. */
+  readonly thresholds: string | null;
 };
 
 export type ConsumedRescopeSuggestion = {
   readonly change: RescopeSuggestion["change"];
   readonly reevaluatedVerdict: RescopeSuggestion["reevaluatedVerdict"];
   readonly droppedRuleIds: RescopeSuggestion["droppedRuleIds"];
+  readonly minSlackDays: number | null;
+  readonly atRiskFindingName: string | null;
+};
+
+export type ConsumedUnresolvedTimeline = {
+  readonly ruleIds: readonly string[];
+  readonly reason: string;
 };
 
 export type ConsumedBlockingFinding = NonNullable<VerdictDetail["blockingFinding"]>;
@@ -161,6 +169,7 @@ export type ConsumedVerdictDetail = {
   readonly missingFacts: readonly ConsumedMissingFact[];
   readonly blockingFinding: ConsumedBlockingFinding | null;
   readonly missedRuleIds: VerdictDetail["missedRuleIds"];
+  readonly unresolvedTimelines: readonly ConsumedUnresolvedTimeline[];
   readonly rescopeSuggestions: readonly ConsumedRescopeSuggestion[];
 };
 
@@ -290,10 +299,17 @@ const BRANCH_OUTCOME_CHECKS: FieldChecks<ConsumedBranchOutcome> = {
   reason: isString,
 };
 
+/** Absent thresholds on pre-field stored plans normalize to null (legacy). */
+const optionalNullString = (value: unknown): value is string | null =>
+  value === undefined || value === null || typeof value === "string";
+
+const optionalNullNumber = (value: unknown): value is number | null =>
+  value === undefined || value === null || typeof value === "number";
+
 const MISSING_FACT_CHECKS: FieldChecks<ConsumedMissingFact> = {
   field: isString,
   branches: arrayOf(shapedLike(BRANCH_OUTCOME_CHECKS)),
-  thresholds: nullOr(isString),
+  thresholds: optionalNullString,
 };
 
 const RESCOPE_CHANGE_CHECKS: FieldChecks<RescopeSuggestion["change"]> = {
@@ -305,6 +321,9 @@ const RESCOPE_CHECKS: FieldChecks<ConsumedRescopeSuggestion> = {
   change: shapedLike(RESCOPE_CHANGE_CHECKS),
   reevaluatedVerdict: isToken(VERDICTS),
   droppedRuleIds: arrayOf(isString),
+  // Pre-enrichment stored plans omit these; accept absence and normalize below.
+  minSlackDays: optionalNullNumber,
+  atRiskFindingName: optionalNullString,
 };
 
 const BLOCKING_FINDING_CHECKS: FieldChecks<ConsumedBlockingFinding> = {
@@ -312,11 +331,19 @@ const BLOCKING_FINDING_CHECKS: FieldChecks<ConsumedBlockingFinding> = {
   name: nullOr(isString),
 };
 
+const UNRESOLVED_TIMELINE_CHECKS: FieldChecks<ConsumedUnresolvedTimeline> = {
+  ruleIds: arrayOf(isString),
+  reason: isString,
+};
+
 const VERDICT_DETAIL_CHECKS: FieldChecks<ConsumedVerdictDetail> = {
   minSlackDays: nullOr(isNumber),
   missingFacts: arrayOf(shapedLike(MISSING_FACT_CHECKS)),
   blockingFinding: nullOr(shapedLike(BLOCKING_FINDING_CHECKS)),
   missedRuleIds: arrayOf(isString),
+  // Older stored plans may omit this array; treat absence as empty.
+  unresolvedTimelines: (value: unknown): value is readonly ConsumedUnresolvedTimeline[] =>
+    value === undefined || arrayOf(shapedLike(UNRESOLVED_TIMELINE_CHECKS))(value),
   rescopeSuggestions: arrayOf(shapedLike(RESCOPE_CHECKS)),
 };
 
@@ -337,7 +364,29 @@ const PLAN_CHECKS: FieldChecks<PlanResponse> = {
 export const CONSUMED_PLAN_FIELDS: readonly string[] = Object.keys(PLAN_CHECKS);
 export const CONSUMED_FINDING_FIELDS: readonly string[] = Object.keys(FINDING_CHECKS);
 
-const readPlan = (body: unknown): PlanResponse | null => readChecked(PLAN_CHECKS, body);
+function normalizePlan(plan: PlanResponse): PlanResponse {
+  return {
+    ...plan,
+    verdictDetail: {
+      ...plan.verdictDetail,
+      unresolvedTimelines: plan.verdictDetail.unresolvedTimelines ?? [],
+      missingFacts: plan.verdictDetail.missingFacts.map((fact) => ({
+        ...fact,
+        thresholds: fact.thresholds ?? null,
+      })),
+      rescopeSuggestions: plan.verdictDetail.rescopeSuggestions.map((suggestion) => ({
+        ...suggestion,
+        minSlackDays: suggestion.minSlackDays ?? null,
+        atRiskFindingName: suggestion.atRiskFindingName ?? null,
+      })),
+    },
+  };
+}
+
+const readPlan = (body: unknown): PlanResponse | null => {
+  const plan = readChecked(PLAN_CHECKS, body);
+  return plan === null ? null : normalizePlan(plan);
+};
 
 /** The plan a set of findings was generated as (`GET /api/events/:id/plan`). */
 export async function loadPlan(apiBaseUrl: string, eventId: string): Promise<PlanResult> {

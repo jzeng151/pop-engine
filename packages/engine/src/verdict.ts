@@ -91,8 +91,16 @@ function describeDifference(base: readonly Finding[], candidate: readonly Findin
   const candidateIds = new Set(ruleIdsOf(candidate));
   const added = [...candidateIds].filter((id) => !baseIds.has(id));
   const dropped = [...baseIds].filter((id) => !candidateIds.has(id));
+  const describeAdded = (id: string): string => {
+    const finding = candidate.find((entry) => entry.ruleIds.includes(id));
+    // F-102 AC 6: the no-license branch must surface the missed-window reason, not only the rule id.
+    if (finding?.deadlineStatus === "published_deadline_missed") {
+      return `${id} (published deadline missed as scoped)`;
+    }
+    return id;
+  };
   const parts = [
-    added.length > 0 ? `adds ${added.join(", ")}` : null,
+    added.length > 0 ? `adds ${added.map(describeAdded).join(", ")}` : null,
     dropped.length > 0 ? `drops ${dropped.join(", ")}` : null,
   ].filter((part): part is string => part !== null);
   return parts.length === 0 ? "same findings, re-dated" : parts.join("; ");
@@ -353,10 +361,17 @@ function buildRescopeSuggestions(
       if (introduced.some((finding) => finding.deadlineStatus === "not_calculable")) continue;
 
       const candidateIds = new Set(ruleIdsOf(candidate.findings));
+      const minSlackDays = candidate.window.minSlackDays;
+      const atRiskFinding =
+        candidate.verdict === "FEASIBLE_AT_RISK" && minSlackDays !== null
+          ? (candidate.findings.find((finding) => finding.slackDays === minSlackDays) ?? null)
+          : null;
       suggestions.push({
         change: { field: definition.field, value: candidateValue.display },
         reevaluatedVerdict: candidate.verdict,
         droppedRuleIds: [...baseRuleIds].filter((ruleId) => !candidateIds.has(ruleId)),
+        minSlackDays,
+        atRiskFindingName: atRiskFinding?.name ?? null,
       });
     }
   }

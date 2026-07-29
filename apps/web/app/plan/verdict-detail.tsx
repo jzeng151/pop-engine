@@ -83,6 +83,11 @@ function RescopeLadder({
             </p>
             <p className="verdict-detail__rescope-verdict">
               Re-evaluated verdict: {verdictCopy(suggestion.reevaluatedVerdict)}
+              {suggestion.reevaluatedVerdict === "FEASIBLE_AT_RISK" &&
+                suggestion.minSlackDays !== null &&
+                ` · ${suggestion.minSlackDays} day${suggestion.minSlackDays === 1 ? "" : "s"} slack`}
+              {suggestion.atRiskFindingName !== null &&
+                ` · tightest: ${suggestion.atRiskFindingName}`}
             </p>
             {suggestion.droppedRuleIds.length > 0 && (
               <p className="verdict-detail__rescope-dropped">
@@ -116,9 +121,25 @@ export function VerdictDetailPanel({
       <div className="verdict-detail" data-testid="verdict-detail">
         <h2 className="verdict-detail__section-title">What still depends on your answers</h2>
         <p className="verdict-detail__lede">
-          Each unanswered fact below was evaluated on every published answer. The overall verdict
-          stays conditional until those answers land.
+          Each unanswered fact below was evaluated on every published answer.
+          {detail.unresolvedTimelines.length === 0
+            ? " The overall verdict stays conditional until those answers land."
+            : " Answering them may still leave the verdict conditional when a published filing window cannot be dated from the inputs supplied."}
         </p>
+        {detail.unresolvedTimelines.length > 0 && (
+          <section className="verdict-detail__timelines" data-testid="unresolved-timelines">
+            <h3 className="verdict-detail__section-title">Published windows that could not be dated</h3>
+            <ul>
+              {detail.unresolvedTimelines.map((entry) => (
+                <li key={entry.ruleIds.join("+")}>
+                  <span className="verdict-detail__rule-ids">{entry.ruleIds.join(", ")}</span>
+                  {": "}
+                  {entry.reason}
+                </li>
+              ))}
+            </ul>
+          </section>
+        )}
         {detail.missingFacts.map((fact) => (
           <BranchTable
             key={fact.field}
@@ -127,6 +148,30 @@ export function VerdictDetailPanel({
             thresholds={fact.thresholds}
           />
         ))}
+      </div>
+    );
+  }
+
+  // CONDITIONAL with only unresolved timelines (no missing facts)
+  if (verdict === "CONDITIONAL" && detail.unresolvedTimelines.length > 0) {
+    return (
+      <div className="verdict-detail" data-testid="verdict-detail">
+        <h2 className="verdict-detail__section-title">What still depends on dating</h2>
+        <p className="verdict-detail__lede">
+          A published filing window could not be dated from the inputs supplied, so the verdict
+          stays conditional independently of the answered questions.
+        </p>
+        <section className="verdict-detail__timelines" data-testid="unresolved-timelines">
+          <ul>
+            {detail.unresolvedTimelines.map((entry) => (
+              <li key={entry.ruleIds.join("+")}>
+                <span className="verdict-detail__rule-ids">{entry.ruleIds.join(", ")}</span>
+                {": "}
+                {entry.reason}
+              </li>
+            ))}
+          </ul>
+        </section>
       </div>
     );
   }

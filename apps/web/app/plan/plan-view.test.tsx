@@ -76,6 +76,7 @@ const emptyVerdictDetail = {
   missedRuleIds: [],
   minSlackDays: null,
   missingFacts: [],
+  unresolvedTimelines: [],
   rescopeSuggestions: [],
 };
 
@@ -979,11 +980,15 @@ describe("F-102 · CONDITIONAL branch table and INFEASIBLE rescope ladder", () =
               change: { field: "street_event_size", value: "medium" },
               reevaluatedVerdict: "FEASIBLE_AT_RISK",
               droppedRuleIds: ["SAPO-STREET-LARGE-001"],
+              minSlackDays: 5,
+              atRiskFindingName: "Street Activity Permit — Medium",
             },
             {
               change: { field: "location_type", value: "private_venue" },
               reevaluatedVerdict: "CONDITIONAL",
               droppedRuleIds: ["SAPO-INSURANCE-001", "SAPO-STREET-LARGE-001"],
+              minSlackDays: null,
+              atRiskFindingName: null,
             },
           ],
         },
@@ -1001,6 +1006,8 @@ describe("F-102 · CONDITIONAL branch table and INFEASIBLE rescope ladder", () =
     expect(suggestions[0]?.textContent).toContain("street event size");
     expect(suggestions[0]?.textContent).toContain("medium");
     expect(suggestions[0]?.textContent).toContain("At risk");
+    expect(suggestions[0]?.textContent).toContain("5 days slack");
+    expect(suggestions[0]?.textContent).toContain("Street Activity Permit — Medium");
     expect(suggestions[1]?.textContent).toContain("private venue");
     expect(suggestions[1]?.textContent).toContain("Depends on");
   });

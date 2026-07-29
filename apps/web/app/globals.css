@@ -177,6 +177,11 @@ body {
   gap: 1rem;
 }
 
+.line--blocker {
+  border-color: var(--error, #9b2d1f);
+  background: color-mix(in srgb, var(--error, #9b2d1f) 8%, transparent);
+}
+
 .line {
   padding: 0.9rem 1rem;
   border: 1px solid var(--line);

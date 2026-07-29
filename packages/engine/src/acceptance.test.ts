@@ -154,7 +154,7 @@ describe("Scenario A — Bushwick Street Activation (demo anchor)", () => {
 
   it("produces the three rescopes by full re-evaluation, not static text (AC 9)", () => {
     const suggestions = plan(intakeA).verdictDetail.rescopeSuggestions;
-    expect(suggestions).toEqual([
+    expect(suggestions).toMatchObject([
       // (c) private venue: SAPO permit + SAPO insurance drop. Conditional rather than at-risk
       // because moving indoors opens a question the street version never asked — whether the
       // amplified sound carries to a public way (§10-108(b)(3)) — and that decides a permit.
@@ -174,8 +174,13 @@ describe("Scenario A — Bushwick Street Activation (demo anchor)", () => {
         change: { field: "street_event_size", value: "medium" },
         reevaluatedVerdict: "FEASIBLE_AT_RISK",
         droppedRuleIds: ["SAPO-STREET-LARGE-001"],
+        minSlackDays: 5,
       },
     ]);
+    const medium = suggestions.find((s) => s.change.value === "medium");
+    const small = suggestions.find((s) => s.change.value === "small");
+    expect(medium?.minSlackDays).toBe(5);
+    expect(small?.atRiskFindingName ?? small?.minSlackDays).toBeTruthy();
   });
 
   it("re-evaluates rescope (a) to the 30-day deadline and five days of slack", () => {

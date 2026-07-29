@@ -304,6 +304,10 @@ export type RescopeSuggestion = {
   readonly change: { readonly field: string; readonly value: string };
   readonly reevaluatedVerdict: Verdict;
   readonly droppedRuleIds: readonly string[];
+  /** Slack days from the re-evaluation window; null when the re-evaluated verdict is not at-risk. */
+  readonly minSlackDays: number | null;
+  /** Name of the tightest at-risk finding in the re-evaluation, when one exists. */
+  readonly atRiskFindingName: string | null;
 };
 
 export type EvaluationTraceEntry = { readonly ruleId: string; readonly result: Tristate };
