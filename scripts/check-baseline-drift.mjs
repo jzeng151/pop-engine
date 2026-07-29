@@ -1599,10 +1599,36 @@ const f203Artifacts = [
 ];
 const f203Capabilities =
   /\b(?:alert )?escalations,\s+digests,\s+team reminders,\s+and per-user preferences\b/i;
+const f203CapabilityNames = ["escalations", "digests", "team reminders", "per-user preferences"];
 const f203Planning = /\bplanned,\s+(?:not scheduled|unscheduled)\b/i;
 const f203Negation =
   /\bnot planned\b|\b(?:no|without)\s+(?:alert )?(?:escalations|digests|team reminders|per-user preferences)\b/i;
 const f203Failures = [];
+
+function activeMarkdown(markdown) {
+  const lines = markdown.replace(/<!--[\s\S]*?(?:-->|$)/g, "").split(/\r?\n/);
+  let fence = null;
+  return lines
+    .map((line) => {
+      const marker = /^ {0,3}(`{3,}|~{3,})(.*)$/.exec(line);
+      if (fence === null && marker) {
+        fence = marker[1];
+        return "";
+      }
+      if (
+        fence !== null &&
+        marker &&
+        marker[1][0] === fence[0] &&
+        marker[1].length >= fence.length &&
+        marker[2].trim() === ""
+      ) {
+        fence = null;
+        return "";
+      }
+      return fence === null ? line : "";
+    })
+    .join("\n");
+}
 
 for (const relative of f203Artifacts) {
   const full = join(repoRoot, relative);
@@ -1611,30 +1637,54 @@ for (const relative of f203Artifacts) {
     continue;
   }
 
-  const contents = readFileSync(full, "utf8");
-  const assignments = contents
+  const contents = activeMarkdown(readFileSync(full, "utf8"));
+  let nextStatementOffset = 0;
+  const scopeStatements = contents
     .split(/\r?\n\s*\r?\n|\r?\n(?=\s*(?:[-*+]|\d+\.)\s+)/)
-    .map((raw) => ({ raw, normalized: raw.replace(/\s+/g, " ").trim() }))
-    .filter(
-      ({ normalized }) =>
-        normalized.toLowerCase().includes("f-203") &&
-        f203Capabilities.test(normalized) &&
-        f203Planning.test(normalized) &&
-        !f203Negation.test(normalized),
-    );
-  if (assignments.length === 0) {
+    .map((raw) => {
+      const offset = contents.indexOf(raw, nextStatementOffset);
+      nextStatementOffset = offset + raw.length;
+      return { raw, offset, normalized: raw.replace(/\s+/g, " ").trim() };
+    })
+    .filter(({ raw, normalized }) => {
+      const lower = normalized.toLowerCase();
+      const namesScope = f203CapabilityNames.every((capability) => lower.includes(capability));
+      const requiresListAssignment = relative === "docs/ROADMAP.md" || relative === "docs/PRD.md";
+      const isListAssignment = requiresListAssignment && /^\s*(?:[-*+]|\d+\.)\s+/.test(raw);
+      return namesScope && (!requiresListAssignment || isListAssignment);
+    });
+
+  const invalidAssignment = scopeStatements.find(({ raw, normalized }) => {
+    if (!f203Capabilities.test(normalized) || !f203Planning.test(normalized)) return true;
+    if (f203Negation.test(normalized)) return true;
+    if (relative === "docs/ROADMAP.md" || relative === "docs/PRD.md") {
+      return !/^\s*(?:[-*+]|\d+\.)\s+(?:\*\*)?F-203\b/i.test(raw);
+    }
+    if (relative === "docs/BASELINE.md") {
+      return !/\bF-203\b[^.]*\b(?:alert )?escalations,\s+digests,\s+team reminders,\s+and per-user preferences\b/i.test(
+        normalized,
+      );
+    }
+    return !/\bper-user preferences\b[^.]*\bunder F-203\b/i.test(normalized);
+  });
+  if (scopeStatements.length === 0 || invalidAssignment) {
     f203Failures.push(
       `${relative} must affirmatively assign escalations, digests, team reminders, and ` +
         "per-user preferences to F-203 as planned, unscheduled Phase 2 scope",
     );
   } else if (relative === "docs/BASELINE.md" || relative === "specs/F-203-deadline-alerts.md") {
-    if (!assignments.some(({ normalized }) => /\bPhase 2\b/i.test(normalized))) {
+    const bindsPhase2 = scopeStatements.every(({ normalized }) =>
+      relative === "docs/BASELINE.md"
+        ? /\bplanned,\s+(?:not scheduled|unscheduled)\s+Phase 2\b/i.test(normalized)
+        : /\bPhase 2\b[^.]*\bunder F-203\b/i.test(normalized),
+    );
+    if (!bindsPhase2) {
       f203Failures.push(`${relative} must assign its F-203 full scope to Phase 2`);
     }
   } else {
-    const underPhase2 = assignments.some(({ raw }) => {
+    const underPhase2 = scopeStatements.every(({ offset }) => {
       const heading = contents
-        .slice(0, contents.indexOf(raw))
+        .slice(0, offset)
         .split(/\r?\n/)
         .findLast((line) => /^#{2,3}\s+.*\bPhase \d+\b/i.test(line));
       return /\bPhase 2\b/i.test(heading ?? "");

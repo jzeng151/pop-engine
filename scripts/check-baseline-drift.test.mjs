@@ -56,7 +56,8 @@ const ruleset = (version) => ["nyc", `rules.v${version}.json`].join("-");
 const SQUARE_RECONCILED = {
   "docs/BASELINE.md":
     "# Baseline\n\n**Decision (SPEC-CONFLICT #127 item 1):** F-203 keeps alert escalations, " +
-    "digests, team reminders, and per-user preferences as its planned, unscheduled Phase 2 depth.\n",
+    "digests, team reminders, and per-user preferences as its planned, unscheduled Phase 2 depth. " +
+    "This adds no Phase 2 acceptance criteria.\n",
   "docs/ROADMAP.md":
     "# Roadmap\n\n## Phase 2 — Execution Hardening\n\n" +
     "- **F-203 (full)** — alert escalations, digests, team reminders, and per-user preferences; " +
@@ -1854,6 +1855,58 @@ describe.concurrent("F-203 Phase 2 scope agreement (SPEC-CONFLICT #127 item 1)",
 
     expect(status).toBe(0);
     expect(output).toContain("F-203 scope check passed");
+  });
+
+  it.each([
+    [
+      "moves a second assignment to Phase 3",
+      "\n## Phase 3 — Differentiation\n\n" +
+        "- **F-203 (full)** — alert escalations, digests, team reminders, and per-user preferences; " +
+        "planned, not scheduled.\n",
+    ],
+    [
+      "marks a second assignment unplanned",
+      "\n## Phase 2 — Execution Hardening\n\n" +
+        "- **F-203 (full)** — alert escalations, digests, team reminders, and per-user preferences; " +
+        "not planned, not scheduled.\n",
+    ],
+  ])("fails when the Roadmap %s", async (_label, conflict) => {
+    const { status, output } = await runOn({
+      "docs/ROADMAP.md": SQUARE_RECONCILED["docs/ROADMAP.md"] + conflict,
+    });
+
+    expect(status).toBe(1);
+    expect(output).toContain("docs/ROADMAP.md must");
+  });
+
+  it.each([
+    ["an HTML comment", "<!--\n", "\n-->"],
+    ["a fenced example", "```md\n", "\n```"],
+  ])("ignores the F-203 assignment inside %s", async (_label, open, close) => {
+    const assignment =
+      "- **F-203 (full)** — alert escalations, digests, team reminders, and per-user preferences; " +
+      "planned, not scheduled.";
+    const { status, output } = await runOn({
+      "docs/ROADMAP.md": SQUARE_RECONCILED["docs/ROADMAP.md"].replace(
+        assignment,
+        `${open}${assignment}${close}`,
+      ),
+    });
+
+    expect(status).toBe(1);
+    expect(output).toContain("docs/ROADMAP.md must affirmatively assign");
+  });
+
+  it("rejects an incidental F-203 reference under another owning id", async () => {
+    const { status, output } = await runOn({
+      "docs/ROADMAP.md": SQUARE_RECONCILED["docs/ROADMAP.md"].replace(
+        "**F-203 (full)**",
+        "**F-999 (full; replaces F-203)**",
+      ),
+    });
+
+    expect(status).toBe(1);
+    expect(output).toContain("docs/ROADMAP.md must affirmatively assign");
   });
 });
 
