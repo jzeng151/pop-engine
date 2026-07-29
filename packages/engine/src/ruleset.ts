@@ -634,14 +634,14 @@ export const UNCONSUMED_INTAKE_FIELDS: Readonly<Record<string, string>> = {
   borough: "Display and future jurisdiction routing (F-207). No NYC rule varies by borough today.",
   food_affinity_private_exception_claimed:
     "Collected for the Health Code Art. 88 private-function exemption, which DOHMH-EXEMPTION-001 " +
-    "renders as an advisory on event_open_to_public alone. Open on issue #89.",
+    "renders as an advisory on event_open_to_public alone. Open on issue #194.",
   venue_has_assembly_approval:
-    "Would drive DOB-ASSEMBLY-001's coverage confirmation, which is statute-backed but not yet " +
-    "implemented: AC 28-117.1.3 requires an amendment for any change inconsistent with the venue's " +
-    "certificate, so an existing approval narrows the question rather than settling it. The rule " +
-    "now says that in its notes instead of describing a branch nothing evaluates, but its trigger " +
-    "still reads location_type and headcount only, so answering this changes no output. Open on " +
-    "issue #89, blocks F-102 AC 6.",
+    "Confirms only that an assembly approval exists; it cannot establish whether the current PACO " +
+    "and PA permit cover the event's exact space, use, occupancy, and layout. Whether exact coverage " +
+    "removes the temporary filing is not published either way; confirm with DOB. Inconsistent " +
+    "conditions require amendment or separate authorization. No published rule consumes this " +
+    "coarse field, so answering it changes no output; objective coverage-specific input and rule " +
+    "modeling is open on issue #188.",
 };
 
 /**

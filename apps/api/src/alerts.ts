@@ -670,6 +670,7 @@ function reminderCopy(
       rendering?.deadline_display,
       ...(rendering?.notes ?? []),
       rendering?.conflict_text,
+      ...filingRoute(row, rendering),
     ]),
     // EVERY PUBLISHED NOTE, because the qualification IS one of them and nothing here can tell
     // which. `findings.ts` builds this array as the rule's own notes, then the DEADLINE's and
@@ -767,7 +768,11 @@ function dependencyCopy(
     // agencies agree on, and without this line the unconfirmed part of the claim is the part the
     // organizer cannot see. Every token is read off the plan item, never named here.
     verificationLine(withAgency(gated), gated.verification_status),
-    confirmationLine(withAgency(gated), gated.verification_status),
+    confirmationLine(
+      withAgency(gated),
+      gated.verification_status,
+      filingRoute(gated, gatedRendering),
+    ),
     verificationLine(withAgency(upstream), upstream.verification_status),
     confirmationLine(withAgency(upstream), upstream.verification_status),
     dependency === undefined

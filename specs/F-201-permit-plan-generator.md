@@ -32,7 +32,7 @@ As an independent organizer, I get the complete list of requirements my specific
 
 ## Acceptance Criteria — Fixture Suite
 
-**The acceptance suite lives in `docs/test-scenario-answer-key.md` (v4): six scenarios (A–F) plus the boundary/unit fixture list. It is derived from the ruleset and pinned to `today = 2026-07-22`. This spec deliberately does not duplicate the expected outputs — the fixture doc is the single copy.** Requirements:
+**The acceptance suite lives in `docs/test-scenario-answer-key.md` (v6): six scenarios (A–F) plus the boundary/unit fixture list. It is derived from the ruleset and pinned to `today = 2026-07-22`. This spec deliberately does not duplicate the expected outputs — the fixture doc is the single copy.** Requirements:
 
 7. All six scenarios pass: expected finding sets match exactly (kind + disposition + finding), 0 false omissions, 0 false additions, verdicts and rescope results match.
 8. All boundary fixtures pass: park headcount 19/20/21; block party ± sales/ride; tent 399/400/401 sq ft; stage 2.0/2.5 ft × 119/120 sq ft; generator 2.5/2.6 gal; 39.9/40 kW; battery 20/20.1 kWh; street size unknown; other_sapo_class advisory; obstructs_public_way = no.

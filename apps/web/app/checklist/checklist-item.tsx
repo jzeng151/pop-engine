@@ -111,11 +111,13 @@ export function PlanContextBody({
 }) {
   const ruleIds = context.ruleIds.join(", ");
   const [primarySource, ...furtherSources] = context.sources;
-  const contextShowsResearchTreatment =
+  const [detailsOpen, setDetailsOpen] = useState(false);
+  const summaryShowsResearchTreatment =
+    context.verificationStatus === "RESEARCH_REQUIRED" &&
+    includesAgencyConfirmation([context.deadlineDisplay, context.feeDisplay]);
+  const detailsShowResearchTreatment =
     context.verificationStatus === "RESEARCH_REQUIRED" &&
     includesAgencyConfirmation([
-      context.deadlineDisplay,
-      context.feeDisplay,
       context.conflictText,
       context.noteText,
       context.timelineUnresolvedReason,
@@ -154,11 +156,13 @@ export function PlanContextBody({
 
       {/* A RESEARCH_REQUIRED line has no located primary source, which the organizer has to see
           on the row itself rather than behind an expand: the absence IS the finding. */}
-      {context.verificationStatus === "RESEARCH_REQUIRED" && !contextShowsResearchTreatment && (
-        <p className="check-item__caveat" role="note">
-          {CONFIRM_WITH_AGENCY}
-        </p>
-      )}
+      {context.verificationStatus === "RESEARCH_REQUIRED" &&
+        !summaryShowsResearchTreatment &&
+        !(detailsOpen && detailsShowResearchTreatment) && (
+          <p className="check-item__caveat" role="note">
+            {CONFIRM_WITH_AGENCY}
+          </p>
+        )}
 
       {/* AC 5: the deadline context lives where the work happens. The published prose is optional
           and ten dated rules omit it, so any deadline data at all renders the block.
@@ -211,7 +215,11 @@ export function PlanContextBody({
       )}
 
       {hasContextDetail(context) && (
-        <Disclosure label={`Details for ${displayName(context)}`} className="check-item__detail">
+        <Disclosure
+          label={`Details for ${displayName(context)}`}
+          className="check-item__detail"
+          onOpenChange={setDetailsOpen}
+        >
           {/* No rule ids and no last-verified date here: the summary above already states both, and
               repeating them rendered each row's provenance twice once the row was expanded. */}
           {/* Both readings of an official conflict, verbatim; never resolved to one silently. The

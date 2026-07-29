@@ -46,6 +46,12 @@ const publishedRuleset: { rules: PublishedRule[]; advisories: PublishedRule[] } 
 const ruleset = parseEngineRuleset(publishedRuleset);
 const answerKey = readFileSync(repoFile("docs/test-scenario-answer-key.md"), "utf8");
 const calendar: HolidayCalendar = { id: ruleset.calendarId, holidays: [] };
+const approvedFixtureConsumers = [
+  "docs/PRD.md",
+  "docs/DESIGN.md",
+  "specs/F-101-event-intake.md",
+  "specs/F-201-permit-plan-generator.md",
+] as const;
 
 /**
  * A published rule id: uppercase segments ending in a three-digit suffix. Deliberately narrow so
@@ -585,6 +591,16 @@ const scenarioIdsIn = {
 const sorted = (ids: readonly string[]): string[] => [...new Set(ids)].sort();
 
 describe("the three artifacts name the same scenarios", () => {
+  it.each(approvedFixtureConsumers)("%s selects only fixture v6", (path) => {
+    const versions = [
+      ...readFileSync(repoFile(path), "utf8").matchAll(
+        /(?:test-scenario-answer-key\.md|Scenario fixtures)[^\n]{0,80}?\bv(\d+)\b/gi,
+      ),
+    ].map((match) => match[1]);
+    expect(versions.length, `${path} fixture pointers`).toBeGreaterThan(0);
+    expect([...new Set(versions)]).toEqual(["6"]);
+  });
+
   // Runs before anything parameterized: a disagreement here means every check below is looping
   // over the wrong set, so reporting it as its own failure is clearer than a downstream symptom.
   it("the answer key and the intake fixtures cover the same scenarios", () => {
@@ -638,6 +654,20 @@ describe("the fixture suite and the published ruleset agree", () => {
     const clock = /`today = (\d{4}-\d{2}-\d{2})`/.exec(answerKey)?.[1];
     expect(clock, "the key states its fixture clock").toBeDefined();
     expect(FIXTURE_TODAY).toBe(clock);
+  });
+
+  it("Scenario F documents exactly the material facts that branch its verdict", () => {
+    const documented = [
+      ...(sectionFor("F").match(/material branch facts: ([^.]+)\./)?.[1] ?? "").matchAll(
+        /`([^`]+)`/g,
+      ),
+    ].map((match) => match[1]);
+    expect(documented).toHaveLength(2);
+    expect(
+      planFor("F")
+        .verdictDetail.missingFacts.map((fact) => fact.field)
+        .sort(),
+    ).toEqual(documented.sort());
   });
 
   it("reads a rule id out of every scenario's expected findings", () => {
