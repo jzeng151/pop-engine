@@ -126,7 +126,7 @@ describe.runIf(databaseUrl.length > 0)("plan API (F-201)", () => {
     const response = await request(appWith()).post(`/api/events/${eventId}/plan`);
 
     expect(response.status).toBe(201);
-    expect(response.body.rulesetVersion).toBe("nyc.v2.9");
+    expect(response.body.rulesetVersion).toBe("nyc.v2.10");
     expect(response.body.eventRevision).toBe(1);
     expect(response.body.verdict).toBe("INFEASIBLE");
     expect(response.body.findings.map((finding: { ruleIds: string[] }) => finding.ruleIds)).toEqual(
@@ -487,7 +487,7 @@ describe.runIf(databaseUrl.length > 0)("plan API (F-201)", () => {
       selling_anything: false,
       // Amplified and audible from the street on purpose, to keep this test's second half alive.
       // It used to read DOB-ASSEMBLY-001 as the finding that dates normally while the calendar is
-      // unpublished; nyc.v2.9 carries that business-day rule, so without a sound permit this intake
+      // unpublished; nyc.v2.10 carries that business-day rule, so without a sound permit this intake
       // has NO calendar-dated finding left and the "everything else still dates" guarantee would
       // have silently lost its subject rather than failed. NYPD-SOUND-001 publishes 5 calendar
       // days, needs no holiday list, and is therefore the subject that survives the bump.

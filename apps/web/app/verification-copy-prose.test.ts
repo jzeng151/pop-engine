@@ -92,7 +92,7 @@ const COMPOUND = {
   why: "the compound form of the same claim",
 };
 
-// The formulation the published legend uses, in `rules/nyc-rules.v2.9.json`. Tested after
+// The formulation the published legend uses, in `rules/nyc-rules.v2.10.json`. Tested after
 // normalisation so the hyphenated variant in F-206's Outputs bullet also counts.
 const REQUIRED = /\bnot (?:covered|modeled|modelled) by this ruleset version\b/i;
 
