@@ -1687,6 +1687,12 @@ describe("facts the ruleset publishes rather than the engine assuming (nyc.v2.4)
         "reevaluatedVerdict",
       ]);
     }
+    // Historical eras keep discovery order, not the F-102 demonstration ladder sort.
+    expect(plan.verdictDetail.rescopeSuggestions.map((s) => s.change.value)).not.toEqual([
+      "medium",
+      "small",
+      "private_venue",
+    ]);
   });
 
   it("requires the binding of any version that could have published it", () => {

@@ -155,9 +155,12 @@ export const DEPENDENCY_SEQUENCING_BINDINGS: readonly {
  *     - a definitively-required finding from an agency the current plan does not already
  *       involve — trading one agency's permit burden for another's is not advice (rules out
  *       "hold it in a park", which swaps SAPO for Parks);
- *     - a finding whose deadline is NOT_CALCULABLE — a scope whose timeline the engine
- *       cannot compute is not a scope it can recommend (rules out "hold it on a plaza",
- *       whose deadline depends on an unasked plaza level).
+ *     - a finding whose deadline is NOT_CALCULABLE because an intake fact was never asked —
+ *       a scope whose timeline the engine cannot compute from unanswered fields is not a
+ *       scope it can recommend (rules out "hold it on a plaza", whose deadline depends on an
+ *       unasked plaza level). An undated window solely from an unpublished holiday calendar
+ *       does not trigger this drop: CONDITIONAL already surfaces it, and withholding would
+ *       erase F-102 AC 7's private-venue ladder step under the deployed null calendar.
  *     Re-sizing within the same agency survives all three, which is Scenario A's ladder.
  */
 export const RESCOPE_EXCLUDES_UNKNOWN_VALUES = true;

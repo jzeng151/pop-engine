@@ -181,7 +181,7 @@ describe("Scenario A — Bushwick Street Activation (demo anchor)", () => {
     const privateVenue = suggestions.find((s) => s.change.value === "private_venue");
     expect(medium?.minSlackDays).toBe(5);
     expect(small?.atRiskFindingName ?? small?.minSlackDays).toBeTruthy();
-    // Current-line enrichment names requirements the private-venue re-evaluation introduces.
+    // Current-line enrichment names findings the private-venue re-evaluation introduces.
     expect(privateVenue?.introducedRuleIds).toEqual(
       expect.arrayContaining([
         "ADV-NOISE-CODE-001",
@@ -192,6 +192,23 @@ describe("Scenario A — Bushwick Street Activation (demo anchor)", () => {
     // Non-at-risk suggestions omit at-risk-only enrichment keys (null would still change shape).
     expect(privateVenue !== undefined && !("minSlackDays" in privateVenue)).toBe(true);
     expect(privateVenue !== undefined && !("atRiskFindingName" in privateVenue)).toBe(true);
+  });
+
+  it("keeps the private-venue ladder step when the holiday calendar is unpublished", () => {
+    // Deployed API pins holidays: null (SPEC-CONFLICT #130). AC 7 still requires the third step.
+    const unpublished = { id: ruleset.calendarId, holidays: null };
+    const suggestions = evaluate(intakeA, ruleset, TODAY, unpublished).verdictDetail
+      .rescopeSuggestions;
+    expect(suggestions.map((suggestion) => suggestion.change.value)).toEqual([
+      "medium",
+      "small",
+      "private_venue",
+    ]);
+    const privateVenue = suggestions.find((suggestion) => suggestion.change.value === "private_venue");
+    expect(privateVenue?.reevaluatedVerdict).toBe("CONDITIONAL");
+    expect(privateVenue?.introducedRuleIds).toEqual(
+      expect.arrayContaining(["DOB-ASSEMBLY-001"]),
+    );
   });
 
   it("re-evaluates rescope (a) to the 30-day deadline and five days of slack", () => {

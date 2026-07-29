@@ -132,7 +132,7 @@ function RescopeLadder({
             )}
             {suggestion.introducedRuleIds.length > 0 && (
               <p className="verdict-detail__rescope-introduced">
-                Requirements that would newly apply under this change:{" "}
+                Findings that would newly appear under this change:{" "}
                 <span className="verdict-detail__rule-ids">
                   {suggestion.introducedRuleIds.join(", ")}
                 </span>
@@ -214,11 +214,14 @@ export function VerdictDetailPanel({
   findings?: readonly ConsumedFinding[];
 }) {
   if (verdict === "CONDITIONAL" && detail.missingFacts.length > 0) {
+    const hasThresholdOnlyFact = detail.missingFacts.some((fact) => fact.branches.length === 0);
     return (
       <div className="verdict-detail" data-testid="verdict-detail">
         <h2 className="verdict-detail__section-title">What still depends on your answers</h2>
         <p className="verdict-detail__lede">
-          Each unanswered fact below was evaluated on every published answer.
+          {hasThresholdOnlyFact
+            ? "Each unanswered fact below is listed with its published branches or thresholds — numeric fields cannot be exhaustively branched."
+            : "Each unanswered fact below was evaluated on every published answer."}
           {detail.unresolvedTimelines.length === 0
             ? " The overall verdict stays conditional until those answers land."
             : " Answering them may still leave the verdict conditional when a published filing window cannot be dated from the inputs supplied."}

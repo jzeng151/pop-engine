@@ -976,6 +976,34 @@ describe("F-102 · CONDITIONAL branch table and INFEASIBLE rescope ladder", () =
     expect(within(fact).getByText("SLA one-day window missed")).toBeDefined();
   });
 
+  it("does not claim exhaustive branching when a numeric fact has only thresholds", async () => {
+    stubApi(
+      plan({
+        verdict: "CONDITIONAL",
+        verdictDetail: {
+          ...emptyVerdictDetail,
+          missingFacts: [
+            {
+              field: "tent_area_sqft",
+              branches: [],
+              thresholds:
+                "DOB-TENT-001 applies above 400; exactly 400 is a conditional boundary (confirm with the publishing agency)",
+            },
+          ],
+        },
+      }),
+    );
+    renderPlan();
+    await screen.findByTestId("verdict-detail");
+
+    expect(screen.getByTestId("verdict-detail").textContent).toContain(
+      "cannot be exhaustively branched",
+    );
+    expect(screen.getByTestId("verdict-detail").textContent).not.toContain(
+      "evaluated on every published answer",
+    );
+  });
+
   it("names the blocking finding and lists each re-evaluated rescope for INFEASIBLE", async () => {
     stubApi(
       plan({
@@ -1035,8 +1063,9 @@ describe("F-102 · CONDITIONAL branch table and INFEASIBLE rescope ladder", () =
     expect(suggestions[0]?.textContent).toContain("on Street Activity Permit — Medium");
     expect(suggestions[1]?.textContent).toContain("small");
     expect(suggestions[2]?.textContent).toContain("private venue");
-    expect(suggestions[2]?.textContent).toContain("would newly apply");
+    expect(suggestions[2]?.textContent).toContain("would newly appear");
     expect(suggestions[2]?.textContent).toContain("DOB-ASSEMBLY-001");
+    expect(suggestions[2]?.textContent).toContain("Findings that would newly appear");
     expect(screen.getByTestId("rescope-at-risk-buffer").textContent).toContain(
       "PopEngine's internal planning buffer",
     );

@@ -405,7 +405,10 @@ function buildRescopeSuggestions(
         finding.ruleIds.every((ruleId) => !baseRuleIds.has(ruleId)),
       );
       // R3 (proposals §6): a coverage gap asserts nothing, another agency's permit is not
-      // relief, and a scope the engine cannot date is not a scope it can recommend.
+      // relief, and a scope the engine cannot date because an intake fact was never asked is
+      // not a scope it can recommend (e.g. plaza level). An undated window solely because the
+      // holiday calendar is unpublished (timelineUnresolvedReason / SPEC-CONFLICT #130) must
+      // not erase F-102 AC 7's private-venue ladder step — CONDITIONAL already surfaces it.
       if (introduced.some((finding) => finding.verificationStatus === "COVERAGE_GAP")) continue;
       if (
         introduced.some(
@@ -414,7 +417,14 @@ function buildRescopeSuggestions(
       ) {
         continue;
       }
-      if (introduced.some((finding) => finding.deadlineStatus === "not_calculable")) continue;
+      if (
+        introduced.some(
+          (finding) =>
+            finding.deadlineStatus === "not_calculable" && finding.deadlineUnknownFields.length > 0,
+        )
+      ) {
+        continue;
+      }
 
       const candidateIds = new Set(ruleIdsOf(candidate.findings));
       const suggestion: RescopeSuggestion = {
@@ -448,7 +458,11 @@ function buildRescopeSuggestions(
       }
     }
   }
-  // F-102 AC 7 demonstration ladder: Medium → Small → private venue (Large is the blocked base).
+  // F-102 AC 7 demonstration ladder on the current ruleset line only. Historical eras keep
+  // discovery order so AD-7 replay stays byte-stable with their original suggestion sequence.
+  if (!emitsRescopeEnrichment(ruleset.rulesetVersion)) {
+    return suggestions;
+  }
   return [...suggestions].sort((left, right) => rescopeLadderRank(left) - rescopeLadderRank(right));
 }
 
