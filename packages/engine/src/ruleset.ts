@@ -618,7 +618,7 @@ export const UNCONSUMED_INTAKE_FIELDS: Readonly<Record<string, string>> = {
   borough: "Display and future jurisdiction routing (F-207). No NYC rule varies by borough today.",
   food_affinity_private_exception_claimed:
     "Collected for the Health Code Art. 88 private-function exemption, which DOHMH-EXEMPTION-001 " +
-    "renders as an advisory on event_open_to_public alone. Open on issue #89.",
+    "renders as an advisory on event_open_to_public alone. Open on issue #194.",
   venue_has_assembly_approval:
     "Confirms only that an assembly approval exists; it cannot establish whether the current PACO " +
     "and PA permit cover the event's exact space, use, occupancy, and layout. Whether exact coverage " +
