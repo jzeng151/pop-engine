@@ -1,43 +1,46 @@
-/* Route-local styles for the F-202 checklist.
-   Values are DESIGN-SYSTEM.md's: surface cards on the slate canvas, high-clarity borders, and the
-   status badges the system specifies (neutral slate, amber, emerald, rose, plus slate-900 for
-   active UI). No device the system does not name. */
+/* F-202 checklist — drafting cards on the shared pe-shell canvas. */
 
 .checklist {
-  --badge-neutral-bg: #f1f5f9;
-  --badge-neutral-text: #334155;
-  --badge-neutral-line: #cbd5e1;
-  --badge-amber-bg: #fffbeb;
-  --badge-amber-text: #92400e;
-  --badge-amber-line: #fde68a;
-  --badge-emerald-bg: #ecfdf5;
-  --badge-emerald-text: #065f46;
-  --badge-emerald-line: #a7f3d0;
-  --badge-rose-bg: #fff1f2;
-  --badge-rose-text: #9f1239;
-  --badge-rose-line: #fecdd3;
+  --badge-neutral-bg: var(--pe-paper-deep);
+  --badge-neutral-text: var(--pe-steel);
+  --badge-neutral-line: var(--pe-rule);
+  --badge-amber-bg: var(--pe-amber-wash);
+  --badge-amber-text: var(--pe-amber-deep);
+  --badge-amber-line: var(--pe-amber);
+  --badge-neon-bg: var(--pe-neon-wash);
+  --badge-neon-text: var(--pe-neon);
+  --badge-neon-line: var(--pe-neon);
+  --badge-emerald-bg: rgba(34, 139, 34, 0.12);
+  --badge-emerald-text: var(--pe-clear);
+  --badge-emerald-line: var(--pe-clear);
+  --badge-rose-bg: rgba(155, 45, 31, 0.1);
+  --badge-rose-text: var(--pe-rose);
+  --badge-rose-line: var(--pe-rose);
 
-  max-width: 44rem;
   margin: 0 auto;
+  display: flex;
+  flex-direction: column;
+  gap: var(--pe-stack);
 }
 
 .checklist__lede,
 .checklist__rollup {
-  margin: 0 0 1.25rem;
+  margin: 0;
   color: var(--muted);
 }
 
 .checklist__rollup {
   font-weight: 600;
   color: var(--ink);
+  font-family: var(--pe-font-mono);
 }
 
 .checklist__flag {
-  padding: 0.75rem 1rem;
-  margin: 0 0 1.25rem;
+  padding: 0.85rem 1rem;
+  margin: 0;
   background: var(--warning-bg);
-  border: 1px solid var(--warning-line);
-  border-radius: 0.5rem;
+  border: 1.5px solid var(--warning-line);
+  border-radius: var(--pe-radius);
 }
 
 .checklist__actions {
@@ -45,14 +48,15 @@
   flex-direction: column;
   align-items: flex-start;
   gap: 0.6rem;
-  margin-bottom: 1.25rem;
+  margin: 0.25rem 0;
 }
 
 .checklist__empty {
-  padding: 0.9rem 1rem;
-  border: 1px solid var(--line);
-  border-radius: 0.5rem;
+  padding: var(--pe-card-pad);
+  border: var(--pe-border);
+  border-radius: var(--pe-radius);
   color: var(--muted);
+  background: var(--pe-surface);
 }
 
 .checklist__items,
@@ -63,20 +67,21 @@
 }
 
 .checklist__context {
-  margin-top: 2rem;
+  margin-top: 1.5rem;
 }
 
 .checklist__context h2 {
   margin: 0;
-  font-size: 1rem;
+  font-family: var(--pe-font-display);
+  font-size: 1.25rem;
 }
 
-/* An architectural surface card per requirement. */
 .check-item {
-  padding: 0.9rem 1rem;
-  background: #fff;
-  border: 1px solid var(--line);
-  border-radius: 0.5rem;
+  padding: var(--pe-card-pad);
+  background: var(--pe-card);
+  border: var(--pe-border);
+  border-radius: var(--pe-radius);
+  box-shadow: var(--pe-shadow);
 }
 
 .check-item__head {
@@ -85,51 +90,53 @@
   align-items: baseline;
   justify-content: space-between;
   gap: 0.5rem;
+  padding-bottom: 0.5rem;
+  border-bottom: 1px solid var(--pe-divider);
 }
 
 .check-item__name {
   margin: 0;
   font-size: 1rem;
+  font-weight: 700;
 }
 
-/* AC 6: a requirement the current plan no longer raises is struck through, never removed. */
 .check-item--dropped .check-item__name {
   text-decoration: line-through;
 }
 
 .check-item__retained {
-  margin: 0.6rem 0 0;
-  padding: 0.6rem 0.75rem;
+  margin: 0.65rem 0 0;
+  padding: 0.65rem 0.8rem;
   background: var(--warning-bg);
-  border: 1px solid var(--warning-line);
-  border-radius: 0.375rem;
+  border: 1.5px solid var(--warning-line);
+  border-radius: var(--pe-radius);
 }
 
+
 .badge {
-  font-size: 0.75rem;
-  letter-spacing: 0.04em;
+  font-family: var(--pe-font-mono);
+  font-size: 0.7rem;
+  letter-spacing: 0.06em;
   text-transform: uppercase;
   padding: 0.15rem 0.45rem;
-  border-radius: 0.25rem;
+  border-radius: var(--pe-radius);
   background: var(--badge-neutral-bg);
   color: var(--badge-neutral-text);
   border: 1px solid var(--badge-neutral-line);
 }
 
-/* F-206 AC 2's verification badges, treated exactly as the plan lines treat them: the two states
-   that qualify what a line says carry amber, every other state is neutral metadata. Matching
-   rather than improving on it, so one status does not mean two things across two views. */
 .badge--official_conflict,
 .badge--research_required {
-  background: var(--badge-amber-bg);
-  color: var(--badge-amber-text);
-  border-color: var(--badge-amber-line);
+  background: var(--badge-neon-bg);
+  color: var(--badge-neon-text);
+  border-color: var(--badge-neon-line);
+  box-shadow: none;
 }
 
 .badge--in_progress {
-  background: var(--ink);
-  color: #fff;
-  border-color: var(--ink);
+  background: var(--badge-amber-bg);
+  color: var(--badge-amber-text);
+  border-color: var(--badge-amber-line);
 }
 
 .badge--submitted {
@@ -154,21 +161,21 @@
   display: flex;
   flex-wrap: wrap;
   gap: 0.25rem 0.75rem;
-  margin: 0.35rem 0 0;
+  margin: 0.4rem 0 0;
   font-size: 0.875rem;
   color: var(--muted);
 }
 
 .check-item__rule-ids {
-  font-family: ui-monospace, monospace;
+  font-family: var(--pe-font-mono);
 }
 
 .check-item__caveat {
-  margin: 0.6rem 0 0;
-  padding: 0.6rem 0.75rem;
+  margin: 0.65rem 0 0;
+  padding: 0.65rem 0.8rem;
   background: var(--warning-bg);
-  border: 1px solid var(--warning-line);
-  border-radius: 0.375rem;
+  border: 1.5px solid var(--warning-line);
+  border-radius: var(--pe-radius);
 }
 
 .check-item__text,
@@ -179,22 +186,29 @@
 
 .check-item__citations {
   list-style: none;
-  margin: 0.6rem 0 0;
-  padding: 0.6rem 0 0;
-  border-top: 1px solid var(--line);
+  margin: 0.65rem 0 0;
+  padding: 0.65rem 0 0;
+  border-top: 1px solid var(--pe-divider);
   font-size: 0.875rem;
 }
 
 .check-item__citations a {
   margin-left: 0.5rem;
+  color: var(--pe-cyan);
+  font-weight: 600;
+  text-decoration: underline;
+  text-decoration-color: rgba(204, 85, 0, 0.4);
+  text-underline-offset: 0.15em;
 }
 
-/* AC 8: the snapshot a row's displayed values came from, when it is not the one the banner
-   states. Metadata, in the system's monospace tag treatment. */
+.check-item__citations a:hover {
+  text-decoration-color: var(--pe-amber-deep);
+}
+
 .check-item__provenance {
-  margin: 0.6rem 0 0;
-  font-family: ui-monospace, monospace;
-  font-size: 0.8125rem;
+  margin: 0.65rem 0 0;
+  font-family: var(--pe-font-mono);
+  font-size: 0.78rem;
   letter-spacing: 0.02em;
   color: var(--muted);
 }
@@ -207,7 +221,7 @@
   gap: 0.6rem 1rem;
   margin-top: 0.9rem;
   padding-top: 0.9rem;
-  border-top: 1px solid var(--line);
+  border-top: 1px solid var(--pe-divider);
 }
 
 .check-item__field {
@@ -224,26 +238,11 @@
 
 .check-item__select,
 .check-item__notes {
-  font: inherit;
-  padding: 0.5rem 0.6rem;
-  min-height: 2.75rem;
-  border: 1px solid var(--line);
-  border-radius: 0.375rem;
-  background: #fff;
+  min-width: 0;
 }
 
 .check-item__notes {
   min-width: 16rem;
-}
-
-.check-item__button {
-  font: inherit;
-  padding: 0.55rem 1rem;
-  min-height: 2.75rem;
-  border: 1px solid var(--ink);
-  border-radius: 0.375rem;
-  background: #fff;
-  cursor: pointer;
 }
 
 .check-item__button:disabled {
@@ -271,4 +270,5 @@
   margin: 0.6rem 0 0;
   color: var(--error);
   font-size: 0.9375rem;
+  font-weight: 600;
 }

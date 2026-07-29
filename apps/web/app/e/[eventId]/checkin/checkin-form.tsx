@@ -70,7 +70,7 @@ export function CheckinForm({ eventId, apiBaseUrl }: CheckinFormProps) {
   if (phase.kind === "success") {
     return (
       <div className="checkin checkin__success" role="status">
-        <p className="checkin__eyebrow">{phase.eventName}</p>
+        <p className="pe-eyebrow">{phase.eventName}</p>
         <h1>You&rsquo;re checked in, {phase.name}</h1>
         <p className="checkin__lede">Thanks for coming. Show this screen if a host asks.</p>
         <p className="checkin__note">Synthetic demo data only — not a production guest list.</p>
@@ -102,7 +102,7 @@ export function CheckinForm({ eventId, apiBaseUrl }: CheckinFormProps) {
         void save();
       }}
     >
-      <p className="checkin__eyebrow">{phase.eventName}</p>
+      <p className="pe-eyebrow">{phase.eventName}</p>
       <h1 className="checkin__title">Check in</h1>
       <p className="checkin__lede">Two fields. No account. No app install.</p>
 

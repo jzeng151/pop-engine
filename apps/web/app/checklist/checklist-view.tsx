@@ -430,15 +430,19 @@ export function ChecklistView({ apiBaseUrl, eventId }: { apiBaseUrl: string; eve
 
   if (state.status === "loading") {
     return (
-      <p className="intake__lede" role="status">
-        Loading your checklist…
-      </p>
+      <main className="checklist">
+        <p className="pe-eyebrow">PopEngine · Checklist</p>
+        <p className="intake__lede" role="status">
+          Loading your checklist…
+        </p>
+      </main>
     );
   }
 
   if (state.status !== "ready") {
     return (
       <main className="checklist">
+        <p className="pe-eyebrow">PopEngine · Checklist</p>
         <h1>Your compliance checklist</h1>
         <p className="intake__error" role="alert">
           {state.message}
@@ -469,6 +473,7 @@ export function ChecklistView({ apiBaseUrl, eventId }: { apiBaseUrl: string; eve
 
   return (
     <main className="checklist">
+      <p className="pe-eyebrow">PopEngine · Checklist</p>
       <h1>Your compliance checklist</h1>
 
       {/* The snapshot the rows below are read against, both values off the checklist's own current

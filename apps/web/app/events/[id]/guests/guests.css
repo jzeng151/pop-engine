@@ -1,11 +1,10 @@
-/* Route-local styles for F-302 organizer guest list. */
+/* F-302 organizer guest list. */
 
 .guests {
-  max-width: 40rem;
   margin: 0 auto;
   display: flex;
   flex-direction: column;
-  gap: 1rem;
+  gap: var(--pe-stack);
 }
 
 .guests__lede,
@@ -20,13 +19,15 @@
 
 .guests__count {
   margin: 0;
-  font-size: 1.1rem;
+  font-family: var(--pe-font-mono);
+  font-size: 1.15rem;
   font-weight: 600;
 }
 
 .guests__error {
   margin: 0;
   color: var(--error);
+  font-weight: 600;
 }
 
 .guests__list {
@@ -35,7 +36,7 @@
   padding: 0;
   display: flex;
   flex-direction: column;
-  gap: 0.75rem;
+  gap: 0.65rem;
 }
 
 .guests__row {
@@ -44,8 +45,11 @@
   align-items: center;
   justify-content: space-between;
   gap: 0.5rem 1rem;
-  padding: 0.75rem 0;
-  border-bottom: 1px solid var(--line);
+  padding: var(--pe-card-pad);
+  border: var(--pe-border);
+  border-radius: var(--pe-radius);
+  background: var(--pe-card);
+  box-shadow: var(--pe-shadow);
 }
 
 .guests__identity {
@@ -55,12 +59,13 @@
 }
 
 .guests__name {
-  font-weight: 600;
+  font-weight: 700;
 }
 
 .guests__meta {
   color: var(--muted);
-  font-size: 0.9rem;
+  font-family: var(--pe-font-mono);
+  font-size: 0.84rem;
 }
 
 .guests__cancelled {
@@ -69,12 +74,7 @@
 }
 
 .guests__cancel {
-  font: inherit;
-  padding: 0.4rem 0.75rem;
-  border: 1px solid var(--line);
-  border-radius: 0.35rem;
-  background: #fff;
-  cursor: pointer;
+  padding: 0.45rem 0.8rem;
 }
 
 .guests__cancel:disabled {
@@ -86,3 +86,4 @@
   margin: 0;
   color: var(--muted);
 }
+
