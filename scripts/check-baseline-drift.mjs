@@ -1616,7 +1616,7 @@ const f203PrdDecision =
   /(?:^|\r?\n)\s*\*\*(?:Status|Issue #127 amendment|(?:Later\s+)?Decisions?)\b/i;
 const f203BaselineDecision = /^\s*\*\*(?:Status|(?:Later\s+)?Decisions?)\b/i;
 const f203BaselineManifestRow =
-  /^\s*\|\s*(?:Product requirements|Feature registry \+ phasing|Phase 1–1\.5 specs)\s*\|/i;
+  /^\s*\|\s*(Product requirements|Feature registry \+ phasing|Phase 1–1\.5 specs)\s*\|/i;
 const f203BaselineManifestScope = new RegExp(
   `(?:\\bF-203\\b(?:\\s+scope amendment[^:|·]*:)?|` +
     "`specs/F-203-deadline-alerts\\.md`\\s+scope amended[^:|·]*:)" +
@@ -1650,6 +1650,8 @@ const f203NoAcceptanceCriteria =
   /\b(?:no|without)\s+(?:Phase\s+2\s+)?acceptance criteria\b|\bacceptance criteria\b[^.]*\b(?:none|not (?:defined|scheduled|included)|non-goal)\b/i;
 const f203NoScopeChange =
   /\b(?:does|do|did|will)\s+not\s+(?:change|alter|modify)\s+(?:the\s+)?F-203(?:'s)?\s+(?:scope|depth|phase|scheduling)\s*[.!]?\s*$/i;
+const isF203NonGoalCriterion = (text) =>
+  f203CriterionNonGoal.test(text) || f203NoAcceptanceCriteria.test(text);
 const f203DecisionScope =
   /\b(?:scope|depth|phase\s+\d+|planned|unplanned|scheduled|unscheduled|scheduling|acceptance criteria)\b/i;
 const f203Planning = /\bplanned,\s+(?:not scheduled|unscheduled)\b/i;
@@ -1657,9 +1659,25 @@ const f203Negation =
   /\b(?:not planned|unplanned)\b|\b(?:is|are|was|were|has been|have been)\s+(?:superseded|rejected)\b|\b(?:no|without)\s+(?:alert )?(?:escalations|digests|team reminders|per-user preferences)\b/i;
 const f203SchedulingConflict =
   /\b(?:(?:is|are|was|were|has been|have been|will be|must be|may be|can be)\s+(?:now\s+)?scheduled|now scheduled)\b/i;
-const f203ConflictingPhase = /\bPhase\s+(?!2\b)\d+\s+(?:scope|depth)\b/i;
-const hasF203ConflictingPhase = (text) =>
-  /\bPhase\s+2\b/i.test(text) && f203ConflictingPhase.test(text);
+function hasF203ConflictingPhase(text) {
+  const phases = [];
+  for (const clause of text.split(/[.!?;]+/)) {
+    const features = [...clause.matchAll(/\bF-\d+\b/gi)];
+    for (const [index, feature] of features.entries()) {
+      if (feature[0].toUpperCase() !== "F-203") continue;
+      const segment = clause.slice(feature.index, features[index + 1]?.index ?? clause.length);
+      phases.push(...[...segment.matchAll(/\bPhase\s+(\d+)\b/gi)].map((match) => match[1]));
+    }
+    phases.push(
+      ...[
+        ...clause.matchAll(
+          /\bPhase\s+(\d+)\b(?:(?!\bF-\d+\b).)*\b(?:scope|depth)\b(?:(?!\bF-\d+\b).)*\bunder F-203\b/gi,
+        ),
+      ].map((match) => match[1]),
+    );
+  }
+  return phases.includes("2") && phases.some((phase) => phase !== "2");
+}
 const f203SpecAssignment =
   /\bF-203\b[^.]*\b(?:keeps|retains|owns|includes)\b|\b(?:remain|remains|are)\b[^.]*\bunder F-203\b/i;
 const f203Failures = [];
@@ -1670,18 +1688,21 @@ function activeMarkdown(markdown) {
   let continuesListItem = false;
   return lines
     .map((line) => {
-      const marker = /^ {0,3}(`{3,}|~{3,})(.*)$/.exec(line);
-      if (fence === null && marker) {
-        fence = marker[1];
+      const marker = /^([ \t]*)(`{3,}|~{3,})(.*)$/.exec(line);
+      const markerIndent = marker?.[1].replace(/\t/g, "    ").length ?? 0;
+      const isFenceMarker =
+        marker !== null && (markerIndent <= 3 || continuesListItem || fence !== null);
+      if (fence === null && isFenceMarker) {
+        fence = marker[2];
         continuesListItem = false;
         return "";
       }
       if (
         fence !== null &&
-        marker &&
-        marker[1][0] === fence[0] &&
-        marker[1].length >= fence.length &&
-        marker[2].trim() === ""
+        isFenceMarker &&
+        marker[2][0] === fence[0] &&
+        marker[2].length >= fence.length &&
+        marker[3].trim() === ""
       ) {
         fence = null;
         return "";
@@ -1753,7 +1774,7 @@ for (const relative of f203Artifacts) {
         (criterion) =>
           /^\s*(?:[-*+]|\d+[.)])\s+/.test(criterion) &&
           f203CapabilityMention.test(criterion) &&
-          !f203CriterionNonGoal.test(criterion),
+          !isF203NonGoalCriterion(criterion),
       );
     const addsUnscheduledProseCriterion = acceptanceCriteriaSections
       .flatMap((section) => section.split(/\r?\n\s*\r?\n/))
@@ -1767,7 +1788,7 @@ for (const relative of f203Artifacts) {
           prose !== "" &&
           !/^(?:[-*+]|\d+[.)])\s+|\|/.test(prose) &&
           f203CapabilityMention.test(prose) &&
-          !f203CriterionNonGoal.test(prose)
+          !isF203NonGoalCriterion(prose)
         );
       });
     const tableLines = acceptanceCriteriaText.split(/\r?\n/);
@@ -1781,7 +1802,7 @@ for (const relative of f203Artifacts) {
         return false;
       }
       const criterion = row.replace(/^\s*\|\s*|\s*\|\s*$/g, "");
-      return f203CapabilityMention.test(criterion) && !f203CriterionNonGoal.test(criterion);
+      return f203CapabilityMention.test(criterion) && !isF203NonGoalCriterion(criterion);
     });
     const addsHeadingScopedCriterion = acceptanceCriteriaSections.some((section) => {
       const lines = section.split(/\r?\n/);
@@ -1794,7 +1815,7 @@ for (const relative of f203Artifacts) {
           else if (capabilityHeadingLevel !== null && heading[1].length <= capabilityHeadingLevel) {
             capabilityHeadingLevel = null;
           }
-          return namesCapability && !f203CriterionNonGoal.test(line);
+          return namesCapability && !isF203NonGoalCriterion(line);
         }
         if (capabilityHeadingLevel === null) return false;
         const isListCriterion = /^\s*(?:[-*+]|\d+[.)])\s+/.test(line);
@@ -1804,8 +1825,7 @@ for (const relative of f203Artifacts) {
           !tableDelimiter.test(lines[index + 1] ?? "");
         const isProseCriterion = line.trim() !== "" && !isListCriterion && !/^\s*\|/.test(line);
         return (
-          (isListCriterion || isTableCriterion || isProseCriterion) &&
-          !f203CriterionNonGoal.test(line)
+          (isListCriterion || isTableCriterion || isProseCriterion) && !isF203NonGoalCriterion(line)
         );
       });
     });
@@ -1881,6 +1901,7 @@ for (const relative of f203Artifacts) {
         return isListAssignment && (ownsF203 || (namesScope && ownerNamesF203));
       }
       if (relative === "docs/BASELINE.md") {
+        if (isOnlyNonMutatingF203Reference(normalized)) return false;
         if (f203BaselineManifestRow.test(raw)) return true;
         return f203BaselineDecision.test(raw) && lower.includes("f-203") && addressesScope;
       }
@@ -1944,13 +1965,20 @@ for (const relative of f203Artifacts) {
         const remaining = normalized.replace(f203BaselineManifestScope, "").replace(/`[^`]*`/g, "");
         return f203SpecAssignment.test(remaining);
       }
-      return !f203BaselineScope.test(normalized);
+      const remaining = normalized.replace(f203BaselineScope, "");
+      return !f203BaselineScope.test(normalized) || f203SpecAssignment.test(remaining);
     }
     return (
       !f203SpecScope.test(normalized) ||
       !/\bper-user preferences\b[^.]*\bunder F-203\b/i.test(normalized)
     );
   });
+  const baselineManifestRows = scopeStatements.filter(({ raw }) =>
+    f203BaselineManifestRow.test(raw),
+  );
+  const baselineManifestConcerns = new Set(
+    baselineManifestRows.map(({ raw }) => f203BaselineManifestRow.exec(raw)?.[1].toLowerCase()),
+  );
   const missingRequiredAssignment =
     ((relative === "docs/ROADMAP.md" || relative === "docs/PRD.md") &&
       (!scopeStatements.some(({ raw }) => /^\s*(?:[-*+]|\d+[.)])\s+/.test(raw)) ||
@@ -1960,7 +1988,7 @@ for (const relative of f203Artifacts) {
             : f203PrdDecision.test(raw),
         ))) ||
     (relative === "docs/BASELINE.md" &&
-      scopeStatements.filter(({ raw }) => f203BaselineManifestRow.test(raw)).length !== 3) ||
+      (baselineManifestRows.length !== 3 || baselineManifestConcerns.size !== 3)) ||
     (relative === "specs/F-203-deadline-alerts.md" &&
       !scopeStatements.some(
         ({ raw, normalized }) =>

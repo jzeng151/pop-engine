@@ -1881,6 +1881,29 @@ describe.concurrent("F-203 Phase 2 scope agreement (SPEC-CONFLICT #127 item 1)",
     expect(output).toContain("F-203 scope check passed");
   });
 
+  it("accepts a non-mutating F-203 baseline decision", async () => {
+    const { status, output } = await runOn({
+      "docs/BASELINE.md":
+        SQUARE_RECONCILED["docs/BASELINE.md"] +
+        "\n**Decision:** This does not change F-203 scope.\n",
+    });
+
+    expect(status, output).toBe(0);
+    expect(output).toContain("F-203 scope check passed");
+  });
+
+  it("rejects scope appended to the canonical baseline decision", async () => {
+    const { status, output } = await runOn({
+      "docs/BASELINE.md": SQUARE_RECONCILED["docs/BASELINE.md"].replace(
+        "This adds no Phase 2 acceptance criteria.",
+        "This adds no Phase 2 acceptance criteria. F-203 also includes automatic permit filing.",
+      ),
+    });
+
+    expect(status).toBe(1);
+    expect(output).toContain("docs/BASELINE.md must affirmatively assign");
+  });
+
   it("accepts a plural baseline decision with unrelated Phase 2 prose", async () => {
     const { status, output } = await runOn({
       "docs/BASELINE.md":
@@ -1940,6 +1963,36 @@ describe.concurrent("F-203 Phase 2 scope agreement (SPEC-CONFLICT #127 item 1)",
 
       expect(status).toBe(1);
       expect(output).toContain(`${relative} must affirmatively assign`);
+    },
+  );
+
+  it.each(["docs/ROADMAP.md", "docs/PRD.md"])(
+    "rejects an F-203 phase reassignment appended to the %s decision",
+    async (relative) => {
+      const { status, output } = await runOn({
+        [relative]: SQUARE_RECONCILED[relative].replace(
+          "unscheduled Phase 2 depth.",
+          "unscheduled Phase 2 depth. F-203 is assigned to Phase 3.",
+        ),
+      });
+
+      expect(status).toBe(1);
+      expect(output).toContain(`${relative} must affirmatively assign`);
+    },
+  );
+
+  it.each(["docs/ROADMAP.md", "docs/PRD.md"])(
+    "accepts an unrelated feature's phase assignment in the %s decision",
+    async (relative) => {
+      const { status, output } = await runOn({
+        [relative]: SQUARE_RECONCILED[relative].replace(
+          "unscheduled Phase 2 depth.",
+          "unscheduled Phase 2 depth. F-204 is assigned to Phase 3.",
+        ),
+      });
+
+      expect(status, output).toBe(0);
+      expect(output).toContain("F-203 scope check passed");
     },
   );
 
@@ -2221,6 +2274,17 @@ describe.concurrent("F-203 Phase 2 scope agreement (SPEC-CONFLICT #127 item 1)",
     });
 
     expect(status).toBe(0);
+    expect(output).toContain("F-203 scope check passed");
+  });
+
+  it("accepts a criterion that explicitly denies Phase 2 acceptance criteria", async () => {
+    const { status, output } = await runOn({
+      "specs/F-203-deadline-alerts.md":
+        SQUARE_RECONCILED["specs/F-203-deadline-alerts.md"] +
+        "\n## Acceptance Criteria\n\n8. Weekly digests have no acceptance criteria yet.\n",
+    });
+
+    expect(status, output).toBe(0);
     expect(output).toContain("F-203 scope check passed");
   });
 
@@ -2512,6 +2576,19 @@ describe.concurrent("F-203 Phase 2 scope agreement (SPEC-CONFLICT #127 item 1)",
     expect(output).toContain("docs/ROADMAP.md must affirmatively assign");
   });
 
+  it("ignores an F-203 assignment in a fenced example nested under a list item", async () => {
+    const { status, output } = await runOn({
+      "docs/ROADMAP.md":
+        SQUARE_RECONCILED["docs/ROADMAP.md"] +
+        "\n- Example only:\n    ```md\n" +
+        "    F-203 also includes automatic permit filing.\n" +
+        "    ```\n",
+    });
+
+    expect(status, output).toBe(0);
+    expect(output).toContain("F-203 scope check passed");
+  });
+
   it("rejects capabilities appended to the F-203 assignment", async () => {
     const { status, output } = await runOn({
       "docs/ROADMAP.md": SQUARE_RECONCILED["docs/ROADMAP.md"].replace(
@@ -2598,6 +2675,19 @@ describe.concurrent("F-203 Phase 2 scope agreement (SPEC-CONFLICT #127 item 1)",
         /^\| Product requirements \|.*\n/m,
         "",
       ),
+    });
+
+    expect(status).toBe(1);
+    expect(output).toContain("docs/BASELINE.md must affirmatively assign");
+  });
+
+  it("requires one F-203 manifest row for each expected concern", async () => {
+    const baseline = SQUARE_RECONCILED["docs/BASELINE.md"];
+    const featureRow = baseline
+      .split("\n")
+      .find((line) => line.startsWith("| Feature registry + phasing |"));
+    const { status, output } = await runOn({
+      "docs/BASELINE.md": baseline.replace(/^\| Product requirements \|.*$/m, featureRow),
     });
 
     expect(status).toBe(1);
