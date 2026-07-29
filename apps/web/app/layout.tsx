@@ -1,4 +1,5 @@
 import type { ReactNode } from "react";
+import { Fraunces, IBM_Plex_Mono, Nunito_Sans } from "next/font/google";
 import "./globals.css";
 
 export const metadata = {
@@ -6,16 +7,36 @@ export const metadata = {
   description: "Synthetic-data demo, access-gated (AD-12).",
 };
 
+/* Self-hosted via next/font so check-in and other routes do not block on fonts.googleapis.com. */
+const fraunces = Fraunces({
+  subsets: ["latin"],
+  weight: ["600"],
+  variable: "--font-fraunces",
+  display: "swap",
+  axes: ["opsz"],
+});
+
+const nunitoSans = Nunito_Sans({
+  subsets: ["latin"],
+  weight: ["400", "600", "700"],
+  variable: "--font-nunito-sans",
+  display: "swap",
+});
+
+const ibmPlexMono = IBM_Plex_Mono({
+  subsets: ["latin"],
+  weight: ["400", "500", "600"],
+  variable: "--font-ibm-plex-mono",
+  display: "swap",
+});
+
 export default function RootLayout({ children }: { children: ReactNode }) {
   return (
-    <html lang="en">
+    <html
+      lang="en"
+      className={`${fraunces.variable} ${nunitoSans.variable} ${ibmPlexMono.variable}`}
+    >
       <body>
-        <link rel="preconnect" href="https://fonts.googleapis.com" />
-        <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="anonymous" />
-        <link
-          href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,600&family=IBM+Plex+Mono:wght@400;500;600&family=Nunito+Sans:wght@400;600;700&display=swap"
-          rel="stylesheet"
-        />
         <div className="pe-shell">{children}</div>
       </body>
     </html>

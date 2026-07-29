@@ -148,25 +148,24 @@
   transform: rotateX(18deg) rotateY(-6deg) translateZ(12px);
   transform-style: preserve-3d;
   transform-origin: 50% 100%;
-  animation: ops-slab-float 4.2s ease-in-out infinite;
+  /* One-shot entrance only — infinite float drains battery on door phones (F-401). */
+  animation: ops-slab-enter 700ms cubic-bezier(0.2, 0.8, 0.2, 1) both;
   transition:
     transform 280ms cubic-bezier(0.2, 0.8, 0.2, 1),
     border-color 200ms ease,
     background 200ms ease;
 }
 
-@keyframes ops-slab-float {
-  0%,
-  100% {
-    transform: rotateX(18deg) rotateY(-6deg) translateZ(12px);
+@keyframes ops-slab-enter {
+  from {
+    transform: rotateX(26deg) rotateY(-10deg) translateZ(0);
   }
-  50% {
-    transform: rotateX(14deg) rotateY(-3deg) translateZ(22px);
+  to {
+    transform: rotateX(18deg) rotateY(-6deg) translateZ(12px);
   }
 }
 
 .ops__gauge:hover {
-  animation: none;
   transform: rotateX(8deg) rotateY(0deg) translateZ(28px);
 }
 

@@ -239,10 +239,7 @@
 .check-item__select,
 .check-item__notes {
   min-width: 0;
-}
-
-.check-item__notes {
-  min-width: 16rem;
+  width: 100%;
 }
 
 .check-item__button:disabled {

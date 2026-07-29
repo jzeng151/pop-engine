@@ -1,9 +1,10 @@
 /* PopEngine — Warm & Authentic (cream, earth tones, burnt orange + forest green). */
 
 :root {
-  --pe-font-display: "Fraunces", Georgia, "Times New Roman", serif;
-  --pe-font-body: "Nunito Sans", "Segoe UI", system-ui, sans-serif;
-  --pe-font-mono: "IBM Plex Mono", ui-monospace, Menlo, monospace;
+  /* next/font sets --font-* on <html>; fallbacks keep layout usable without them. */
+  --pe-font-display: var(--font-fraunces, "Fraunces"), Georgia, "Times New Roman", serif;
+  --pe-font-body: var(--font-nunito-sans, "Nunito Sans"), "Segoe UI", system-ui, sans-serif;
+  --pe-font-mono: var(--font-ibm-plex-mono, "IBM Plex Mono"), ui-monospace, Menlo, monospace;
 
   /* Cream canvas + sand depth */
   --pe-paper: #fffdd0;
@@ -76,7 +77,6 @@ body {
   isolation: isolate;
   min-height: 100dvh;
   padding: 2rem 1.5rem 3.5rem;
-  overflow-x: hidden;
   color: var(--pe-ink);
   font-family: var(--pe-font-body);
   background:

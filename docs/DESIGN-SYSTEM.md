@@ -4,7 +4,9 @@
 **AMENDMENT:** Amended 2026-07-29 for the Warm & Authentic visual foundation (this PR).
 **AUTHORITATIVE FOR:** visual foundations and intake-card design language. Approved feature specs remain authoritative for feature behavior, regulatory/safety copy, and required UI states.
 
-This document describes the Warm & Authentic CSS foundation in `apps/web/app/globals.css`. It does not add a CSS framework or require additional font packages.
+**Governance gate:** This is a baseline design-system amendment, not a roadmap F-id. Visual tokens and shared CSS land only while `docs/DESIGN-SYSTEM.md` remains `APPROVED` in `docs/BASELINE.md` (documentation governance). Do not invent a product F-id for theme work; feature behavior still requires an approved `specs/F-xxx-*.md`. Scope of this amendment is presentation only — no new endpoints, tables, regulatory copy, or feature acceptance criteria.
+
+This document describes the Warm & Authentic CSS foundation in `apps/web/app/globals.css`. It does not add a CSS framework. Display, body, and mono faces are self-hosted through `next/font/google` in `apps/web/app/layout.tsx` (no runtime request to fonts.googleapis.com).
 
 ---
 
@@ -38,9 +40,9 @@ This document describes the Warm & Authentic CSS foundation in `apps/web/app/glo
 
 ## 3. Typography Hierarchy
 
-* **Display:** `Fraunces`, Georgia, serif (`--pe-font-display`) for page titles.
-* **Body:** `Nunito Sans`, system sans-serif (`--pe-font-body`) for labels, controls, and prose.
-* **Metadata:** `IBM Plex Mono`, system monospace (`--pe-font-mono`) for eyebrow labels, counters, and compact status details.
+* **Display:** Self-hosted `Fraunces` with Georgia fallback (`--pe-font-display`) for page titles.
+* **Body:** Self-hosted `Nunito Sans` with system sans fallback (`--pe-font-body`) for labels, controls, and prose.
+* **Metadata:** Self-hosted `IBM Plex Mono` with system mono fallback (`--pe-font-mono`) for eyebrow labels, counters, and compact status details.
 
 | Role | CSS foundation | Usage |
 | :--- | :--- | :--- |
