@@ -1611,9 +1611,10 @@ const f203BaselineScope = new RegExp(
   `\\bF-203\\b\\s+(?:keeps|retains)\\s+${f203Capabilities.source}\\s+as its planned,`,
   "i",
 );
-const f203RoadmapDecision = /(?:^|\r?\n)\s*\*\*(?:Status|Decision):\*\*/i;
-const f203PrdDecision = /(?:^|\r?\n)\s*\*\*(?:Issue #127 amendment|Decision)\b/i;
-const f203SpecDecision = /^\s*\*\*(?:Status|Decision)\b/i;
+const f203RoadmapDecision = /(?:^|\r?\n)\s*\*\*(?:Status|(?:Later\s+)?Decisions?)\b/i;
+const f203PrdDecision = /(?:^|\r?\n)\s*\*\*(?:Issue #127 amendment|(?:Later\s+)?Decisions?)\b/i;
+const f203BaselineDecision = /^\s*\*\*(?:Later\s+)?Decisions?\b/i;
+const f203SpecDecision = /^\s*\*\*(?:Status|(?:Later\s+)?Decisions?)\b/i;
 const f203RetainedScope = new RegExp(
   `\\bF-203\\b\\s+retains\\s+${f203Capabilities.source}\\s+as planned,\\s+unscheduled\\b`,
   "i",
@@ -1640,6 +1641,9 @@ const f203Negation =
   /\b(?:not planned|unplanned)\b|\b(?:no|without)\s+(?:alert )?(?:escalations|digests|team reminders|per-user preferences)\b/i;
 const f203SchedulingConflict =
   /\b(?:(?:is|are|was|were|has been|have been|will be|must be|may be|can be)\s+(?:now\s+)?scheduled|now scheduled)\b/i;
+const f203ConflictingPhase = /\bPhase\s+(?!2\b)\d+\s+(?:scope|depth)\b/i;
+const hasF203ConflictingPhase = (text) =>
+  /\bPhase\s+2\b/i.test(text) && f203ConflictingPhase.test(text);
 const f203SpecAssignment =
   /\bF-203\b[^.]*\b(?:keeps|retains|owns|includes)\b|\b(?:remain|remains|are)\b[^.]*\bunder F-203\b/i;
 const f203Failures = [];
@@ -1700,8 +1704,22 @@ for (const relative of f203Artifacts) {
           f203CapabilityMention.test(criterion) &&
           !f203CriterionNonGoal.test(criterion),
       );
+    const tableLines = acceptanceCriteriaSections.split(/\r?\n/);
+    const tableDelimiter = /^\s*\|(?:\s*:?-+:?\s*\|)+\s*$/;
+    const addsUnscheduledTableCriterion = tableLines.some((row, index) => {
+      if (
+        !/^\s*\|/.test(row) ||
+        tableDelimiter.test(row) ||
+        tableDelimiter.test(tableLines[index + 1] ?? "")
+      ) {
+        return false;
+      }
+      const criterion = row.replace(/^\s*\|\s*|\s*\|\s*$/g, "");
+      return f203CapabilityMention.test(criterion) && !f203CriterionNonGoal.test(criterion);
+    });
     if (
       addsUnscheduledCriterion ||
+      addsUnscheduledTableCriterion ||
       /^#{1,6}\s+(?:Phase 2\b.*\bAcceptance Criteria|Acceptance Criteria\b.*\bPhase 2)\b/im.test(
         contents,
       )
@@ -1714,7 +1732,9 @@ for (const relative of f203Artifacts) {
   }
   let nextStatementOffset = 0;
   const scopeStatements = contents
-    .split(/\r?\n\s*\r?\n|\r?\n(?=\s*(?:[-*+]|\d+\.)\s+)/)
+    .split(
+      /\r?\n\s*\r?\n|\r?\n(?=\s*(?:(?:[-*+]|\d+\.)\s+|\*\*(?:Status|(?:Later\s+)?Decisions?|Issue #\d+ amendment)\b))/i,
+    )
     .map((raw) => {
       const offset = contents.indexOf(raw, nextStatementOffset);
       nextStatementOffset = offset + raw.length;
@@ -1723,7 +1743,13 @@ for (const relative of f203Artifacts) {
     .filter(({ raw, normalized }) => {
       const lower = normalized.toLowerCase();
       const namesScope = f203CapabilityNames.some((capability) => lower.includes(capability));
-      const addressesScope = namesScope || f203DecisionScope.test(normalized);
+      const addressesScope = normalized
+        .split(/(?<=[.!?])\s+/)
+        .some(
+          (sentence) =>
+            sentence.toLowerCase().includes("f-203") &&
+            (f203CapabilityMention.test(sentence) || f203DecisionScope.test(sentence)),
+        );
       const requiresListAssignment = relative === "docs/ROADMAP.md" || relative === "docs/PRD.md";
       const isListAssignment = requiresListAssignment && /^\s*(?:[-*+]|\d+\.)\s+/.test(raw);
       if (requiresListAssignment) {
@@ -1741,7 +1767,7 @@ for (const relative of f203Artifacts) {
         return isListAssignment && (ownsF203 || (namesScope && lower.includes("f-203")));
       }
       if (relative === "docs/BASELINE.md") {
-        return /^\s*\*\*Decision\b/i.test(raw) && lower.includes("f-203") && addressesScope;
+        return f203BaselineDecision.test(raw) && lower.includes("f-203") && addressesScope;
       }
       if (f203SpecDecision.test(raw)) return lower.includes("f-203") && addressesScope;
       if (relative === "specs/F-203-deadline-alerts.md" && f203SpecAssignment.test(normalized)) {
@@ -1759,7 +1785,8 @@ for (const relative of f203Artifacts) {
       return (
         !f203RetainedScope.test(normalized) ||
         !hasAllF203Capabilities(normalized) ||
-        f203SchedulingConflict.test(normalized)
+        f203SchedulingConflict.test(normalized) ||
+        hasF203ConflictingPhase(normalized)
       );
     }
     if (relative === "specs/F-203-deadline-alerts.md" && f203SpecDecision.test(raw)) {
@@ -1772,7 +1799,9 @@ for (const relative of f203Artifacts) {
     ) {
       return true;
     }
-    if (f203Negation.test(normalized) || f203SchedulingConflict.test(normalized)) return true;
+    if (f203Negation.test(normalized) || f203SchedulingConflict.test(normalized)) {
+      return true;
+    }
     if (relative === "docs/ROADMAP.md" || relative === "docs/PRD.md") {
       return !f203ListOwner.test(raw) || !f203ListScope.test(normalized);
     }
