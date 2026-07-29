@@ -10,11 +10,15 @@ describe("PR 134 SPEC-CONFLICT reconciliations", () => {
   it("keeps F-405 in Phase 2 with its own runbook assignments and F-213 in Phase 3", () => {
     const roadmap = read("docs/ROADMAP.md");
     const runbook = read("specs/F-405-day-of-runbook.md");
+    const f405 = roadmap.indexOf("F-405 · Day-of Runbook");
+    const f213 = roadmap.indexOf("F-213 · Team Task Assignment");
+    const phase3 = roadmap.indexOf("## Phase 3");
 
-    expect(roadmap.indexOf("F-405 · Day-of Runbook")).toBeLessThan(roadmap.indexOf("## Phase 3"));
-    expect(roadmap.indexOf("F-213 · Team Task Assignment")).toBeGreaterThan(
-      roadmap.indexOf("## Phase 3"),
-    );
+    expect(f405).toBeGreaterThanOrEqual(0);
+    expect(f213).toBeGreaterThanOrEqual(0);
+    expect(phase3).toBeGreaterThanOrEqual(0);
+    expect(f405).toBeLessThan(phase3);
+    expect(f213).toBeGreaterThan(phase3);
     expect(runbook).toContain("F-405 owns the minimal Phase 2 runbook-assignment source");
     expect(runbook).toContain("F-213 remains the Phase 3 general team-task feature");
     expect(runbook).not.toContain("SPEC-CONFLICT #207) blocks approval");

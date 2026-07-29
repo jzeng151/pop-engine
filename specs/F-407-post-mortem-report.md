@@ -30,7 +30,7 @@ An organizer can freeze a source-linked post-event report covering attendance ve
 
 ## Inputs, Outputs, State, Validation, and Errors
 
-- Inputs are exact source versions; output is a draft then confirmed metric snapshot.
+- Inputs are exact source versions; the default P&L source is the snapshot captured with F-406's per-event current confirmed pointer, while an organizer may explicitly select an older confirmed version labeled historical. Output is a draft then confirmed metric snapshot.
 - State is draft → stale when source changes → confirmed; confirmed snapshots remain immutable, later corrections create a strictly increasing event-local version with predecessor provenance, and F-407's per-event current confirmed outcome-snapshot pointer advances atomically on confirmation.
 - Unavailable, partial, unknown, or incomparable data is labeled and excluded from denominators according to each approved metric definition.
 - Missing or unresolved material data stays visibly unset, unknown, pending, or failed as appropriate; it never becomes a successful or complete result.
@@ -61,6 +61,7 @@ Exact HTTP, JSON Schema, migration, job, and provider shapes belong in their rev
 3. **F407-AC-03:** Missing/partial data remains labeled and cannot silently change a denominator or appear as zero.
 4. **F407-AC-04:** Confirmation atomically compares the complete source-version set and expected current confirmed outcome-snapshot version and rejects any mismatch; the organizer must rebuild the draft before confirmation. A successful confirmation freezes the report, records its strictly increasing event-local version and predecessor, and atomically advances F-407's per-event current confirmed outcome-snapshot pointer. Later source changes require a new report version.
 5. **F407-AC-05:** F-502 consumes only confirmed snapshots and cannot mutate them; F-407 may present eligible same-currency cost lines as organizer-confirmable proposals in F-104's existing user-line shape with exact snapshot/line provenance, without making F-407 an F-104 prerequisite.
+6. **F407-AC-06:** The default P&L selection captures F-406's current confirmed P&L-snapshot pointer with the exact snapshot it reads, and confirmation rejects/rebuilds if that pointer changes. An explicitly selected older confirmed version remains visibly labeled historical; F-407 never chooses an arbitrary confirmed P&L snapshot or presents a superseded one as current.
 
 ## Fixtures and Verification
 

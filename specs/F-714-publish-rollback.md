@@ -30,7 +30,7 @@ Authorized independent reviewers can atomically publish one immutable ruleset ar
 
 ## Inputs, Outputs, State, Validation, and Errors
 
-- Input is an exact approved candidate or prior artifact, the expected current artifact checksum, and reason; output is immutable publish/rollback record and atomic current-pointer change.
+- Publication input is an exact approved candidate with its declared predecessor plus the expected current artifact and lineage-tip checksums; rollback input is an exact prior artifact plus the expected current checksum. Output is an immutable publish/rollback record and atomic pointer change.
 - State is review-ready → approved → publishing → published or failed; any changed input invalidates approval.
 - Distribution state is pending → effective, partially distributed, or failed; evaluators resolve the authoritative pointer to an exact checksum-keyed artifact and never treat a stale `current` cache entry as authoritative.
 - Failure before commit leaves the old pointer active; failure after commit is reconciled from the authoritative transaction, never guessed.
@@ -48,7 +48,7 @@ Authorized independent reviewers can atomically publish one immutable ruleset ar
 | Concern              | Proposed impact                                                                                                                                    |
 | -------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------- |
 | API                  | Publish/rollback/record/status operations require narrow platform-admin OpenAPI contracts and idempotency.                                         |
-| Schema               | Forward migrations for immutable artifacts/approvals/test links/publish and rollback records/current pointer.                                      |
+| Schema               | Forward migrations for immutable artifacts/approvals/test links/publish and rollback records/current and append-only lineage-tip pointers.         |
 | Jobs                 | Validation/distribution/cache refresh may use durable jobs; pointer commit remains atomic and authoritative.                                       |
 | Providers            | Immutable artifact storage only through approved adapter.                                                                                          |
 | Privacy and security | Separation of duties, strong authorization/reauth, immutable audit, checksum verification, idempotency, no mutable artifacts, and incident alerts. |
@@ -58,13 +58,13 @@ Exact HTTP, JSON Schema, migration, job, and provider shapes belong in their rev
 ## Acceptance Criteria
 
 1. **F714-AC-01:** Publication rejects unless the exact candidate checksum has required independent approvals and a passing full F-712 suite matching the deployed engine/schema/calendar contracts and current approved fixture set; any context change invalidates approval.
-2. **F714-AC-02:** A successful transaction stores the immutable artifact/metadata and compare-and-swaps the expected current rules checksum plus the complete approved engine/schema/calendar/fixture/approval gate context before advancing exactly one jurisdiction pointer atomically with an audit record; any concurrent context change rejects publication.
+2. **F714-AC-02:** A successful publication stores the immutable artifact/metadata and compare-and-swaps the expected current rules checksum, expected lineage-tip checksum, and complete approved engine/schema/calendar/fixture/approval gate context before atomically advancing both jurisdiction pointers to the candidate with one audit record; any concurrent context change rejects publication.
 3. **F714-AC-03:** A recognized retry is resolved by idempotency identity before current-pointer validation and returns its original immutable result; a partial failure cannot expose an unrecorded pointer.
-4. **F714-AC-04:** Rollback rejects unless the exact prior artifact checksum has explicit authorization, the required independent approval, and a passing current F-712 compatibility/full-suite run for the deployed engine, schema, and calendar contracts or an explicitly selected preserved compatible runtime. Success records the reason/actors and atomically advances the rules pointer plus authoritative runtime selection when a preserved runtime is required; it never edits or deletes either artifact.
+4. **F714-AC-04:** Rollback rejects unless the exact prior artifact checksum has explicit authorization, the required independent approval, and a passing current F-712 compatibility/full-suite run for the deployed engine, schema, and calendar contracts or an explicitly selected preserved compatible runtime. Success records the reason/actors and atomically moves only the current rules pointer plus authoritative runtime selection when a preserved runtime is required; the lineage tip remains unchanged, and neither artifact is edited or deleted.
 5. **F714-AC-05:** Historical plans continue resolving their pinned ruleset/revision and are never silently re-evaluated after publish or rollback.
-6. **F714-AC-06:** A genuinely new publication or rollback rejects when the jurisdiction pointer no longer matches the request's expected current checksum; concurrent requests from one predecessor cannot both advance the pointer or produce a non-linear artifact history.
+6. **F714-AC-06:** A genuinely new publication rejects when either jurisdiction pointer no longer matches its expected checksum; rollback rejects when the current pointer no longer matches its expected checksum. Concurrent requests from one predecessor cannot both advance the lineage tip or produce a non-linear artifact history.
 7. **F714-AC-07:** After pointer commit, runtime selection uses the authoritative pointer's exact artifact checksum; if that artifact is unavailable, evaluation fails visibly rather than serving an older artifact as current, and publication cannot report effective until required evaluator/cache checks confirm the checksum.
-8. **F714-AC-08:** Publication rejects a candidate already present in the jurisdiction artifact lineage and any candidate whose declared predecessor is not the current lineage tip; selecting a prior artifact or otherwise moving the pointer backward must use the rollback path and satisfy AC-04.
+8. **F714-AC-08:** Publication rejects a candidate already present in the jurisdiction artifact lineage and any candidate whose declared predecessor is not the current lineage tip. Rollback never changes that tip: after a rollback, a new candidate declares the unchanged tip as predecessor while separately compare-and-swapping the rolled-back current pointer; success atomically moves both pointers to the candidate. Selecting a prior artifact or otherwise moving only the current pointer backward must use the rollback path and satisfy AC-04.
 
 ## Fixtures and Verification
 

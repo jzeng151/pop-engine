@@ -62,7 +62,7 @@ Exact HTTP, JSON Schema, migration, job, and provider shapes belong in their rev
 4. **F403-AC-04:** Duplicate submissions are idempotent and never manufacture a new consent grant.
 5. **F403-AC-05:** Ambiguous contact matches never merge data or transfer consent without explicit authorized resolution.
 6. **F403-AC-06:** Emergency-message consent can be granted and later withdrawn independently, with distinct evidence and immediate suppression, without changing event-entry or marketing consent.
-7. **F403-AC-07:** Every grant provides an attendee-accessible, channel-appropriate withdrawal path authorized by an unguessable contact/purpose-scoped credential or provider-verified equivalent, without requiring an account or organizer action; invalid or cross-contact requests cannot withdraw consent, and success applies AC-03.
+7. **F403-AC-07:** Every grant provides an attendee-accessible, channel-appropriate withdrawal path authorized by an unguessable credential bound to that exact grant's contact, purpose, channel, and contact point, or by a provider-verified equivalent with the same scope, without requiring an account or organizer action. Invalid, cross-contact, cross-purpose, or cross-channel requests cannot withdraw consent, and success applies AC-03 only to the bound grant.
 
 ## Fixtures and Verification
 

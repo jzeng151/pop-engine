@@ -30,8 +30,8 @@ An organizer can record actual revenue and costs against the approved F-104 budg
 
 ## Inputs, Outputs, State, Validation, and Errors
 
-- Inputs are user-confirmed actual entries and one budget version; outputs are known revenue, cost, profit/loss, margin, and variance.
-- Draft actuals may change; confirmation creates an immutable outcome snapshot while corrections create a later version.
+- Inputs are user-confirmed actual entries and one budget version; outputs are known revenue, cost, profit/loss, margin, and variance plus F-406's per-event current confirmed P&L-snapshot pointer.
+- Draft actuals may change; confirmation creates an immutable event-local snapshot version, corrections create a strictly increasing version with predecessor provenance, and the current confirmed P&L-snapshot pointer advances atomically.
 - Missing/unknown costs remain excluded with an incomplete warning; zero is accepted only when explicitly entered.
 - Missing or unresolved material data stays visibly unset, unknown, pending, or failed as appropriate; it never becomes a successful or complete result.
 - Invalid input produces a field or action-specific error without partial mutation. Retriable external failures preserve the user's confirmed state and expose a safe retry.
@@ -44,13 +44,13 @@ An organizer can record actual revenue and costs against the approved F-104 budg
 
 ## System Impact
 
-| Concern              | Proposed impact                                                                                      |
-| -------------------- | ---------------------------------------------------------------------------------------------------- |
-| API                  | Actual-entry, rollup, and snapshot operations require approved OpenAPI money/concurrency contracts.  |
-| Schema               | Forward migrations for actual ledger entries and immutable P&L snapshots linked to a budget version. |
-| Jobs                 | None.                                                                                                |
-| Providers            | None.                                                                                                |
-| Privacy and security | Workspace authorization and audit history; raw financial values are excluded from logs/analytics.    |
+| Concern              | Proposed impact                                                                                                                             |
+| -------------------- | ------------------------------------------------------------------------------------------------------------------------------------------- |
+| API                  | Actual-entry, rollup, and snapshot operations require approved OpenAPI money/concurrency contracts.                                         |
+| Schema               | Forward migrations for actual ledger entries, immutable P&L snapshots linked to a budget version, and a per-event current-snapshot pointer. |
+| Jobs                 | None.                                                                                                                                       |
+| Providers            | None.                                                                                                                                       |
+| Privacy and security | Workspace authorization and audit history; raw financial values are excluded from logs/analytics.                                           |
 
 Exact HTTP, JSON Schema, migration, job, and provider shapes belong in their reviewed machine contracts; this proposal does not authorize parallel local types or edits to merged migrations.
 
@@ -59,9 +59,10 @@ Exact HTTP, JSON Schema, migration, job, and provider shapes belong in their rev
 1. **F406-AC-01:** Actual entries use integer minor units and one currency and deterministically calculate revenue, cost, profit/loss, margin, and budget variance; margin is unavailable (not zero) when revenue is zero, with zero/positive-revenue boundary fixtures.
 2. **F406-AC-02:** Unknown/missing actuals are not zero and produce an incomplete-result warning.
 3. **F406-AC-03:** Mapping or unmapping an actual changes rollups without mutating the referenced budget line.
-4. **F406-AC-04:** Confirmation atomically compare-and-swaps the complete current budget-mapping and actual-ledger version set; any mismatch rejects confirmation and requires a rebuilt preview. Success creates an immutable snapshot tied to those exact versions, and correction creates a new snapshot.
+4. **F406-AC-04:** Confirmation atomically compare-and-swaps the complete current budget-mapping and actual-ledger version set plus the expected current confirmed P&L-snapshot version; any mismatch rejects confirmation and requires a rebuilt preview. Success creates an immutable, strictly increasing event-local snapshot tied to those exact versions, records its predecessor, and atomically advances F-406's per-event current confirmed P&L-snapshot pointer.
 5. **F406-AC-05:** No screen or export represents the result as audited accounting, tax, or payment data.
 6. **F406-AC-06:** Actual-ledger create/edit/delete and mapping/unmapping operations bind a stable request identity to the original result; replay returns that result without duplicating entries or rollups. Each mutation compare-and-swaps the expected ledger version and every affected entry version; a mismatch rejects the whole mutation without changing an entry, mapping, or rollup.
+7. **F406-AC-07:** Consumers may read the exact snapshot captured with F-406's current pointer or an explicitly selected older confirmed version; an older version remains visibly labeled historical and is never represented as current.
 
 ## Fixtures and Verification
 
