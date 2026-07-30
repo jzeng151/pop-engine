@@ -260,6 +260,7 @@ const isoDate = (value: Date | string | null): string | null =>
 const planContext = (item: PlanItemRow, rendering: FindingRendering) => ({
   ruleIds: item.rule_ids,
   permitName: item.permit_name,
+  userSummary: rendering.user_summary ?? null,
   agency: item.agency,
   kind: item.kind,
   disposition: item.disposition,

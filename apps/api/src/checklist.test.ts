@@ -116,6 +116,7 @@ type ChecklistItemView = {
   applyAfterDate: string | null;
   agency: string | null;
   permitName: string | null;
+  userSummary: { heading: string } | null;
   kind: string;
   verificationStatus: string;
   lastVerifiedDate: string | null;
@@ -431,6 +432,9 @@ describe.runIf(databaseUrl.length > 0)("F-202 compliance checklist", () => {
 
       expect(blocking?.planItemId).toMatch(/^[0-9a-f-]{36}$/);
       expect(blocking?.agency).toBe("SAPO (Mayor's Office CECM)");
+      expect(blocking?.userSummary?.heading).toBe(
+        ruleset.rules.find((rule) => rule.id === "SAPO-STREET-LARGE-001")?.userSummary?.heading,
+      );
       // Spec AC 5: the deadline context lives where the work happens.
       expect(blocking?.latestApplyDate).toBe("2026-07-12");
       expect(blocking?.verificationStatus).toBe("SOURCE_CONFIRMED");

@@ -7,6 +7,7 @@ const dashboardStyles = readFileSync(
   resolve("apps/web/app/events/[id]/dashboard/dashboard.css"),
   "utf8",
 );
+const checklistStyles = readFileSync(resolve("apps/web/app/checklist/checklist.css"), "utf8");
 const darkTheme = styles.match(/\[data-theme="dark"\]\s*\{([\s\S]*?)\n\}/)?.[1];
 
 const colorFrom = (source: string, token: string): string => {
@@ -88,6 +89,18 @@ describe("shared accessibility color contracts", () => {
     expect(contrast(darkColor("on-info"), darkColor("blue"))).toBeGreaterThanOrEqual(4.5);
     expect(contrast(darkColor("on-highlight"), darkColor("yellow"))).toBeGreaterThanOrEqual(4.5);
     expect(contrast(darkColor("on-clear"), darkColor("clear"))).toBeGreaterThanOrEqual(4.5);
+  });
+
+  it("gives read-only checklist context an accessible informational background", () => {
+    expect(checklistStyles).toMatch(
+      /\.check-item--context\s*\{\s*background: var\(--pe-info-wash\)/,
+    );
+    expect(contrast(color("ink"), color("info-wash"))).toBeGreaterThanOrEqual(4.5);
+    expect(contrast(color("steel"), color("info-wash"))).toBeGreaterThanOrEqual(4.5);
+    expect(contrast(color("blue"), color("info-wash"))).toBeGreaterThanOrEqual(4.5);
+    expect(contrast(darkColor("ink"), darkColor("info-wash"))).toBeGreaterThanOrEqual(4.5);
+    expect(contrast(darkColor("steel"), darkColor("info-wash"))).toBeGreaterThanOrEqual(4.5);
+    expect(contrast(darkColor("blue"), darkColor("info-wash"))).toBeGreaterThanOrEqual(4.5);
   });
 
   it("uses intake orange as the landing, workspace, and dashboard accent", () => {

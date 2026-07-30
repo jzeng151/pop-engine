@@ -27,7 +27,7 @@ import {
 const humanize = (token: string): string => token.replace(/_/g, " ");
 
 const displayName = (context: PlanContext): string =>
-  context.permitName ?? context.ruleIds.join(", ");
+  context.userSummary?.heading ?? context.permitName ?? "Additional plan context";
 
 /**
  * Whether this row has anything to say about timing. `deadlineStatus` is always set, so
@@ -82,11 +82,8 @@ function ContextCitation({ source }: { source: PlanContext["sources"][number] })
 /**
  * Whether this row has anything behind its expand, so an empty control is never rendered.
  *
- * Every field the panel renders is listed here, and only fields the panel renders are. `ruleIds` and
- * `lastVerifiedDate` are absent from both because the row states them in its summary, above — a
- * checklist row is worked rather than scanned, so its provenance stays on the row. That is also why
- * this row can gate its panel while the plan line's is unconditional: there, the rule ids are IN the
- * panel, so a row with no optional fields would have dropped them off the page.
+ * Every field the panel renders is listed here, and only fields the panel renders are.
+ * `lastVerifiedDate` is absent because the row states it in its summary, above.
  */
 const hasContextDetail = (context: PlanContext): boolean =>
   context.sources.length > 1 ||
@@ -110,7 +107,6 @@ export function PlanContextBody({
    */
   currentPlan: SourcePlan;
 }) {
-  const ruleIds = context.ruleIds.join(", ");
   const [primarySource, ...furtherSources] = context.sources;
   const [detailsOpen, setDetailsOpen] = useState(false);
   const summaryShowsResearchTreatment =
@@ -144,7 +140,6 @@ export function PlanContextBody({
             rather than rendered empty. */}
         {context.agency !== null && <span>{context.agency}</span>}
         <span>{humanize(context.disposition)}</span>
-        <span className="check-item__rule-ids">{ruleIds}</span>
         {/* F-206 AC 5: the date the plan item stored, and only when it stored one. A null renders
             nothing at all — the snapshot's publication date is a different fact, and standing it in
             here would state a verification that never happened. */}
@@ -221,8 +216,7 @@ export function PlanContextBody({
           className="check-item__detail"
           onOpenChange={setDetailsOpen}
         >
-          {/* No rule ids and no last-verified date here: the summary above already states both, and
-              repeating them rendered each row's provenance twice once the row was expanded. */}
+          {/* No last-verified date here: the summary above already states it. */}
           {/* Both readings of an official conflict, verbatim; never resolved to one silently. The
               badge in the summary already says OFFICIAL CONFLICT. */}
           {context.conflictText !== null && (

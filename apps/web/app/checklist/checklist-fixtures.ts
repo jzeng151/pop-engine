@@ -66,9 +66,10 @@ const ruleOf = (ruleId: string) => {
 const deadlineDisplayOf = (deadline: Deadline | null): string | null =>
   deadline !== null && "display" in deadline ? deadline.display : null;
 
-/** The published name of a requirement, as an organizer sees it on a row. */
+/** The published organizer-facing name of a requirement. */
 export const nameOf = (ruleId: string): string => {
-  const name = ruleOf(ruleId).name;
+  const rule = ruleOf(ruleId);
+  const name = rule.userSummary?.heading ?? rule.name;
   if (name === null) throw new Error(`${ruleId} publishes no name`);
   return name;
 };
@@ -99,6 +100,7 @@ export const planContext = (
   return {
     ruleIds: [rule.id],
     permitName: rule.name,
+    userSummary: rule.userSummary,
     agency: rule.agency,
     kind: rule.kind,
     disposition: rule.publishedDisposition ?? DEFAULT_DISPOSITION_BY_RULE_KIND[rule.kind],

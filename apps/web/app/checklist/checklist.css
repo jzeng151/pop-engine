@@ -84,6 +84,10 @@
   box-shadow: var(--pe-shadow);
 }
 
+.check-item--context {
+  background: var(--pe-info-wash);
+}
+
 .check-item__head {
   display: flex;
   flex-wrap: wrap;
@@ -111,7 +115,6 @@
   border: 1.5px solid var(--warning-line);
   border-radius: var(--pe-radius);
 }
-
 
 .badge {
   font-family: var(--pe-font-mono);
