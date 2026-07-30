@@ -16,6 +16,7 @@ import type {
   DeadlineStatus,
   Disposition,
   FindingSource,
+  RuleUserSummary,
   VerificationStatus,
 } from "@pop-engine/engine";
 import { CREDENTIALED } from "../intake/events-api";
@@ -64,6 +65,7 @@ export type ConsumedDeadline = {
 export type PlanContext = {
   readonly ruleIds: readonly string[];
   readonly permitName: string | null;
+  readonly userSummary: Pick<RuleUserSummary, "heading"> | null;
   readonly agency: string | null;
   readonly disposition: Disposition;
   readonly deadline: ConsumedDeadline | null;
@@ -362,6 +364,7 @@ const SOURCE_CHECKS: FieldChecks<FindingSource> = {
 const PLAN_CONTEXT_CHECKS: FieldChecks<PlanContext> = {
   ruleIds: arrayOf(isString),
   permitName: nullOr(isString),
+  userSummary: nullOr(shapedLike({ heading: isString })),
   agency: nullOr(isString),
   disposition: isToken(DISPOSITIONS),
   deadline: nullOr(shapedLike(DEADLINE_CHECKS)),

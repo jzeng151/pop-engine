@@ -179,9 +179,7 @@ describe("AC 1 · one click converts the latest plan into a checklist", () => {
     await renderView();
 
     const row = await expandedRowFor(STREET_MEDIUM);
-    // By class, not by text: the rule id is the display name here, so it also appears in the
-    // heading and in the expand control's label, which names what it expands.
-    expect(row.querySelector(".check-item__rule-ids")?.textContent).toBe(STREET_MEDIUM);
+    expect(row.textContent).not.toContain(STREET_MEDIUM);
     expect(within(row).getByText(/apply by 2026-08-01/)).toBeDefined();
     expect(within(row).getByText(citationOf(STREET_MEDIUM))).toBeDefined();
     expect(within(row).getByText(feeOf(STREET_MEDIUM) as string)).toBeDefined();
@@ -1909,7 +1907,7 @@ describe("edge cases", () => {
     expect(await screen.findByRole("heading", { name: nameOf(STREET_MEDIUM) })).toBeDefined();
   });
 
-  it("names a row by its rule ids when the requirement publishes no permit name", async () => {
+  it("uses the organizer summary when a requirement publishes no permit name", async () => {
     stubApi({
       [GET_CHECKLIST]: checklistOf({
         created: true,
@@ -1930,9 +1928,9 @@ describe("edge cases", () => {
       within(rowFor(SOUND)).queryByRole("link", { name: portalUrlOf(SOUND) ?? "" }),
     ).toBeNull();
 
-    const row = screen.getByRole("article", { name: STREET_MEDIUM });
+    const row = screen.getByRole("article", { name: nameOf(STREET_MEDIUM) });
     expect(
-      within(row).getByRole("combobox", { name: `Status for ${STREET_MEDIUM}` }),
+      within(row).getByRole("combobox", { name: `Status for ${nameOf(STREET_MEDIUM)}` }),
     ).toBeDefined();
   });
 
@@ -2101,20 +2099,23 @@ describe("a fee stated only where the ruleset states one", () => {
     expect(within(await expandedRowFor(STREET_MEDIUM)).getByText(fee as string)).toBeDefined();
   });
 
-  it("states each row's rule ids once, not twice, when the row is expanded", async () => {
-    // The summary already carries them, so the copy added inside the panel rendered a row's
-    // provenance twice as soon as anyone opened it.
+  it("uses the published organizer heading without exposing internal rule codes", async () => {
     stubApi({
       [GET_CHECKLIST]: checklistOf({
         created: true,
         items: [trackedItem(STREET_MEDIUM, { lastVerifiedDate: "2026-07-01" })],
+        contextItems: [planContext(NOISE_ADVISORY)],
       }),
     });
     await renderView();
 
     const row = await expandedRowFor(STREET_MEDIUM);
-    expect(row.querySelectorAll(".check-item__rule-ids")).toHaveLength(1);
+    expect(within(row).getByRole("heading", { name: nameOf(STREET_MEDIUM) })).toBeDefined();
+    expect(row.textContent).not.toContain(STREET_MEDIUM);
     expect(row.querySelectorAll(".check-item__verified-date")).toHaveLength(1);
+    const context = rowFor(NOISE_ADVISORY);
+    expect(within(context).getByRole("heading", { name: nameOf(NOISE_ADVISORY) })).toBeDefined();
+    expect(context.textContent).not.toContain(NOISE_ADVISORY);
   });
 });
 
@@ -2147,8 +2148,7 @@ describe("the checklist's expand control matches what is behind it", () => {
     expect(within(row).queryByRole("button", { name: /^Details for/ })).toBeNull();
     // And the date it carries is on the row regardless, not lost with the control.
     expect(within(row).getByText("last verified 2026-06-15")).toBeDefined();
-    // Nor are the rule ids, which the plan line keeps in its panel and this row keeps in its head.
-    expect(row.querySelectorAll(".check-item__rule-ids")).toHaveLength(1);
+    expect(row.textContent).not.toContain(NOISE_ADVISORY);
   });
 });
 
