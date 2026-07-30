@@ -288,7 +288,7 @@ export function IntakeForm({
       setSaved(body.event);
       currentRevision.current = body.event.revision_counter;
       setPlanStale(body.plan_stale === true);
-      if (eventId === undefined) router.push(`/events/${body.event.id}`);
+      router.push(`/events/${body.event.id}`);
     } catch {
       setFailure("The API could not be reached.");
     } finally {
