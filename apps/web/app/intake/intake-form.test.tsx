@@ -450,7 +450,7 @@ describe("loading a saved event to edit it", () => {
     expect(url).toBe("https://api.example.com/api/events/event-9");
     expect(init.method).toBe("PATCH");
     expect(requestBody(fetchMock, 1).headcount).toBe(151);
-    expect(router.push).not.toHaveBeenCalled();
+    expect(router.push).toHaveBeenCalledWith("/events/event-9");
   });
 
   it("carries a standing plan-stale flag through the load", async () => {
