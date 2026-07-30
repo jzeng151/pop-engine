@@ -210,6 +210,8 @@ describe("Scenario A — Bushwick Street Activation (demo anchor)", () => {
       portalName: null,
       portalUrl: null,
     });
+    expect(privateVenue?.remainingMissingFields).toContain("sound_audible_from_public_way");
+    expect(privateVenue?.remainingTimelineReasons).toEqual([]);
     // Non-at-risk suggestions omit at-risk-only enrichment keys (null would still change shape).
     expect(privateVenue !== undefined && !("minSlackDays" in privateVenue)).toBe(true);
     expect(privateVenue !== undefined && !("atRiskFindingName" in privateVenue)).toBe(true);

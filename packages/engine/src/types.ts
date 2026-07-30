@@ -337,6 +337,10 @@ export type RescopeSuggestion = {
     readonly portalName: string | null;
     readonly portalUrl: string | null;
   }[];
+  /** Facts the improved re-evaluation still needs before it can leave CONDITIONAL. */
+  readonly remainingMissingFields?: readonly string[];
+  /** Published timelines the improved re-evaluation still cannot date. */
+  readonly remainingTimelineReasons?: readonly string[];
   /**
    * Present on at-risk re-evaluations when enrichment is emitted. Omitted on other suggestions and
    * on three-field historical eras.

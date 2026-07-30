@@ -5,6 +5,7 @@ import { cleanup, render, screen, waitFor, within } from "@testing-library/react
 import userEvent from "@testing-library/user-event";
 import ChecklistPage from "../events/[id]/checklist/page";
 import PlanPage from "../events/[id]/plan/page";
+import { publishedRulesFileIn } from "../rules-file";
 import { ChecklistView } from "./checklist-view";
 import { NOT_COVERED_BY_RULESET } from "../verification-copy";
 import { CONFIRM_WITH_AGENCY } from "@pop-engine/engine";
@@ -2013,6 +2014,7 @@ describe("reaching the checklist at all", () => {
   // conversion step and the Scenario A demo path were reachable only by typing the URL.
   it("links to the checklist from the plan route", async () => {
     vi.stubEnv("NEXT_PUBLIC_API_BASE_URL", API);
+    vi.stubEnv("RULES_FILE", publishedRulesFileIn("rules"));
     vi.stubGlobal(
       "fetch",
       vi.fn(async () => new Promise(() => {})),

@@ -1,5 +1,10 @@
 import { PlanView } from "../../../plan/plan-view";
+import type { FindingReference } from "../../../plan/verdict-detail";
+import { rulesFileIn } from "../../../rules-file";
+import { parseEngineRuleset } from "@pop-engine/engine";
 import type { Metadata } from "next";
+import { readFile } from "node:fs/promises";
+import { resolve } from "node:path";
 import "./checklist-entry.css";
 
 export const metadata: Metadata = {
@@ -11,9 +16,31 @@ export const metadata: Metadata = {
 export default async function PlanPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
   const apiBaseUrl = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:3001";
+  const ruleset = parseEngineRuleset(
+    JSON.parse(await readFile(resolve(rulesFileIn("../../rules")), "utf8")),
+  );
+  const rulesetReferences: FindingReference[] = ruleset.rules.flatMap((rule) => {
+    if (rule.userSummary === null) return [];
+    return [
+      {
+        ruleIds: [rule.id],
+        label: rule.userSummary.heading,
+        source: rule.userSummary.points.flatMap((point) => point.sources)[0] ?? null,
+        portalName: rule.portalName,
+        portalUrl: rule.portalUrl,
+      },
+    ];
+  });
   return (
     <>
-      <PlanView apiBaseUrl={apiBaseUrl} eventId={id} />
+      <PlanView
+        apiBaseUrl={apiBaseUrl}
+        eventId={id}
+        rulesetReferences={{
+          rulesetVersion: ruleset.rulesetVersion,
+          findings: rulesetReferences,
+        }}
+      />
       {/* F-202 AC 1's "one click" needs somewhere to click from, and after generating a plan the
           organizer is here. Nothing else in `apps/web/app` reached the checklist route, so the
           conversion step and the Scenario A demo path were only reachable by typing the URL.
