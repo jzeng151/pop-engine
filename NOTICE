@@ -1,5 +1,5 @@
 PopEngine
-Copyright 2026 Naquan McKune, Jason Zeng, Adedoyin Ahoton, Bo Moldenhauer
+Copyright 2026 The PopEngine Authors
 
 This product includes software developed for the PopEngine project.
 
@@ -10,7 +10,7 @@ repository: apps/, packages/, scripts/, and the build and test configuration.
 
 It does NOT cover the published regulatory ruleset or the verification record.
 Those are listed in LICENSING.md and are reserved pending a decision by the
-copyright holders named above.
+project's copyright holders.
 
 REGULATORY CONTENT IS NOT ADVICE
 

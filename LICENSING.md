@@ -36,9 +36,11 @@ The ruleset records what named primary sources were observed to publish on the d
 
 ## Copyright holders
 
-Naquan McKune, Jason Zeng, Adedoyin Ahoton, Bo Moldenhauer.
+Copyright is held by the authors of this work, recorded here as "The PopEngine Authors" following ordinary practice for Apache-2.0 and MIT projects, neither of which requires enumerating contributors in the license file.
 
-Absent a separate written agreement between them, this file records intent rather than settling ownership. If an institution has an IP claim on this work through a course or program, that claim takes precedence over this file and should be resolved before anyone relies on these terms.
+Contribution history is in the git log and the pull request record. `docs/PRD.md` lists the project team, which is a roster rather than a statement of authorship; the two are not the same thing and are not required to match.
+
+This file records intent rather than settling ownership. If an institution has an IP claim on this work through a course or program, that claim takes precedence over this file and should be resolved before anyone relies on these terms.
 
 ## Contributing
 
