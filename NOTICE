@@ -1,0 +1,20 @@
+PopEngine
+Copyright 2026 Naquan McKune, Jason Zeng, Adedoyin Ahoton, Bo Moldenhauer
+
+This product includes software developed for the PopEngine project.
+
+SCOPE OF THIS LICENSE
+
+The Apache License, Version 2.0 in LICENSE covers the SOURCE CODE in this
+repository: apps/, packages/, scripts/, and the build and test configuration.
+
+It does NOT cover the published regulatory ruleset or the verification record.
+Those are listed in LICENSING.md and are reserved pending a decision by the
+copyright holders named above.
+
+REGULATORY CONTENT IS NOT ADVICE
+
+The ruleset in rules/ records what named primary sources were observed to
+publish on the dates recorded in docs/VERIFICATION-SOURCES.md. It is not legal
+advice, it is not complete, and it is not a substitute for confirming a
+requirement with the issuing agency. See "What it does not do" in README.md.
