@@ -10,7 +10,7 @@ import {
   type IntakeIssue,
   type IntakeValue,
 } from "@pop-engine/engine";
-import { CREDENTIALED, loadEvent, regeneratePlan, type SavedEvent } from "./events-api";
+import { CREDENTIALED, loadEvent, type SavedEvent } from "./events-api";
 import { discoverParks, parksBoroughCode, type ParkSuggestion } from "./parks-api";
 
 // The intake questionnaire. Every question, option, and asked-when condition comes from
@@ -119,23 +119,15 @@ export function IntakeForm({
   const router = useRouter();
   const [answers, setAnswers] = useState<Answers>({});
   const [saved, setSaved] = useState<SavedEvent | null>(null);
-  const [planStale, setPlanStale] = useState(false);
   const [errors, setErrors] = useState<IntakeIssue[]>([]);
   const [saving, setSaving] = useState(false);
   const [failure, setFailure] = useState<string | null>(null);
-  const [regenerating, setRegenerating] = useState(false);
-  const [regenerationError, setRegenerationError] = useState<string | null>(null);
-  const [regeneratedRevision, setRegeneratedRevision] = useState<number | null>(null);
   const [loading, setLoading] = useState(eventId !== undefined);
   const [loadFailure, setLoadFailure] = useState<string | null>(null);
   const [parkSuggestions, setParkSuggestions] = useState<ParkSuggestion[] | null>(null);
   const [parkSearchFailure, setParkSearchFailure] = useState<string | null>(null);
   const [parkSearching, setParkSearching] = useState(false);
 
-  // The revision the form is currently sitting on. A ref, because an in-flight
-  // regeneration has to compare against the revision as it stands when the plan lands,
-  // not against the one captured when the button was clicked.
-  const currentRevision = useRef<number | null>(null);
   const parkSearchRequest = useRef(0);
   const parkSearchController = useRef<AbortController | null>(null);
   const locationNameInput = useRef<HTMLInputElement | null>(null);
@@ -149,8 +141,6 @@ export function IntakeForm({
       if (result.ok) {
         setAnswers(answersFromEvent(contract, result.loaded.event));
         setSaved(result.loaded.event);
-        currentRevision.current = result.loaded.event.revision_counter;
-        setPlanStale(result.loaded.plan_stale);
       } else {
         setLoadFailure(result.message);
       }
@@ -286,39 +276,12 @@ export function IntakeForm({
       const stored = answersFromEvent(contract, body.event);
       setAnswers((latest) => reconcileAnswers(latest, answersAtSubmit, stored));
       setSaved(body.event);
-      currentRevision.current = body.event.revision_counter;
-      setPlanStale(body.plan_stale === true);
       router.push(`/events/${body.event.id}`);
     } catch {
       setFailure("The API could not be reached.");
     } finally {
       setSaving(false);
     }
-  };
-
-  // Spec #8: one click regenerates the plan for the revision just saved. The plan
-  // endpoint belongs to F-201; intake calls it and reports what it answered.
-  const regenerate = async (id: string, revision: number) => {
-    setRegenerating(true);
-    setRegenerationError(null);
-    const result = await regeneratePlan(apiBaseUrl, id);
-    setRegenerating(false);
-
-    // A save can land while this was in flight. A plan for a superseded revision is
-    // stale the moment it arrives, so it must not clear the warning or the button for
-    // the revision the organizer is now on. Same when the plan names a revision that is
-    // not the one on screen.
-    const superseded =
-      currentRevision.current !== revision ||
-      (result.ok && result.eventRevision !== null && result.eventRevision !== revision);
-    if (superseded) return;
-
-    if (result.ok) {
-      setPlanStale(false);
-      setRegeneratedRevision(revision);
-      return;
-    }
-    setRegenerationError(result.message);
   };
 
   if (loading) {
@@ -518,28 +481,6 @@ export function IntakeForm({
               {" · "}
               <a href={`/events/${saved.id}/guests`}>Guest list</a>
             </p>
-            {planStale && (
-              <div className="intake__stale">
-                <p>
-                  This edit is newer than the plan that was generated, so the plan is out of date.
-                </p>
-                <button
-                  type="button"
-                  onClick={() => void regenerate(saved.id, saved.revision_counter)}
-                  disabled={regenerating}
-                >
-                  {regenerating ? "Regenerating plan…" : "Regenerate plan"}
-                </button>
-                {regenerationError !== null && (
-                  <p className="intake__error" role="alert">
-                    {regenerationError}
-                  </p>
-                )}
-              </div>
-            )}
-            {planStale === false && regeneratedRevision !== null && (
-              <p role="status">Plan regenerated for revision {regeneratedRevision}.</p>
-            )}
           </section>
         )}
       </form>

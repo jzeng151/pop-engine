@@ -1,5 +1,7 @@
 import type { Metadata } from "next";
 
+import { PlanStaleNotice } from "./plan-stale-notice";
+
 export const metadata: Metadata = {
   title: "Event overview",
 };
@@ -67,6 +69,10 @@ export default async function EventOverview({ params }: { params: Promise<{ id: 
         <a className="button button--primary" href={`/intake/${id}`}>
           Review event intake
         </a>
+        <PlanStaleNotice
+          apiBaseUrl={process.env.API_BASE_URL ?? "http://localhost:3001"}
+          eventId={id}
+        />
       </header>
 
       <div className="riso-overview__sections">
