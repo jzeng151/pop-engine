@@ -1,88 +1,85 @@
 # PopEngine
 
-NYC event permit planning for independent organizers — turn a short event description into a source-transparent permit plan, checklist, and (when built) door-day ops.
+**Tells a NYC event organizer whether their event can legally happen on the date they picked, and if it can't, the nearest version that can.**
+
+[![CI](https://github.com/jzeng151/pop-engine/actions/workflows/ci.yml/badge.svg)](https://github.com/jzeng151/pop-engine/actions/workflows/ci.yml)
+![Node](https://img.shields.io/badge/node-%3E%3D22-brightgreen)
+![Ruleset](https://img.shields.io/badge/ruleset-nyc.v2.11-blue)
+![Coverage gate](https://img.shields.io/badge/coverage%20gate-90%25-informational)
+
+![Event field guide: one event record from permit planning through door-day operations](docs/screenshots/overview.jpg)
 
 > Capstone demo environment is access-gated and uses **synthetic data only**. No real identity documents, applications, or attendee PII.
 
-## Problem
+---
 
-Independent pop-up and event organizers in New York City must navigate a permit maze across many agencies (SAPO, Parks, NYPD, DOT, FDNY, DOB, Health, and others). Each agency has its own portal, lead time, fees, and documents. A single sidewalk activation with food and amplified sound can need several permits, with lead times from days to more than a year. Nothing tells an organizer which rules apply to *their* event or whether their date is still feasible — so people discover missing permits late, cancel, or get fined.
+## What it does
 
-## Solution
+Independent organizers in New York City navigate permits across nine city and state agencies with filing deadlines from 14 to 60 days out, and festival classes that close December 31 of the *prior year*. Most find out too late. Today, avoiding that is sold as a professional service by event-production agencies.
 
-PopEngine is a web app that answers a short intake (borough, location type, headcount, date, food, sound, structures, flame, alcohol, power) and generates a **complete, cited permit plan**: agencies, lead times, fees, documents, and a timeline computed backward from the event date, plus an immediate feasibility verdict.
+PopEngine answers a short intake and returns a dated feasibility verdict. Here is real output from the demo scenario:
 
-Verification states stay visible end to end (`SOURCE_CONFIRMED`, `OFFICIAL_CONFLICT`, `RESEARCH_REQUIRED`, `COVERAGE_GAP`). The plan becomes a live compliance checklist with deadline alerts and portal links. Stretch Track B adds public event pages, RSVPs, QR check-in, and a live ops dashboard — arrivals labeled as **check-ins**, never occupancy.
+```
+Bushwick Street Activation · multi-block street event · 35 days out
 
-```text
-Intake → Feasibility verdict → Permit plan + citations
-      → Checklist + alerts → (stretch) Promote / RSVP / Check-in / Live ops
+  ✗ INFEASIBLE as scoped
+    Blocked by: Street Event Permit (Large)
+    The published 45-day filing deadline passed on 2026-07-20.
+
+  What you could change (each is a full re-evaluation, not a static tip)
+    → street event size = medium      at risk, apply within 4 days
+    → street event size = small       at risk, DOHMH notice in 4 days
+    → location type = private venue   SAPO permit and insurance drop entirely;
+                                      Place of Assembly approval appears instead
 ```
 
-## Tech stack
+The list of permits is the easy half. **The deadline arithmetic, and knowing which smaller version of your event is still legal, is the part people pay for.**
 
-| Layer | Choice |
-| --- | --- |
-| Monorepo | pnpm workspaces |
-| Web | Next.js (App Router), TypeScript |
-| API | Express, TypeScript |
-| Rules engine | `packages/engine` — pure TS (no DB, HTTP, env, or system clock) |
-| Database | Postgres 16 (Supabase in demo) |
-| Object storage | S3-compatible (Supabase Storage) for checklist documents |
-| Email / SMS | Resend / Twilio (SMS may be labeled simulation until A2P clears) |
-| Demo gate | Cloudflare Access (CORS is not auth) |
-| Host | Railway |
-| Tests | Vitest, coverage gate ≥ 90% |
+![Permit plan: what blocks this date, and three re-evaluated ways to change it](docs/screenshots/plan-rescope.jpg)
 
-Published regulatory facts come only from the ruleset discovered under `rules/` (never invent a permit name, deadline, or fee). Current versions: `docs/BASELINE.md`.
+Every line traces to a published rule with its source. When the ruleset does not cover a combination, the plan says so rather than guessing.
 
-## Screenshots
+![Compliance checklist: supported requirements with verification states and per-item sources](docs/screenshots/checklist.jpg)
 
-Synthetic demo UI only — no real organizer or attendee data. Intake is a live capture of the local app; plan and live-ops frames are illustrative layout mocks for the README (runtime permit lines always come from the published ruleset, never from mock copy).
+## What it does not do
 
-![Event intake questionnaire](docs/screenshots/intake.png)
+Stated plainly, because a permit tool that overstates its coverage is worse than none.
 
-*Intake — short questionnaire that drives the rules engine.*
+- **New York City only.** One jurisdiction. 42 published rules and 4 advisories naming nine city and state agencies. A second city is designed for and not built.
+- **Business-day deadlines render `NOT_CALCULABLE`.** No located primary source establishes that an agency's published closure stops its filing counter, and NYC rules span a city and a state agency whose calendars differ. Publishing a calendar anyway would invent the semantics, so the holiday calendar is deliberately empty.
+- **It is not legal advice, and it never asserts a fact it cannot cite.** Where the record is silent, the output says the combination is not covered by this ruleset version.
+- **Phase 2 is not shipped.** Authentication exists as a foundation; workspaces and roles gate production and are not built. The demo is single-tenant and synthetic.
 
-![Permit plan with citations and snapshot banner](docs/screenshots/plan.jpg)
+## How it works
 
-*Permit plan — findings, citations, and ruleset snapshot banner (illustrative).*
+**The ruleset is a versioned file in git, not database rows.** A rule change is a pull request with a diff, a reviewer, and a checksum. `permit_rules` is a seeded read model, never the source. (`ARCHITECTURE.md` AD-2)
 
-![Live ops check-in dashboard](docs/screenshots/live-ops.jpg)
+**The rules engine is a pure module** with no database, no HTTP, no environment, no system clock. `today` is a parameter. The six approved scenarios run as ordinary unit tests, and identical inputs always produce an identical plan. (AD-6)
 
-*Live ops (stretch) — check-in totals vs capacity; arrivals only, not occupancy (illustrative).*
+**Plans are immutable snapshots** pinned to the ruleset version that produced them, so a plan from last week still reproduces after the rules change. (AD-7)
 
-## Setup
+**Conditions are tri-state.** A material unknown never silently becomes false. It stays visible as `SOURCE_CONFIRMED`, `OFFICIAL_CONFLICT`, `RESEARCH_REQUIRED`, or `COVERAGE_GAP`, end to end from the rule to the screen.
 
-### Prerequisites
+```text
+Intake → Feasibility verdict → Permit plan + citations → Checklist + deadline alerts
+       → Public event page · RSVP · QR check-in · Live ops
+```
 
-- **Node.js 22+**
-- **pnpm** 11.5.x (see `packageManager` in root `package.json`)
-- **Postgres 16** reachable locally (Homebrew, Docker, or a remote URL)
+![Intake: questions appear as answers make them relevant, and "I don't know" is a real answer](docs/screenshots/intake.jpg)
 
-### Install
+## Quickstart
+
+**Prerequisites:** Node.js 22+ · pnpm 11.5.3 (see `packageManager`) · Postgres 16
 
 ```bash
 pnpm install
-```
-
-### Configure env
-
-```bash
 cp apps/api/.env.example apps/api/.env
 cp apps/web/.env.example apps/web/.env.local
 ```
 
-Minimum local values:
+Set `DATABASE_URL` in `apps/api/.env`. Leave `RULES_FILE` unset so the API discovers the published ruleset under `rules/`. The web app defaults to `NEXT_PUBLIC_API_BASE_URL=http://localhost:3001`; leave the Supabase keys blank to run unauthenticated.
 
-- `apps/api/.env` — set `DATABASE_URL` to your Postgres URL; leave `RULES_FILE` unset so the API discovers the published ruleset in `rules/`.
-- `apps/web/.env.local` — `NEXT_PUBLIC_API_BASE_URL=http://localhost:3001` (default in the example).
-
-Optional for full checklist uploads / alerts: fill S3 and Resend/Twilio keys from the examples. See `DEPLOY.md` for the gated demo stack.
-
-### Migrate and run
-
-Confirm Postgres answers a real query (not only `pg_isready`):
+Confirm Postgres answers a real query, not only `pg_isready`:
 
 ```bash
 psql "$DATABASE_URL" -c 'select 1'
@@ -92,42 +89,71 @@ pnpm --filter api migrate up
 Then in two terminals:
 
 ```bash
-pnpm --filter api dev   # http://localhost:3001  — GET /health
+pnpm --filter api dev   # http://localhost:3001, GET /health
 pnpm --filter web dev   # http://localhost:3000
 ```
 
-Open `http://localhost:3000/intake` to start.
+Open <http://localhost:3000/intake>.
 
 ### Quality gates
 
 ```bash
-pnpm check:baseline   # APPROVED artifacts + no hardcoded ruleset paths
+pnpm check:baseline   # approved artifacts agree with their own headers; no hardcoded ruleset paths
 pnpm typecheck
 pnpm lint
-pnpm test             # Vitest across the workspace
 pnpm test:coverage    # enforces the 90% gate
-pnpm build            # Next.js production build
+pnpm build
 ```
 
-Set `DATABASE_URL` when running tests that hit Postgres (API integration suites skip without it).
+`DATABASE_URL` must be set for the API integration suites; they skip without it.
 
 ## Repo map
 
-- `apps/web` — organizer UI, plan/checklist, public event + check-in/live-ops surfaces
-- `apps/api` — Express API, migrations, in-process alert poller
-- `packages/engine` — pure rules evaluation
-- `rules/` — published immutable NYC ruleset (one active file)
-- `specs/` — feature specs (`F-*`)
-- `docs/` — PRD, architecture, design, baseline, verification sources
+| Path | What lives there |
+| --- | --- |
+| `apps/web` | organizer UI: intake, plan, checklist, public event page, check-in, live ops |
+| `apps/api` | Express API, migrations, in-process alert poller |
+| `packages/engine` | pure rules evaluation with no DB, HTTP, env, or clock |
+| `rules/` | the published immutable NYC ruleset (exactly one active file) |
+| `specs/` | approved feature specifications (`F-*`) |
+| `docs/` | PRD, architecture, baseline manifest, verification sources, answer key |
+| `scripts/` | governance guards wired into `pnpm check:baseline` |
 
-## Docs to read before coding
+## Contributing
 
-1. `docs/BASELINE.md` — which artifact versions are current  
-2. `AGENTS.md` + `CONTRIBUTING.md`  
-3. Your `specs/F-xxx-*.md`  
-4. Relevant sections of `docs/ARCHITECTURE.md`  
-5. `rules/` + `docs/test-scenario-answer-key.md` when touching rules, plans, or verdicts  
+Read **`AGENTS.md`** first. It lists which artifacts to read before touching code, in order, and when each applies. `CONTRIBUTING.md` carries the golden rules. `docs/DOCUMENTATION-GOVERNANCE.md` defines the authority hierarchy, the five document states, and which changes need which approvals.
+
+The rule that matters most: **regulatory output comes only from the published ruleset. Never invent a permit name, agency, deadline, fee, or source.**
 
 ## Deploy
 
-See `DEPLOY.md` (Railway + Supabase + Resend + Twilio + Cloudflare Access). Demo is access-gated; synthetic data only (ARCHITECTURE AD-12).
+See **`DEPLOY.md`**: Railway (host) · Supabase (Postgres, storage, auth) · Resend (email) · Twilio (SMS) · Cloudflare Access (demo gate). The demo is access-gated with synthetic data only (`ARCHITECTURE.md` AD-12).
+
+<details>
+<summary><strong>Tech stack</strong></summary>
+
+| Layer | Choice |
+| --- | --- |
+| Monorepo | pnpm workspaces |
+| Web | Next.js (App Router), TypeScript |
+| API | Express, TypeScript |
+| Rules engine | `packages/engine`, pure TS |
+| Database | Postgres 16 (Supabase in demo) |
+| Object storage | S3-compatible (Supabase Storage) |
+| Auth | Supabase Auth (F-701 foundation; production gated on F-702/F-703) |
+| Email / SMS | Resend / Twilio (SMS is a labeled simulation until A2P clears) |
+| Demo gate | Cloudflare Access (CORS is not auth) |
+| Host | Railway |
+| Tests | Vitest, 90% coverage gate |
+
+Current artifact versions are in `docs/BASELINE.md`.
+
+</details>
+
+## License
+
+**Source code** is licensed under the [Apache License 2.0](LICENSE).
+
+**The published ruleset (`rules/`), the verification record (`docs/VERIFICATION-SOURCES.md`), the scenario fixtures, and the product and architecture documents are not covered by it.** They are reserved pending a decision by the copyright holders. [`LICENSING.md`](LICENSING.md) says what falls where and why.
+
+The ruleset is not legal advice. It records what named primary sources were observed to publish on recorded dates, and it is not a substitute for confirming a requirement with the issuing agency.
