@@ -1,5 +1,7 @@
 # Contributing to PopEngine
 
+**Status:** APPROVED (2026-07-22; PR #137-only access-gated-demo overwrite recorded 2026-07-27; see `docs/BASELINE.md`)
+
 This guide is the contract for how we build. It's written for everyone, including teammates using AI assistants for most of their code. Read it once fully; re-read the Golden Rules before every PR.
 
 ## Read This Before Writing Any Code
