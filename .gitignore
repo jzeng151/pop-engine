@@ -6,3 +6,11 @@ coverage/
 .env*
 !.env.example
 .DS_Store
+.gstack/
+
+# Design-tool working state. The approved design system is docs/DESIGN-SYSTEM.md;
+# a second active design artifact is what governance §4 forbids, and the mock
+# renders are large binaries the repo does not need (see the 2026-08-02 amendment).
+.impeccable/
+apps/web/DESIGN.md
+apps/web/PRODUCT.md

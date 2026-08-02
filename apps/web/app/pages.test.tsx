@@ -7,6 +7,7 @@ import RootLayout, { metadata } from "./layout";
 import Home from "./page";
 import IntakePage from "./intake/page";
 import EditIntakePage from "./intake/[id]/page";
+import EventOverviewPage from "./events/[id]/page";
 import { intakeFormProps } from "./intake/intake-page-props";
 
 vi.mock("next/navigation", () => ({ useRouter: () => ({ push: vi.fn() }) }));
@@ -97,5 +98,24 @@ describe("the intake routes", () => {
     // The form takes it from here: it fetches the event from the browser, because the
     // Access cookie is the browser's and not this server's.
     expect(screen.getByRole("status").textContent).toBe("Loading your event…");
+  });
+});
+
+// F-705 AC 8: the overview links only to routes that exist. A destination removed or renamed
+// elsewhere leaves a dead link here, and the shell's own suite does not cover this page.
+describe("the event overview route", () => {
+  it("links every listed destination under the event it was rendered for", async () => {
+    render(await EventOverviewPage({ params: Promise.resolve({ id: "event-9" }) }));
+
+    const destinations = screen.getAllByRole("link").map((link) => link.getAttribute("href"));
+    expect(destinations).toEqual([
+      "/intake/event-9",
+      "/events/event-9/plan",
+      "/events/event-9/checklist",
+      "/events/event-9/promote",
+      "/events/event-9/guests",
+      "/e/event-9/checkin",
+      "/events/event-9/dashboard",
+    ]);
   });
 });

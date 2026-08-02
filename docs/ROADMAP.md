@@ -1,6 +1,6 @@
 # PopEngine — Roadmap (Canonical)
 
-**Status:** APPROVED (2026-07-22; F-109 retitled "Scope-Support Classification" and its concept renamed from "coverage states" to "scope support states" 2026-07-26, product-owner approved, resolving a three-way overload of "coverage"; the five state values are unchanged; standalone `Square/POS integrations` entry dropped from Phase 4 on 2026-07-28, product-owner approved, resolving SPEC-CONFLICT #127 item 2 by the narrowing branch, no F-id's meaning changed; see `docs/BASELINE.md`).
+**Status:** APPROVED (2026-07-22; F-109 retitled "Scope-Support Classification" and its concept renamed from "coverage states" to "scope support states" 2026-07-26, product-owner approved, resolving a three-way overload of "coverage"; the five state values are unchanged; standalone `Square/POS integrations` entry dropped from Phase 4 on 2026-07-28, product-owner approved, resolving SPEC-CONFLICT #127 item 2 by the narrowing branch, no F-id's meaning changed; F-705 Event Workspace Shell added to Phase 1.5 on 2026-08-02, product-owner approved, registering navigation scope that had shipped under a design-system amendment that excludes it, no F-id's meaning changed; see `docs/BASELINE.md`).
 **Companion docs:** `PRD.md` (requirements) · `DESIGN.md` (lifecycle model, lanes, gates, demo plan, dependency graph) · `test-scenario-answer-key.md` (MVP ground truth).
 **Feature IDs:** F-xxx IDs are permanent shared vocabulary; once assigned, an ID's meaning never changes. Full ID policy in `DESIGN.md`.
 
@@ -39,6 +39,7 @@ Worked separately from the core per `DESIGN.md` Decision 10; doubles as the fall
 - **F-301 · Public Event Page** — auto-generated from intake; shareable URL with RSVP button.
 - **F-302 · RSVP / Guest List** — capacity-aware; exports to check-in.
 - **F-205 · Insurance Requirement Detector** — flags $1M liability + City-as-additional-insured where required (block parties without rides exempt); "borough office determines" note for parks.
+- **F-705 · Event Workspace Shell** — the `/events/[id]` shell and overview route: one persistent navigation across the four lifecycle stages for a single event, a masthead naming the active event and labeling the demo, a disabled Planned group, and the theme control. Navigation and chrome only; no endpoint, table, or feature behavior. _Added 2026-08-02, product-owner approved, amending a phase set that was closed on 2026-07-22: the shell shipped with the 2026-07-29 UI work under the design-system amendment, whose scope clause excludes cross-feature navigation, so it is recorded here as the product scope it is. Assigned to F-7xx, the Platform horizontal, because it spans all four stages rather than attaching to one (`DESIGN.md` lifecycle model). No assigned ID's meaning changes._
 
 ## Phase 2 — Execution Hardening (post-capstone)
 
