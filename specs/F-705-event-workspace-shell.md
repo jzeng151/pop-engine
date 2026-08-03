@@ -48,7 +48,10 @@ The state is exposed as `data-load-state` so the distinction is testable rather 
 ## Acceptance Criteria
 
 1. Every `/events/[id]/*` route renders inside the shell, and the shell renders the same eight destinations in the same four groups regardless of which one is active.
-2. The active destination carries `aria-current="page"`. Overview matches its path exactly; every other destination matches by prefix, so a nested route keeps its parent highlighted.
+2. The active destination carries `aria-current="page"` **for the destinations the shell's layout wraps** — Overview, Permit plan, Checklist, Event page, Guests and Live ops. Overview matches its path exactly; the others match by prefix, so a nested route keeps its parent highlighted.
+
+   Event intake (`/intake/[id]`) and Check-in (`/e/[id]/checkin`) are deliberately excluded, because they cannot satisfy it: `EventWorkspace` is mounted only by `apps/web/app/events/[id]/layout.tsx`, so following either link unmounts the navigation entirely and there is no rail left to mark. The criterion said "every destination" until 2026-08-03, which was unsatisfiable as written rather than merely unimplemented. Narrowed rather than fixed by pulling those routes inside the shell: `/e/[id]/checkin` is an attendee surface that must not carry organizer chrome, and the "One-Event Rail Rule" in `docs/DESIGN-SYSTEM.md` keeps attendee and authentication surfaces outside the rail. The persistent-navigation promise in the User Story and In Scope is bounded the same way.
+
 3. The masthead names the active event once loaded, announces the change politely (`aria-live="polite"`), and falls back to the placeholder in both non-ready states without inventing a name.
 4. The masthead states "Synthetic data demo" on every route, satisfying the capstone labeling rule in `AGENTS.md` for an environment carrying no real applications or attendee data.
 5. Planned modules render as `disabled` buttons inside a group headed "Planned". They are not links, do not navigate, and name no F-id, date, or commitment. The visible `PLANNED` stamp belongs to the group, not to each button: `docs/DESIGN-SYSTEM.md` is the authority for that treatment and publishes one clipped paper insert over the rail, stamped once.
@@ -73,4 +76,6 @@ API: none. Schema: none. Jobs: none. Providers: none. Privacy: the event name is
 
 ## Rollout and Fallback
 
-Already deployed. There is no flag: the shell either renders or the route group fails to render, which the existing route tests catch. Removing it means deleting the layout and the overview route, and re-homing any affordance another spec depends on — as of this writing, F-101 Acceptance Criterion 8's plan-stale notice and one-click regeneration, which land on the overview.
+Already deployed. There is no flag: the shell either renders or the route group fails to render, which the existing route tests catch. Removing it means deleting the layout and the overview route.
+
+One dependency to re-home, and it is not yet on this branch. F-101 Acceptance Criterion 8's plan-stale notice and one-click regeneration are being moved onto the overview by the F-101 change stacked above this one; until that lands they still render on the intake form. Whoever removes the shell after it lands has to re-home them, and whoever removes it before does not. Stated this way because the earlier wording described the finished stack rather than this branch, and a maintainer following it here would go looking for an affordance the shell does not yet own.

@@ -193,6 +193,7 @@ The eight features below must be complete, real, and demoable. No mocks in this 
 - **F-301 · Public Event Page [P1]:** auto-generated from the intake (title, date, venue, description, RSVP button, map) at a shareable URL.
 - **F-302 · RSVP / Guest List [P1]:** capacity-aware RSVPs; guest list exports to check-in.
 - **F-205 · Insurance Requirement Detector [P1]:** street/plaza events flag $1M liability with City as additional insured (SAPO-INSURANCE-001; block parties without rides are exempt per 50 RCNY §1-08(b)); parks events render "insurance determined by borough office at review" (PARKS-INSURANCE-NOTE-001), never hard-required. _(These rules ship in the day-one ruleset; F-205 is the dedicated UI surfacing.)_
+- **F-705 · Event Workspace Shell [P1]:** one persistent navigation across the four lifecycle stages for a single event, plus an overview route, a masthead naming the active event and labeling the synthetic-data demo, a disabled Planned group, and the light/dark theme control. Navigation and chrome only: no endpoint, table, or feature behavior, and every destination keeps its own feature's requirements.
 
 ## 5. REQUIREMENTS — PLANNED SCOPE (Phases 2–4; outlined for delegation, specs written when scheduled)
 

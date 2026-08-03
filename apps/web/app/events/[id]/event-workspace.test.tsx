@@ -146,3 +146,39 @@ describe("the organizer event workspace", () => {
     );
   });
 });
+
+// F-705 AC 2, narrowed 2026-08-03: aria-current is promised only for the destinations this
+// layout wraps. Event intake and Check-in are outside it — following either unmounts the shell,
+// so no rail survives to carry the mark. This pins which destinations are in the promise, so a
+// future edit that widens the criterion has to change a test that says why it cannot hold.
+describe("F-705 AC 2: which destinations the aria-current promise covers", () => {
+  const WRAPPED = [
+    "/events/event-9",
+    "/events/event-9/plan",
+    "/events/event-9/checklist",
+    "/events/event-9/promote",
+    "/events/event-9/guests",
+    "/events/event-9/dashboard",
+  ];
+  const OUTSIDE_THE_SHELL = ["/intake/event-9", "/e/event-9/checkin"];
+
+  it("routes every promised destination through the layout that mounts the shell", () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(() => new Promise(() => undefined)),
+    );
+    render(
+      <EventWorkspace apiBaseUrl="https://api.example.com" eventId="event-9">
+        <p>Current surface</p>
+      </EventWorkspace>,
+    );
+
+    const hrefs = screen.getAllByRole("link").map((link) => link.getAttribute("href") ?? "");
+    // Both sets are rendered by the shell...
+    for (const href of [...WRAPPED, ...OUTSIDE_THE_SHELL]) expect(hrefs).toContain(href);
+    // ...but only the wrapped ones sit under /events/[id], which is the only path
+    // apps/web/app/events/[id]/layout.tsx mounts EventWorkspace for.
+    for (const href of WRAPPED) expect(href.startsWith("/events/")).toBe(true);
+    for (const href of OUTSIDE_THE_SHELL) expect(href.startsWith("/events/")).toBe(false);
+  });
+});
