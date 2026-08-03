@@ -44,9 +44,9 @@ the product path: the questionnaire's own scoping in `visibility.ts` and `valida
 of an answer to an un-asked question are untouched by the prototype and left unresolved here
 (section 3, section 7a item 4, section 8 item 2). What Q1 is disposed of is the semantics question
 inside the engine and its cost; what the organizer would be asked and shown under a changed Q1 is
-not measured anywhere below. For Q2 it publishes a measurement of the engine (section 3b) and of
-the plan's verdict-detail renderer (section 3c) and no more; the six-failure count, the 1569/1569
-result and the plan diffs say nothing about Q2. Section 7 gives a separate recommendation for each,
+not measured anywhere below. For Q2 it publishes a measurement of the engine (section 3b), of
+the plan's verdict-detail renderer (section 3c) and of the questionnaire (section 3d), and no more;
+the six-failure count, the 1569/1569 result and the plan diffs say nothing about Q2. Section 7 gives a separate recommendation for each,
 and issue #108 stays open on Q2 either way.
 
 **Measurement basis.** Every number below was measured on commit `f8d6fc3` (this branch's merge-base
@@ -71,6 +71,14 @@ short enough to state completely:
    `apps/web/app/plan/render-probe.test.tsx`, run
    `npx vitest run apps/web/app/plan/render-probe.test.tsx` on the unpatched tree, and delete it
    afterwards. Same status: a probe, not a fixture.
+7. For section 3d's questionnaire result, write appendix A5 to
+   `apps/web/app/intake/questionnaire-probe.test.tsx`, run
+   `npx vitest run apps/web/app/intake/questionnaire-probe.test.tsx` on the unpatched tree, and
+   delete it afterwards.
+8. For sections 4 and 7a's nullable-gate result, write appendix A6 to
+   `packages/engine/src/intake/nullable-probe.test.ts`, run
+   `npx vitest run packages/engine/src/intake/nullable-probe.test.ts` on the unpatched tree, and
+   delete it afterwards.
 
 ---
 
@@ -416,12 +424,47 @@ organizer was told" is true for Q2 is measured, and it does tell them. That stre
 recommendation rather than moving it, and it removes the reason to keep the question waiting on a
 plan-rendering measurement.
 
-**What is still not measured, stated so the narrowing is honest.** Two things. First, the
-questionnaire: whether the intake form offers `"unknown"` for `sapo_event_type` and how it presents
-that choice is an F-101 question this document did not probe. Second, whether a branch table is the
-right presentation at all, as opposed to `may_be_required` findings on the plan lines themselves,
-remains the product and engine-owner call section 3b named. The measurement settles what is shown,
-not whether what is shown is enough.
+### 3d. Q2 in the questionnaire: how `CASE_3`'s answers are actually entered
+
+An earlier revision listed the questionnaire side as an outstanding measurement. It is not
+outstanding; it is reachable from a test the same way section 3c's rendering was, so it is measured
+here. `CASE_3` was entered through the shipped `IntakeForm` on a clean `f8d6fc3`, driving the real
+component with the contract parsed from `rules/nyc-rules.v2.11.json`, exactly as
+`apps/web/app/intake/intake-form.test.tsx` drives it. The harness is appendix A5. It is a probe, not
+a fixture: nothing on this branch adds it, and it asserts nothing.
+
+**What the organizer is asked, and what they can answer.**
+
+| step                                                     | measured                                                                                                                        |
+| -------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------- |
+| after `location_type: street`, before answering the gate | no `sapo_event_type` question on screen                                                                                         |
+| after `obstructs_public_way: yes`                        | the `sapo_event_type` question appears                                                                                          |
+| its options                                              | Street event, Block party, Plaza event, Other sapo class, **I don't know** (all five registry values, none dropped)             |
+| the form's lede                                          | "Answer what applies to your event. Questions appear as your answers make them relevant, and "I don't know" is a real answer, it is stored as unknown and carried into your plan." (the source uses a dash where this quotation uses a comma) |
+| the submitted body after choosing it                     | `sapo_event_type: "unknown"`, sent verbatim, never `false` and never blank                                                       |
+
+`intake-form.tsx:655-675` builds the radio options from `field.values`, the registry's list, with no
+filter; `optionLabel` (`:50-51`) is the only special case and it renders `"unknown"` as "I don't
+know". So the five options are the registry's five, and `"unknown"` is presented as a deliberate
+answer rather than as a skip.
+
+**So `CASE_3` is reachable through the organizer UI, not only through the API.** Section 3b
+established that `validate.ts` accepts `"unknown"` and `events.ts` stores it; this establishes that
+the shipped questionnaire offers it, labels it in plain words, and explains what happens to it. The
+whole Q2 path is now measured end to end: asked on screen, stored as `"unknown"`, scoped by
+`conditions.ts:200-202`, rendered back as a four-row branch table.
+
+**One detail worth recording.** The submission carries the four suppressed dependents as explicit
+`null` (`street_event_size`, `plaza_level`, `plaza_multiple_blocks`, `has_amusement_ride`), and
+`validate.ts:143-144` counts an explicit `null` as not provided, so no `not_applicable` error
+fires and the columns are written NULL. That is today's behaviour and the prototype does not
+change it.
+
+**What is still not measured, stated so the narrowing is honest.** One thing, and it is not a
+measurement: whether a branch table is the right presentation at all, as opposed to
+`may_be_required` findings on the plan lines themselves, remains the product and engine-owner call
+section 3b named. The measurements settle what is asked and what is shown, not whether what is
+shown is enough.
 
 ## 4. Whether the Q1 state can arise at all
 
@@ -442,6 +485,14 @@ narrowing. The route the earlier document identified as the one needing no migra
 widening an existing expression so a legitimately-NULL row becomes in-scope-and-unanswered, remains
 a future route that has never been taken. That finding stands at v2.11 and is unchanged by anything
 here.
+
+**Unreachability rests on the registry as published, not on the validator.** `validate.ts:299`
+raises `required` only for a field that is not `nullable`, so the barrier is that none of the ten
+gate fields carries `nullable: true` and none of the eight fields that do gates anything. An intake
+contract that put those two facts together (a `nullable` gate, by either of the two forms section
+7a names) would make the Q1 state reachable on a newly created row, with no prior row and no
+widening. Appendix A6 measures the half of that which already works today: an in-scope
+registry-nullable field left unanswered validates clean and persists as NULL.
 
 ## 5. Whether `IntakeValue` can represent "unanswered"
 
@@ -529,8 +580,11 @@ The reasons, in the order they carry weight:
 
 1. **The Q1 state is not reachable through the API and never has been** (section 4, re-verified at
    v2.11), and no published ruleset has ever widened a gate. The change buys correctness in a state
-   the deployed system cannot currently produce. This reason is Q1-specific; it does not transfer to
-   Q2, which section 3b shows is reachable and storable.
+   the deployed system cannot currently produce. That is a statement about the registry as
+   published, not about the validator: it holds because no gate field is `nullable`, and a
+   published contract that made one `nullable` would make the state reachable on a newly created
+   row (section 4, section 7a's trigger). This reason is Q1-specific; it does not transfer to Q2,
+   which section 3b shows is reachable and storable.
 2. **The approved fixtures cannot tell the two semantics apart** (section 3). Merging a semantics
    change that its own regression suite is blind to is the wrong order of operations regardless of
    which semantics is right. If the change is ever made, the fixtures that distinguish the semantics
@@ -551,9 +605,10 @@ The reasons, in the order they carry weight:
    comment argues for it) but it should be decided deliberately, not inherited from a diff that
    happened not to touch the file.
 
-**The trigger that should reopen this, stated precisely because the precondition is a conjunction
-and an earlier revision wrote it as a disjunction.** Reaching the Q1 state needs **both** of two
-things, and neither alone is sufficient:
+**The trigger that should reopen this. There are two independent routes into the Q1 state, and an
+earlier revision described only the first.**
+
+**Route 1, rescoping an existing NULL, needs a conjunction.** Neither half alone is sufficient:
 
 - **stored rows written while the narrower expression legitimately left a dependent NULL**: a row
   written under today's contract cannot supply the state on its own, because section 4 shows every
@@ -562,18 +617,50 @@ things, and neither alone is sufficient:
   in-scope-and-unanswered. A widening in a deployment holding no such rows has no old NULL to
   rescope, so it cannot supply the state on its own either.
 
-**The reopening trigger is deliberately the weaker of the two, not the conjunction:** the first
-ruleset publication that widens any existing `asked_when` expression, **or** the deployment
-acquiring real event rows, whichever comes first. That is a conservative choice, reopening on
-either prerequisite rather than waiting for both, and not a claim that either one alone makes the
-state reachable. Because a widening is itself a §6 rule-semantics change requiring the engine
-owner's review, the reviewer who would approve the widening is the same person who would need to
-weigh this, which is a real mitigation and belongs in the record.
+**Route 2, a nullable gate, needs neither half and produces the state on a newly created row.** It
+was missed by the earlier framing and it is the shorter route. `validate.ts:299` raises `required`
+only `if (!isProvided(submission, field.field) && !field.nullable)`, and `isProvided`
+(`validate.ts:143-144`) counts an explicit `null` as not provided. So the moment a gate field
+carries `nullable: true` in the registry, an in-scope gate may be submitted blank, `events.ts:151`
+and `:164` write the column as `values[column] ?? null`, and the row is created in-scope-and-NULL
+with no prior row and no widening anywhere in its history. Two intake-contract changes reach that
+state:
+
+- **marking an existing gate `nullable`**; or
+- **publishing an `asked_when` that references one of today's eight registry-nullable leaf fields**
+  (`tent_area_sqft`, `tent_days_in_place`, `stage_height_ft`, `stage_area_sqft`,
+  `generator_gasoline_gallons`, `generator_diesel_gallons`, `generator_kw`, `battery_system_kwh`),
+  which turns a field that is already blank-able into a gate.
+
+**Measured, not inferred.** Appendix A6 submits a park event with `structure_types: ["tent_canopy"]`
+and no `tent_area_sqft` to `validateIntake` against the v2.11 contract on a clean `f8d6fc3`. It
+returns `errors: []` and `values.tent_area_sqft === null`: an in-scope registry-nullable field, left
+unanswered, accepted and persisted as NULL on a create. That is the whole of route 2's persistence
+half already working today; the only thing today's registry withholds is a gate in that position,
+because none of the ten gate fields is `nullable` and none of the eight nullable fields gates
+anything (section 1). What the engine then does with an in-scope NULL gate is not a new
+measurement: it is `CASE_1` in section 3a, where the dependents collapse to `false` and four SAPO
+street permits go unnamed.
+
+**The reopening trigger, restated to cover both routes:** whichever comes first of
+
+- the first ruleset publication that **widens** any existing `asked_when` expression;
+- the deployment **acquiring real event rows**;
+- the first intake-contract change that **creates a nullable gate**, by either of route 2's two
+  forms.
+
+The first two are deliberately the weaker halves of route 1's conjunction rather than the
+conjunction itself, which is a conservative choice and not a claim that either alone makes the
+state reachable. The third is not a weakened half of anything: on its own it makes the state
+reachable on newly created rows. Because all three are §6 changes requiring review (a widening and
+a nullable-gate publication are rule-semantics or Event Input/rules-schema changes), the reviewer
+who would approve them is the same person who would need to weigh this, which is a real mitigation
+and belongs in the record.
 
 ### 7b. Q2, the gate answered `"unknown"`
 
 **Also do not implement a change now, but on entirely different evidence, and the question is not
-closed.** Sections 3b and 3c measure Q2 and find:
+closed.** Sections 3b, 3c and 3d measure Q2 and find:
 
 - Q2 **is** reachable and storable through the API today, so 7a's reason 1 does not apply to it.
 - The prototype in the appendix **does not address** Q2 at all, so 7a's reasons 2, 3 and 4, which
@@ -585,19 +672,24 @@ closed.** Sections 3b and 3c measure Q2 and find:
   `VerdictDetailPanel` and reports what it renders: four rows, one per published `sapo_event_type`
   value, the four street-size permits named by their organizer labels in the `street event` row.
   This is no longer an inference from engine output.
+- The organizer **can enter it**. Section 3d walks `CASE_3` through the shipped `IntakeForm`: with
+  `obstructs_public_way: "yes"` the `sapo_event_type` question appears, all five registry values are
+  offered, `"unknown"` is labelled "I don't know", the lede says it is stored as unknown and carried
+  into the plan, and the submission sends `"unknown"` verbatim. So Q2 is not a state only the API can
+  reach; it is a state the questionnaire invites.
 
-The third and fourth points are the only argument this document has for Q2, and they are an
-argument against a change on the evidence available, not a demonstration that today's behaviour is
-right. Whether naming the four street permits in a branch table rather than as `may_be_required`
-findings is the correct presentation is an engine-owner and product call that no artifact in the
-repo answers.
+The last three points are the argument this document has for Q2, and they are an argument against a
+change on the evidence available, not a demonstration that today's behaviour is right. Whether
+naming the four street permits in a branch table rather than as `may_be_required` findings is the
+correct presentation is an engine-owner and product call that no artifact in the repo answers.
 
-**So: keep issue #108 open, and do not close it as won't-fix or as answered by this document.** The
-plan-rendering measurement that an earlier revision made a precondition for a Q2 decision has now
-been run (section 3c) and it supports the recommendation above. Two things are still outstanding on
-Q2, and they are different in kind: the questionnaire side, whether the intake form offers and
-explains `"unknown"` for `sapo_event_type`, is a measurement this document did not run; whether a
-branch table is adequate presentation is a decision that no measurement settles.
+**So: keep issue #108 open, and do not close it as won't-fix or as answered by this document.** Both
+measurements an earlier revision made preconditions for a Q2 decision have now been run: the plan
+rendering (section 3c) and the questionnaire (section 3d). Neither moved the recommendation. Each
+strengthened it in the same direction, by replacing an unrun measurement with a measured path on
+which the organizer is asked the question in plain words and told what the answer will do. One thing
+is still outstanding on Q2 and it is different in kind from both: whether a branch table is adequate
+presentation is a decision that no measurement settles.
 
 **What I am explicitly not recommending, and why.** I am not recommending the ruleset alternative
 (converting the boolean gates to enums carrying `unknown`) either. The earlier document prices it at
@@ -613,8 +705,8 @@ Under `docs/DOCUMENTATION-GOVERNANCE.md` §5 and §6:
 
 | If the team decides to                    | Row of the §6 table                                                                         | Required approval                                                                                              |
 | ----------------------------------------- | ------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------- |
-| Implement the tri-state semantics         | **§5 first** (the `F-201:48` reading is unresolved, section 8 item 1), then "Rule trigger, dedupe, branch, deadline, or formula semantics", **and "Product scope, feature meaning, phase" if resolving `F-201:48` changes what that approved spec requires** | **Prerequisite: resolve `specs/F-201-permit-plan-generator.md:48` under §5.** Only then verification owner (Dev 4) plus engine owner (Dev 1), plus the product owner/team decision if the resolution moves F-201's scheduled behaviour |
-| Add fixtures distinguishing the semantics | "Executable regulatory expectation" is an approved fixture (§1); the answer key is APPROVED | Same prerequisite and the same pair, plus the answer key's own revision authorization                          |
+| Implement the tri-state semantics         | **§5 twice first** (the `F-201:48` reading is unresolved, section 8 item 1; the `ARCHITECTURE.md:83` boundary is contradicted, section 8 item 7), then "Rule trigger, dedupe, branch, deadline, or formula semantics", **plus "Product scope, feature meaning, phase" if resolving `F-201:48` changes what that approved spec requires, plus "Durable architecture decision" if resolving `ARCHITECTURE.md:83` moves that boundary** | **Two prerequisites, both under §5, both ahead of the signatures below: resolve `specs/F-201-permit-plan-generator.md:48`, and reconcile `docs/ARCHITECTURE.md:83` against a semantics that reads a raw NULL as materially unknown.** Only then verification owner (Dev 4) plus engine owner (Dev 1); plus the product owner/team decision if the F-201 resolution moves that spec's scheduled behaviour; plus the architecture owner's ADR approval if the `ARCHITECTURE.md:83` resolution moves that boundary rather than confirming it |
+| Add fixtures distinguishing the semantics | "Executable regulatory expectation" is an approved fixture (§1); the answer key is APPROVED | Both prerequisites and the same pair, plus the answer key's own revision authorization                        |
 | Take the ruleset alternative              | Regulatory source/status/content **and** rule semantics **and** shared enum **and** database migration touching shared/core tables | Verification owner plus rules reviewer, plus engine owner, plus all affected lane owners and the architecture owner for the shared enum, **plus the database owner** for the migration |
 | Do nothing (this recommendation)          | none                                                                                        | none; the issue stays open                                                                                     |
 
@@ -634,6 +726,34 @@ requires rather than just to state which reading was always meant, §6's "Produc
 meaning, phase" row adds the product-owner/team-decision capacity on top. This document does not
 resolve `F-201:48`, does not decide which of the two routes the resolution takes, and records no
 approval of either.
+
+**There is a second prerequisite, and an earlier revision of this table missed it entirely: the
+architecture boundary at `docs/ARCHITECTURE.md:83`.** That line, in an APPROVED document, reads:
+"Unknown-capable active fields use explicit `unknown` values, never NULL-as-unknown." Attempt B does
+the opposite. Its whole mechanism is to read a raw NULL on an in-scope gate as making the gate's
+dependents materially unknown (`blockersFor` in appendix A2 records a blocker exactly when the raw
+value is `undefined` or `null`), and the gate it does this to in `CASE_1` is
+`obstructs_public_way`, which is one of the unknown-capable fields that sentence is about: it
+publishes `yes`/`no`/`unknown` and `ARCHITECTURE.md:83` says its unknown is the explicit value, not
+the NULL. So the semantics attempt B measures and the technical boundary the architecture document
+approved are contradictory as written, and this is a different conflict from `F-201:48`: that one is
+about scheduled feature behaviour under governance §1's "Approved `specs/F-xxx-*.md`" row, this one
+is about "Technical boundaries and invariants", whose authoritative artifact is
+`docs/ARCHITECTURE.md` plus approved ADRs.
+
+Governance §5 applies to it the same way and in the same order: stop the affected implementation,
+record a `SPEC-CONFLICT` naming both locations (`docs/ARCHITECTURE.md:83` and the semantics in
+section 3) with the user-visible consequence, and **resolve the source artifact first**. That is why
+it is a prerequisite row and not a caveat: a table that sequences only the `F-201:48` question could
+authorise an implementation while an authoritative technical boundary still says the mechanism that
+implementation depends on is not allowed. Two lane owners cannot settle it between them either, for
+the same §5 reason. If the reconciliation confirms the boundary as written, the tri-state semantics
+needs a different mechanism or does not proceed; if it moves the boundary, that is a durable
+architecture decision and §6's "Durable architecture decision or dependency" row requires the
+architecture owner's ADR approval on top of the verification and engine signatures. **This document
+does not resolve `ARCHITECTURE.md:83`, does not say which way the reconciliation should go, and
+records no approval of either outcome.** It records that the conflict exists and that it is due
+before implementation approval.
 
 **The database-owner row is not optional and is not held.** The ruleset alternative converts gate
 columns in `events` from `boolean` to text carrying `"unknown"`, which is a forward migration on a
@@ -677,14 +797,20 @@ Stated plainly rather than left as silence:
 5. **Whether any state, migration or fixture in a lane I did not run could reach the unanswered
    state.** I ran the full 1569-test suite against a live database, which covers every suite in the
    repo. I did not audit the seed or demo tooling.
-6. **Whether Q2's branch-table presentation is adequate** (sections 3b and 3c). What the engine
-   produces for a gate answered `"unknown"`, and what `VerdictDetailPanel` renders from it, are both
-   measured now: the four street permits appear on screen by their published labels. What remains
-   undetermined is the judgement, whether a branch table is the right place for them or whether they
-   belong on the plan lines as `may_be_required` findings, and that is a product and engine-owner
-   call rather than a measurement. The one measurement still missing on Q2 is the questionnaire
-   side: whether the intake form offers `"unknown"` for `sapo_event_type` and how it explains that
-   choice. I did not probe F-101's form.
+6. **Whether Q2's branch-table presentation is adequate** (sections 3b, 3c and 3d). The whole Q2 path
+   is measured now: the questionnaire asks `sapo_event_type` and offers `"unknown"` as "I don't
+   know", the engine scopes the four dependents out, and `VerdictDetailPanel` renders the four
+   street permits on screen by their published labels. What remains undetermined is the judgement,
+   whether a branch table is the right place for them or whether they belong on the plan lines as
+   `may_be_required` findings, and that is a product and engine-owner call rather than a
+   measurement. No measurement is outstanding on Q2.
+7. **How `docs/ARCHITECTURE.md:83` and a NULL-as-materially-unknown semantics are to be
+   reconciled.** The approved line says unknown-capable active fields use explicit `unknown` values
+   and "never NULL-as-unknown"; attempt B derives material unknownness from a raw NULL on
+   `obstructs_public_way`, which is one of those fields. Section 7's approvals table carries the
+   reconciliation as a §5 prerequisite ahead of the verification and engine-owner signatures. I did
+   not resolve it, I do not have a preferred outcome on the record, and nothing here is an
+   architecture approval.
 
 ## 9. Corrections to `asked-when-three-state-measurement.md`
 
@@ -716,12 +842,13 @@ four of the five are the ruleset moving underneath it.
 
 ## Appendix: every input behind every number above
 
-Four artifacts, all generated at `f8d6fc3` and all verified to apply or run there. **None is
+Six artifacts, all generated at `f8d6fc3` and all verified to apply or run there. **None is
 applied on this branch and this document recommends applying none of them.** They are published
 because the measurements' primary claims are counts, and a count whose input is not published is an
 assertion rather than evidence. A1 produces the six-failure profile in section 3, A2 produces the
-1569/1569 run in section 3, A3 produces every number in sections 3a and 3b, and A4 produces the
-rendered text in section 3c.
+1569/1569 run in section 3, A3 produces every number in sections 3a and 3b, A4 produces the
+rendered text in section 3c, A5 produces the questionnaire table in section 3d, and A6 produces the
+nullable-gate result in sections 4 and 7a.
 
 ### A1: attempt A, the semantics issue #108's Q1 asks for and nothing else
 
@@ -1161,3 +1288,212 @@ describe("render probe", () => {
 reasons are quoted verbatim in section 3c's second table), and one unresolved timeline
 (`SAPO-PLAZA-001`, "the plan was never asked plaza_level, which this deadline keys on"). No blocking
 finding, no missed rule ids, no rescope suggestions.
+
+### A5: the questionnaire probe, and the form it drives
+
+Written to `apps/web/app/intake/questionnaire-probe.test.tsx`, run with
+`npx vitest run apps/web/app/intake/questionnaire-probe.test.tsx` on a clean `f8d6fc3`, and deleted
+afterwards. Nothing on this branch adds it and it asserts nothing; it enters `CASE_3`'s answers
+through the shipped `IntakeForm` and prints what is on screen and what is submitted. Section 3d's
+table is that printed output. The contract is parsed from `rules/nyc-rules.v2.11.json`, and only
+`fetch` and `next/navigation` are faked, exactly as `apps/web/app/intake/intake-form.test.tsx`
+fakes them.
+
+```tsx
+// @vitest-environment jsdom
+
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
+import { afterEach, beforeEach, describe, it, vi } from "vitest";
+import { cleanup, render, screen, waitFor, within } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
+import { parseIntakeContract } from "@pop-engine/engine";
+import { publishedRulesFileIn } from "../rules-file";
+import { IntakeForm } from "./intake-form";
+
+const router = vi.hoisted(() => ({ push: vi.fn() }));
+vi.mock("next/navigation", () => ({ useRouter: () => router }));
+
+const contract = parseIntakeContract(
+  JSON.parse(readFileSync(resolve(publishedRulesFileIn("rules")), "utf8")),
+);
+
+const jsonResponse = (status: number, body: unknown): Response =>
+  new Response(JSON.stringify(body), { status, headers: { "Content-Type": "application/json" } });
+
+const echoSavedEvent = (status: number, init: RequestInit): Response =>
+  jsonResponse(status, {
+    event: { id: "event-1", revision_counter: 1, ...JSON.parse(String(init.body)) },
+    warnings: [],
+    plan_stale: false,
+  });
+
+const chooseOption = async (
+  user: ReturnType<typeof userEvent.setup>,
+  field: string,
+  value: string,
+) => {
+  const option = document.querySelector<HTMLInputElement>(
+    `input[name="${field}"][value="${value}"]`,
+  );
+  if (option === null) throw new Error(`no option ${field}=${value} on screen`);
+  await user.click(option);
+};
+
+const fillField = async (
+  user: ReturnType<typeof userEvent.setup>,
+  field: string,
+  value: string,
+) => {
+  const input = document.querySelector<HTMLInputElement>(`input[name="${field}"]`);
+  if (input === null) throw new Error(`no input ${field} on screen`);
+  await user.clear(input);
+  await user.type(input, value);
+};
+
+let fetchMock: ReturnType<typeof vi.fn>;
+
+beforeEach(() => {
+  router.push.mockReset();
+  fetchMock = vi.fn(async (_url: string, init: RequestInit) => echoSavedEvent(201, init));
+  vi.stubGlobal("fetch", fetchMock);
+});
+
+afterEach(() => {
+  cleanup();
+  vi.unstubAllGlobals();
+});
+
+describe("questionnaire probe", () => {
+  it("walks CASE_3's answers through the shipped form", async () => {
+    const user = userEvent.setup();
+    render(
+      <IntakeForm contract={contract} apiBaseUrl="https://api.example.com" eventId={undefined} />,
+    );
+
+    await fillField(user, "name", "Probe case 3");
+    await chooseOption(user, "borough", "manhattan");
+    await chooseOption(user, "location_type", "street");
+    await fillField(user, "headcount", "200");
+    await fillField(user, "event_date", "2026-09-30");
+    await chooseOption(user, "event_open_to_public", "yes");
+    await chooseOption(user, "food_present", "false");
+    await chooseOption(user, "selling_anything", "false");
+    await chooseOption(user, "amplified_sound", "false");
+    await chooseOption(user, "structure_types", "none");
+    await chooseOption(user, "open_flame_or_cooking", "none");
+    await chooseOption(user, "generator_present", "false");
+    await chooseOption(user, "battery_present", "false");
+    await chooseOption(user, "alcohol", "false");
+
+    console.log("=== after location_type=street, before obstructs answer ===");
+    console.log(
+      "sapo_event_type on screen:",
+      document.querySelector('input[name="sapo_event_type"]') !== null,
+    );
+
+    await chooseOption(user, "obstructs_public_way", "yes");
+
+    console.log("=== after obstructs_public_way=yes ===");
+    const group = screen.queryByRole("group", { name: /Sapo event type/i });
+    console.log("sapo_event_type question present:", group !== null);
+    if (group !== null) {
+      console.log("legend:", group.querySelector("legend")?.textContent);
+      console.log(
+        "options:",
+        JSON.stringify(
+          Array.from(group.querySelectorAll<HTMLInputElement>("input")).map((input) => ({
+            value: input.value,
+            label: input.parentElement?.textContent,
+          })),
+        ),
+      );
+      console.log("help text:", group.textContent);
+    }
+    console.log("lede:", document.querySelector(".intake__lede")?.textContent);
+
+    await chooseOption(user, "sapo_event_type", "unknown");
+    console.log(
+      "'I don't know' present in group:",
+      group !== null && within(group).queryByText("I don't know") !== null,
+    );
+
+    await user.click(screen.getByRole("button", { name: /^Save/ }));
+    await waitFor(() => {
+      if (fetchMock.mock.calls.length === 0) throw new Error("no submit yet");
+    });
+    const body = JSON.parse(String((fetchMock.mock.calls[0]?.[1] as RequestInit).body));
+    console.log("=== submitted body ===");
+    console.log(JSON.stringify(body, null, 2));
+    console.log("dependents present in submission:", {
+      street_event_size: "street_event_size" in body,
+      plaza_level: "plaza_level" in body,
+      plaza_multiple_blocks: "plaza_multiple_blocks" in body,
+      has_amusement_ride: "has_amusement_ride" in body,
+    });
+  });
+});
+```
+
+**What it printed:** before `obstructs_public_way` is answered, `sapo_event_type` is not on screen;
+after answering `yes`, the question renders with options
+`street_event`/`block_party`/`plaza_event`/`other_sapo_class`/`unknown` labelled "Street event",
+"Block party", "Plaza event", "Other sapo class", "I don't know"; and the submitted body carries
+`sapo_event_type: "unknown"` with the four dependents present as explicit `null`.
+
+### A6: the nullable-gate probe
+
+Written to `packages/engine/src/intake/nullable-probe.test.ts`, run with
+`npx vitest run packages/engine/src/intake/nullable-probe.test.ts` on a clean `f8d6fc3`, and deleted
+afterwards. Nothing on this branch adds it and it asserts nothing. It submits an event whose
+`structure_types` includes `tent_canopy`, which puts the registry-nullable `tent_area_sqft` in
+scope, and leaves that field unanswered.
+
+```ts
+import { readFileSync } from "node:fs";
+import { describe, it } from "vitest";
+import { PUBLISHED_RULES_FILE } from "../__fixtures__/published-ruleset";
+import { parseIntakeContract } from "./registry";
+import { validateIntake } from "./validate";
+
+const raw: Record<string, unknown> = JSON.parse(readFileSync(PUBLISHED_RULES_FILE, "utf8"));
+const contract = parseIntakeContract(raw);
+
+const TENT_EVENT: Record<string, unknown> = {
+  name: "Nullable probe",
+  borough: "manhattan",
+  location_type: "park",
+  headcount: 150,
+  event_date: "2026-09-30",
+  event_open_to_public: "yes",
+  food_present: false,
+  selling_anything: false,
+  amplified_sound: false,
+  structure_types: ["tent_canopy"],
+  structure_over_10ft_tall: "no",
+  open_flame_or_cooking: ["none"],
+  generator_present: false,
+  battery_present: false,
+  alcohol: false,
+};
+
+describe("nullable probe", () => {
+  it("submits an in-scope registry-nullable field with no answer", () => {
+    const result = validateIntake(contract, TENT_EVENT, "2026-07-22");
+    console.log("errors:", JSON.stringify(result.errors));
+    console.log(
+      "tent_area_sqft in stored answers:",
+      Object.prototype.hasOwnProperty.call(result.values ?? {}, "tent_area_sqft"),
+      "| value:",
+      JSON.stringify((result.values ?? {}).tent_area_sqft),
+    );
+    console.log("full result keys:", Object.keys(result));
+  });
+});
+```
+
+**What it printed:** `errors: []`, and `tent_area_sqft` present in the row to persist with the value
+`null`. So an in-scope registry-nullable field left unanswered validates clean and is written NULL
+on a newly created row. Sections 4 and 7a use this for the one thing it shows: the persistence half
+of a nullable gate already works, and the only reason the Q1 state is unreachable today is that no
+gate field is `nullable`.
