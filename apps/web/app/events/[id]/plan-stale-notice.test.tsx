@@ -502,6 +502,82 @@ describe("what the notice refuses to conclude", () => {
     expect(screen.queryByRole("button", { name: "Regenerate plan" })).toBeNull();
   });
 
+  /**
+   * The ordering the #232 review names for the downgrade guard, driven rather than raced.
+   *
+   * The guard's inputs used to be read BEFORE the staleness recheck and used after it, so another
+   * tab regenerating in that window — onto a ruleset newer than the one this service runs — left
+   * the guard deciding on a plan that no longer exists. It opens, the organizer regenerates, and
+   * the newer pinned plan is replaced from superseded rules.
+   *
+   * Driven by keying the plan's pinned version on how many event requests have ALREADY BEEN
+   * ISSUED when the plan request goes out. That is the ordering relation itself, not a proxy for
+   * it: `Promise.all` and a plain `await` both issue their fetches synchronously in source order,
+   * so "the plan was read while only the first event read had gone out" is deterministic in jsdom
+   * and needs no timing. One event request issued means the plan was read before the recheck; two
+   * means it was read no earlier than the recheck.
+   *
+   * The service stays on nyc.v2.11 throughout, so the plan read before the recheck opens the guard
+   * and the plan read with it (pinned nyc.v2.12 by the other tab) closes it.
+   */
+  it("guards on the plan as it stands after the staleness recheck, not before it", async () => {
+    let eventRequests = 0;
+    fetchMock.mockImplementation(async (url: string) => {
+      if (String(url).includes("/api/rules/meta")) return metaResponse(PINNED_VERSION);
+      if (String(url).endsWith("/plan")) {
+        return planResponse(eventRequests > 1 ? "nyc.v2.12" : PINNED_VERSION, 3);
+      }
+      eventRequests += 1;
+      return eventResponse(true, eventRequests === 1 ? 3 : 4);
+    });
+
+    render(<PlanStaleNotice apiBaseUrl="https://api.example.com" eventId="event-9" />);
+
+    const refusal = await screen.findByRole("alert");
+    expect(refusal.textContent).toContain("nyc.v2.12");
+    expect(screen.queryByRole("button", { name: "Regenerate plan" })).toBeNull();
+    expect(screen.getByText(/edited since its plan was generated/)).toBeDefined();
+  });
+
+  /**
+   * A POST whose outcome the browser never learned may already have committed, and a committed
+   * regeneration is an immutable plan (AD-7). Re-offering the button on the strength of the error
+   * alone therefore writes a second plan for one organizer action.
+   *
+   * The ordering, driven: the connection drops on the POST, and every event read from that point
+   * on reports the plan current, which is what the api holds once the request it did receive
+   * committed. The assertion on the call log is the ordering claim — the read that decides whether
+   * to re-offer the button must come after the POST in the sequence, not from the state this
+   * component held before it.
+   */
+  it("withholds the retry when a failed regeneration may already have stored a plan", async () => {
+    const user = userEvent.setup();
+    const calls: string[] = [];
+    let posted = false;
+    fetchMock.mockImplementation(async (url: string, init?: RequestInit) => {
+      if (init?.method === "POST") {
+        calls.push("post");
+        posted = true;
+        // The api received it and committed; the response never arrived.
+        throw new TypeError("Failed to fetch");
+      }
+      if (String(url).includes("/api/rules/meta")) return metaResponse();
+      if (String(url).endsWith("/plan")) return planResponse();
+      calls.push("event");
+      return eventResponse(!posted, 3);
+    });
+
+    render(<PlanStaleNotice apiBaseUrl="https://api.example.com" eventId="event-9" />);
+    await user.click(await screen.findByRole("button", { name: "Regenerate plan" }));
+
+    const outcome = await screen.findByRole("alert");
+    expect(outcome.textContent).toContain("not known whether a plan was stored");
+    expect(screen.queryByRole("button", { name: "Regenerate plan" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Regenerating plan…" })).toBeNull();
+    expect(calls.filter((call) => call === "post")).toHaveLength(1);
+    expect(calls.lastIndexOf("event")).toBeGreaterThan(calls.indexOf("post"));
+  });
+
   // A 2xx body that omits plan_stale is not a confirmation. loadEvent normalises it to false,
   // which is right for "is it stale" and wrong for "was freshness confirmed".
   it("does not confirm regeneration when the event never reports staleness", async () => {

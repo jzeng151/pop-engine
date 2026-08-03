@@ -41,6 +41,22 @@ type Regeneration =
 const RECHECK_UNAVAILABLE =
   "This plan's staleness could not be re-read, so regeneration is not offered here. Reload this page to check.";
 
+/** Said when a POST answered 2xx and the read that would confirm the stored plan did not. */
+const STORED_UNCONFIRMED =
+  "Your plan was regenerated, but the event could not be re-read to confirm the new plan is " +
+  "current, so the warning above stays. Reload this page to check; regenerating again would store " +
+  "a second plan.";
+
+/**
+ * Said when the POST itself came back with no usable outcome. It may have reached the api and
+ * committed before the connection dropped, so it is not known whether a plan was stored, and a
+ * retry would store a second one (AD-7) if it was.
+ */
+const RETRY_WITHHELD =
+  "The regeneration request failed, so it is not known whether a plan was stored. It is not " +
+  "offered again here, because a second attempt would store a second plan if the first one landed. " +
+  "Reload this page to check.";
+
 function regenerationGuard(plan: PlanResult, meta: RulesMetaResult): Regeneration {
   if (!plan.ok) return { status: "refused", reason: plan.message };
   const liveVersion = meta.ok ? meta.meta.ruleset_version : null;
@@ -62,10 +78,10 @@ export function PlanStaleNotice({ apiBaseUrl, eventId }: { apiBaseUrl: string; e
   const [failure, setFailure] = useState<string | null>(null);
   const [regeneratedRevision, setRegeneratedRevision] = useState<number | null>(null);
   /**
-   * Carries the read failure when the POST stored a plan and the follow-up event read could not
-   * confirm it. Distinct from `failure`, which means no plan was written: this one has to say a
-   * plan exists, and it withdraws the button, because a second POST writes a second immutable
-   * plan (AD-7) for one organizer action.
+   * What to say when a plan may exist and cannot be shown to be current: the POST stored one and
+   * the follow-up read could not confirm it, or the POST gave no usable outcome at all. Distinct
+   * from `failure`, which means the api answered and no plan was written. This one withdraws the
+   * button, because a second POST writes a second immutable plan (AD-7) for one organizer action.
    */
   const [unconfirmed, setUnconfirmed] = useState<string | null>(null);
   /**
@@ -120,23 +136,29 @@ export function PlanStaleNotice({ apiBaseUrl, eventId }: { apiBaseUrl: string; e
       if (!stillDescribed() || !result.ok || !result.loaded.plan_stale) return;
       setStale(true);
 
-      // Only a stale plan can be regenerated, so the two reads the guard needs are made only once
+      // Only a stale plan can be regenerated, so the reads the guard needs are made only once
       // there is an action to guard.
-      const [plan, meta] = await Promise.all([
+      //
+      // Another tab can regenerate while this component reads, which leaves the plan already
+      // current, and the event can be edited again after that, which leaves it stale for a revision
+      // this component has never seen. Comparing the plan's own revision against the revision read
+      // above cannot tell those apart: both read 3 whether or not a PATCH has since moved the event
+      // to 4, and answering "current" there withdraws a true warning and shows the organizer a plan
+      // their edit is not in. The api recomputes staleness against the stored plan on every read,
+      // so ask it again, after the read that raised the warning. Withdrawal takes an explicit
+      // "not stale" and nothing else.
+      //
+      // The recheck and the guard's own reads go out together rather than one after the other. A
+      // plan read that COMPLETES before the recheck is issued describes a plan the recheck's answer
+      // may already have superseded: the other tab's regeneration can pin a ruleset newer than the
+      // one this service runs, and guarding on the earlier pair opens the button on a plan that no
+      // longer exists, so regenerating rebuilds the newer pinned plan from superseded rules and
+      // drops requirements. Issued in one batch, neither read precedes the other.
+      const [recheck, plan, meta] = await Promise.all([
+        loadEvent(apiBaseUrl, eventId),
         loadPlan(apiBaseUrl, eventId),
         loadRulesMeta(apiBaseUrl),
       ]);
-      if (!stillDescribed()) return;
-
-      // Another tab can regenerate while these two reads are in flight, which leaves the plan
-      // already current, and the event can be edited again after that, which leaves it stale for a
-      // revision this component has never seen. Comparing the plan's own revision against the
-      // revision read before it cannot tell those apart: both read 3 whether or not a PATCH has
-      // since moved the event to 4, and answering "current" there withdraws a true warning and
-      // shows the organizer a plan their edit is not in. The api recomputes staleness against the
-      // stored plan on every read, so ask it again here, after the reads its answer has to be
-      // newer than. Withdrawal takes an explicit "not stale" and nothing else.
-      const recheck = await loadEvent(apiBaseUrl, eventId);
       if (!stillDescribed()) return;
       // No answer is not "still stale" and not "current". The warning stays, because nothing
       // withdrew it, and the button does not appear, because the plan may already have been
@@ -174,8 +196,19 @@ export function PlanStaleNotice({ apiBaseUrl, eventId }: { apiBaseUrl: string; e
     if (!stillDescribed()) return;
 
     if (!result.ok) {
+      // A POST that failed on the wire may still have reached the api and committed, which stores
+      // an immutable plan (AD-7) this browser never saw a response for. Re-offering the button on
+      // the strength of the error alone therefore writes a second plan for one organizer action.
+      // The button comes back only on an explicit "still stale" read AFTER the POST, not on the
+      // state this component held before it; anything else withholds it and says why.
+      const recheck = await loadEvent(apiBaseUrl, eventId);
+      if (!stillDescribed()) return;
       setRegenerating(false);
-      setFailure(result.message);
+      if (recheck.ok && recheck.loaded.plan_stale_reported && recheck.loaded.plan_stale) {
+        setFailure(result.message);
+        return;
+      }
+      setUnconfirmed(`${RETRY_WITHHELD} ${result.message}`);
       return;
     }
 
@@ -191,7 +224,7 @@ export function PlanStaleNotice({ apiBaseUrl, eventId }: { apiBaseUrl: string; e
     if (!stillDescribed()) return;
     setRegenerating(false);
     if (!recheck.ok) {
-      setUnconfirmed(recheck.message);
+      setUnconfirmed(`${STORED_UNCONFIRMED} ${recheck.message}`);
       return;
     }
     if (recheck.loaded.plan_stale) return;
@@ -207,7 +240,9 @@ export function PlanStaleNotice({ apiBaseUrl, eventId }: { apiBaseUrl: string; e
       typeof revision === "number" &&
       Number.isFinite(revision);
     if (!confirmed) {
-      setUnconfirmed("The event was read, but it did not report whether the plan is current.");
+      setUnconfirmed(
+        `${STORED_UNCONFIRMED} The event was read, but it did not report whether the plan is current.`,
+      );
       return;
     }
 
@@ -236,13 +271,7 @@ export function PlanStaleNotice({ apiBaseUrl, eventId }: { apiBaseUrl: string; e
           {regenerating ? "Regenerating plan…" : "Regenerate plan"}
         </button>
       )}
-      {unconfirmed !== null && (
-        <p role="alert">
-          Your plan was regenerated, but the event could not be re-read to confirm the new plan is
-          current, so the warning above stays. Reload this page to check; regenerating again would
-          store a second plan. {unconfirmed}
-        </p>
-      )}
+      {unconfirmed !== null && <p role="alert">{unconfirmed}</p>}
       {regeneration.status === "refused" && <p role="alert">{regeneration.reason}</p>}
       {failure !== null && <p role="alert">{failure}</p>}
     </section>
