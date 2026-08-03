@@ -89,8 +89,12 @@ const respondWith = ({
   });
 };
 
-const renderNotice = () =>
-  render(<PlanStaleNotice apiBaseUrl="https://api.example.com" eventId="event-9" />);
+const renderNotice = (eventId = "event-9") =>
+  render(<PlanStaleNotice apiBaseUrl="https://api.example.com" eventId={eventId} />);
+
+const notice = (eventId: string) => (
+  <PlanStaleNotice apiBaseUrl="https://api.example.com" eventId={eventId} />
+);
 
 describe("the stale-plan notice on the event overview", () => {
   it("says nothing at all when the plan is current", async () => {
@@ -130,6 +134,54 @@ describe("the stale-plan notice on the event overview", () => {
       (call) => (call[1] as RequestInit | undefined)?.method === "POST",
     );
     expect(regeneration?.[0]).toBe("https://api.example.com/api/events/event-9/plan");
+  });
+
+  // React reuses a component instance across a prop change, so the state below belongs to whichever
+  // event was last read. Left alone it describes the previous one, and the button it keeps enabled
+  // posts against the new one — a second immutable plan (AD-7) for an event nobody said was stale.
+  const respondPerEvent = (staleEventId: string, regenerated = { done: false }) => {
+    fetchMock.mockImplementation(async (url: string, init?: RequestInit) => {
+      if (init?.method === "POST") {
+        regenerated.done = true;
+        return new Response(JSON.stringify({ eventRevision: 3 }), {
+          headers: { "Content-Type": "application/json" },
+          status: 201,
+        });
+      }
+      if (url.endsWith("/api/rules/meta")) return metaResponse();
+      if (url.endsWith("/plan")) return planResponse();
+      return eventResponse(url.includes(staleEventId) && !regenerated.done);
+    });
+  };
+
+  it("clears the stale warning when it is reused for an event that is not stale", async () => {
+    respondPerEvent("event-9");
+
+    const { rerender } = renderNotice();
+    await screen.findByRole("button", { name: "Regenerate plan" });
+
+    rerender(notice("event-10"));
+
+    await vi.waitFor(() =>
+      expect(screen.queryByText(/edited since its plan was generated/)).toBeNull(),
+    );
+    expect(screen.queryByRole("button", { name: "Regenerate plan" })).toBeNull();
+    expect(screen.queryByRole("status")).toBeNull();
+  });
+
+  it("does not report one event's regeneration against the event that replaced it", async () => {
+    const user = userEvent.setup();
+    respondPerEvent("event-9");
+
+    const { rerender } = renderNotice();
+    await user.click(await screen.findByRole("button", { name: "Regenerate plan" }));
+    rerender(notice("event-10"));
+
+    await vi.waitFor(() =>
+      expect(screen.queryByText(/edited since its plan was generated/)).toBeNull(),
+    );
+    expect(screen.queryByRole("status")).toBeNull();
+    expect(screen.queryByRole("alert")).toBeNull();
   });
 
   it("keeps the warning and says why when regeneration fails", async () => {

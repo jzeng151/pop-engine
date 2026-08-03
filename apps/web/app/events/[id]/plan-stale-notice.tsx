@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import { loadEvent, regeneratePlan } from "../../intake/events-api";
 import {
@@ -62,9 +62,25 @@ export function PlanStaleNotice({ apiBaseUrl, eventId }: { apiBaseUrl: string; e
    * plan (AD-7) for one organizer action.
    */
   const [unconfirmed, setUnconfirmed] = useState<string | null>(null);
+  /**
+   * Which event the state above describes. React keeps one instance across a prop change, so
+   * without this the previous event's warning survives into the next one — and the button it
+   * leaves enabled posts against the new event, storing an immutable plan (AD-7) for an event
+   * nobody said was stale. It is a ref rather than state because a regeneration already in flight
+   * has to read the CURRENT event when it lands, not the one captured when it was started.
+   */
+  const describedEventId = useRef(eventId);
 
   useEffect(() => {
     let mounted = true;
+
+    describedEventId.current = eventId;
+    setStale(false);
+    setRegeneration({ status: "checking" });
+    setRegenerating(false);
+    setFailure(null);
+    setRegeneratedRevision(null);
+    setUnconfirmed(null);
 
     void loadEvent(apiBaseUrl, eventId).then(async (result) => {
       // An event that cannot be read says nothing about its plan. Rendering the warning would
@@ -90,9 +106,16 @@ export function PlanStaleNotice({ apiBaseUrl, eventId }: { apiBaseUrl: string; e
   if (!stale && regeneratedRevision === null) return null;
 
   const regenerate = async () => {
+    // Every outcome below is about THIS event. If the component has been handed another one while
+    // the request was in flight, none of it can be reported: the screen now describes an event the
+    // POST never touched.
+    const regeneratedEventId = eventId;
+    const stillDescribed = () => describedEventId.current === regeneratedEventId;
+
     setRegenerating(true);
     setFailure(null);
     const result = await regeneratePlan(apiBaseUrl, eventId);
+    if (!stillDescribed()) return;
 
     if (!result.ok) {
       setRegenerating(false);
@@ -109,6 +132,7 @@ export function PlanStaleNotice({ apiBaseUrl, eventId }: { apiBaseUrl: string; e
     // otherwise see the same warning and the same live button after a POST that stored a plan,
     // and press it again.
     const recheck = await loadEvent(apiBaseUrl, eventId);
+    if (!stillDescribed()) return;
     setRegenerating(false);
     if (!recheck.ok) {
       setUnconfirmed(recheck.message);
