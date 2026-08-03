@@ -36,8 +36,21 @@ describe("loadEvent", () => {
       loaded: {
         event: { id: "event-1", revision_counter: 3, borough: "queens" },
         plan_stale: true,
+        // Distinct from `plan_stale`: whether the API answered the question at all. A caller
+        // confirming freshness after a regeneration cannot read the boolean, because a body that
+        // omits the field normalises to `false` and would read as confirmed-current.
+        plan_stale_reported: true,
       },
     });
+    // Added 2026-08-03: the two are not the same question.
+    const silent = stubFetch(async () =>
+      jsonResponse(200, { event: { id: "event-1", revision_counter: 3 }, warnings: [] }),
+    );
+    const quiet = await loadEvent("https://api.example.com", "event-1");
+    expect(quiet.ok && quiet.loaded.plan_stale).toBe(false);
+    expect(quiet.ok && quiet.loaded.plan_stale_reported).toBe(false);
+    void silent;
+
     expect(fetchMock).toHaveBeenCalledWith("https://api.example.com/api/events/event-1", {
       credentials: "include",
       headers: { "Content-Type": "application/json" },

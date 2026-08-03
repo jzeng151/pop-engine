@@ -18,6 +18,8 @@ export type SavedEvent = {
 export type LoadedEvent = {
   event: SavedEvent;
   plan_stale: boolean;
+  /** Whether the response carried the field at all; see the parser. */
+  plan_stale_reported: boolean;
 };
 
 export type LoadResult = { ok: true; loaded: LoadedEvent } | { ok: false; message: string };
@@ -84,6 +86,11 @@ export async function loadEvent(apiBaseUrl: string, eventId: string): Promise<Lo
     loaded: {
       event: event as SavedEvent,
       plan_stale: asRecord(body)?.plan_stale === true,
+      // Whether the API actually answered the staleness question, as distinct from answering
+      // "no". A caller deciding "is it stale" wants the boolean above; a caller deciding
+      // "was freshness confirmed" cannot use it, because a body that omits the field would read
+      // as confirmed-current.
+      plan_stale_reported: typeof asRecord(body)?.plan_stale === "boolean",
     },
   };
 }

@@ -81,8 +81,12 @@ export function PlanStaleNotice({ apiBaseUrl, eventId }: { apiBaseUrl: string; e
   // window posts an immutable plan (AD-7) for an event nobody said was stale. Updating here makes
   // React re-render before anything is committed, so no render can observe the mismatch.
   if (renderedEventId !== eventId) {
+    // State only. The identity ref is NOT touched here: React may begin a concurrent render for
+    // another event and then abandon it, and a ref mutation survives that abandonment while the
+    // old event stays committed. Every in-flight read and regeneration for the still-visible event
+    // would then fail its identity check, leaving a committed button disabled forever with no
+    // outcome. The ref is advanced in the effect below, which only runs on a commit.
     setRenderedEventId(eventId);
-    describedEventId.current = eventId;
     setStale(false);
     setRegeneration({ status: "checking" });
     setRegenerating(false);
@@ -93,6 +97,10 @@ export function PlanStaleNotice({ apiBaseUrl, eventId }: { apiBaseUrl: string; e
 
   useEffect(() => {
     let mounted = true;
+    // Commit phase, so an abandoned concurrent render cannot advance it. Between the render-phase
+    // reset above and this line the ref still names the previous event, which is safe: that reset
+    // has already hidden the warning and the button, so there is nothing for a click to act on.
+    describedEventId.current = eventId;
     // Every async result below is about the event that was current when its request went out.
     // `mounted` alone cannot say that: React keeps this instance across an eventId change and runs
     // the cleanup AFTER the new id has committed, so a slow read for the previous event lands with
@@ -116,6 +124,17 @@ export function PlanStaleNotice({ apiBaseUrl, eventId }: { apiBaseUrl: string; e
         loadRulesMeta(apiBaseUrl),
       ]);
       if (!stillDescribed()) return;
+
+      // Another tab can regenerate while these two reads are in flight. The plan that comes back
+      // is then already current, and offering the button on the strength of the earlier
+      // `plan_stale: true` would store a second immutable plan (AD-7) for one revision. The plan
+      // carries the revision it evaluated, so compare it against the event rather than re-reading:
+      // equal means the warning this component is showing is already out of date, and the honest
+      // response is to withdraw it rather than offer an action against it.
+      if (plan.ok && plan.plan.eventRevision === result.loaded.event.revision_counter) {
+        setStale(false);
+        return;
+      }
       setRegeneration(regenerationGuard(plan, meta));
     });
 
@@ -161,8 +180,23 @@ export function PlanStaleNotice({ apiBaseUrl, eventId }: { apiBaseUrl: string; e
     }
     if (recheck.loaded.plan_stale) return;
 
+    // `loadEvent` normalises a missing `plan_stale` to `false`, which is right for a reader asking
+    // "is it stale" and wrong for this one, which is asking "was freshness confirmed". A 2xx body
+    // that simply omits the field would otherwise clear the warning as though the API had answered.
+    // Same for a revision that is not a number: the confirmation would read "regenerated for
+    // revision undefined". Either is the stored-but-unconfirmed outcome, not a success.
+    const revision = recheck.loaded.event.revision_counter;
+    const confirmed =
+      recheck.loaded.plan_stale_reported &&
+      typeof revision === "number" &&
+      Number.isFinite(revision);
+    if (!confirmed) {
+      setUnconfirmed("The event was read, but it did not report whether the plan is current.");
+      return;
+    }
+
     setStale(false);
-    setRegeneratedRevision(recheck.loaded.event.revision_counter);
+    setRegeneratedRevision(revision);
   };
 
   if (!stale) {

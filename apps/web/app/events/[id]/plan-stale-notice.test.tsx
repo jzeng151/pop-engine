@@ -23,10 +23,14 @@ const eventResponse = (planStale: boolean, revision = 3) =>
     { headers: { "Content-Type": "application/json" }, status: 200 },
   );
 
-const planResponse = (rulesetVersion = PINNED_VERSION) =>
+// A STALE plan is one generated for an earlier revision than the event's, which is what the API's
+// `plan_stale: true` means. These fixtures used to say `plan_stale: true` while the plan named the
+// event's current revision — a state the API cannot produce — so `eventRevision` defaults to one
+// behind `eventResponse`'s default of 3.
+const planResponse = (rulesetVersion = PINNED_VERSION, eventRevision = 2) =>
   new Response(
     JSON.stringify({
-      eventRevision: 3,
+      eventRevision,
       rulesetVersion,
       snapshotDate: "2026-07-01",
       verdict: "CONDITIONAL",
@@ -418,5 +422,69 @@ describe("event identity and announcement", () => {
     const region = warning.closest("[aria-live]");
     expect(region).not.toBeNull();
     expect(region?.getAttribute("aria-live")).toBe("polite");
+  });
+});
+
+// All three added 2026-08-03 from the #232 review.
+describe("what the notice refuses to conclude", () => {
+  // Another tab regenerating while the guard reads are in flight leaves the plan already current.
+  // Offering the button on the strength of the earlier plan_stale would store a second immutable
+  // plan for one revision.
+  it("withdraws the warning when the plan turns out to be current for this revision", async () => {
+    fetchMock.mockImplementation(async (url: string) => {
+      if (String(url).endsWith("/plan"))
+        return new Response(
+          JSON.stringify({ plan: { rulesetVersion: "nyc.v2.11", eventRevision: 3 } }),
+          {
+            headers: { "Content-Type": "application/json" },
+            status: 200,
+          },
+        );
+      if (String(url).includes("/api/rules/meta"))
+        return new Response(JSON.stringify({ ruleset_version: "nyc.v2.11" }), {
+          headers: { "Content-Type": "application/json" },
+          status: 200,
+        });
+      return eventResponse(true, 3);
+    });
+
+    render(<PlanStaleNotice apiBaseUrl="https://api.example.com" eventId="event-9" />);
+
+    await vi.waitFor(() => expect(fetchMock.mock.calls.length).toBeGreaterThan(2));
+    await vi.waitFor(() =>
+      expect(screen.queryByRole("button", { name: "Regenerate plan" })).toBeNull(),
+    );
+  });
+
+  // A 2xx body that omits plan_stale is not a confirmation. loadEvent normalises it to false,
+  // which is right for "is it stale" and wrong for "was freshness confirmed".
+  it("does not confirm regeneration when the event never reports staleness", async () => {
+    const user = userEvent.setup();
+    let posted = false;
+    fetchMock.mockImplementation(async (_url: string, init?: RequestInit) => {
+      if (init?.method === "POST") {
+        posted = true;
+        return new Response(JSON.stringify({ eventRevision: 3 }), {
+          headers: { "Content-Type": "application/json" },
+          status: 201,
+        });
+      }
+      if (String(_url).endsWith("/plan")) return planResponse();
+      if (String(_url).includes("/api/rules/meta")) return metaResponse();
+      if (posted)
+        // 2xx, valid event, no plan_stale field at all.
+        return new Response(JSON.stringify({ event: { id: "event-9", revision_counter: 3 } }), {
+          headers: { "Content-Type": "application/json" },
+          status: 200,
+        });
+      return eventResponse(true, 3);
+    });
+
+    render(<PlanStaleNotice apiBaseUrl="https://api.example.com" eventId="event-9" />);
+    await user.click(await screen.findByRole("button", { name: "Regenerate plan" }));
+
+    const alert = await screen.findByRole("alert");
+    expect(alert.textContent).toContain("did not report whether the plan is current");
+    expect(screen.queryByText(/Plan regenerated for revision undefined/)).toBeNull();
   });
 });
