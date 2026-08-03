@@ -6,7 +6,7 @@
     "node": ">=22"
   },
   "scripts": {
-    "typecheck": "pnpm -r typecheck",
+    "typecheck": "pnpm -r typecheck && tsc -p docs/proposals/tsconfig.json",
     "lint": "eslint .",
     "build": "pnpm --filter web build",
     "format": "prettier --write .",

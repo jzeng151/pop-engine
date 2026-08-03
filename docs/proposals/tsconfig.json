@@ -1,0 +1,10 @@
+{
+  "//": "Type-checks the proposal artifacts under this directory. They belong to no package and ship nowhere, so `pnpm -r typecheck` would never see them and their `satisfies` annotations would be decorative. Root `pnpm typecheck` runs this project too.",
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "types": [],
+    "lib": ["ES2022"],
+    "noEmit": true
+  },
+  "include": ["*.ts"]
+}
