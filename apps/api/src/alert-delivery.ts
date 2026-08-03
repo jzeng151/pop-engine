@@ -57,7 +57,21 @@ export class AlertDeliveryError extends Error {
   }
 }
 
-export type AlertSender = (message: AlertMessage) => Promise<AlertDelivery>;
+export type AlertSender = ((message: AlertMessage) => Promise<AlertDelivery>) & {
+  /**
+   * Whether this sender hands the message to a party outside this process.
+   *
+   * Read by `alerts.ts` to decide whether an attempt is worth recording at all. The record exists
+   * for one question — did a provider end up holding a message nobody here saw the outcome of —
+   * and a sender that reaches no provider can never produce that state, so recording an intent for
+   * one can only ever manufacture a hold on a message nothing sent.
+   *
+   * Absent means it does reach one, which is the conservative reading: an unmarked sender is
+   * treated as live, so the day a real SMS provider replaces the simulation it records intents
+   * without anyone remembering to say so.
+   */
+  readonly reachesAProvider?: boolean;
+};
 
 export type AlertSenders = Readonly<Record<AlertChannel, AlertSender>>;
 
@@ -229,10 +243,11 @@ export const SIMULATED_SMS_LABEL =
  * `SIMULATED_SMS_LABEL` on the alert. Nothing presents it as a delivered message.
  */
 export function createSimulatedSmsSender(record?: (message: AlertMessage) => void): AlertSender {
-  return async (message) => {
+  const send: AlertSender = async (message) => {
     record?.(message);
     return { simulated: true, label: SIMULATED_SMS_LABEL, provider: "simulated" };
   };
+  return Object.assign(send, { reachesAProvider: false });
 }
 
 /**

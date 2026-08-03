@@ -526,8 +526,33 @@ const ITEM_UPDATE_CHECKS: FieldChecks<ChecklistItemUpdate> = {
 /** The fields this feature reads off a checklist row, exposed so a test can assert coverage. */
 export const CONSUMED_ITEM_FIELDS: readonly string[] = Object.keys(ITEM_CHECKS);
 
+/**
+ * The one field this page will accept a body without, because the two services deploy separately.
+ *
+ * Web and api are hosted apart, so a rollout puts one of them ahead of the other for as long as
+ * the second takes. With `alertsHeldForReconciliation` required, a web-first deployment turns
+ * every checklist load into "the API returned a checklist this page cannot read" until the api
+ * catches up — the organizer loses their whole checklist over a notice that has nothing to report
+ * yet, which is a far worse outcome than the notice arriving a few minutes late.
+ *
+ * ABSENT IS READ AS NONE, and that is honest rather than a convenience: an api that does not know
+ * about reconciliation holds is not reporting zero of them, and the page renders nothing from an
+ * empty list either way. It is the same reading the api itself gives a channel with no holds.
+ *
+ * NARROW ON PURPOSE, and it stays narrow. Every other field is still required, so the consumed-type
+ * discipline is untouched: this is one named field with a stated rollout reason, not a general
+ * tolerance for missing data. It goes away when the api deployment that adds the field is the
+ * oldest one in service.
+ */
+const withRolloutDefaults = (body: unknown): unknown => {
+  const record = asRecord(body);
+  return record === null || record.alertsHeldForReconciliation !== undefined
+    ? body
+    : { ...record, alertsHeldForReconciliation: [] };
+};
+
 const readChecklist = (body: unknown): ChecklistResponse | null =>
-  readChecked(CHECKLIST_CHECKS, body);
+  readChecked(CHECKLIST_CHECKS, withRolloutDefaults(body));
 
 /** The event's checklist, whether or not one has been created (`GET /api/events/:id/checklist`). */
 export async function loadChecklist(apiBaseUrl: string, eventId: string): Promise<ChecklistResult> {

@@ -9,6 +9,7 @@
 
 import { randomUUID } from "node:crypto";
 import { readFile } from "node:fs/promises";
+import type { MigrationBuilder } from "node-pg-migrate";
 import { Pool } from "pg";
 import request from "supertest";
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
@@ -28,8 +29,10 @@ import {
   PROVIDER_TIMEOUT_MS,
   SIMULATED_SMS_LABEL,
   type AlertMessage,
+  type AlertChannel,
   type AlertSenders,
 } from "./alert-delivery";
+import { up as migration014 } from "../migrations/014_alert_send_attempts";
 import {
   simulatedDeliveries,
   createAlertPoller,
@@ -45,6 +48,7 @@ import {
   SEND_CONCURRENCY,
   TICK_BUDGET_MS,
   type AlertScheduler,
+  type AlertStatus,
 } from "./alerts";
 import { createApp } from "./app";
 import { instantAtLocalHour, todayInJurisdiction } from "./calendar";
@@ -106,7 +110,13 @@ const fakeProvider = (): FakeProvider => {
     };
   };
   return Object.assign(provider, {
-    senders: { email: send(false), sms: send(true) } satisfies AlertSenders,
+    senders: {
+      email: send(false),
+      // Marked exactly as the shipped SMS sender is, because the fake stands in for it: it renders
+      // in-product and hands nothing to a provider. Leaving the marker off would model an SMS
+      // channel this product does not have (`sendersFromEnv`, pinned in the AC 5 suite).
+      sms: Object.assign(send(true), { reachesAProvider: false }),
+    } satisfies AlertSenders,
   });
 };
 
@@ -1414,17 +1424,46 @@ describe.skipIf(databaseUrl === "")("F-203 deadline alerts", () => {
         eventId: string,
         recipient: string,
         dueDaysAgo: number,
+        row: { readonly channel?: AlertChannel; readonly status?: AlertStatus } = {},
       ): Promise<string> => {
         const alertId = randomUUID();
         await pool.query(
           `INSERT INTO alerts (id, event_id, alert_type, channel, recipient, idempotency_key,
-                               send_at, status, payload)
-           VALUES ($1, $2, 'deadline_reminder', 'email', $3, $5,
-                   current_timestamp - ($4 || ' days')::interval, 'pending',
+                               send_at, status, failure_count, payload)
+           VALUES ($1, $2, 'deadline_reminder', $6, $3, $5,
+                   current_timestamp - ($4 || ' days')::interval, $7,
+                   CASE WHEN $7 = 'failed' THEN 1 ELSE 0 END,
                    '{"subject":"file it","body":"file it"}'::jsonb)`,
-          [alertId, eventId, recipient, dueDaysAgo, alertId],
+          [
+            alertId,
+            eventId,
+            recipient,
+            dueDaysAgo,
+            alertId,
+            row.channel ?? "email",
+            row.status ?? "pending",
+          ],
         );
         return alertId;
+      };
+
+      /**
+       * Migration 014's own data step, replayed over rows that predate it.
+       *
+       * The upgrade state cannot occur in a test database otherwise: every alert here was written
+       * after the table existed, so the one population the migration has to decide about — rows
+       * attempted by code that recorded nothing — has to be built and then handed to the
+       * migration's own SQL rather than to a re-statement of it.
+       */
+      const seedLegacyAttempts = async (): Promise<void> => {
+        const sql = vi.fn();
+        migration014({
+          sql,
+          createTable: vi.fn(),
+          createIndex: vi.fn(),
+          func: vi.fn(),
+        } as unknown as MigrationBuilder);
+        for (const [statement] of sql.mock.calls) await pool.query(String(statement));
       };
 
       const recordAttempt = async (
@@ -1771,6 +1810,80 @@ describe.skipIf(databaseUrl === "")("F-203 deadline alerts", () => {
         } finally {
           client.release();
         }
+      });
+
+      it("holds the failures an upgrade finds behind no attempt, and only those", async () => {
+        // WHAT MIGRATION 014 MEETS WHEN IT IS NOT A CLEAN INSTALL. An alert that failed before
+        // this table existed was attempted by code that recorded nothing, so the absence of an
+        // attempt row — which every predicate here reads as "never tried, safe to send" — is
+        // false of it. Its last attempt may have been the unobserved kind and its key may be far
+        // older than the provider's dedup window, which is exactly the pair that makes a retry a
+        // second delivery. The migration seeds those rows so the upgrade starts from what is
+        // known rather than from the reading that happens to be permissive.
+        //
+        // THE OTHER TWO ROWS ARE THE SCOPE, and they are here because a seed that took them would
+        // be worse than the gap it closes. A legacy PENDING row has no evidence of ever having
+        // been attempted, and holding the whole queue on a guess is the systematic non-delivery
+        // this feature exists to prevent. A legacy SMS row was rendered in-product by the
+        // simulation, which has no provider a duplicate could reach.
+        const eventId = await createEvent(scenario("C"));
+        const failedEmail = await insertDueAlert(eventId, "legacy-failed@example.test", 30, {
+          status: "failed",
+        });
+        await insertDueAlert(eventId, "legacy-untried@example.test", 30);
+        await insertDueAlert(eventId, "+15555550199", 30, { channel: "sms", status: "failed" });
+
+        await seedLegacyAttempts();
+
+        const provider = fakeProvider();
+        const summary = await createAlertPoller({
+          database: pool,
+          senders: provider.senders,
+          jurisdiction: ruleset.jurisdiction,
+        }).tick();
+
+        expect(provider.attempts.map((message) => message.recipient)).not.toContain(
+          "legacy-failed@example.test",
+        );
+        expect(summary.heldForReconciliation).toBe(1);
+        expect(await reconciliationHolds(pool, eventId)).toEqual([
+          { channel: "email", heldCount: 1 },
+        ]);
+        // Seeded unresolved, because nobody did find out what the provider did with it: the row
+        // is what a reconciliation reads, not a claim that anything was observed.
+        const seeded = await attemptsOf(failedEmail);
+        expect(seeded).toHaveLength(1);
+        expect(seeded[0]?.outcome_recorded_at).toBeNull();
+        expect(provider.delivered.map((message) => message.recipient).sort()).toEqual([
+          "+15555550199",
+          "legacy-untried@example.test",
+        ]);
+      });
+
+      it("records no provider attempt for an SMS the product only simulates", async () => {
+        // A LABELLED SIMULATION HAS NO PROVIDER, so it can never have an outcome nobody observed:
+        // a crash between the intent and the sending transaction loses nothing a retry could
+        // duplicate. Recording an intent for one buys nothing and costs a false hold — the tick
+        // warns that a message needs reconciling against a provider, and the checklist tells the
+        // organizer their text alerts were handed to a sending service, about a send that never
+        // left the process.
+        //
+        // Decided at the write rather than filtered at the read, so a live SMS sender records
+        // intents like any other provider on the day A2P approval lands.
+        const eventId = await createEvent(scenario("C"));
+        const alertId = await insertDueAlert(eventId, "+12125550100", 2, { channel: "sms" });
+        const provider = fakeProvider();
+
+        const summary = await createAlertPoller({
+          database: pool,
+          senders: provider.senders,
+          jurisdiction: ruleset.jurisdiction,
+        }).tick();
+
+        expect(summary.sent).toBe(1);
+        expect(await attemptsOf(alertId)).toEqual([]);
+        expect(summary.heldForReconciliation).toBe(0);
+        expect(await reconciliationHolds(pool, eventId)).toEqual([]);
       });
     });
 
@@ -5439,6 +5552,15 @@ describe("F-203 delivery channels (AC 5)", () => {
     });
     expect(SIMULATED_SMS_LABEL).toContain("not delivered");
     expect(seen).toEqual([message]);
+    // And it says so where the poller asks, which is what keeps a simulated send out of the
+    // provider-reconciliation machinery: nothing left this process, so no provider can be holding
+    // a message whose outcome nobody saw. The live email sender says nothing and is treated as
+    // reaching one, which is the direction that cannot go wrong.
+    expect(createSimulatedSmsSender().reachesAProvider).toBe(false);
+    expect(sendersFromEnv({}).sms.reachesAProvider).toBe(false);
+    expect(
+      createResendEmailSender({ apiKey: "re_test", from: "a@b.test" }).reachesAProvider,
+    ).toBeUndefined();
   });
 
   it("picks live email only when both credentials are present, and always simulates SMS", async () => {

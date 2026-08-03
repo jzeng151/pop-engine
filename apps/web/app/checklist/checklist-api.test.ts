@@ -119,6 +119,24 @@ describe("loadChecklist", () => {
     });
   });
 
+  it("reads a checklist from an API that has not deployed the reconciliation notice yet", async () => {
+    // Web and api are deployed separately, so a web-first rollout meets an api that does not send
+    // `alertsHeldForReconciliation` yet. Refusing the body over it replaces the organizer's whole
+    // checklist with "this page cannot read it" for the length of the rollout, to withhold a
+    // notice that has nothing to report until the api can report it. Absent is read as none —
+    // which is what it is — and every other field stays as strictly checked as before.
+    const body = checklistBody({ created: true, items: [trackedItem()] }) as Record<
+      string,
+      unknown
+    >;
+    stubFetch(async () => jsonResponse(200, omit(body, "alertsHeldForReconciliation")));
+
+    const result = await loadChecklist("https://api.example.com", "event-1");
+
+    expect(result).toMatchObject({ ok: true });
+    expect(result.ok && result.checklist.alertsHeldForReconciliation).toEqual([]);
+  });
+
   it("refuses a row whose source plan is missing its snapshot pair", async () => {
     stubFetch(async () =>
       jsonResponse(

@@ -1910,7 +1910,23 @@ async function deliverClaimed(
   senders: AlertSenders,
   database: Pool,
 ): Promise<{ status: "sent" | "failed"; delivery: AlertDelivery | null; error: string | null }> {
-  const attemptId = await recordAttemptIntent(database, row);
+  const sender = senders[row.channel];
+  // NOTHING TO RECONCILE WHERE NOTHING IS HANDED OVER. The intent exists to catch one state: a
+  // provider holding a message whose outcome this side never learned. The SMS channel is the
+  // labelled in-product simulation while A2P registration is outstanding, so it has no provider,
+  // no key anyone could look a message up by, and no way for a retry to duplicate a delivery —
+  // the crash this record survives loses nothing but a render. Writing one anyway meant a crash
+  // between the intent and the sending transaction eventually took the alert permanently out of
+  // the queue and told the organizer their text alerts were handed to a sending service, both
+  // about a message that never left the process.
+  //
+  // ASKED OF THE SENDER, not of the channel. `alerts.ts` reads the channel everywhere and could
+  // have excluded `sms` in a word, but that word is a claim about configuration this file cannot
+  // see — the same inference `alert-delivery.ts` refuses when it records what a send actually was
+  // on the row rather than leaving a reader to work it out. A live SMS sender is marked as
+  // reaching a provider by saying nothing, so this needs no edit on the day one lands.
+  const attemptId =
+    sender.reachesAProvider === false ? null : await recordAttemptIntent(database, row);
   // Written in the SENDING transaction, so a crash that loses the mark-sent loses this too. That
   // is the correct outcome rather than a limitation: both describe the same lost knowledge.
   const recordOutcome = async (): Promise<void> => {
@@ -1921,7 +1937,7 @@ async function deliverClaimed(
     );
   };
   try {
-    const delivery = await senders[row.channel]({
+    const delivery = await sender({
       recipient: row.recipient,
       subject: row.payload.subject ?? "",
       body: row.payload.body ?? "",

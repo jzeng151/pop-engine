@@ -55,6 +55,48 @@ export function up(pgm: MigrationBuilder): void {
     name: "alert_send_attempts_unresolved_idx",
     where: "outcome_recorded_at IS NULL AND superseded_at IS NULL",
   });
+  // WHAT THIS TABLE'S ABSENCE MEANT BEFORE IT EXISTED, which is not what it means afterwards. From
+  // here on, an alert with no attempt row was never handed to anybody, and the poller reads that
+  // as safe to send at any age. Applied over a database that has been running, the same absence is
+  // true of every row that was already attempted, because nothing recorded attempts. A row that
+  // failed under that code may have failed the unobserved way — a timeout, or a reset after the
+  // provider had the message — and its key can be older than the 24 hours the provider honours it
+  // for, so the first post-upgrade retry would be a second delivery to a real person rather than
+  // one the provider deduplicates. Left unseeded, the mechanism this migration exists for would
+  // start life blind to the whole population it was written to protect.
+  //
+  // FAILED ONLY, and that boundary is the decision rather than a detail. `failed` is the one state
+  // that is proof of an attempt. A legacy `pending` row is the ordinary case — not yet due, or due
+  // and never picked up — so seeding those would hold an entire queue on the possibility that one
+  // of them crashed mid-send, turning a possible duplicate into certain non-delivery for
+  // everything. That is the failure F-203 exists to prevent, and `alerts.ts` refuses the same
+  // trade where it refuses to hold a row by age.
+  //
+  // EMAIL ONLY, because SMS has never had a provider to duplicate at: every shipped sender for it
+  // is the labelled in-product simulation (`alert-delivery.ts`), so a legacy SMS failure cannot be
+  // a message sitting at a provider unacknowledged. Holding one would ask a person to reconcile
+  // something nothing sent.
+  //
+  // TEST ROWS ARE LEFT ALONE for the reason every other predicate leaves them alone: an AC 6 demo
+  // send is an operator action against no deadline, and a hold on one is an operational warning
+  // about a message no organizer was waiting for.
+  //
+  // `-infinity` RATHER THAN A DATE, because the attempt time is not merely unknown, it is
+  // unknowable from anything on the row — nothing recorded when the last attempt happened. Any
+  // stamp this migration invented would be a claim about a provider's dedup window that no
+  // evidence supports, and a recent-looking one would be the permissive reading again, wearing a
+  // timestamp. Older than every window, from every reader, without naming a number that would then
+  // have to be kept in step with `PROVIDER_DEDUP_WINDOW_HOURS`.
+  //
+  // The seeded rows are unresolved and stay that way: nobody ever did find out what the provider
+  // did with these, which is exactly what a hold says. The way out is the way out for any hold — a
+  // person checks the provider for the key and then marks the alert sent or clears the attempt.
+  pgm.sql(`INSERT INTO alert_send_attempts (alert_id, idempotency_key, attempted_at)
+           SELECT id, idempotency_key, '-infinity'::timestamptz
+             FROM alerts
+            WHERE status = 'failed'
+              AND channel = 'email'
+              AND coalesce(payload->>'test', 'false') <> 'true'`);
 }
 
 export function down(pgm: MigrationBuilder): void {
