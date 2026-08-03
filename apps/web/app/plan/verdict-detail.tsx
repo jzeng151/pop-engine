@@ -399,6 +399,15 @@ export function VerdictDetailPanel({
   /** Deployed ruleset references, supplied only when that version matches the plan's snapshot. */
   rulesetReferences?: readonly FindingReference[];
 }) {
+  // `rulesetReferences` is supplied only when the deployed ruleset is the exact version this plan
+  // pinned, so after the next publish every stored plan would render raw ids like `SLA-ONEDAY-001`
+  // in its branch prose. The plan's findings are the snapshot's own copy of the headings the
+  // ruleset published at generation time, so they carry the mapping forward for every rule that
+  // fired on this plan; the deployed references still cover the rest, when they are current. A rule
+  // that neither fired here nor exists in the deployed ruleset keeps its id — nothing on this page
+  // knows what that version called it, and the id is the honest answer.
+  const references = [...findings.map(referenceFromFinding), ...rulesetReferences];
+
   if (verdict === "CONDITIONAL" && detail.missingFacts.length > 0) {
     const hasThresholdOnlyFact = detail.missingFacts.some((fact) => fact.branches.length === 0);
     return (
@@ -414,15 +423,17 @@ export function VerdictDetailPanel({
         </p>
         {detail.unresolvedTimelines.length > 0 && (
           <section className="verdict-detail__timelines" data-testid="unresolved-timelines">
-            <h3 className="verdict-detail__section-title">Published windows that could not be dated</h3>
+            <h3 className="verdict-detail__section-title">
+              Published windows that could not be dated
+            </h3>
             <ul>
               {detail.unresolvedTimelines.map((entry) => (
                 <li key={entry.ruleIds.join("+")}>
                   <FindingReferences
-                    references={referencesForRuleIds(entry.ruleIds, findings, rulesetReferences)}
+                    references={referencesForRuleIds(entry.ruleIds, findings, references)}
                   />
                   {": "}
-                  {humanizeRuleCodes(entry.reason, rulesetReferences)}
+                  {humanizeRuleCodes(entry.reason, references)}
                 </li>
               ))}
             </ul>
@@ -434,14 +445,14 @@ export function VerdictDetailPanel({
             field={fact.field}
             branches={fact.branches}
             thresholds={fact.thresholds}
-            rulesetReferences={rulesetReferences}
+            rulesetReferences={references}
           />
         ))}
         {detail.missedRuleIds.length > 0 && (
           <MissedMayBeRequiredSection
             missedRuleIds={detail.missedRuleIds}
             findings={findings}
-            rulesetReferences={rulesetReferences}
+            rulesetReferences={references}
           />
         )}
       </div>
@@ -462,10 +473,10 @@ export function VerdictDetailPanel({
             {detail.unresolvedTimelines.map((entry) => (
               <li key={entry.ruleIds.join("+")}>
                 <FindingReferences
-                  references={referencesForRuleIds(entry.ruleIds, findings, rulesetReferences)}
+                  references={referencesForRuleIds(entry.ruleIds, findings, references)}
                 />
                 {": "}
-                {humanizeRuleCodes(entry.reason, rulesetReferences)}
+                {humanizeRuleCodes(entry.reason, references)}
               </li>
             ))}
           </ul>
@@ -474,7 +485,7 @@ export function VerdictDetailPanel({
           <MissedMayBeRequiredSection
             missedRuleIds={detail.missedRuleIds}
             findings={findings}
-            rulesetReferences={rulesetReferences}
+            rulesetReferences={references}
           />
         )}
       </div>
@@ -488,7 +499,7 @@ export function VerdictDetailPanel({
         <MissedMayBeRequiredSection
           missedRuleIds={detail.missedRuleIds}
           findings={findings}
-          rulesetReferences={rulesetReferences}
+          rulesetReferences={references}
         />
       </div>
     );
@@ -505,7 +516,7 @@ export function VerdictDetailPanel({
     const rulesetBlockerReference =
       blocker === null
         ? undefined
-        : rulesetReferences.find((reference) =>
+        : references.find((reference) =>
             reference.ruleIds.some((ruleId) => blocker.ruleIds.includes(ruleId)),
           );
     const blockerReference =
@@ -547,11 +558,7 @@ export function VerdictDetailPanel({
               <p className="verdict-detail__missed">
                 All published deadlines missed as scoped:{" "}
                 <FindingReferences
-                  references={referencesForRuleIds(
-                    detail.missedRuleIds,
-                    findings,
-                    rulesetReferences,
-                  )}
+                  references={referencesForRuleIds(detail.missedRuleIds, findings, references)}
                 />
               </p>
             )}
@@ -561,7 +568,7 @@ export function VerdictDetailPanel({
           suggestions={detail.rescopeSuggestions}
           blockingFinding={blocker}
           findings={findings}
-          rulesetReferences={rulesetReferences}
+          rulesetReferences={references}
         />
       </div>
     );
