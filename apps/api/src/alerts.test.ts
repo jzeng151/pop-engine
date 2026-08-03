@@ -45,6 +45,7 @@ import {
   createAlertScheduler,
   failedDeliveries,
   ALERT_POLLER_CONNECTIONS,
+  DEDUP_WINDOW_CLAIM_MARGIN_MS,
   DELIVERY_BOUND_MS,
   MAX_ALERTS_PER_TICK,
   POLL_INTERVAL_MS,
@@ -152,6 +153,7 @@ type AttemptRow = {
   idempotency_key: string;
   attempted_at: Date;
   outcome_recorded_at: Date | null;
+  superseded_at: Date | null;
 };
 
 describe.skipIf(databaseUrl === "")("F-203 deadline alerts", () => {
@@ -1428,6 +1430,19 @@ describe.skipIf(databaseUrl === "")("F-203 deadline alerts", () => {
         );
       };
 
+      /** The same, at millisecond resolution, for the cases that turn on the margin. */
+      const recordAttemptMsAgo = async (
+        alertId: string,
+        msAgo: number,
+        idempotencyKey: string = alertId,
+      ): Promise<void> => {
+        await pool.query(
+          `INSERT INTO alert_send_attempts (alert_id, idempotency_key, attempted_at)
+           VALUES ($1, $3, current_timestamp - ($2 || ' milliseconds')::interval)`,
+          [alertId, msAgo, idempotencyKey],
+        );
+      };
+
       it("leaves a crashed send distinguishable from an alert that was never tried", async () => {
         // THE FAILING TEST FOR ISSUE #166. The provider took the message and the process died
         // before the COMMIT, so the alert row rolls back to exactly what it was. Beside it sits an
@@ -1594,6 +1609,128 @@ describe.skipIf(databaseUrl === "")("F-203 deadline alerts", () => {
         const recorded = await attemptsOf(alert?.id ?? "");
         expect(recorded).toHaveLength(1);
         expect(recorded[0]?.outcome_recorded_at).toBeNull();
+      });
+
+      it("holds a retry that would reach the provider after the window closed mid-claim", async () => {
+        // THE CUTOFF IS NOT THE MOMENT THE DECISION IS MADE. Between this predicate and the
+        // provider receiving the request there is the event lock, the claim, the expiry query, the
+        // attempt-writer's own connection and insert, and then the request itself. An attempt that
+        // is inside the window when the claim reads it can be outside it when the message lands,
+        // and then the provider deduplicates nothing and the organizer gets the alert twice.
+        const eventId = await createEvent(scenario("C"));
+        const alertId = await insertDueAlert(eventId, "just-inside@example.test", 2);
+        await recordAttemptMsAgo(
+          alertId,
+          PROVIDER_DEDUP_WINDOW_HOURS * 3_600_000 - DEDUP_WINDOW_CLAIM_MARGIN_MS / 2,
+        );
+        const provider = fakeProvider();
+
+        const summary = await createAlertPoller({
+          database: pool,
+          senders: provider.senders,
+          jurisdiction: ruleset.jurisdiction,
+        }).tick();
+
+        expect(provider.attempts.map((message) => message.recipient)).not.toContain(
+          "just-inside@example.test",
+        );
+        expect(summary.heldForReconciliation).toBeGreaterThanOrEqual(1);
+      });
+
+      it("still retries an attempt with the whole margin left before the window closes", async () => {
+        // The other side of the same line, so the margin cannot be widened into an age test. Well
+        // inside the window a retry is what the provider deduplicates, and withholding it would
+        // turn a recoverable lost outcome into a missed filing deadline.
+        const eventId = await createEvent(scenario("C"));
+        const alertId = await insertDueAlert(eventId, "well-inside@example.test", 2);
+        await recordAttemptMsAgo(
+          alertId,
+          PROVIDER_DEDUP_WINDOW_HOURS * 3_600_000 - DEDUP_WINDOW_CLAIM_MARGIN_MS * 4,
+        );
+        const provider = fakeProvider();
+
+        await createAlertPoller({
+          database: pool,
+          senders: provider.senders,
+          jurisdiction: ruleset.jurisdiction,
+        }).tick();
+
+        expect(provider.attempts.map((message) => message.recipient)).toContain(
+          "well-inside@example.test",
+        );
+        const { rows } = await pool.query<{ status: string }>(
+          "SELECT status FROM alerts WHERE id = $1",
+          [alertId],
+        );
+        expect(rows[0]?.status).toBe("sent");
+      });
+
+      it("delivers a revived alert instead of holding it on the withdrawn schedule's attempt", async () => {
+        // THE HOLD OUTLIVING ITS SCHEDULE, which is the worse failure of the two this predicate
+        // can produce. A regeneration cancels an alert whose attempt nobody saw the end of; a
+        // later regeneration brings the same row back once that attempt is older than the dedup
+        // window. The upsert resets the row to a fresh schedule, but the attempt is scoped to the
+        // alert id alone, so the scan and the claim both keep excluding it — and the reappearing
+        // deadline is never delivered at all. That is the outcome F-203 exists to prevent, and it
+        // is worse than the duplicate the hold was added to avoid.
+        const eventId = await createEvent(scenario("C"));
+        const contacts = { email: "revived@example.test", phone: null };
+        const dated = await insertDuePlan(eventId, { latestApplyDate: dayFromToday(1) });
+        const client = await pool.connect();
+        try {
+          await schedulerWith()(client, eventId, dated.planId, contacts);
+          const reminder = (await alertsOf(eventId)).find(
+            (row) => row.alert_type === "deadline_reminder",
+          );
+          // Handed to the provider, outcome never observed, and now old enough that the provider
+          // would no longer recognise the key.
+          await recordAttemptMsAgo(
+            reminder?.id ?? "",
+            PROVIDER_DEDUP_WINDOW_HOURS * 3_600_000 + 3_600_000,
+            reminder?.idempotency_key,
+          );
+
+          // The dated requirement disappears, so its reminders are withdrawn.
+          const undated = await insertDuePlan(eventId, {
+            latestApplyDate: null,
+            reuseChecklistItemId: dated.checklistItemId,
+          });
+          await schedulerWith()(client, eventId, undated.planId, contacts);
+          expect((await alertsOf(eventId)).find((row) => row.id === reminder?.id)?.status).toBe(
+            "cancelled",
+          );
+
+          // And the deadline comes back.
+          const redated = await insertDuePlan(eventId, {
+            latestApplyDate: dayFromToday(1),
+            reuseChecklistItemId: dated.checklistItemId,
+          });
+          await schedulerWith()(client, eventId, redated.planId, contacts);
+          expect((await alertsOf(eventId)).find((row) => row.id === reminder?.id)?.status).toBe(
+            "pending",
+          );
+
+          const provider = fakeProvider();
+          await createAlertPoller({
+            database: pool,
+            senders: provider.senders,
+            jurisdiction: ruleset.jurisdiction,
+          }).tick();
+
+          expect(provider.delivered.map((message) => message.recipient)).toContain(
+            "revived@example.test",
+          );
+          expect((await alertsOf(eventId)).find((row) => row.id === reminder?.id)?.status).toBe(
+            "sent",
+          );
+          // The attempt itself is kept, unresolved as it always was: superseding it says which
+          // schedule it belonged to, never that anyone found out what the provider did with it.
+          const kept = await attemptsOf(reminder?.id ?? "");
+          expect(kept[0]?.outcome_recorded_at).toBeNull();
+          expect(kept[0]?.superseded_at).not.toBeNull();
+        } finally {
+          client.release();
+        }
       });
     });
 

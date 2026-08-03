@@ -25,6 +25,14 @@ export const shorthands: ColumnDefinitions | undefined = undefined;
  * The key is stored because it is what a reconciliation would look the message up by at the
  * provider. It is a digest of the destination, never the destination itself (AGENTS.md: no
  * unredacted contact data).
+ *
+ * `superseded_at` says the SCHEDULE this attempt was made for has ended, and it is a different
+ * statement from `outcome_recorded_at`: one is about what the provider did, the other about which
+ * queue membership the attempt belongs to. An alert cancelled by a regeneration and revived by a
+ * later one comes back as a fresh schedule (`alerts.ts` clears its failure count and backoff for
+ * the same reason), and without this the withdrawn schedule's unresolved attempt kept excluding
+ * the revived row from every scan for good. Set, never cleared; the attempt stays unresolved
+ * because nobody ever did learn what the provider did with it.
  */
 export function up(pgm: MigrationBuilder): void {
   pgm.createTable("alert_send_attempts", {
@@ -38,12 +46,14 @@ export function up(pgm: MigrationBuilder): void {
     idempotency_key: { type: "text", notNull: true },
     attempted_at: { type: "timestamptz", notNull: true, default: pgm.func("clock_timestamp()") },
     outcome_recorded_at: { type: "timestamptz" },
+    superseded_at: { type: "timestamptz" },
   });
   // The one question asked of this table on every scan: does this alert have an attempt nobody ever
-  // saw the end of. Partial, because a resolved attempt is history and never selected.
+  // saw the end of, made for the schedule the alert is on now. Partial, because a resolved attempt
+  // is history and a superseded one belongs to a schedule that ended; neither is ever selected.
   pgm.createIndex("alert_send_attempts", ["alert_id"], {
     name: "alert_send_attempts_unresolved_idx",
-    where: "outcome_recorded_at IS NULL",
+    where: "outcome_recorded_at IS NULL AND superseded_at IS NULL",
   });
 }
 

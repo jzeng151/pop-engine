@@ -358,6 +358,26 @@ export const ALERT_POLLER_CONNECTIONS = SEND_CONCURRENCY + 1;
 export const PROVIDER_DEDUP_WINDOW_HOURS = 24;
 
 /**
+ * How much of that window is kept in reserve rather than spent, because the decision and the
+ * delivery are not the same moment.
+ *
+ * The predicate below is evaluated at the top of the claim transaction. What still has to happen
+ * before the provider holds the request: the event lock, the claim SELECT, the expiry SELECT, a
+ * connection from the attempt-writer's own pool, the intent INSERT, and then the request in flight.
+ * Reading the cutoff exactly meant an attempt at 23h59m was ruled retryable and the repeated key
+ * arrived after 24h, where the provider deduplicates nothing and the organizer gets a second copy
+ * of the same reminder.
+ *
+ * `TICK_BUDGET_MS + PROVIDER_TIMEOUT_MS` is not a new number: it is the poller's worst-case tick,
+ * already named at the top of this file. It is deliberately generous for a single claim, and it is
+ * the right size because the SCAN uses this predicate too, and a scanned row can wait a whole tick
+ * before its claim runs. One margin that is sound at both sites beats two that have to be kept in
+ * step. Erring large costs a forty-second sliver of an otherwise-permitted retry window, which the
+ * next tick re-offers as a hold; erring small costs a real person a duplicate.
+ */
+export const DEDUP_WINDOW_CLAIM_MARGIN_MS = TICK_BUDGET_MS + PROVIDER_TIMEOUT_MS;
+
+/**
  * An alert that was handed to a provider and whose outcome nobody ever saw, long enough ago that
  * the provider would no longer recognise the key.
  *
@@ -370,14 +390,25 @@ export const PROVIDER_DEDUP_WINDOW_HOURS = 24;
  * Held rather than sent and rather than cancelled: sending may deliver a second copy, cancelling
  * would assert PopEngine no longer intends to send something when in fact nobody knows whether it
  * arrived. The tick counts these so they can be reconciled against the provider by a human.
+ *
+ * AN ATTEMPT SPEAKS FOR THE SCHEDULE IT WAS MADE FOR AND NOT FOR A LATER ONE, which is why
+ * `superseded_at` is read here. Scoped to the alert id alone, this predicate outlived the queue
+ * membership it belonged to: a regeneration cancelled a row carrying an unresolved attempt, a
+ * later one revived it as a fresh schedule, and the old attempt then excluded the revived row from
+ * every scan and every claim for good. That is not a duplicate avoided, it is a deadline reminder
+ * that is never delivered — the outcome F-203 exists to prevent, and worse than the duplicate this
+ * hold was added to avoid. The revival supersedes the attempt; the attempt row stays, still
+ * unresolved, because nobody did find out what the provider did with it.
  */
 const HAS_AN_UNRESOLVED_ATTEMPT = `EXISTS (
        SELECT 1
          FROM alert_send_attempts AS attempt
         WHERE attempt.alert_id = alerts.id
           AND attempt.outcome_recorded_at IS NULL
+          AND attempt.superseded_at IS NULL
           AND attempt.attempted_at
               < current_timestamp - interval '${PROVIDER_DEDUP_WINDOW_HOURS} hours'
+                                  + interval '${DEDUP_WINDOW_CLAIM_MARGIN_MS} milliseconds'
      )`;
 
 /**
@@ -1525,14 +1556,23 @@ export function createAlertScheduler(settings: AlertSchedulerSettings): AlertSch
 
     let scheduled = 0;
     const keys: string[] = [];
+    /** Alerts this review brought back from `cancelled`, whose attempts belong to what it ended. */
+    const revived: string[] = [];
     for (const alert of planned) {
       for (const channel of channels) {
         // Non-null: `channels` is filtered on exactly this.
         const recipient = recipientFor(contacts, channel) ?? "";
         const key = idempotencyKey(eventId, alert.identity, channel, recipient);
         keys.push(key);
-        const { rows } = await client.query<{ inserted: boolean }>(
-          `INSERT INTO alerts (id, event_id, checklist_item_id, alert_type, channel, recipient,
+        const { rows } = await client.query<{ id: string; inserted: boolean; revived: boolean }>(
+          // The status BEFORE this statement, which `RETURNING` cannot see: it returns the row as
+          // written, and a revival is only recognisable by what the row was. Read in a CTE, so it
+          // is the same statement's snapshot rather than a second round trip that another
+          // transaction could commit inside.
+          `WITH prior_status AS (
+             SELECT status FROM alerts WHERE idempotency_key = $7
+           )
+           INSERT INTO alerts (id, event_id, checklist_item_id, alert_type, channel, recipient,
                                idempotency_key, send_at, status, payload)
              VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'pending', $9::jsonb)
            ON CONFLICT (idempotency_key) DO UPDATE
@@ -1671,7 +1711,8 @@ export function createAlertScheduler(settings: AlertSchedulerSettings): AlertSch
              WHERE alerts.status IN ('pending', 'cancelled', 'failed')
            -- xmax = 0 is true only for a row this statement inserted, which is what separates a
            -- newly scheduled alert from one that already existed and was recomputed in place.
-           RETURNING xmax = 0 AS inserted`,
+           RETURNING id, xmax = 0 AS inserted,
+                     (SELECT status FROM prior_status) = 'cancelled' AS revived`,
           [
             randomUUID(),
             eventId,
@@ -1695,6 +1736,42 @@ export function createAlertScheduler(settings: AlertSchedulerSettings): AlertSch
           ],
         );
         if (rows[0]?.inserted === true) scheduled += 1;
+        if (rows[0]?.revived === true && rows[0].id !== undefined) revived.push(rows[0].id);
+      }
+    }
+
+    // WHAT THE REVIVAL OWES THE ROW IT BROUGHT BACK. The clause above already treats a return from
+    // cancelled as a fresh schedule — new send_at, no failure count, no backoff, no last_error —
+    // and an attempt made for the withdrawn schedule is the one piece of that lifecycle it could
+    // not reach, because it lives on another table. Left behind, it kept the revived alert out of
+    // every scan and every claim indefinitely once it aged past the provider's dedup window, so a
+    // deadline that came back was never delivered at all.
+    //
+    // SUPERSEDED, NOT RESOLVED, and the two words are not interchangeable here. Writing
+    // `outcome_recorded_at` would claim somebody observed what the provider did with that message,
+    // which nobody did; the row stays unresolved and is still what a reconciliation would read.
+    //
+    // The trade is stated rather than hidden, because it is a real one: if that lost attempt did
+    // arrive, the revived alert is a second copy. A duplicate reminder is a cost an organizer can
+    // absorb, and a filing window that closes unannounced is the failure this feature exists to
+    // prevent — so it is logged loudly and sent, not held forever.
+    if (revived.length > 0) {
+      const { rows: superseded } = await client.query<{ alert_id: string }>(
+        `UPDATE alert_send_attempts SET superseded_at = clock_timestamp()
+          WHERE alert_id = ANY($1::uuid[])
+            AND outcome_recorded_at IS NULL
+            AND superseded_at IS NULL
+          RETURNING alert_id`,
+        [revived],
+      );
+      if (superseded.length > 0) {
+        // Ids only. The recipient is contact data and does not go in a log (AGENTS.md).
+        console.warn(
+          `${superseded.length} attempt(s) with no recorded outcome belonged to an alert schedule ` +
+            `that was cancelled and has now been revived; they no longer hold it back, so the ` +
+            `alert will be sent and may duplicate a delivery nobody observed: ` +
+            `${superseded.map((row) => row.alert_id).join(", ")}`,
+        );
       }
     }
 
@@ -2216,9 +2293,10 @@ export function createAlertPoller(dependencies: {
     if (held.length > 0) {
       // Ids only. The row's recipient is contact data and does not go in a log (AGENTS.md).
       console.warn(
-        `${held.length} alert(s) were handed to a provider more than ` +
-          `${PROVIDER_DEDUP_WINDOW_HOURS}h ago with no recorded outcome, so they are held rather ` +
-          `than retried: ${held.map((row) => row.id).join(", ")}`,
+        `${held.length} alert(s) were handed to a provider with no recorded outcome, long enough ` +
+          `ago that its ${PROVIDER_DEDUP_WINDOW_HOURS}h dedup window would have closed before a ` +
+          `retry could land, so they are held rather than retried: ` +
+          `${held.map((row) => row.id).join(", ")}`,
       );
     }
     // The expiry sweep that used to run here is gone. It took no lock, so it could read a
