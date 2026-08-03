@@ -106,8 +106,12 @@ const isNearEmpty = (findings: PlanResponse["findings"]): boolean =>
  * establish it. The cost is that a stale plan cannot be regenerated until that endpoint answers;
  * the plan on screen is stale but its regulatory basis is sound, and the page already says it is
  * stale. Stale-but-sound is the better of the two to leave an organizer holding.
+ *
+ * Exported because the event overview's stale-plan notice (F-101 AC 8) offers the same operation
+ * from another surface. One organizer action, one decision about it: a second copy of this
+ * comparison is a second place for the downgrade to become reachable again.
  */
-function regenerationRefusal(
+export function regenerationRefusal(
   pinnedVersion: string,
   liveVersion: string | null,
   standing: ReturnType<typeof compareToPinned> | null,

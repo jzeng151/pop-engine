@@ -1,8 +1,16 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 
 import { loadEvent, regeneratePlan } from "../../intake/events-api";
+import {
+  loadPlan,
+  loadRulesMeta,
+  type PlanResult,
+  type RulesMetaResult,
+} from "../../plan/plan-api";
+import { regenerationRefusal } from "../../plan/plan-view";
+import { compareToPinned } from "../../plan/snapshot-banner";
 
 /**
  * F-101 Acceptance Criterion 8, second half: a plan the event has been edited past is marked
@@ -13,22 +21,58 @@ import { loadEvent, regeneratePlan } from "../../intake/events-api";
  * came back. Plans are immutable snapshots (AD-7), so regeneration is a new plan for the current
  * revision, never a patch.
  */
+
+/** Whether this surface may offer the regeneration, and why not when it may not. */
+type Regeneration =
+  { status: "checking" } | { status: "offered" } | { status: "refused"; reason: string };
+
+/**
+ * The ruleset downgrade guard, asked rather than repeated.
+ *
+ * Regeneration evaluates whatever ruleset the SERVICE has loaded, not the one this plan pinned, so
+ * offering it while the service sits behind the plan rebuilds the plan from superseded rules and
+ * can drop requirements the organizer has already been shown. `regenerationRefusal` in the plan
+ * view owns that decision; this only supplies it the two versions.
+ *
+ * A plan that cannot be read supplies no pinned version, so nothing establishes that regenerating
+ * would not move the plan backwards. That is refused too, reported with the read failure itself
+ * rather than a second sentence about it.
+ */
+function regenerationGuard(plan: PlanResult, meta: RulesMetaResult): Regeneration {
+  if (!plan.ok) return { status: "refused", reason: plan.message };
+  const liveVersion = meta.ok ? meta.meta.ruleset_version : null;
+  const refusal = regenerationRefusal(
+    plan.plan.rulesetVersion,
+    liveVersion,
+    liveVersion === null ? null : compareToPinned(liveVersion, plan.plan.rulesetVersion),
+  );
+  return refusal === null ? { status: "offered" } : { status: "refused", reason: refusal };
+}
+
 export function PlanStaleNotice({ apiBaseUrl, eventId }: { apiBaseUrl: string; eventId: string }) {
   const [stale, setStale] = useState(false);
+  const [regeneration, setRegeneration] = useState<Regeneration>({ status: "checking" });
   const [regenerating, setRegenerating] = useState(false);
   const [failure, setFailure] = useState<string | null>(null);
   const [regeneratedRevision, setRegeneratedRevision] = useState<number | null>(null);
-  const revision = useRef<number | null>(null);
 
   useEffect(() => {
     let mounted = true;
 
-    void loadEvent(apiBaseUrl, eventId).then((result) => {
+    void loadEvent(apiBaseUrl, eventId).then(async (result) => {
       // An event that cannot be read says nothing about its plan. Rendering the warning would
       // assert an edit nobody observed; rendering the cleared state would assert the opposite.
-      if (!mounted || !result.ok) return;
-      revision.current = result.loaded.event.revision_counter;
-      setStale(result.loaded.plan_stale);
+      if (!mounted || !result.ok || !result.loaded.plan_stale) return;
+      setStale(true);
+
+      // Only a stale plan can be regenerated, so the two reads the guard needs are made only once
+      // there is an action to guard.
+      const [plan, meta] = await Promise.all([
+        loadPlan(apiBaseUrl, eventId),
+        loadRulesMeta(apiBaseUrl),
+      ]);
+      if (!mounted) return;
+      setRegeneration(regenerationGuard(plan, meta));
     });
 
     return () => {
@@ -39,23 +83,28 @@ export function PlanStaleNotice({ apiBaseUrl, eventId }: { apiBaseUrl: string; e
   if (!stale && regeneratedRevision === null) return null;
 
   const regenerate = async () => {
-    const requested = revision.current;
     setRegenerating(true);
     setFailure(null);
     const result = await regeneratePlan(apiBaseUrl, eventId);
-    setRegenerating(false);
 
     if (!result.ok) {
+      setRegenerating(false);
       setFailure(result.message);
       return;
     }
 
-    // A plan generated for another revision does not make this one current. Clearing the warning
-    // on it would tell the organizer their plan matches an event it does not describe.
-    if (result.eventRevision !== null && result.eventRevision !== requested) return;
+    // The event can be edited again while the generation is in flight, so a revision this page read
+    // before the POST is not evidence about the plan that just replaced it — both sides of that
+    // comparison could read 3 while a PATCH moved the event to 4. The API recomputes staleness
+    // against the stored plan on every read, so the warning is cleared on that answer and on
+    // nothing else. An event that cannot be re-read leaves the warning up: unconfirmed is not
+    // current.
+    const recheck = await loadEvent(apiBaseUrl, eventId);
+    setRegenerating(false);
+    if (!recheck.ok || recheck.loaded.plan_stale) return;
 
     setStale(false);
-    setRegeneratedRevision(requested);
+    setRegeneratedRevision(recheck.loaded.event.revision_counter);
   };
 
   if (!stale) {
@@ -69,9 +118,12 @@ export function PlanStaleNotice({ apiBaseUrl, eventId }: { apiBaseUrl: string; e
   return (
     <section className="riso-overview__notice riso-overview__notice--stale">
       <p>This event has been edited since its plan was generated, so the plan is out of date.</p>
-      <button disabled={regenerating} onClick={() => void regenerate()} type="button">
-        {regenerating ? "Regenerating plan…" : "Regenerate plan"}
-      </button>
+      {regeneration.status === "offered" && (
+        <button disabled={regenerating} onClick={() => void regenerate()} type="button">
+          {regenerating ? "Regenerating plan…" : "Regenerate plan"}
+        </button>
+      )}
+      {regeneration.status === "refused" && <p role="alert">{regeneration.reason}</p>}
       {failure !== null && <p role="alert">{failure}</p>}
     </section>
   );

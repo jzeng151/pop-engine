@@ -11,6 +11,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { PlanStaleNotice } from "./plan-stale-notice";
 
+const PINNED_VERSION = "nyc.v2.11";
+
 const eventResponse = (planStale: boolean, revision = 3) =>
   new Response(
     JSON.stringify({
@@ -19,6 +21,33 @@ const eventResponse = (planStale: boolean, revision = 3) =>
     }),
     { headers: { "Content-Type": "application/json" }, status: 200 },
   );
+
+const planResponse = (rulesetVersion = PINNED_VERSION) =>
+  new Response(
+    JSON.stringify({
+      eventRevision: 3,
+      rulesetVersion,
+      snapshotDate: "2026-07-01",
+      verdict: "CONDITIONAL",
+      verdictDetail: {
+        minSlackDays: null,
+        missingFacts: [],
+        blockingFinding: null,
+        missedRuleIds: [],
+        unresolvedTimelines: [],
+        rescopeSuggestions: [],
+      },
+      generatedAt: "2026-08-02T12:00:00.000Z",
+      findings: [],
+    }),
+    { headers: { "Content-Type": "application/json" }, status: 200 },
+  );
+
+const metaResponse = (rulesetVersion = PINNED_VERSION) =>
+  new Response(JSON.stringify({ ruleset_version: rulesetVersion, snapshot_date: "2026-07-01" }), {
+    headers: { "Content-Type": "application/json" },
+    status: 200,
+  });
 
 let fetchMock: ReturnType<typeof vi.fn>;
 
@@ -32,12 +61,40 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
+/**
+ * Answers the four calls this notice can make, the way the api does: the event, the stored plan,
+ * the ruleset the service is running, and the regeneration POST. The service defaults to the
+ * version the plan pinned, so the downgrade guard stays open unless a test moves it.
+ */
+const respondWith = ({
+  event = () => eventResponse(true),
+  plan = () => planResponse(),
+  meta = () => metaResponse(),
+  regeneration = () =>
+    new Response(JSON.stringify({ eventRevision: 3 }), {
+      headers: { "Content-Type": "application/json" },
+      status: 201,
+    }),
+}: {
+  event?: () => Response;
+  plan?: () => Response;
+  meta?: () => Response;
+  regeneration?: () => Response;
+} = {}) => {
+  fetchMock.mockImplementation(async (url: string, init?: RequestInit) => {
+    if (init?.method === "POST") return regeneration();
+    if (url.endsWith("/api/rules/meta")) return meta();
+    if (url.endsWith("/plan")) return plan();
+    return event();
+  });
+};
+
 const renderNotice = () =>
   render(<PlanStaleNotice apiBaseUrl="https://api.example.com" eventId="event-9" />);
 
 describe("the stale-plan notice on the event overview", () => {
   it("says nothing at all when the plan is current", async () => {
-    fetchMock.mockResolvedValue(eventResponse(false));
+    respondWith({ event: () => eventResponse(false) });
 
     renderNotice();
 
@@ -47,14 +104,17 @@ describe("the stale-plan notice on the event overview", () => {
 
   it("reports the stale plan and regenerates it in one click", async () => {
     const user = userEvent.setup();
-    fetchMock.mockImplementation(async (_url: string, init?: RequestInit) =>
-      init?.method === "POST"
-        ? new Response(JSON.stringify({ eventRevision: 3 }), {
-            headers: { "Content-Type": "application/json" },
-            status: 201,
-          })
-        : eventResponse(true),
-    );
+    let regenerated = false;
+    respondWith({
+      event: () => eventResponse(!regenerated),
+      regeneration: () => {
+        regenerated = true;
+        return new Response(JSON.stringify({ eventRevision: 3 }), {
+          headers: { "Content-Type": "application/json" },
+          status: 201,
+        });
+      },
+    });
 
     renderNotice();
 
@@ -62,23 +122,25 @@ describe("the stale-plan notice on the event overview", () => {
     expect(button.hasAttribute("disabled")).toBe(false);
     await user.click(button);
 
-    expect(await screen.findByRole("status")).toBeDefined();
+    expect((await screen.findByRole("status")).textContent).toBe(
+      "Plan regenerated for revision 3.",
+    );
     expect(screen.queryByRole("button", { name: "Regenerate plan" })).toBeNull();
-    const regeneration = fetchMock.mock.calls[1] ?? [];
-    expect(regeneration[0]).toBe("https://api.example.com/api/events/event-9/plan");
-    expect((regeneration[1] as RequestInit | undefined)?.method).toBe("POST");
+    const regeneration = fetchMock.mock.calls.find(
+      (call) => (call[1] as RequestInit | undefined)?.method === "POST",
+    );
+    expect(regeneration?.[0]).toBe("https://api.example.com/api/events/event-9/plan");
   });
 
   it("keeps the warning and says why when regeneration fails", async () => {
     const user = userEvent.setup();
-    fetchMock.mockImplementation(async (_url: string, init?: RequestInit) =>
-      init?.method === "POST"
-        ? new Response(JSON.stringify({ message: "The ruleset could not be read." }), {
-            headers: { "Content-Type": "application/json" },
-            status: 500,
-          })
-        : eventResponse(true),
-    );
+    respondWith({
+      regeneration: () =>
+        new Response(JSON.stringify({ message: "The ruleset could not be read." }), {
+          headers: { "Content-Type": "application/json" },
+          status: 500,
+        }),
+    });
 
     renderNotice();
 
@@ -88,58 +150,68 @@ describe("the stale-plan notice on the event overview", () => {
     expect(screen.getByRole("button", { name: "Regenerate plan" })).toBeDefined();
   });
 
-  // A plan generated for a revision other than the one on screen does not make this one current.
-  // Clearing the warning on it would tell the organizer their plan matches an event it does not.
-  it("keeps the warning when the plan comes back for another revision", async () => {
+  // The event can be edited again while the generation runs, so a revision captured before the POST
+  // is not evidence about the plan that replaced it: both sides read 3 while a PATCH moved the
+  // event to 4. Only the api's own recomputed answer clears the warning.
+  it("keeps the warning when the event advanced while the regeneration was in flight", async () => {
     const user = userEvent.setup();
-    fetchMock.mockImplementation(async (_url: string, init?: RequestInit) =>
-      init?.method === "POST"
-        ? new Response(JSON.stringify({ eventRevision: 2 }), {
-            headers: { "Content-Type": "application/json" },
-            status: 201,
-          })
-        : eventResponse(true, 3),
-    );
+    respondWith({ event: () => eventResponse(true, 3) });
 
     renderNotice();
 
     await user.click(await screen.findByRole("button", { name: "Regenerate plan" }));
 
-    await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
-    expect(screen.getByRole("button", { name: "Regenerate plan" })).toBeDefined();
+    await vi.waitFor(() =>
+      expect(
+        fetchMock.mock.calls.some(
+          (call) => (call[1] as RequestInit | undefined)?.method === "POST",
+        ),
+      ).toBe(true),
+    );
+    expect(await screen.findByRole("button", { name: "Regenerate plan" })).toBeDefined();
     expect(screen.queryByRole("status")).toBeNull();
-  });
-
-  // The plan endpoint is F-201's and may not report the revision. The event has not moved while
-  // this was in flight, so that is still this revision's plan.
-  it("accepts a plan that does not name a revision", async () => {
-    const user = userEvent.setup();
-    fetchMock.mockImplementation(async (_url: string, init?: RequestInit) =>
-      init?.method === "POST"
-        ? new Response(JSON.stringify({ verdict: "feasible" }), {
-            headers: { "Content-Type": "application/json" },
-            status: 201,
-          })
-        : eventResponse(true, 3),
-    );
-
-    renderNotice();
-
-    await user.click(await screen.findByRole("button", { name: "Regenerate plan" }));
-
-    expect((await screen.findByRole("status")).textContent).toBe(
-      "Plan regenerated for revision 3.",
-    );
   });
 
   // The overview must not claim a plan is current because the event could not be read.
   it("says nothing when the event cannot be loaded", async () => {
-    fetchMock.mockResolvedValue(new Response("", { status: 500 }));
+    respondWith({ event: () => new Response("", { status: 500 }) });
 
     renderNotice();
 
     await vi.waitFor(() => expect(fetchMock).toHaveBeenCalled());
     expect(screen.queryByRole("button", { name: "Regenerate plan" })).toBeNull();
     expect(screen.queryByRole("alert")).toBeNull();
+  });
+
+  // The plan view refuses this same operation when the service is behind the plan's pinned ruleset,
+  // because regenerating would rebuild the plan from superseded rules and can drop a requirement
+  // the organizer has already been shown. This surface offers the same operation, so it is bound by
+  // the same refusal.
+  it("refuses regeneration when the service is running an older ruleset", async () => {
+    respondWith({ meta: () => metaResponse("nyc.v2.10") });
+
+    renderNotice();
+
+    expect((await screen.findByRole("alert")).textContent).toContain("nyc.v2.11");
+    expect(screen.queryByRole("button", { name: "Regenerate plan" })).toBeNull();
+  });
+
+  it("refuses regeneration when the running ruleset cannot be read", async () => {
+    respondWith({ meta: () => new Response("", { status: 503 }) });
+
+    renderNotice();
+
+    expect((await screen.findByRole("alert")).textContent).toContain("could not be read");
+    expect(screen.queryByRole("button", { name: "Regenerate plan" })).toBeNull();
+  });
+
+  // No pinned version, no way to establish that regenerating would not move the plan backwards.
+  it("refuses regeneration when the stored plan cannot be read", async () => {
+    respondWith({ plan: () => new Response("", { status: 500 }) });
+
+    renderNotice();
+
+    expect(await screen.findByRole("alert")).toBeDefined();
+    expect(screen.queryByRole("button", { name: "Regenerate plan" })).toBeNull();
   });
 });
