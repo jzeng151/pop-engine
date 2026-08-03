@@ -7,6 +7,7 @@
 
 import { cleanup, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import { useLayoutEffect } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { PlanStaleNotice } from "./plan-stale-notice";
@@ -167,6 +168,55 @@ describe("the stale-plan notice on the event overview", () => {
     );
     expect(screen.queryByRole("button", { name: "Regenerate plan" })).toBeNull();
     expect(screen.queryByRole("status")).toBeNull();
+  });
+
+  /**
+   * Reads the screen the organizer can actually click. A layout effect runs after React has
+   * committed the new event's render to the DOM and before the notice's own passive effect, so it
+   * is the one place a test can stand inside the window where the new id is live and the previous
+   * event's state may still be on screen. Anything that waits for effects to settle passes whether
+   * or not that window exists.
+   */
+  let onNoticeCommitted = () => {};
+  const CommittedScreenProbe = ({ eventId }: { eventId: string }) => {
+    useLayoutEffect(() => {
+      onNoticeCommitted();
+    }, [eventId]);
+    return null;
+  };
+  const noticeWithProbe = (eventId: string) => (
+    <>
+      {notice(eventId)}
+      <CommittedScreenProbe eventId={eventId} />
+    </>
+  );
+
+  it("offers nothing for the new event in the render that first carries its id", async () => {
+    respondPerEvent("event-9");
+    onNoticeCommitted = () => {};
+
+    const { rerender } = render(noticeWithProbe("event-9"));
+    await screen.findByRole("button", { name: "Regenerate plan" });
+
+    let committedWarning: string | null = null;
+    let committedButton: HTMLElement | null = null;
+    onNoticeCommitted = () => {
+      committedWarning =
+        screen.queryByText(/edited since its plan was generated/)?.textContent ?? null;
+      committedButton = screen.queryByRole("button", { name: "Regenerate plan" });
+      // The organizer can press whatever this render left enabled. Against the mismatched render
+      // that click posts an immutable plan (AD-7) for event-10, which nobody said was stale.
+      committedButton?.click();
+    };
+    rerender(noticeWithProbe("event-10"));
+
+    expect(committedWarning).toBeNull();
+    expect(committedButton).toBeNull();
+    expect(
+      fetchMock.mock.calls.filter(
+        (call) => (call[1] as RequestInit | undefined)?.method === "POST",
+      ),
+    ).toHaveLength(0);
   });
 
   it("does not report one event's regeneration against the event that replaced it", async () => {

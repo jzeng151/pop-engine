@@ -73,10 +73,15 @@ export function PlanStaleNotice({ apiBaseUrl, eventId }: { apiBaseUrl: string; e
    * has to read the CURRENT event when it lands, not the one captured when it was started.
    */
   const describedEventId = useRef(eventId);
+  /** The event the last render described, so a render can tell that it has been handed another. */
+  const [renderedEventId, setRenderedEventId] = useState(eventId);
 
-  useEffect(() => {
-    let mounted = true;
-
+  // Clearing in an effect would be one render too late: the effect runs after React has already
+  // shown the new event's id under the previous event's warning and button, and a click in that
+  // window posts an immutable plan (AD-7) for an event nobody said was stale. Updating here makes
+  // React re-render before anything is committed, so no render can observe the mismatch.
+  if (renderedEventId !== eventId) {
+    setRenderedEventId(eventId);
     describedEventId.current = eventId;
     setStale(false);
     setRegeneration({ status: "checking" });
@@ -84,6 +89,10 @@ export function PlanStaleNotice({ apiBaseUrl, eventId }: { apiBaseUrl: string; e
     setFailure(null);
     setRegeneratedRevision(null);
     setUnconfirmed(null);
+  }
+
+  useEffect(() => {
+    let mounted = true;
 
     void loadEvent(apiBaseUrl, eventId).then(async (result) => {
       // An event that cannot be read says nothing about its plan. Rendering the warning would
