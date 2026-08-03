@@ -20,6 +20,26 @@ repeat it. What this one does is:
 Where the two disagree, the disagreement is called out in place. Corrections to the earlier
 document are collected in section 8 so its readers can find them.
 
+**Which of issue #108's two inputs this document measures. Read this before any number below.**
+The issue names one behaviour but there are two distinct inputs that produce it, and they do not
+behave the same way.
+
+- **Q1, the gate that is in scope and UNANSWERED**: raw `undefined` or `null`. Every failure
+  count, prototype and plan diff in sections 3, 3a and 4 is Q1, and Q1 is the question PR #167
+  measured.
+- **Q2, the gate that was ASKED and ANSWERED `"unknown"`.** The merged
+  `docs/proposals/unknown-gate-measurement.md:136-138` identifies Q2 as the case issue #108's own
+  title describes, and distinguishes it from PR #167's. **The prototype in the appendix does not
+  touch Q2.** Its blocker list (`blockersFor`) records a gate only when the raw value is `undefined`
+  or `null`, so a gate answered `"unknown"` scopes its dependents out under the patch exactly as it
+  does today. Verified by running the same intake on both trees: byte-identical plans
+  (section 3b).
+
+**Consequence, stated plainly: this document does not dispose of issue #108.** It disposes of Q1,
+whose semantics change is measured here end to end. For Q2 it publishes a measurement (section 3b)
+and no more; the six-failure count, the 1569/1569 result and the plan diffs say nothing about Q2.
+Section 7 gives a separate recommendation for each, and issue #108 stays open on Q2 either way.
+
 **Measurement basis.** Every number below was measured on commit `f8d6fc3` (this branch's merge-base
 with `origin/main`), ruleset `rules/nyc-rules.v2.11.json`, Node v24, PostgreSQL 18.4, full suite
 size **1569**.
@@ -32,8 +52,12 @@ short enough to state completely:
    **Without this, 347 of the 1569 tests skip silently**, including all 23 of `apps/api/src/plan.test.ts`,
    which is where the earlier document found 4 of its 15 failures. A run that reports
    "1222 passed | 347 skipped" has not measured the api lane at all.
-3. Apply the patch in the appendix (`git apply`), which is generated at `f8d6fc3`.
+3. Apply one of the two patches in the appendix (`git apply`), both generated at `f8d6fc3`:
+   A1 for the attempt A failure count, A2 for the attempt B green run.
 4. `pnpm test`.
+5. For the plan diffs, write appendix A3 to `packages/engine/src/probe.test.ts`, run
+   `npx vitest run packages/engine/src/probe.test.ts` on the patched and unpatched trees, and
+   delete the file afterwards. It is a probe, not a fixture, and nothing on this branch adds it.
 
 ---
 
@@ -141,17 +165,19 @@ filters `resolved.unknownFields` to build the branch set. Since `not_asked` cont
 fields, a suppressed dependent never becomes a branchable fact either. This is why the change cannot
 be confined to `conditions.ts` (section 3).
 
-## 3. Blast radius on the approved fixtures
+## 3. Blast radius on the approved fixtures (Q1)
 
 **Headline: no approved expected value moves. Zero.** The full suite passes unchanged with the
-tri-state semantics implemented correctly. This is the finding that changes the recommendation, and
-it does not point the way the issue assumed.
+tri-state Q1 semantics implemented correctly. This is the finding that changes the recommendation,
+and it does not point the way the issue assumed. Everything in this section and in 3a is Q1;
+section 3b is Q2 and none of these numbers carry over to it.
 
 Baseline on `f8d6fc3` with `DATABASE_URL` set: **1569 passed, 0 failed, 61 files**.
 
-**Attempt A, the semantics issue #108 asks for and nothing else.** The scope resolver records, per
+**Attempt A, the Q1 semantics and nothing else.** The scope resolver records, per
 field, the set of gates that blocked it; `resolveAnswer` returns `unknown` rather than `not_asked`
-for a blocked field.
+for a blocked field. Published in full as appendix A1. A gate is counted as blocking only when its
+raw value is `undefined` or `null`, so this is Q1 and not Q2.
 
 | Suite                                                                                | Result                     |
 | ------------------------------------------------------------------------------------ | -------------------------- |
@@ -186,9 +212,12 @@ overriding it.
 
 > **Full suite: 1569 / 1569 pass. `pnpm typecheck` clean. Zero expected values move.**
 
-Throwaway diff: `packages/engine/src/conditions.ts` **+52/-3**, `packages/engine/src/verdict.ts`
-**+9/-2**. Two files, no fixture edit, no `IntakeValue` change, no migration. `visibility.ts` is
-untouched (see section 6 for why that is a question and not a saving).
+Published in full as appendix A2. Throwaway diff: `packages/engine/src/conditions.ts` **+52/-3**,
+`packages/engine/src/verdict.ts` **+9/-2**. Two files, no fixture edit, no `IntakeValue` change, no
+migration. `visibility.ts` is untouched, which makes +61/-5 a **lower bound** on implementation size
+rather than the size of a complete implementation: leaving that file alone leaves the engine and the
+questionnaire disagreeing about which questions were asked, which `conditions.ts:192-195` says they
+must not do (section 7a item 4).
 
 The three defects attempt B fixes are the three the earlier document's round 8 flagged as unmeasured
 in its own attempt 3. Probes on the current tree, ruleset v2.11:
@@ -207,31 +236,48 @@ still moves no fixture.
 
 **Attempt B changes plan output materially in states no approved fixture covers.** Measured by
 running the same intake through `evaluate` with and without the patch, ruleset v2.11,
-`today = 2026-07-22`.
+`today = 2026-07-22`. The intakes and the harness are appendix A3; the counts below are that
+harness's output and nothing was measured against an intake this document does not publish. (An
+earlier revision reported 8 and 19 here from an intake it did not publish. The published intake
+gives 9 and 20 (the same eleven-finding delta and the same finding set), and it is the published
+one that this document stands behind.)
 
-Case 1, a street event where nobody answered `obstructs_public_way` (and so nobody answered
-`sapo_event_type`):
+Case 1 (`CASE_1` in A3), a street event where nobody answered `obstructs_public_way` (and so nobody
+answered `sapo_event_type`):
 
-|           | findings                                                                                                                                                                                                    | verdict     |
-| --------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------- |
-| today     | 8, of which **zero SAPO permits**                                                                                                                                                                           | CONDITIONAL |
-| attempt B | 19, including `SAPO-STREET-SMALL/MEDIUM/LARGE/XL-001`, `SAPO-BLOCK-PARTY-001`, `SAPO-BLOCK-PARTY-SPONSOR-001`, `SAPO-PLAZA-001`, `SAPO-INSURANCE-001` as `may_be_required`, plus `ADV-SAPO-OTHER-CLASS-001` | CONDITIONAL |
+|           | findings                                                                                                                                                                                                                                                       | verdict     |
+| --------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------- |
+| today     | 9, of which **zero SAPO permits** (`SAPO-SCOPE-001` as `no_new_requirement`, plus eight `CONF-NO-*`)                                                                                                                                                            | CONDITIONAL |
+| attempt B | 20, adding `SAPO-STREET-SMALL/MEDIUM/LARGE/XL-001`, `SAPO-BLOCK-PARTY-001`, `SAPO-BLOCK-PARTY-SPONSOR-001`, `SAPO-PLAZA-001`, `SAPO-INSURANCE-001`, `SAPO-INSURANCE-BLOCK-PARTY-RIDE-001` as `may_be_required`, `CONF-NO-BLOCK-PARTY-RIDE-001`, `ADV-SAPO-OTHER-CLASS-001` | CONDITIONAL |
 
-Today's plan for that event is indistinguishable from the plan for a street event that was asked and
-answered "no, it does not obstruct the public way". An organizer holding a street event is told, with
-no caveat anywhere in the plan, that no SAPO permit was identified. **That is the harm class the
-issue describes, and it is not theoretical: it is reproducible in four lines against the published
-ruleset.** It is also exactly the failure `AGENTS.md` names in its engine invariants ("a material
-`unknown` never silently becomes `false`"), with the qualification that today the engine does not
-consider it material.
+**What today actually withholds, and what it does not.** The two plans are not indistinguishable
+from the plan for a street event answered "no, it does not obstruct the public way" (`CASE_0` in
+A3), and the earlier revision of this paragraph overstated the harm by saying they were. Measured,
+the differences today are two: the answered-"no" plan is **FEASIBLE** and the unanswered plan is
+**CONDITIONAL**, and the unanswered plan carries `obstructs_public_way` in `missingFacts` with two
+branches, the `yes` branch reading
 
-Case 2, the issue's own worked example, a park event with a generator where `battery_present` is
-absent:
+> adds SAPO event type not covered, Block party permit, Block association and neighbor approval,
+> Liability insurance for a street or plaza permit, Plaza event permit; drops Street Activity Permit
+> Office (SAPO) scope
 
-|           | `FDNY-GENERATOR-001`       | verdict     |
-| --------- | -------------------------- | ----------- |
-| today     | absent                     | CONDITIONAL |
-| attempt B | present, `may_be_required` | CONDITIONAL |
+So the plan does carry an explicit caveat naming the unresolved gate, and it names five of the
+findings that answering `yes` would add. What it does **not** name is the four street-size permits:
+`street_event_size` sits one level further down, is scoped out by the unanswered
+`obstructs_public_way`, and no branch text on any missing fact mentions
+`SAPO-STREET-SMALL/MEDIUM/LARGE/XL-001`. Under attempt B the same event names all four. That
+narrower gap, a caveat that stops one level short of the permits at the bottom of the chain, is
+the real difference, and it is what `AGENTS.md`'s engine invariant ("a material `unknown` never
+silently becomes `false`") bears on, with the qualification that today the engine does not consider
+the second-level field material.
+
+Case 2 (`CASE_2` in A3), the issue's own worked example, a park event with a generator below both
+fuel thresholds where `battery_present` is absent:
+
+|           | findings | `FDNY-GENERATOR-001`       | verdict     |
+| --------- | -------- | -------------------------- | ----------- |
+| today     | 9        | absent                     | CONDITIONAL |
+| attempt B | 10       | present, `may_be_required` | CONDITIONAL |
 
 **The consequence for the decision is the important one.** The approved suite cannot distinguish the
 two semantics. 1569 tests, six scenarios and the whole boundary list agree on every expected value
@@ -248,9 +294,71 @@ confirmation should fire off an unanswered field is a separate question about th
 (F-201 / issue #107 territory), not about `asked_when`, and I am recording it rather than acting on
 it.
 
-## 4. Whether the state can arise at all
+### 3b. Q2: the gate that was asked and answered `"unknown"`
 
-**Not through the API. Re-verified against current code, not carried forward.**
+Everything above is Q1. This subsection is Q2, measured on its own inputs, because
+`unknown-gate-measurement.md:136-138` identifies Q2 rather than Q1 as issue #108's own case.
+
+**Only two of the ten gates can carry `"unknown"` at all.** From the registry's `values` lists
+(section 1's table, "publishes `unknown`?" column): `obstructs_public_way`
+(`yes`/`no`/`unknown`) and `sapo_event_type` (`street_event`/`block_party`/`plaza_event`/
+`other_sapo_class`/`unknown`). The other eight declare no such value, and the seven booleans among
+them cannot hold one: `events.generator_present` and its siblings are `boolean, notNull`
+(`apps/api/migrations/001_initial_schema.ts`).
+
+**The two behave differently, because their dependents use different operators.**
+
+| gate answered `"unknown"` | clause on its dependent          | `evaluateClause` | dependents                                                                       |
+| ------------------------- | -------------------------------- | ---------------- | -------------------------------------------------------------------------------- |
+| `obstructs_public_way`    | `obstructs_public_way != no`     | **true**         | `sapo_event_type` stays in scope; nothing is suppressed                          |
+| `sapo_event_type`         | `sapo_event_type = <class>` (×4) | **false**        | `street_event_size`, `plaza_level`, `plaza_multiple_blocks`, `has_amusement_ride` all leave scope |
+
+`conditions.ts:200-202` is the reason: `=` is `value === clause.value`, and `"unknown"` equals no
+declared class, while `!=` is `value !== null && value !== clause.value`, which `"unknown"`
+satisfies. So Q2 reduces to one gate, `sapo_event_type`, and four dependents.
+
+**Q2 is reachable and storable, which is the material difference from Q1.** `events.sapo_event_type`
+is a text column whose check is `oneOf("sapo_event_type", [..., "unknown"])`
+(`apps/api/migrations/001_initial_schema.ts:34-36`), `"unknown"` is a declared registry value so
+`validate.ts` accepts it, and `events.ts`'s insert writes it unchanged. Nothing in the chain rejects
+it. Section 4's "not reachable through the API" finding is a **Q1** finding and does not extend to
+Q2.
+
+**The prototype does not change Q2.** `CASE_3` in appendix A3 is a street event with
+`obstructs_public_way: "yes"` and `sapo_event_type: "unknown"`. Run on the unpatched tree and on
+attempt B it produces the same plan both times: 13 findings, verdict CONDITIONAL, one missing fact
+(`sapo_event_type`) with four branches. Attempt B's `blockersFor` returns `[]` for any raw value
+that is neither `undefined` nor `null`, so `"unknown"` never becomes a recorded blocker.
+
+**What Q2 does today, measured.** The four dependents leave scope, so
+`SAPO-STREET-SMALL/MEDIUM/LARGE/XL-001` and `SAPO-INSURANCE-BLOCK-PARTY-RIDE-001` do not fire. What
+the organizer gets instead is `sapo_event_type` as a missing fact with a `street_event` branch
+reading
+
+> adds Large street event permit, Medium street event permit, Small street event permit,
+> Extra-large street event permit; drops SAPO event type not covered, Block party permit, Block
+> association and neighbor approval, Plaza event permit; Liability insurance for a street or plaza
+> permit becomes required
+
+plus `SAPO-BLOCK-PARTY-001`, `SAPO-BLOCK-PARTY-SPONSOR-001`, `SAPO-PLAZA-001` and
+`SAPO-INSURANCE-001` as `may_be_required` findings in the plan itself.
+
+**So the silent-omission harm issue #108 describes does not reproduce on Q2.** Every requirement the
+scoping withholds is named in the branch table by its published label, on a plan the verdict already
+marks CONDITIONAL. That agrees with `unknown-gate-measurement.md`'s own summary ("the requirement
+does not vanish silently"), independently re-measured here at v2.11 rather than carried forward from
+v2.8.
+
+**What that does not settle.** Whether a branch table naming the four street permits is an adequate
+presentation of them, or whether they should also appear as `may_be_required` findings the way
+`SAPO-BLOCK-PARTY-001` does, is a product and engine-owner question about what "material" means one
+level down. This document measures the behaviour and does not rule on it. Section 7 carries a
+separate recommendation for Q2 on that basis.
+
+## 4. Whether the Q1 state can arise at all
+
+**Not through the API. Re-verified against current code, not carried forward. This section is Q1
+only; Q2 is reachable and storable, per section 3b.**
 
 - `packages/engine/src/intake/validate.ts:299`: `if (!isProvided(submission, field.field) && !field.nullable)` raises `required`. All 10 gate fields omit `nullable` in the registry (section 1), so an asked gate cannot be submitted blank.
 - `apps/api/src/events.ts:151` and `:164`: both `INSERT` and `UPDATE` build their column list from `intakeColumnNames(intakeContract)`, the full registry, and pass `values[column] ?? null` for each. No column is ever skipped on write, so a partial-column insert cannot happen through the API.
@@ -330,21 +438,29 @@ is genuinely missing. Those are different states, and v2.5 did not remove the se
 the first. So the honest statement is: the change would reintroduce the same finding on the same rule
 in a strictly smaller set of cases, all of which are cases where something really is unknown.
 
-Weighed against that: today's behavior on case 1 suppresses four SAPO street-size permits on a street
-event, silently. Spurious conditionals are a real product harm, v2.5 exists because of them, but
-they are visible to the organizer and recoverable by answering a question. A silently omitted permit
-is neither.
+Weighed against that: today's behavior on case 1 withholds four SAPO street-size permits from a
+street event, and although the plan does name the unresolved gate and five other findings behind it
+(section 3a), no branch text reaches the four street permits themselves. Spurious conditionals are a
+real product harm, v2.5 exists because of them, but they are visible to the organizer and
+recoverable by answering a question. A permit no branch text names is recoverable only by answering
+a question the plan does not identify as the one that would produce it.
 
 ## 7. Recommendation
 
-**Do not implement the semantics change now. Defer it, with a named trigger and a named precondition.
-Keep issue #108 open; do not close it as won't-fix.**
+**This section recommends separately on Q1 and Q2 (see the scope statement at the top). It does not
+dispose of issue #108: the Q2 decision is left open on a measurement, not closed.**
+
+### 7a. Q1, the unanswered gate
+
+**Do not implement the semantics change now. Defer it, with a named trigger and a named
+precondition.**
 
 The reasons, in the order they carry weight:
 
-1. **The state is not reachable through the API and never has been** (section 4, re-verified at
+1. **The Q1 state is not reachable through the API and never has been** (section 4, re-verified at
    v2.11), and no published ruleset has ever widened a gate. The change buys correctness in a state
-   the deployed system cannot currently produce.
+   the deployed system cannot currently produce. This reason is Q1-specific; it does not transfer to
+   Q2, which section 3b shows is reachable and storable.
 2. **The approved fixtures cannot tell the two semantics apart** (section 3). Merging a semantics
    change that its own regression suite is blind to is the wrong order of operations regardless of
    which semantics is right. If the change is ever made, the fixtures that distinguish the semantics
@@ -353,9 +469,11 @@ The reasons, in the order they carry weight:
 3. **The issue underscopes the change.** `verdict.ts` is not optional: without the branching change
    the plan generator does not terminate on six existing tests. Order-independence and three-valued
    conjunction are two further correctness requirements the issue does not mention. All three are
-   fixable and are fixed in attempt B, but the issue's "Scope if changed" list naming
-   `visibility.ts` and `conditions.ts` is wrong in both directions: `verdict.ts` is required and
-   `visibility.ts` was not touched.
+   fixable and are fixed in attempt B. So the issue's "Scope if changed" list, naming
+   `visibility.ts` and `conditions.ts`, is incomplete: `verdict.ts` is required as well. It is
+   **not** wrong to name `visibility.ts`: attempt B leaves that file untouched and thereby leaves
+   the divergence in item 4 unresolved, so the two-file diff below is a lower bound on
+   implementation size, not the size of a complete implementation.
 4. **`visibility.ts` is an unresolved design question, not a saving.** Attempt B changes the engine's
    scoping and leaves the questionnaire's scoping two-state, so the two would disagree about the same
    event: the engine would call a dependent's scope unknown and material while the form does not ask
@@ -363,11 +481,45 @@ The reasons, in the order they carry weight:
    comment argues for it) but it should be decided deliberately, not inherited from a diff that
    happened not to touch the file.
 
-**The trigger that should reopen this:** the first ruleset publication that widens any existing
-`asked_when` expression, or the deployment acquiring real event rows, whichever comes first. Either
-makes the state reachable and the calculus changes. Because a widening is itself a §6 rule-semantics
-change requiring the engine owner's review, the reviewer who would approve the widening is the same
-person who would need to weigh this, which is a real mitigation and belongs in the record.
+**The trigger that should reopen this, stated precisely because the precondition is a conjunction
+and an earlier revision wrote it as a disjunction.** Reaching the Q1 state needs **both** of two
+things, and neither alone is sufficient:
+
+- **stored rows written while the narrower expression legitimately left a dependent NULL**: a row
+  written under today's contract cannot supply the state on its own, because section 4 shows every
+  asked non-nullable gate is populated on write; and
+- **a later widening of that expression**, so a row's legitimate NULL is rescoped into
+  in-scope-and-unanswered. A widening in a deployment holding no such rows has no old NULL to
+  rescope, so it cannot supply the state on its own either.
+
+**The reopening trigger is deliberately the weaker of the two, not the conjunction:** the first
+ruleset publication that widens any existing `asked_when` expression, **or** the deployment
+acquiring real event rows, whichever comes first. That is a conservative choice, reopening on
+either prerequisite rather than waiting for both, and not a claim that either one alone makes the
+state reachable. Because a widening is itself a §6 rule-semantics change requiring the engine
+owner's review, the reviewer who would approve the widening is the same person who would need to
+weigh this, which is a real mitigation and belongs in the record.
+
+### 7b. Q2, the gate answered `"unknown"`
+
+**Also do not implement a change now, but on entirely different evidence, and the question is not
+closed.** Section 3b measures Q2 and finds:
+
+- Q2 **is** reachable and storable through the API today, so 7a's reason 1 does not apply to it.
+- The prototype in the appendix **does not address** Q2 at all, so 7a's reasons 2, 3 and 4, which
+  are all statements about that prototype, do not apply to it either.
+- The silent-omission harm issue #108 describes **does not reproduce** on Q2: every requirement the
+  scoping withholds is named in the branch table by its published label, on a plan the verdict marks
+  CONDITIONAL.
+
+The third point is the only argument this document has for Q2, and it is an argument against a
+change on the evidence available, not a demonstration that today's behaviour is right. Whether
+naming the four street permits in a branch table rather than as `may_be_required` findings is the
+correct presentation is an engine-owner and product call that no artifact in the repo answers.
+
+**So: keep issue #108 open, and do not close it as won't-fix or as answered by this document.** If a
+decision on Q2 is wanted, it needs its own measurement of the questionnaire and plan-rendering
+layers, which this document did not run.
 
 **What I am explicitly not recommending, and why.** I am not recommending the ruleset alternative
 (converting the boolean gates to enums carrying `unknown`) either. The earlier document prices it at
@@ -385,13 +537,26 @@ Under `docs/DOCUMENTATION-GOVERNANCE.md` §6:
 | ----------------------------------------- | ------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------- |
 | Implement the tri-state semantics         | "Rule trigger, dedupe, branch, deadline, or formula semantics"                              | **Verification owner (Dev 4) plus engine owner (Dev 1)**                                                       |
 | Add fixtures distinguishing the semantics | "Executable regulatory expectation" is an approved fixture (§1); the answer key is APPROVED | Same pair, plus the answer key's own revision authorization                                                    |
-| Take the ruleset alternative              | Regulatory source/status/content **and** rule semantics **and** shared enum                 | Verification owner plus rules reviewer, plus engine owner, plus lane/architecture owners for the schema change |
+| Take the ruleset alternative              | Regulatory source/status/content **and** rule semantics **and** shared enum **and** database migration touching shared/core tables | Verification owner plus rules reviewer, plus engine owner, plus all affected lane owners and the architecture owner for the shared enum, **plus the database owner** for the migration |
 | Do nothing (this recommendation)          | none                                                                                        | none; the issue stays open                                                                                     |
 
-`AGENTS.md` states the same requirement from the other direction: "Rule-semantics changes also need
-the engine owner's (Dev 1) review." Per `docs/DESIGN.md:70` and `:73`, Dev 1 owns engine fidelity to
-the ruleset and the fixture suite, and Dev 4 owns verification sign-off. This document has neither
-approval and implements nothing.
+**The database-owner row is not optional and is not held.** The ruleset alternative converts gate
+columns in `events` from `boolean` to text carrying `"unknown"`, which is a forward migration on a
+shared core table. `docs/DOCUMENTATION-GOVERNANCE.md:96` requires "Database owner plus all affected
+lane owners" for that class, separately from the shared-enum row, and an earlier revision of this
+table named only the lane and architecture owners. `docs/DESIGN.md:73` puts DB migrations in Dev 4's
+lane, so the database owner and the verification owner are the same person here, which is exactly
+why the capacity has to be named separately rather than assumed covered by the verification
+signature already in the row. No such approval has been given, and nothing in this document should
+be read as recording one. `AGENTS.md:44-45` is the standing constraint on the
+same table: the `events` schema migration is the four-lane contract, PR #137's one-time overwrite is
+the sole recorded exception and creates no precedent, and every later change requires the normal §6
+team decision.
+
+`AGENTS.md` states the semantics requirement from the other direction: "Rule-semantics changes also
+need the engine owner's (Dev 1) review." Per `docs/DESIGN.md:70` and `:73`, Dev 1 owns engine
+fidelity to the ruleset and the fixture suite, and Dev 4 owns verification sign-off. This document
+holds none of the approvals in the table above and implements nothing.
 
 ## 8. What could not be determined
 
@@ -399,8 +564,10 @@ Stated plainly rather than left as silence:
 
 1. **Whether the engine owner reads `F-201:48` as forbidding the change.** Section 6 gives my reading
    and the reason for it. It is a spec-interpretation call and it is theirs, not mine.
-2. **Whether the questionnaire should follow the engine into three-state.** Section 7 item 4. This is
-   a product and UX decision as much as an engine one, and no artifact in the repo answers it.
+2. **Whether the questionnaire should follow the engine into three-state.** Section 7a item 4. This
+   is a product and UX decision as much as an engine one, and no artifact in the repo answers it.
+   Until it is answered, `visibility.ts` stays in scope for any Q1 implementation and the +61/-5
+   two-file figure below is a lower bound.
 3. **The ruleset alternative's answer-key impact.** Unmeasured here and unmeasured in the earlier
    document. Measuring it requires converting 132 fixture literals first, because `readFieldValue`
    rejects a boolean for an enum field, so every scenario fails validation before any answer key is
@@ -412,6 +579,10 @@ Stated plainly rather than left as silence:
 5. **Whether any state, migration or fixture in a lane I did not run could reach the unanswered
    state.** I ran the full 1569-test suite against a live database, which covers every suite in the
    repo. I did not audit the seed or demo tooling.
+6. **Whether Q2's branch-table presentation is adequate** (section 3b). I measured what the engine
+   produces for a gate answered `"unknown"`. I did not measure what the questionnaire shows or what
+   `plan-line.tsx` renders for it, and those layers are where "the organizer was told" is actually
+   decided. Any Q2 decision needs that measurement first.
 
 ## 9. Corrections to `asked-when-three-state-measurement.md`
 
@@ -434,17 +605,125 @@ four of the five are the ruleset moving underneath it.
 5. **Its attempt 3 is order-dependent and mishandles `false AND unknown`**, which its own round 8
    records as unmeasured. Both are fixed in attempt B here and both fixes are measured; the suite
    still passes 1569/1569. Its section 7 conclusion that "the answer-key impact and implementation
-   size of a correct, order-independent implementation therefore remain unmeasured" is now measured:
-   zero movement, two files, +61/-5.
+   size of a correct, order-independent implementation therefore remain unmeasured" is now partly
+   measured: zero answer-key movement, and two files at +61/-5 for the engine half. Implementation
+   size is still not fully measured, because `visibility.ts` is left out and the divergence that
+   creates is unresolved (section 7a item 4), so +61/-5 is a lower bound.
 
 ---
 
-## Appendix: the throwaway patch (attempt B)
+## Appendix: every input behind every number above
 
-Generated at `f8d6fc3` and verified to apply there with `git apply --check`. **It is not applied on
-this branch and this document does not recommend applying it.** It is published because the
-measurement's primary claim is a failure count, and a count whose input is not published is an
-assertion rather than evidence.
+Three artifacts, all generated at `f8d6fc3` and all verified to apply or run there. **None is
+applied on this branch and this document recommends applying none of them.** They are published
+because the measurements' primary claims are counts, and a count whose input is not published is an
+assertion rather than evidence. A1 produces the six-failure profile in section 3, A2 produces the
+1569/1569 run in section 3, and A3 produces every number in sections 3a and 3b.
+
+### A1: attempt A, the semantics issue #108's Q1 asks for and nothing else
+
+Applies to a clean `f8d6fc3` on its own (not on top of A2). `pnpm typecheck` is clean; `pnpm test`
+with `DATABASE_URL` set reports **1563 passed, 6 failed, 61 files**, and the six are:
+
+| file                  | test                                                                                     |
+| --------------------- | ---------------------------------------------------------------------------------------- |
+| `acceptance.test.ts`  | Issue #107 named confirmations: keeps the UNKNOWN-capable `obstructs_public_way` field out of named-confirmation provenance |
+| `engine.test.ts`      | business-day arithmetic: keeps an uncomputable published window conditional instead of dropping it |
+| `engine.test.ts`      | determinism (AC 3): moves with `today`, which is a parameter and never the system clock  |
+| `engine.test.ts`      | published bound inclusivity: leaves inclusive bounds alone                               |
+| `engine.test.ts`      | typed deadlines: does not call direct filing open once the gated permit's own deadline has passed |
+| `engine.test.ts`      | typed deadlines: treats the day inside the Parks floor as missed                         |
+
+All six fail with `RangeError: Maximum call stack size exceeded` and there is not one assertion
+failure in the run.
+
+```diff
+diff --git a/packages/engine/src/conditions.ts b/packages/engine/src/conditions.ts
+index 21a68b8..4d9c32e 100644
+--- a/packages/engine/src/conditions.ts
++++ b/packages/engine/src/conditions.ts
+@@ -30,7 +30,11 @@ export type TriggerEvaluation = {
+   readonly triggeredBy: readonly TriggeredBy[];
+ };
+
+-export type ScopeResolver = { isInScope: (field: string) => boolean };
++export type ScopeResolver = {
++  isInScope: (field: string) => boolean;
++  isIndeterminate?: (field: string) => boolean;
++  blockersOf?: (field: string) => readonly string[];
++};
+
+ /**
+  * Evaluate the registry's `asked_when` scoping. The published expressions are a closed set of
+@@ -178,11 +182,21 @@ export function createScopeResolver(intake: EventIntake, ruleset: EngineRuleset)
+   const cache = new Map<string, boolean>();
+   const resolving = new Set<string>();
+
++  const indeterminate = new Map<string, readonly string[]>();
++
+   const valueOf = (field: string): IntakeValue => {
+     if (!isInScope(field)) return null;
+     return intake[field] ?? null;
+   };
+
++  const blockersFor = (clause: AskedWhenClause): readonly string[] => {
++    if (indeterminate.has(clause.field)) return indeterminate.get(clause.field) as readonly string[];
++    if (resolving.has(clause.field)) return [];
++    if (!isInScope(clause.field)) return indeterminate.get(clause.field) ?? [];
++    const raw = intake[clause.field];
++    return raw === undefined || raw === null ? [clause.field] : [];
++  };
++
+   const evaluateClause = (clause: AskedWhenClause): boolean => {
+     const value = valueOf(clause.field);
+     switch (clause.kind) {
+@@ -224,6 +238,15 @@ export function createScopeResolver(intake: EventIntake, ruleset: EngineRuleset)
+
+     resolving.add(field);
+     try {
++      const blocked = new Set<string>();
++      for (const clause of definition.askedWhenClauses) {
++        for (const blocker of blockersFor(clause)) blocked.add(blocker);
++      }
++      if (blocked.size > 0) {
++        indeterminate.set(field, [...blocked]);
++        cache.set(field, false);
++        return false;
++      }
+       const inScope = definition.askedWhenClauses.every(evaluateClause);
+       cache.set(field, inScope);
+       return inScope;
+@@ -232,11 +255,19 @@ export function createScopeResolver(intake: EventIntake, ruleset: EngineRuleset)
+     }
+   }
+
+-  return { isInScope };
++  return {
++    isInScope,
++    isIndeterminate: (field: string) => indeterminate.has(field),
++    blockersOf: (field: string) => indeterminate.get(field) ?? [],
++  };
+ }
+
+ function resolveAnswer(field: string, intake: EventIntake, scope: ScopeResolver): ResolvedAnswer {
+-  if (!scope.isInScope(field)) return { state: "not_asked" };
++  if (!scope.isInScope(field)) {
++    if (scope.isIndeterminate?.(field) === true)
++      return { state: "unknown", isExplicitUnknown: false };
++    return { state: "not_asked" };
++  }
+   const value = intake[field];
+   if (value === undefined || value === null) return { state: "unknown", isExplicitUnknown: false };
+   if (value === UNKNOWN_ANSWER) return { state: "unknown", isExplicitUnknown: true };
+```
+
+`blockersFor` is where Q2 falls outside this measurement: a raw value that is neither `undefined`
+nor `null` produces no blocker, so a gate answered `"unknown"` is unaffected by A1 and by A2 alike.
+
+### A2: attempt B, attempt A plus the three corrections
+
+Applies to a clean `f8d6fc3` (not on top of A1). `pnpm typecheck` is clean; `pnpm test` with
+`DATABASE_URL` set reports **1569 passed, 0 failed, 61 files**.
 
 ```diff
 diff --git a/packages/engine/src/conditions.ts b/packages/engine/src/conditions.ts
@@ -574,3 +853,98 @@ index 14e12f2..a2ca1a8 100644
    const missingFacts: MissingFact[] = [];
    const pathVerdicts: Verdict[] = [];
 ```
+
+### A3: the plan-diff probe harness and its four complete intakes
+
+Written to `packages/engine/src/probe.test.ts`, run with
+`npx vitest run packages/engine/src/probe.test.ts`, and deleted afterwards. It is a probe, not a
+fixture: nothing on this branch adds it, and it asserts nothing. It prints, and the printed output
+is what sections 3a and 3b report. Run it once on a clean `f8d6fc3` for the "today" column and once
+with A2 applied for the "attempt B" column. `CASE_1` and `CASE_2` are not submittable through the
+API (`validate.ts` raises `required` for a blank non-nullable gate in scope, which is section 4's
+finding); the probe calls `evaluate` directly, which is the only way to reach the Q1 state at all.
+`CASE_0` and `CASE_3` are submittable.
+
+```ts
+import { readFileSync } from "node:fs";
+import { describe, it } from "vitest";
+import { PUBLISHED_RULES_FILE } from "./__fixtures__/published-ruleset";
+import { evaluate, parseEngineRuleset } from "./index";
+import type { EventIntake, PublishedHolidayCalendar } from "./types";
+
+const TODAY = "2026-07-22";
+const raw: Record<string, unknown> = JSON.parse(readFileSync(PUBLISHED_RULES_FILE, "utf8"));
+const ruleset = parseEngineRuleset(raw);
+const calendar: PublishedHolidayCalendar = { id: ruleset.calendarId, holidays: [] };
+
+const CASE_1: EventIntake = {
+  name: "Probe case 1",
+  borough: "manhattan",
+  location_type: "street",
+  headcount: 200,
+  event_date: "2026-09-30",
+  event_open_to_public: "yes",
+  food_present: false,
+  selling_anything: false,
+  amplified_sound: false,
+  structure_types: ["none"],
+  open_flame_or_cooking: ["none"],
+  generator_present: false,
+  battery_present: false,
+  alcohol: false,
+};
+
+const CASE_2: EventIntake = {
+  name: "Probe case 2",
+  borough: "manhattan",
+  location_type: "park",
+  headcount: 150,
+  event_date: "2026-09-30",
+  event_open_to_public: "yes",
+  food_present: false,
+  selling_anything: false,
+  amplified_sound: false,
+  structure_types: ["none"],
+  open_flame_or_cooking: ["none"],
+  generator_present: true,
+  generator_gasoline_gallons: 1,
+  generator_diesel_gallons: 0,
+  generator_kw: 5,
+  alcohol: false,
+};
+
+const CASE_0: EventIntake = { ...CASE_1, obstructs_public_way: "no" };
+
+const CASE_3: EventIntake = { ...CASE_1, obstructs_public_way: "yes", sapo_event_type: "unknown" };
+
+function show(label: string, intake: EventIntake): void {
+  const plan = evaluate(intake, ruleset, TODAY, calendar);
+  const p = plan as unknown as Record<string, unknown>;
+  const detail = p.verdictDetail as Record<string, unknown>;
+  const findings = p.findings as Array<Record<string, unknown>>;
+  console.log(`\n===== ${label} =====`);
+  console.log("verdict:", p.verdict, "| findings:", findings.length);
+  console.log(
+    "  " + findings.map((f) => `${JSON.stringify(f.ruleIds)}:${String(f.disposition)}`).join("\n  "),
+  );
+  console.log("missingFacts:", JSON.stringify(detail.missingFacts));
+}
+
+describe("probe", () => {
+  it("runs", () => {
+    show("CASE 0 street, obstructs_public_way ANSWERED no", CASE_0);
+    show("CASE 1 street, obstructs_public_way UNANSWERED", CASE_1);
+    show("CASE 2 park + generator, battery_present ABSENT", CASE_2);
+    show("CASE 3 street, obstructs=yes, sapo_event_type ANSWERED unknown", CASE_3);
+  });
+});
+```
+
+**The four results, as printed.**
+
+| case                                                          | today                                        | with A2                                      |
+| ------------------------------------------------------------- | -------------------------------------------- | -------------------------------------------- |
+| `CASE_0` street, `obstructs_public_way: "no"`                 | FEASIBLE, 9 findings, `missingFacts: []`     | identical                                    |
+| `CASE_1` street, `obstructs_public_way` absent                | CONDITIONAL, 9 findings, 1 missing fact      | CONDITIONAL, 20 findings, 1 missing fact     |
+| `CASE_2` park + generator, `battery_present` absent           | CONDITIONAL, 9 findings, no `FDNY-GENERATOR-001` | CONDITIONAL, 10 findings, `FDNY-GENERATOR-001` `may_be_required` |
+| `CASE_3` street, `sapo_event_type: "unknown"`                 | CONDITIONAL, 13 findings, 1 missing fact     | **identical**, A2 does not reach Q2         |
