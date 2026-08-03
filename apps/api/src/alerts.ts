@@ -336,8 +336,50 @@ export const MAX_ALERTS_PER_TICK = Math.floor(
     PROVIDER_TIMEOUT_MS,
 );
 
-/** What the poller's own pool has to hold: every concurrent send, plus the scan that feeds them. */
-export const ALERT_POLLER_CONNECTIONS = SEND_CONCURRENCY + 1;
+/**
+ * What the poller's own pool has to hold: every concurrent send, the second connection each one
+ * borrows to record its attempt, and the scan that feeds them.
+ *
+ * TWO PER SEND, because the attempt-intent write has to commit while the sending transaction is
+ * still open and therefore cannot share its connection. A pool sized for one per send would have
+ * every worker holding a connection and waiting for a free one to record its intent, which turns
+ * eight concurrent sends into one at a time — the throughput arithmetic above assumes otherwise.
+ * The second connection is held for a single INSERT, not for the send.
+ */
+export const ALERT_POLLER_CONNECTIONS = SEND_CONCURRENCY * 2 + 1;
+
+/**
+ * How long the email provider honours a repeated `Idempotency-Key`, per Resend's published
+ * documentation. Inside it a retry of an attempt whose outcome was lost is deduplicated; outside
+ * it the same retry is a second delivery to the same person.
+ *
+ * This is the number that makes an unresolved attempt reconcilable rather than sendable, so it is
+ * named once and read by the scan, the claim and the tests.
+ */
+export const PROVIDER_DEDUP_WINDOW_HOURS = 24;
+
+/**
+ * An alert that was handed to a provider and whose outcome nobody ever saw, long enough ago that
+ * the provider would no longer recognise the key.
+ *
+ * NOT AN AGE TEST ON THE ALERT, and that is the whole distinction issue #166 turns on. A pending
+ * row with no recorded attempt is safe to send at any age — it cannot duplicate a delivery that
+ * never happened, and suppressing it by age would convert one possible duplicate into systematic
+ * non-delivery for a product whose purpose is that a filing deadline does not pass unnoticed. Only
+ * a row that WAS attempted, and whose attempt has no recorded outcome, is ambiguous.
+ *
+ * Held rather than sent and rather than cancelled: sending may deliver a second copy, cancelling
+ * would assert PopEngine no longer intends to send something when in fact nobody knows whether it
+ * arrived. The tick counts these so they can be reconciled against the provider by a human.
+ */
+const HAS_AN_UNRESOLVED_ATTEMPT = `EXISTS (
+       SELECT 1
+         FROM alert_send_attempts AS attempt
+        WHERE attempt.alert_id = alerts.id
+          AND attempt.outcome_recorded_at IS NULL
+          AND attempt.attempted_at
+              < current_timestamp - interval '${PROVIDER_DEDUP_WINDOW_HOURS} hours'
+     )`;
 
 /**
  * How long the test endpoint waits for a poller that claimed its row first.
@@ -1695,20 +1737,64 @@ type DueAlertRow = {
 };
 
 /**
+ * Record that this alert is ABOUT to be handed to a provider, in a transaction of its own.
+ *
+ * ITS OWN CONNECTION, which is the mechanical heart of issue #166. The point of the record is to
+ * survive the transaction that is sending, so it cannot be written by that transaction: a crash
+ * before its COMMIT takes the intent down with the mark-sent it was meant to outlive. A second
+ * connection commits immediately and independently.
+ *
+ * It cannot write to the `alerts` row either — the claim holds it — so the intent is a child row.
+ * A foreign key takes only FOR KEY SHARE on the parent, which is compatible with the claim's
+ * FOR NO KEY UPDATE, so the insert does not queue behind the send it is recording.
+ */
+async function recordAttemptIntent(
+  database: Pool,
+  row: DueAlertRow,
+): Promise<string | null> {
+  const client = await database.connect();
+  try {
+    const { rows } = await client.query<{ id: string }>(
+      `INSERT INTO alert_send_attempts (alert_id, idempotency_key) VALUES ($1, $2) RETURNING id`,
+      [row.id, row.idempotency_key],
+    );
+    return rows[0]?.id ?? null;
+  } finally {
+    client.release();
+  }
+}
+
+/**
  * Send one claimed alert and record what happened, in the transaction that claimed it.
  *
- * The claim is `FOR UPDATE SKIP LOCKED`, so two ticks (or two api instances) cannot both hold the
- * same row. Marking happens inside the same transaction as the send, so the only window left is a
- * crash between the provider accepting the message and the COMMIT — after which the row is still
- * pending and the next tick sends the same `idempotency_key` again. That is why the key goes to
- * the provider (AD-13): this side cannot distinguish "never sent" from "sent, mark lost", and the
- * provider can.
+ * The claim is `FOR NO KEY UPDATE SKIP LOCKED`, so two ticks (or two api instances) cannot both
+ * hold the same row. Marking happens inside the same transaction as the send, so the only window
+ * left is a crash between the provider accepting the message and the COMMIT — after which the row
+ * is still pending and the next tick sends the same `idempotency_key` again. That is why the key
+ * goes to the provider (AD-13): this side cannot distinguish "never sent" from "sent, mark lost",
+ * and the provider can.
+ *
+ * THAT DEFERRAL EXPIRES, which is what the intent record above is for. The provider only honours a
+ * repeated key for `PROVIDER_DEDUP_WINDOW_HOURS`; past that the same retry is a second delivery.
+ * So the attempt is written before the send and resolved after it, and a resolution that never
+ * arrives is what a later scan reads to hold the row instead of retrying it blind.
  */
 async function deliverClaimed(
   client: PoolClient,
   row: DueAlertRow,
   senders: AlertSenders,
+  database: Pool,
 ): Promise<{ status: "sent" | "failed"; delivery: AlertDelivery | null; error: string | null }> {
+  const attemptId = await recordAttemptIntent(database, row);
+  // Written in the SENDING transaction, so a crash that loses the mark-sent loses this too. That
+  // is the correct outcome rather than a limitation: both describe the same lost knowledge.
+  const recordOutcome = async (): Promise<void> => {
+    if (attemptId === null) return;
+    await client.query(
+      "UPDATE alert_send_attempts SET outcome_recorded_at = clock_timestamp() WHERE id = $1",
+      [attemptId],
+    );
+  };
   try {
     const delivery = await senders[row.channel]({
       recipient: row.recipient,
@@ -1727,12 +1813,18 @@ async function deliverClaimed(
         WHERE id = $1`,
       [row.id, JSON.stringify({ delivery })],
     );
+    await recordOutcome();
     return { status: "sent", delivery, error: null };
   } catch (error) {
     const message =
       error instanceof AlertDeliveryError ? error.message : "delivery failed for an unknown reason";
     if (!(error instanceof AlertDeliveryError))
       console.error(`alert ${row.id} delivery failed`, error);
+    // A refusal and an unreachable host are answers, so the attempt is closed and the row keeps
+    // being retried for as long as the outage lasts (spec edge case: nothing is lost). A timeout
+    // is not an answer, and an unrecognised throw is not one either, so those are left open and
+    // reconciled rather than retried once the provider's dedup window has passed.
+    if (error instanceof AlertDeliveryError && error.outcomeObserved) await recordOutcome();
     // Failed, counted, and left for the next tick. Nothing is lost while a provider is down
     // (spec edge case); the count is what distinguishes a blip from an address that never works.
     await client.query(
@@ -1840,12 +1932,24 @@ async function sendOne(
         WHERE id = $1 AND status IN ('pending', 'failed') AND send_at <= current_timestamp
           AND (next_attempt_at IS NULL OR next_attempt_at <= current_timestamp)
           AND ${NOT_FROM_A_STALE_PLAN}
+          -- RE-ASKED HERE for the same reason as everything else on this claim: an attempt can
+          -- age past the dedup window between the scan and this, and the decision must be made
+          -- where the alert is acted on.
+          AND NOT ${HAS_AN_UNRESOLVED_ATTEMPT}
           -- RE-ASKED HERE, not inherited from the sweep at the top of the tick. See
           -- FILING_WINDOW_HAS_SHUT: the queue this row came from can run for the whole budget,
           -- so a tick that swept before local midnight could deliver a filing date that had since
           -- become yesterday. Read under the event lock, which is what makes it a safe point
           -- rather than another race.
-        FOR UPDATE SKIP LOCKED`,
+          --
+          -- FOR NO KEY UPDATE rather than FOR UPDATE, which changes nothing about who may send
+          -- this alert — the two conflict with each other and with every UPDATE, so one worker
+          -- still excludes the others and the reconciler still queues behind a claim. What it
+          -- stops excluding is FOR KEY SHARE, the lock a foreign key takes on the parent row, so
+          -- the attempt-intent insert can commit on its own connection while this transaction is
+          -- still open. Under FOR UPDATE that insert would wait for the send it is recording,
+          -- which is the one thing it must not do.
+        FOR NO KEY UPDATE SKIP LOCKED`,
       [alertId],
     );
     const row = rows[0];
@@ -1876,7 +1980,7 @@ async function sendOne(
       return null;
     }
 
-    const outcome = await deliverClaimed(client, row, senders);
+    const outcome = await deliverClaimed(client, row, senders, database);
     await client.query("COMMIT");
     return outcome;
   } catch (error) {
@@ -1900,6 +2004,16 @@ export type AlertTickSummary = {
    * that could not start: the work is still there and nobody is doing it.
    */
   readonly skipped: number;
+  /**
+   * Due alerts that were handed to a provider, whose outcome was never observed, and whose
+   * attempt is now older than the provider's dedup window.
+   *
+   * NOT a subset of `abandoned`, and not work this tick failed to reach: no tick will ever send
+   * these. Retrying one may deliver a second copy to the same person, so it waits for a human to
+   * reconcile it against the provider. Counted because a queue that stops moving with nothing
+   * failing is otherwise indistinguishable from an empty one.
+   */
+  readonly heldForReconciliation: number;
   /**
    * Whether this tick reached the end of the work that was due, which is the ONE question the
    * poller has to answer and has been inferring three different ways.
@@ -1977,6 +2091,9 @@ export function createAlertPoller(dependencies: {
           AND send_at <= current_timestamp
           AND (next_attempt_at IS NULL OR next_attempt_at <= current_timestamp)
           AND ${NOT_FROM_A_STALE_PLAN}
+          -- Excluded from the scan as well as from the claim, so a row awaiting reconciliation
+          -- does not consume a slot in every capped scan for as long as it goes unreconciled.
+          AND NOT ${HAS_AN_UNRESOLVED_ATTEMPT}
         -- SAME-INSTANT ROWS ARE ORDERED BY WHAT DEPENDS ON WHAT, not by uuid. A gated window
         -- exactly one reminder offset wide puts the dependency alert and the filing reminder on the
         -- same send_at, and the tiebreak then fell through to id, so which one an organizer saw
@@ -2036,6 +2153,24 @@ export function createAlertPoller(dependencies: {
       console.warn(
         `alert poll filled its ${MAX_ALERTS_PER_TICK}-row scan; alerts beyond it wait for the ` +
           `next scan and may exceed the ${DELIVERY_BOUND_MS}ms delivery bound`,
+      );
+    }
+    // WHAT THE SCAN JUST REFUSED TO CLAIM, counted rather than left silent. A held row is due,
+    // undelivered as far as this side knows, and nothing in the poller will ever move it: the only
+    // way out is a human checking the provider for the key and then either marking the alert sent
+    // or clearing its attempt. Reporting nothing would make that look like an empty queue.
+    const { rows: held } = await database.query<{ id: string }>(
+      `SELECT id FROM alerts
+        WHERE status IN ('pending', 'failed')
+          AND send_at <= current_timestamp
+          AND ${HAS_AN_UNRESOLVED_ATTEMPT}`,
+    );
+    if (held.length > 0) {
+      // Ids only. The row's recipient is contact data and does not go in a log (AGENTS.md).
+      console.warn(
+        `${held.length} alert(s) were handed to a provider more than ` +
+          `${PROVIDER_DEDUP_WINDOW_HOURS}h ago with no recorded outcome, so they are held rather ` +
+          `than retried: ${held.map((row) => row.id).join(", ")}`,
       );
     }
     // The expiry sweep that used to run here is gone. It took no lock, so it could read a
@@ -2131,7 +2266,14 @@ export function createAlertPoller(dependencies: {
           `they stay due and are taken by the next tick`,
       );
     }
-    return { sent, failed, abandoned, skipped: stillSkipped, drained };
+    return {
+      sent,
+      failed,
+      abandoned,
+      skipped: stillSkipped,
+      heldForReconciliation: held.length,
+      drained,
+    };
   };
 
   /** Set while consecutive ticks keep reporting skipped work, so the chasing cannot run forever. */

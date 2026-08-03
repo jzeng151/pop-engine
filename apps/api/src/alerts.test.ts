@@ -48,6 +48,7 @@ import {
   DELIVERY_BOUND_MS,
   MAX_ALERTS_PER_TICK,
   POLL_INTERVAL_MS,
+  PROVIDER_DEDUP_WINDOW_HOURS,
   TICK_BUDGET_MS,
   type AlertScheduler,
 } from "./alerts";
@@ -144,6 +145,14 @@ type AlertRow = {
   };
 };
 
+type AttemptRow = {
+  id: string;
+  alert_id: string;
+  idempotency_key: string;
+  attempted_at: Date;
+  outcome_recorded_at: Date | null;
+};
+
 describe.skipIf(databaseUrl === "")("F-203 deadline alerts", () => {
   let pool: Pool;
   let ruleset: EngineRuleset;
@@ -214,6 +223,15 @@ describe.skipIf(databaseUrl === "")("F-203 deadline alerts", () => {
     const { rows } = await pool.query<AlertRow>(
       `SELECT a.* FROM alerts AS a WHERE a.event_id = $1 ORDER BY a.send_at, a.alert_type, a.channel`,
       [eventId],
+    );
+    return rows;
+  };
+
+  /** What this alert's send was recorded as having ATTEMPTED, whatever came of it (migration 014). */
+  const attemptsOf = async (alertId: string): Promise<AttemptRow[]> => {
+    const { rows } = await pool.query<AttemptRow>(
+      `SELECT * FROM alert_send_attempts WHERE alert_id = $1 ORDER BY attempted_at`,
+      [alertId],
     );
     return rows;
   };
@@ -1368,6 +1386,214 @@ describe.skipIf(databaseUrl === "")("F-203 deadline alerts", () => {
       expect(provider.attempts).toHaveLength(2);
       expect(provider.attempts[0]?.idempotencyKey).toBe(provider.attempts[1]?.idempotencyKey);
       expect(provider.delivered).toHaveLength(1);
+    });
+
+    describe("an attempt is recorded before the send, so a crash is not a non-attempt", () => {
+      /**
+       * A due alert written straight in, with no attempt behind it and no plan to go stale.
+       *
+       * Written rather than scheduled because these tests are about how OLD a row is allowed to
+       * be: the scheduler only writes alerts for filing dates that are still ahead, so it cannot
+       * produce a row that has been due for a month.
+       */
+      const insertDueAlert = async (
+        eventId: string,
+        recipient: string,
+        dueDaysAgo: number,
+      ): Promise<string> => {
+        const alertId = randomUUID();
+        await pool.query(
+          `INSERT INTO alerts (id, event_id, alert_type, channel, recipient, idempotency_key,
+                               send_at, status, payload)
+           VALUES ($1, $2, 'deadline_reminder', 'email', $3, $5,
+                   current_timestamp - ($4 || ' days')::interval, 'pending',
+                   '{"subject":"file it","body":"file it"}'::jsonb)`,
+          [alertId, eventId, recipient, dueDaysAgo, alertId],
+        );
+        return alertId;
+      };
+
+      const recordAttempt = async (
+        alertId: string,
+        hoursAgo: number,
+        observed: boolean,
+      ): Promise<void> => {
+        await pool.query(
+          `INSERT INTO alert_send_attempts (alert_id, idempotency_key, attempted_at,
+                                            outcome_recorded_at)
+           VALUES ($1, $4, current_timestamp - ($2 || ' hours')::interval,
+                   CASE WHEN $3 THEN current_timestamp - ($2 || ' hours')::interval END)`,
+          [alertId, hoursAgo, observed, alertId],
+        );
+      };
+
+      it("leaves a crashed send distinguishable from an alert that was never tried", async () => {
+        // THE FAILING TEST FOR ISSUE #166. The provider took the message and the process died
+        // before the COMMIT, so the alert row rolls back to exactly what it was. Beside it sits an
+        // alert nobody has ever tried. Until an attempt was recorded before the handoff, those two
+        // rows were identical, and every later decision about them had to be made blind.
+        const eventId = await createEvent(scenario("C"));
+        expect(await schedulePastDue(eventId, [1])).toBe(1);
+        const attempted = (await alertsOf(eventId))[0]?.id ?? "";
+        const provider = fakeProvider();
+
+        const doomed = new Pool({ connectionString: databaseUrl });
+        const crashing = Object.create(pool) as Pool;
+        crashing.query = pool.query.bind(pool) as Pool["query"];
+        crashing.connect = (async () => {
+          const client = await doomed.connect();
+          const query = client.query.bind(client);
+          client.query = ((...args: unknown[]) =>
+            typeof args[0] === "string" && args[0].includes("UPDATE alerts")
+              ? Promise.reject(new Error("connection terminated unexpectedly"))
+              : query(...(args as Parameters<typeof query>))) as typeof client.query;
+          return client;
+        }) as Pool["connect"];
+
+        await createAlertPoller({
+          jurisdiction: ruleset.jurisdiction,
+          database: crashing,
+          senders: provider.senders,
+        }).tick();
+        await doomed.end();
+
+        // The row is pending and due, which is the entire state that used to be readable — the
+        // same state a row the poller has never reached is in.
+        const untried = await insertDueAlert(eventId, "untried@example.test", 1);
+        const rows = await alertsOf(eventId);
+        expect(rows.every((row) => row.status === "pending")).toBe(true);
+        expect(provider.delivered).toHaveLength(1);
+        // The one that reached the provider says so, and says nobody saw what came of it.
+        const recorded = await attemptsOf(attempted);
+        expect(recorded).toHaveLength(1);
+        expect(recorded[0]?.outcome_recorded_at).toBeNull();
+        expect(recorded[0]?.idempotency_key).toBe(
+          rows.find((row) => row.id === attempted)?.idempotency_key,
+        );
+        // The one that did not is not carrying an attempt it never made.
+        expect(await attemptsOf(untried)).toHaveLength(0);
+      });
+
+      it("records the outcome when the send completes, so the attempt is not left open", async () => {
+        const eventId = await createEvent(scenario("C"));
+        expect(await schedulePastDue(eventId, [1])).toBe(1);
+        const provider = fakeProvider();
+
+        await createAlertPoller({
+          database: pool,
+          senders: provider.senders,
+          jurisdiction: ruleset.jurisdiction,
+        }).tick();
+
+        const [alert] = await alertsOf(eventId);
+        expect(alert?.status).toBe("sent");
+        const recorded = await attemptsOf(alert?.id ?? "");
+        expect(recorded).toHaveLength(1);
+        expect(recorded[0]?.outcome_recorded_at).not.toBeNull();
+      });
+
+      it("sends a pending alert with no recorded attempt however long it has been due", async () => {
+        // THE CONSTRAINT ISSUE #166 MEASURED. Suppressing by age alone is the cheap version of
+        // this fix and it is the wrong trade: it turns one possible duplicate into systematic
+        // non-delivery, for a product whose whole purpose is that a filing deadline does not pass
+        // unnoticed. A row nobody ever handed to a provider cannot be a duplicate at any age.
+        const eventId = await createEvent(scenario("C"));
+        const alertId = await insertDueAlert(eventId, "long-overdue@example.test", 30);
+        const provider = fakeProvider();
+
+        await createAlertPoller({
+          database: pool,
+          senders: provider.senders,
+          jurisdiction: ruleset.jurisdiction,
+        }).tick();
+
+        expect(provider.delivered.map((message) => message.recipient)).toContain(
+          "long-overdue@example.test",
+        );
+        const { rows } = await pool.query<{ status: string }>(
+          "SELECT status FROM alerts WHERE id = $1",
+          [alertId],
+        );
+        expect(rows[0]?.status).toBe("sent");
+      });
+
+      it("holds an attempt nobody saw the end of once the provider's dedup window has passed", async () => {
+        // Past the window the provider no longer recognises the key, so a retry is a second
+        // delivery rather than a deduplicated one. It is neither sent nor forgotten: it stops
+        // being claimable and is counted, so a human can reconcile it against the provider.
+        const eventId = await createEvent(scenario("C"));
+        const alertId = await insertDueAlert(eventId, "unreconciled@example.test", 2);
+        await recordAttempt(alertId, PROVIDER_DEDUP_WINDOW_HOURS + 1, false);
+        const provider = fakeProvider();
+
+        const summary = await createAlertPoller({
+          database: pool,
+          senders: provider.senders,
+          jurisdiction: ruleset.jurisdiction,
+        }).tick();
+
+        expect(provider.attempts.map((message) => message.recipient)).not.toContain(
+          "unreconciled@example.test",
+        );
+        expect(summary.heldForReconciliation).toBeGreaterThanOrEqual(1);
+        const { rows } = await pool.query<{ status: string }>(
+          "SELECT status FROM alerts WHERE id = $1",
+          [alertId],
+        );
+        expect(rows[0]?.status).toBe("pending");
+      });
+
+      it("keeps retrying an attempt the provider answered, however old that answer is", async () => {
+        // The spec's outage edge case: nothing is dropped and the poller keeps trying. An answered
+        // attempt is not the ambiguous case — this side knows what happened to it — so age alone
+        // must not retire it.
+        const eventId = await createEvent(scenario("C"));
+        const alertId = await insertDueAlert(eventId, "answered@example.test", 2);
+        await recordAttempt(alertId, PROVIDER_DEDUP_WINDOW_HOURS + 1, true);
+        const provider = fakeProvider();
+
+        await createAlertPoller({
+          database: pool,
+          senders: provider.senders,
+          jurisdiction: ruleset.jurisdiction,
+        }).tick();
+
+        const { rows } = await pool.query<{ status: string }>(
+          "SELECT status FROM alerts WHERE id = $1",
+          [alertId],
+        );
+        expect(rows[0]?.status).toBe("sent");
+        expect(await attemptsOf(alertId)).toHaveLength(2);
+      });
+
+      it("leaves the attempt open when the provider never answered at all", async () => {
+        // A timeout is not an answer: the provider may have accepted the message. Retried inside
+        // the dedup window like any other failure, and held rather than blind-retried outside it,
+        // which is the same rule the crash gets because it is the same uncertainty.
+        const eventId = await createEvent(scenario("C"));
+        expect(await schedulePastDue(eventId, [1])).toBe(1);
+        const provider = fakeProvider();
+        const timingOut: AlertSenders = {
+          sms: provider.senders.sms,
+          email: async () => {
+            throw new AlertDeliveryError("email provider did not respond within 10000ms", {
+              outcomeObserved: false,
+            });
+          },
+        };
+
+        await createAlertPoller({
+          database: pool,
+          senders: timingOut,
+          jurisdiction: ruleset.jurisdiction,
+        }).tick();
+
+        const [alert] = await alertsOf(eventId);
+        expect(alert?.status).toBe("failed");
+        const recorded = await attemptsOf(alert?.id ?? "");
+        expect(recorded).toHaveLength(1);
+        expect(recorded[0]?.outcome_recorded_at).toBeNull();
+      });
     });
 
     it("hands the same alert to only one of two concurrent ticks", async () => {

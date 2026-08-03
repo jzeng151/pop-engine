@@ -35,9 +35,24 @@ export type AlertDelivery = {
 
 /** A delivery that did not happen. The alert stays for a later tick; nothing is lost. */
 export class AlertDeliveryError extends Error {
-  constructor(message: string) {
+  /**
+   * Whether the provider actually told us what it did with the message.
+   *
+   * A refusal and an unreachable host are answers: no message left. A request that timed out is
+   * not — the provider may have accepted it and simply not said so before the socket was abandoned.
+   * That distinction is what `alerts.ts` needs to decide whether a retry past the provider's dedup
+   * window would be a second delivery or a first one, so it is recorded rather than inferred from
+   * the message text.
+   *
+   * True by default: every existing throw site knows what happened, and the one that does not says
+   * so explicitly below.
+   */
+  readonly outcomeObserved: boolean;
+
+  constructor(message: string, options: { readonly outcomeObserved?: boolean } = {}) {
     super(message);
     this.name = "AlertDeliveryError";
+    this.outcomeObserved = options.outcomeObserved ?? true;
   }
 }
 
@@ -102,6 +117,9 @@ export function createResendEmailSender(settings: {
         timedOut
           ? `email provider did not respond within ${timeoutMs}ms`
           : `email provider unreachable: ${error instanceof Error ? error.message : "unknown error"}`,
+        // A timeout is the one failure this side cannot read as "nothing was delivered": the
+        // request was accepted by the socket and abandoned without an answer.
+        { outcomeObserved: !timedOut },
       );
     }
     // THE BODY IS RELEASED ON BOTH PATHS, and the throwing one is why this is a comment rather

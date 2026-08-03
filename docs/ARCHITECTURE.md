@@ -202,6 +202,22 @@ capacities, not independent lane approvals.
 | failure_count     | integer NOT NULL default 0                                            | delivery attempts that failed (migration 008); a failed alert is retried on later ticks, never dropped (F-203 edge case)                                                                                                                                                                               |
 | next_attempt_at   | timestamptz, nullable                                                 | when a failed alert is eligible again (migration 010). Separate from `send_at`, which is the schedule the 2-minute delivery bound is measured against and never moves; null means never failed. Without it a dead destination stays due forever and is re-attempted on every scan, consuming the batch |
 
+### alert_send_attempts
+
+That an alert was handed to a provider, written **before** the handoff and in its own transaction (migration 014; issue #166). One row per attempt.
+
+| Column              | Type                                | Notes                                                                                                                                                                                                                |
+| ------------------- | ----------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| id                  | uuid PK                             |                                                                                                                                                                                                                      |
+| alert_id            | uuid FK → alerts, ON DELETE CASCADE |                                                                                                                                                                                                                      |
+| idempotency_key     | text NOT NULL                       | the key handed to the provider, which is what a reconciliation looks the message up by; a digest of the destination, never the destination                                                                           |
+| attempted_at        | timestamptz NOT NULL                | `clock_timestamp()` at the moment of the handoff, not the transaction's start                                                                                                                                        |
+| outcome_recorded_at | timestamptz, nullable               | when this side observed what the provider did. NULL means nobody ever did — a crash between accept and COMMIT, or a request that timed out. A refusal and an unreachable host are observed outcomes and are recorded |
+
+Written on a second connection because the sending transaction is the one it has to outlive, and as a child row because that transaction holds the `alerts` row (`alerts.ts` claims it `FOR NO KEY UPDATE`, which a foreign key's `FOR KEY SHARE` does not conflict with).
+
+A pending alert with no attempt row is safe to send at any age; suppressing by row age alone would convert one possible duplicate into systematic non-delivery. A pending alert whose attempt has no recorded outcome and is older than the email provider's 24-hour idempotency-key window is neither sent nor cancelled: it is held and counted (`AlertTickSummary.heldForReconciliation`, plus a warning naming the alert ids) for a human to reconcile against the provider.
+
 ### event_alert_contacts
 
 Where an event's alerts are sent (migration 009; F-203 Outputs, amended 2026-07-27). One row per event.
