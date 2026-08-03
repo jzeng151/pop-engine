@@ -1593,21 +1593,6 @@ textarea:focus-visible {
   color: color-mix(in srgb, var(--pe-accent-text) 58%, transparent);
 }
 
-.riso-nav__group--planned .riso-nav__stamp {
-  display: none;
-}
-
-.riso-nav__stamp {
-  padding: 0.12rem 0.3rem;
-  border: 1px solid currentColor;
-  font-family: var(--pe-font-mono);
-  font-size: 0.68rem;
-  letter-spacing: 0.08em;
-  line-height: 1.2;
-  text-transform: uppercase;
-  transform: rotate(-2deg);
-}
-
 .riso-workspace__paper {
   min-width: 0;
   padding: 1.15rem 1rem 3.5rem;

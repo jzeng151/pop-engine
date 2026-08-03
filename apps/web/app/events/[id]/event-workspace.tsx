@@ -168,9 +168,10 @@ function WorkspaceNavigation({ eventId, pathname }: { eventId: string; pathname:
         <ul>
           {plannedModules.map((module) => (
             <li key={module}>
+              {/* The PLANNED stamp is the group's, not each button's — `docs/DESIGN-SYSTEM.md`
+                  publishes one clipped insert stamped once, and F-705 AC 5 defers to it. */}
               <button disabled type="button">
                 <span>{module}</span>
-                <span className="riso-nav__stamp">Planned</span>
               </button>
             </li>
           ))}
@@ -196,10 +197,15 @@ export function EventWorkspace({ apiBaseUrl, children, eventId }: EventWorkspace
         return;
       }
 
+      // F-705 state table: `ready` means the event responded with a name. A blank or absent one is
+      // `unavailable` — the same state as a failed read, because the placeholder on screen is the
+      // same placeholder and calling it `ready` would report it as the event's name.
       const loadedName = result.loaded.event.name;
-      if (typeof loadedName === "string" && loadedName.trim().length > 0) {
-        setEventName(loadedName.trim());
+      if (typeof loadedName !== "string" || loadedName.trim().length === 0) {
+        setLoadState("unavailable");
+        return;
       }
+      setEventName(loadedName.trim());
       setLoadState("ready");
     });
 

@@ -1,0 +1,81 @@
+# F-705 · Event Workspace Shell
+
+**Status:** APPROVED (2026-08-02, product-owner approved, one person currently holding every lane) · **Reviewer/approver:** product owner · **Owner:** the product owner, who currently holds every lane. This names the party accountable for this spec's changes and approvals under `docs/DOCUMENTATION-GOVERNANCE.md` §7; it assigns no delivery lane, which only `docs/DESIGN.md` can do · see `docs/BASELINE.md`.
+**Phase:** 1.5 (stretch track), per `docs/ROADMAP.md` · **Lane:** none. `docs/DESIGN.md` is the authority for lanes and assigns this feature to no dev; it is chrome that spans all four stages rather than one lane's feature · **Depends on:** the routes it links to (F-101, F-102/F-201, F-202, F-301, F-302, F-401, F-402) and `docs/DESIGN-SYSTEM.md` for tokens and chrome
+**Amended:** 2026-08-03, correcting two claims this spec made that its own sources do not carry. The Lane line assigned Dev 3, which `docs/DESIGN.md` never did; Acceptance Criterion 5 put the visible stamp on each button, while `docs/DESIGN-SYSTEM.md` publishes one stamp on the group and `apps/web/app/globals.css` has rendered it that way since 2026-07-29. Both are corrections of the lower-authority artifact under `docs/DOCUMENTATION-GOVERNANCE.md` §2, not new decisions: no lane is created, no visual decision is reopened, and the shell's behavior is unchanged. The Owner field is stated separately in the same amendment, because it had read "see Lane below" and the corrected Lane names no dev, leaving a scheduled feature with no accountable party against §7.
+**Written:** 2026-08-02, after the fact. The shell shipped in the 2026-07-29 Riso Field Guide work under the design-system amendment, whose scope clause covers presentation and existing-route chrome and excludes new cross-feature navigation. Navigation across lifecycle stages is product scope, so it gets an ID and a spec rather than a wider design-system gate. Nothing here asks for new behavior; it states what exists so the criteria can be checked and so later changes have something to change.
+
+## User Story
+
+As an independent organizer with one event in progress, every stage of that event's work is reachable from one place that tells me which event I am looking at, so I do not navigate by URL or lose track of which record I am editing.
+
+## In Scope
+
+The `/events/[id]` route group's layout and its overview page:
+
+- the persistent shell (brand, masthead, skip link, navigation) wrapping every `/events/[id]/*` route;
+- navigation grouped by the four `docs/DESIGN.md` lifecycle stages — Ideate (Overview, Event intake), Comply (Permit plan, Checklist), Market (Event page, Guests), Operate (Check-in, Live ops);
+- a **Planned** group of disabled, non-navigating buttons naming modules that do not exist;
+- the overview page at `/events/[id]`, listing the Comply, Market, and Operate destinations with one line each, plus a link to the event's intake;
+- the light/dark theme toggle in the masthead.
+
+## Non-Goals
+
+- No endpoint, table, column, migration, or engine change. The shell reads one existing endpoint and writes nothing.
+- No feature behavior. Every destination keeps the acceptance criteria of its own spec; this spec never overrides one.
+- No regulatory copy. The shell states no requirement, deadline, fee, agency, or verification status, and renders no finding.
+- No authenticated or per-user state. Theme is per-browser only. The F-701–F-703 production gate is untouched.
+- The Planned group commits to no feature, date, or scope, and assigns no work to any F-id.
+
+## Inputs
+
+`eventId` from the route params; `NEXT_PUBLIC_API_BASE_URL`, the variable the deployment sets and the only one a client component can read; the event record via `loadEvent`, read for its `name` alone.
+
+## Outputs
+
+Chrome and links. Nothing is persisted server-side. The selected theme is written to `localStorage` under `popengine-theme`.
+
+## States
+
+| State         | When                                              | Renders                                                                                    |
+| ------------- | ------------------------------------------------- | ------------------------------------------------------------------------------------------ |
+| `loading`     | before the event responds                         | the placeholder name "Event workspace"; navigation is already usable                       |
+| `ready`       | the event responds with a non-empty trimmed name  | that name                                                                                  |
+| `unavailable` | the request fails, or the name is absent or blank | the same placeholder, and no claim that the event exists, is missing, or is named anything |
+
+The state is exposed as `data-load-state` so the distinction is testable rather than inferred from the text.
+
+## Acceptance Criteria
+
+1. Every `/events/[id]/*` route renders inside the shell, and the shell renders the same eight destinations in the same four groups regardless of which one is active.
+2. The active destination carries `aria-current="page"` **for the destinations the shell's layout wraps** — Overview, Permit plan, Checklist, Event page, Guests and Live ops. Overview matches its path exactly; the others match by prefix, so a nested route keeps its parent highlighted.
+
+   Event intake (`/intake/[id]`) and Check-in (`/e/[id]/checkin`) are deliberately excluded, because they cannot satisfy it: `EventWorkspace` is mounted only by `apps/web/app/events/[id]/layout.tsx`, so following either link unmounts the navigation entirely and there is no rail left to mark. The criterion said "every destination" until 2026-08-03, which was unsatisfiable as written rather than merely unimplemented. Narrowed rather than fixed by pulling those routes inside the shell: `/e/[id]/checkin` is an attendee surface that must not carry organizer chrome, and the "One-Event Rail Rule" in `docs/DESIGN-SYSTEM.md` keeps attendee and authentication surfaces outside the rail. The persistent-navigation promise in the User Story and In Scope is bounded the same way.
+
+3. The masthead names the active event once loaded, announces the change politely (`aria-live="polite"`), and falls back to the placeholder in both non-ready states without inventing a name.
+4. The masthead states "Synthetic data demo" on every route, satisfying the capstone labeling rule in `AGENTS.md` for an environment carrying no real applications or attendee data.
+5. Planned modules render as `disabled` buttons inside a group headed "Planned". They are not links, do not navigate, and name no F-id, date, or commitment. The visible `PLANNED` stamp belongs to the group, not to each button: `docs/DESIGN-SYSTEM.md` is the authority for that treatment and publishes one clipped paper insert over the rail, stamped once.
+6. The theme toggle switches light and dark, reports state through `aria-pressed`, persists to `localStorage`, and follows a change made in another tab. When storage is unavailable it still applies the theme for the current page and does not fail.
+7. Keyboard and screen-reader access: a skip link reaches the content region, the navigation carries `aria-label="Event lifecycle"`, and the mobile disclosure is a native `<details>` element rather than scripted show/hide.
+8. The overview page links only to routes that exist and are reachable, and describes each in one sentence that promises no output the destination does not produce.
+
+## Edge Cases
+
+- An `eventId` that no event matches: the shell still renders and stays navigable. Each destination reports its own not-found state; the shell does not pre-empt them.
+- A blank or whitespace-only event name is treated as absent, not rendered as an empty heading.
+- Slow event loads never block navigation, because the nav does not depend on the response.
+- A destination that a later decision removes must leave this spec's list, not linger as a dead link.
+
+## Impact
+
+API: none. Schema: none. Jobs: none. Providers: none. Privacy: the event name is already visible on every destination; the shell introduces no new data on screen. Security: no authorization decision is made or implied here, and the demo access gate (AD-12) remains the only gate.
+
+## Allowed File Footprint
+
+`apps/web/app/events/[id]/layout.tsx`, `apps/web/app/events/[id]/event-workspace.tsx`, `apps/web/app/events/[id]/page.tsx`, `apps/web/app/theme-toggle.tsx`, and their tests. Shared and requiring coordination: `apps/web/app/globals.css` (design-system tokens and chrome, `docs/DESIGN-SYSTEM.md`).
+
+## Rollout and Fallback
+
+Already deployed. There is no flag: the shell either renders or the route group fails to render, which the existing route tests catch. Removing it means deleting the layout and the overview route.
+
+One dependency to re-home, and it is not yet on this branch. F-101 Acceptance Criterion 8's plan-stale notice and one-click regeneration are being moved onto the overview by the F-101 change stacked above this one; until that lands they still render on the intake form. Whoever removes the shell after it lands has to re-home them, and whoever removes it before does not. Stated this way because the earlier wording described the finished stack rather than this branch, and a maintainer following it here would go looking for an affordance the shell does not yet own.

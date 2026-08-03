@@ -12,7 +12,10 @@ export default async function EventLayout({
   const { id } = await params;
 
   return (
-    <EventWorkspace apiBaseUrl={process.env.API_BASE_URL ?? "http://localhost:3001"} eventId={id}>
+    <EventWorkspace
+      apiBaseUrl={process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:3001"}
+      eventId={id}
+    >
       {children}
     </EventWorkspace>
   );
