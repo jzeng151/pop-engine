@@ -196,10 +196,15 @@ export function EventWorkspace({ apiBaseUrl, children, eventId }: EventWorkspace
         return;
       }
 
+      // F-705 state table: `ready` means the event responded with a name. A blank or absent one is
+      // `unavailable` — the same state as a failed read, because the placeholder on screen is the
+      // same placeholder and calling it `ready` would report it as the event's name.
       const loadedName = result.loaded.event.name;
-      if (typeof loadedName === "string" && loadedName.trim().length > 0) {
-        setEventName(loadedName.trim());
+      if (typeof loadedName !== "string" || loadedName.trim().length === 0) {
+        setLoadState("unavailable");
+        return;
       }
+      setEventName(loadedName.trim());
       setLoadState("ready");
     });
 
