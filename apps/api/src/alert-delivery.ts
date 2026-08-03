@@ -216,12 +216,19 @@ export function createResendEmailSender(settings: {
  * (AGENTS.md "do not claim completion while a mock is present"). Failing leaves the alert pending
  * for a later tick, so configuring the key later delivers it rather than losing it.
  */
+export const UNCONFIGURED_EMAIL_ERROR =
+  "RESEND_API_KEY and SMTP_FROM are not configured; email alerts stay pending until they are";
+
 export function unconfiguredEmailSender(): AlertSender {
-  return async () => {
-    throw new AlertDeliveryError(
-      "RESEND_API_KEY and SMTP_FROM are not configured; email alerts stay pending until they are",
-    );
+  const send: AlertSender = async () => {
+    throw new AlertDeliveryError(UNCONFIGURED_EMAIL_ERROR);
   };
+  // NO PROVIDER, for the same reason the SMS simulation carries this: the throw above happens
+  // before a socket is opened, so nothing outside this process can be holding the message. Without
+  // the marker an intent is written before the sender runs, and a crash after that insert and
+  // before the outcome update commits leaves it unresolved forever — which ages into a hold and
+  // keeps the alert out of every poll, so configuring the credentials later delivers nothing.
+  return Object.assign(send, { reachesAProvider: false });
 }
 
 /**

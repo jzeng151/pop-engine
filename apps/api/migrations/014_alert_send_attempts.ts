@@ -81,6 +81,16 @@ export function up(pgm: MigrationBuilder): void {
   // send is an operator action against no deadline, and a hold on one is an operational warning
   // about a message no organizer was waiting for.
   //
+  // AND SO ARE THE FAILURES THAT NEVER REACHED ANYBODY, which is the one place `failed` is not
+  // proof of a provider handoff. A database that ran without RESEND_API_KEY or SMTP_FROM failed
+  // its email alerts inside the process: `unconfiguredEmailSender` throws before a socket is
+  // opened, so no provider can be holding those messages and no retry of one can be a second
+  // delivery. Seeding them would hold every such row permanently, and the whole point of failing
+  // that way rather than simulating a send is that adding the credentials later delivers the
+  // alert. The row's own recorded error is the only evidence of why it failed, so it is what is
+  // read. The literal is repeated here rather than imported because a merged migration must keep
+  // meaning what it meant on the day it ran; `alerts.test.ts` pins it against the live sender.
+  //
   // `-infinity` RATHER THAN A DATE, because the attempt time is not merely unknown, it is
   // unknowable from anything on the row — nothing recorded when the last attempt happened. Any
   // stamp this migration invented would be a claim about a provider's dedup window that no
@@ -96,7 +106,8 @@ export function up(pgm: MigrationBuilder): void {
              FROM alerts
             WHERE status = 'failed'
               AND channel = 'email'
-              AND coalesce(payload->>'test', 'false') <> 'true'`);
+              AND coalesce(payload->>'test', 'false') <> 'true'
+              AND coalesce(payload->>'last_error', '') <> $$RESEND_API_KEY and SMTP_FROM are not configured; email alerts stay pending until they are$$`);
 }
 
 export function down(pgm: MigrationBuilder): void {
