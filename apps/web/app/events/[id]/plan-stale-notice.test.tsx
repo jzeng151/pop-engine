@@ -282,11 +282,15 @@ describe("the stale-plan notice on the event overview", () => {
   // fails, the organizer has neither a confirmation nor an error, and the obvious response —
   // pressing the button again — stores a second plan for one action.
   const recheckFails = () => {
-    let eventReads = 0;
+    let posted = false;
     respondWith({
-      event: () => {
-        eventReads += 1;
-        return eventReads === 1 ? eventResponse(true) : new Response("", { status: 502 });
+      event: () => (posted ? new Response("", { status: 502 }) : eventResponse(true)),
+      regeneration: () => {
+        posted = true;
+        return new Response(JSON.stringify({ eventRevision: 3 }), {
+          headers: { "Content-Type": "application/json" },
+          status: 201,
+        });
       },
     });
   };
@@ -429,31 +433,73 @@ describe("event identity and announcement", () => {
 describe("what the notice refuses to conclude", () => {
   // Another tab regenerating while the guard reads are in flight leaves the plan already current.
   // Offering the button on the strength of the earlier plan_stale would store a second immutable
-  // plan for one revision.
-  it("withdraws the warning when the plan turns out to be current for this revision", async () => {
+  // plan for one revision. The api recomputes staleness on every read, so the withdrawal rests on
+  // its answer to a read made after the plan read, not on the revisions this component compared.
+  it("withdraws the warning when the api reports the plan is no longer stale", async () => {
+    let eventReads = 0;
     fetchMock.mockImplementation(async (url: string) => {
-      if (String(url).endsWith("/plan"))
-        return new Response(
-          JSON.stringify({ plan: { rulesetVersion: "nyc.v2.11", eventRevision: 3 } }),
-          {
-            headers: { "Content-Type": "application/json" },
-            status: 200,
-          },
-        );
-      if (String(url).includes("/api/rules/meta"))
-        return new Response(JSON.stringify({ ruleset_version: "nyc.v2.11" }), {
-          headers: { "Content-Type": "application/json" },
-          status: 200,
-        });
-      return eventResponse(true, 3);
+      if (String(url).includes("/api/rules/meta")) return metaResponse();
+      if (String(url).endsWith("/plan")) return planResponse(PINNED_VERSION, 3);
+      eventReads += 1;
+      // The regeneration in the other tab lands between the two event reads.
+      return eventReads === 1 ? eventResponse(true, 3) : eventResponse(false, 3);
     });
 
     render(<PlanStaleNotice apiBaseUrl="https://api.example.com" eventId="event-9" />);
 
-    await vi.waitFor(() => expect(fetchMock.mock.calls.length).toBeGreaterThan(2));
+    await vi.waitFor(() => expect(eventReads).toBeGreaterThan(1));
     await vi.waitFor(() =>
-      expect(screen.queryByRole("button", { name: "Regenerate plan" })).toBeNull(),
+      expect(screen.queryByText(/edited since its plan was generated/)).toBeNull(),
     );
+    expect(screen.queryByRole("button", { name: "Regenerate plan" })).toBeNull();
+  });
+
+  /**
+   * The ordering the #232 review names, driven rather than raced: this component's reads happen in
+   * a fixed order, so answering each one with the state the api would hold at that moment
+   * reproduces the interleaving exactly, with no timing dependence.
+   *
+   * 1. the first event read reports revision 3, stale;
+   * 2. another tab regenerates, so the plan read answers with a plan for revision 3;
+   * 3. a PATCH moves the event to revision 4 before the guard finishes, so every later read
+   *    reports revision 4 and the plan is stale again.
+   *
+   * Comparing the plan's revision against the revision from step 1 reads "current" here and
+   * withdraws a warning that is true, hiding the edit from step 3 until a reload.
+   */
+  it("keeps the warning when the event moved on after the plan was read", async () => {
+    let eventReads = 0;
+    fetchMock.mockImplementation(async (url: string) => {
+      if (String(url).includes("/api/rules/meta")) return metaResponse();
+      if (String(url).endsWith("/plan")) return planResponse(PINNED_VERSION, 3);
+      eventReads += 1;
+      return eventReads === 1 ? eventResponse(true, 3) : eventResponse(true, 4);
+    });
+
+    render(<PlanStaleNotice apiBaseUrl="https://api.example.com" eventId="event-9" />);
+
+    expect(await screen.findByRole("button", { name: "Regenerate plan" })).toBeDefined();
+    expect(screen.getByText(/edited since its plan was generated/)).toBeDefined();
+    expect(eventReads).toBeGreaterThan(1);
+  });
+
+  // No answer at all is not "still stale" and not "current". The warning stays, because nothing
+  // withdrew it, and the button goes, because a plan another tab has already regenerated must not
+  // be regenerated a second time (AD-7).
+  it("withholds regeneration when staleness cannot be re-read", async () => {
+    let eventReads = 0;
+    fetchMock.mockImplementation(async (url: string) => {
+      if (String(url).includes("/api/rules/meta")) return metaResponse();
+      if (String(url).endsWith("/plan")) return planResponse();
+      eventReads += 1;
+      return eventReads === 1 ? eventResponse(true, 3) : new Response("", { status: 502 });
+    });
+
+    render(<PlanStaleNotice apiBaseUrl="https://api.example.com" eventId="event-9" />);
+
+    expect((await screen.findByRole("alert")).textContent).toContain("could not be re-read");
+    expect(screen.getByText(/edited since its plan was generated/)).toBeDefined();
+    expect(screen.queryByRole("button", { name: "Regenerate plan" })).toBeNull();
   });
 
   // A 2xx body that omits plan_stale is not a confirmation. loadEvent normalises it to false,

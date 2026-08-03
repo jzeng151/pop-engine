@@ -38,6 +38,9 @@ type Regeneration =
  * would not move the plan backwards. That is refused too, reported with the read failure itself
  * rather than a second sentence about it.
  */
+const RECHECK_UNAVAILABLE =
+  "This plan's staleness could not be re-read, so regeneration is not offered here. Reload this page to check.";
+
 function regenerationGuard(plan: PlanResult, meta: RulesMetaResult): Regeneration {
   if (!plan.ok) return { status: "refused", reason: plan.message };
   const liveVersion = meta.ok ? meta.meta.ruleset_version : null;
@@ -125,13 +128,26 @@ export function PlanStaleNotice({ apiBaseUrl, eventId }: { apiBaseUrl: string; e
       ]);
       if (!stillDescribed()) return;
 
-      // Another tab can regenerate while these two reads are in flight. The plan that comes back
-      // is then already current, and offering the button on the strength of the earlier
-      // `plan_stale: true` would store a second immutable plan (AD-7) for one revision. The plan
-      // carries the revision it evaluated, so compare it against the event rather than re-reading:
-      // equal means the warning this component is showing is already out of date, and the honest
-      // response is to withdraw it rather than offer an action against it.
-      if (plan.ok && plan.plan.eventRevision === result.loaded.event.revision_counter) {
+      // Another tab can regenerate while these two reads are in flight, which leaves the plan
+      // already current, and the event can be edited again after that, which leaves it stale for a
+      // revision this component has never seen. Comparing the plan's own revision against the
+      // revision read before it cannot tell those apart: both read 3 whether or not a PATCH has
+      // since moved the event to 4, and answering "current" there withdraws a true warning and
+      // shows the organizer a plan their edit is not in. The api recomputes staleness against the
+      // stored plan on every read, so ask it again here, after the reads its answer has to be
+      // newer than. Withdrawal takes an explicit "not stale" and nothing else.
+      const recheck = await loadEvent(apiBaseUrl, eventId);
+      if (!stillDescribed()) return;
+      // No answer is not "still stale" and not "current". The warning stays, because nothing
+      // withdrew it, and the button does not appear, because the plan may already have been
+      // regenerated and a second POST writes a second immutable plan (AD-7) for one revision.
+      // `plan_stale_reported` rather than `plan_stale`, for the reason given at the POST recheck:
+      // a 2xx body that omits the field would otherwise read as an answer.
+      if (!recheck.ok || !recheck.loaded.plan_stale_reported) {
+        setRegeneration({ status: "refused", reason: RECHECK_UNAVAILABLE });
+        return;
+      }
+      if (!recheck.loaded.plan_stale) {
         setStale(false);
         return;
       }
