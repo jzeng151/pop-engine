@@ -28,7 +28,7 @@ The `/events/[id]` route group's layout and its overview page:
 
 ## Inputs
 
-`eventId` from the route params; `API_BASE_URL`; the event record via `loadEvent`, read for its `name` alone.
+`eventId` from the route params; `NEXT_PUBLIC_API_BASE_URL`, the variable the deployment sets and the only one a client component can read; the event record via `loadEvent`, read for its `name` alone.
 
 ## Outputs
 
