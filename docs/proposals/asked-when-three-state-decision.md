@@ -35,10 +35,19 @@ behave the same way.
   does today. Verified by running the same intake on both trees: byte-identical plans
   (section 3b).
 
-**Consequence, stated plainly: this document does not dispose of issue #108.** It disposes of Q1,
-whose semantics change is measured here end to end. For Q2 it publishes a measurement (section 3b)
-and no more; the six-failure count, the 1569/1569 result and the plan diffs say nothing about Q2.
-Section 7 gives a separate recommendation for each, and issue #108 stays open on Q2 either way.
+**Consequence, stated plainly: this document does not dispose of issue #108.** For Q1 it disposes of
+the **engine** question and nothing wider. Sections 3, 3a and 4 measure what `packages/engine`
+produces and what an engine-level change would cost; the Q1 probe in appendix A3 calls `evaluate`
+directly, because a Q1 intake cannot be submitted through the API at all (section 4). That is an
+engine measurement, not an end-to-end one, and this document does not claim to have run Q1 through
+the product path: the questionnaire's own scoping in `visibility.ts` and `validate.ts`'s rejection
+of an answer to an un-asked question are untouched by the prototype and left unresolved here
+(section 3, section 7a item 4, section 8 item 2). What Q1 is disposed of is the semantics question
+inside the engine and its cost; what the organizer would be asked and shown under a changed Q1 is
+not measured anywhere below. For Q2 it publishes a measurement of the engine (section 3b) and of
+the plan's verdict-detail renderer (section 3c) and no more; the six-failure count, the 1569/1569
+result and the plan diffs say nothing about Q2. Section 7 gives a separate recommendation for each,
+and issue #108 stays open on Q2 either way.
 
 **Measurement basis.** Every number below was measured on commit `f8d6fc3` (this branch's merge-base
 with `origin/main`), ruleset `rules/nyc-rules.v2.11.json`, Node v24, PostgreSQL 18.4, full suite
@@ -58,6 +67,10 @@ short enough to state completely:
 5. For the plan diffs, write appendix A3 to `packages/engine/src/probe.test.ts`, run
    `npx vitest run packages/engine/src/probe.test.ts` on the patched and unpatched trees, and
    delete the file afterwards. It is a probe, not a fixture, and nothing on this branch adds it.
+6. For section 3c's on-screen result, write appendix A4 to
+   `apps/web/app/plan/render-probe.test.tsx`, run
+   `npx vitest run apps/web/app/plan/render-probe.test.tsx` on the unpatched tree, and delete it
+   afterwards. Same status: a probe, not a fixture.
 
 ---
 
@@ -355,6 +368,61 @@ presentation of them, or whether they should also appear as `may_be_required` fi
 level down. This document measures the behaviour and does not rule on it. Section 7 carries a
 separate recommendation for Q2 on that basis.
 
+### 3c. Q2 on screen: `CASE_3` through the plan's existing verdict-detail renderer
+
+An earlier revision recorded Q2's on-screen presentation as undetermined and deferred it to a
+future measurement. That was wrong: the product path already exists and is reachable from a test,
+so it is measured here rather than deferred. `apps/web/app/plan/plan-view.tsx:416-420` passes the
+plan's `verdictDetail` to `VerdictDetailPanel`, and `apps/web/app/plan/verdict-detail.tsx:121-139`
+renders one row per branch of every missing fact with its value, its verdict copy and its reason.
+`apps/web/app/plan/plan-view.test.tsx:1002-1039` is the approved coverage of that behaviour, and
+`docs/test-scenario-answer-key.md:23` makes branches-shown the approved CONDITIONAL contract
+("a material unknown changes the outcome; branches shown"), with `:144` naming the street-size
+ladder specifically.
+
+**How this was measured.** `CASE_3` (appendix A3, unchanged) was evaluated on the unpatched tree at
+`f8d6fc3` and its `verdictDetail` and findings rendered through `VerdictDetailPanel` in jsdom, with
+`rulesetReferences` built from `rules/nyc-rules.v2.11.json` exactly as `plan-view.test.tsx` builds
+them. The harness is published as appendix A4. It is a probe, not a fixture: nothing on this branch
+adds it, and it asserts nothing.
+
+**What the organizer actually sees.** One panel headed "What still depends on your answers", with
+these regions:
+
+| region                                | rendered text                                                                                                                                          |
+| ------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| lede                                  | "Each unanswered fact below was evaluated on every published answer. Answering them may still leave the verdict conditional when a published filing window cannot be dated from the inputs supplied." |
+| "Published windows that could not be dated" | "Plaza event permit (More information · Apply through E-Apply): the plan was never asked plaza_level, which this deadline keys on"                 |
+| missing-fact heading                  | "sapo event type"                                                                                                                                      |
+
+and one four-row branch table under it, columns "If answered", "Verdict", "Reason":
+
+| If answered      | Verdict    | Reason                                                                                                                                                                                                              |
+| ---------------- | ---------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| street event     | Depends on | adds Large street event permit, Medium street event permit, Small street event permit, Extra-large street event permit; drops SAPO event type not covered, Block party permit, Block association and neighbor approval, Plaza event permit; Liability insurance for a street or plaza permit becomes required |
+| block party      | Depends on | adds Block-party ride insurance check, Insurance for a block party with a ride; drops SAPO event type not covered, Liability insurance for a street or plaza permit, Plaza event permit; Block party permit becomes required |
+| plaza event      | Depends on | drops SAPO event type not covered, Block party permit, Block association and neighbor approval; Plaza event permit becomes required; Liability insurance for a street or plaza permit becomes required               |
+| other sapo class | On track   | drops Block party permit, Block association and neighbor approval, Plaza event permit; Liability insurance for a street or plaza permit becomes required                                                            |
+
+**So the four street-size permits are on screen, by their published organizer labels, in the
+`street event` row.** The values are humanised (`street_event` renders as "street event"), the
+verdicts go through `verdict-copy.ts` (CONDITIONAL renders "Depends on", FEASIBLE renders "On
+track"), and the reason text is the engine's, rendered verbatim. Nothing in the panel drops a
+branch: all four values the registry publishes for `sapo_event_type` get a row.
+
+**What this changes in this document.** Section 7b's recommendation previously rested in part on a
+measurement nobody had run. It no longer needs to: the presentation layer that decides whether "the
+organizer was told" is true for Q2 is measured, and it does tell them. That strengthens the same
+recommendation rather than moving it, and it removes the reason to keep the question waiting on a
+plan-rendering measurement.
+
+**What is still not measured, stated so the narrowing is honest.** Two things. First, the
+questionnaire: whether the intake form offers `"unknown"` for `sapo_event_type` and how it presents
+that choice is an F-101 question this document did not probe. Second, whether a branch table is the
+right presentation at all, as opposed to `may_be_required` findings on the plan lines themselves,
+remains the product and engine-owner call section 3b named. The measurement settles what is shown,
+not whether what is shown is enough.
+
 ## 4. Whether the Q1 state can arise at all
 
 **Not through the API. Re-verified against current code, not carried forward. This section is Q1
@@ -417,7 +485,9 @@ first. The engine's own tri-state invariant, applied one level up to the scoping
 attempt B implements.
 
 That said, the sentence is close enough to the change that the engine owner should be the one to
-rule on the reading. I am not treating my reading as settling it.
+rule on the reading. I am not treating my reading as settling it. Under governance §5 that ruling
+comes **before** any implementation approval rather than alongside it, which is why section 7's
+approvals table carries it as a prerequisite row rather than as a caveat.
 
 **Second: would the change reintroduce what nyc.v2.5 removed? Yes, narrowly, and I can name the
 rule.** This is not inference. `docs/test-scenario-answer-key.md` v7 records it in its own status
@@ -503,7 +573,7 @@ weigh this, which is a real mitigation and belongs in the record.
 ### 7b. Q2, the gate answered `"unknown"`
 
 **Also do not implement a change now, but on entirely different evidence, and the question is not
-closed.** Section 3b measures Q2 and finds:
+closed.** Sections 3b and 3c measure Q2 and find:
 
 - Q2 **is** reachable and storable through the API today, so 7a's reason 1 does not apply to it.
 - The prototype in the appendix **does not address** Q2 at all, so 7a's reasons 2, 3 and 4, which
@@ -511,15 +581,23 @@ closed.** Section 3b measures Q2 and finds:
 - The silent-omission harm issue #108 describes **does not reproduce** on Q2: every requirement the
   scoping withholds is named in the branch table by its published label, on a plan the verdict marks
   CONDITIONAL.
+- That branch table **reaches the screen**. Section 3c runs `CASE_3` through the shipped
+  `VerdictDetailPanel` and reports what it renders: four rows, one per published `sapo_event_type`
+  value, the four street-size permits named by their organizer labels in the `street event` row.
+  This is no longer an inference from engine output.
 
-The third point is the only argument this document has for Q2, and it is an argument against a
-change on the evidence available, not a demonstration that today's behaviour is right. Whether
-naming the four street permits in a branch table rather than as `may_be_required` findings is the
-correct presentation is an engine-owner and product call that no artifact in the repo answers.
+The third and fourth points are the only argument this document has for Q2, and they are an
+argument against a change on the evidence available, not a demonstration that today's behaviour is
+right. Whether naming the four street permits in a branch table rather than as `may_be_required`
+findings is the correct presentation is an engine-owner and product call that no artifact in the
+repo answers.
 
-**So: keep issue #108 open, and do not close it as won't-fix or as answered by this document.** If a
-decision on Q2 is wanted, it needs its own measurement of the questionnaire and plan-rendering
-layers, which this document did not run.
+**So: keep issue #108 open, and do not close it as won't-fix or as answered by this document.** The
+plan-rendering measurement that an earlier revision made a precondition for a Q2 decision has now
+been run (section 3c) and it supports the recommendation above. Two things are still outstanding on
+Q2, and they are different in kind: the questionnaire side, whether the intake form offers and
+explains `"unknown"` for `sapo_event_type`, is a measurement this document did not run; whether a
+branch table is adequate presentation is a decision that no measurement settles.
 
 **What I am explicitly not recommending, and why.** I am not recommending the ruleset alternative
 (converting the boolean gates to enums carrying `unknown`) either. The earlier document prices it at
@@ -531,14 +609,31 @@ impact nobody has measured, not asserting the numbers.
 
 ### Approvals this decision would require
 
-Under `docs/DOCUMENTATION-GOVERNANCE.md` §6:
+Under `docs/DOCUMENTATION-GOVERNANCE.md` §5 and §6:
 
 | If the team decides to                    | Row of the §6 table                                                                         | Required approval                                                                                              |
 | ----------------------------------------- | ------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------- |
-| Implement the tri-state semantics         | "Rule trigger, dedupe, branch, deadline, or formula semantics"                              | **Verification owner (Dev 4) plus engine owner (Dev 1)**                                                       |
-| Add fixtures distinguishing the semantics | "Executable regulatory expectation" is an approved fixture (§1); the answer key is APPROVED | Same pair, plus the answer key's own revision authorization                                                    |
+| Implement the tri-state semantics         | **§5 first** (the `F-201:48` reading is unresolved, section 8 item 1), then "Rule trigger, dedupe, branch, deadline, or formula semantics", **and "Product scope, feature meaning, phase" if resolving `F-201:48` changes what that approved spec requires** | **Prerequisite: resolve `specs/F-201-permit-plan-generator.md:48` under §5.** Only then verification owner (Dev 4) plus engine owner (Dev 1), plus the product owner/team decision if the resolution moves F-201's scheduled behaviour |
+| Add fixtures distinguishing the semantics | "Executable regulatory expectation" is an approved fixture (§1); the answer key is APPROVED | Same prerequisite and the same pair, plus the answer key's own revision authorization                          |
 | Take the ruleset alternative              | Regulatory source/status/content **and** rule semantics **and** shared enum **and** database migration touching shared/core tables | Verification owner plus rules reviewer, plus engine owner, plus all affected lane owners and the architecture owner for the shared enum, **plus the database owner** for the migration |
 | Do nothing (this recommendation)          | none                                                                                        | none; the issue stays open                                                                                     |
+
+**The `F-201:48` question is a prerequisite, not a detail, and an earlier revision of this table got
+that wrong by listing only the two owners.** Section 8 item 1 says the brief cannot determine
+whether the approved sentence at `specs/F-201-permit-plan-generator.md:48` ("a field never asked is
+not a material unknown") forbids the tri-state behaviour. Section 6 gives a reading on which it does
+not, and says the engine owner should be the one to rule; that is still my reading and it is not a
+resolution. Governance §1 makes an approved `specs/F-xxx-*.md` authoritative for scheduled feature
+behaviour, and `AGENTS.md:15` and governance §5 say what happens when an artifact in that position
+is contradictory or unclear: stop the affected implementation, record a `SPEC-CONFLICT` with both
+locations and the user-visible consequence, and **resolve the source artifact first**. §5 also names
+what must not happen, that a contributor "silently select the version they prefer". Two lane owners
+picking a reading of an approved spec between them is exactly that, so the verification and engine
+signatures cannot be the mechanism that settles it. If the resolution turns out to change what F-201
+requires rather than just to state which reading was always meant, §6's "Product scope, feature
+meaning, phase" row adds the product-owner/team-decision capacity on top. This document does not
+resolve `F-201:48`, does not decide which of the two routes the resolution takes, and records no
+approval of either.
 
 **The database-owner row is not optional and is not held.** The ruleset alternative converts gate
 columns in `events` from `boolean` to text carrying `"unknown"`, which is a forward migration on a
@@ -563,7 +658,10 @@ holds none of the approvals in the table above and implements nothing.
 Stated plainly rather than left as silence:
 
 1. **Whether the engine owner reads `F-201:48` as forbidding the change.** Section 6 gives my reading
-   and the reason for it. It is a spec-interpretation call and it is theirs, not mine.
+   and the reason for it. It is a spec-interpretation call and it is theirs, not mine. Because
+   `F-201` is approved and authoritative for scheduled feature behaviour (governance §1), §5 makes
+   resolving it the first step rather than a parallel one, and section 7's approvals table states it
+   as a prerequisite to any implementation approval.
 2. **Whether the questionnaire should follow the engine into three-state.** Section 7a item 4. This
    is a product and UX decision as much as an engine one, and no artifact in the repo answers it.
    Until it is answered, `visibility.ts` stays in scope for any Q1 implementation and the +61/-5
@@ -579,10 +677,14 @@ Stated plainly rather than left as silence:
 5. **Whether any state, migration or fixture in a lane I did not run could reach the unanswered
    state.** I ran the full 1569-test suite against a live database, which covers every suite in the
    repo. I did not audit the seed or demo tooling.
-6. **Whether Q2's branch-table presentation is adequate** (section 3b). I measured what the engine
-   produces for a gate answered `"unknown"`. I did not measure what the questionnaire shows or what
-   `plan-line.tsx` renders for it, and those layers are where "the organizer was told" is actually
-   decided. Any Q2 decision needs that measurement first.
+6. **Whether Q2's branch-table presentation is adequate** (sections 3b and 3c). What the engine
+   produces for a gate answered `"unknown"`, and what `VerdictDetailPanel` renders from it, are both
+   measured now: the four street permits appear on screen by their published labels. What remains
+   undetermined is the judgement, whether a branch table is the right place for them or whether they
+   belong on the plan lines as `may_be_required` findings, and that is a product and engine-owner
+   call rather than a measurement. The one measurement still missing on Q2 is the questionnaire
+   side: whether the intake form offers `"unknown"` for `sapo_event_type` and how it explains that
+   choice. I did not probe F-101's form.
 
 ## 9. Corrections to `asked-when-three-state-measurement.md`
 
@@ -614,11 +716,12 @@ four of the five are the ruleset moving underneath it.
 
 ## Appendix: every input behind every number above
 
-Three artifacts, all generated at `f8d6fc3` and all verified to apply or run there. **None is
+Four artifacts, all generated at `f8d6fc3` and all verified to apply or run there. **None is
 applied on this branch and this document recommends applying none of them.** They are published
 because the measurements' primary claims are counts, and a count whose input is not published is an
 assertion rather than evidence. A1 produces the six-failure profile in section 3, A2 produces the
-1569/1569 run in section 3, and A3 produces every number in sections 3a and 3b.
+1569/1569 run in section 3, A3 produces every number in sections 3a and 3b, and A4 produces the
+rendered text in section 3c.
 
 ### A1: attempt A, the semantics issue #108's Q1 asks for and nothing else
 
@@ -948,3 +1051,113 @@ describe("probe", () => {
 | `CASE_1` street, `obstructs_public_way` absent                | CONDITIONAL, 9 findings, 1 missing fact      | CONDITIONAL, 20 findings, 1 missing fact     |
 | `CASE_2` park + generator, `battery_present` absent           | CONDITIONAL, 9 findings, no `FDNY-GENERATOR-001` | CONDITIONAL, 10 findings, `FDNY-GENERATOR-001` `may_be_required` |
 | `CASE_3` street, `sapo_event_type: "unknown"`                 | CONDITIONAL, 13 findings, 1 missing fact     | **identical**, A2 does not reach Q2         |
+
+### A4: the Q2 render probe, and the panel it renders through
+
+Written to `apps/web/app/plan/render-probe.test.tsx`, run with
+`npx vitest run apps/web/app/plan/render-probe.test.tsx` on a clean `f8d6fc3`, and deleted
+afterwards. Nothing on this branch adds it and it asserts nothing; it evaluates `CASE_3` and prints
+what `VerdictDetailPanel` renders from the result. Section 3c's tables are that printed output.
+`CASE_3` here is the same intake as in A3, restated locally so the probe is self-contained.
+
+```tsx
+// @vitest-environment jsdom
+
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
+import { describe, it } from "vitest";
+import { render } from "@testing-library/react";
+import { evaluate, parseEngineRuleset } from "@pop-engine/engine";
+import type { EventIntake, PublishedHolidayCalendar } from "@pop-engine/engine";
+import { publishedRulesFileIn } from "../rules-file";
+import { VerdictDetailPanel } from "./verdict-detail";
+
+const TODAY = "2026-07-22";
+const rawText = readFileSync(resolve(publishedRulesFileIn("rules")), "utf8");
+const raw: Record<string, unknown> = JSON.parse(rawText);
+const publishedRuleset = raw as unknown as {
+  ruleset_version: string;
+  rules: PublishedRuleShape[];
+  advisories: PublishedRuleShape[];
+};
+type PublishedRuleShape = {
+  id: string;
+  output: {
+    user_summary?: { heading: string; points: { sources: { label: string; url: string }[] }[] };
+    portal?: { name?: string; url?: string | null };
+  };
+};
+const ruleset = parseEngineRuleset(raw);
+const calendar: PublishedHolidayCalendar = { id: ruleset.calendarId, holidays: [] };
+
+// Built exactly as `plan-view.test.tsx` builds them, so the panel humanises rule codes on this
+// probe the same way it does on the page.
+const rulesetReferences = [...publishedRuleset.rules, ...publishedRuleset.advisories].flatMap(
+  (rule) => {
+    if (rule.output.user_summary === undefined) return [];
+    return [
+      {
+        ruleIds: [rule.id],
+        label: rule.output.user_summary.heading,
+        source: rule.output.user_summary.points.flatMap((point) => point.sources)[0] ?? null,
+        portalName: rule.output.portal?.name ?? null,
+        portalUrl: rule.output.portal?.url ?? null,
+      },
+    ];
+  },
+);
+
+const CASE_1: EventIntake = {
+  name: "Probe case 1",
+  borough: "manhattan",
+  location_type: "street",
+  headcount: 200,
+  event_date: "2026-09-30",
+  event_open_to_public: "yes",
+  food_present: false,
+  selling_anything: false,
+  amplified_sound: false,
+  structure_types: ["none"],
+  open_flame_or_cooking: ["none"],
+  generator_present: false,
+  battery_present: false,
+  alcohol: false,
+};
+
+const CASE_3: EventIntake = { ...CASE_1, obstructs_public_way: "yes", sapo_event_type: "unknown" };
+
+describe("render probe", () => {
+  it("renders CASE_3 through VerdictDetailPanel", () => {
+    const plan = evaluate(CASE_3, ruleset, TODAY, calendar);
+    const p = plan as unknown as Record<string, never>;
+    console.log("verdict:", plan.verdict, "findings:", plan.findings.length);
+    console.log("verdictDetail:", JSON.stringify(plan.verdictDetail, null, 2));
+    const { container } = render(
+      <VerdictDetailPanel
+        verdict={plan.verdict}
+        detail={p.verdictDetail}
+        findings={p.findings}
+        rulesetReferences={rulesetReferences}
+      />,
+    );
+    console.log("===== RENDERED TEXT =====");
+    console.log(container.textContent);
+    console.log("===== ROWS =====");
+    for (const row of Array.from(container.querySelectorAll("tbody tr"))) {
+      console.log(
+        Array.from(row.querySelectorAll("td"))
+          .map((cell) => cell.textContent)
+          .join(" | "),
+      );
+    }
+    console.log("===== HEADINGS =====");
+    for (const h of Array.from(container.querySelectorAll("h2,h3"))) console.log(h.textContent);
+  });
+});
+```
+
+**The engine input the panel rendered, as printed:** verdict `CONDITIONAL`, 13 findings,
+`minSlackDays: 10`, one missing fact (`sapo_event_type`, `thresholds: null`, four branches whose
+reasons are quoted verbatim in section 3c's second table), and one unresolved timeline
+(`SAPO-PLAZA-001`, "the plan was never asked plaza_level, which this deadline keys on"). No blocking
+finding, no missed rule ids, no rescope suggestions.
