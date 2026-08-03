@@ -1,5 +1,7 @@
 # PopEngine — Deployment Runbook (Phase 0)
 
+**Status:** APPROVED (2026-07-23, issue #1; see `docs/BASELINE.md`)
+
 Provider baseline (`docs/BASELINE.md`): **Railway** (host) · **Supabase** (Postgres,
 S3-compatible storage, and Auth) · **Resend** (email) · **Twilio** (SMS) · **Cloudflare Access**
 (demo gate, AD-12). Synthetic data only until the joint F-701/F-702/F-703 production gate ships.

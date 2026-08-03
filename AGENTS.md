@@ -1,5 +1,7 @@
 # PopEngine Agent Instructions
 
+**Status:** APPROVED (2026-07-22; PR #137-only access-gated-demo overwrite recorded 2026-07-27; see `docs/BASELINE.md`)
+
 These rules apply to every coding agent and contributor in this repository. Adopted 2026-07-22 (trimmed from the proposed version in `docs/proposals/` to match artifacts that actually exist; items marked _Phase 2+_ activate when those artifacts do).
 
 ## Before changing code
