@@ -421,7 +421,8 @@ export function VerdictDetailPanel({
   // `rulesetReferences` is withheld because the deployed ruleset is no longer the one this plan
   // pinned. Closing it means persisting the labels in `verdict_detail`, which is era-gated engine
   // output (AD-7 byte-stable replay), so it needs a new published ruleset and its owners' approval;
-  // and it would still leave every already-stored plan on the raw id.
+  // and it would still leave every already-stored plan on the raw id. F-102's Output section names
+  // this residue as the one case where an organizer is shown an id.
   const references = [
     ...rulesetReferences,
     ...findings.filter((finding) => finding.ruleIds.length === 1).map(referenceFromFinding),

@@ -1110,11 +1110,13 @@ describe("F-102 · CONDITIONAL branch table and INFEASIBLE rescope ladder", () =
     expect(fact.textContent).not.toContain("DOB-TALL-STRUCTURE-001");
   });
 
-  it("leaves a merged finding's rule ids alone when the deployed ruleset cannot label them", async () => {
-    // Same merged finding, but the plan pinned a version this deployment no longer runs, so the
+  it("shows the residue F-102 names: a historical merged rule id no source can label", async () => {
+    // The one case F-102's Output section excludes from "the organizer is shown no id". Same
+    // merged finding, but the plan pinned a version this deployment no longer runs, so the
     // per-rule references are withheld. The finding's heading belongs to one of its contributing
     // rules and the plan does not say which, so it labels none of them: the id is the honest
-    // answer, and naming the tent approval here would be a wrong one.
+    // answer, and naming the tent approval here would be a wrong one. Labelling it needs per-rule
+    // labels persisted in `verdict_detail`, which is a new ruleset era and not approved here.
     stubApi(
       plan({
         rulesetVersion: "nyc.v2.10",
