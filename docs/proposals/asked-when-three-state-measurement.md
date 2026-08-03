@@ -1196,6 +1196,15 @@ index 795a497..670b280 100644
 
 ## Corrections from the issue #108 decision brief
 
+> **These corrections have a DIFFERENT measurement basis from the rest of this document.** Everything
+> above was measured at merge-base `481e1f6`, ruleset `nyc-rules.v2.8.json`, suite size 1163, and the
+> reproduction recipe in the header applies to it. The corrections below were measured at `f8d6fc3`,
+> ruleset `nyc-rules.v2.11.json`, Node v24, PostgreSQL 18.4, suite size **1569**, and report v2.11
+> results. Following this document's stated checkout will NOT reproduce them. The prototype patches
+> and probe harnesses behind them are on the branch `archive/issue-108-probe-appendices`. This note
+> exists because appending them without it would have made the header's provenance declaration false
+> for part of its own document.
+
 Added 2026-08-03. These corrections were written in `asked-when-three-state-decision.md` and are moved here, to the document they correct, when that brief was cut back to its decision. Nothing about them changed in the move.
 
 Recorded so that document's readers can find them. None is a criticism of that document's method;

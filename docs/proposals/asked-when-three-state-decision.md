@@ -3,8 +3,10 @@
 **Status:** PROPOSED
 
 This document recommends an action on issue #108. It changes no engine code, no ruleset, no
-fixture, no schema and no manifest entry. The branch carrying it contains the document and nothing
-else. Nothing here is implementable until the approvals named in section 7 are given.
+fixture, no schema and no manifest entry. The branch carrying it changes **two** documents: this
+one, and `docs/proposals/asked-when-three-state-measurement.md`, which receives the corrections
+this document used to carry in a section of its own — they correct that document, so they belong
+in it. Nothing here is implementable until the approvals named in section 7 are given.
 
 **Relationship to the existing measurement.** `docs/proposals/asked-when-three-state-measurement.md`
 is the prior artifact. It is pinned to merge-base `481e1f6` and ruleset **nyc.v2.8**, and the
@@ -18,7 +20,7 @@ repeat it. What this one does is:
 - state a recommendation, which the earlier document explicitly declined to do.
 
 Where the two disagree, the disagreement is called out in place. Corrections to the earlier
-document are collected in section 8 so its readers can find them.
+document are collected in section 7 so its readers can find them.
 
 **Which of issue #108's two inputs this document measures. Read this before any number below.**
 The issue names one behaviour but there are two distinct inputs that produce it, and they do not
@@ -69,8 +71,10 @@ Still runnable from what is written here:
 Not runnable from this document: the two prototype patches and the four probe harnesses. They were
 published here as appendices A1–A6 and were removed on 2026-08-03, when this brief was cut back to
 its decision, because each published probe invited a claim about what it proved and four review
-rounds went to correcting those claims rather than the recommendation. They are in this branch's
-history at commit `53bd3c3` and can be recovered with `git show 53bd3c3:docs/proposals/asked-when-three-state-decision.md`.
+rounds went to correcting those claims rather than the recommendation. They are preserved on the
+branch `archive/issue-108-probe-appendices`, pushed for that purpose so the reference survives a
+force-push of this one, and can be read with
+`git show archive/issue-108-probe-appendices:docs/proposals/asked-when-three-state-decision.md`.
 
 The consequence, stated rather than left for a reader to discover: **the failure counts, the plan
 diffs and the two Q2 probe results below cannot be re-derived from this document alone.** They were
@@ -159,7 +163,7 @@ none of them gates anything. That is what makes the state unreachable through th
 Everything in this section about Q1 is measured on the attempt-B prototype described in section 4;
 the prototype is not on this branch and this document does not publish it. The probe harnesses and
 the full patches were published here until 2026-08-03 and were removed with the rest of the
-appendices; they are in this branch's history if a reader needs to re-derive a number.
+appendices; they are on `archive/issue-108-probe-appendices` if a reader needs to re-derive a number.
 
 **Q1, the unanswered gate. No approved expected value moves. Zero.** The full suite passes
 unchanged under the tri-state Q1 semantics as attempt B implements them — 1569 passed, 61 files,
@@ -451,7 +455,7 @@ Under `docs/DOCUMENTATION-GOVERNANCE.md` §5 and §6:
 
 | If the team decides to                    | Row of the §6 table                                                                                                                                                                                                                                                                                                                                                                                                                  | Required approval                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
 | ----------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Implement the tri-state semantics         | **§5 twice first** (the `F-201:48` reading is unresolved, section 8 item 1; the `ARCHITECTURE.md:83` boundary is contradicted, section 8 item 8), then "Rule trigger, dedupe, branch, deadline, or formula semantics", **plus "Product scope, feature meaning, phase" if resolving `F-201:48` changes what that approved spec requires, plus "Durable architecture decision" if resolving `ARCHITECTURE.md:83` moves that boundary** | **Two prerequisites, both under §5, both ahead of the signatures below: resolve `specs/F-201-permit-plan-generator.md:48`, and reconcile `docs/ARCHITECTURE.md:83` against a semantics that reads a raw NULL as materially unknown.** Only then verification owner (Dev 4) plus engine owner (Dev 1); plus the product owner/team decision if the F-201 resolution moves that spec's scheduled behaviour; plus the architecture owner's ADR approval if the `ARCHITECTURE.md:83` resolution moves that boundary rather than confirming it |
+| Implement the tri-state semantics         | **§5 twice first** (the `F-201:48` reading is unresolved, section 7 item 1; the `ARCHITECTURE.md:83` boundary is contradicted, section 7 item 8), then "Rule trigger, dedupe, branch, deadline, or formula semantics", **plus "Product scope, feature meaning, phase" if resolving `F-201:48` changes what that approved spec requires, plus "Durable architecture decision" if resolving `ARCHITECTURE.md:83` moves that boundary** | **Two prerequisites, both under §5, both ahead of the signatures below: resolve `specs/F-201-permit-plan-generator.md:48`, and reconcile `docs/ARCHITECTURE.md:83` against a semantics that reads a raw NULL as materially unknown.** Only then verification owner (Dev 4) plus engine owner (Dev 1); plus the product owner/team decision if the F-201 resolution moves that spec's scheduled behaviour; plus the architecture owner's ADR approval if the `ARCHITECTURE.md:83` resolution moves that boundary rather than confirming it |
 | Add fixtures distinguishing the semantics | "Executable regulatory expectation" is an approved fixture (§1); the answer key is APPROVED                                                                                                                                                                                                                                                                                                                                          | Both prerequisites and the same pair, plus the answer key's own revision authorization                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
 | Take the ruleset alternative              | Regulatory source/status/content **and** rule semantics **and** shared enum **and** database migration touching shared/core tables                                                                                                                                                                                                                                                                                                   | Verification owner plus rules reviewer, plus engine owner, plus all affected lane owners and the architecture owner for the shared enum, **plus the database owner** for the migration                                                                                                                                                                                                                                                                                                                                                    |
 | Do nothing (this recommendation)          | none                                                                                                                                                                                                                                                                                                                                                                                                                                 | none; the issue stays open                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
