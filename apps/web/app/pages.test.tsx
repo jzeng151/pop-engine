@@ -163,6 +163,20 @@ describe("the event overview route", () => {
   // The stale-plan notice and the workspace shell are client components: they fetch from the
   // organizer's browser, so a server-only `API_BASE_URL` reaches neither and both fall back to
   // localhost in every deployment. `NEXT_PUBLIC_API_BASE_URL` is the variable the deployment sets.
+  it("points the stale-plan notice at the configured browser api", async () => {
+    vi.stubEnv("NEXT_PUBLIC_API_BASE_URL", "https://api.example.com");
+    const fetchMock = vi.fn(() => new Promise<Response>(() => undefined));
+    vi.stubGlobal("fetch", fetchMock);
+
+    render(await EventOverviewPage({ params: Promise.resolve({ id: "event-9" }) }));
+
+    await waitFor(() =>
+      expect(fetchMock).toHaveBeenCalledWith(
+        "https://api.example.com/api/events/event-9",
+        expect.anything(),
+      ),
+    );
+  });
 
   it("points the workspace shell at the configured browser api", async () => {
     vi.stubEnv("NEXT_PUBLIC_API_BASE_URL", "https://api.example.com");
