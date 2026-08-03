@@ -173,6 +173,9 @@ export const checklistBody = (
   simulatedAlertDeliveries: [],
   // Likewise present on every real response: empty is the answer whenever nothing has failed.
   failedAlertDeliveries: [],
+  // Likewise: empty is the answer whenever no alert has been left unresolved long enough for the
+  // poller to stop on it, which is the ordinary state.
+  alertsHeldForReconciliation: [],
   // Likewise: the contact store answers for every event, and nulls are what an event nobody has
   // given a contact for looks like (migration 009).
   alertContacts: { email: null, phone: null },

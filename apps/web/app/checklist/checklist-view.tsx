@@ -151,6 +151,45 @@ export function failedDeliveryNotice(failure: {
         `it will redirect the alerts that have not gone out.`;
 }
 
+/**
+ * An alert PopEngine has stopped on, said as stopping rather than as failing.
+ *
+ * THE THIRD FACT, and the one that was being reported as one of the other two. A message handed to
+ * a provider whose answer nobody saw stops being retryable once the provider would no longer
+ * recognise the key, because a retry past that point is a second copy to the same person rather
+ * than a deduplicated one. A crash left that row `pending`, which the failure notice correctly says
+ * nothing about, and a lost answer left it `failed`, where the notice above told the organizer
+ * PopEngine keeps retrying it. Both readings said delivery was in hand after it had ended.
+ *
+ * WHAT IT MAY AND MAY NOT SAY. It may not say the message did not arrive: nobody knows, and that
+ * uncertainty is the reason for the hold. It may not promise a retry, a schedule, or anyone in
+ * particular acting, because none of those is happening. What is true and useful is the shape of
+ * the state: it was sent to the provider, no answer came back, PopEngine has stopped, and only a
+ * person checking with the provider changes that. The last clause is the one an organizer can act
+ * on today, and it stops at their own reminders: it says not to rely on this alert, and says
+ * nothing about the filing itself, which is the ruleset's to describe and not this sentence's.
+ *
+ * "the sending service" rather than the provider's name, which is an operational detail an
+ * organizer has no account with and cannot ring up.
+ */
+export function reconciliationHoldNotice(hold: { channel: string; heldCount: number }): string {
+  const name = CHANNEL_NAMES[hold.channel] ?? hold.channel;
+  const one = hold.heldCount === 1;
+  const alerts = one ? "alert" : "alerts";
+  const were = one ? "was" : "were";
+  const them = one ? "it" : "them";
+  const they = one ? "it" : "they";
+  const their = one ? "its" : "their";
+  const dates = one ? "the filing date it covers" : "the filing dates they cover";
+  return (
+    `${hold.heldCount} ${name} ${alerts} for this event ${were} handed to the sending service ` +
+    `and no answer came back. Too much time has passed to try ${them} again safely, so PopEngine ` +
+    `has stopped: ${they} will not be sent again on ${their} own. Someone has to check with the ` +
+    `sending service whether ${they} arrived; until then, do not count on ${them} to remind you ` +
+    `of ${dates}.`
+  );
+}
+
 export function ChecklistView({ apiBaseUrl, eventId }: { apiBaseUrl: string; eventId: string }) {
   const [state, setState] = useState<ChecklistState>({ status: "loading" });
   const [creating, setCreating] = useState(false);
@@ -537,6 +576,16 @@ export function ChecklistView({ apiBaseUrl, eventId }: { apiBaseUrl: string; eve
       {checklist.failedAlertDeliveries.map((failure) => (
         <p className="checklist__flag" role="alert" key={`failed-${failure.channel}`}>
           {failedDeliveryNotice(failure)}
+        </p>
+      ))}
+
+      {/* A channel PopEngine has stopped on, which is a third fact and not a louder version of the
+          one above. Failing means being retried; this means nobody will try again until a person
+          checks with the sending service. Both can be true of the same channel at once, which is
+          why they are separate blocks rather than a branch inside one sentence. */}
+      {checklist.alertsHeldForReconciliation.map((hold) => (
+        <p className="checklist__flag" role="alert" key={`held-${hold.channel}`}>
+          {reconciliationHoldNotice(hold)}
         </p>
       ))}
 

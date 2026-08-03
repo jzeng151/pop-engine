@@ -34,6 +34,7 @@ import {
   alertContacts,
   failedDeliveries,
   parseContacts,
+  reconciliationHolds,
   simulatedDeliveries,
   type AlertScheduler,
 } from "./alerts";
@@ -643,6 +644,12 @@ async function checklistView(database: Queryable, eventId: string, plan: LatestP
     // inferred. Kept separate from the simulation above on purpose — "switched off by design" and
     // "tried and failed" are different facts, and collapsing them would misreport both.
     failedAlertDeliveries: await failedDeliveries(database, eventId),
+    // F-203: alerts the poller has permanently stopped on, kept apart from the failures above for
+    // the same reason those are kept apart from the simulation. "Still being retried" and "stopped
+    // until a person checks with the provider" are different facts, and the organizer needs the
+    // second one most: nothing else on this page distinguishes an alert that is on its way from
+    // one that is never coming.
+    alertsHeldForReconciliation: await reconciliationHolds(database, eventId),
     alertContacts: await alertContacts(database, eventId),
     items: view,
     // Advisories, notifications, prohibitions and notes: shown for context, not tracked.

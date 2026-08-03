@@ -211,6 +211,18 @@ export type FailedAlertDelivery = {
   readonly heldForReview: boolean;
 };
 
+/**
+ * A channel with alerts the poller has permanently stopped on (F-203).
+ *
+ * Distinct from a failure: a failure is retried, and this is not. The api counts alerts that were
+ * handed to a provider whose answer nobody ever saw, long enough ago that a retry would be a
+ * second delivery rather than a deduplicated one, so no tick will take them again.
+ */
+export type ReconciliationHold = {
+  readonly channel: string;
+  readonly heldCount: number;
+};
+
 export type AlertContacts = {
   readonly email: string | null;
   readonly phone: string | null;
@@ -240,6 +252,8 @@ export type ChecklistResponse = {
   readonly simulatedAlertDeliveries: readonly SimulatedAlertDelivery[];
   /** Empty when no alert for this event has an attempt behind it that failed. */
   readonly failedAlertDeliveries: readonly FailedAlertDelivery[];
+  /** Empty when no alert for this event has an attempt the poller has given up on. */
+  readonly alertsHeldForReconciliation: readonly ReconciliationHold[];
   readonly alertContacts: AlertContacts;
 };
 
@@ -477,6 +491,11 @@ const FAILED_DELIVERY_CHECKS: FieldChecks<FailedAlertDelivery> = {
   heldForReview: isBoolean,
 };
 
+const RECONCILIATION_HOLD_CHECKS: FieldChecks<ReconciliationHold> = {
+  channel: isString,
+  heldCount: isNumber,
+};
+
 const ALERT_CONTACTS_CHECKS: FieldChecks<AlertContacts> = {
   email: nullOr(isString),
   phone: nullOr(isString),
@@ -494,6 +513,7 @@ const CHECKLIST_CHECKS: FieldChecks<ChecklistResponse> = {
   contextItems: arrayOf(shapedLike(PLAN_CONTEXT_CHECKS)),
   simulatedAlertDeliveries: arrayOf(shapedLike(SIMULATED_DELIVERY_CHECKS)),
   failedAlertDeliveries: arrayOf(shapedLike(FAILED_DELIVERY_CHECKS)),
+  alertsHeldForReconciliation: arrayOf(shapedLike(RECONCILIATION_HOLD_CHECKS)),
   alertContacts: shapedLike(ALERT_CONTACTS_CHECKS),
 };
 

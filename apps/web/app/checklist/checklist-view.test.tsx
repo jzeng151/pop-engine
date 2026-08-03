@@ -1507,6 +1507,83 @@ describe("F-203 · a channel that failed to deliver is reported to the organizer
     expect(screen.queryByText(/working|delivering|sent normally/)).toBeNull();
   });
 
+  it("tells the organizer when delivery has stopped rather than paused or continued", async () => {
+    // THE DISTINCTION THIS PAGE COULD NOT DRAW. An alert the poller has permanently stopped on
+    // reached the organizer either as nothing at all (a crash leaves it pending) or as an ordinary
+    // failure under copy saying PopEngine keeps retrying it. Both told them delivery was in hand.
+    // The one thing this notice has to make possible is telling "still trying" from "stopped, and
+    // a person has to do something", so the words say which of those it is and name the action.
+    stubApi({
+      [GET_CHECKLIST]: checklistOf({
+        created: true,
+        alertsHeldForReconciliation: [{ channel: "email", heldCount: 2 }],
+      }),
+    });
+
+    await renderView();
+
+    const notice = screen.getByText(/no answer came back/);
+    expect(notice.textContent).toBe(
+      "2 email alerts for this event were handed to the sending service and no answer came back. " +
+        "Too much time has passed to try them again safely, so PopEngine has stopped: they will " +
+        "not be sent again on their own. Someone has to check with the sending service whether " +
+        "they arrived; until then, do not count on them to remind you of the filing dates they " +
+        "cover.",
+    );
+    expect(notice.getAttribute("role")).toBe("alert");
+    // The claim that broke this: nothing here may promise a retry that is not going to happen.
+    expect(notice.textContent).not.toContain("keeps retrying");
+  });
+
+  it("agrees with itself on one stopped alert", async () => {
+    stubApi({
+      [GET_CHECKLIST]: checklistOf({
+        created: true,
+        alertsHeldForReconciliation: [{ channel: "email", heldCount: 1 }],
+      }),
+    });
+
+    await renderView();
+
+    expect(screen.getByText(/no answer came back/).textContent).toBe(
+      "1 email alert for this event was handed to the sending service and no answer came back. " +
+        "Too much time has passed to try it again safely, so PopEngine has stopped: it will not " +
+        "be sent again on its own. Someone has to check with the sending service whether it " +
+        "arrived; until then, do not count on it to remind you of the filing date it covers.",
+    );
+  });
+
+  it("says nothing when no alert is stopped", async () => {
+    // Same rule as every other notice on this page: an absence is not evidence of health, so
+    // nothing is rendered from one.
+    stubApi({ [GET_CHECKLIST]: checklistOf({ created: true, alertsHeldForReconciliation: [] }) });
+
+    await renderView();
+
+    expect(screen.queryByText(/no answer came back/)).toBeNull();
+  });
+
+  it("keeps a stopped alert and a retrying failure as separate statements", async () => {
+    // The two can be true of one event at once, on the same channel: one alert lost its answer a
+    // day ago and another failed a minute ago. Collapsing them would put the wrong sentence on
+    // one of the two, which is the defect this notice exists to correct.
+    stubApi({
+      [GET_CHECKLIST]: checklistOf({
+        created: true,
+        failedAlertDeliveries: [{ channel: "email", failedCount: 1, heldForReview: false }],
+        alertsHeldForReconciliation: [{ channel: "email", heldCount: 1 }],
+      }),
+    });
+
+    await renderView();
+
+    const retrying = screen.getByText(/not been confirmed as delivered/);
+    const stopped = screen.getByText(/no answer came back/);
+    expect(retrying).not.toBe(stopped);
+    expect(retrying.textContent).toContain("PopEngine keeps retrying them");
+    expect(stopped.textContent).not.toContain("keeps retrying");
+  });
+
   it("keeps a switched-off channel and a failing channel as separate statements", async () => {
     // "Not switched on yet" and "tried and did not arrive" are different facts. Collapsing them
     // would misreport both.

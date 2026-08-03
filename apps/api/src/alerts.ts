@@ -2284,10 +2284,18 @@ export function createAlertPoller(dependencies: {
     // undelivered as far as this side knows, and nothing in the poller will ever move it: the only
     // way out is a human checking the provider for the key and then either marking the alert sent
     // or clearing its attempt. Reporting nothing would make that look like an empty queue.
+    //
+    // NOT ROWS THE PRODUCT CAN RETIRE ITSELF, which is why the scan's staleness predicate is here
+    // too. A hold asserts that only a person checking the provider can resolve this alert, and
+    // that is false of one whose plan the event has been edited past: regeneration cancels it. The
+    // count without the predicate warned about every obsolete row on every tick for as long as an
+    // organizer took to regenerate, which is both a false alarm and the way a genuine hold gets
+    // buried.
     const { rows: held } = await database.query<{ id: string }>(
       `SELECT id FROM alerts
         WHERE status IN ('pending', 'failed')
           AND send_at <= current_timestamp
+          AND ${NOT_FROM_A_STALE_PLAN}
           AND ${HAS_AN_UNRESOLVED_ATTEMPT}`,
     );
     if (held.length > 0) {
@@ -2746,6 +2754,14 @@ export async function simulatedDeliveries(
  * Test sends are excluded. A demo alert fired at a deliberately bogus address is an operator
  * action against no deadline, and counting it would tell an organizer their own reminders are
  * failing when they are not. Same predicate the reconciler already uses to leave test rows alone.
+ *
+ * AND SO ARE THE ROWS THE POLLER HAS STOPPED ON, because this count is read under copy that says
+ * retrying continues. An alert whose attempt outlived the provider's dedup window is never taken
+ * again by any tick, so counting it here told an organizer delivery was still being attempted
+ * after it had permanently ended. Those rows are reported by `reconciliationHolds` instead, which
+ * says what is actually true of them. The stale-plan half of the pair stays HERE rather than
+ * moving: the notice already has a paused branch that names regeneration, which is the action that
+ * resolves it, and the reconciliation notice would send the organizer after the provider instead.
  */
 export type FailedDelivery = {
   readonly channel: AlertChannel;
@@ -2778,6 +2794,7 @@ export async function failedDeliveries(
       WHERE event_id = $1
         AND status = 'failed'
         AND coalesce(payload->>'test', 'false') <> 'true'
+        AND NOT (${HAS_AN_UNRESOLVED_ATTEMPT} AND ${NOT_FROM_A_STALE_PLAN})
       GROUP BY channel
       ORDER BY channel`,
     [eventId],
@@ -2787,6 +2804,56 @@ export async function failedDeliveries(
     failedCount: row.count,
     heldForReview: row.held === true,
   }));
+}
+
+/**
+ * A channel with alerts the poller will never take again, counted so the organizer is told.
+ *
+ * THE DIFFERENCE BETWEEN "STILL TRYING" AND "STOPPED", which is the one distinction the checklist
+ * could not draw. An alert handed to a provider whose answer nobody saw stops being claimable once
+ * the provider's dedup window has closed on it, because a retry past that point is a second
+ * delivery rather than a deduplicated one. Nothing in the poller moves it afterwards. Neither
+ * surface reported that: a crash leaves the row `pending`, which `failedDeliveries` correctly says
+ * nothing about, and a lost answer leaves it `failed`, where it was counted under copy promising
+ * retries that had already ended. For a product whose purpose is that a filing deadline does not
+ * pass unnoticed, telling an organizer delivery continues when it has stopped is the worst thing
+ * available short of losing the alert.
+ *
+ * DERIVED, NOT PERSISTED, and that is deliberate rather than convenient. The hold is a fact about
+ * how old an attempt is, so it becomes true with the passage of time and unwinds the moment
+ * somebody records the outcome or supersedes the attempt. A status column would have to be written
+ * by whichever tick happened to notice and then unwritten by hand, and the row would keep claiming
+ * a hold after the thing that caused it was resolved. Reading it costs one query on a surface that
+ * already runs several, and it cannot disagree with the predicate the poller actually uses because
+ * it IS that predicate.
+ *
+ * Pending as well as failed, because the crash case is the silent one. Test rows are excluded for
+ * the reason they are excluded everywhere else, and stale-plan rows because regeneration cancels
+ * them rather than a person reconciling them.
+ */
+export type ReconciliationHold = {
+  readonly channel: AlertChannel;
+  /** Alerts on this channel the poller has permanently stopped on. Never zero: absent instead. */
+  readonly heldCount: number;
+};
+
+export async function reconciliationHolds(
+  database: Queryable,
+  eventId: string,
+): Promise<ReconciliationHold[]> {
+  const { rows } = await database.query<{ channel: AlertChannel; count: number }>(
+    `SELECT channel, count(*)::int AS count
+       FROM alerts
+      WHERE event_id = $1
+        AND status IN ('pending', 'failed')
+        AND coalesce(payload->>'test', 'false') <> 'true'
+        AND ${NOT_FROM_A_STALE_PLAN}
+        AND ${HAS_AN_UNRESOLVED_ATTEMPT}
+      GROUP BY channel
+      ORDER BY channel`,
+    [eventId],
+  );
+  return rows.map((row) => ({ channel: row.channel, heldCount: row.count }));
 }
 
 export type AlertView = {

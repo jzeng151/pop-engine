@@ -44,6 +44,7 @@ import {
   createAlertPoller,
   createAlertScheduler,
   failedDeliveries,
+  reconciliationHolds,
   ALERT_POLLER_CONNECTIONS,
   DEDUP_WINDOW_CLAIM_MARGIN_MS,
   DELIVERY_BOUND_MS,
@@ -1557,6 +1558,35 @@ describe.skipIf(databaseUrl === "")("F-203 deadline alerts", () => {
           [alertId],
         );
         expect(rows[0]?.status).toBe("pending");
+      });
+
+      it("does not report an obsolete alert's aged attempt as needing a human", async () => {
+        // A HOLD IS A CLAIM THAT ONLY A PERSON CAN CLEAR, so it must not be made about a row the
+        // product can clear itself. The scan already refuses alerts whose plan the event has been
+        // edited past, because regeneration cancels them; the hold count did not, so every tick
+        // reported an obsolete row as awaiting a manual reconciliation against the provider. False
+        // warnings on a counter whose whole value is that it is rare, with the genuine holds
+        // buried among them.
+        const eventId = await createEvent(scenario("C"));
+        expect(await schedulePastDue(eventId, [reminderOffsets[0] ?? 7])).toBe(1);
+        const alertId = (await alertsOf(eventId))[0]?.id ?? "";
+        await recordAttempt(alertId, PROVIDER_DEDUP_WINDOW_HOURS + 1, false);
+        const poller = createAlertPoller({
+          database: pool,
+          senders: fakeProvider().senders,
+          jurisdiction: ruleset.jurisdiction,
+        });
+        // While the plan is current the hold is real: nothing but a person can resolve it.
+        expect((await poller.tick()).heldForReconciliation).toBe(1);
+
+        // The organizer edits the event. The alert now answers an intake they have moved on from,
+        // and regenerating the plan cancels it without anyone asking the provider anything.
+        await pool.query(
+          "UPDATE events SET revision_counter = revision_counter + 1 WHERE id = $1",
+          [eventId],
+        );
+
+        expect((await poller.tick()).heldForReconciliation).toBe(0);
       });
 
       it("keeps retrying an attempt the provider answered, however old that answer is", async () => {
@@ -3354,6 +3384,135 @@ describe.skipIf(databaseUrl === "")("F-203 deadline alerts", () => {
       expect(response.status).toBe(502);
 
       expect(await failedDeliveries(pool, eventId)).toEqual([]);
+    });
+  });
+
+  describe("an alert the poller has permanently stopped on is reported as stopped", () => {
+    /**
+     * The state a crash or a lost answer leaves once the provider's dedup window has closed on it:
+     * a due alert, an attempt nobody saw the end of, and no tick that will ever take it again.
+     *
+     * Written directly because the AGE is the point and nothing in the product produces a day-old
+     * attempt inside a test.
+     */
+    const insertHeldAlert = async (
+      eventId: string,
+      status: "pending" | "failed",
+    ): Promise<string> => {
+      const alertId = randomUUID();
+      await pool.query(
+        `INSERT INTO alerts (id, event_id, alert_type, channel, recipient, idempotency_key,
+                             send_at, status, failure_count, payload)
+         VALUES ($1, $2, 'deadline_reminder', 'email', 'organizer@example.test', $3,
+                 current_timestamp - interval '2 days', $4,
+                 CASE WHEN $4 = 'failed' THEN 1 ELSE 0 END,
+                 '{"subject":"file it","body":"file it"}'::jsonb)`,
+        [alertId, eventId, alertId, status],
+      );
+      await pool.query(
+        `INSERT INTO alert_send_attempts (alert_id, idempotency_key, attempted_at)
+         VALUES ($1, $2, current_timestamp - ($3 || ' hours')::interval)`,
+        [alertId, alertId, PROVIDER_DEDUP_WINDOW_HOURS + 1],
+      );
+      return alertId;
+    };
+
+    it("tells the organizer a crashed send stopped, where nothing told them anything", async () => {
+      // THE SILENT HALF. A crash between the provider accepting the message and the COMMIT rolls
+      // the row back to `pending`, so `failedDeliveries` says nothing — correctly, because pending
+      // is not a failure — and the organizer's checklist looked exactly like an event whose
+      // reminders are simply not due yet. The poller had in fact stopped on it for good.
+      const eventId = await createEvent(scenario("C"));
+      await insertHeldAlert(eventId, "pending");
+
+      expect(await failedDeliveries(pool, eventId)).toEqual([]);
+      expect(await reconciliationHolds(pool, eventId)).toEqual([
+        { channel: "email", heldCount: 1 },
+      ]);
+    });
+
+    it("stops counting a stopped alert among the failures it says are being retried", async () => {
+      // THE WORSE HALF. A lost answer leaves the row `failed`, so it was reported as an ordinary
+      // current-plan failure under copy that says PopEngine keeps retrying it. The poller has
+      // permanently stopped on that row, so the organizer was told delivery continues when it had
+      // ended — for a product whose purpose is that a filing deadline does not pass unnoticed.
+      const eventId = await createEvent(scenario("C"));
+      await insertHeldAlert(eventId, "failed");
+
+      expect(await failedDeliveries(pool, eventId)).toEqual([]);
+      expect(await reconciliationHolds(pool, eventId)).toEqual([
+        { channel: "email", heldCount: 1 },
+      ]);
+    });
+
+    it("leaves a failure the poller is still retrying exactly where it was", async () => {
+      // The other side of the line, so the hold cannot widen into "every failure is hopeless". A
+      // failed attempt inside the dedup window is retried on the next tick, and the notice that
+      // says so is true of it.
+      const eventId = await createEvent(scenario("C"));
+      await schedulePastDue(eventId, [reminderOffsets[0] ?? 7]);
+      const provider = fakeProvider();
+      provider.fail = "email provider unreachable: ECONNREFUSED";
+      await createAlertPoller({ database: pool, senders: provider.senders, jurisdiction: ruleset.jurisdiction }).tick();
+
+      expect(await failedDeliveries(pool, eventId)).toEqual([
+        { channel: "email", failedCount: 1, heldForReview: false },
+      ]);
+      expect(await reconciliationHolds(pool, eventId)).toEqual([]);
+    });
+
+    it("says nothing about an alert the organizer's own edit has already retired", async () => {
+      // Same predicate the tick's count now applies, and the same reason: regeneration cancels
+      // this row, so calling it a hold would send the organizer after the provider about a
+      // reminder they have already superseded.
+      const eventId = await createEvent(scenario("C"));
+      await schedulePastDue(eventId, [reminderOffsets[0] ?? 7]);
+      const alertId = (await alertsOf(eventId))[0]?.id ?? "";
+      await pool.query(
+        `INSERT INTO alert_send_attempts (alert_id, idempotency_key, attempted_at)
+         VALUES ($1, $2, current_timestamp - ($3 || ' hours')::interval)`,
+        [alertId, alertId, PROVIDER_DEDUP_WINDOW_HOURS + 1],
+      );
+      await pool.query("UPDATE events SET revision_counter = revision_counter + 1 WHERE id = $1", [
+        eventId,
+      ]);
+
+      expect(await reconciliationHolds(pool, eventId)).toEqual([]);
+    });
+
+    it("reaches the checklist an organizer actually reads", async () => {
+      // Through the real delivery path: the provider never answers, the attempt stays open, and
+      // the window closes on it. The count has to arrive on the surface the organizer uses, not
+      // only in a server log they will never see.
+      const eventId = await createEvent(scenario("C"));
+      await schedulePastDue(eventId, [reminderOffsets[0] ?? 7]);
+      const silentProvider: AlertSenders = {
+        sms: fakeProvider().senders.sms,
+        email: async () => {
+          throw new AlertDeliveryError("email provider did not respond within 10000ms", {
+            outcomeObserved: false,
+          });
+        },
+      };
+      await createAlertPoller({ database: pool, senders: silentProvider, jurisdiction: ruleset.jurisdiction }).tick();
+      const alertId = (await alertsOf(eventId))[0]?.id ?? "";
+      // The window closes while nobody is looking, which no test can wait out in real time.
+      await pool.query(
+        `UPDATE alert_send_attempts
+            SET attempted_at = current_timestamp - ($2 || ' hours')::interval
+          WHERE alert_id = $1`,
+        [alertId, PROVIDER_DEDUP_WINDOW_HOURS + 1],
+      );
+
+      const response = await request(appWith(fakeProvider())).get(
+        `/api/events/${eventId}/checklist`,
+      );
+
+      expect(response.status).toBe(200);
+      expect(response.body.alertsHeldForReconciliation).toEqual([
+        { channel: "email", heldCount: 1 },
+      ]);
+      expect(response.body.failedAlertDeliveries).toEqual([]);
     });
   });
 
