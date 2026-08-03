@@ -45,6 +45,9 @@ function regenerationGuard(plan: PlanResult, meta: RulesMetaResult): Regeneratio
     plan.plan.rulesetVersion,
     liveVersion,
     liveVersion === null ? null : compareToPinned(liveVersion, plan.plan.rulesetVersion),
+    // The plan the refusal preserves is not on this screen; the overview's Comply section links to
+    // it. Naming that link is the only wording here that points at the artifact being described.
+    'the plan under "Open permit plan"',
   );
   return refusal === null ? { status: "offered" } : { status: "refused", reason: refusal };
 }

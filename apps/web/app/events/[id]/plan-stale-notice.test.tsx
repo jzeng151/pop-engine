@@ -290,6 +290,20 @@ describe("the stale-plan notice on the event overview", () => {
     expect(screen.queryByRole("button", { name: "Regenerate plan" })).toBeNull();
   });
 
+  // The refusal ends by saying the preserved plan is still the one the pinned rules produced. On
+  // the plan view that plan is on the screen the sentence is read from; here it is not — the
+  // overview only links to it — so a refusal that says "the plan below" tells the organizer they
+  // are looking at a regulatory artifact that is one navigation away.
+  it("names the permit-plan link rather than a plan below", async () => {
+    respondWith({ meta: () => metaResponse("nyc.v2.10") });
+
+    renderNotice();
+
+    const refusal = (await screen.findByRole("alert")).textContent ?? "";
+    expect(refusal).toContain("Open permit plan");
+    expect(refusal).not.toContain("the plan below");
+  });
+
   it("refuses regeneration when the running ruleset cannot be read", async () => {
     respondWith({ meta: () => new Response("", { status: 503 }) });
 

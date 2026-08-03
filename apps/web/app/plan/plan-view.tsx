@@ -110,11 +110,17 @@ const isNearEmpty = (findings: PlanResponse["findings"]): boolean =>
  * Exported because the event overview's stale-plan notice (F-101 AC 8) offers the same operation
  * from another surface. One organizer action, one decision about it: a second copy of this
  * comparison is a second place for the downgrade to become reachable again.
+ *
+ * `preservedPlan` is how the caller's own screen refers to the plan the refusal preserves, because
+ * the two surfaces sit in different places relative to it: the plan view renders it directly under
+ * this text, while the overview only links to it. A fixed phrase would tell the overview's reader
+ * they are already looking at a regulatory artifact they would still have to navigate to.
  */
 export function regenerationRefusal(
   pinnedVersion: string,
   liveVersion: string | null,
   standing: ReturnType<typeof compareToPinned> | null,
+  preservedPlan: string,
 ): string | null {
   if (standing === "same" || standing === "newer") return null;
   return (
@@ -125,8 +131,9 @@ export function regenerationRefusal(
     "Regenerating would rebuild your plan from the service's rules, so it is unavailable until the " +
     "service is back on " +
     pinnedVersion +
-    " or newer. This is the service being behind, not a problem with your event, and the plan below " +
-    "is still the one those rules produced."
+    " or newer. This is the service being behind, not a problem with your event, and " +
+    preservedPlan +
+    " is still the one those rules produced."
   );
 }
 
@@ -264,7 +271,12 @@ export function PlanView({
   const refusal =
     plan === null
       ? null
-      : regenerationRefusal(plan.rulesetVersion, meta?.ruleset_version ?? null, standing);
+      : regenerationRefusal(
+          plan.rulesetVersion,
+          meta?.ruleset_version ?? null,
+          standing,
+          "the plan below",
+        );
   const canGenerate = wouldOffer && refusal === null;
 
   return (
