@@ -70,7 +70,7 @@ export default async function EventOverview({ params }: { params: Promise<{ id: 
           Review event intake
         </a>
         <PlanStaleNotice
-          apiBaseUrl={process.env.API_BASE_URL ?? "http://localhost:3001"}
+          apiBaseUrl={process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:3001"}
           eventId={id}
         />
       </header>
