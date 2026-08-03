@@ -168,9 +168,10 @@ function WorkspaceNavigation({ eventId, pathname }: { eventId: string; pathname:
         <ul>
           {plannedModules.map((module) => (
             <li key={module}>
+              {/* The PLANNED stamp is the group's, not each button's — `docs/DESIGN-SYSTEM.md`
+                  publishes one clipped insert stamped once, and F-705 AC 5 defers to it. */}
               <button disabled type="button">
                 <span>{module}</span>
-                <span className="riso-nav__stamp">Planned</span>
               </button>
             </li>
           ))}

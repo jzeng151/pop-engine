@@ -1,7 +1,8 @@
 # F-705 · Event Workspace Shell
 
 **Status:** APPROVED (2026-08-02, product-owner approved, one person currently holding every lane) · **Reviewer/approver:** product owner · **Owner:** see Lane below · see `docs/BASELINE.md`.
-**Phase:** 1.5 (stretch track) · **Lane:** Dev 3 · **Depends on:** the routes it links to (F-101, F-102/F-201, F-202, F-301, F-302, F-401, F-402) and `docs/DESIGN-SYSTEM.md` for tokens and chrome
+**Phase:** 1.5 (stretch track), per `docs/ROADMAP.md` · **Lane:** none. `docs/DESIGN.md` is the authority for lanes and assigns this feature to no dev; it is chrome that spans all four stages rather than one lane's feature · **Depends on:** the routes it links to (F-101, F-102/F-201, F-202, F-301, F-302, F-401, F-402) and `docs/DESIGN-SYSTEM.md` for tokens and chrome
+**Amended:** 2026-08-03, correcting two claims this spec made that its own sources do not carry. The Lane line assigned Dev 3, which `docs/DESIGN.md` never did; Acceptance Criterion 5 put the visible stamp on each button, while `docs/DESIGN-SYSTEM.md` publishes one stamp on the group and `apps/web/app/globals.css` has rendered it that way since 2026-07-29. Both are corrections of the lower-authority artifact under `docs/DOCUMENTATION-GOVERNANCE.md` §2, not new decisions: no lane is created, no visual decision is reopened, and the shell's behavior is unchanged.
 **Written:** 2026-08-02, after the fact. The shell shipped in the 2026-07-29 Riso Field Guide work under the design-system amendment, whose scope clause covers presentation and existing-route chrome and excludes new cross-feature navigation. Navigation across lifecycle stages is product scope, so it gets an ID and a spec rather than a wider design-system gate. Nothing here asks for new behavior; it states what exists so the criteria can be checked and so later changes have something to change.
 
 ## User Story
@@ -50,7 +51,7 @@ The state is exposed as `data-load-state` so the distinction is testable rather 
 2. The active destination carries `aria-current="page"`. Overview matches its path exactly; every other destination matches by prefix, so a nested route keeps its parent highlighted.
 3. The masthead names the active event once loaded, announces the change politely (`aria-live="polite"`), and falls back to the placeholder in both non-ready states without inventing a name.
 4. The masthead states "Synthetic data demo" on every route, satisfying the capstone labeling rule in `AGENTS.md` for an environment carrying no real applications or attendee data.
-5. Planned modules render as `disabled` buttons carrying a visible "Planned" stamp. They are not links, do not navigate, and name no F-id, date, or commitment.
+5. Planned modules render as `disabled` buttons inside a group headed "Planned". They are not links, do not navigate, and name no F-id, date, or commitment. The visible `PLANNED` stamp belongs to the group, not to each button: `docs/DESIGN-SYSTEM.md` is the authority for that treatment and publishes one clipped paper insert over the rail, stamped once.
 6. The theme toggle switches light and dark, reports state through `aria-pressed`, persists to `localStorage`, and follows a change made in another tab. When storage is unavailable it still applies the theme for the current page and does not fail.
 7. Keyboard and screen-reader access: a skip link reaches the content region, the navigation carries `aria-label="Event lifecycle"`, and the mobile disclosure is a native `<details>` element rather than scripted show/hide.
 8. The overview page links only to routes that exist and are reachable, and describes each in one sentence that promises no output the destination does not produce.

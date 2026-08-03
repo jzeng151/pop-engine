@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 
-import { cleanup, render, screen } from "@testing-library/react";
+import { cleanup, render, screen, within } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { EventWorkspace } from "./event-workspace";
@@ -60,10 +60,26 @@ describe("the organizer event workspace", () => {
       </EventWorkspace>,
     );
 
-    for (const button of screen.getAllByRole("button", { name: "AI assistantPlanned" })) {
-      expect((button as HTMLButtonElement).disabled).toBe(true);
+    // F-705 AC 5: the visible PLANNED stamp is the group's, published once by
+    // `docs/DESIGN-SYSTEM.md` and drawn by `.riso-nav__group--planned::after`. Nothing inside a
+    // button may claim it: a per-button stamp in the markup is a stamp the stylesheet hides, which
+    // is a criterion this test would report as met while no organizer ever sees it.
+    // The shell renders the rail once per breakpoint, so every copy of the group is checked.
+    const groups = screen
+      .getAllByRole("heading", { name: "Planned" })
+      .map((heading) => heading.closest("section") as HTMLElement);
+    expect(groups.length).toBeGreaterThan(0);
+
+    for (const group of groups) {
+      expect(within(group).queryAllByRole("link")).toHaveLength(0);
+      const buttons = within(group).getAllByRole("button");
+      expect(buttons.length).toBeGreaterThan(0);
+      for (const button of buttons) {
+        expect((button as HTMLButtonElement).disabled).toBe(true);
+        expect(button.textContent).not.toContain("Planned");
+      }
+      expect(group.querySelectorAll(".riso-nav__stamp")).toHaveLength(0);
     }
-    expect(screen.getAllByText("Planned").length).toBeGreaterThan(0);
   });
 
   // F-705 AC 3: an event that cannot be read leaves the workspace usable and says nothing about
