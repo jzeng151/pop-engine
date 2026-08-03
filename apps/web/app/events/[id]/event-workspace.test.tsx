@@ -83,7 +83,9 @@ describe("the organizer event workspace", () => {
     expect(screen.getAllByRole("link", { name: "Permit plan" }).length).toBeGreaterThan(0);
   });
 
-  // F-705 AC 3: a blank name is absent, not an empty heading.
+  // F-705 AC 3 and the spec's state table: a blank or absent name is `unavailable`, not `ready`.
+  // `ready` would say the event responded with a name it never sent, and the placeholder on screen
+  // would be reported as that name.
   it("treats a whitespace-only event name as absent", async () => {
     vi.stubGlobal(
       "fetch",
@@ -102,7 +104,7 @@ describe("the organizer event workspace", () => {
     );
 
     const masthead = await screen.findByText("Event workspace");
-    expect(masthead.getAttribute("data-load-state")).toBe("ready");
+    expect(masthead.getAttribute("data-load-state")).toBe("unavailable");
   });
 
   // F-705 AC 4 and AC 7: the capstone label and the two access affordances that carry no visible
