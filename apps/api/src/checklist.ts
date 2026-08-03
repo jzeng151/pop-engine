@@ -32,9 +32,8 @@ import type {
 } from "@pop-engine/engine";
 import {
   alertContacts,
-  failedDeliveries,
+  alertDeliveryHealth,
   parseContacts,
-  reconciliationHolds,
   simulatedDeliveries,
   type AlertScheduler,
 } from "./alerts";
@@ -613,6 +612,11 @@ async function checklistView(database: Queryable, eventId: string, plan: LatestP
   // is offered creation instead (AC 6 flags an existing checklist).
   const acknowledged = await acknowledgedPlanId(database, eventId);
   const planChanged = acknowledged !== null && acknowledged !== plan.id;
+  // F-203: both alert-delivery notices from ONE snapshot. Read separately they were two pool
+  // queries with real time between them, and the hold predicate turns on how old an attempt is —
+  // so a row crossing the dedup cutoff in the gap arrived under both notices at once, one saying
+  // PopEngine keeps retrying it and the other saying retrying has stopped.
+  const alertHealth = await alertDeliveryHealth(database, eventId);
 
   return {
     eventId,
@@ -643,13 +647,13 @@ async function checklistView(database: Queryable, eventId: string, plan: LatestP
     // F-203: channels whose alerts tried to send and did not, counted from the rows rather than
     // inferred. Kept separate from the simulation above on purpose — "switched off by design" and
     // "tried and failed" are different facts, and collapsing them would misreport both.
-    failedAlertDeliveries: await failedDeliveries(database, eventId),
+    failedAlertDeliveries: alertHealth.failedDeliveries,
     // F-203: alerts the poller has permanently stopped on, kept apart from the failures above for
     // the same reason those are kept apart from the simulation. "Still being retried" and "stopped
     // until a person checks with the provider" are different facts, and the organizer needs the
     // second one most: nothing else on this page distinguishes an alert that is on its way from
     // one that is never coming.
-    alertsHeldForReconciliation: await reconciliationHolds(database, eventId),
+    alertsHeldForReconciliation: alertHealth.reconciliationHolds,
     alertContacts: await alertContacts(database, eventId),
     items: view,
     // Advisories, notifications, prohibitions and notes: shown for context, not tracked.

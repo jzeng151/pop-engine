@@ -35,6 +35,7 @@ import {
 import { up as migration014 } from "../migrations/014_alert_send_attempts";
 import {
   simulatedDeliveries,
+  alertDeliveryHealth,
   createAlertPoller,
   createAlertScheduler,
   failedDeliveries,
@@ -1424,7 +1425,12 @@ describe.skipIf(databaseUrl === "")("F-203 deadline alerts", () => {
         eventId: string,
         recipient: string,
         dueDaysAgo: number,
-        row: { readonly channel?: AlertChannel; readonly status?: AlertStatus } = {},
+        row: {
+          readonly channel?: AlertChannel;
+          readonly status?: AlertStatus;
+          /** What the last send recorded on the row, which is the only evidence of WHY it failed. */
+          readonly lastError?: string;
+        } = {},
       ): Promise<string> => {
         const alertId = randomUUID();
         await pool.query(
@@ -1433,7 +1439,7 @@ describe.skipIf(databaseUrl === "")("F-203 deadline alerts", () => {
            VALUES ($1, $2, 'deadline_reminder', $6, $3, $5,
                    current_timestamp - ($4 || ' days')::interval, $7,
                    CASE WHEN $7 = 'failed' THEN 1 ELSE 0 END,
-                   '{"subject":"file it","body":"file it"}'::jsonb)`,
+                   '{"subject":"file it","body":"file it"}'::jsonb || $8::jsonb)`,
           [
             alertId,
             eventId,
@@ -1442,6 +1448,7 @@ describe.skipIf(databaseUrl === "")("F-203 deadline alerts", () => {
             alertId,
             row.channel ?? "email",
             row.status ?? "pending",
+            JSON.stringify(row.lastError === undefined ? {} : { last_error: row.lastError }),
           ],
         );
         return alertId;
@@ -1858,6 +1865,71 @@ describe.skipIf(databaseUrl === "")("F-203 deadline alerts", () => {
           "+15555550199",
           "legacy-untried@example.test",
         ]);
+      });
+
+      it("leaves an upgrade's locally-unconfigured failures out of the backfill", async () => {
+        // WHAT THE SEED IS ALLOWED TO ASSUME, and this row breaks the assumption. The backfill
+        // reads `failed` as proof that a provider was handed something, which is true of every
+        // failure that reached one. It is not true of a database that ran without RESEND_API_KEY
+        // or SMTP_FROM: `unconfiguredEmailSender` throws inside this process, so those rows failed
+        // without any provider ever seeing the message. Seeding one gives it an unresolved
+        // `-infinity` attempt, and the hold predicate then stops it for good — so configuring the
+        // credentials later delivers nothing, which is the systematic non-delivery this whole
+        // mechanism exists to avoid. The row's own recorded error is the proof, so it is read.
+        const eventId = await createEvent(scenario("C"));
+        const unconfigured = await insertDueAlert(eventId, "no-credentials@example.test", 30, {
+          status: "failed",
+          lastError: await unconfiguredEmailSender()({
+            recipient: "no-credentials@example.test",
+            subject: "",
+            body: "",
+            idempotencyKey: "",
+          }).then(
+            () => "",
+            (error: Error) => error.message,
+          ),
+        });
+        const reachedAProvider = await insertDueAlert(eventId, "provider@example.test", 30, {
+          status: "failed",
+          lastError: "email provider did not respond within 10000ms",
+        });
+
+        await seedLegacyAttempts();
+
+        expect(await attemptsOf(unconfigured)).toEqual([]);
+        expect(await attemptsOf(reachedAProvider)).toHaveLength(1);
+
+        // And the alert goes out the moment credentials exist, rather than being held forever.
+        const provider = fakeProvider();
+        await createAlertPoller({
+          database: pool,
+          senders: provider.senders,
+          jurisdiction: ruleset.jurisdiction,
+        }).tick();
+
+        expect(provider.delivered.map((message) => message.recipient)).toContain(
+          "no-credentials@example.test",
+        );
+      });
+
+      it("records no provider attempt for an email channel with no credentials", async () => {
+        // THE LIVE HALF OF THE SAME ROOT CAUSE. `unconfiguredEmailSender` throws without opening a
+        // socket, so no provider can be holding this message — but an intent was written before it
+        // was called, and a process that dies before the outcome update commits leaves that intent
+        // unresolved. It then ages past the dedup window and holds the alert out of every poll, so
+        // adding credentials later delivers nothing. A sender that reaches nobody says so, exactly
+        // as the SMS simulation does.
+        const eventId = await createEvent(scenario("C"));
+        const alertId = await insertDueAlert(eventId, "unconfigured@example.test", 2);
+
+        const summary = await createAlertPoller({
+          database: pool,
+          senders: { email: unconfiguredEmailSender(), sms: fakeProvider().senders.sms },
+          jurisdiction: ruleset.jurisdiction,
+        }).tick();
+
+        expect(summary.failed).toBe(1);
+        expect(await attemptsOf(alertId)).toEqual([]);
       });
 
       it("records no provider attempt for an SMS the product only simulates", async () => {
@@ -3695,6 +3767,48 @@ describe.skipIf(databaseUrl === "")("F-203 deadline alerts", () => {
       expect(await reconciliationHolds(pool, eventId)).toEqual([]);
     });
 
+    it("never puts one alert under both notices at once", async () => {
+      // TWO QUERIES, TWO SNAPSHOTS, TWO CONTRADICTORY ANSWERS. The hold is a fact about how old an
+      // attempt is, so it becomes true with the passage of time — including between two sequential
+      // pool queries, each of which runs in its own autocommit snapshot. A failed alert counted as
+      // a failure by the first and as a hold by the second reaches the organizer under both the
+      // notice that says PopEngine keeps retrying and the notice that says retrying has stopped,
+      // and the page keeps both until it is reloaded. One statement cannot disagree with itself.
+      //
+      // THE CROSSING IS FORCED: the pool is proxied so the attempt ages past the cutoff the moment
+      // a statement that reads the alerts table has run. Under two statements that lands between
+      // them, which is the reported ordering exactly.
+      const eventId = await createEvent(scenario("C"));
+      const alertId = await insertHeldAlert(eventId, "failed");
+      await pool.query(
+        `UPDATE alert_send_attempts SET attempted_at = current_timestamp WHERE alert_id = $1`,
+        [alertId],
+      );
+
+      let crossed = false;
+      const crossing = Object.create(pool) as Pool;
+      crossing.query = (async (text: string, values?: unknown[]) => {
+        const result = await pool.query(text as never, values as never);
+        if (!crossed && typeof text === "string" && text.includes("FROM alerts")) {
+          crossed = true;
+          await pool.query(
+            `UPDATE alert_send_attempts
+                SET attempted_at = current_timestamp - ($2 || ' hours')::interval
+              WHERE alert_id = $1`,
+            [alertId, PROVIDER_DEDUP_WINDOW_HOURS + 1],
+          );
+        }
+        return result;
+      }) as Pool["query"];
+
+      const health = await alertDeliveryHealth(crossing, eventId);
+
+      expect(crossed).toBe(true);
+      expect(health.failedDeliveries.length === 0 || health.reconciliationHolds.length === 0).toBe(
+        true,
+      );
+    });
+
     it("reaches the checklist an organizer actually reads", async () => {
       // Through the real delivery path: the provider never answers, the attempt stays open, and
       // the window closes on it. The count has to arrive on the surface the organizer uses, not
@@ -5029,6 +5143,43 @@ describe.skipIf(databaseUrl === "")("F-203 deadline alerts", () => {
       expect((await alertsOf(eventId))[0]?.status).toBe("cancelled");
     });
 
+    it("retires a held alert whose filing window has since shut", async () => {
+      // A HOLD IS ABOUT SENDING, NOT ABOUT EXISTING. An unresolved attempt stops a retry because a
+      // retry might be a second delivery — nothing about that reasoning applies to a cancellation,
+      // which delivers nothing. The predicate sat above the window check in both the scan and the
+      // claim, so once the window shut the row could no longer reach the path that retires it: it
+      // stayed pending forever and was reported as needing a human to reconcile it against a
+      // provider, about a deadline that can no longer be reminded at all.
+      const eventId = await createEvent(scenario("C"));
+      await schedulePastDue(eventId, [reminderOffsets[0] ?? 7]);
+      const [row] = await alertsOf(eventId);
+      const alertId = row?.id ?? "";
+      await pool.query(
+        `INSERT INTO alert_send_attempts (alert_id, idempotency_key, attempted_at)
+         VALUES ($1, $2, current_timestamp - ($3 || ' hours')::interval)`,
+        [alertId, alertId, PROVIDER_DEDUP_WINDOW_HOURS + 1],
+      );
+      await pool.query(
+        `UPDATE permit_plan_items SET latest_apply_date = current_date - 5
+          WHERE id IN (SELECT plan_item_id FROM checklist_items WHERE id = $1)`,
+        [row?.checklist_item_id],
+      );
+
+      const provider = fakeProvider();
+      const summary = await createAlertPoller({
+        database: pool,
+        senders: provider.senders,
+        jurisdiction: ruleset.jurisdiction,
+      }).tick();
+
+      // Retired, not delivered: the hold still refuses the send it was written to refuse.
+      expect(provider.attempts).toHaveLength(0);
+      expect((await alertsOf(eventId))[0]?.status).toBe("cancelled");
+      // And it stops being reported as something a person has to chase a provider about.
+      expect(summary.heldForReconciliation).toBe(0);
+      expect(await reconciliationHolds(pool, eventId)).toEqual([]);
+    });
+
     it("keeps a backoff when the same checklist is submitted twice", async () => {
       // Round 27's rule was right and its trigger was wrong. send_at is recomputed from the request
       // clock whenever the slot has already gone, so it differs on EVERY review of an overdue
@@ -5246,6 +5397,33 @@ describe("the day an alert is sent on", () => {
 });
 
 // The delivery adapters need no database: they are the seam between the poller and a provider.
+describe("migration 014's backfill exclusions", () => {
+  it("excludes exactly the error the unconfigured email sender records", async () => {
+    // THE DRIFT GUARD FOR A LITERAL THAT CANNOT BE IMPORTED. A merged migration has to keep
+    // meaning what it meant on the day it ran, so it carries the text rather than a reference to
+    // a constant a later PR could reword. This is what stops the two silently parting company:
+    // reword the sender and the backfill starts seeding rows it was written to skip.
+    const sql = vi.fn();
+    migration014({
+      sql,
+      createTable: vi.fn(),
+      createIndex: vi.fn(),
+      func: vi.fn(),
+    } as unknown as MigrationBuilder);
+    const recorded = await unconfiguredEmailSender()({
+      recipient: "organizer@example.test",
+      subject: "",
+      body: "",
+      idempotencyKey: "",
+    }).then(
+      () => "",
+      (error: Error) => error.message,
+    );
+
+    expect(String(sql.mock.calls[0]?.[0])).toContain(`<> $$${recorded}$$`);
+  });
+});
+
 describe("F-203 delivery channels (AC 5)", () => {
   const message: AlertMessage = {
     recipient: "organizer@example.test",

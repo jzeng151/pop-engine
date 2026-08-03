@@ -2063,6 +2063,7 @@ async function sendOne(
     // The event lock above is what makes this recheck meaningful rather than another race: it is
     // held before this reads, so what it reads is a state no review is midway through changing.
     // The lock supplies the safe point; the predicate is still needed to use it.
+    const today = todayInJurisdiction(jurisdiction, new Date());
     const { rows } = await client.query<DueAlertRow>(
       // The staleness check belongs HERE as well as in the scan, and for the same reason the due
       // predicate is re-asked here: the event edit this guards against can commit in the window
@@ -2076,7 +2077,16 @@ async function sendOne(
           -- RE-ASKED HERE for the same reason as everything else on this claim: an attempt can
           -- age past the dedup window between the scan and this, and the decision must be made
           -- where the alert is acted on.
-          AND NOT ${HAS_AN_UNRESOLVED_ATTEMPT}
+          --
+          -- A HOLD STOPS A SEND, NOT AN EXISTENCE. Written as a bare NOT, this predicate also
+          -- stopped the row from reaching the expiry decision below, so a held alert whose filing
+          -- window later shut could never be retired: it stayed pending and was reported as
+          -- needing a person to reconcile it against a provider, about a deadline that can no
+          -- longer be reminded at all. Nothing the hold protects is at risk on that path — a
+          -- cancellation delivers nothing and cannot duplicate anything — so a closed window is
+          -- let through to be retired, and the expiry check three statements down is what it
+          -- reaches. It cannot reach a send: that branch returns before one.
+          AND (NOT ${HAS_AN_UNRESOLVED_ATTEMPT} OR ${FILING_WINDOW_HAS_SHUT("$2")})
           -- RE-ASKED HERE, not inherited from the sweep at the top of the tick. See
           -- FILING_WINDOW_HAS_SHUT: the queue this row came from can run for the whole budget,
           -- so a tick that swept before local midnight could deliver a filing date that had since
@@ -2091,7 +2101,7 @@ async function sendOne(
           -- still open. Under FOR UPDATE that insert would wait for the send it is recording,
           -- which is the one thing it must not do.
         FOR NO KEY UPDATE SKIP LOCKED`,
-      [alertId],
+      [alertId, today],
     );
     const row = rows[0];
     if (row === undefined) {
@@ -2110,7 +2120,7 @@ async function sendOne(
     // revision no writer is midway through changing. One decision, one place, one lock.
     const { rows: expired } = await client.query(
       `SELECT 1 FROM alerts WHERE id = $1 AND ${FILING_WINDOW_HAS_SHUT("$2")}`,
-      [alertId, todayInJurisdiction(jurisdiction, new Date())],
+      [alertId, today],
     );
     if (expired[0] !== undefined) {
       // Cancelled rather than left pending, for round 19's reason: the scheduler will refuse to
@@ -2202,6 +2212,10 @@ export function createAlertPoller(dependencies: {
   let stopped = false;
 
   const tick = async (): Promise<AlertTickSummary> => {
+    // One calendar day for the whole tick, so the scan, the hold count and every claim behind them
+    // agree about which windows have shut. `sendOne` re-reads it under the event lock, which is the
+    // safe point; this is what the two statements below need to ask the same question.
+    const today = todayInJurisdiction(jurisdiction, new Date());
     // Ids first, then one transaction per alert. One transaction for the whole batch would hold
     // every send under a single COMMIT, so a crash midway would re-send everything already
     // delivered in it; per row, only the row in flight is ever in doubt.
@@ -2234,7 +2248,9 @@ export function createAlertPoller(dependencies: {
           AND ${NOT_FROM_A_STALE_PLAN}
           -- Excluded from the scan as well as from the claim, so a row awaiting reconciliation
           -- does not consume a slot in every capped scan for as long as it goes unreconciled.
-          AND NOT ${HAS_AN_UNRESOLVED_ATTEMPT}
+          -- Except where its window has shut, for the reason the claim states: a held row still
+          -- has to be able to reach the one path that retires it, and that path sends nothing.
+          AND (NOT ${HAS_AN_UNRESOLVED_ATTEMPT} OR ${FILING_WINDOW_HAS_SHUT("$1")})
         -- SAME-INSTANT ROWS ARE ORDERED BY WHAT DEPENDS ON WHAT, not by uuid. A gated window
         -- exactly one reminder offset wide puts the dependency alert and the filing reminder on the
         -- same send_at, and the tiebreak then fell through to id, so which one an organizer saw
@@ -2286,6 +2302,7 @@ export function createAlertPoller(dependencies: {
                  send_at,
                  CASE alert_type WHEN 'dependency_unlocked' THEN 0 ELSE 1 END, id
         LIMIT ${MAX_ALERTS_PER_TICK}`,
+      [today],
     );
     const scanWasFull = rows.length === MAX_ALERTS_PER_TICK;
     if (scanWasFull) {
@@ -2307,12 +2324,19 @@ export function createAlertPoller(dependencies: {
     // count without the predicate warned about every obsolete row on every tick for as long as an
     // organizer took to regenerate, which is both a false alarm and the way a genuine hold gets
     // buried.
+    //
+    // A SHUT WINDOW IS THE OTHER THING THE PRODUCT RETIRES ITSELF, so it is excluded here for the
+    // same reason staleness is. This tick is about to cancel that row rather than leave it for a
+    // person, and warning that it needs reconciling in the same pass that retires it is the false
+    // alarm the staleness predicate was added to stop.
     const { rows: held } = await database.query<{ id: string }>(
       `SELECT id FROM alerts
         WHERE status IN ('pending', 'failed')
           AND send_at <= current_timestamp
           AND ${NOT_FROM_A_STALE_PLAN}
+          AND NOT ${FILING_WINDOW_HAS_SHUT("$1")}
           AND ${HAS_AN_UNRESOLVED_ATTEMPT}`,
+      [today],
     );
     if (held.length > 0) {
       // Ids only. The row's recipient is contact data and does not go in a log (AGENTS.md).
@@ -2799,27 +2823,7 @@ export async function failedDeliveries(
   database: Queryable,
   eventId: string,
 ): Promise<FailedDelivery[]> {
-  const { rows } = await database.query<{
-    channel: AlertChannel;
-    count: number;
-    held: boolean | null;
-  }>(
-    `SELECT channel, count(*)::int AS count,
-            bool_or(NOT (${NOT_FROM_A_STALE_PLAN})) AS held
-       FROM alerts
-      WHERE event_id = $1
-        AND status = 'failed'
-        AND coalesce(payload->>'test', 'false') <> 'true'
-        AND NOT (${HAS_AN_UNRESOLVED_ATTEMPT} AND ${NOT_FROM_A_STALE_PLAN})
-      GROUP BY channel
-      ORDER BY channel`,
-    [eventId],
-  );
-  return rows.map((row) => ({
-    channel: row.channel,
-    failedCount: row.count,
-    heldForReview: row.held === true,
-  }));
+  return (await alertDeliveryHealth(database, eventId)).failedDeliveries;
 }
 
 /**
@@ -2857,19 +2861,73 @@ export async function reconciliationHolds(
   database: Queryable,
   eventId: string,
 ): Promise<ReconciliationHold[]> {
-  const { rows } = await database.query<{ channel: AlertChannel; count: number }>(
-    `SELECT channel, count(*)::int AS count
+  return (await alertDeliveryHealth(database, eventId)).reconciliationHolds;
+}
+
+/**
+ * Both alert-delivery notices an organizer reads, classified in ONE statement.
+ *
+ * THE TWO ARE ONE QUESTION ASKED TWICE, and asking it twice is what let them contradict each other.
+ * "Still being retried" and "stopped until a person checks with the provider" are complementary by
+ * construction: the same predicate decides which side a row falls on. But the predicate turns on
+ * how OLD an attempt is, so it flips with the passage of time — and two pool queries are two
+ * autocommit snapshots with real time between them. An alert crossing the dedup cutoff in that gap
+ * was counted as a failure by the first and as a hold by the second, so the checklist arrived
+ * carrying both notices about one row: PopEngine keeps retrying this, and PopEngine has stopped
+ * retrying this. The page holds that until it is reloaded.
+ *
+ * One statement cannot disagree with itself, so the classification happens once, over one snapshot,
+ * and the two projections are taken from it. The exported pair above are kept as the narrow reads
+ * for callers that want only one of them; neither restates the predicate.
+ */
+export async function alertDeliveryHealth(
+  database: Queryable,
+  eventId: string,
+): Promise<{
+  readonly failedDeliveries: FailedDelivery[];
+  readonly reconciliationHolds: ReconciliationHold[];
+}> {
+  const { rows } = await database.query<{
+    channel: AlertChannel;
+    failed_count: number;
+    held_for_review: boolean | null;
+    hold_count: number;
+  }>(
+    `SELECT channel,
+            count(*) FILTER (
+              WHERE status = 'failed'
+                AND NOT (${HAS_AN_UNRESOLVED_ATTEMPT} AND ${NOT_FROM_A_STALE_PLAN})
+            )::int AS failed_count,
+            bool_or(NOT (${NOT_FROM_A_STALE_PLAN})) FILTER (
+              WHERE status = 'failed'
+                AND NOT (${HAS_AN_UNRESOLVED_ATTEMPT} AND ${NOT_FROM_A_STALE_PLAN})
+            ) AS held_for_review,
+            count(*) FILTER (
+              WHERE ${NOT_FROM_A_STALE_PLAN} AND ${HAS_AN_UNRESOLVED_ATTEMPT}
+            )::int AS hold_count
        FROM alerts
       WHERE event_id = $1
         AND status IN ('pending', 'failed')
         AND coalesce(payload->>'test', 'false') <> 'true'
-        AND ${NOT_FROM_A_STALE_PLAN}
-        AND ${HAS_AN_UNRESOLVED_ATTEMPT}
       GROUP BY channel
       ORDER BY channel`,
     [eventId],
   );
-  return rows.map((row) => ({ channel: row.channel, heldCount: row.count }));
+  return {
+    // Never zero: absent instead, which is what both notices' "empty means nothing to say" relies
+    // on. The row is now per channel rather than per classification, so a channel can qualify for
+    // one count and not the other.
+    failedDeliveries: rows
+      .filter((row) => row.failed_count > 0)
+      .map((row) => ({
+        channel: row.channel,
+        failedCount: row.failed_count,
+        heldForReview: row.held_for_review === true,
+      })),
+    reconciliationHolds: rows
+      .filter((row) => row.hold_count > 0)
+      .map((row) => ({ channel: row.channel, heldCount: row.hold_count })),
+  };
 }
 
 export type AlertView = {
