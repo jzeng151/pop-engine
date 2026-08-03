@@ -19,7 +19,8 @@
 
 import { createHash, randomUUID } from "node:crypto";
 import { Router, type NextFunction, type Request, type Response } from "express";
-import type { Pool, PoolClient, QueryResult, QueryResultRow } from "pg";
+import { Pool } from "pg";
+import type { PoolClient, QueryResult, QueryResultRow } from "pg";
 import { CONFIRM_WITH_AGENCY, DEPENDENCY_SEQUENCING_BINDINGS } from "@pop-engine/engine";
 import type { Deadline, Disposition, VerificationStatus } from "@pop-engine/engine";
 import {
@@ -262,7 +263,14 @@ const NOT_FROM_A_STALE_PLAN = `NOT EXISTS (
           AND (alerts.payload->>'event_revision')::int < plan_level_event.revision_counter
      )`;
 
-const SEND_CONCURRENCY = 8;
+/**
+ * How many alerts one tick hands to a provider at once.
+ *
+ * Exported because the budget arithmetic is checked against it. The check used to read the poller's
+ * pool size instead, which was the same number until the pool was resized and then quietly said
+ * sixteen waves where the poller runs eight.
+ */
+export const SEND_CONCURRENCY = 8;
 /**
  * How long a tick waits between re-trying alerts a writer's lock made it skip, and for how long.
  *
@@ -336,17 +344,8 @@ export const MAX_ALERTS_PER_TICK = Math.floor(
     PROVIDER_TIMEOUT_MS,
 );
 
-/**
- * What the poller's own pool has to hold: every concurrent send, the second connection each one
- * borrows to record its attempt, and the scan that feeds them.
- *
- * TWO PER SEND, because the attempt-intent write has to commit while the sending transaction is
- * still open and therefore cannot share its connection. A pool sized for one per send would have
- * every worker holding a connection and waiting for a free one to record its intent, which turns
- * eight concurrent sends into one at a time — the throughput arithmetic above assumes otherwise.
- * The second connection is held for a single INSERT, not for the send.
- */
-export const ALERT_POLLER_CONNECTIONS = SEND_CONCURRENCY * 2 + 1;
+/** What the poller's own pool has to hold: every concurrent send, plus the scan that feeds them. */
+export const ALERT_POLLER_CONNECTIONS = SEND_CONCURRENCY + 1;
 
 /**
  * How long the email provider honours a repeated `Idempotency-Key`, per Resend's published
@@ -1737,6 +1736,55 @@ type DueAlertRow = {
 };
 
 /**
+ * Where the attempt-intent write gets its connection, which must not be the pool the send already
+ * holds one from.
+ *
+ * A SEND HOLDS ONE CONNECTION AND NEEDS A SECOND, so taking both from one pool deadlocks it: as
+ * soon as concurrent sends fill the pool, every one of them holds a client and waits for another,
+ * and none can release what it holds. The poller's own pool could be oversized around that; the
+ * alerts router cannot, because `POST /events/:id/alerts/test` runs on the API's shared pool and
+ * would take the whole API down with it rather than only itself.
+ *
+ * So intent writes have a pool of their own, derived from the source pool's own connection
+ * settings. It can never be the side that starves: a connection is held for one INSERT and
+ * released, never across a provider call.
+ *
+ * ONE PER DATABASE RATHER THAN PER POOL, because the scarce resource is the server's connection
+ * limit and not the pool object. The api already points two pools at the same database, and giving
+ * each of them a writer would reserve twice the connections for a write that is never the
+ * bottleneck.
+ */
+const attemptWriters = new Map<string, Pool>();
+
+/** What makes two pools the same database, so they can share one writer. */
+function connectionTarget(options: Pool["options"]): string {
+  return JSON.stringify([
+    options.connectionString ?? null,
+    options.host ?? null,
+    options.port ?? null,
+    options.database ?? null,
+    options.user ?? null,
+  ]);
+}
+
+function attemptWriterFor(database: Pool): Pool {
+  const target = connectionTarget(database.options);
+  const existing = attemptWriters.get(target);
+  if (existing !== undefined) return existing;
+  const writer = new Pool({
+    ...database.options,
+    // Every send can be recording its intent at once, because none of them may wait on another's
+    // provider call to reach the provider at all.
+    max: SEND_CONCURRENCY,
+    // Nothing owns this pool's lifetime, since it is derived from another pool rather than built
+    // by a composition root that would close it, so it must not be what keeps a process alive.
+    allowExitOnIdle: true,
+  });
+  attemptWriters.set(target, writer);
+  return writer;
+}
+
+/**
  * Record that this alert is ABOUT to be handed to a provider, in a transaction of its own.
  *
  * ITS OWN CONNECTION, which is the mechanical heart of issue #166. The point of the record is to
@@ -1752,7 +1800,7 @@ async function recordAttemptIntent(
   database: Pool,
   row: DueAlertRow,
 ): Promise<string | null> {
-  const client = await database.connect();
+  const client = await attemptWriterFor(database).connect();
   try {
     const { rows } = await client.query<{ id: string }>(
       `INSERT INTO alert_send_attempts (alert_id, idempotency_key) VALUES ($1, $2) RETURNING id`,

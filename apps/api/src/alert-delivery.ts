@@ -38,14 +38,15 @@ export class AlertDeliveryError extends Error {
   /**
    * Whether the provider actually told us what it did with the message.
    *
-   * A refusal and an unreachable host are answers: no message left. A request that timed out is
-   * not — the provider may have accepted it and simply not said so before the socket was abandoned.
-   * That distinction is what `alerts.ts` needs to decide whether a retry past the provider's dedup
-   * window would be a second delivery or a first one, so it is recorded rather than inferred from
-   * the message text.
+   * A refusal is an answer: the provider said what it did. A connection that was never established
+   * is as good as one, because nothing was handed over. Anything in between (a timeout, a socket
+   * that died mid-request) is not: the provider may have accepted the message and simply not said
+   * so. That distinction is what `alerts.ts` needs to decide whether a retry past the provider's
+   * dedup window would be a second delivery or a first one, so it is recorded rather than inferred
+   * from the message text.
    *
-   * True by default: every existing throw site knows what happened, and the one that does not says
-   * so explicitly below.
+   * True by default: every throw site that knows nothing was delivered leaves it alone, and the
+   * transport path below, which is the one that cannot always tell, says so explicitly.
    */
   readonly outcomeObserved: boolean;
 
@@ -71,6 +72,31 @@ export type AlertSenders = Readonly<Record<AlertChannel, AlertSender>>;
  * and the next tick retries it, which is the path the spec's provider-outage edge case describes.
  */
 export const PROVIDER_TIMEOUT_MS = 10_000;
+
+/**
+ * Transport failures that PROVE the request never reached the provider.
+ *
+ * All three are failures of connection establishment: the name did not resolve, or the host
+ * refused the socket. Nothing was written, so nothing can be in flight, and the attempt is closed
+ * and the alert goes on being retried for as long as the outage lasts (spec edge case).
+ *
+ * A LIST RATHER THAN A "NOT A TIMEOUT" TEST, and that is the whole correction. `ECONNRESET` is the
+ * counter-example: it can arrive after the request body was written and Resend accepted it, so the
+ * provider may be holding a message this side will never hear about. Calling that "nothing was
+ * delivered" closes the attempt, and a closed attempt is retried past the 24-hour dedup window,
+ * which is the second delivery the attempt record exists to prevent. So proof is required to
+ * resolve an attempt, and everything unproven stays open.
+ */
+const PROVEN_BEFORE_HANDOFF = new Set(["ENOTFOUND", "EAI_AGAIN", "ECONNREFUSED"]);
+
+/** `fetch` wraps a transport failure, so the errno naming it sits on the cause chain. */
+function failedBeforeHandoff(error: unknown): boolean {
+  for (let link: unknown = error; link instanceof Error; link = link.cause) {
+    const { code } = link as { code?: unknown };
+    if (typeof code === "string" && PROVEN_BEFORE_HANDOFF.has(code)) return true;
+  }
+  return false;
+}
 
 /**
  * Email via Resend's HTTP API (BASELINE.md provider baseline; live in the demo).
@@ -117,9 +143,9 @@ export function createResendEmailSender(settings: {
         timedOut
           ? `email provider did not respond within ${timeoutMs}ms`
           : `email provider unreachable: ${error instanceof Error ? error.message : "unknown error"}`,
-        // A timeout is the one failure this side cannot read as "nothing was delivered": the
-        // request was accepted by the socket and abandoned without an answer.
-        { outcomeObserved: !timedOut },
+        // Resolved only for a failure that proves the request never left. A timeout does not, and
+        // neither does a connection that died after the body was written.
+        { outcomeObserved: failedBeforeHandoff(error) },
       );
     }
     // THE BODY IS RELEASED ON BOTH PATHS, and the throwing one is why this is a comment rather

@@ -49,6 +49,7 @@ import {
   MAX_ALERTS_PER_TICK,
   POLL_INTERVAL_MS,
   PROVIDER_DEDUP_WINDOW_HOURS,
+  SEND_CONCURRENCY,
   TICK_BUDGET_MS,
   type AlertScheduler,
 } from "./alerts";
@@ -2751,6 +2752,43 @@ describe.skipIf(databaseUrl === "")("F-203 deadline alerts", () => {
       expect(response.body.alert.recipient).toBeUndefined();
     });
 
+    it("answers on a pool with no second connection for the attempt-intent write", async () => {
+      // A LIVENESS TEST, not a sizing one. The send holds one client for as long as the provider
+      // takes, and the attempt record has to commit while that transaction is still open, so it
+      // needs a second connection. Drawn from the same pool, concurrent test sends each hold one
+      // and wait for another, none can release the one it holds, and the endpoint stops answering.
+      // On the API's shared pool, which the poller's connection count does not size.
+      //
+      // A pool of one is that deadlock with no timing to arrange: either the intent has somewhere
+      // else to be written or this request never comes back.
+      const eventId = await createEvent(scenario("C"));
+      const provider = fakeProvider();
+      const oneConnection = new Pool({ connectionString: databaseUrl, max: 1 });
+
+      try {
+        const response = await request(
+          createApp({
+            database: pool,
+            intakeContract,
+            today: () => FIXTURE_TODAY,
+            alerts: {
+              jurisdiction: ruleset.jurisdiction,
+              database: oneConnection,
+              senders: provider.senders,
+            },
+          }),
+        )
+          .post(`/api/events/${eventId}/alerts/test`)
+          .send({ channel: "email", recipient: "organizer@example.test" });
+
+        expect(response.status).toBe(201);
+        expect(response.body.alert.status).toBe("sent");
+        expect(provider.delivered).toHaveLength(1);
+      } finally {
+        await oneConnection.end();
+      }
+    });
+
     it("reports success when the poller delivered the test row first", async () => {
       // The test row is written due immediately, so the poller can claim it in the gap before the
       // endpoint sends it. The endpoint's own claim then returns nothing out of SKIP LOCKED — not
@@ -3929,8 +3967,13 @@ describe.skipIf(databaseUrl === "")("F-203 deadline alerts", () => {
       // What must hold is that a full first pass, at the provider's worst case, fits inside what
       // REMAINS of the bound. This is that sentence in milliseconds, and it fails for any cap that
       // breaks it rather than for one particular arithmetic.
-      const concurrency = ALERT_POLLER_CONNECTIONS - 1;
-      const worstCaseFirstPassMs = Math.ceil(MAX_ALERTS_PER_TICK / concurrency) * PROVIDER_TIMEOUT_MS;
+      //
+      // READ FROM THE SEND CONCURRENCY, not from the pool size. Those were the same number until
+      // the pool was resized, and then this assertion silently doubled the concurrency it was
+      // checking against (sixteen waves where the poller runs eight), so a scan-cap change that
+      // broke the budget would have left it green.
+      const worstCaseFirstPassMs =
+        Math.ceil(MAX_ALERTS_PER_TICK / SEND_CONCURRENCY) * PROVIDER_TIMEOUT_MS;
 
       expect(worstCaseFirstPassMs).toBeLessThanOrEqual(DELIVERY_BOUND_MS - POLL_INTERVAL_MS);
       // AND INSIDE THE BUDGET THE TICK ACTUALLY HAS. Two bounds, and this is the tighter one today.
@@ -3938,7 +3981,10 @@ describe.skipIf(databaseUrl === "")("F-203 deadline alerts", () => {
       // fresh alerts queue behind rows the previous pass already had its turn on.
       expect(worstCaseFirstPassMs).toBeLessThanOrEqual(TICK_BUDGET_MS);
       // And it is not trivially small: a cap of nothing would satisfy the lines above.
-      expect(MAX_ALERTS_PER_TICK).toBeGreaterThanOrEqual(concurrency);
+      expect(MAX_ALERTS_PER_TICK).toBeGreaterThanOrEqual(SEND_CONCURRENCY);
+      // The pool still has to hold every send at once plus the scan that feeds them. Asserted
+      // here because the arithmetic above no longer reads it and would not notice it shrinking.
+      expect(ALERT_POLLER_CONNECTIONS).toBeGreaterThan(SEND_CONCURRENCY);
     });
 
     it("delivers more than one pass worth without waiting an interval", async () => {
@@ -4790,6 +4836,65 @@ describe("F-203 delivery channels (AC 5)", () => {
     });
 
     await expect(sender(message)).rejects.toThrow("email provider unreachable: socket hang up");
+  });
+
+  /** What `fetch` throws for a transport failure: a wrapper whose cause carries the errno. */
+  const transportFailure = (code: string, detail: string) =>
+    (async () => {
+      throw new TypeError("fetch failed", {
+        cause: Object.assign(new Error(detail), { code }),
+      });
+    }) as unknown as typeof globalThis.fetch;
+
+  it("leaves a connection that died mid-request unresolved rather than calling it an outage", async () => {
+    // THE CASE THAT DEFEATS ISSUE #166'S OWN FIX. A reset can arrive after the request body was
+    // written and the provider accepted it, so a message may be on its way that this side will
+    // never hear about. Reading that as "nothing was delivered" closes the attempt, and a closed
+    // attempt goes on being retried past the provider's dedup window, which is the second
+    // delivery to the same person that the attempt record exists to prevent.
+    const sender = createResendEmailSender({
+      apiKey: "re_test",
+      from: "PopEngine <noreply@example.test>",
+      fetch: transportFailure("ECONNRESET", "read ECONNRESET"),
+    });
+
+    const error = await sender(message).catch((thrown: unknown) => thrown);
+    expect(error).toBeInstanceOf(AlertDeliveryError);
+    expect((error as AlertDeliveryError).outcomeObserved).toBe(false);
+  });
+
+  it("resolves the attempt only for a failure that proves the request never left", async () => {
+    // The other half, and why this is a list rather than a "not a timeout" test: a name that does
+    // not resolve and a socket that is refused both happen before anything is handed over, so
+    // nothing can be in flight. Those keep the spec's outage behaviour: retried for as long as
+    // the outage lasts, nothing held, nothing lost.
+    for (const code of ["ENOTFOUND", "EAI_AGAIN", "ECONNREFUSED"]) {
+      const sender = createResendEmailSender({
+        apiKey: "re_test",
+        from: "PopEngine <noreply@example.test>",
+        fetch: transportFailure(code, `connect ${code} api.resend.com`),
+      });
+
+      const error = await sender(message).catch((thrown: unknown) => thrown);
+      expect(error).toBeInstanceOf(AlertDeliveryError);
+      expect((error as AlertDeliveryError).outcomeObserved).toBe(true);
+    }
+  });
+
+  it("leaves a transport failure it cannot classify unresolved", async () => {
+    // The default direction is the safe one. An unrecognised throw says nothing about whether the
+    // request reached the provider, and holding an alert for a human to reconcile is recoverable
+    // where a duplicate delivery is not.
+    const sender = createResendEmailSender({
+      apiKey: "re_test",
+      from: "PopEngine <noreply@example.test>",
+      fetch: (async () => {
+        throw new Error("socket hang up");
+      }) as unknown as typeof globalThis.fetch,
+    });
+
+    const error = await sender(message).catch((thrown: unknown) => thrown);
+    expect((error as AlertDeliveryError).outcomeObserved).toBe(false);
   });
 
   it("fails rather than simulating when email is not configured", async () => {
