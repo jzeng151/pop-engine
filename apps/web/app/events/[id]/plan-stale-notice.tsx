@@ -93,11 +93,20 @@ export function PlanStaleNotice({ apiBaseUrl, eventId }: { apiBaseUrl: string; e
 
   useEffect(() => {
     let mounted = true;
+    // Every async result below is about the event that was current when its request went out.
+    // `mounted` alone cannot say that: React keeps this instance across an eventId change and runs
+    // the cleanup AFTER the new id has committed, so a slow read for the previous event lands with
+    // `mounted` still true and installs that event's warning over the new one. The button it leaves
+    // enabled then posts against the new event and stores an immutable plan (AD-7) nobody asked
+    // for. `regenerate` already compares identity this way; this is the same rule applied to the
+    // reads, so no async path in this component is guarded on liveness alone.
+    const requestedEventId = eventId;
+    const stillDescribed = () => mounted && describedEventId.current === requestedEventId;
 
     void loadEvent(apiBaseUrl, eventId).then(async (result) => {
       // An event that cannot be read says nothing about its plan. Rendering the warning would
       // assert an edit nobody observed; rendering the cleared state would assert the opposite.
-      if (!mounted || !result.ok || !result.loaded.plan_stale) return;
+      if (!stillDescribed() || !result.ok || !result.loaded.plan_stale) return;
       setStale(true);
 
       // Only a stale plan can be regenerated, so the two reads the guard needs are made only once
@@ -106,7 +115,7 @@ export function PlanStaleNotice({ apiBaseUrl, eventId }: { apiBaseUrl: string; e
         loadPlan(apiBaseUrl, eventId),
         loadRulesMeta(apiBaseUrl),
       ]);
-      if (!mounted) return;
+      if (!stillDescribed()) return;
       setRegeneration(regenerationGuard(plan, meta));
     });
 
@@ -158,14 +167,19 @@ export function PlanStaleNotice({ apiBaseUrl, eventId }: { apiBaseUrl: string; e
 
   if (!stale) {
     return (
-      <p className="riso-overview__notice" role="status">
+      <p aria-live="polite" className="riso-overview__notice" role="status">
         Plan regenerated for revision {regeneratedRevision}.
       </p>
     );
   }
 
   return (
-    <section className="riso-overview__notice riso-overview__notice--stale">
+    // Inserted only once the event read resolves, so a screen-reader user who lands here after an
+    // edit is never moved to it. The intake form's `.intake__saved` carried aria-live="polite" for
+    // exactly this state and that behaviour was lost when the affordance moved to the overview;
+    // F-705 Acceptance Criterion 7 and the design system both require this surface to be announced.
+    // Polite rather than assertive: the plan being out of date is not an interruption.
+    <section aria-live="polite" className="riso-overview__notice riso-overview__notice--stale">
       <p>This event has been edited since its plan was generated, so the plan is out of date.</p>
       {regeneration.status === "offered" && unconfirmed === null && (
         <button disabled={regenerating} onClick={() => void regenerate()} type="button">

@@ -373,3 +373,50 @@ describe("the stale-plan notice on the event overview", () => {
     expect(screen.queryByRole("button", { name: "Regenerate plan" })).toBeNull();
   });
 });
+
+// Both added 2026-08-03 from the #232 review.
+describe("event identity and announcement", () => {
+  // What this test DOES prove: a read for a previous event, landing after the component has been
+  // handed another one, never installs the previous event's warning.
+  //
+  // What it does NOT prove, stated because the distinction decides whether the identity guard in
+  // the effect is load-bearing: the review described a narrower ordering, where the read settles
+  // after the new id commits but BEFORE React runs the passive-effect cleanup. Under this file's
+  // scheduling the cleanup has already set `mounted` false by the time the read resolves, so this
+  // case passes with or without the identity comparison — verified by reverting the guard and
+  // watching it stay green. The guard is kept as defence against that ordering, which jsdom cannot
+  // deterministically reproduce here, and not because this test establishes it.
+  it("ignores a read that lands after the component is handed another event", async () => {
+    let releaseFirst: (r: Response) => void = () => {};
+    fetchMock.mockImplementationOnce(
+      () => new Promise<Response>((resolve) => (releaseFirst = resolve)),
+    );
+
+    const view = render(<PlanStaleNotice apiBaseUrl="https://api.example.com" eventId="event-1" />);
+
+    // Second event is not stale, and its read settles first.
+    fetchMock.mockResolvedValue(eventResponse(false));
+    view.rerender(<PlanStaleNotice apiBaseUrl="https://api.example.com" eventId="event-2" />);
+    await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
+
+    // Now the FIRST event's read arrives, saying it was stale.
+    releaseFirst(eventResponse(true));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(screen.queryByRole("button", { name: "Regenerate plan" })).toBeNull();
+    expect(screen.queryByText(/edited since its plan was generated/)).toBeNull();
+  });
+
+  // Regression: the intake form rendered this asynchronous state inside `.intake__saved`, which
+  // carried aria-live="polite". Moving the affordance to the overview dropped that.
+  it("announces the stale warning, which appears only after the read resolves", async () => {
+    fetchMock.mockResolvedValue(eventResponse(true));
+
+    render(<PlanStaleNotice apiBaseUrl="https://api.example.com" eventId="event-9" />);
+
+    const warning = await screen.findByText(/edited since its plan was generated/);
+    const region = warning.closest("[aria-live]");
+    expect(region).not.toBeNull();
+    expect(region?.getAttribute("aria-live")).toBe("polite");
+  });
+});
