@@ -30,7 +30,7 @@ describe("migration 013", () => {
 });
 
 describe.runIf(databaseUrl.length > 0)("migration 013 correction after migration 012", () => {
-  it("stales only the latest plan whose snapshot predates F-110", async () => {
+  it("stales every latest plan whose snapshot is missing either F-110 key", async () => {
     const client = new Client({ connectionString: databaseUrl });
     await client.connect();
     try {
@@ -48,6 +48,8 @@ describe.runIf(databaseUrl.length > 0)("migration 013 correction after migration
         INSERT INTO events VALUES
           ('legacy', 'draft', 'private_venue', 75, 'unknown', 'unknown', 4,
            '2026-01-01T00:00:00Z'),
+          ('partial', 'draft', 'private_venue', 75, 'unknown', 'unknown', 4,
+           '2026-01-01T00:00:00Z'),
           ('current', 'draft', 'private_venue', 75, 'unknown', 'unknown', 4,
            '2026-01-01T00:00:00Z');
 
@@ -60,6 +62,8 @@ describe.runIf(databaseUrl.length > 0)("migration 013 correction after migration
         );
         INSERT INTO permit_plans VALUES
           ('legacy-plan', 'legacy', 4, '{}', '2026-01-02T00:00:00Z'),
+          ('partial-plan', 'partial', 4,
+           '{"venue_paco_covers_exact_event":"unknown"}', '2026-01-02T00:00:00Z'),
           ('current-old', 'current', 4, '{}', '2026-01-02T00:00:00Z'),
           ('current-new', 'current', 4,
            '{"venue_paco_covers_exact_event":"unknown",
@@ -98,6 +102,13 @@ describe.runIf(databaseUrl.length > 0)("migration 013 correction after migration
         },
         {
           id: "legacy",
+          revision_counter: 5,
+          timestamp_advanced: true,
+          plan_stale: true,
+        },
+        // The predicate is NOT (has_paco AND has_fdny), so one key present is still a miss.
+        {
+          id: "partial",
           revision_counter: 5,
           timestamp_advanced: true,
           plan_stale: true,
