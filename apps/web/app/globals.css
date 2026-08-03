@@ -751,7 +751,7 @@ fieldset.intake__question > legend {
 .promote__secondary,
 .guests__cancel,
 .check-item__button,
-.intake__stale button {
+.riso-overview__notice button {
   font: inherit;
   font-family: var(--pe-font-body);
   font-weight: 600;
@@ -773,7 +773,7 @@ fieldset.intake__question > legend {
 .promote__secondary:hover:not([disabled]),
 .guests__cancel:hover:not([disabled]),
 .check-item__button:hover:not([disabled]),
-.intake__stale button:hover:not([disabled]) {
+.riso-overview__notice button:hover:not([disabled]) {
   background: var(--pe-paper-deep);
   border-color: var(--pe-amber);
   color: var(--pe-ink);
@@ -783,7 +783,7 @@ fieldset.intake__question > legend {
 .promote__secondary:focus-visible,
 .guests__cancel:focus-visible,
 .check-item__button:focus-visible,
-.intake__stale button:focus-visible {
+.riso-overview__notice button:focus-visible {
   outline: 2px solid var(--pe-amber);
   outline-offset: 2px;
   box-shadow: 0 0 0 3px var(--pe-amber-soft);
@@ -1719,6 +1719,30 @@ textarea:focus-visible {
   margin: 0;
   font-size: clamp(1.05rem, 2.4vw, 1.35rem);
   line-height: 1.45;
+}
+
+/* The stale-plan notice and its regeneration control (F-101 AC 8), which live on this page since
+   the intake save began redirecting here. The button treatment is shared with the other secondary
+   buttons above, so the 2.75rem target and the focus outline are the same ones everywhere. */
+.riso-overview__notice {
+  display: grid;
+  justify-items: start;
+  gap: 0.75rem;
+  margin: 0;
+  max-width: 42rem;
+  color: var(--pe-ink);
+}
+
+.riso-overview__notice p {
+  margin: 0;
+}
+
+.riso-overview__notice--stale {
+  padding: 1rem 1.1rem;
+  background: var(--pe-amber-wash);
+  border: 1.5px solid var(--pe-amber);
+  border-left-width: 0.3rem;
+  border-radius: var(--pe-radius);
 }
 
 .riso-overview__sections {
