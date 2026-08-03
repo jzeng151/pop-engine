@@ -12,17 +12,8 @@ import { readFile } from "node:fs/promises";
 import { Pool } from "pg";
 import request from "supertest";
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
-import {
-  CONFIRM_WITH_AGENCY,
-  parseEngineRuleset,
-  parseIntakeContract,
-} from "@pop-engine/engine";
-import type {
-  Deadline,
-  EngineRuleset,
-  HolidayCalendar,
-  IntakeContract,
-} from "@pop-engine/engine";
+import { CONFIRM_WITH_AGENCY, parseEngineRuleset, parseIntakeContract } from "@pop-engine/engine";
+import type { Deadline, EngineRuleset, HolidayCalendar, IntakeContract } from "@pop-engine/engine";
 import {
   FIXTURE_TODAY,
   SCENARIO_INTAKE_FIXTURES,
@@ -682,7 +673,11 @@ describe.skipIf(databaseUrl === "")("F-203 deadline alerts", () => {
       // address while the first sat there already sent. That is a different attempt to one
       // destination, which is what AC 7 forbids in the words this PR gave it.
       const eventId = await createEvent(scenario("C"));
-      const atRisk = { verdict: "feasible_at_risk", minSlackDays: 9, latestApplyDate: dayFromToday(30) };
+      const atRisk = {
+        verdict: "feasible_at_risk",
+        minSlackDays: 9,
+        latestApplyDate: dayFromToday(30),
+      };
       const warn = async (options: Record<string, unknown>) => {
         const { planId } = await insertDuePlan(eventId, options);
         const client = await pool.connect();
@@ -700,9 +695,10 @@ describe.skipIf(databaseUrl === "")("F-203 deadline alerts", () => {
       const first = (await alertsOf(eventId)).filter((row) => row.alert_type === "slack_warning");
       expect(first).toHaveLength(1);
       // Sent, so a second row would be a second delivery rather than a rewrite of a pending one.
-      await pool.query("UPDATE alerts SET status = 'sent', sent_at = clock_timestamp() WHERE id = $1", [
-        first[0]?.id,
-      ]);
+      await pool.query(
+        "UPDATE alerts SET status = 'sent', sent_at = clock_timestamp() WHERE id = $1",
+        [first[0]?.id],
+      );
 
       // A new plan row, same event, same risk. Nothing an organizer would read as new.
       await warn(atRisk);
@@ -838,7 +834,9 @@ describe.skipIf(databaseUrl === "")("F-203 deadline alerts", () => {
         (await alertsOf(eventId)).find((row) => row.alert_type === "slack_warning")?.payload.body,
       );
       expect(body).toContain("Verification of your Sound Device Permit (NYPD): SOURCE CONFIRMED");
-      expect(body).toContain("Verification of your Special Event Permit (NYC Parks): RESEARCH REQUIRED");
+      expect(body).toContain(
+        "Verification of your Special Event Permit (NYC Parks): RESEARCH REQUIRED",
+      );
       expect(body).toContain("Special Event Permit (NYC Parks): confirm with agency");
       expect(body.split(CONFIRM_WITH_AGENCY)).toHaveLength(2);
     });
@@ -1311,7 +1309,11 @@ describe.skipIf(databaseUrl === "")("F-203 deadline alerts", () => {
       await schedulePastDue(eventId);
       const provider = fakeProvider();
 
-      const summary = await createAlertPoller({ database: pool, senders: provider.senders, jurisdiction: ruleset.jurisdiction }).tick();
+      const summary = await createAlertPoller({
+        database: pool,
+        senders: provider.senders,
+        jurisdiction: ruleset.jurisdiction,
+      }).tick();
 
       expect(summary.sent).toBeGreaterThanOrEqual(2);
       const rows = await alertsOf(eventId);
@@ -1328,7 +1330,11 @@ describe.skipIf(databaseUrl === "")("F-203 deadline alerts", () => {
       await schedulePastDue(eventId);
       const provider = fakeProvider();
       provider.fail = "email provider unreachable: socket hang up";
-      const poller = createAlertPoller({ database: pool, senders: provider.senders, jurisdiction: ruleset.jurisdiction });
+      const poller = createAlertPoller({
+        database: pool,
+        senders: provider.senders,
+        jurisdiction: ruleset.jurisdiction,
+      });
 
       const failedTick = await poller.tick();
       expect(failedTick.failed).toBeGreaterThanOrEqual(2);
@@ -1382,7 +1388,11 @@ describe.skipIf(databaseUrl === "")("F-203 deadline alerts", () => {
       expect((await alertsOf(eventId)).every((row) => row.status === "pending")).toBe(true);
       expect(provider.delivered).toHaveLength(1);
 
-      await createAlertPoller({ database: pool, senders: provider.senders, jurisdiction: ruleset.jurisdiction }).tick();
+      await createAlertPoller({
+        database: pool,
+        senders: provider.senders,
+        jurisdiction: ruleset.jurisdiction,
+      }).tick();
 
       expect((await alertsOf(eventId)).every((row) => row.status === "sent")).toBe(true);
       // Two attempts, one delivery: the repeated attempt carried the same key, and the provider
@@ -1768,7 +1778,11 @@ describe.skipIf(databaseUrl === "")("F-203 deadline alerts", () => {
       const eventId = await createEvent(scenario("C"));
       expect(await schedulePastDue(eventId, [1])).toBe(1);
       const provider = fakeProvider();
-      const poller = createAlertPoller({ database: pool, senders: provider.senders, jurisdiction: ruleset.jurisdiction });
+      const poller = createAlertPoller({
+        database: pool,
+        senders: provider.senders,
+        jurisdiction: ruleset.jurisdiction,
+      });
 
       await Promise.all([poller.tick(), poller.tick()]);
 
@@ -1800,7 +1814,11 @@ describe.skipIf(databaseUrl === "")("F-203 deadline alerts", () => {
       const provider = fakeProvider();
       provider.failFor = "dead@example.test";
 
-      await createAlertPoller({ database: pool, senders: provider.senders, jurisdiction: ruleset.jurisdiction }).tick();
+      await createAlertPoller({
+        database: pool,
+        senders: provider.senders,
+        jurisdiction: ruleset.jurisdiction,
+      }).tick();
 
       const fresh = (await alertsOf(eventId)).filter(
         (row) => row.recipient === "organizer@example.test",
@@ -1831,7 +1849,11 @@ describe.skipIf(databaseUrl === "")("F-203 deadline alerts", () => {
       };
 
       const startedAt = Date.now();
-      const summary = await createAlertPoller({ database: pool, senders: provider.senders, jurisdiction: ruleset.jurisdiction }).tick();
+      const summary = await createAlertPoller({
+        database: pool,
+        senders: provider.senders,
+        jurisdiction: ruleset.jurisdiction,
+      }).tick();
       const elapsed = Date.now() - startedAt;
 
       expect(summary.sent).toBe(events.length);
@@ -1858,7 +1880,11 @@ describe.skipIf(databaseUrl === "")("F-203 deadline alerts", () => {
       };
 
       const startedAt = Date.now();
-      const summary = await createAlertPoller({ database: pool, senders: provider.senders, jurisdiction: ruleset.jurisdiction }).tick();
+      const summary = await createAlertPoller({
+        database: pool,
+        senders: provider.senders,
+        jurisdiction: ruleset.jurisdiction,
+      }).tick();
       const elapsed = Date.now() - startedAt;
 
       expect(summary.sent).toBe(6);
@@ -1903,7 +1929,11 @@ describe.skipIf(databaseUrl === "")("F-203 deadline alerts", () => {
       const { rows } = await pool.query<{ now: Date }>("SELECT clock_timestamp() AS now");
       const beforeTick = rows[0]?.now as Date;
 
-      await createAlertPoller({ database: pool, senders: provider.senders, jurisdiction: ruleset.jurisdiction }).tick();
+      await createAlertPoller({
+        database: pool,
+        senders: provider.senders,
+        jurisdiction: ruleset.jurisdiction,
+      }).tick();
 
       const alert = (await alertsOf(eventId))[0];
       // `current_timestamp` is the transaction's start, which is before the send; the row would be
@@ -1922,7 +1952,11 @@ describe.skipIf(databaseUrl === "")("F-203 deadline alerts", () => {
       await schedulePastDue(dead, [7, 6, 5, 4]);
       const provider = fakeProvider();
       provider.failFor = "organizer@example.test";
-      const poller = createAlertPoller({ database: pool, senders: provider.senders, jurisdiction: ruleset.jurisdiction });
+      const poller = createAlertPoller({
+        database: pool,
+        senders: provider.senders,
+        jurisdiction: ruleset.jurisdiction,
+      });
 
       // Two passes: the first attempt, then the immediate retry a blip deserves.
       await poller.tick();
@@ -1949,7 +1983,11 @@ describe.skipIf(databaseUrl === "")("F-203 deadline alerts", () => {
       await materialize(eventId);
       const provider = fakeProvider();
 
-      await createAlertPoller({ database: pool, senders: provider.senders, jurisdiction: ruleset.jurisdiction }).tick();
+      await createAlertPoller({
+        database: pool,
+        senders: provider.senders,
+        jurisdiction: ruleset.jurisdiction,
+      }).tick();
 
       expect(provider.attempts).toHaveLength(0);
       expect((await alertsOf(eventId)).every((row) => row.status === "pending")).toBe(true);
@@ -2263,9 +2301,10 @@ describe.skipIf(databaseUrl === "")("F-203 deadline alerts", () => {
       await materialize(eventId, { contactEmail: "person@example.test" });
       const before = await alertsOf(eventId);
       expect(before.length).toBeGreaterThan(0);
-      await pool.query("UPDATE alerts SET status = 'sent', sent_at = clock_timestamp() WHERE event_id = $1", [
-        eventId,
-      ]);
+      await pool.query(
+        "UPDATE alerts SET status = 'sent', sent_at = clock_timestamp() WHERE event_id = $1",
+        [eventId],
+      );
 
       await materialize(eventId, { contactEmail: "person@EXAMPLE.TEST" });
 
@@ -2318,9 +2357,10 @@ describe.skipIf(databaseUrl === "")("F-203 deadline alerts", () => {
       await materialize(eventId, { contactPhone: "+12125550100" });
       const before = await alertsOf(eventId);
       expect(before.some((row) => row.channel === "sms")).toBe(true);
-      await pool.query("UPDATE alerts SET status = 'sent', sent_at = clock_timestamp() WHERE event_id = $1", [
-        eventId,
-      ]);
+      await pool.query(
+        "UPDATE alerts SET status = 'sent', sent_at = clock_timestamp() WHERE event_id = $1",
+        [eventId],
+      );
 
       // The same number, retyped the way a person writes one.
       await materialize(eventId, { contactPhone: "+1 (212) 555-0100" });
@@ -2330,9 +2370,11 @@ describe.skipIf(databaseUrl === "")("F-203 deadline alerts", () => {
       expect(after).toHaveLength(before.length);
       expect(after.every((row) => row.status === "sent")).toBe(true);
       // Stored canonically, so every later comparison agrees with this one.
-      expect(after.filter((row) => row.channel === "sms").every((row) => row.recipient === "12125550100")).toBe(
-        true,
-      );
+      expect(
+        after
+          .filter((row) => row.channel === "sms")
+          .every((row) => row.recipient === "12125550100"),
+      ).toBe(true);
     });
 
     it("keeps the evidence when a review changes nothing about the destination", async () => {
@@ -2450,7 +2492,11 @@ describe.skipIf(databaseUrl === "")("F-203 deadline alerts", () => {
       };
       await scheduleTo("typo@example.test");
       const provider = fakeProvider();
-      const poller = createAlertPoller({ database: pool, senders: provider.senders, jurisdiction: ruleset.jurisdiction });
+      const poller = createAlertPoller({
+        database: pool,
+        senders: provider.senders,
+        jurisdiction: ruleset.jurisdiction,
+      });
 
       await poller.tick();
       expect(provider.delivered.some((sent) => sent.recipient === "typo@example.test")).toBe(true);
@@ -2483,7 +2529,11 @@ describe.skipIf(databaseUrl === "")("F-203 deadline alerts", () => {
       await schedulePastDue(eventId, [reminderOffsets[0] ?? 7]);
       const provider = fakeProvider();
       provider.fail = "email provider unreachable: ECONNREFUSED";
-      const poller = createAlertPoller({ database: pool, senders: provider.senders, jurisdiction: ruleset.jurisdiction });
+      const poller = createAlertPoller({
+        database: pool,
+        senders: provider.senders,
+        jurisdiction: ruleset.jurisdiction,
+      });
 
       await poller.tick();
       await poller.tick();
@@ -2795,7 +2845,11 @@ describe.skipIf(databaseUrl === "")("F-203 deadline alerts", () => {
         return result;
       }) as Pool["query"];
 
-      await createAlertPoller({ jurisdiction: ruleset.jurisdiction, database: racing, senders: provider.senders }).tick();
+      await createAlertPoller({
+        jurisdiction: ruleset.jurisdiction,
+        database: racing,
+        senders: provider.senders,
+      }).tick();
 
       const after = (await alertsOf(eventId)).find(
         (row) => row.alert_type === "dependency_unlocked",
@@ -2831,7 +2885,11 @@ describe.skipIf(databaseUrl === "")("F-203 deadline alerts", () => {
         await review.query("BEGIN");
         await review.query("SELECT id FROM events WHERE id = $1 FOR UPDATE", [eventId]);
 
-        await createAlertPoller({ database: pool, senders: provider.senders, jurisdiction: ruleset.jurisdiction }).tick();
+        await createAlertPoller({
+          database: pool,
+          senders: provider.senders,
+          jurisdiction: ruleset.jurisdiction,
+        }).tick();
 
         // Nothing went out: the review owns the event, and the alerts it is about to reconcile are
         // not delivered out from under it.
@@ -2847,7 +2905,11 @@ describe.skipIf(databaseUrl === "")("F-203 deadline alerts", () => {
 
       expect((await alertsOf(eventId)).every((row) => row.status === "cancelled")).toBe(true);
       // And once the review is done the poller is free again, with nothing left to send.
-      await createAlertPoller({ database: pool, senders: provider.senders, jurisdiction: ruleset.jurisdiction }).tick();
+      await createAlertPoller({
+        database: pool,
+        senders: provider.senders,
+        jurisdiction: ruleset.jurisdiction,
+      }).tick();
       expect(provider.attempts).toHaveLength(0);
     });
 
@@ -2876,9 +2938,9 @@ describe.skipIf(databaseUrl === "")("F-203 deadline alerts", () => {
           reuseChecklistItemId: gated.checklistItemId,
         });
         await schedulerWith()(client, eventId, ungated.planId, contacts);
-        expect(
-          (await alertsOf(eventId)).find((row) => row.id === unlock?.id)?.status,
-        ).toBe("cancelled");
+        expect((await alertsOf(eventId)).find((row) => row.id === unlock?.id)?.status).toBe(
+          "cancelled",
+        );
 
         // And back: the gate returns, so the alert scheduled for it does too.
         const regated = await insertDuePlan(eventId, {
@@ -2969,7 +3031,11 @@ describe.skipIf(databaseUrl === "")("F-203 deadline alerts", () => {
         if (typeof text === "string" && text.includes("INSERT INTO alerts")) {
           // Exactly the race, made deterministic: the poller takes the row before the endpoint
           // gets to it, and delivers it.
-          await createAlertPoller({ database: pool, senders: provider.senders, jurisdiction: ruleset.jurisdiction }).tick();
+          await createAlertPoller({
+            database: pool,
+            senders: provider.senders,
+            jurisdiction: ruleset.jurisdiction,
+          }).tick();
         }
         return result;
       }) as Pool["query"];
@@ -2979,7 +3045,11 @@ describe.skipIf(databaseUrl === "")("F-203 deadline alerts", () => {
           database: pool,
           intakeContract,
           today: () => FIXTURE_TODAY,
-          alerts: { jurisdiction: ruleset.jurisdiction, database: racing, senders: provider.senders },
+          alerts: {
+            jurisdiction: ruleset.jurisdiction,
+            database: racing,
+            senders: provider.senders,
+          },
         }),
       )
         .post(`/api/events/${eventId}/alerts/test`)
@@ -3022,7 +3092,11 @@ describe.skipIf(databaseUrl === "")("F-203 deadline alerts", () => {
           database: pool,
           intakeContract,
           today: () => FIXTURE_TODAY,
-          alerts: { jurisdiction: ruleset.jurisdiction, database: claiming, senders: fakeProvider().senders },
+          alerts: {
+            jurisdiction: ruleset.jurisdiction,
+            database: claiming,
+            senders: fakeProvider().senders,
+          },
         }),
       )
         .post(`/api/events/${eventId}/alerts/test`)
@@ -3064,7 +3138,11 @@ describe.skipIf(databaseUrl === "")("F-203 deadline alerts", () => {
             database: pool,
             intakeContract,
             today: () => FIXTURE_TODAY,
-            alerts: { jurisdiction: ruleset.jurisdiction, database: inserting, senders: fakeProvider().senders },
+            alerts: {
+              jurisdiction: ruleset.jurisdiction,
+              database: inserting,
+              senders: fakeProvider().senders,
+            },
           }),
         )
           .post(`/api/events/${eventId}/alerts/test`)
@@ -3111,7 +3189,11 @@ describe.skipIf(databaseUrl === "")("F-203 deadline alerts", () => {
           database: pool,
           intakeContract,
           today: () => FIXTURE_TODAY,
-          alerts: { jurisdiction: ruleset.jurisdiction, database: claiming, senders: fakeProvider().senders },
+          alerts: {
+            jurisdiction: ruleset.jurisdiction,
+            database: claiming,
+            senders: fakeProvider().senders,
+          },
         }),
       )
         .post(`/api/events/${eventId}/alerts/test`)
@@ -3184,7 +3266,11 @@ describe.skipIf(databaseUrl === "")("F-203 deadline alerts", () => {
           database: pool,
           intakeContract,
           today: () => FIXTURE_TODAY,
-          alerts: { jurisdiction: ruleset.jurisdiction, database: racing, senders: failing.senders },
+          alerts: {
+            jurisdiction: ruleset.jurisdiction,
+            database: racing,
+            senders: failing.senders,
+          },
         }),
       )
         .post(`/api/events/${eventId}/alerts/test`)
@@ -3259,7 +3345,11 @@ describe.skipIf(databaseUrl === "")("F-203 deadline alerts", () => {
           database: pool,
           intakeContract,
           today: () => FIXTURE_TODAY,
-          alerts: { jurisdiction: ruleset.jurisdiction, database: failing, senders: fakeProvider().senders },
+          alerts: {
+            jurisdiction: ruleset.jurisdiction,
+            database: failing,
+            senders: fakeProvider().senders,
+          },
         }),
       )
         .post(`/api/events/${randomUUID()}/alerts/test`)
@@ -3311,7 +3401,11 @@ describe.skipIf(databaseUrl === "")("F-203 deadline alerts", () => {
       const provider = fakeProvider();
       provider.fail = "email provider rejected the send with status 550";
 
-      await createAlertPoller({ database: pool, senders: provider.senders, jurisdiction: ruleset.jurisdiction }).tick();
+      await createAlertPoller({
+        database: pool,
+        senders: provider.senders,
+        jurisdiction: ruleset.jurisdiction,
+      }).tick();
 
       const failures = await failedDeliveries(pool, eventId);
       expect(failures).toEqual([{ channel: "email", failedCount: 2, heldForReview: false }]);
@@ -3334,7 +3428,11 @@ describe.skipIf(databaseUrl === "")("F-203 deadline alerts", () => {
       await schedulePastDue(eventId, [1]);
       const provider = fakeProvider();
       provider.fail = "email provider unreachable: ECONNREFUSED";
-      const poller = createAlertPoller({ database: pool, senders: provider.senders, jurisdiction: ruleset.jurisdiction });
+      const poller = createAlertPoller({
+        database: pool,
+        senders: provider.senders,
+        jurisdiction: ruleset.jurisdiction,
+      });
       await poller.tick();
       expect(await failedDeliveries(pool, eventId)).toEqual([
         { channel: "email", failedCount: 1, heldForReview: false },
@@ -3453,7 +3551,11 @@ describe.skipIf(databaseUrl === "")("F-203 deadline alerts", () => {
       await schedulePastDue(eventId, [reminderOffsets[0] ?? 7]);
       const provider = fakeProvider();
       provider.fail = "email provider unreachable: ECONNREFUSED";
-      await createAlertPoller({ database: pool, senders: provider.senders, jurisdiction: ruleset.jurisdiction }).tick();
+      await createAlertPoller({
+        database: pool,
+        senders: provider.senders,
+        jurisdiction: ruleset.jurisdiction,
+      }).tick();
 
       expect(await failedDeliveries(pool, eventId)).toEqual([
         { channel: "email", failedCount: 1, heldForReview: false },
@@ -3494,7 +3596,11 @@ describe.skipIf(databaseUrl === "")("F-203 deadline alerts", () => {
           });
         },
       };
-      await createAlertPoller({ database: pool, senders: silentProvider, jurisdiction: ruleset.jurisdiction }).tick();
+      await createAlertPoller({
+        database: pool,
+        senders: silentProvider,
+        jurisdiction: ruleset.jurisdiction,
+      }).tick();
       const alertId = (await alertsOf(eventId))[0]?.id ?? "";
       // The window closes while nobody is looking, which no test can wait out in real time.
       await pool.query(
@@ -3533,7 +3639,11 @@ describe.skipIf(databaseUrl === "")("F-203 deadline alerts", () => {
       const before = await request(appWith(provider)).get(`/api/events/${eventId}/checklist`);
       expect(before.body.simulatedAlertDeliveries).toEqual([]);
 
-      await createAlertPoller({ database: pool, senders: provider.senders, jurisdiction: ruleset.jurisdiction }).tick();
+      await createAlertPoller({
+        database: pool,
+        senders: provider.senders,
+        jurisdiction: ruleset.jurisdiction,
+      }).tick();
 
       const after = await request(appWith(provider)).get(`/api/events/${eventId}/checklist`);
       expect(after.body.simulatedAlertDeliveries).toEqual([
@@ -3544,7 +3654,11 @@ describe.skipIf(databaseUrl === "")("F-203 deadline alerts", () => {
     it("says nothing when every send was live", async () => {
       const eventId = await createEvent(scenario("C"));
       await schedulePastDue(eventId);
-      await createAlertPoller({ jurisdiction: ruleset.jurisdiction, database: pool, senders: fakeProvider().senders }).tick();
+      await createAlertPoller({
+        jurisdiction: ruleset.jurisdiction,
+        database: pool,
+        senders: fakeProvider().senders,
+      }).tick();
 
       const response = await request(appWith(fakeProvider())).get(
         `/api/events/${eventId}/checklist`,
@@ -3591,7 +3705,11 @@ describe.skipIf(databaseUrl === "")("F-203 deadline alerts", () => {
       expect(rows.every((row) => row.send_at.getTime() < Date.now())).toBe(true);
       const provider = fakeProvider();
 
-      const poller = createAlertPoller({ database: pool, senders: provider.senders, jurisdiction: ruleset.jurisdiction });
+      const poller = createAlertPoller({
+        database: pool,
+        senders: provider.senders,
+        jurisdiction: ruleset.jurisdiction,
+      });
       await poller.tick();
       await poller.tick();
 
@@ -3610,7 +3728,11 @@ describe.skipIf(databaseUrl === "")("F-203 deadline alerts", () => {
       const due = await alertsOf(eventId);
       expect(due).toHaveLength(1);
       const provider = fakeProvider();
-      const poller = createAlertPoller({ database: pool, senders: provider.senders, jurisdiction: ruleset.jurisdiction });
+      const poller = createAlertPoller({
+        database: pool,
+        senders: provider.senders,
+        jurisdiction: ruleset.jurisdiction,
+      });
 
       // A review in progress: the event row is held exactly as `checklist.ts` holds it.
       const reviewer = await pool.connect();
@@ -3653,7 +3775,11 @@ describe.skipIf(databaseUrl === "")("F-203 deadline alerts", () => {
       const eventId = await createEvent(scenario("C"));
       await schedulePastDue(eventId, [reminderOffsets[0] ?? 7]);
       const provider = fakeProvider();
-      const poller = createAlertPoller({ database: pool, senders: provider.senders, jurisdiction: ruleset.jurisdiction });
+      const poller = createAlertPoller({
+        database: pool,
+        senders: provider.senders,
+        jurisdiction: ruleset.jurisdiction,
+      });
 
       // The organizer edits the event. Nothing else happens: no regeneration, no review.
       await pool.query("UPDATE events SET revision_counter = revision_counter + 1 WHERE id = $1", [
@@ -3679,7 +3805,11 @@ describe.skipIf(databaseUrl === "")("F-203 deadline alerts", () => {
         eventId,
       ]);
       const provider = fakeProvider();
-      const poller = createAlertPoller({ database: pool, senders: provider.senders, jurisdiction: ruleset.jurisdiction });
+      const poller = createAlertPoller({
+        database: pool,
+        senders: provider.senders,
+        jurisdiction: ruleset.jurisdiction,
+      });
       expect((await poller.tick()).sent).toBe(0);
 
       // The review: the plan the alerts hang off now names the event's current revision.
@@ -3731,7 +3861,11 @@ describe.skipIf(databaseUrl === "")("F-203 deadline alerts", () => {
       ]);
 
       const provider = fakeProvider();
-      await createAlertPoller({ database: pool, senders: provider.senders, jurisdiction: ruleset.jurisdiction }).tick();
+      await createAlertPoller({
+        database: pool,
+        senders: provider.senders,
+        jurisdiction: ruleset.jurisdiction,
+      }).tick();
 
       expect(provider.attempts).toHaveLength(0);
       const after = (await alertsOf(eventId)).find((row) => row.alert_type === "slack_warning");
@@ -3760,7 +3894,11 @@ describe.skipIf(databaseUrl === "")("F-203 deadline alerts", () => {
         eventId,
       ]);
       const provider = fakeProvider();
-      const poller = createAlertPoller({ database: pool, senders: provider.senders, jurisdiction: ruleset.jurisdiction });
+      const poller = createAlertPoller({
+        database: pool,
+        senders: provider.senders,
+        jurisdiction: ruleset.jurisdiction,
+      });
       expect((await poller.tick()).sent).toBe(0);
 
       await pool.query(
@@ -3783,53 +3921,53 @@ describe.skipIf(databaseUrl === "")("F-203 deadline alerts", () => {
       expect(provider.delivered).toHaveLength(1);
     });
 
-    it(
-      "delivers inside the bound when a whole tick was skipped",
-      async () => {
-        // Round 13 taught the tick that a skipped alert is not a completed one. This is the same
-        // distinction one layer up, at the poller: a tick where EVERY due alert was skipped comes
-        // back with no sends, and the respawn guard read that as "nothing to do" and waited out
-        // the interval. So an alert falling due just after an idle scan waited nearly a full
-        // interval for the tick, was skipped, and then waited another whole interval before a
-        // healthy provider was ever asked. Past AC 2 with nothing failing.
-        //
-        // THE BOUND IS THE ASSERTION. The interval is pinned at its default here, so the only way
-        // to land inside AC 2's window is the follow-up scan; waiting for the timer would blow the
-        // deadline by itself.
-        const eventId = await createEvent(scenario("C"));
-        await schedulePastDue(eventId, [reminderOffsets[0] ?? 7]);
-        const provider = fakeProvider();
-        const poller = createAlertPoller({ database: pool, senders: provider.senders, jurisdiction: ruleset.jurisdiction });
-        const reviewer = await pool.connect();
-        const startedAt = Date.now();
-        try {
-          // Held past the tick's own retry window, so the tick ends having attempted nothing.
-          await reviewer.query("BEGIN");
-          await reviewer.query("SELECT id FROM events WHERE id = $1 FOR UPDATE", [eventId]);
-          poller.start();
-          await new Promise((resolve) => setTimeout(resolve, 3_000));
-          await reviewer.query("COMMIT");
+    it("delivers inside the bound when a whole tick was skipped", async () => {
+      // Round 13 taught the tick that a skipped alert is not a completed one. This is the same
+      // distinction one layer up, at the poller: a tick where EVERY due alert was skipped comes
+      // back with no sends, and the respawn guard read that as "nothing to do" and waited out
+      // the interval. So an alert falling due just after an idle scan waited nearly a full
+      // interval for the tick, was skipped, and then waited another whole interval before a
+      // healthy provider was ever asked. Past AC 2 with nothing failing.
+      //
+      // THE BOUND IS THE ASSERTION. The interval is pinned at its default here, so the only way
+      // to land inside AC 2's window is the follow-up scan; waiting for the timer would blow the
+      // deadline by itself.
+      const eventId = await createEvent(scenario("C"));
+      await schedulePastDue(eventId, [reminderOffsets[0] ?? 7]);
+      const provider = fakeProvider();
+      const poller = createAlertPoller({
+        database: pool,
+        senders: provider.senders,
+        jurisdiction: ruleset.jurisdiction,
+      });
+      const reviewer = await pool.connect();
+      const startedAt = Date.now();
+      try {
+        // Held past the tick's own retry window, so the tick ends having attempted nothing.
+        await reviewer.query("BEGIN");
+        await reviewer.query("SELECT id FROM events WHERE id = $1 FOR UPDATE", [eventId]);
+        poller.start();
+        await new Promise((resolve) => setTimeout(resolve, 3_000));
+        await reviewer.query("COMMIT");
 
-          await vi.waitFor(
-            async () => {
-              const [row] = await alertsOf(eventId);
-              expect(row?.status).toBe("sent");
-            },
-            { timeout: 20_000, interval: 250 },
-          );
-        } finally {
-          poller.stop();
-          reviewer.release();
-        }
+        await vi.waitFor(
+          async () => {
+            const [row] = await alertsOf(eventId);
+            expect(row?.status).toBe("sent");
+          },
+          { timeout: 20_000, interval: 250 },
+        );
+      } finally {
+        poller.stop();
+        reviewer.release();
+      }
 
-        const [delivered] = await alertsOf(eventId);
-        const tookMs = (delivered?.sent_at?.getTime() ?? 0) - startedAt;
-        expect(tookMs).toBeLessThan(DELIVERY_BOUND_MS);
-        // The sharper statement: it did not wait for the next scheduled scan.
-        expect(tookMs).toBeLessThan(POLL_INTERVAL_MS);
-      },
-      30_000,
-    );
+      const [delivered] = await alertsOf(eventId);
+      const tookMs = (delivered?.sent_at?.getTime() ?? 0) - startedAt;
+      expect(tookMs).toBeLessThan(DELIVERY_BOUND_MS);
+      // The sharper statement: it did not wait for the next scheduled scan.
+      expect(tookMs).toBeLessThan(POLL_INTERVAL_MS);
+    }, 30_000);
 
     it("does not warn about slack once every filing date has passed", async () => {
       // The stale-plan class again, keyed on DATES rather than on revision. Nothing was edited, so
@@ -3911,7 +4049,9 @@ describe.skipIf(databaseUrl === "")("F-203 deadline alerts", () => {
         client.release();
       }
 
-      expect((await alertsOf(eventId)).some((row) => row.alert_type === "slack_warning")).toBe(true);
+      expect((await alertsOf(eventId)).some((row) => row.alert_type === "slack_warning")).toBe(
+        true,
+      );
     });
 
     it("still warns about slack while a filing date is ahead", async () => {
@@ -3932,7 +4072,9 @@ describe.skipIf(databaseUrl === "")("F-203 deadline alerts", () => {
         client.release();
       }
 
-      expect((await alertsOf(eventId)).some((row) => row.alert_type === "slack_warning")).toBe(true);
+      expect((await alertsOf(eventId)).some((row) => row.alert_type === "slack_warning")).toBe(
+        true,
+      );
     });
 
     it("does not deliver a reminder for a filing date that passed during an outage", async () => {
@@ -3956,7 +4098,11 @@ describe.skipIf(databaseUrl === "")("F-203 deadline alerts", () => {
       );
       const provider = fakeProvider();
 
-      await createAlertPoller({ database: pool, senders: provider.senders, jurisdiction: ruleset.jurisdiction }).tick();
+      await createAlertPoller({
+        database: pool,
+        senders: provider.senders,
+        jurisdiction: ruleset.jurisdiction,
+      }).tick();
 
       expect(provider.attempts).toHaveLength(0);
       // Cancelled rather than held: unlike a stale plan, no future review can revive this, because
@@ -3969,12 +4115,17 @@ describe.skipIf(databaseUrl === "")("F-203 deadline alerts", () => {
       // The mirror, so the guard cannot be written as "never deliver a failed reminder".
       const eventId = await createEvent(scenario("C"));
       await schedulePastDue(eventId, [reminderOffsets[0] ?? 7]);
-      await pool.query("UPDATE alerts SET status = 'failed', failure_count = 2 WHERE event_id = $1", [
-        eventId,
-      ]);
+      await pool.query(
+        "UPDATE alerts SET status = 'failed', failure_count = 2 WHERE event_id = $1",
+        [eventId],
+      );
       const provider = fakeProvider();
 
-      await createAlertPoller({ database: pool, senders: provider.senders, jurisdiction: ruleset.jurisdiction }).tick();
+      await createAlertPoller({
+        database: pool,
+        senders: provider.senders,
+        jurisdiction: ruleset.jurisdiction,
+      }).tick();
 
       expect(provider.delivered).toHaveLength(1);
       expect((await alertsOf(eventId))[0]?.status).toBe("sent");
@@ -4123,7 +4274,9 @@ describe.skipIf(databaseUrl === "")("F-203 deadline alerts", () => {
 
       const warning = (await alertsOf(eventId)).find((row) => row.alert_type === "slack_warning");
       // The controlling requirement is ungated, so the number IS a countdown and is anchored.
-      expect(warning?.payload.subject).toBe(`At risk — apply within 5 days of ${todayInJurisdiction("US-NY-NYC")}`);
+      expect(warning?.payload.subject).toBe(
+        `At risk — apply within 5 days of ${todayInJurisdiction("US-NY-NYC")}`,
+      );
       expect(String(warning?.payload.body)).toContain("measured from the plan's evaluation date");
       expect(String(warning?.payload.body)).not.toContain("WIDTH of the window");
     });
@@ -4173,57 +4326,53 @@ describe.skipIf(databaseUrl === "")("F-203 deadline alerts", () => {
       expect(after?.status).toBe("cancelled");
     });
 
-    it(
-      "does not make a full batch wait an interval for the rest",
-      async () => {
-        // THE THIRD TIME THIS SHAPE HAS BITTEN, so the fix is the distinction rather than the case.
-        // The scan is capped, so a tick that fills its batch has NOT reached the end of the work —
-        // but with every send succeeding it reported no shortfall at all, `start` read that as a
-        // finished tick, and the overflow waited a whole interval. Round 16 was the same missing
-        // distinction with an all-skipped tick. The summary now says whether it drained the queue,
-        // so both cases and any future one collapse into one question.
-        const eventId = await createEvent(scenario("C"));
-        const overflow = 97;
-        await pool.query(
-          `INSERT INTO alerts (id, event_id, alert_type, channel, recipient, idempotency_key,
+    it("does not make a full batch wait an interval for the rest", async () => {
+      // THE THIRD TIME THIS SHAPE HAS BITTEN, so the fix is the distinction rather than the case.
+      // The scan is capped, so a tick that fills its batch has NOT reached the end of the work —
+      // but with every send succeeding it reported no shortfall at all, `start` read that as a
+      // finished tick, and the overflow waited a whole interval. Round 16 was the same missing
+      // distinction with an all-skipped tick. The summary now says whether it drained the queue,
+      // so both cases and any future one collapse into one question.
+      const eventId = await createEvent(scenario("C"));
+      const overflow = 97;
+      await pool.query(
+        `INSERT INTO alerts (id, event_id, alert_type, channel, recipient, idempotency_key,
                                send_at, status, payload)
            SELECT gen_random_uuid(), $1, 'slack_warning', 'email', 'organizer@example.test',
                   $2 || ':batch:' || step, current_timestamp - interval '1 minute', 'pending',
                   '{"subject":"s","body":"b"}'::jsonb
              FROM generate_series(1, $3) AS step`,
-          [eventId, `${eventId}`, overflow],
+        [eventId, `${eventId}`, overflow],
+      );
+      const provider = fakeProvider();
+      const poller = createAlertPoller({
+        database: pool,
+        senders: provider.senders,
+        jurisdiction: ruleset.jurisdiction,
+      });
+      const startedAt = Date.now();
+
+      poller.start();
+      try {
+        await vi.waitFor(
+          async () => {
+            const { rows } = await pool.query<{ pending: string }>(
+              "SELECT count(*)::text AS pending FROM alerts WHERE event_id = $1 AND status <> 'sent'",
+              [eventId],
+            );
+            expect(rows[0]?.pending).toBe("0");
+          },
+          { timeout: 30_000, interval: 250 },
         );
-        const provider = fakeProvider();
-        const poller = createAlertPoller({
-          database: pool,
-          senders: provider.senders,
-          jurisdiction: ruleset.jurisdiction,
-        });
-        const startedAt = Date.now();
+      } finally {
+        poller.stop();
+      }
 
-        poller.start();
-        try {
-          await vi.waitFor(
-            async () => {
-              const { rows } = await pool.query<{ pending: string }>(
-                "SELECT count(*)::text AS pending FROM alerts WHERE event_id = $1 AND status <> 'sent'",
-                [eventId],
-              );
-              expect(rows[0]?.pending).toBe("0");
-            },
-            { timeout: 30_000, interval: 250 },
-          );
-        } finally {
-          poller.stop();
-        }
-
-        // The whole set went out without waiting for the next scheduled scan, which is the bound
-        // the overflow used to miss with a healthy provider and an otherwise empty queue.
-        expect(Date.now() - startedAt).toBeLessThan(POLL_INTERVAL_MS);
-        expect(provider.delivered.length).toBe(overflow);
-      },
-      45_000,
-    );
+      // The whole set went out without waiting for the next scheduled scan, which is the bound
+      // the overflow used to miss with a healthy provider and an otherwise empty queue.
+      expect(Date.now() - startedAt).toBeLessThan(POLL_INTERVAL_MS);
+      expect(provider.delivered.length).toBe(overflow);
+    }, 45_000);
 
     it("reports a full batch as not drained", async () => {
       // The statement the poller now reads, asserted directly so the classification is pinned and
@@ -4923,8 +5072,9 @@ describe.skipIf(databaseUrl === "")("F-203 deadline alerts", () => {
       );
       // Not vacuous: the untried SMS really did fill the cap alongside it, which is the crowding
       // that made this reachable.
-      expect(provider.delivered.filter((sent) => sent.recipient === "+15550000000").length)
-        .toBeGreaterThan(0);
+      expect(
+        provider.delivered.filter((sent) => sent.recipient === "+15550000000").length,
+      ).toBeGreaterThan(0);
     });
 
     it("keeps retrying through a provider outage without losing an alert", async () => {
@@ -4932,7 +5082,11 @@ describe.skipIf(databaseUrl === "")("F-203 deadline alerts", () => {
       await schedulePastDue(eventId);
       const provider = fakeProvider();
       provider.fail = "email provider unreachable: ECONNREFUSED";
-      const poller = createAlertPoller({ database: pool, senders: provider.senders, jurisdiction: ruleset.jurisdiction });
+      const poller = createAlertPoller({
+        database: pool,
+        senders: provider.senders,
+        jurisdiction: ruleset.jurisdiction,
+      });
 
       // The first retry is immediate: one failure is usually a blip, and waiting on it would spend
       // the delivery budget on a provider that is probably fine.
@@ -5054,9 +5208,86 @@ describe("F-203 delivery channels (AC 5)", () => {
       fetch: async () => new Response(bodyFor("rejected"), { status: 422 }),
     });
     await expect(
-      rejected({ recipient: "organizer@example.test", subject: "s", body: "b", idempotencyKey: "k2" }),
+      rejected({
+        recipient: "organizer@example.test",
+        subject: "s",
+        body: "b",
+        idempotencyKey: "k2",
+      }),
     ).rejects.toBeInstanceOf(AlertDeliveryError);
     expect(cancelled).toContain("rejected");
+  });
+
+  // Both added 2026-08-03 from the #228 review. They are about one thing: an attempt is only left
+  // OPEN when this side genuinely does not know what the provider did. Leaving it open when the
+  // outcome was knowable holds the alert permanently once it ages past the dedup window.
+  it("keeps the observed status when releasing the response body fails", async () => {
+    const sender = createResendEmailSender({
+      apiKey: "re_test",
+      from: "PopEngine <noreply@example.test>",
+      fetch: (async () =>
+        new Response(
+          new ReadableStream({
+            start(controller) {
+              controller.enqueue(new TextEncoder().encode("{}"));
+              controller.close();
+            },
+            cancel() {
+              throw new Error("socket teardown failed");
+            },
+          }),
+          { status: 422 },
+        )) as unknown as typeof globalThis.fetch,
+    });
+
+    // The provider answered 422. Teardown failing afterwards is socket hygiene, not evidence about
+    // delivery, so the rejection must still report the outcome as observed.
+    const error = await sender(message).catch((thrown: unknown) => thrown);
+    expect(error).toBeInstanceOf(AlertDeliveryError);
+    expect((error as AlertDeliveryError).outcomeObserved).toBe(true);
+    expect((error as Error).message).toContain("422");
+  });
+
+  it("resolves the attempt for every failure proven to precede the handoff", async () => {
+    // Routing and TLS failures happen before any HTTP byte is written, so no duplicate is
+    // possible and the alert must stay retryable through the outage. ECONNRESET is the
+    // counter-example and must stay unresolved: it can arrive after the body was accepted.
+    const provenCodes = [
+      "ENOTFOUND",
+      "EAI_AGAIN",
+      "ECONNREFUSED",
+      "ENETUNREACH",
+      "EHOSTUNREACH",
+      "ERR_TLS_CERT_ALTNAME_INVALID",
+      "UNABLE_TO_VERIFY_LEAF_SIGNATURE",
+      "DEPTH_ZERO_SELF_SIGNED_CERT",
+      "SELF_SIGNED_CERT_IN_CHAIN",
+      "CERT_HAS_EXPIRED",
+    ];
+
+    const senderFor = (code: string) =>
+      createResendEmailSender({
+        apiKey: "re_test",
+        from: "PopEngine <noreply@example.test>",
+        fetch: (async () => {
+          const cause = Object.assign(new Error("transport"), { code });
+          throw Object.assign(new TypeError("fetch failed"), { cause });
+        }) as unknown as typeof globalThis.fetch,
+      });
+
+    for (const code of provenCodes) {
+      const error = await senderFor(code)
+        .call(null, message)
+        .catch((thrown: unknown) => thrown);
+      expect((error as AlertDeliveryError).outcomeObserved, code).toBe(true);
+    }
+
+    const reset = await senderFor("ECONNRESET")
+      .call(null, message)
+      .catch((thrown: unknown) => thrown);
+    expect((reset as AlertDeliveryError).outcomeObserved, "ECONNRESET stays unresolved").toBe(
+      false,
+    );
   });
 
   it("sends email through Resend and hands it the idempotency key", async () => {

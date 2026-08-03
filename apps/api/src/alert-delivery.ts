@@ -87,7 +87,24 @@ export const PROVIDER_TIMEOUT_MS = 10_000;
  * which is the second delivery the attempt record exists to prevent. So proof is required to
  * resolve an attempt, and everything unproven stays open.
  */
-const PROVEN_BEFORE_HANDOFF = new Set(["ENOTFOUND", "EAI_AGAIN", "ECONNREFUSED"]);
+const PROVEN_BEFORE_HANDOFF = new Set([
+  // Name resolution and connection establishment: no socket was ever established, so no request
+  // bytes existed to reach Resend.
+  "ENOTFOUND",
+  "EAI_AGAIN",
+  "ECONNREFUSED",
+  "ENETUNREACH",
+  "EHOSTUNREACH",
+  // TLS handshake failures. The handshake completes before any HTTP byte is written, so a
+  // certificate this side refuses means the request was never sent. Added 2026-08-03: leaving
+  // them unproven meant a certificate outage lasting past the dedup window permanently held every
+  // alert behind it, even though no duplicate was ever possible.
+  "ERR_TLS_CERT_ALTNAME_INVALID",
+  "UNABLE_TO_VERIFY_LEAF_SIGNATURE",
+  "DEPTH_ZERO_SELF_SIGNED_CERT",
+  "SELF_SIGNED_CERT_IN_CHAIN",
+  "CERT_HAS_EXPIRED",
+]);
 
 /** `fetch` wraps a transport failure, so the errno naming it sits on the cause chain. */
 function failedBeforeHandoff(error: unknown): boolean {
@@ -158,10 +175,19 @@ export function createResendEmailSender(settings: {
     // Cancelled rather than read, because nothing here wants the contents. The provider's body can
     // echo the recipient, which is contact data (AGENTS.md "do not log unredacted contact data"),
     // so the rejection carries the status and nothing else.
-    await response.body?.cancel();
+    //
+    // Releasing the body must not be able to overrule what the provider already said. A rejected
+    // `cancel()` used to propagate as an ordinary error, which reports the outcome as UNOBSERVED —
+    // so a teardown that kept failing until the oldest attempt aged past the dedup window held the
+    // alert permanently, after a definitive response including a 2xx. The status is the outcome;
+    // this is socket hygiene, and a failure at it is neither the organizer's problem nor evidence
+    // about delivery.
+    await response.body?.cancel().catch(() => undefined);
     if (!response.ok) {
       throw new AlertDeliveryError(
         `email provider rejected the send with status ${response.status}`,
+        // The provider answered. Whatever that answer was, this side observed it.
+        { outcomeObserved: true },
       );
     }
     return { simulated: false, label: null, provider: "resend" };
