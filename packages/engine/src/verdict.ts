@@ -91,12 +91,14 @@ function describeDifference(base: readonly Finding[], candidate: readonly Findin
   const candidateIds = new Set(ruleIdsOf(candidate));
   const added = [...candidateIds].filter((id) => !baseIds.has(id));
   const dropped = [...baseIds].filter((id) => !candidateIds.has(id));
-  const label = (finding: Finding | undefined, id: string): string =>
-    finding?.userSummary?.heading ?? id;
+  // Rule ids, not organizer headings. This prose is persisted on the plan row, so the id is the
+  // permanent anchor back to the published rule that produced the sentence; a heading is not unique
+  // and any later ruleset publish may reword it. The organizer never reads the id: the plan view's
+  // `humanizeRuleCodes` swaps each id for the same heading at render time.
   const describeMissed = (finding: Finding, id: string): string =>
     finding.deadlineStatus === "published_deadline_missed"
-      ? `${label(finding, id)} (published deadline missed as scoped)`
-      : label(finding, id);
+      ? `${id} (published deadline missed as scoped)`
+      : id;
   const describeAdded = (id: string): string => {
     const finding = candidate.find((entry) => entry.ruleIds.includes(id));
     // F-102 AC 6: the no-license branch must surface the missed-window reason, not only the rule id.
@@ -119,30 +121,17 @@ function describeDifference(base: readonly Finding[], candidate: readonly Findin
       continue;
     }
     if (finding.deadlineStatus === "published_deadline_missed") {
-      tightened.push(
-        `${finding.userSummary?.heading ?? finding.ruleIds.join(", ")} (published deadline missed as scoped)`,
-      );
+      tightened.push(`${finding.ruleIds.join(", ")} (published deadline missed as scoped)`);
       continue;
     }
     if (prior.disposition !== finding.disposition) {
-      tightened.push(
-        `${finding.userSummary?.heading ?? finding.ruleIds.join(", ")} becomes ${finding.disposition}`,
-      );
+      tightened.push(`${finding.ruleIds.join(", ")} becomes ${finding.disposition}`);
     }
   }
 
   const parts = [
     added.length > 0 ? `adds ${added.map(describeAdded).join(", ")}` : null,
-    dropped.length > 0
-      ? `drops ${dropped
-          .map((id) =>
-            label(
-              base.find((finding) => finding.ruleIds.includes(id)),
-              id,
-            ),
-          )
-          .join(", ")}`
-      : null,
+    dropped.length > 0 ? `drops ${dropped.join(", ")}` : null,
     ...tightened,
   ].filter((part): part is string => part !== null);
   return parts.length > 0 ? parts.join("; ") : "same findings, re-dated";
@@ -208,25 +197,25 @@ function emitsF102DetailEnrichment(rulesetVersion: string): boolean {
 function publishedThresholds(field: string, ruleset: EngineRuleset): string | null {
   const described: string[] = [];
   const enrichBoundary = emitsF102DetailEnrichment(ruleset.rulesetVersion);
-  const walk = (node: TriggerNode, ruleLabel: string): void => {
+  const walk = (node: TriggerNode, ruleId: string): void => {
     if ("field" in node) {
       if (node.field !== field || typeof node.value !== "number") return;
       const comparison = node.op === "gt" ? "above" : node.op === "gte" ? "at or above" : null;
       if (comparison === null) return;
       if (enrichBoundary && node.boundary === "conditional") {
         described.push(
-          `${ruleLabel} applies ${comparison} ${node.value}; exactly ${node.value} is a conditional boundary (confirm with the publishing agency)`,
+          `${ruleId} applies ${comparison} ${node.value}; exactly ${node.value} is a conditional boundary (confirm with the publishing agency)`,
         );
       } else {
-        described.push(`${ruleLabel} applies ${comparison} ${node.value}`);
+        described.push(`${ruleId} applies ${comparison} ${node.value}`);
       }
       return;
     }
-    for (const child of "all" in node ? node.all : node.any) walk(child, ruleLabel);
+    for (const child of "all" in node ? node.all : node.any) walk(child, ruleId);
   };
-  for (const rule of ruleset.rules) {
-    walk(rule.trigger, enrichBoundary ? (rule.userSummary?.heading ?? rule.id) : rule.id);
-  }
+  // As in `describeDifference`: the persisted string carries the rule id, and the plan view
+  // humanizes it at render time.
+  for (const rule of ruleset.rules) walk(rule.trigger, rule.id);
   return described.length === 0 ? null : described.join("; ");
 }
 

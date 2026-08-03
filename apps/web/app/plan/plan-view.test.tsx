@@ -1070,6 +1070,89 @@ describe("F-102 · CONDITIONAL branch table and INFEASIBLE rescope ladder", () =
     expect(screen.getByTestId("verdict-detail").textContent).not.toContain("DOB-TENT-001");
   });
 
+  it("names a branch rule by its own heading, not by the merged finding's", async () => {
+    // DOB-TENT-001 and DOB-TALL-STRUCTURE-001 share the `dob-structure` dedupe key, so one finding
+    // carries both ids under the tent heading. The branch that drops the tall-structure permit must
+    // say so: naming the tent approval there misstates which requirement the answer removes.
+    stubApi(
+      plan({
+        verdict: "CONDITIONAL",
+        findings: [
+          finding({
+            ruleIds: ["DOB-TENT-001", "DOB-TALL-STRUCTURE-001"],
+            name: "Temporary structure filing",
+            userSummary: { heading: publishedHeading("DOB-TENT-001"), points: [] },
+          }),
+        ],
+        verdictDetail: {
+          ...emptyVerdictDetail,
+          missingFacts: [
+            {
+              field: "structure_over_10ft_tall",
+              thresholds: null,
+              branches: [
+                {
+                  value: "false",
+                  verdict: "CONDITIONAL",
+                  reason: "drops DOB-TALL-STRUCTURE-001",
+                },
+              ],
+            },
+          ],
+        },
+      }),
+    );
+    renderPlan();
+    const fact = await screen.findByTestId("missing-fact");
+
+    expect(fact.textContent).toContain(publishedHeading("DOB-TALL-STRUCTURE-001"));
+    expect(fact.textContent).not.toContain(publishedHeading("DOB-TENT-001"));
+    expect(fact.textContent).not.toContain("DOB-TALL-STRUCTURE-001");
+  });
+
+  it("shows the residue F-102 names: a historical merged rule id no source can label", async () => {
+    // The one case F-102's Output section excludes from "the organizer is shown no id". Same
+    // merged finding, but the plan pinned a version this deployment no longer runs, so the
+    // per-rule references are withheld. The finding's heading belongs to one of its contributing
+    // rules and the plan does not say which, so it labels none of them: the id is the honest
+    // answer, and naming the tent approval here would be a wrong one. Labelling it needs per-rule
+    // labels persisted in `verdict_detail`, which is a new ruleset era and not approved here.
+    stubApi(
+      plan({
+        rulesetVersion: "nyc.v2.10",
+        verdict: "CONDITIONAL",
+        findings: [
+          finding({
+            ruleIds: ["DOB-TENT-001", "DOB-TALL-STRUCTURE-001"],
+            name: "Temporary structure filing",
+            userSummary: { heading: publishedHeading("DOB-TENT-001"), points: [] },
+          }),
+        ],
+        verdictDetail: {
+          ...emptyVerdictDetail,
+          missingFacts: [
+            {
+              field: "structure_over_10ft_tall",
+              thresholds: null,
+              branches: [
+                {
+                  value: "false",
+                  verdict: "CONDITIONAL",
+                  reason: "drops DOB-TALL-STRUCTURE-001",
+                },
+              ],
+            },
+          ],
+        },
+      }),
+    );
+    renderPlan();
+    const fact = await screen.findByTestId("missing-fact");
+
+    expect(fact.textContent).toContain("drops DOB-TALL-STRUCTURE-001");
+    expect(fact.textContent).not.toContain(publishedHeading("DOB-TENT-001"));
+  });
+
   it("names the blocking finding and lists each re-evaluated rescope for INFEASIBLE", async () => {
     const introducedRuleIds = [
       "ADV-VENUE-OCCUPANCY-001",

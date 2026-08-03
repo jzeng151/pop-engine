@@ -196,11 +196,7 @@ describe("Scenario A — Bushwick Street Activation (demo anchor)", () => {
     expect(small?.atRiskFindingName ?? small?.minSlackDays).toBeTruthy();
     // Current-line enrichment names findings the private-venue re-evaluation introduces.
     expect(privateVenue?.introducedRuleIds).toEqual(
-      expect.arrayContaining([
-        "ADV-NOISE-CODE-001",
-        "ADV-VENUE-OCCUPANCY-001",
-        "DOB-ASSEMBLY-001",
-      ]),
+      expect.arrayContaining(["ADV-NOISE-CODE-001", "ADV-VENUE-OCCUPANCY-001", "DOB-ASSEMBLY-001"]),
     );
     const assemblyRule = ruleset.rules.find((rule) => rule.id === "DOB-ASSEMBLY-001");
     expect(privateVenue?.introducedFindings).toContainEqual({
@@ -227,11 +223,11 @@ describe("Scenario A — Bushwick Street Activation (demo anchor)", () => {
       "small",
       "private_venue",
     ]);
-    const privateVenue = suggestions.find((suggestion) => suggestion.change.value === "private_venue");
-    expect(privateVenue?.reevaluatedVerdict).toBe("CONDITIONAL");
-    expect(privateVenue?.introducedRuleIds).toEqual(
-      expect.arrayContaining(["DOB-ASSEMBLY-001"]),
+    const privateVenue = suggestions.find(
+      (suggestion) => suggestion.change.value === "private_venue",
     );
+    expect(privateVenue?.reevaluatedVerdict).toBe("CONDITIONAL");
+    expect(privateVenue?.introducedRuleIds).toEqual(expect.arrayContaining(["DOB-ASSEMBLY-001"]));
   });
 
   it("re-evaluates rescope (a) to the 30-day deadline and five days of slack", () => {
@@ -628,11 +624,12 @@ describe("Scenario E — Plaza Brand Activation (max complexity)", () => {
 
   it("names the conditional boundary when tent area is unanswered", () => {
     const result = plan({ ...intakeE, tent_area_sqft: null, structure_over_10ft_tall: false });
-    const tentFact = result.verdictDetail.missingFacts.find((fact) => fact.field === "tent_area_sqft");
-    const tentHeading = ruleset.rules.find((rule) => rule.id === "DOB-TENT-001")?.userSummary
-      ?.heading;
-    expect(tentFact?.thresholds).toContain(`${tentHeading} applies above 400`);
-    expect(tentFact?.thresholds).not.toContain("DOB-TENT-001");
+    const tentFact = result.verdictDetail.missingFacts.find(
+      (fact) => fact.field === "tent_area_sqft",
+    );
+    // The rule id, not the organizer heading: this string is persisted on the plan row and the
+    // plan view humanizes it at render time.
+    expect(tentFact?.thresholds).toContain("DOB-TENT-001 applies above 400");
     expect(tentFact?.thresholds).toContain("exactly 400 is a conditional boundary");
   });
 });
@@ -729,6 +726,15 @@ describe("Scenario F — Rooftop Launch Party (conditional branches)", () => {
     // AC 6: the closed SLA window is named even when the rule ids were already on the unresolved base.
     expect(noLicense?.reason).toContain("published deadline missed as scoped");
     expect(noLicense?.reason).not.toBe("same findings, re-dated");
+    // This reason is persisted verbatim in `permit_plans.verdict_detail`, so it names the rules by
+    // id and never by their organizer heading. The id resolves to one published rule forever; a
+    // heading is not unique and any later publish may reword it, which would leave a stored
+    // sentence that no longer traces back. The organizer sees the heading regardless, because the
+    // plan view's `humanizeRuleCodes` substitutes it at render time.
+    const sla = ruleset.rules.find((rule) => rule.id === "SLA-ONEDAY-001");
+    expect(noLicense?.reason).toContain("SLA-ONEDAY-001");
+    expect(sla?.userSummary?.heading).toBeDefined();
+    expect(noLicense?.reason).not.toContain(sla?.userSummary?.heading);
     // Approved Scenario F branch table is two facts (license + sound); assembly approval is confirmation context only (#89).
     expect(result.verdictDetail.missingFacts.map((fact) => fact.field).sort()).toEqual([
       "sound_audible_from_public_way",

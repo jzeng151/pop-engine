@@ -399,6 +399,35 @@ export function VerdictDetailPanel({
   /** Deployed ruleset references, supplied only when that version matches the plan's snapshot. */
   rulesetReferences?: readonly FindingReference[];
 }) {
+  // `rulesetReferences` is supplied only when the deployed ruleset is the exact version this plan
+  // pinned, so after the next publish every stored plan would render raw ids like `SLA-ONEDAY-001`
+  // in its branch prose. The plan's findings are the snapshot's own copy of the headings the
+  // ruleset published at generation time, so they carry the mapping forward for every rule that
+  // fired on this plan; the deployed references still cover the rest, when they are current. A rule
+  // that neither fired here nor exists in the deployed ruleset keeps its id — nothing on this page
+  // knows what that version called it, and the id is the honest answer.
+  //
+  // The deployed references come FIRST because each names exactly one rule, and a finding may
+  // label only the ids it can label unambiguously — which is none, once it has been deduplicated.
+  // A merged finding carries every contributing rule id under the heading of one of them and does
+  // not record which, so letting it map them would rename each to that heading: `drops
+  // DOB-TALL-STRUCTURE-001` would read as dropping the tent approval rather than the published
+  // tall-structure permit. A merged id the deployed references cannot cover therefore keeps its id,
+  // which is the same honest answer this panel already gives an unknown rule.
+  //
+  // Not covered, and not coverable here: a rule named only in a branch reason or a threshold line
+  // on a stored plan whose version has moved on. Those candidate rules never fired, so the plan
+  // holds no heading for them — `missingFacts` stores the prose and no labels behind it — and
+  // `rulesetReferences` is withheld because the deployed ruleset is no longer the one this plan
+  // pinned. Closing it means persisting the labels in `verdict_detail`, which is era-gated engine
+  // output (AD-7 byte-stable replay), so it needs a new published ruleset and its owners' approval;
+  // and it would still leave every already-stored plan on the raw id. F-102's Output section names
+  // this residue as the one case where an organizer is shown an id.
+  const references = [
+    ...rulesetReferences,
+    ...findings.filter((finding) => finding.ruleIds.length === 1).map(referenceFromFinding),
+  ];
+
   if (verdict === "CONDITIONAL" && detail.missingFacts.length > 0) {
     const hasThresholdOnlyFact = detail.missingFacts.some((fact) => fact.branches.length === 0);
     return (
@@ -414,15 +443,17 @@ export function VerdictDetailPanel({
         </p>
         {detail.unresolvedTimelines.length > 0 && (
           <section className="verdict-detail__timelines" data-testid="unresolved-timelines">
-            <h3 className="verdict-detail__section-title">Published windows that could not be dated</h3>
+            <h3 className="verdict-detail__section-title">
+              Published windows that could not be dated
+            </h3>
             <ul>
               {detail.unresolvedTimelines.map((entry) => (
                 <li key={entry.ruleIds.join("+")}>
                   <FindingReferences
-                    references={referencesForRuleIds(entry.ruleIds, findings, rulesetReferences)}
+                    references={referencesForRuleIds(entry.ruleIds, findings, references)}
                   />
                   {": "}
-                  {humanizeRuleCodes(entry.reason, rulesetReferences)}
+                  {humanizeRuleCodes(entry.reason, references)}
                 </li>
               ))}
             </ul>
@@ -434,14 +465,14 @@ export function VerdictDetailPanel({
             field={fact.field}
             branches={fact.branches}
             thresholds={fact.thresholds}
-            rulesetReferences={rulesetReferences}
+            rulesetReferences={references}
           />
         ))}
         {detail.missedRuleIds.length > 0 && (
           <MissedMayBeRequiredSection
             missedRuleIds={detail.missedRuleIds}
             findings={findings}
-            rulesetReferences={rulesetReferences}
+            rulesetReferences={references}
           />
         )}
       </div>
@@ -462,10 +493,10 @@ export function VerdictDetailPanel({
             {detail.unresolvedTimelines.map((entry) => (
               <li key={entry.ruleIds.join("+")}>
                 <FindingReferences
-                  references={referencesForRuleIds(entry.ruleIds, findings, rulesetReferences)}
+                  references={referencesForRuleIds(entry.ruleIds, findings, references)}
                 />
                 {": "}
-                {humanizeRuleCodes(entry.reason, rulesetReferences)}
+                {humanizeRuleCodes(entry.reason, references)}
               </li>
             ))}
           </ul>
@@ -474,7 +505,7 @@ export function VerdictDetailPanel({
           <MissedMayBeRequiredSection
             missedRuleIds={detail.missedRuleIds}
             findings={findings}
-            rulesetReferences={rulesetReferences}
+            rulesetReferences={references}
           />
         )}
       </div>
@@ -488,7 +519,7 @@ export function VerdictDetailPanel({
         <MissedMayBeRequiredSection
           missedRuleIds={detail.missedRuleIds}
           findings={findings}
-          rulesetReferences={rulesetReferences}
+          rulesetReferences={references}
         />
       </div>
     );
@@ -505,7 +536,7 @@ export function VerdictDetailPanel({
     const rulesetBlockerReference =
       blocker === null
         ? undefined
-        : rulesetReferences.find((reference) =>
+        : references.find((reference) =>
             reference.ruleIds.some((ruleId) => blocker.ruleIds.includes(ruleId)),
           );
     const blockerReference =
@@ -547,11 +578,7 @@ export function VerdictDetailPanel({
               <p className="verdict-detail__missed">
                 All published deadlines missed as scoped:{" "}
                 <FindingReferences
-                  references={referencesForRuleIds(
-                    detail.missedRuleIds,
-                    findings,
-                    rulesetReferences,
-                  )}
+                  references={referencesForRuleIds(detail.missedRuleIds, findings, references)}
                 />
               </p>
             )}
@@ -561,7 +588,7 @@ export function VerdictDetailPanel({
           suggestions={detail.rescopeSuggestions}
           blockingFinding={blocker}
           findings={findings}
-          rulesetReferences={rulesetReferences}
+          rulesetReferences={references}
         />
       </div>
     );
