@@ -172,6 +172,48 @@ describe("the stale-plan notice on the event overview", () => {
     expect(screen.queryByRole("status")).toBeNull();
   });
 
+  // A POST that answered 2xx wrote an immutable plan (AD-7). If the read that would confirm it
+  // fails, the organizer has neither a confirmation nor an error, and the obvious response —
+  // pressing the button again — stores a second plan for one action.
+  const recheckFails = () => {
+    let eventReads = 0;
+    respondWith({
+      event: () => {
+        eventReads += 1;
+        return eventReads === 1 ? eventResponse(true) : new Response("", { status: 502 });
+      },
+    });
+  };
+
+  it("says a plan was stored when the freshness check could not be made", async () => {
+    const user = userEvent.setup();
+    recheckFails();
+
+    renderNotice();
+    await user.click(await screen.findByRole("button", { name: "Regenerate plan" }));
+
+    const outcome = await screen.findByRole("alert");
+    expect(outcome.textContent).toContain("regenerated");
+    expect(outcome.textContent).toContain("could not");
+    expect(screen.getByText(/edited since its plan was generated/)).toBeDefined();
+  });
+
+  it("does not offer regeneration again once a plan was stored but unconfirmed", async () => {
+    const user = userEvent.setup();
+    recheckFails();
+
+    renderNotice();
+    await user.click(await screen.findByRole("button", { name: "Regenerate plan" }));
+
+    await screen.findByRole("alert");
+    expect(screen.queryByRole("button", { name: "Regenerate plan" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Regenerating plan…" })).toBeNull();
+    const posts = fetchMock.mock.calls.filter(
+      (call) => (call[1] as RequestInit | undefined)?.method === "POST",
+    );
+    expect(posts).toHaveLength(1);
+  });
+
   // The overview must not claim a plan is current because the event could not be read.
   it("says nothing when the event cannot be loaded", async () => {
     respondWith({ event: () => new Response("", { status: 500 }) });

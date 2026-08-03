@@ -55,6 +55,13 @@ export function PlanStaleNotice({ apiBaseUrl, eventId }: { apiBaseUrl: string; e
   const [regenerating, setRegenerating] = useState(false);
   const [failure, setFailure] = useState<string | null>(null);
   const [regeneratedRevision, setRegeneratedRevision] = useState<number | null>(null);
+  /**
+   * Carries the read failure when the POST stored a plan and the follow-up event read could not
+   * confirm it. Distinct from `failure`, which means no plan was written: this one has to say a
+   * plan exists, and it withdraws the button, because a second POST writes a second immutable
+   * plan (AD-7) for one organizer action.
+   */
+  const [unconfirmed, setUnconfirmed] = useState<string | null>(null);
 
   useEffect(() => {
     let mounted = true;
@@ -98,10 +105,16 @@ export function PlanStaleNotice({ apiBaseUrl, eventId }: { apiBaseUrl: string; e
     // comparison could read 3 while a PATCH moved the event to 4. The API recomputes staleness
     // against the stored plan on every read, so the warning is cleared on that answer and on
     // nothing else. An event that cannot be re-read leaves the warning up: unconfirmed is not
-    // current.
+    // current. It is also reported, rather than returned from silently — the organizer would
+    // otherwise see the same warning and the same live button after a POST that stored a plan,
+    // and press it again.
     const recheck = await loadEvent(apiBaseUrl, eventId);
     setRegenerating(false);
-    if (!recheck.ok || recheck.loaded.plan_stale) return;
+    if (!recheck.ok) {
+      setUnconfirmed(recheck.message);
+      return;
+    }
+    if (recheck.loaded.plan_stale) return;
 
     setStale(false);
     setRegeneratedRevision(recheck.loaded.event.revision_counter);
@@ -118,10 +131,17 @@ export function PlanStaleNotice({ apiBaseUrl, eventId }: { apiBaseUrl: string; e
   return (
     <section className="riso-overview__notice riso-overview__notice--stale">
       <p>This event has been edited since its plan was generated, so the plan is out of date.</p>
-      {regeneration.status === "offered" && (
+      {regeneration.status === "offered" && unconfirmed === null && (
         <button disabled={regenerating} onClick={() => void regenerate()} type="button">
           {regenerating ? "Regenerating plan…" : "Regenerate plan"}
         </button>
+      )}
+      {unconfirmed !== null && (
+        <p role="alert">
+          Your plan was regenerated, but the event could not be re-read to confirm the new plan is
+          current, so the warning above stays. Reload this page to check; regenerating again would
+          store a second plan. {unconfirmed}
+        </p>
       )}
       {regeneration.status === "refused" && <p role="alert">{regeneration.reason}</p>}
       {failure !== null && <p role="alert">{failure}</p>}
