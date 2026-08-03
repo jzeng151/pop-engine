@@ -406,7 +406,26 @@ export function VerdictDetailPanel({
   // fired on this plan; the deployed references still cover the rest, when they are current. A rule
   // that neither fired here nor exists in the deployed ruleset keeps its id — nothing on this page
   // knows what that version called it, and the id is the honest answer.
-  const references = [...findings.map(referenceFromFinding), ...rulesetReferences];
+  //
+  // The deployed references come FIRST because each names exactly one rule, and a finding may
+  // label only the ids it can label unambiguously — which is none, once it has been deduplicated.
+  // A merged finding carries every contributing rule id under the heading of one of them and does
+  // not record which, so letting it map them would rename each to that heading: `drops
+  // DOB-TALL-STRUCTURE-001` would read as dropping the tent approval rather than the published
+  // tall-structure permit. A merged id the deployed references cannot cover therefore keeps its id,
+  // which is the same honest answer this panel already gives an unknown rule.
+  //
+  // Not covered, and not coverable here: a rule named only in a branch reason or a threshold line
+  // on a stored plan whose version has moved on. Those candidate rules never fired, so the plan
+  // holds no heading for them — `missingFacts` stores the prose and no labels behind it — and
+  // `rulesetReferences` is withheld because the deployed ruleset is no longer the one this plan
+  // pinned. Closing it means persisting the labels in `verdict_detail`, which is era-gated engine
+  // output (AD-7 byte-stable replay), so it needs a new published ruleset and its owners' approval;
+  // and it would still leave every already-stored plan on the raw id.
+  const references = [
+    ...rulesetReferences,
+    ...findings.filter((finding) => finding.ruleIds.length === 1).map(referenceFromFinding),
+  ];
 
   if (verdict === "CONDITIONAL" && detail.missingFacts.length > 0) {
     const hasThresholdOnlyFact = detail.missingFacts.some((fact) => fact.branches.length === 0);
