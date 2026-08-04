@@ -98,8 +98,18 @@ published here as appendices A1–A6 and were removed on 2026-08-03, when this b
 its decision, because each published probe invited a claim about what it proved and four review
 rounds went to correcting those claims rather than the recommendation. They are preserved on the
 branch `archive/issue-108-probe-appendices`, pushed for that purpose so the reference survives a
-force-push of this one, and can be read with
-`git show archive/issue-108-probe-appendices:docs/proposals/asked-when-three-state-decision.md`.
+force-push of this one, and can be read by fetching that branch first:
+
+```
+git fetch origin refs/heads/archive/issue-108-probe-appendices
+git show FETCH_HEAD:docs/proposals/asked-when-three-state-decision.md
+```
+
+The fetch is not optional and an earlier revision of this paragraph left it out. A clone stores a
+non-default branch under `refs/remotes/origin/`, so `git show archive/issue-108-probe-appendices:...`
+resolves nothing and fails with `fatal: invalid object name`. The two commands above were run on
+2026-08-03 in a fresh full clone and in a `--depth 1 --single-branch --branch main` clone, and both
+printed the archived 1647-line document, whose appendix begins at its line 974.
 
 The consequence, stated rather than left for a reader to discover: **the failure counts, the plan
 diffs and the two Q2 probe results below cannot be re-derived from this document alone.** They were
@@ -505,15 +515,51 @@ point it covers. Two things are still outstanding on Q2, and they differ in kind
 run just described, which a measurement would settle, and whether a branch table is adequate
 presentation, which no measurement settles.
 
-**What I am explicitly not recommending, and why.** I am not recommending the ruleset alternative
-(converting the boolean gates to enums carrying `unknown`) either. The earlier document prices it at
-8 rewritten expressions, 11 published objects and 2 validator checks at risk of silent
-non-matching, 132 fixture literals, a ruleset publication, a migration, and an unmeasured answer key,
-reaching 5 of the 8 gates that need it. I did not re-price it at v2.11 and I do not claim its numbers
-are current; I am declining to recommend an option whose cost is that large and whose answer-key
-impact nobody has measured, not asserting the numbers.
+**What I am explicitly not recommending, and why. Re-priced at v2.11 rather than cited from v2.8.**
+I am not recommending the ruleset alternative (converting the five boolean gates to enums carrying
+`unknown`) either. The earlier document priced it on `481e1f6` at nyc.v2.8, and this brief rejects
+the option on that price, so the price was re-derived on `c700698` at nyc.v2.11 on 2026-08-03 rather
+than carried forward with a disclaimer. The method is a walk over every top-level ruleset array
+whose members carry an `id`, plus a scan of the test tree for boolean literals submitted for those
+five fields. Run against the v2.8 artifact and the v2.8 tree it reproduces the earlier document's
+figures exactly (8, 11 objects, 12 conditions, 132 literals), which is what makes the v2.11 figures
+below comparable rather than a different count of a different thing.
 
-One thing about it is decidable from section 2's corrected inventory without re-pricing anything:
+| component                                            | v2.8 (`481e1f6`) | v2.11 (`c700698`)                |
+| ---------------------------------------------------- | ---------------- | -------------------------------- |
+| `asked_when` expressions to rewrite                   | 8                | **7**                            |
+| published objects carrying a boolean trigger condition | 11               | **16**                           |
+| trigger conditions in them                            | 12               | **17**                           |
+| `validate.ts` checks at risk of silent non-matching   | 2                | 2                                |
+| fixture boolean literals to convert                   | 132              | **147**                          |
+| ruleset publication and forward migration on `events` | both required    | both required                    |
+| answer-key impact                                     | unmeasured       | still unmeasured (section 7 item 3) |
+| gates the option reaches                              | 5 of 8           | 5 of 8                           |
+
+What moved, and why:
+
+- **8 to 7 expressions.** `food_affinity_private_exception_claimed` carried one of the eight and
+  v2.9 removed the field (section 1). The remaining seven are `food_vendor_count`,
+  `sound_audible_from_public_way`, `generator_gasoline_gallons`, `generator_diesel_gallons`,
+  `generator_kw`, `battery_system_kwh` and `venue_license_covers_event_area`.
+- **11/12 to 16/17 objects and conditions.** Five `CONF-NO-*` rules published between v2.8 and
+  v2.11 (`CONF-NO-FOOD-001`, `CONF-NO-AMPLIFIED-SOUND-001`, `CONF-NO-GENERATOR-001`,
+  `CONF-NO-BATTERY-001`, `CONF-NO-ALCOHOL-001`) each compare one of the five fields to `bool false`.
+  The earlier count was taken before they were published; it did not miss them.
+- **132 to 147 literals.** 127 named literals across the same eight files, up from 112, plus the
+  same 20 positional SQL values in the five `ruleset.test.ts` event inserts, which are unchanged.
+  The suite grew from 1163 tests to 1577 over the same interval.
+
+**What the new price decides: the same rejection, on a wider margin.** One component got smaller by
+one expression and two got materially larger, so nothing here is a case for taking the option that
+the stale figure was hiding. The number this brief now rejects it on is 7 expressions, 16 published
+objects carrying 17 trigger conditions, 2 validator checks, 147 fixture literals, a ruleset
+publication and a forward migration on `events`, still reaching 5 of the 8 gates that need it. Two
+limits on that re-pricing, stated rather than implied: it does not measure the answer key, which
+section 7 item 3 still records as unmeasured, and it prices only the conversion of the five
+booleans, not the three gates the conversion cannot reach.
+
+Separately from the price, and decidable from section 2's corrected inventory:
 the alternative converts booleans, and only five of the eight gates that lack a published `unknown`
 are booleans. `headcount` (integer), `location_type` (enum) and `structure_types` (multi-enum) are
 not reachable by a boolean-to-enum conversion at all, so whatever that route costs, it does not
@@ -607,7 +653,8 @@ Stated plainly rather than left as silence:
    Until it is answered, `visibility.ts` stays in scope for any Q1 implementation and attempt B's
    two-file diff is a lower bound on implementation size.
 3. **The ruleset alternative's answer-key impact.** Unmeasured here and unmeasured in the earlier
-   document. Measuring it requires converting 132 fixture literals first, because `readFieldValue`
+   document. Measuring it requires converting the 147 fixture literals section 6b re-prices at
+   v2.11 first, because `readFieldValue`
    rejects a boolean for an enum field, so every scenario fails validation before any answer key is
    reached. I did not do that work and I do not have a number for it.
 4. **Whether attempt B is correct across the gate inventory and across grammars the current ruleset
