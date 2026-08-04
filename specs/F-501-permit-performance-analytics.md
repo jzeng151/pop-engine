@@ -31,7 +31,7 @@ A workspace can review late submissions, revisions, unexpected requirements, and
 
 ## Inputs, Outputs, State, Validation, and Errors
 
-- Inputs are authorized filters plus confirmed source records, including only F-208's explicit user-confirmed unexpected-requirement records for that classification; outputs are aggregates with numerator, denominator, coverage, and metric version.
+- Inputs are authorized filters plus confirmed source records, including only F-208's explicit user-confirmed unexpected-requirement records for that classification, and a stable request identity on each export creation; outputs are aggregates with numerator, denominator, coverage, and metric version.
 - Reports are computed or snapshotted from immutable sources; corrected inputs produce a new result version.
 - Missing/unknown/conflicting dates are excluded or classified exactly by the metric definition, never silently treated as on time.
 - Missing or unresolved material data stays visibly unset, unknown, pending, or failed as appropriate; it never becomes a successful or complete result.
@@ -63,6 +63,9 @@ Exact HTTP, JSON Schema, migration, job, and provider shapes belong in their rev
 4. **F501-AC-04:** Cross-workspace queries, filters, exports, cached results, and drill-downs disclose no foreign record.
 5. **F501-AC-05:** A refresh pins the complete source-version set and generation it reads; snapshot publication compare-and-swaps that generation, rejecting an obsolete refresh so it cannot replace a newer correction-derived snapshot. A default refresh additionally captures, for every event it reads, the exact F-407 per-event current confirmed outcome-snapshot pointer it resolved, and publication compare-and-swaps those pointers too: a refresh whose pointer moved before publication is rejected and rebuilt rather than published as current. A pointer advance from snapshot N to N+1 leaves N's immutable source-version set unchanged, so pinning versions alone does not detect it and would publish superseded outcomes as current. An explicitly selected historical confirmed version is still permitted and stays visibly labeled historical; it names its own version and is not compared against the current pointer. A source correction creates a new report/snapshot and preserves the prior version when retention is enabled.
 6. **F501-AC-06:** Every staged analytics export remains private; each download issuance rechecks current workspace membership/role and returns only an authorized streaming response or short-lived signed URL. Authorization loss blocks new access, and an issued direct-storage URL has only bounded validity until expiry.
+7. **F501-AC-07:** Creating an export binds the request to a stable client-supplied request identity, committed with the export under a uniqueness constraint scoped to the workspace. A retry presenting the same identity returns the original export and its original artifact, enqueues no second job, and stages no second file; a deliberately separate export sends a new identity. This is request identity, never content uniqueness: two genuinely distinct exports over the same filters and the same pinned snapshot are both produced, and a repeated identity is never rejected as a duplicate value.
+
+   F501-AC-05 pins and compare-and-swaps the source generation, which rejects an obsolete refresh rather than a replay: a retry reads the same generation and passes that check. When the create transaction commits and its response is lost, the retry stages a second private artifact over the same workspace records, with its own retention clock and its own F501-AC-06 access surface, for one authorized export.
 
 ## Fixtures and Verification
 

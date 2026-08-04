@@ -30,7 +30,7 @@ Authorized event staff can record timestamped incidents and private attachments 
 
 ## Inputs, Outputs, State, Validation, and Errors
 
-- Inputs are staff-confirmed event/time/description, optional safe files, and a stable request identity on each create and each addendum append; outputs are append-only incident and addendum records.
+- Inputs are staff-confirmed event/time/description, optional safe files, and a stable request identity on each create, each addendum append, and each export creation; outputs are append-only incident and addendum records plus the pinned export job and artifact.
 - State is recorded with later addenda/correction markers; unsafe attachments remain quarantined and separate from incident status.
 - The event's incident-export source generation advances on any incident, addendum/correction, or retention removal; every queued or staged export pins that generation.
 - Unknown time/category or conflicting accounts remain explicit and are not reconciled by the system.
@@ -64,6 +64,9 @@ Exact HTTP, JSON Schema, migration, job, and provider shapes belong in their rev
 5. **F412-AC-05:** Export/retention behavior matches the approved policy and records the actor/action.
 6. **F412-AC-06:** Attachments remain in private storage; every download issuance rechecks event/workspace authorization and scan state and returns only a short-lived signed URL. Authorization loss blocks new URLs, and an issued direct-storage URL has only its disclosed bounded validity until expiry.
 7. **F412-AC-07:** Generated exports remain private and pin the complete incident/addendum/retention generation they read. A generation change cancels queued work, invalidates staged artifacts, and blocks new access to the obsolete export. Every authenticated stream or short-lived signed URL issuance rechecks both that generation and current event/workspace-role authorization; an already issued direct-storage URL has only its disclosed bounded validity until expiry.
+8. **F412-AC-08:** Creating an export binds the request to a stable client-supplied request identity, committed with the export job under a uniqueness constraint scoped to the event. A retry presenting the same identity returns the original job and, once complete, its original artifact, enqueues no second job, and stages no second artifact; a deliberately separate export sends a new identity. This is request identity, never content uniqueness: two genuinely distinct exports over the same pinned generation and the same filters are both produced, and a repeated identity is never rejected as a duplicate value.
+
+   F412-AC-07 pins the source generation and access state, which guards freshness rather than replay: a retry reads the same generation and passes both checks. F412-AC-01's and F412-AC-02's identities do not reach this case either, because each is scoped to one incident create or one addendum append and says nothing about exports. When the create transaction commits and its response is lost, the retry stages a second private artifact of the same incident and addendum records, which is a second copy of sensitive incident data in storage, a second retention clock, and a second F412-AC-05 actor/action record for one authorized export.
 
 ## Fixtures and Verification
 
