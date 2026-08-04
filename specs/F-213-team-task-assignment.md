@@ -63,6 +63,7 @@ Exact HTTP, JSON Schema, migration, job, and provider shapes belong in their rev
 4. **F213-AC-04:** Assignment and member removal serialize on membership (or use an equivalent database invariant), so their race cannot leave an open task assigned to an inactive member; historical attribution remains.
 5. **F213-AC-05:** Concurrent stale updates are rejected rather than silently losing a status or assignee change.
 6. **F213-AC-06:** Each task pins its exact checklist, application, or runbook source version. When that source is superseded or removed, active work is visibly source-stale and cannot appear current; history remains, and the approved policy determines whether the task is cancelled or requires review.
+7. **F213-AC-07:** Task creation carries a client-supplied stable request identity and commits it with the task in one transaction; a replay of that identity returns the original task instead of appending a second one, and a deliberate second task from the same source uses a new identity and is created normally. Source uniqueness cannot stand in for this, because F-213 allows several deliberate tasks against one source record, so deduplicating on the source would refuse legitimate work while a lost create response would still leave two indistinguishable tasks.
 
 ## Fixtures and Verification
 
