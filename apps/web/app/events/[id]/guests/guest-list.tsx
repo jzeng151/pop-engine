@@ -87,11 +87,14 @@ export function GuestListView({ eventId, apiBaseUrl }: GuestListProps) {
       <h1>{list.event.name}</h1>
       <p className="guests__lede">Guest list · {list.event.event_date}</p>
       <p className="guests__count" aria-live="polite">
-        {list.confirmed_count} of {list.event.headcount} confirmed
+        {list.event.capacity === null
+          ? `${list.confirmed_count} confirmed`
+          : `${list.confirmed_count} of ${list.event.capacity} confirmed`}
       </p>
       <p className="guests__note">
-        Synthetic demo data only (AD-12). Capacity uses intake headcount. Guests RSVP from the
-        published public event page. <a href={`/events/${eventId}/promote`}>Promote / publish</a>
+        Synthetic demo data only (AD-12). Admission uses the event's confirmed capacity; with none
+        set there is no limit. Guests RSVP from the published public event page.{" "}
+        <a href={`/events/${eventId}/promote`}>Promote / publish</a>
         {" · "}
         <a href={`/events/${eventId}/dashboard`}>Live ops</a>
         {" · "}

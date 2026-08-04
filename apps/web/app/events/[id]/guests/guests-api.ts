@@ -16,7 +16,7 @@ export type GuestRsvp = {
 };
 
 export type GuestList = {
-  event: { id: string; name: string; headcount: number; event_date: string };
+  event: { id: string; name: string; capacity: number | null; event_date: string };
   rsvps: GuestRsvp[];
   confirmed_count: number;
 };
@@ -51,7 +51,7 @@ function parseList(body: unknown): GuestList | null {
     event === null ||
     typeof event.id !== "string" ||
     typeof event.name !== "string" ||
-    typeof event.headcount !== "number" ||
+    !(typeof event.capacity === "number" || event.capacity === null) ||
     typeof event.event_date !== "string" ||
     !Array.isArray(record?.rsvps) ||
     typeof record.confirmed_count !== "number"
@@ -62,7 +62,7 @@ function parseList(body: unknown): GuestList | null {
     event: {
       id: event.id,
       name: event.name,
-      headcount: event.headcount,
+      capacity: event.capacity,
       event_date: event.event_date,
     },
     rsvps: record.rsvps as GuestRsvp[],

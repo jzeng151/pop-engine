@@ -16,7 +16,7 @@ const sampleList = {
   event: {
     id: "11111111-1111-4111-8111-111111111111",
     name: "Demo Night",
-    headcount: 5,
+    capacity: 5,
     event_date: "2026-08-26",
   },
   rsvps: [
