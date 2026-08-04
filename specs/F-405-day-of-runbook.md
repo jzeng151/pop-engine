@@ -23,7 +23,7 @@ An organizer can generate one current event-day sheet containing confirmed permi
 
 ## Dependencies and Baseline
 
-- **Depends on:** F-202 checklist, F-208/F-209 records where present, F-405's runbook-only staff assignments, and the F-701/F-702/F-703 gate.
+- **Depends on:** F-202 checklist, F-208/F-209 records where present, F-405's runbook-only staff assignments, the F-701/F-702/F-703 gate, F-107 Event Revisions, and the approved plan-acceptance contract. The last two are prerequisites because AC-01 reads `events.current_revision_id` and `events.current_plan_id`, which `docs/EVENT-REVISION-CONTRACT.md` §3 assigns to F-107 and to the plan-acceptance contract respectively. Before they ship there is no approved source for which revision is current or which plan is accepted, and this spec does not invent one: §2.5 forbids treating the newest candidate as accepted, and `permit_plans.event_revision` is a historical migration input rather than an authority for new reads, so an implementer may substitute neither.
 - **Not a dependency:** [SPEC-CONFLICT #207](https://github.com/jzeng151/pop-engine/issues/207) is resolved for this proposal: F-405 owns the minimal Phase 2 runbook-assignment source required by the PRD/Roadmap, while F-213 remains the Phase 3 general team-task feature and is not an F-405 dependency. This resolution does not approve either spec.
 - Baseline at draft time: PRD, Roadmap, Design, and Phase 0–1.5 Architecture approved 2026-07-22; `ARCHITECTURE-FUTURE.md` approved as a planning target 2026-07-25; NYC ruleset `nyc.v2.7`, rules schema `popengine-rules/v2`, and scenario fixtures v5 where regulatory output is consumed.
 - The approval PR must re-pin any baseline version that changes before approval. A proposed or superseded input blocks implementation.
@@ -83,5 +83,6 @@ Exact HTTP, JSON Schema, migration, job, and provider shapes belong in their rev
 
 ## Approval Blockers
 
+- F-107 and the approved plan-acceptance contract must be shipped, or an approved pre-cutover acceptance source must exist and be named here. Approving F-405 without one of those approves AC-01 as a criterion that cannot run.
 - Approve minimal load-in task/contact/runbook-assignment fields and lifecycle, included runbook fields, ready/incomplete wording, privacy handling, and whether snapshots require persistence.
 - Assign the owner and independent reviewer, approve this spec, and add it to `docs/BASELINE.md`.
