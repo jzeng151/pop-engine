@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { parseRulesetVersion } from "@pop-engine/engine";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 
 import { loadEvent, regeneratePlan, type RegenerationRefusal } from "../../intake/events-api";
 
@@ -41,9 +42,19 @@ function downgradeRefusalCopy({
         "reproduce the requirements you have already been shown, so the service refused to store " +
         "one rather than risk it.") +
     " That is about which rules the service is running, not about your event: the plan under " +
-    '"Open permit plan" is still the one those rules produced. Regenerating will work once the ' +
-    `service is running ${pinnedRulesetVersion} or a later version of it, so try again then, or ` +
-    "ask whoever runs this deployment which ruleset it is on."
+    '"Open permit plan" is still the one those rules produced. ' +
+    // A deployment is the way out only when the pinned version is one a later ruleset can be
+    // ordered against. A plan pinned to a label outside the published form is unorderable against
+    // every version the service could run, including the same label again, so naming a deployment
+    // would name a wait that ends at this same refusal.
+    (parseRulesetVersion(pinnedRulesetVersion) === null
+      ? `Waiting will not clear this: ${pinnedRulesetVersion} is not a published ruleset version, ` +
+        "so no version the service runs can be ordered against it and every attempt is refused the " +
+        "same way. Ask whoever runs this deployment to look at the ruleset version this plan " +
+        "recorded; nothing on this page can settle it."
+      : `Regenerating will work once the service is running ${pinnedRulesetVersion} or a later ` +
+        "version of it, so try again then, or ask whoever runs this deployment which ruleset it " +
+        "is on.")
   );
 }
 
@@ -65,6 +76,18 @@ const STORED_UNCONFIRMED =
   "Your plan was regenerated, but the event could not be re-read to confirm the new plan is " +
   "current, so the warning above stays. Reload this page to check; regenerating again would store " +
   "a second plan.";
+
+/**
+ * Said when the POST stored a plan and the read after it reports the plan stale anyway: the event
+ * was edited again while the generation was running, so the stored plan pins the revision it
+ * evaluated (AD-7) and the warning that is still up is about the newer edit. Returning silently
+ * here would leave the organizer the same warning and the same live button they just pressed, with
+ * nothing said about the plan that landed.
+ */
+const STORED_FOR_EARLIER_REVISION =
+  "Your plan was regenerated and stored, but it was built from an earlier revision of this event: " +
+  "the event was edited again while that was running. The warning above is now about that newer " +
+  "edit. Regenerating again will store another plan, built from the event as it stands now.";
 
 /**
  * Said when the POST itself came back with no usable outcome. It may have reached the api and
@@ -108,7 +131,7 @@ export function PlanStaleNotice({ apiBaseUrl, eventId }: { apiBaseUrl: string; e
     // another event and then abandon it, and a ref mutation survives that abandonment while the
     // old event stays committed. Every in-flight read and regeneration for the still-visible event
     // would then fail its identity check, leaving a committed button disabled forever with no
-    // outcome. The ref is advanced in the effect below, which only runs on a commit.
+    // outcome. The ref is advanced in the layout effect below, which only runs on a commit.
     setRenderedEventId(eventId);
     setStale(false);
     setRegenerating(false);
@@ -117,12 +140,18 @@ export function PlanStaleNotice({ apiBaseUrl, eventId }: { apiBaseUrl: string; e
     setRegeneratedRevision(null);
   }
 
+  // Commit phase, so an abandoned concurrent render cannot advance it, and the LAYOUT phase rather
+  // than a passive effect because React runs this inside the commit that puts the new event on
+  // screen, before it yields to any microtask. A passive effect leaves a window between that commit
+  // and the effect: a request for the PREVIOUS event resolving inside it still passes the identity
+  // check below and installs the previous event's outcome over the event now on screen, where the
+  // render-phase reset has already cleared everything. That is the whole point of the check.
+  useLayoutEffect(() => {
+    describedEventId.current = eventId;
+  }, [eventId]);
+
   useEffect(() => {
     let mounted = true;
-    // Commit phase, so an abandoned concurrent render cannot advance it. Between the render-phase
-    // reset above and this line the ref still names the previous event, which is safe: that reset
-    // has already hidden the warning and the button, so there is nothing for a click to act on.
-    describedEventId.current = eventId;
     // The result below is about the event that was current when its request went out. `mounted`
     // alone cannot say that: React keeps this instance across an eventId change and runs the
     // cleanup AFTER the new id has committed, so a slow read for the previous event lands with
@@ -202,7 +231,10 @@ export function PlanStaleNotice({ apiBaseUrl, eventId }: { apiBaseUrl: string; e
       setWithheld(`${STORED_UNCONFIRMED} ${recheck.message}`);
       return;
     }
-    if (recheck.loaded.plan_stale) return;
+    if (recheck.loaded.plan_stale) {
+      setFailure(STORED_FOR_EARLIER_REVISION);
+      return;
+    }
 
     // `loadEvent` normalises a missing `plan_stale` to `false`, which is right for a reader asking
     // "is it stale" and wrong for this one, which is asking "was freshness confirmed". A 2xx body

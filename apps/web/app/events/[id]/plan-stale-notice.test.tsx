@@ -13,6 +13,7 @@
 
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { useLayoutEffect } from "react";
+import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { PlanStaleNotice } from "./plan-stale-notice";
@@ -29,12 +30,16 @@ const eventResponse = (planStale: boolean, revision = 3) =>
   );
 
 /** What the endpoint's downgrade guard answers with (F-201 AC 12). */
-const downgradeRefusal = (standing: "older" | "different", rulesetVersion: string) =>
+const downgradeRefusal = (
+  standing: "older" | "different",
+  rulesetVersion: string,
+  pinnedRulesetVersion = PINNED_VERSION,
+) =>
   new Response(
     JSON.stringify({
       error: "plan generation refused: …",
       rulesetVersion,
-      pinnedRulesetVersion: PINNED_VERSION,
+      pinnedRulesetVersion,
       standing,
     }),
     { headers: { "Content-Type": "application/json" }, status: 409 },
@@ -235,6 +240,28 @@ describe("the endpoint's downgrade refusal", () => {
     expect(text).toContain("sfo.v1.0");
   });
 
+  /**
+   * Two versions can be unorderable because the pinned one is not a published version identifier at
+   * all: a plan pinned to a label like `draft` is unorderable against every ruleset the service can
+   * run, including `draft` itself, since a reused label says nothing about an artifact's contents.
+   * Telling that organizer to wait for a deployment names a wait that ends at the same refusal.
+   */
+  it("does not offer a deployment as the way out when the pinned version cannot be ordered at all", async () => {
+    respondWith({ post: () => downgradeRefusal("different", "nyc.v2.11", "draft") });
+
+    renderNotice();
+    await clickRegenerate();
+
+    const text = await refusalText();
+    expect(text).toContain("draft");
+    expect(text).not.toContain("or a later version of it");
+    expect(text).not.toContain("try again");
+    // Ordering says nothing about regulatory content here either, so the copy may not read as a
+    // statement that the stored plan is wrong or incomplete.
+    expect(text).not.toMatch(/dropped|would drop|were removed|are missing/);
+    expect(text).toContain("Ask whoever runs this deployment");
+  });
+
   // A retry posts the same request to the same service and is refused the same way. Leaving the
   // button up invites the organizer to press it until something changes that only a deployment can.
   it("leaves no retry that would repeat the same refusal", async () => {
@@ -368,6 +395,26 @@ describe("a regeneration whose outcome is not known", () => {
     expect(regenerateButton()).toBeNull();
   });
 
+  /**
+   * A regeneration can succeed and be stale again on arrival: the event is edited while the plan is
+   * being generated, so the POST stores an immutable plan (AD-7) for the revision it evaluated and
+   * the read after it correctly reports the plan out of date. Returning silently leaves the same
+   * warning and the same live button the organizer pressed, with nothing said about the plan that
+   * was stored, so the next press stores a second one for the same click's worth of intent.
+   */
+  it("reports a regeneration that stored a plan the event has already been edited past", async () => {
+    respondWith();
+
+    renderNotice();
+    await clickRegenerate();
+
+    const outcome = await screen.findByText(/built from an earlier revision of this event/);
+    expect(outcome.textContent).toContain("regenerated and stored");
+    // The warning is still true and the retry is still the right action: both stay.
+    expect(screen.getByText(/edited since its plan was generated/)).toBeDefined();
+    expect(regenerateButton()).not.toBeNull();
+  });
+
   // The api answered, so nothing was written and the event is still stale by the read that follows.
   it("reports an api-reported failure and leaves the retry", async () => {
     respondWith({
@@ -492,11 +539,15 @@ describe("event identity and announcement", () => {
 
   // A regeneration for the event the organizer has navigated away from says nothing about the one
   // now on screen: the POST never touched it.
+  //
+  // Both events read stale, and that is load-bearing rather than incidental setup. With the second
+  // event current the notice renders nothing at all, so an outcome wrongly installed for the first
+  // one is invisible and this passes with the identity check deleted, verified by deleting it.
   it("reports no outcome for an event it has been handed away from", async () => {
     let releasePost: (r: Response) => void = () => {};
     fetchMock.mockImplementation(async (url: string, init?: RequestInit) => {
       if (isPost(init)) return new Promise<Response>((resolve) => (releasePost = resolve));
-      return eventResponse(url.includes("event-9"));
+      return eventResponse(true);
     });
 
     const view = renderNotice();
@@ -507,7 +558,71 @@ describe("event identity and announcement", () => {
     releasePost(downgradeRefusal("older", "nyc.v2.10"));
     await new Promise((resolve) => setTimeout(resolve, 0));
 
+    // The second event's own warning, which is what makes the absence below an absence rather than
+    // an empty notice.
+    await vi.waitFor(() =>
+      expect(screen.queryByText(/edited since its plan was generated/)).not.toBeNull(),
+    );
     expect(screen.queryByText(/Your plan was not regenerated/)).toBeNull();
+  });
+
+  /**
+   * The narrow ordering the test above cannot reach, and the one the identity guard exists for:
+   * the new event's render has COMMITTED, and the previous event's regeneration resolves before
+   * anything React defers has run. React's own act() flushes passive effects synchronously at the
+   * end of the render it wraps, ahead of any pending microtask, so a test that renders through act
+   * can never stand in that window and passes whether or not the guard holds there.
+   *
+   * So this one drives its own root outside act. The commit that carries `event-10` releases the
+   * in-flight POST from a layout effect, which React runs inside that commit; the POST's
+   * continuation is a microtask and therefore lands before React's deferred work. If the committed
+   * identity is only advanced by that deferred work, the previous event's refusal passes the check
+   * and installs `event-9`'s ruleset versions over the event now on screen.
+   */
+  it("applies no regeneration outcome once another event's render has committed", async () => {
+    const actEnvironment = globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean };
+    const wasActEnvironment = actEnvironment.IS_REACT_ACT_ENVIRONMENT;
+    actEnvironment.IS_REACT_ACT_ENVIRONMENT = false;
+    const container = document.body.appendChild(document.createElement("div"));
+    const root = createRoot(container);
+
+    try {
+      // Both events are stale, so the notice is on screen for either one and a message installed
+      // for the wrong event is visible rather than hidden behind a cleared warning.
+      let releasePost: (response: Response) => void = () => {};
+      fetchMock.mockImplementation(async (url: string, init?: RequestInit) => {
+        if (isPost(init)) return new Promise<Response>((resolve) => (releasePost = resolve));
+        return eventResponse(true);
+      });
+
+      onNoticeCommitted = () => {};
+      root.render(noticeWithProbe("event-9"));
+      const button = await vi.waitFor(() => {
+        const found = regenerateButton();
+        if (found === null) throw new Error("the regeneration was not offered");
+        return found;
+      });
+      button.click();
+      await vi.waitFor(() => expect(postCount()).toBe(1));
+
+      onNoticeCommitted = () => releasePost(downgradeRefusal("older", "nyc.v2.10"));
+      root.render(noticeWithProbe("event-10"));
+
+      // Nothing is on screen between that commit and `event-10`'s own read: the render that carries
+      // the new id clears the previous event's state. The read is issued from an effect React runs
+      // after the commit, so the refusal microtask has already been accepted or rejected by the
+      // time its warning goes up, and the assertions below are not racing it.
+      await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(3));
+      await vi.waitFor(() =>
+        expect(screen.queryByText(/edited since its plan was generated/)).not.toBeNull(),
+      );
+      expect(screen.queryByText(/Your plan was not regenerated/)).toBeNull();
+      expect(regenerateButton()).not.toBeNull();
+    } finally {
+      root.unmount();
+      container.remove();
+      actEnvironment.IS_REACT_ACT_ENVIRONMENT = wasActEnvironment;
+    }
   });
 
   // Regression: the intake form rendered this asynchronous state inside `.intake__saved`, which
