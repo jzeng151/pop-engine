@@ -23,7 +23,7 @@ An organizer can generate editable Instagram, email, and SMS drafts from confirm
 
 ## Dependencies and Baseline
 
-- F-101 confirmed event data and the F-701/F-702/F-703 gate.
+- F-101 confirmed event data and the F-701/F-702/F-703 gate. F-702 supplies the workspace membership boundary the event and its AI runs and drafts resolve against and F-703 supplies the permission matrix `F304-AC-07` checks; F-701 supplies the authenticated actor both read from. All three are PROPOSED, so the gate is not an approved input today and this spec is not implementable against it until they are approved and listed in `docs/BASELINE.md`.
 - ADR for the AI gateway, provider/model, retention, prompt versioning, and evaluation.
 - Baseline at draft time: PRD, Roadmap, Design, and Phase 0–1.5 Architecture approved 2026-07-22; `ARCHITECTURE-FUTURE.md` approved as a planning target 2026-07-25; NYC ruleset `nyc.v2.7`, rules schema `popengine-rules/v2`, and scenario fixtures v5 where regulatory output is consumed.
 - Operand binding for client-supplied identities: `specs/F-411-staff-roles-credentialed-entry.md` F411-AC-08 states once, for this whole branch, that a client-supplied identity is committed with the operands that determine its recorded result and that a reuse carrying different operands is a conflict rather than a replay. Every identity criterion below relies on it. F-411 is PROPOSED, so that rule is not an approved input today and this spec is not implementable against it until F-411 is approved or the rule is promoted to an approved shared invariant; F411-AC-08 records both paths.
@@ -69,11 +69,18 @@ Exact HTTP, JSON Schema, migration, job, and provider shapes belong in their rev
 
    The System Impact table names idempotency, which is not a criterion an implementation is held to, and AC-01 pins the source versions rather than the request. When the run commits and its response is lost, the retry spends provider quota a second time and produces a second independently editable draft set for one organizer action, with nothing to say which set the organizer's later edits belong to.
 
+7. **F304-AC-07:** Every operation this feature defines names the event it acts in and the workspace that owns it, and is admitted only by the acting actor's current F-702 membership of that workspace together with the F-703 permission approved for the action, both re-read server-side from stored membership and role at the moment of the operation and, for a write, inside the same transaction that commits it. That covers starting a generation and its AI run create under F304-AC-06, every run status and result read, draft retrieval and the source-fact preview under F304-AC-01 and F304-AC-02, copying, editing, and regenerating a draft and the pre-copy recheck under F304-AC-01 and F304-AC-03, and the explicit organizer reconciliation F304-AC-01 defines. A request failing the check is refused before any durable write and before any confirmed event fact, source-fact preview, draft, or run result is disclosed, and a refused generation issues no provider call, so a caller the check turns away sends nothing of the event to the provider either. Its response does not distinguish an event or run that does not exist from one the actor may not see. The check is at the operation and not at session start or workspace switch, so authority removed while a request is in flight causes that request to fail rather than commit.
+
+   Without this criterion AC-01 through AC-06 all pass for a caller who names another workspace's event. They fix version pinning, the field filter the provider receives, the no-publish rule, the prohibited-claim check, failure recovery, and request identity, and not one of them asks who the actor is: AC-02's filter constrains which fields reach the provider, not who may trigger the call. A conforming implementation can therefore disclose another organizer's confirmed event details to the caller and to the provider, then return copyable drafts advertising an event the caller has no membership in.
+
+   One input this criterion needs is not established by any approved artifact today and is not invented here. F-703 is PROPOSED and names no role set, so the permission above cannot be named. Until F-703 is approved this criterion is testable only as "every generation start, run read, draft retrieval, preview, copy, edit, regeneration, and reconciliation is refused unless the acting actor holds an active membership of the workspace that owns the named event, read server-side at that operation, and a refusal discloses nothing about whether that event or run exists", not against a named role or permission identifier. Naming the generation and draft permissions with F-703 is an approval blocker below.
+
 ## Fixtures and Verification
 
 - Planned automated fixture IDs are the acceptance IDs above; each must map one-to-one to a runnable test before approval can claim implementation readiness.
 - F304-AC-01 includes a fixture in which a metadata-only rename advances the Event concurrency token without appending a revision, and the draft naming the old name is blocked from copy until regeneration or explicit reconciliation.
 - Regulatory fixtures: Use approved scenario findings only as a prohibited-claim regression corpus; generated text is never a regulatory fixture.
+- F304-AC-07 includes a fixture in which an actor holding no membership of the owning workspace names a valid event and run and is refused at generation start, at every run and draft read, at preview, and at copy, with a response that does not distinguish absence from denial and with no provider call issued, and a fixture in which authority removed while a generation request is in flight fails that request rather than committing a run.
 - Security-sensitive and cross-workspace paths require negative authorization tests; provider paths require success, duplicate-delivery, retry, invalid-signature, and permanent-failure tests where applicable.
 
 ## Allowed Footprint and Coordination
@@ -91,4 +98,5 @@ Exact HTTP, JSON Schema, migration, job, and provider shapes belong in their rev
 ## Approval Blockers
 
 - Approve AI gateway/provider ADR, privacy review, prompt/evaluation set, cost limits, and prohibited-claim checks.
+- Approve F-701, F-702, and F-703, and name with F-703 the generation and draft permissions `F304-AC-07` checks. That criterion checks a permission no approved artifact defines today and may not invent one, so until the matrix names them it is testable only at the membership level stated there.
 - Assign the owner and independent reviewer, approve this spec, and add it to `docs/BASELINE.md`.

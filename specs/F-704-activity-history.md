@@ -23,7 +23,7 @@ Authorized users can see who changed material answers, recalculated plans, chang
 
 ## Dependencies and Baseline
 
-- F-701/F-702/F-703 and approved activity event vocabulary/redaction policy.
+- The F-701/F-702/F-703 gate and approved activity event vocabulary/redaction policy. F-702 supplies the workspace membership boundary workspace-scoped activity resolves against and F-703 supplies the permission matrix and the separate platform role `F704-AC-07` checks; F-701 supplies the authenticated actor both read from. All three are PROPOSED, so the gate is not an approved input today and this spec is not implementable against it until they are approved and listed in `docs/BASELINE.md`.
 - Consuming features must emit activity in the same transaction as their domain mutation.
 - Baseline at draft time: PRD, Roadmap, Design, and Phase 0–1.5 Architecture approved 2026-07-22; `ARCHITECTURE-FUTURE.md` approved as a planning target 2026-07-25; NYC ruleset `nyc.v2.7`, rules schema `popengine-rules/v2`, and scenario fixtures v5 where regulatory output is consumed.
 - The approval PR must re-pin any baseline version that changes before approval. A proposed or superseded input blocks implementation.
@@ -63,10 +63,17 @@ Exact HTTP, JSON Schema, migration, job, and provider shapes belong in their rev
 5. **F704-AC-05:** Corrections, rule publication/rollback, and system jobs append new entries and never rewrite earlier history.
 6. **F704-AC-06:** Every record carries a stable non-secret actor reference in addition to actor type; user attribution remains distinct and displayable under the approved deletion policy, while system and provider actions use explicit named identities rather than a generic or fabricated user.
 
+7. **F704-AC-07:** Every activity read this feature defines, the query, filter, pagination, and source-link operations of `F704-AC-04`, names the workspace it reads in or the platform scope it reads at, and is admitted only by the acting actor's current F-702 membership of that workspace together with the F-703 permission approved for the read, or for platform-scoped activity by the actor's current authority under the approved separate platform role, re-read server-side from stored membership and role at each request. Activity writes are internal to the consuming features' own domain transactions under `F704-AC-01` and are gated by the criteria of the features that emit them, so this criterion reaches only reads. `F704-AC-04` remains the rule for what a read may disclose, its tenant isolation and platform-role visibility unchanged; this criterion adds when and where the authority that rule presumes is read: per request, at the operation, never from a session, a client-supplied role claim, or the authority held when the timeline was first opened, so membership or platform authority removed while a request is in flight causes that request to fail rather than return records. A request failing the check is refused before any activity record, aggregate reference, or source link is disclosed, and its response does not distinguish a workspace, aggregate, or activity record that does not exist from one the actor may not see.
+
+   Without this criterion AC-01 through AC-06 all pass for a caller whose authority is stale. They fix atomic emission, failure suppression, metadata redaction, cross-workspace non-disclosure, append-only history, and actor attribution, and `F704-AC-04` says what a foreign caller may not see without saying when the authority that decides it is read, so an implementation that resolves membership once at session start satisfies every criterion while a removed member keeps reading the workspace's full activity timeline, who changed what and when, until they sign out.
+
+   One input this criterion needs is not established by any approved artifact today and is not invented here. F-703 is PROPOSED and names no role set, so neither the workspace read permission nor the platform role above can be named. Until F-703 is approved this criterion is testable only as "every workspace-scoped activity read is refused unless the acting actor holds an active membership of that workspace, and every platform-scoped activity read is refused unless the actor holds the separate platform authority, both read server-side at that request, and a refusal discloses nothing about whether the scope or its records exist", not against a named role or permission identifier. Naming the activity read permissions with F-703 is an approval blocker below.
+
 ## Fixtures and Verification
 
 - Planned automated fixture IDs are the acceptance IDs above; each must map one-to-one to a runnable test before approval can claim implementation readiness.
 - Regulatory fixtures: none; this feature does not define regulatory ground truth.
+- F704-AC-07 includes a fixture in which an authenticated actor holding no membership of the owning workspace names a valid aggregate and is refused at query, filter, pagination, and source-link resolution, with a response that does not distinguish absence from denial; a matching platform-scope fixture for an actor without the platform role; and a fixture in which membership removed while a request is in flight fails that request rather than returning records.
 - Security-sensitive and cross-workspace paths require negative authorization tests; provider paths require success, duplicate-delivery, retry, invalid-signature, and permanent-failure tests where applicable.
 
 ## Allowed Footprint and Coordination
@@ -84,4 +91,5 @@ Exact HTTP, JSON Schema, migration, job, and provider shapes belong in their rev
 ## Approval Blockers
 
 - Approve action vocabulary, workspace/platform scope contract, metadata/redaction, retention, role visibility, and transactional emission pattern.
+- Approve F-701, F-702, and F-703, and name with F-703 the workspace and platform activity read permissions `F704-AC-07` checks. That criterion checks a permission no approved artifact defines today and may not invent one, so until the matrix names them it is testable only at the membership and platform-authority level stated there.
 - Assign the owner and independent reviewer, approve this spec, and add it to `docs/BASELINE.md`.
