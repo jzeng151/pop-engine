@@ -1,5 +1,4 @@
 import type { ColumnDefinitions, MigrationBuilder } from "node-pg-migrate";
-import { PROVIDER_DEDUP_WINDOW_HOURS } from "../src/alerts";
 
 export const shorthands: ColumnDefinitions | undefined = undefined;
 
@@ -145,11 +144,18 @@ export function up(pgm: MigrationBuilder): void {
   // has — a person checks the provider for the key and then marks the alert sent or clears the
   // attempt, or the limit passes and the poller retries it.
   //
-  // The interval is written from `PROVIDER_DEDUP_WINDOW_HOURS` rather than as a literal, so the
-  // claim this stamp makes and the window it is a claim about cannot drift apart.
+  // THE INTERVAL IS A LITERAL AND ITS DERIVATION IS THIS COMMENT. 24 hours is the value of
+  // `PROVIDER_DEDUP_WINDOW_HOURS` on the day this migration was written, and the two say the same
+  // thing on the day it runs, which is what the seed needs. Read from the constant instead, they
+  // would also say the same thing on every later day, and that is the wrong property here: a
+  // change to the window would rewrite what this already-applied migration is understood to have
+  // done, and a database migrated after that change would seed a different stamp from one migrated
+  // before it out of the same migration set. Frozen, this migration keeps the number it ran with,
+  // and a change to the window is what a change to a shipped migration has always been — a new
+  // ordered one (AGENTS.md). `migration-014.test.ts` pins the literal and the absence of the read.
   pgm.sql(`INSERT INTO alert_send_attempts (alert_id, idempotency_key, attempted_at)
            SELECT id, idempotency_key,
-                  clock_timestamp() - interval '${PROVIDER_DEDUP_WINDOW_HOURS} hours'
+                  clock_timestamp() - interval '24 hours'
              FROM alerts
             WHERE status = 'failed'
               AND channel = 'email'

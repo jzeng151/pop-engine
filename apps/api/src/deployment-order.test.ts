@@ -121,6 +121,30 @@ describe("F-203 rollout constraints the runbook has to carry", () => {
     );
   });
 
+  it("describes the hold as bounded and released from the first unresolved attempt", () => {
+    // THE FIFTH CORRECTION OF THE SAME SHAPE, after the organizer's notice, the tick's telemetry,
+    // the schema contract and the hold log: an authoritative artifact left saying what the system
+    // used to do. The product owner bounded the hold on 2026-08-04, and the schema section still
+    // said an unsuperseded attempt would hold a revived alert out of every scan permanently, which
+    // is the description a contributor reads first and is required to implement against.
+    //
+    // PINNED AS THE TWO CLAIMS THE BOUND CONSISTS OF, not as a phrasing: the section may say what
+    // it likes about the hold as long as it names the limit and says the release is measured from
+    // the oldest unresolved attempt rather than the newest. The second is what stops an outage
+    // extending suppression past the approved 48 hours, and it is the half a reader would drop.
+    expect(read("apps/api/src/alerts.ts")).toContain("UNRESOLVED_ATTEMPT_HOLD_LIMIT_HOURS");
+
+    const architecture = read("docs/ARCHITECTURE.md");
+    const schemaSection = architecture.slice(
+      architecture.indexOf("### alert_send_attempts"),
+      architecture.indexOf("### event_alert_contacts"),
+    );
+    const prose = schemaSection.replace(/\s+/g, " ");
+    expect(prose).toContain("UNRESOLVED_ATTEMPT_HOLD_LIMIT_HOURS");
+    expect(prose).toMatch(/first unresolved attempt/i);
+    expect(prose).not.toMatch(/held out of every scan permanently/i);
+  });
+
   it("tells a deployer to deploy web before the api for the reconciliation notice", () => {
     // WHY THE CODE NEEDS THIS. The api stops counting a reconciliation-held alert among the
     // failures (the failure notice promises retries that have ended for it) and reports it under

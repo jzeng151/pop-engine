@@ -354,6 +354,11 @@ export const ALERT_POLLER_CONNECTIONS = SEND_CONCURRENCY + 1;
  *
  * This is the number that makes an unresolved attempt reconcilable rather than sendable, so it is
  * named once and read by the scan, the claim and the tests.
+ *
+ * Migration 014's backfill carries a FROZEN COPY of this value rather than a read of it, because
+ * what a migration did to a database it has already run against cannot depend on a number that is
+ * still moving. Changing this constant does not change that seed, and is not meant to: a change to
+ * the provider's window that has to reach existing rows is a new ordered migration.
  */
 export const PROVIDER_DEDUP_WINDOW_HOURS = 24;
 
