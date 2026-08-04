@@ -24,16 +24,6 @@ export type LoadedEvent = {
 
 export type LoadResult = { ok: true; loaded: LoadedEvent } | { ok: false; message: string };
 
-/**
- * A plan regeneration. `eventRevision` is the revision the new plan evaluated, read from
- * the plan endpoint's own `eventRevision` (F-201 serves plans in camelCase; the events
- * routes serve database rows in snake_case). The caller uses it to ignore a response for
- * a revision the event has already moved past. It is null when the response does not say,
- * which the caller must treat as "cannot confirm" rather than "matches".
- */
-export type PlanRegenerationResult =
-  { ok: true; eventRevision: number | null } | { ok: false; message: string };
-
 const UNREACHABLE = "The API could not be reached.";
 
 async function readJson(response: Response): Promise<unknown> {
@@ -93,35 +83,4 @@ export async function loadEvent(apiBaseUrl: string, eventId: string): Promise<Lo
       plan_stale_reported: typeof asRecord(body)?.plan_stale === "boolean",
     },
   };
-}
-
-/**
- * One-click plan regeneration (F-101 spec #8). The endpoint is F-201's
- * (`POST /api/events/:id/plan`, ARCHITECTURE.md API Surface); intake only asks for it
- * and reports what came back. Plans are immutable snapshots (AD-7), so regeneration is
- * a new plan for the current revision, never a patch.
- */
-export async function regeneratePlan(
-  apiBaseUrl: string,
-  eventId: string,
-): Promise<PlanRegenerationResult> {
-  let response: Response;
-  try {
-    response = await fetch(`${apiBaseUrl}/api/events/${eventId}/plan`, {
-      method: "POST",
-      ...CREDENTIALED,
-    });
-  } catch {
-    return { ok: false, message: UNREACHABLE };
-  }
-
-  const body = await readJson(response);
-  if (!response.ok) {
-    return {
-      ok: false,
-      message: failureMessage(body, `The plan could not be regenerated (HTTP ${response.status}).`),
-    };
-  }
-  const revision = asRecord(body)?.eventRevision;
-  return { ok: true, eventRevision: typeof revision === "number" ? revision : null };
 }

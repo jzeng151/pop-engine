@@ -107,16 +107,21 @@ const isNearEmpty = (findings: PlanResponse["findings"]): boolean =>
  * the plan on screen is stale but its regulatory basis is sound, and the page already says it is
  * stale. Stale-but-sound is the better of the two to leave an organizer holding.
  *
- * Exported because the event overview's stale-plan notice (F-101 AC 8) offers the same operation
- * from another surface. One organizer action, one decision about it: a second copy of this
- * comparison is a second place for the downgrade to become reachable again.
+ * What this cannot do is hold across the write it authorises. It decides on reads that have
+ * already returned, and another deployment can store a plan pinned to a newer ruleset in the
+ * interval before the POST, which no client read observes. The event overview's stale-plan notice
+ * (F-101 AC 8) stopped offering the operation for that reason (#232); this page still offers it,
+ * because it is also the only route to a FIRST plan, which has nothing to downgrade. Closing the
+ * interval for the rest needs the precondition checked where the plan is written
+ * (`docs/OPEN-QUESTIONS.md` T-5); until then this comparison narrows the window and does not
+ * close it. It is no longer exported: the overview was the only other caller.
  *
  * `preservedPlan` is how the caller's own screen refers to the plan the refusal preserves, because
  * the two surfaces sit in different places relative to it: the plan view renders it directly under
  * this text, while the overview only links to it. A fixed phrase would tell the overview's reader
  * they are already looking at a regulatory artifact they would still have to navigate to.
  */
-export function regenerationRefusal(
+function regenerationRefusal(
   pinnedVersion: string,
   liveVersion: string | null,
   standing: ReturnType<typeof compareToPinned> | null,

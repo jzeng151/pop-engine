@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { loadEvent, regeneratePlan } from "./events-api";
+import { loadEvent } from "./events-api";
 
 // `fetch` is stubbed; the api's own behavior is covered by the integration suite in
 // apps/api. What is pinned here is the request this app makes and how each answer is
@@ -106,74 +106,6 @@ describe("loadEvent", () => {
       throw new TypeError("Failed to fetch");
     });
     await expect(loadEvent("https://api.example.com", "event-1")).resolves.toEqual({
-      ok: false,
-      message: "The API could not be reached.",
-    });
-  });
-});
-
-describe("regeneratePlan", () => {
-  it("posts to the event's plan endpoint with the Access cookie attached", async () => {
-    const fetchMock = stubFetch(async () =>
-      jsonResponse(201, { verdict: "feasible", eventRevision: 2 }),
-    );
-
-    await expect(regeneratePlan("https://api.example.com", "event-1")).resolves.toEqual({
-      ok: true,
-      eventRevision: 2,
-    });
-    expect(fetchMock).toHaveBeenCalledWith("https://api.example.com/api/events/event-1/plan", {
-      method: "POST",
-      credentials: "include",
-      headers: { "Content-Type": "application/json" },
-    });
-  });
-
-  it("reports an unknown revision when the plan response does not name one", async () => {
-    // The plan endpoint is F-201's; this app must not require a shape it does not own.
-    // A snake_case key is not the one F-201 publishes, so it reads as "cannot confirm".
-    stubFetch(async () => jsonResponse(201, { verdict: "feasible", event_revision: 2 }));
-    await expect(regeneratePlan("https://api.example.com", "event-1")).resolves.toEqual({
-      ok: true,
-      eventRevision: null,
-    });
-
-    stubFetch(async () => jsonResponse(201, { verdict: "feasible" }));
-    await expect(regeneratePlan("https://api.example.com", "event-1")).resolves.toEqual({
-      ok: true,
-      eventRevision: null,
-    });
-  });
-
-  it("reports the api's own error message", async () => {
-    stubFetch(async () => jsonResponse(409, { error: "event has no intake to evaluate" }));
-    await expect(regeneratePlan("https://api.example.com", "event-1")).resolves.toEqual({
-      ok: false,
-      message: "event has no intake to evaluate",
-    });
-  });
-
-  it("falls back to the status when the failure body carries no message", async () => {
-    stubFetch(async () => new Response("<html>gateway</html>", { status: 502 }));
-    await expect(regeneratePlan("https://api.example.com", "event-1")).resolves.toEqual({
-      ok: false,
-      message: "The plan could not be regenerated (HTTP 502).",
-    });
-  });
-
-  it("falls back to the status when the failure body is JSON without an error string", async () => {
-    stubFetch(async () => jsonResponse(500, { error: 42 }));
-    await expect(regeneratePlan("https://api.example.com", "event-1")).resolves.toEqual({
-      ok: false,
-      message: "The plan could not be regenerated (HTTP 500).",
-    });
-  });
-
-  it("reports an unreachable api instead of throwing", async () => {
-    stubFetch(async () => {
-      throw new TypeError("Failed to fetch");
-    });
-    await expect(regeneratePlan("https://api.example.com", "event-1")).resolves.toEqual({
       ok: false,
       message: "The API could not be reached.",
     });
