@@ -26,7 +26,7 @@ const listBody = {
   event: {
     id: EVENT_ID,
     name: "Demo Night",
-    headcount: 5,
+    capacity: 5,
     event_date: "2026-08-26",
   },
   rsvps: [
@@ -44,7 +44,44 @@ const listBody = {
 };
 
 describe("GuestListView", () => {
-  it("shows confirmed count vs headcount and can cancel an RSVP", async () => {
+  // SPEC-CONFLICT #209, resolved 2026-08-03: a null capacity is no confirmed limit, so the
+  // count is shown on its own rather than against a number the organizer never set.
+  it("shows the count alone when no capacity is confirmed", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(
+        new Response(
+          JSON.stringify({ ...listBody, event: { ...listBody.event, capacity: null } }),
+          {
+            headers: { "Content-Type": "application/json" },
+            status: 200,
+          },
+        ),
+      ),
+    );
+    render(<GuestListView eventId={EVENT_ID} apiBaseUrl="https://api.example.com" />);
+    expect(await screen.findByText("1 confirmed")).toBeDefined();
+  });
+
+  // The note is rendered during the compatibility window, when `readLimit` may have taken the
+  // number from a pre-rename API's regulatory `headcount`. Calling that a confirmed capacity
+  // tells the organizer something the responding API has not stated, so the copy names the
+  // limit by what it does rather than by which field supplied it.
+  it("does not call the limit a confirmed capacity when a pre-rename api supplied it", async () => {
+    const legacyBody = {
+      ...listBody,
+      event: { id: EVENT_ID, name: "Demo Night", headcount: 5, event_date: "2026-08-26" },
+    };
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(jsonResponse(200, legacyBody)));
+
+    render(<GuestListView eventId={EVENT_ID} apiBaseUrl="https://api.example.com" />);
+    expect(await screen.findByText("1 of 5 confirmed")).toBeDefined();
+    const note = document.querySelector(".guests__note");
+    expect(note?.textContent).toContain("current admission limit");
+    expect(note?.textContent).not.toContain("confirmed capacity");
+  });
+
+  it("shows confirmed count vs capacity and can cancel an RSVP", async () => {
     const user = userEvent.setup();
     const fetchMock = vi
       .fn()

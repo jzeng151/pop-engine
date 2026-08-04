@@ -16,7 +16,7 @@ const sampleList = {
   event: {
     id: "11111111-1111-4111-8111-111111111111",
     name: "Demo Night",
-    headcount: 5,
+    capacity: 5,
     event_date: "2026-08-26",
   },
   rsvps: [
@@ -45,6 +45,81 @@ describe("loadGuestList", () => {
       `https://api.example.com/api/events/${sampleList.event.id}/guests`,
       expect.anything(),
     );
+  });
+
+  // `docs/ARCHITECTURE.md:9` rolls web and API independently, so this build can be talking to an
+  // API that predates the `headcount` to `capacity` rename. Rejecting that response would empty
+  // the guest list and take the cancel controls with it until the API deployment lands. The limit
+  // an old API serves under `headcount` is the limit that API actually enforces, so it is read as
+  // the limit rather than discarded.
+  it("reads the pre-rename headcount as the limit when the API sends no capacity", async () => {
+    const legacy = {
+      ...sampleList,
+      event: { ...sampleList.event, headcount: 40, capacity: undefined },
+    };
+    delete (legacy.event as { capacity?: unknown }).capacity;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => jsonResponse(200, legacy)),
+    );
+
+    const result = await loadGuestList("https://api.example.com", sampleList.event.id);
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.list.event.capacity).toBe(40);
+  });
+
+  // Both generations at once is what a mid-rollout API serves. `capacity` is this contract's
+  // field and `headcount` is the regulatory input the previous contract admitted against, so the
+  // newer field wins and the older one is ignored rather than merged.
+  it("prefers capacity over headcount when the API serves both", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () =>
+        jsonResponse(200, { ...sampleList, event: { ...sampleList.event, headcount: 40 } }),
+      ),
+    );
+
+    const result = await loadGuestList("https://api.example.com", sampleList.event.id);
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.list.event.capacity).toBe(5);
+  });
+
+  // A null capacity is a stated fact from a current API: no confirmed limit. It is not the same
+  // as an absent one, and the fallback must not turn it into the regulatory headcount.
+  it("keeps a stated null capacity even when headcount is also served", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () =>
+        jsonResponse(200, {
+          ...sampleList,
+          event: { ...sampleList.event, capacity: null, headcount: 40 },
+        }),
+      ),
+    );
+
+    const result = await loadGuestList("https://api.example.com", sampleList.event.id);
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.list.event.capacity).toBeNull();
+  });
+
+  it("rejects a list that carries neither capacity nor headcount", async () => {
+    const neither = { ...sampleList, event: { ...sampleList.event, capacity: undefined } };
+    delete (neither.event as { capacity?: unknown }).capacity;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => jsonResponse(200, neither)),
+    );
+
+    await expect(loadGuestList("https://api.example.com", sampleList.event.id)).resolves.toEqual({
+      ok: false,
+      message: "The API returned a guest list this page cannot read.",
+    });
   });
 
   it("maps a missing event to a friendly message", async () => {
