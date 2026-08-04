@@ -62,6 +62,9 @@ Exact HTTP, JSON Schema, migration, job, and provider shapes belong in their rev
 4. **F606-AC-04:** Duplicate source changes deduplicate without erasing separate review decisions or evidence.
 5. **F606-AC-05:** An accepted candidate enters normal human research/review and still requires F-714 approvals before publication.
 6. **F606-AC-06:** No-change is emitted only by deterministic equality under the run's exact-byte or approved versioned-normalization comparator, whose identity and result are recorded with both raw snapshots. AI may summarize or prioritize a comparator difference but cannot suppress its review candidate.
+7. **F606-AC-07:** Every run carries a stable execution identity, committed with the run under a uniqueness constraint scoped to the source. A manually started run takes a client-supplied request identity; a scheduled run takes the identity of its source/cadence occurrence, so a job delivered twice resolves to the one occurrence. A retry or redelivery presenting the same identity returns the original run with its evidence and candidates and performs no second fetch or analysis; a deliberate rerun of the same source sends a new identity. This is execution identity, never content uniqueness: two genuinely distinct runs that fetch identical bytes are both recorded, and a repeated identity is never rejected as a duplicate value.
+
+   AC-04 deduplicates the source changes a run produces, which sits downstream of the waste. Without a run identity, a lost manual start response or a twice-delivered scheduled job performs the fetch and the model analysis twice against a rate-limited provider, and records two runs for one intended execution. AC-04 then makes the pair look reconciled while the evidence trail still says the source was examined twice at a single occurrence.
 
 ## Fixtures and Verification
 

@@ -61,6 +61,9 @@ Exact HTTP, JSON Schema, migration, job, and provider shapes belong in their rev
 3. **F304-AC-03:** Drafts cannot send or publish, and copying/editing a draft does not mutate the event or approved plan.
 4. **F304-AC-04:** Generated text cannot add a regulatory deadline, fee, agency, permit, completeness claim, or requirement not present in approved source wording. Every other concrete event claim must match an exact confirmed source fact shown in the preview; otherwise the draft is rejected before copy with an action to confirm or correct the authoritative event data and regenerate.
 5. **F304-AC-05:** Timeout, policy rejection, provider failure, and unsafe output show a recoverable error and preserve manual composition.
+6. **F304-AC-06:** Starting a generation binds the request to a stable client-supplied request identity, committed with the run under a uniqueness constraint scoped to the event. A retry presenting the same identity returns the original run and its drafts and starts no second provider call; a deliberate regeneration sends a new identity. This is request identity, never content uniqueness: two genuinely distinct generations from one event revision, lifecycle generation, and prompt/model version are both recorded, and a repeated identity is never rejected as a duplicate value.
+
+   The System Impact table names idempotency, which is not a criterion an implementation is held to, and AC-01 pins the source versions rather than the request. When the run commits and its response is lost, the retry spends provider quota a second time and produces a second independently editable draft set for one organizer action, with nothing to say which set the organizer's later edits belong to.
 
 ## Fixtures and Verification
 

@@ -62,6 +62,9 @@ Exact HTTP, JSON Schema, migration, job, and provider shapes belong in their rev
 4. **F604-AC-04:** Rejecting preserves current state and source; duplicate or stale acceptance is idempotent or rejected without lost updates.
 5. **F604-AC-05:** Official conflict, ambiguity, type mismatch, or unconfirmed extraction remains visible and cannot be auto-resolved.
 6. **F604-AC-06:** Creating or accepting reconciliation work compare-and-swaps the exact F-602 proposal, source document, and current-record versions and requires the document to remain authorized, available, and scan-safe. Deletion, quarantine, or other source ineligibility serializes against those actions, supersedes every outstanding reconciliation from that version, and prevents it from updating F-208/F-209.
+7. **F604-AC-07:** Creating a reconciliation proposal binds the request to a stable client-supplied request identity, committed with the proposal under a uniqueness constraint scoped to the F-602 proposal it reconciles. A retry presenting the same identity returns the original reconciliation proposal and creates no second row; a deliberate second reconciliation of the same F-602 proposal sends a new identity. This is request identity, never content uniqueness: two genuinely distinct reconciliation proposals over the same source/current-record pair are both created, and a repeated identity is never rejected as a duplicate value.
+
+   AC-06 compare-and-swaps versions at acceptance, which protects the domain mutation and not the review queue in front of it. When detection commits and the worker never receives confirmation, the retry produces a second pending reconciliation over the same F-602 proposal and current-record versions. Both are independently actionable, a reviewer accepts one and is left holding the other, and AC-06 sees nothing wrong because each carries the versions it was built from.
 
 ## Fixtures and Verification
 

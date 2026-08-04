@@ -62,6 +62,9 @@ Exact HTTP, JSON Schema, migration, job, and provider shapes belong in their rev
 3. **F712-AC-03:** Failure, evaluation error, timeout, cancellation, missing fixture, or changed input cannot count as a passing publication gate.
 4. **F712-AC-04:** Expected outputs remain approved fixture data and are never regenerated from the candidate under test.
 5. **F712-AC-05:** Identical inputs produce byte-stable result artifacts and no rule data executes as code.
+6. **F712-AC-06:** Creating a run binds the request to a stable client-supplied request identity, committed with the run under a uniqueness constraint scoped to the candidate. A retry presenting the same identity returns the original run, and its result once complete, and enqueues no second job; a deliberate rerun of the same candidate sends a new identity. This is request identity, never content uniqueness: two genuinely distinct runs over one candidate checksum, engine, fixture set, calendar, and `today` are both recorded, and a repeated identity is never rejected as a duplicate value.
+
+   AC-01 records the input tuple, which cannot tell a retry from a deliberate rerun because both carry the same tuple by construction. When the create transaction commits and its response is lost, the retry enqueues a second isolated full-suite job: runner capacity is spent twice, and two result artifacts exist for one intended run, each usable as an F-714 gate artifact for the same checksum.
 
 ## Fixtures and Verification
 

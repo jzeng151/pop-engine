@@ -61,11 +61,19 @@ Exact HTTP, JSON Schema, migration, job, and provider shapes belong in their rev
 3. **F702-AC-03:** Every workspace-owned aggregate rejects cross-workspace reads, writes, identifier guessing, exports, uploads, and job execution.
 4. **F702-AC-04:** Owner removal/leave serializes on the workspace (or uses an equivalent database invariant) so the last active owner cannot be removed under concurrent requests; the concurrent two-owner removal fixture leaves at least one owner.
 5. **F702-AC-05:** No authenticated user-owned product data or external beta is enabled before F-703 is also deployed and verified.
+6. **F702-AC-06:** Issuing and revoking an invitation require the actor to hold an active owner membership of that exact workspace, checked server-side against stored membership rather than any client-supplied workspace or role claim. A non-owner member, a removed member, and a member of a different workspace are each rejected without disclosing whether the workspace or invitation exists, and the rejection creates, mutates, and expires nothing.
+
+   This is the minimum owner authority the non-goals reserve to F-702 rather than a role model, which stays F-703's. Without it, AC-02 and AC-03 hold and the boundary still opens: AC-02 governs only transitions of an invitation that already exists, and AC-03 admits anyone who reached active membership. An ordinary member could therefore invite an outsider, the outsider would accept through AC-02 into a valid membership, and every cross-workspace check in AC-03 would pass for them, because by then they are legitimately inside. Membership is what AC-03 trusts, so the criterion that decides who may create membership cannot be deferred to F-703 while F-702 ships. Revocation is named alongside issuance for the same reason: leaving it open lets any member cancel an owner's pending invitation.
+
+7. **F702-AC-07:** Issuing an invitation binds the request to a stable client-supplied request identity, committed with the invitation under a uniqueness constraint scoped to the workspace. A retry presenting the same identity returns the original invitation and its original token and creates no second pending row; deliberately inviting the same address again sends a new identity. This is request identity, never content uniqueness: two genuinely distinct invitations that read the same are both created, and a repeated identity is never rejected as a duplicate value.
+
+   AC-02 serializes transitions of one invitation and cannot see a second one. When issuance commits and its response is lost, the caller retries, a second pending row and a second token exist for the same intended invitation, and revoking or accepting either leaves the other still valid, so a revocation the owner was told succeeded does not close the invitation.
 
 ## Fixtures and Verification
 
 - Planned automated fixture IDs are the acceptance IDs above; each must map one-to-one to a runnable test before approval can claim implementation readiness.
 - F702-AC-02 includes a concurrent accept-versus-revoke fixture that proves a revoked invitation cannot create a membership.
+- F702-AC-06 includes a non-owner-member issuance fixture and a non-owner-member revocation fixture, each proving the rejection leaves no invitation and no membership behind, so the AC-03 cross-workspace path is never reached through a membership a non-owner created.
 - Regulatory fixtures: none; this feature does not define regulatory ground truth.
 - Security-sensitive and cross-workspace paths require negative authorization tests; provider paths require success, duplicate-delivery, retry, invalid-signature, and permanent-failure tests where applicable.
 
