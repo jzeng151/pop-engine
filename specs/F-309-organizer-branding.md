@@ -60,7 +60,7 @@ Exact HTTP, JSON Schema, migration, job, and provider shapes belong in their rev
 2. **F309-AC-02:** Published branding meets approved contrast/focus requirements or falls back to the default design.
 3. **F309-AC-03:** Organizer input cannot inject HTML, script, CSS, external font, tracking pixel, or arbitrary URL.
 4. **F309-AC-04:** Consent copy, status labels, errors, PopEngine attribution, and page structure remain unchanged.
-5. **F309-AC-05:** Reset removes branding and restores the default page without changing event/RSVP data.
+5. **F309-AC-05:** Publish, replacement, and reset each name the exact current published-brand version they were reviewed against, together with the reviewed draft/asset version and a stable request identity, and compare-and-swap that brand version inside the transaction that changes it. A concurrent publish and reset therefore produce one success and one rejection, so a draft reviewed before the reset cannot restore the logo and accent after the organizer was told reset succeeded; the rejected actor reloads and re-reviews. Reset removes branding and restores the default page without changing event/RSVP data.
 6. **F309-AC-06:** The logo remains in private storage; public rendering issues only a short-lived signed URL for the currently published asset. Reset or replacement stops issuing URLs for the prior asset, and any already issued URL has only its disclosed bounded validity until expiry.
 
 ## Fixtures and Verification

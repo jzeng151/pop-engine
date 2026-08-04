@@ -23,7 +23,7 @@ An organizer can turn a location into proposed park, plaza, precinct, community-
 
 ## Dependencies and Baseline
 
-- F-101, approved jurisdiction/reference datasets, and the F-701/F-702/F-703 gate.
+- F-101, F-107 Event Revisions, whose save path AC-05 confirms through, approved jurisdiction/reference datasets, and the F-701/F-702/F-703 gate.
 - ADR for geocoding provider, confidence policy, retention, manual correction, and versioned reference data.
 - Baseline at draft time: PRD, Roadmap, Design, and Phase 0–1.5 Architecture approved 2026-07-22; `ARCHITECTURE-FUTURE.md` approved as a planning target 2026-07-25; NYC ruleset `nyc.v2.7`, rules schema `popengine-rules/v2`, and scenario fixtures v5 where regulatory output is consumed.
 - The approval PR must re-pin any baseline version that changes before approval. A proposed or superseded input blocks implementation.
@@ -60,7 +60,7 @@ Exact HTTP, JSON Schema, migration, job, and provider shapes belong in their rev
 2. **F108-AC-02:** Ambiguous, low-confidence, no-match, unsupported-jurisdiction, and provider-failure states require manual resolution and cannot evaluate as confirmed.
 3. **F108-AC-03:** Manual correction records actor/time and the selected authoritative reference without changing provider history.
 4. **F108-AC-04:** The engine consumes only the confirmed registry-compatible value and treats the provider result as non-authoritative.
-5. **F108-AC-05:** Confirmation compare-and-swaps the current provider/reference version pinned by the proposal; a version change rejects confirmation unless an explicit reviewed historical-version exception is recorded before creating the immutable revision. A later version cannot silently alter an existing revision or plan.
+5. **F108-AC-05:** A proposal pins two things: the provider/reference version it resolved, and the `base_revision_id` of the Event revision the reviewer saw. Confirmation writes the confirmed value through F-107's ordinary revision save, so the single transaction in `docs/EVENT-REVISION-CONTRACT.md` §2.4 locks the Event, compares that `base_revision_id` with `events.current_revision_id`, and compare-and-swaps the pinned provider/reference version in the same transaction. Either being stale rejects the whole confirmation and mutates nothing; a stale base returns `409` with code `revision_conflict` and the current revision, and the organizer reloads and re-reviews rather than the server merging. Comparing only the provider/reference version would let a concurrent Event edit be lost, because the appended revision would carry answers read before that edit. A reviewed historical-version exception is recorded before the save and waives only the reference-version comparison, never the revision comparison. A later version cannot silently alter an existing revision or plan.
 
 ## Fixtures and Verification
 
