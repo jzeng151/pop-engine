@@ -1198,10 +1198,12 @@ index 795a497..670b280 100644
 
 > **These corrections have a DIFFERENT measurement basis from the rest of this document.** Everything
 > above was measured at merge-base `481e1f6`, ruleset `nyc-rules.v2.8.json`, suite size 1163, and the
-> reproduction recipe in the header applies to it. The corrections below were measured at `f8d6fc3`,
-> ruleset `nyc-rules.v2.11.json`, Node v24, PostgreSQL 18.4, suite size **1569**, and report v2.11
-> results. Following this document's stated checkout will NOT reproduce them. The prototype patches
-> and probe harnesses behind them are on the branch `archive/issue-108-probe-appendices`. This note
+> reproduction recipe in the header applies to it. The corrections below were measured at `c700698`,
+> ruleset `nyc-rules.v2.11.json`, Node v24.18.1, PostgreSQL 18.4, suite size **1577**, and report
+> v2.11 results. They were first taken at `f8d6fc3` and rerun at `c700698`, the decision brief's
+> current merge base, on 2026-08-03; the suite size is the only figure the rerun moved. Following
+> this document's stated checkout will NOT reproduce them. The prototype patches and probe
+> harnesses behind them are on the branch `archive/issue-108-probe-appendices`. This note
 > exists because appending them without it would have made the header's provenance declaration false
 > for part of its own document.
 
@@ -1210,28 +1212,29 @@ Added 2026-08-03. These corrections were written in `asked-when-three-state-deci
 Recorded so that document's readers can find them. None is a criticism of that document's method;
 four of the five are the ruleset moving underneath it.
 
-1. **"20 of 33, and it was 20 at v2.5, v2.6, v2.7 and v2.8"** (its section 1) is right for those
-   versions and still right at v2.9, v2.10 and v2.11. Its added claim that it "did not find a
+1. **"20 of 33, and it was 20 at v2.5, v2.6, v2.7 and v2.8"** (section 1 of this document) is right
+   for those versions and still right at v2.9, v2.10 and v2.11. Its added claim that it "did not find a
    reading of the registry that gives 19" is too strong: 19 is the count at v2.1, v2.2, v2.3 and
    v2.4, where the total is 32. The issue's error is the pairing, not the 19.
-2. **"All 11 gates"** (its sections 1 and 4) is 10 at v2.11. `event_open_to_public` stopped gating
-   anything when v2.9 removed `food_affinity_private_exception_claimed`.
-3. **Its gated-field table** lists `food_affinity_private_exception_claimed` and
+2. **"All 11 gates"** (sections 1 and 4 of this document) is 10 at v2.11. `event_open_to_public`
+   stopped gating anything when v2.9 removed `food_affinity_private_exception_claimed`.
+3. **This document's gated-field table** lists `food_affinity_private_exception_claimed` and
    `venue_has_assembly_approval`, both removed at v2.9, and omits `venue_paco_covers_exact_event` and
    `venue_fdny_pa_permit_current_for_event_space`, both added there.
-4. **Its attempt-1 failure profile (15 failures, 10 of them assertion failures) no longer
-   reproduces.** At v2.11 attempt A gives 6 failures, all non-termination, no assertion failures. The
+4. **This document's attempt-1 failure profile (15 failures, 10 of them assertion failures) no
+   longer reproduces.** At v2.11 attempt A gives 6 failures, all non-termination, no assertion failures. The
    10 assertion failures came from two fixture objects omitting `battery_present`, which answer key
    v4 has since written down. Its "the two fixture lines" remedy is no longer needed.
-5. **Its attempt 3 is order-dependent and mishandles `false AND unknown`**, which its own round 8
-   records as unmeasured. Both are fixed in attempt B here and both fixes are measured; the suite
-   still passes 1569/1569. Its section 7 conclusion that "the answer-key impact and implementation
-   size of a correct, order-independent implementation therefore remain unmeasured" is now partly
-   measured: zero answer-key movement on the inputs run, and two files at +61/-5 for the engine
-   half. Both figures are bounded rather than settled. +61/-5 is a lower bound on size, because
-   `visibility.ts` is left out and the divergence that creates is unresolved (section 7a item 4).
-   And "a correct implementation" is not what was measured: attempt B is unexercised on a
-   multi-enum gate (section 3, section 8 item 4), so that clause of the earlier document's
-   conclusion still stands.
+5. **This document's attempt 3 is order-dependent and mishandles `false AND unknown`**, which its
+   own round 8 records as unmeasured. Both are fixed in attempt B here and both fixes are measured;
+   the suite still passes 1577/1577. Section 7's conclusion above that "the answer-key impact and
+   implementation size of a correct, order-independent implementation therefore remain unmeasured"
+   is now partly measured: zero answer-key movement on the inputs run, and two files at +61/-5 for
+   the engine half. Both figures are bounded rather than settled. +61/-5 is a lower bound on size,
+   because `visibility.ts` is left out and the divergence that creates is unresolved (section 6a
+   item 4 of `asked-when-three-state-decision.md`). And "a correct implementation" is not what was
+   measured: attempt B is unexercised on a multi-enum gate (section 2 and section 7 item 4 of
+   `asked-when-three-state-decision.md`), so that clause of this document's own conclusion still
+   stands.
 
 ---

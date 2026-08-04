@@ -50,23 +50,36 @@ not measured anywhere below. For Q2 it publishes a measurement of the engine (se
 the plan's verdict-detail renderer (section 2) and of the questionnaire (section 2), and no more.
 Those are three probes at three points, not one run along the path: no measurement in this document
 crosses the API or the database, and the joins between the three are read from source (section 2).
-The six-failure count, the 1569/1569 result and the plan diffs say nothing about Q2 at all. Section
+The six-failure count, the 1577/1577 result and the plan diffs say nothing about Q2 at all. Section
 7 gives a separate recommendation for each, and issue #108 stays open on Q2 either way.
 
-**Measurement basis.** Every number below was measured on commit `f8d6fc3` (this branch's merge-base
-with `origin/main`), ruleset `rules/nyc-rules.v2.11.json`, Node v24, PostgreSQL 18.4, full suite
-size **1569**.
+**Measurement basis.** Every number below was measured on commit `c700698` (this branch's merge-base
+with `origin/main`), ruleset `rules/nyc-rules.v2.11.json`, Node v24.18.1, PostgreSQL 18.4, full suite
+size **1577**.
+
+**The basis moved, and the numbers were rerun rather than restated.** An earlier revision reported
+every number against `f8d6fc3`, which is 18 commits older than this branch's merge base. The
+intervening commits change `packages/engine/src/verdict.ts`, the plan's `VerdictDetailPanel` and
+their tests, which are the paths this brief measures, so the older numbers described a different
+tree. All four probes and both prototype runs were rerun on `c700698` on 2026-08-03. **Two figures
+moved, and both are suite sizes**: the full suite is 1577 rather than 1569, and attempt A's passing
+count is 1571 rather than 1563. Nothing else moved. Attempt A fails the same six tests, all
+non-termination and no assertion failure; attempt B passes the whole suite with `pnpm typecheck`
+clean; the street-event case still goes from 9 findings to 20 with the same four SAPO street-size
+permits; the Q2 render probe still produces four branch rows; the nullable-gate probe still returns
+`errors: []` with `tent_area_sqft` carried as `null`. The recommendation in section 6 is unchanged,
+and nothing in the rerun contradicts it.
 
 **How to reproduce.** Partly, and this document says which part.
 
 Still runnable from what is written here:
 
-1. `git checkout f8d6fc3 && pnpm install --frozen-lockfile`.
+1. `git checkout c700698 && pnpm install --frozen-lockfile`.
 2. Bring up an empty PostgreSQL, export `DATABASE_URL`, and run `pnpm --filter api migrate up`.
-   **Without this, 347 of the 1569 tests skip silently**, including all 23 of
-   `apps/api/src/plan.test.ts`. A run reporting "1222 passed | 347 skipped" has not measured the
+   **Without this, 347 of the 1577 tests skip silently**, including all 23 of
+   `apps/api/src/plan.test.ts`. A run reporting "1230 passed | 347 skipped" has not measured the
    api lane at all.
-3. `pnpm test` gives the 1569-test baseline every number below is stated against.
+3. `pnpm test` gives the 1577-test baseline every number below is stated against.
 
 Not runnable from this document: the two prototype patches and the four probe harnesses. They were
 published here as appendices A1–A6 and were removed on 2026-08-03, when this brief was cut back to
@@ -167,7 +180,7 @@ the full patches were published here until 2026-08-03 and were removed with the 
 appendices; they are on `archive/issue-108-probe-appendices` if a reader needs to re-derive a number.
 
 **Q1, the unanswered gate. No approved expected value moves. Zero.** The full suite passes
-unchanged under the tri-state Q1 semantics as attempt B implements them — 1569 passed, 61 files,
+unchanged under the tri-state Q1 semantics as attempt B implements them — 1577 passed, 61 files,
 against a live database. "As attempt B implements them" is load-bearing: that is a statement about
 one prototype on the inputs measured, not about the semantics in general. The semantics alone,
 without attempt B's three corrections, give 6 failures, all non-termination in `verdict.ts` and no
@@ -369,7 +382,7 @@ route, and they differ in what else they need:
 
 - **marking an existing gate `nullable`**. This produces the persisted state by itself only for the
   three storage-nullable gates. For the other seven it also needs a forward migration relaxing the
-  column, which is a change to a shared core table and carries its own review (`AGENTS.md:44-45`
+  column, which is a change to a shared core table and carries its own review (`AGENTS.md:46-47`
   and the database-owner row of governance §6, as in the approvals table below); or
 - **publishing an `asked_when` that references one of today's eight registry-nullable leaf fields**
   (`tent_area_sqft`, `tent_days_in_place`, `stage_height_ft`, `stage_area_sqft`,
@@ -379,7 +392,7 @@ route, and they differ in what else they need:
 
 **Measured at the validator, source-traced past it.** The nullable-gate probe submitted a park event with
 `structure_types: ["tent_canopy"]` and no `tent_area_sqft` to `validateIntake` against the v2.11
-contract on a clean `f8d6fc3`. It returns `errors: []` and `values.tent_area_sqft === null`: an
+contract on a clean `c700698`. It returns `errors: []` and `values.tent_area_sqft === null`: an
 in-scope registry-nullable field, left unanswered, accepted and carried into the record as `null`.
 The probe stops there. It never calls the events router and never executes an INSERT, so "and the
 row is created NULL" is read off `events.ts:145` and `:154` (every registry column written as
@@ -501,7 +514,7 @@ whether the approved sentence at `specs/F-201-permit-plan-generator.md:48` ("a f
 not a material unknown") forbids the tri-state behaviour. Section 5 gives a reading on which it does
 not, and says the engine owner should be the one to rule; that is still my reading and it is not a
 resolution. Governance §1 makes an approved `specs/F-xxx-*.md` authoritative for scheduled feature
-behaviour, and `AGENTS.md:15` and governance §5 say what happens when an artifact in that position
+behaviour, and `AGENTS.md:17` and governance §5 say what happens when an artifact in that position
 is contradictory or unclear: stop the affected implementation, record a `SPEC-CONFLICT` with both
 locations and the user-visible consequence, and **resolve the source artifact first**. §5 also names
 what must not happen, that a contributor "silently select the version they prefer". Two lane owners
@@ -548,7 +561,7 @@ table named only the lane and architecture owners. `docs/DESIGN.md:73` puts DB m
 lane, so the database owner and the verification owner are the same person here, which is exactly
 why the capacity has to be named separately rather than assumed covered by the verification
 signature already in the row. No such approval has been given, and nothing in this document should
-be read as recording one. `AGENTS.md:44-45` is the standing constraint on the
+be read as recording one. `AGENTS.md:46-47` is the standing constraint on the
 same table: the `events` schema migration is the four-lane contract, PR #137's one-time overwrite is
 the sole recorded exception and creates no precedent, and every later change requires the normal §6
 team decision.
@@ -584,10 +597,10 @@ Stated plainly rather than left as silence:
    with a multi-enum as the blocking gate. The source trace of why that path looks unsafe (scalar
    branch candidates meeting `contains` conditions) went with the appendices and is not reproduced
    here; what stands is that neither the failure nor its absence has been reproduced. Until it is,
-   the 1569/1569 result and the diff-size figure are claims about the measured inputs, not about a
+   the 1577/1577 result and the diff-size figure are claims about the measured inputs, not about a
    correct implementation.
 5. **Whether any state, migration or fixture in a lane I did not run could reach the unanswered
-   state.** I ran the full 1569-test suite against a live database, which covers every suite in the
+   state.** I ran the full 1577-test suite against a live database, which covers every suite in the
    repo. I did not audit the seed or demo tooling.
 6. **Whether Q2's branch-table presentation is adequate** (section 2, section 6b). Three points on
    the path are measured: the questionnaire asks `sapo_event_type` and offers `"unknown"` as "I
