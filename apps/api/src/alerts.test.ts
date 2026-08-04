@@ -6013,6 +6013,65 @@ describe("F-203 delivery channels (AC 5)", () => {
     );
   });
 
+  it("resolves the attempt when the connection attempt itself timed out", async () => {
+    // The shape below is copied from what Node 24's fetch actually throws against an unroutable
+    // address, not invented: a TypeError("fetch failed") whose cause is undici's ConnectTimeoutError
+    // carrying UND_ERR_CONNECT_TIMEOUT. The connect timer expires before a socket exists, so no
+    // request byte was written and Resend cannot be holding the message. Left unresolved, an
+    // outage lasting past the dedup window holds the reminder for good.
+    const sender = createResendEmailSender({
+      apiKey: "re_test",
+      from: "PopEngine <noreply@example.test>",
+      fetch: (async () => {
+        const cause = Object.assign(
+          new Error("Connect Timeout Error (attempted address: 192.0.2.1:443, timeout: 10000ms)"),
+          { name: "ConnectTimeoutError", code: "UND_ERR_CONNECT_TIMEOUT" },
+        );
+        throw Object.assign(new TypeError("fetch failed"), { cause });
+      }) as unknown as typeof globalThis.fetch,
+    });
+
+    const error = await sender(message).catch((thrown: unknown) => thrown);
+    expect(error).toBeInstanceOf(AlertDeliveryError);
+    expect((error as AlertDeliveryError).outcomeObserved).toBe(true);
+  });
+
+  it("reads every address a dual-stack connect tried, not just the first", async () => {
+    // Node's happy-eyeballs connect fails with an AggregateError holding one error per address, and
+    // it copies only errors[0].code onto the aggregate, verified against net.connect with
+    // autoSelectFamily on Node 24.18.1. A read that stops at the top level therefore judges the
+    // whole connect by whichever address happened to be tried first.
+    const aggregate = (codes: readonly string[]) => {
+      const errors = codes.map((code) =>
+        Object.assign(new Error(`connect ${code} 203.0.113.7:443`), { code }),
+      );
+      // Exactly what net.js does: the aggregate itself carries the FIRST attempt's code.
+      const combined = Object.assign(new AggregateError(errors), { code: errors[0]?.code });
+      return Object.assign(new TypeError("fetch failed"), { cause: combined });
+    };
+    const senderFor = (codes: readonly string[]) =>
+      createResendEmailSender({
+        apiKey: "re_test",
+        from: "PopEngine <noreply@example.test>",
+        fetch: (async () => {
+          throw aggregate(codes);
+        }) as unknown as typeof globalThis.fetch,
+      });
+    const observed = async (codes: readonly string[]) =>
+      (
+        (await senderFor(codes)
+          .call(null, message)
+          .catch((thrown: unknown) => thrown)) as AlertDeliveryError
+      ).outcomeObserved;
+
+    // Every address refused the socket, so the connect is proven whichever one led.
+    expect(await observed(["ECONNREFUSED", "ECONNREFUSED"]), "all refused").toBe(true);
+    expect(await observed(["ENETUNREACH", "ECONNREFUSED"]), "all proven, mixed codes").toBe(true);
+    // One attempt this side cannot account for is enough to leave the attempt open, and the
+    // aggregate's own code says the opposite.
+    expect(await observed(["ECONNREFUSED", "ECONNRESET"]), "one unproven attempt").toBe(false);
+  });
+
   it("sends email through Resend and hands it the idempotency key", async () => {
     const calls: { url: string; init: RequestInit }[] = [];
     const sender = createResendEmailSender({

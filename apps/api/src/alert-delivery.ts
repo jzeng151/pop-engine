@@ -90,16 +90,36 @@ export const PROVIDER_TIMEOUT_MS = 10_000;
 /**
  * Transport failures that PROVE the request never reached the provider.
  *
- * All three are failures of connection establishment: the name did not resolve, or the host
- * refused the socket. Nothing was written, so nothing can be in flight, and the attempt is closed
- * and the alert goes on being retried for as long as the outage lasts (spec edge case).
+ * THE MEMBERSHIP RULE, so the next code is added or rejected by the rule rather than by whether
+ * somebody has reported it yet: a code belongs here when EVERY path that can raise it lies before
+ * the first request byte is written: name resolution, connection establishment, or the TLS
+ * handshake. One path that can raise it after the body was written disqualifies the code, however
+ * rare that path is, because the code is the whole of what this side ever learns. It is a rule
+ * about the code, not about the outage: "in this outage nothing was sent" is not membership,
+ * because the next occurrence of the same code need not be that outage.
  *
- * A LIST RATHER THAN A "NOT A TIMEOUT" TEST, and that is the whole correction. `ECONNRESET` is the
- * counter-example: it can arrive after the request body was written and Resend accepted it, so the
- * provider may be holding a message this side will never hear about. Calling that "nothing was
- * delivered" closes the attempt, and a closed attempt is retried past the 24-hour dedup window,
- * which is the second delivery the attempt record exists to prevent. So proof is required to
- * resolve an attempt, and everything unproven stays open.
+ * The asymmetry is deliberate and is why the rule demands proof rather than likelihood. A code
+ * wrongly left out costs retries through an outage, which is the spec's edge case working. A code
+ * wrongly let in closes the attempt, and a closed attempt is retried past the provider's 24-hour
+ * dedup window, which is the second delivery the attempt record exists to prevent.
+ *
+ * EVALUATED AND REJECTED by that rule, recorded so they are not re-derived one report at a time:
+ *   - `ECONNRESET`, `ETIMEDOUT`, `UND_ERR_SOCKET`: each can arrive while connecting AND after the
+ *     request body was written and accepted. The code cannot say which happened. (`ECONNRESET` was
+ *     excluded on this ground in an earlier round and stays excluded.)
+ *   - `UND_ERR_HEADERS_TIMEOUT`, `UND_ERR_BODY_TIMEOUT`, `UND_ERR_RES_CONTENT_LENGTH_MISMATCH`,
+ *     `UND_ERR_RES_EXCEEDED_MAX_SIZE`, `UND_ERR_REQUEST_RETRY`, `UND_ERR_RESPONSE`,
+ *     `UND_ERR_HEADERS_OVERFLOW`, `HPE_*`: the request was fully written; the provider may be
+ *     holding it.
+ *   - `UND_ERR_REQ_CONTENT_LENGTH_MISMATCH`: detected while writing the request body, so bytes
+ *     were already on the socket.
+ *   - `UND_ERR_ABORT`, `UND_ERR_ABORTED`, `UND_ERR_DESTROYED`, `UND_ERR_CLOSED`, `UND_ERR_INFO`,
+ *     `UND_ERR_SOCKS5`, `UND_ERR`: one code for a whole lifecycle or subsystem rather than one
+ *     phase of it, so no path guarantee can be made. This side's own ten-second abort lands here.
+ *   - `UND_ERR_INVALID_ARG`, `UND_ERR_NOT_SUPPORTED`, `UND_ERR_INVALID_RETURN_VALUE`,
+ *     `UND_ERR_BPL_MISSING_UPSTREAM`, `UND_ERR_MAX_ORIGINS_REACHED`, `UND_ERR_WS_*`: not transport
+ *     failures of this request at all. They would be a bug or a misconfiguration here, and a
+ *     retry classification is not the answer to either.
  */
 const PROVEN_BEFORE_HANDOFF = new Set([
   // Name resolution and connection establishment: no socket was ever established, so no request
@@ -109,6 +129,15 @@ const PROVEN_BEFORE_HANDOFF = new Set([
   "ECONNREFUSED",
   "ENETUNREACH",
   "EHOSTUNREACH",
+  // Undici's own connection-establishment failures, which is the class Node's `fetch` reports
+  // instead of an errno. `UND_ERR_CONNECT_TIMEOUT` is raised by the connect timer, which is
+  // cancelled the moment the socket is usable, so it can only fire with no socket to write to;
+  // `UND_ERR_PRX_TLS` is the TLS connection TO a proxy failing, before the tunnel that would carry
+  // the request exists (reachable whenever a proxy dispatcher is in play, NODE_USE_ENV_PROXY
+  // included). Added 2026-08-04: a connect timeout outage lasting past the dedup window held every
+  // alert behind it for good, though nothing had ever been handed over.
+  "UND_ERR_CONNECT_TIMEOUT",
+  "UND_ERR_PRX_TLS",
   // TLS handshake failures. The handshake completes before any HTTP byte is written, so a
   // certificate this side refuses means the request was never sent. Added 2026-08-03: leaving
   // them unproven meant a certificate outage lasting past the dedup window permanently held every
@@ -123,6 +152,14 @@ const PROVEN_BEFORE_HANDOFF = new Set([
 /** `fetch` wraps a transport failure, so the errno naming it sits on the cause chain. */
 function failedBeforeHandoff(error: unknown): boolean {
   for (let link: unknown = error; link instanceof Error; link = link.cause) {
+    // A dual-stack connect fails with one error PER ADDRESS TRIED, and Node copies only the first
+    // attempt's code onto the aggregate. Reading that code alone judges the whole connect by
+    // whichever address happened to be tried first, in both directions: it can claim proof the
+    // other attempts do not support, and it can hide proof they do. So every attempt is read, and
+    // one this side cannot account for leaves the attempt open.
+    if (link instanceof AggregateError) {
+      return link.errors.length > 0 && link.errors.every((cause) => failedBeforeHandoff(cause));
+    }
     const { code } = link as { code?: unknown };
     if (typeof code === "string" && PROVEN_BEFORE_HANDOFF.has(code)) return true;
   }
