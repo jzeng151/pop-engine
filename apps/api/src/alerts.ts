@@ -389,7 +389,18 @@ export const DEDUP_WINDOW_CLAIM_MARGIN_MS = TICK_BUDGET_MS + PROVIDER_TIMEOUT_MS
  * (`docs/BASELINE.md`). The hold used to have no end, so a provider outage presenting as timeouts
  * for longer than the dedup window withheld a filing reminder for good — the outcome F-203:59 and
  * AC 2 exist to prevent. Bounded, the hold keeps the suppression over the period where it can help
- * and gives the reminder back afterwards.
+ * and gives the reminder back afterwards, on every alert whose filing window is still open when the
+ * bound passes.
+ *
+ * WHERE IT IS NOT OPEN, THE REMINDER IS NOT GIVEN BACK, and that is stated here rather than left to
+ * be discovered. An alert with less than this many hours of window left is released after its own
+ * `latest_apply_date`, so the released row reaches the claim with a shut window and is cancelled
+ * without the provider being called: the 1-day reminder, by construction, since its lead time is
+ * half the bound. WHAT EITHER SIDE OF IT COSTS below prices that, and the 2026-08-04 decision
+ * prices it in the same words, but neither decides it. Releasing earlier than the bound would, and
+ * an earlier release is a change to the approved behaviour that no approval covers, so it is not
+ * selectable in this file: it is raised as SPEC-CONFLICT #241 under governance §5, with
+ * `docs/OPEN-QUESTIONS.md` T-8 blocking on it.
  *
  * DERIVED, not chosen round. Two things fix the range:
  *
@@ -465,7 +476,9 @@ export const SEND_BOUNDARY_MARGIN_MS = PROVIDER_TIMEOUT_MS + SEND_BOUNDARY_HANDO
  * ("nothing is lost") was being broken by the mechanism meant to protect a duplicate. The retry
  * opens an attempt of its own, so an outage that keeps producing unobserved outcomes re-enters the
  * hold under the new attempt rather than sending on every tick: at most one possible duplicate per
- * alert per limit.
+ * alert per limit. The retry is a delivery only where the alert's filing window is still open at
+ * the bound; where it is not, the released row is cancelled unsent, which
+ * `UNRESOLVED_ATTEMPT_HOLD_LIMIT_HOURS` states in full and SPEC-CONFLICT #241 carries.
  *
  * MEASURED FROM THE FIRST UNRESOLVED ATTEMPT, WHICH IS WHY THIS ASKS FOR A MINIMUM RATHER THAN FOR
  * ANY ROW. Nothing holds an alert for the dedup window after its first attempt, so an ambiguous
@@ -483,34 +496,6 @@ export const SEND_BOUNDARY_MARGIN_MS = PROVIDER_TIMEOUT_MS + SEND_BOUNDARY_HANDO
  * attempt left unresolved past its bound would anchor every later bound in the past, so no attempt
  * could hold this alert again and the outage would send on every tick from then on.
  *
- * AND BY THE ALERT'S OWN REMAINING WINDOW, WHICHEVER OF THE TWO COMES FIRST. The limit is a fixed
- * number of hours and the thing it holds is a reminder that expires, so on any alert with less lead
- * time than the limit has hours the limit lands after the filing date: the released row reaches the
- * claim, its window has shut, and it is cancelled without the provider ever being called. That is
- * the one-day reminder exactly, and for it a 48-hour hold is not a hold but a silent drop — the
- * outcome F-203:59 and AC 2 exist to prevent, produced by the mechanism that was bounded to stop
- * producing it. A retry that cannot be delivered is not the retry the 2026-08-04 decision approved.
- *
- * So the hold also ends on the last day a retry can still reach the organizer while the filing date
- * can be met, which is `FILING_WINDOW_HAS_SHUT` asked about TOMORROW: while the window is still
- * open tomorrow, holding costs the organizer nothing they can still use; once it is not, today is
- * the last day the queue can do anything with this row and the hold ends here. The limit is
- * unchanged and still the ceiling — a seven-day reminder has six days of window and is held for the
- * full 48 hours — and nothing about its recorded approval moves.
- *
- * WHAT THE EARLIER RELEASE COSTS is the same cost the owner already priced at the limit, arriving
- * sooner: a possible second copy of a reminder that did arrive. The provider still deduplicates a
- * repeated key inside its own window, so the rate is unchanged at one possible duplicate per alert
- * per dedup window, and it is spent on the last day the reminder can be acted on rather than on a
- * day the deadline has already gone.
- *
- * WHAT IT DOES NOT REACH, recorded rather than claimed as conformance: an alert whose window shuts
- * before ANY tick can retry it — an attempt left unresolved in the last minutes of the filing date
- * — is cancelled by the next tick and nothing is delivered. No bound saves that row, because there
- * is no moment left to send it in. Whether PopEngine should say anything after a filing date has
- * gone is a product question and not this file's to answer; `docs/OPEN-QUESTIONS.md` T-7 carries it,
- * and the approved behaviour (a shut window is retired, not announced) stands until it is answered.
- *
  * A BACKFILLED `-infinity` IS PAST EVERY LIMIT, and that is the right reading of it rather than an
  * oversight. Migration 014 seeded that value precisely because the attempt time is unknowable, so
  * no bound measured from it can ever contain the row, and nothing will ever make it knowable. Those
@@ -525,8 +510,7 @@ export const SEND_BOUNDARY_MARGIN_MS = PROVIDER_TIMEOUT_MS + SEND_BOUNDARY_HANDO
  * hold was added to avoid. The revival supersedes the attempt; the attempt row stays, still
  * unresolved, because nobody did find out what the provider did with it.
  */
-const unresolvedAttemptPastTheCutoff = (now: string, marginMs: number, day: string): string => `(
-     EXISTS (
+const unresolvedAttemptPastTheCutoff = (now: string, marginMs: number): string => `EXISTS (
        SELECT 1
          FROM alert_send_attempts AS attempt
         WHERE attempt.alert_id = alerts.id
@@ -541,16 +525,12 @@ const unresolvedAttemptPastTheCutoff = (now: string, marginMs: number, day: stri
                        + interval '${marginMs} milliseconds'
           AND min(attempt.attempted_at)
               >= ${now} - interval '${UNRESOLVED_ATTEMPT_HOLD_LIMIT_HOURS} hours'
-     )
-     -- THE SECOND BOUND, asked as the first one asked about tomorrow: a hold may keep this alert
-     -- only while tomorrow is still a day the reminder could be sent on. An alert with no filing
-     -- date has no such bound and is held by the limit alone, which is the same reading of a null
-     -- the rest of this file takes: an absent date is not an expired one.
-     AND NOT ${FILING_WINDOW_HAS_SHUT(`(${day}::date + 1)`)}
-   )`;
+     )`;
 
-const hasAnUnresolvedAttempt = (day: string): string =>
-  unresolvedAttemptPastTheCutoff("current_timestamp", DEDUP_WINDOW_CLAIM_MARGIN_MS, day);
+const HAS_AN_UNRESOLVED_ATTEMPT = unresolvedAttemptPastTheCutoff(
+  "current_timestamp",
+  DEDUP_WINDOW_CLAIM_MARGIN_MS,
+);
 
 /**
  * An alert the poller has stopped on, written once for both readers of it.
@@ -587,7 +567,7 @@ const HELD_FOR_RECONCILIATION = (day: string): string => `(
        AND coalesce(alerts.payload->>'test', 'false') <> 'true'
        AND ${NOT_FROM_A_STALE_PLAN}
        AND NOT ${FILING_WINDOW_HAS_SHUT(day)}
-       AND ${hasAnUnresolvedAttempt(day)}
+       AND ${HAS_AN_UNRESOLVED_ATTEMPT}
      )`;
 
 /**
@@ -611,8 +591,10 @@ const HELD_FOR_RECONCILIATION = (day: string): string => `(
  * of the sender cannot reopen this, because the question is asked after all of them by
  * construction.
  */
-const heldAtTheSendBoundary = (day: string): string =>
-  unresolvedAttemptPastTheCutoff("clock_timestamp()", SEND_BOUNDARY_MARGIN_MS, day);
+const HELD_AT_THE_SEND_BOUNDARY = unresolvedAttemptPastTheCutoff(
+  "clock_timestamp()",
+  SEND_BOUNDARY_MARGIN_MS,
+);
 
 /**
  * The other half of that margin: that the handoff it reserved for is the only thing that happened.
@@ -2124,16 +2106,7 @@ function attemptWriterFor(database: Pool): Pool {
  * refused would clear the hold it was refused by. Made to depend on the inserted row, it runs only
  * where a send is actually being recorded, and it commits or is lost with it.
  */
-async function recordAttemptIntent(
-  database: Pool,
-  row: DueAlertRow,
-  /**
-   * The jurisdiction's day, because the hold this insert asks about is bounded by the alert's own
-   * filing window as well as by the limit. Computed by the caller for the same reason every other
-   * reader of a day computes it there: this file has no honest default for which jurisdiction it is.
-   */
-  day: string,
-): Promise<string | null> {
+async function recordAttemptIntent(database: Pool, row: DueAlertRow): Promise<string | null> {
   const writer = attemptWriterFor(database);
   const attemptId = randomUUID();
   const client = await writer.connect();
@@ -2143,7 +2116,7 @@ async function recordAttemptIntent(
       `WITH recorded AS (
          INSERT INTO alert_send_attempts (id, alert_id, idempotency_key)
               SELECT $3, alerts.id, $2 FROM alerts
-               WHERE alerts.id = $1 AND NOT ${hasAnUnresolvedAttempt("$4")}
+               WHERE alerts.id = $1 AND NOT ${HAS_AN_UNRESOLVED_ATTEMPT}
            RETURNING id
        ), overtaken AS (
          UPDATE alert_send_attempts AS attempt
@@ -2156,7 +2129,7 @@ async function recordAttemptIntent(
             AND EXISTS (SELECT 1 FROM recorded)
        )
        SELECT id FROM recorded`,
-      [row.id, row.idempotency_key, attemptId, day],
+      [row.id, row.idempotency_key, attemptId],
     );
     recorded = rows[0]?.id ?? null;
   } catch (error) {
@@ -2263,11 +2236,7 @@ async function deliverClaimed(
   // reaching a provider by saying nothing, so this needs no edit on the day one lands.
   let attemptId: string | null = null;
   if (sender.reachesAProvider !== false) {
-    attemptId = await recordAttemptIntent(
-      database,
-      row,
-      todayInJurisdiction(jurisdiction, new Date()),
-    );
+    attemptId = await recordAttemptIntent(database, row);
     // The claim permitted this send and the wait for the writer's connection outlived what the
     // claim reserved, so the permission has expired: the key would reach the provider outside the
     // window it deduplicates within. Nothing is sent and nothing is marked, so the row is exactly
@@ -2364,7 +2333,7 @@ async function deliverClaimed(
     const boundaryDay = todayInJurisdiction(jurisdiction, new Date());
     const { rows: boundary } = await client
       .query<{ shut: boolean; held: boolean }>(
-        `SELECT ${FILING_WINDOW_HAS_SHUT("$2")} AS shut, ${heldAtTheSendBoundary("$2")} AS held
+        `SELECT ${FILING_WINDOW_HAS_SHUT("$2")} AS shut, ${HELD_AT_THE_SEND_BOUNDARY} AS held
          FROM alerts WHERE id = $1`,
         [row.id, boundaryDay],
       )
@@ -2574,7 +2543,7 @@ async function sendOne(
           -- cancellation delivers nothing and cannot duplicate anything — so a closed window is
           -- let through to be retired, and the expiry check three statements down is what it
           -- reaches. It cannot reach a send: that branch returns before one.
-          AND (NOT ${hasAnUnresolvedAttempt("$2")} OR ${FILING_WINDOW_HAS_SHUT("$2")})
+          AND (NOT ${HAS_AN_UNRESOLVED_ATTEMPT} OR ${FILING_WINDOW_HAS_SHUT("$2")})
           -- RE-ASKED HERE, not inherited from the sweep at the top of the tick. See
           -- FILING_WINDOW_HAS_SHUT: the queue this row came from can run for the whole budget,
           -- so a tick that swept before local midnight could deliver a filing date that had since
@@ -2757,7 +2726,7 @@ export function createAlertPoller(dependencies: {
           -- does not consume a slot in every capped scan for as long as it goes unreconciled.
           -- Except where its window has shut, for the reason the claim states: a held row still
           -- has to be able to reach the one path that retires it, and that path sends nothing.
-          AND (NOT ${hasAnUnresolvedAttempt("$1")} OR ${FILING_WINDOW_HAS_SHUT("$1")})
+          AND (NOT ${HAS_AN_UNRESOLVED_ATTEMPT} OR ${FILING_WINDOW_HAS_SHUT("$1")})
         -- SAME-INSTANT ROWS ARE ORDERED BY WHAT DEPENDS ON WHAT, not by uuid. A gated window
         -- exactly one reminder offset wide puts the dependency alert and the filing reminder on the
         -- same send_at, and the tiebreak then fell through to id, so which one an organizer saw
@@ -3468,19 +3437,19 @@ export async function alertDeliveryHealth(
     `SELECT channel,
             count(*) FILTER (
               WHERE status = 'failed'
-                AND NOT (${hasAnUnresolvedAttempt("$2")} AND ${NOT_FROM_A_STALE_PLAN})
+                AND NOT (${HAS_AN_UNRESOLVED_ATTEMPT} AND ${NOT_FROM_A_STALE_PLAN})
             )::int AS failed_count,
             bool_or(NOT (${NOT_FROM_A_STALE_PLAN})) FILTER (
               WHERE status = 'failed'
-                AND NOT (${hasAnUnresolvedAttempt("$2")} AND ${NOT_FROM_A_STALE_PLAN})
+                AND NOT (${HAS_AN_UNRESOLVED_ATTEMPT} AND ${NOT_FROM_A_STALE_PLAN})
             ) AS held_for_review,
             -- Over the same rows the count is taken from, so it qualifies that count and not some
             -- other population. See FailedDelivery.attemptedWithoutOutcome: a row reaching this
             -- filter with an unresolved attempt is a stale one by construction, and a review does
             -- not start it again.
-            bool_or(${hasAnUnresolvedAttempt("$2")}) FILTER (
+            bool_or(${HAS_AN_UNRESOLVED_ATTEMPT}) FILTER (
               WHERE status = 'failed'
-                AND NOT (${hasAnUnresolvedAttempt("$2")} AND ${NOT_FROM_A_STALE_PLAN})
+                AND NOT (${HAS_AN_UNRESOLVED_ATTEMPT} AND ${NOT_FROM_A_STALE_PLAN})
             ) AS attempted_without_outcome,
             -- THE TICK'S OWN DEFINITION OF A HOLD, taken rather than restated. This count and the
             -- one the poller logs are the same claim about the same row, and listing the
