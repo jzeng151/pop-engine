@@ -37,21 +37,33 @@ behave the same way.
   does today. Verified by running the same intake on both trees: byte-identical plans
   (section 2).
 
-**Consequence, stated plainly: this document does not dispose of issue #108.** For Q1 it disposes of
-the **engine** question and nothing wider. Sections 2 and 4 measure what `packages/engine`
-produces and what an engine-level change would cost; the Q1 probe called `evaluate`
-directly, because a Q1 intake cannot be submitted through the API at all (section 4). That is an
-engine measurement, not an end-to-end one, and this document does not claim to have run Q1 through
-the product path: the questionnaire's own scoping in `visibility.ts` and `validate.ts`'s rejection
-of an answer to an un-asked question are untouched by the prototype and left unresolved here
-(section 2, section 6a item 4, section 7 item 2). What Q1 is disposed of is the semantics question
-inside the engine and its cost; what the organizer would be asked and shown under a changed Q1 is
-not measured anywhere below. For Q2 it publishes a measurement of the engine (section 2), of
+**Consequence, stated plainly: this document does not dispose of issue #108, and it does not dispose
+of the Q1 engine question either.** For Q1 it measures the engine and nothing wider. Sections 2 and
+4 measure what `packages/engine` produces and what an engine-level change would cost; the Q1 probe
+called `evaluate` directly, because a Q1 intake cannot be submitted through the API at all
+(section 4). That is an engine measurement, not an end-to-end one, and this document does not claim
+to have run Q1 through the product path: the questionnaire's own scoping in `visibility.ts` and
+`validate.ts`'s rejection of an answer to an un-asked question are untouched by the prototype and
+left unresolved here (section 4, section 6a item 4, section 7 item 2).
+
+**What the Q1 prototype settled, and what it did not.** It settled that the approved fixture suite
+cannot tell the two semantics apart, and that the change is nonetheless not a no-op on at least one
+intake no fixture covers (section 2). It did not settle correctness across the gate inventory:
+attempt B was never exercised with the multi-enum gate `structure_types` blocking, and the source
+trace of why that path looks unsafe is not reproduced here, so neither the failure nor its absence
+has been shown (section 7 item 4). It did not settle the engine-package cost either: attempt B
+leaves `visibility.ts` untouched, so its diff is a lower bound on implementation size rather than
+the size of a complete implementation (section 6a item 3, section 7 item 2). The engine
+investigation stays open on both counts; section 6a recommends deferring the change, not closing the
+question. What the organizer would be asked and shown under a changed Q1 is not measured anywhere
+below.
+
+For Q2 this document publishes a measurement of the engine (section 2), of
 the plan's verdict-detail renderer (section 2) and of the questionnaire (section 2), and no more.
 Those are three probes at three points, not one run along the path: no measurement in this document
-crosses the API or the database, and the joins between the three are read from source (section 2).
-The six-failure count, the 1577/1577 result and the plan diffs say nothing about Q2 at all. Section
-7 gives a separate recommendation for each, and issue #108 stays open on Q2 either way.
+crosses the API or the database, and this document does not trace the steps between the three
+either. The six-failure count, the 1577/1577 result and the plan diffs say nothing about Q2 at all.
+Section 6 gives a separate recommendation for each, and issue #108 stays open on Q2 either way.
 
 **Measurement basis.** Every number below was measured on commit `c700698` (this branch's merge-base
 with `origin/main`), ruleset `rules/nyc-rules.v2.11.json`, Node v24.18.1, PostgreSQL 18.4, full suite
@@ -199,6 +211,12 @@ Only two of the ten gates can carry `"unknown"` at all — `obstructs_public_way
 an `unknown` value, and one a multi-enum. Attempt B is unexercised on the multi-enum gate, so
 "correct" is not established for the whole gate inventory.
 
+**The Q2 engine probe, which is the first of the three points measured for Q2.** The same intake was
+run through `evaluate` on both trees and produced byte-identical plans: a gate answered `"unknown"`
+scopes its dependents out under the patch exactly as it does today, because `blockersFor` records a
+gate only when the raw value is `undefined` or `null`. The four SAPO street-size permits that depend
+on `sapo_event_type` are the dependents scoped out in the case measured.
+
 **Q2 is already visible to an organizer, on both sides.** Measured through the shipped components
 rather than deferred. The plan's `VerdictDetailPanel` renders one row per branch of every missing
 fact with its verdict copy and reason (`plan-view.tsx:416-420`, `verdict-detail.tsx:121-139`,
@@ -228,7 +246,8 @@ and it is independent of issue #108.
 ## 4. Whether the Q1 state can arise at all
 
 **Not through the API. Re-verified against current code, not carried forward. This section is Q1
-only; Q2 is reachable, and storable on a source reading, per section 2.**
+only; Q2 is reachable per section 2, and whether a Q2 answer is then stored is not established
+anywhere in this document.**
 
 - `packages/engine/src/intake/validate.ts:299`: `if (!isProvided(submission, field.field) && !field.nullable)` raises `required`. All 10 gate fields omit `nullable` in the registry (section 1), so an asked gate cannot be submitted blank.
 - `apps/api/src/events.ts:151` and `:164`: both `INSERT` and `UPDATE` build their column list from `intakeColumnNames(intakeContract)`, the full registry, and pass `values[column] ?? null` for each. No column is ever skipped on write, so a partial-column insert cannot happen through the API.
@@ -313,7 +332,8 @@ a question the plan does not identify as the one that would produce it.
 ## 6. Recommendation
 
 **This section recommends separately on Q1 and Q2 (see the scope statement at the top). It does not
-dispose of issue #108: the Q2 decision is left open on a measurement, not closed.**
+dispose of issue #108: the Q2 decision is left open on a measurement, not closed, and the Q1 engine
+question is deferred with two of its own gaps unmeasured (items 3 and 4 below).**
 
 ### 6a. Q1, the unanswered gate
 
@@ -329,7 +349,7 @@ The reasons, in the order they carry weight:
    published contract that made one `nullable` would make the state reachable on a newly created
    row wherever the `events` column can hold the NULL, which for three of the ten gates it can
    (section 4, section 6a's trigger). This reason is Q1-specific; it does not transfer to Q2,
-   which section 2 shows is reachable, and storable on a source reading.
+   which section 2 shows is reachable.
 2. **The approved fixtures cannot tell the two semantics apart** (section 2). Merging a semantics
    change that its own regression suite is blind to is the wrong order of operations regardless of
    which semantics is right. If the change is ever made, the fixtures that distinguish the semantics
@@ -442,8 +462,7 @@ closed.** Section 2 summarises the three Q2 probes, whose harnesses were removed
 appendices. They find:
 
 - Q2 **is** reachable: the questionnaire offers `"unknown"` and the submission carries it (section
-  2). Whether the row then stores it is source-traced through `validate.ts`, the `events` check
-  constraint and `events.ts`, not measured (section 2). Either way 6a's reason 1, which turns on a
+  2). Whether the row then stores it is neither measured nor traced here. Either way 6a's reason 1, which turns on a
   state no submission can express at all, does not apply to Q2.
 - The prototype **does not address** Q2 at all, so 6a's reasons 2, 3 and 4, which
   are all statements about that prototype, do not apply to it either.
@@ -452,8 +471,12 @@ appendices. They find:
   CONDITIONAL.
 - That branch table **reaches the screen**. The render probe ran the Q2 case through the shipped
   `VerdictDetailPanel` (section 2 names the renderer and the test that covers it) and reported four
-  rows, one per published `sapo_event_type`
-  value, the four street-size permits named by their organizer labels in the `street event` row.
+  rows, one per known **alternate** `sapo_event_type` value rather than one per published value:
+  the registry publishes five (`street_event`, `block_party`, `plaza_event`, `other_sapo_class`,
+  `unknown`) and `alternativeValues` (`packages/engine/src/verdict.ts:147-168`) drops both the
+  current answer and `unknown` before rendering, which on a Q2 case is the same value twice. The
+  four street-size permits are named by their organizer labels in the `street event` row. The table
+  therefore covers the alternatives an organizer could switch to, not the full published value set.
   This is no longer an inference from engine output, though re-deriving it means recovering the
   harness from the archive branch.
 - The organizer **can enter it**. The questionnaire probe walked the same case through the shipped
@@ -471,9 +494,8 @@ correct presentation is an engine-owner and product call that no artifact in the
 **How strong that evidence is, stated exactly.** Three probes at three points on the path, not one
 run through it. Nothing measured here submits a Q2 intake to the API, stores it, generates a plan
 from the stored row and retrieves it into the page; the API, database and plan-retrieval joins are
-source-traced (section 2). A reader who wants the recommendation to rest on a product-path run
-rather than on three isolated probes plus three files read should treat that as the outstanding
-measurement it is.
+neither exercised nor traced here. A reader who wants the recommendation to rest on a product-path
+run rather than on three isolated probes should treat that as the outstanding measurement it is.
 
 **So: keep issue #108 open, and do not close it as won't-fix or as answered by this document.** Two
 measurements an earlier revision made preconditions for a Q2 decision have now been run: the plan
@@ -613,9 +635,8 @@ Stated plainly rather than left as silence:
    settleable by measurement, which item 6 is not. The questionnaire probe fakes `fetch`, the engine
    probe calls `evaluate` directly and the render probe renders a plan object in isolation (all three
    harnesses went with the appendices), so the API validation, the `events` insert, plan
-   generation from the stored row and retrieval back into the page are read from source and not
-   exercised (section 2). Nothing in the source reading suggests they fail; nothing here shows they
-   do not.
+   generation from the stored row and retrieval back into the page are neither exercised nor traced
+   here. Nothing measured here suggests they fail; nothing here shows they do not.
 8. **How `docs/ARCHITECTURE.md:83` and a NULL-as-materially-unknown semantics are to be
    reconciled.** The approved line says unknown-capable active fields use explicit `unknown` values
    and "never NULL-as-unknown"; attempt B derives material unknownness from a raw NULL on

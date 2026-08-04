@@ -413,7 +413,7 @@ identically, in `packages/engine/src/types.ts` and `packages/engine/src/intake/v
 `index.ts` re-exporting the `visibility.ts` one.
 
 **Rounds 1 to 3 budgeted two coordinated edits for that. That was the wrong reading: the duplicate
-is a defect, not a cost to plan around.** `AGENTS.md:42` requires shared types to be imported from
+is a defect, not a cost to plan around.** `AGENTS.md:44` requires shared types to be imported from
 `packages/engine` and never redefined, and the same authority argument applies inside the engine:
 budgeting both edits preserves a second declaration of a type that should have exactly one. Nothing
 in either site needs a separate definition, and they have not drifted only because nobody has edited
