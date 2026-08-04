@@ -92,8 +92,11 @@ export function GuestListView({ eventId, apiBaseUrl }: GuestListProps) {
           : `${list.confirmed_count} of ${list.event.capacity} confirmed`}
       </p>
       <p className="guests__note">
-        Synthetic demo data only (AD-12). Admission uses the event's confirmed capacity; with none
-        set there is no limit. Guests RSVP from the published public event page.{" "}
+        {/* Source-neutral on purpose: during the rollout window `readLimit` may have taken this
+            number from a pre-rename API's `headcount`, so naming it a confirmed capacity would
+            state something the responding API has not. */}
+        Synthetic demo data only (AD-12). Admission uses the event's current admission limit; with
+        none set there is no limit. Guests RSVP from the published public event page.{" "}
         <a href={`/events/${eventId}/promote`}>Promote / publish</a>
         {" · "}
         <a href={`/events/${eventId}/dashboard`}>Live ops</a>
