@@ -1552,11 +1552,12 @@ describe("F-203 · a channel that failed to deliver is reported to the organizer
     expect(notice.textContent).toBe(
       "2 email alerts for this event were recorded as attempted sends, and no outcome ever came " +
         "back: PopEngine cannot tell whether they reached the sending service at all. Too much " +
-        "time has passed to try them again safely, so PopEngine has stopped: nothing on their " +
-        "current schedule will send them again while they stay recorded this way. Someone has to " +
-        "check with the sending service whether they went out, and what that check records " +
-        "decides whether this schedule sends them after all; until then, do not count on them to " +
-        "remind you of the filing dates they cover.",
+        "time has passed to try them again straight away without risking a second copy, so " +
+        "PopEngine has paused them: nothing on their current schedule sends them again for now. " +
+        "Someone can check with the sending service whether they went out, and what that check " +
+        "records decides whether this schedule sends them sooner; if nobody does, PopEngine " +
+        "tries once more when the pause ends, and that may arrive as a second copy. Until then, " +
+        "do not count on them to remind you of the filing dates they cover.",
     );
     expect(notice.getAttribute("role")).toBe("alert");
     // The claim that broke this: nothing here may promise a retry that is not going to happen.
@@ -1604,12 +1605,16 @@ describe("F-203 · a channel that failed to deliver is reported to the organizer
 
     const notice = screen.getByText(/no outcome ever came back/);
     expect(notice.textContent).toContain(
-      "nothing on their current schedule will send them again while they stay recorded this way",
+      "nothing on their current schedule sends them again for now",
     );
     // And the check is named as what can change that, rather than only as an errand.
     expect(notice.textContent).toMatch(/what that check records decides whether/);
     // The promise this notice may not make in an unqualified form.
     expect(notice.textContent).not.toMatch(/will send them again\./);
+    // Nor may "for now" be left to do the work on its own: the hold ends by itself under the
+    // 2026-08-04 bound, and an organizer who is not told that can receive the second copy the
+    // rest of this notice is about after being told delivery had stopped.
+    expect(notice.textContent).toMatch(/tries once more when the pause ends/);
   });
 
   it("does not assert a handoff it cannot prove happened", async () => {
@@ -1651,11 +1656,12 @@ describe("F-203 · a channel that failed to deliver is reported to the organizer
     expect(screen.getByText(/no outcome ever came back/).textContent).toBe(
       "1 email alert for this event was recorded as an attempted send, and no outcome ever came " +
         "back: PopEngine cannot tell whether it reached the sending service at all. Too much " +
-        "time has passed to try it again safely, so PopEngine has stopped: nothing on its " +
-        "current schedule will send it again while it stays recorded this way. Someone has to " +
-        "check with the sending service whether it went out, and what that check records decides " +
-        "whether this schedule sends it after all; until then, do not count on it to remind you " +
-        "of the filing date it covers.",
+        "time has passed to try it again straight away without risking a second copy, so " +
+        "PopEngine has paused it: nothing on its current schedule sends it again for now. " +
+        "Someone can check with the sending service whether it went out, and what that check " +
+        "records decides whether this schedule sends it sooner; if nobody does, PopEngine tries " +
+        "once more when the pause ends, and that may arrive as a second copy. Until then, do not " +
+        "count on it to remind you of the filing date it covers.",
     );
   });
 

@@ -378,6 +378,63 @@ export const PROVIDER_DEDUP_WINDOW_HOURS = 24;
 export const DEDUP_WINDOW_CLAIM_MARGIN_MS = TICK_BUDGET_MS + PROVIDER_TIMEOUT_MS;
 
 /**
+ * How long an attempt nobody saw the end of holds its alert before the alert is retried anyway.
+ *
+ * THE PRODUCT OWNER'S DECISION OF 2026-08-04, resolving SPEC-CONFLICT #240 against approved F-203
+ * (`docs/BASELINE.md`). The hold used to have no end, so a provider outage presenting as timeouts
+ * for longer than the dedup window withheld a filing reminder for good — the outcome F-203:59 and
+ * AC 2 exist to prevent. Bounded, the hold keeps the suppression over the period where it can help
+ * and gives the reminder back afterwards.
+ *
+ * DERIVED, not chosen round. Two things fix the range:
+ *
+ * - The FLOOR is `PROVIDER_DEDUP_WINDOW_HOURS` plus `DEDUP_WINDOW_CLAIM_MARGIN_MS`, because that is
+ *   where the hold starts. A limit at or below it would mean no row is ever held: that is option 1
+ *   in #240, which the owner did not take.
+ * - The CEILING is the six days between F-203's two `deadline_reminder` offsets, 7 days before the
+ *   deadline and 1 day before it. A reminder released later than that arrives after its own
+ *   successor has already gone out, so the release can no longer restore any lead time and can only
+ *   read as a duplicate.
+ *
+ * Between them the limit is also the maximum delay the release adds and, during an outage that
+ * stays ambiguous, the maximum rate of possible duplicates: one per alert per limit, because each
+ * retry opens its own attempt and re-enters the hold under it. Both argue for the smallest value
+ * that still leaves a real reconciliation period, and a limit a few minutes above the floor leaves
+ * none. Two dedup windows is the smallest whole multiple of the only interval the provider actually
+ * publishes that clears the floor — one does not, by the claim margin — and it is a third of the
+ * ceiling.
+ *
+ * WHAT EITHER SIDE OF IT COSTS AN ORGANIZER. Past it: possibly a second copy of a reminder that did
+ * arrive, naming the same deadline, 48 hours after the first, and for a 7-day reminder still five
+ * days before the filing date. Inside it: a reminder whose send never reached anyone is delayed by
+ * up to 48 hours, which a 7-day reminder absorbs and a 1-day reminder does not — that one arrives
+ * after its deadline. No limit above the floor saves the 1-day reminder, because its whole lead
+ * time is shorter than the window the provider deduplicates within. That is the cost of holding at
+ * all, and it is why this is the smallest multiple that works rather than a larger one.
+ */
+export const UNRESOLVED_ATTEMPT_HOLD_LIMIT_HOURS = PROVIDER_DEDUP_WINDOW_HOURS * 2;
+
+/**
+ * What the send boundary keeps back for the handoff it sits in front of.
+ *
+ * ASKING WITH NOTHING RESERVED WAS THE FOURTH DEFECT ON THIS MARGIN. Every earlier reader of the
+ * cutoff decides and then waits, so each holds back enough of the window to cover what follows it;
+ * the boundary check was written as the one that needs nothing, on the grounds that the request is
+ * all that follows. The request is not free: `sender(...)` still has DNS, the TCP and TLS
+ * handshakes and the body transmission in front of it, and `alert-delivery.ts` bounds that whole
+ * thing — connection setup included — with `PROVIDER_TIMEOUT_MS`. A key permitted at 23h59m59s can
+ * therefore reach Resend after 24 hours, where it deduplicates nothing.
+ *
+ * SO THE MARGIN IS STATED AS WHAT IT MUST COVER, and it is exactly two things: the bounded provider
+ * request, and the in-process gap between this answer and the request leaving. The second is
+ * `SEND_BOUNDARY_HANDOFF_BUDGET_MS`, and it is ASSERTED rather than assumed at the point of use, so
+ * a fifth statement inserted between the boundary and the sender cannot silently consume the margin
+ * the way the last three did. It fails closed: over budget, nothing is handed over.
+ */
+const SEND_BOUNDARY_HANDOFF_BUDGET_MS = 1_000;
+export const SEND_BOUNDARY_MARGIN_MS = PROVIDER_TIMEOUT_MS + SEND_BOUNDARY_HANDOFF_BUDGET_MS;
+
+/**
  * An alert whose send was attempted and whose outcome nobody ever saw, long enough ago that a
  * provider holding it would no longer recognise the key.
  *
@@ -397,6 +454,19 @@ export const DEDUP_WINDOW_CLAIM_MARGIN_MS = TICK_BUDGET_MS + PROVIDER_TIMEOUT_MS
  * would assert PopEngine no longer intends to send something when in fact nobody knows whether it
  * arrived. The tick counts these so they can be reconciled against the provider by a human.
  *
+ * AND HELD FOR A BOUNDED TIME, which is the product owner's 2026-08-04 resolution of SPEC-CONFLICT
+ * #240 (`docs/BASELINE.md`). Past `UNRESOLVED_ATTEMPT_HOLD_LIMIT_HOURS` the attempt stops holding
+ * its alert and the alert is retried, because an unbounded hold is how F-203's outage edge case
+ * ("nothing is lost") was being broken by the mechanism meant to protect a duplicate. The retry
+ * opens an attempt of its own, so an outage that keeps producing unobserved outcomes re-enters the
+ * hold under the new attempt rather than sending on every tick: at most one possible duplicate per
+ * alert per limit.
+ *
+ * A BACKFILLED `-infinity` IS PAST EVERY LIMIT, and that is the right reading of it rather than an
+ * oversight. Migration 014 seeded that value precisely because the attempt time is unknowable, so
+ * no bound measured from it can ever contain the row, and nothing will ever make it knowable. Those
+ * rows were retried on every tick before this branch existed, which is what F-203 asks for.
+ *
  * AN ATTEMPT SPEAKS FOR THE SCHEDULE IT WAS MADE FOR AND NOT FOR A LATER ONE, which is why
  * `superseded_at` is read here. Scoped to the alert id alone, this predicate outlived the queue
  * membership it belonged to: a regeneration cancelled a row carrying an unresolved attempt, a
@@ -415,6 +485,8 @@ const unresolvedAttemptPastTheCutoff = (now: string, marginMs: number): string =
           AND attempt.attempted_at
               < ${now} - interval '${PROVIDER_DEDUP_WINDOW_HOURS} hours'
                        + interval '${marginMs} milliseconds'
+          AND attempt.attempted_at
+              >= ${now} - interval '${UNRESOLVED_ATTEMPT_HOLD_LIMIT_HOURS} hours'
      )`;
 
 const HAS_AN_UNRESOLVED_ATTEMPT = unresolvedAttemptPastTheCutoff(
@@ -423,13 +495,15 @@ const HAS_AN_UNRESOLVED_ATTEMPT = unresolvedAttemptPastTheCutoff(
 );
 
 /**
- * The same question asked where there is nothing left to reserve for.
+ * The same question asked at the last statement before the provider, reserving what that statement
+ * still has in front of it.
  *
- * THE MARGIN IS WHAT THIS DOES NOT NEED, and that is the whole difference. Every other reader of
- * the cutoff decides in advance and then waits — for the event lock, the claim, the writer's
- * connection, the intent insert — so each has to hold back enough of the window to cover what
- * follows it. This one is the last statement before `sender(...)`, so what follows it is the
- * request, and the answer cannot go stale before it is used.
+ * WHAT THE MARGIN COVERS, STATED SO IT CAN BE CHECKED: the in-process gap between this answer and
+ * `sender(...)` being called, which `SEND_BOUNDARY_HANDOFF_BUDGET_MS` bounds and
+ * `handoffFitsTheMargin` asserts, plus the provider request itself, which `PROVIDER_TIMEOUT_MS`
+ * bounds end to end including DNS and the TLS handshake. Nothing else may sit between the two, and
+ * the assertion is what makes that a checked property of the code rather than a comment about it.
+ * Reserving nothing here was the fourth defect on this margin: it read the request as instant.
  *
  * `clock_timestamp()` RATHER THAN `current_timestamp`, because this runs inside the sending
  * transaction and `current_timestamp` is that transaction's START. Reading it here would answer as
@@ -441,7 +515,23 @@ const HAS_AN_UNRESOLVED_ATTEMPT = unresolvedAttemptPastTheCutoff(
  * of the sender cannot reopen this, because the question is asked after all of them by
  * construction.
  */
-const HELD_AT_THE_SEND_BOUNDARY = unresolvedAttemptPastTheCutoff("clock_timestamp()", 0);
+const HELD_AT_THE_SEND_BOUNDARY = unresolvedAttemptPastTheCutoff(
+  "clock_timestamp()",
+  SEND_BOUNDARY_MARGIN_MS,
+);
+
+/**
+ * The other half of that margin: that the handoff it reserved for is the only thing that happened.
+ *
+ * The margin covers a bounded request and a gap this side controls. Only the request is bounded by
+ * anything outside this file, so the gap is the part a later edit can grow — the last three defects
+ * on this margin were each a statement added in front of the sender. Checked at the point of use,
+ * an insertion that spends more than the budget stops the send instead of taking the reservation
+ * with it, and the case it protects (a duplicate reminder to a real organizer) cannot come back
+ * silently.
+ */
+const handoffFitsTheMargin = (boundaryAnsweredAt: number, now: number): boolean =>
+  now - boundaryAnsweredAt <= SEND_BOUNDARY_HANDOFF_BUDGET_MS;
 
 /**
  * How long the test endpoint waits for a poller that claimed its row first.
@@ -2128,12 +2218,14 @@ async function deliverClaimed(
   // THE INTENT IS CLOSED ON BOTH PATHS. Nothing was handed over, so an attempt left open would ask
   // a person to reconcile a message that never left this process — and would itself become a hold
   // 24 hours later, recorded by the statement that refused to send.
+  let boundaryAnsweredAt = 0;
   if (attemptId !== null) {
     const { rows: boundary } = await client.query<{ shut: boolean; held: boolean }>(
       `SELECT ${FILING_WINDOW_HAS_SHUT("$2")} AS shut, ${HELD_AT_THE_SEND_BOUNDARY} AS held
          FROM alerts WHERE id = $1`,
       [row.id, todayInJurisdiction(jurisdiction, new Date())],
     );
+    boundaryAnsweredAt = Date.now();
     if (boundary[0]?.shut === true) {
       await resolveAttempt(client);
       await client.query("UPDATE alerts SET status = 'cancelled' WHERE id = $1", [row.id]);
@@ -2143,6 +2235,20 @@ async function deliverClaimed(
       // On the writer's own connection, for the reason `recordProvenNonDelivery` records: this
       // transaction is about to be rolled back to nothing, and the knowledge that no message left
       // has to survive that.
+      await recordProvenNonDelivery();
+      return null;
+    }
+    // THE ASSERTION THE MARGIN RESTS ON. Everything above reserved room for one bounded request and
+    // for getting to it; if getting to it took longer than that reservation, the answer above is no
+    // longer the answer for this send and the key could reach the provider outside the window it
+    // deduplicates within. Fails closed, like every other boundary decision here: nothing is handed
+    // over, the intent is closed because nothing was, and the next tick reads the row as it stands.
+    if (!handoffFitsTheMargin(boundaryAnsweredAt, Date.now())) {
+      console.warn(
+        `alert ${row.id} spent more than ${SEND_BOUNDARY_HANDOFF_BUDGET_MS}ms between the send ` +
+          `boundary and the provider handoff, which is the margin the boundary reserved for it; ` +
+          `nothing was sent`,
+      );
       await recordProvenNonDelivery();
       return null;
     }
@@ -2372,10 +2478,11 @@ export type AlertTickSummary = {
    * now older than the provider's dedup window. Attempted rather than handed over: the attempt is
    * recorded before the sender runs, so a process that died in between counts here too.
    *
-   * NOT a subset of `abandoned`, and not work this tick failed to reach: no tick will ever send
-   * these. Retrying one may deliver a second copy to the same person, so it waits for a human to
-   * reconcile it against the provider. Counted because a queue that stops moving with nothing
-   * failing is otherwise indistinguishable from an empty one.
+   * NOT a subset of `abandoned`, and not work this tick failed to reach: no tick claims these
+   * while they are held. Retrying one may deliver a second copy to the same person, so it waits
+   * for a human to reconcile it against the provider, or for `UNRESOLVED_ATTEMPT_HOLD_LIMIT_HOURS`
+   * to pass, after which it is retried anyway. Counted because a queue that stops moving with
+   * nothing failing is otherwise indistinguishable from an empty one.
    */
   readonly heldForReconciliation: number;
   /**
@@ -2538,9 +2645,11 @@ export function createAlertPoller(dependencies: {
       );
     }
     // WHAT THE SCAN JUST REFUSED TO CLAIM, counted rather than left silent. A held row is due,
-    // undelivered as far as this side knows, and nothing in the poller will ever move it: the only
-    // way out is a human checking the provider for the key and then either marking the alert sent
-    // or clearing its attempt. Reporting nothing would make that look like an empty queue.
+    // undelivered as far as this side knows, and no tick will move it while the hold lasts: the
+    // ways out are a human checking the provider for the key and then either marking the alert
+    // sent or clearing its attempt, or the hold limit passing, after which the poller retries it
+    // and accepts the possible duplicate. Reporting nothing would make that look like an empty
+    // queue, and the first of those two exits is the one that avoids the duplicate.
     //
     // NOT ROWS THE PRODUCT CAN RETIRE ITSELF, which is why the scan's staleness predicate is here
     // too. A hold asserts that only a person checking the provider can resolve this alert, and
@@ -2582,7 +2691,8 @@ export function createAlertPoller(dependencies: {
         `${held.length} alert(s) were recorded as attempted sends whose outcome never came back, ` +
           `so this side cannot tell whether a provider ended up holding them, long enough ago ` +
           `that its ${PROVIDER_DEDUP_WINDOW_HOURS}h dedup window would have closed before a ` +
-          `retry could land, so they are held rather than retried: ` +
+          `retry could land, so they are held rather than retried until they reach ` +
+          `${UNRESOLVED_ATTEMPT_HOLD_LIMIT_HOURS}h, when they are retried anyway: ` +
           `${held.map((row) => row.id).join(", ")}`,
       );
     }
@@ -3043,9 +3153,9 @@ export async function simulatedDeliveries(
  * failing when they are not. Same predicate the reconciler already uses to leave test rows alone.
  *
  * AND SO ARE THE ROWS THE POLLER HAS STOPPED ON, because this count is read under copy that says
- * retrying continues. An alert whose attempt outlived the provider's dedup window is never taken
- * again by any tick, so counting it here told an organizer delivery was still being attempted
- * after it had permanently ended. Those rows are reported by `reconciliationHolds` instead, which
+ * retrying continues. An alert whose attempt outlived the provider's dedup window is not taken by
+ * any tick while it is held, so counting it here told an organizer delivery was still being
+ * attempted while it had in fact stopped. Those rows are reported by `reconciliationHolds` instead, which
  * says what is actually true of them. The stale-plan half of the pair stays HERE rather than
  * moving: the notice already has a paused branch that names regeneration, which is the action that
  * resolves it, and the reconciliation notice would send the organizer after the provider instead.
@@ -3121,7 +3231,7 @@ export async function failedDeliveries(
  */
 export type ReconciliationHold = {
   readonly channel: AlertChannel;
-  /** Alerts on this channel the poller has permanently stopped on. Never zero: absent instead. */
+  /** Alerts on this channel the poller has stopped on for now. Never zero: absent instead. */
   readonly heldCount: number;
 };
 

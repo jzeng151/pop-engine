@@ -166,7 +166,8 @@ export function failedDeliveryNotice(failure: {
   // which is not something this page is given.
   return failure.attemptedWithoutOutcome === true
     ? `${paused} That will not restart any that were already attempted with no outcome recorded: ` +
-        `those stay stopped until someone checks with the sending service.`
+        `those stay paused until someone checks with the sending service, or until PopEngine's ` +
+        `own wait on them runs out.`
     : paused;
 }
 
@@ -215,6 +216,15 @@ export function failedDeliveryNotice(failure: {
  * promise holds only while the attempt stays as it is, and the sentence says so rather than
  * ruling out a send the reconciliation is there to release.
  *
+ * AND THE HOLD ENDS BY ITSELF, which is the product owner's 2026-08-04 resolution of SPEC-CONFLICT
+ * #240 (`docs/BASELINE.md`) and the last thing this notice was still saying was permanent. Past
+ * `UNRESOLVED_ATTEMPT_HOLD_LIMIT_HOURS` the poller retries the alert on the schedule it is already
+ * on, with nobody having checked anything. So the copy is a pause rather than a stop, and it says
+ * the second copy is possible when the pause ends: an organizer who is told delivery has stopped
+ * and then receives the reminder twice was told something false by the page that was supposed to
+ * be the honest one. The number stays out of the sentence and out of this file — one constant owns
+ * it, in `apps/api/src/alerts.ts`, and a copy of it here would be a second one to keep in step.
+ *
  * "the sending service" rather than the provider's name, which is an operational detail an
  * organizer has no account with and cannot ring up.
  */
@@ -228,15 +238,15 @@ export function reconciliationHoldNotice(hold: { channel: string; heldCount: num
   const their = one ? "its" : "their";
   const dates = one ? "the filing date it covers" : "the filing dates they cover";
   const attempted = one ? "an attempted send" : "attempted sends";
-  const stay = one ? "stays" : "stay";
   return (
     `${hold.heldCount} ${name} ${alerts} for this event ${were} recorded as ${attempted}, and no ` +
     `outcome ever came back: PopEngine cannot tell whether ${they} reached the sending service ` +
-    `at all. Too much time has passed to try ${them} again safely, so PopEngine has stopped: ` +
-    `nothing on ${their} current schedule will send ${them} again while ${they} ${stay} recorded ` +
-    `this way. Someone has to check with the sending service whether ${they} went out, and what ` +
-    `that check records decides whether this schedule sends ${them} after all; until then, do ` +
-    `not count on ${them} to remind you of ${dates}.`
+    `at all. Too much time has passed to try ${them} again straight away without risking a second ` +
+    `copy, so PopEngine has paused ${them}: nothing on ${their} current schedule sends ${them} ` +
+    `again for now. Someone can check with the sending service whether ${they} went out, and what ` +
+    `that check records decides whether this schedule sends ${them} sooner; if nobody does, ` +
+    `PopEngine tries once more when the pause ends, and that may arrive as a second copy. Until ` +
+    `then, do not count on ${them} to remind you of ${dates}.`
   );
 }
 

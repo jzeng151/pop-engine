@@ -151,12 +151,26 @@ const drainThenExit = (signal: NodeJS.Signals): void => {
     // open between requests, and `close()` waits for every connection, so without this the drain
     // would last as long as an idle tab rather than as long as the work. A connection with no
     // request on it has nothing to lose by going.
-    await new Promise<void>((drained) => {
-      server.close(() => drained());
-      server.closeIdleConnections();
+    //
+    // AND STARTED BEFORE THAT WAIT RATHER THAN AFTER IT, because the two are independent work and
+    // only one of them is urgent. Ordered after the drain, the poller kept its interval for as long
+    // as the slowest request took: still claiming alerts and still handing them to a provider after
+    // the host had asked the process to go. Host patience is finite, and what it eventually kills is
+    // one of those new sends mid-transaction — the accepted-but-unrecorded attempt this whole
+    // release exists to stop. `stop()` reaches the send in flight; nothing about it needs the HTTP
+    // side to be finished first, so it is started here and awaited alongside.
+    const pollerStopped = alertPoller.stop().then(() => {
+      // Said out loud, because "the poller stopped taking work" is the fact a deployer watching a
+      // long shutdown needs and the exit line below cannot give them: it comes after both.
+      console.log("alert poller stopped claiming alerts");
     });
-    // Then the poller's own work, which no HTTP request is holding.
-    await alertPoller.stop();
+    await Promise.all([
+      new Promise<void>((drained) => {
+        server.close(() => drained());
+        server.closeIdleConnections();
+      }),
+      pollerStopped,
+    ]);
     await Promise.all([alertPool.end(), pool.end()]);
     console.log("alert poller drained; exiting");
     process.exit(0);

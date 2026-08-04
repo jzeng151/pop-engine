@@ -47,8 +47,10 @@ import {
   MAX_ALERTS_PER_TICK,
   POLL_INTERVAL_MS,
   PROVIDER_DEDUP_WINDOW_HOURS,
+  SEND_BOUNDARY_MARGIN_MS,
   SEND_CONCURRENCY,
   TICK_BUDGET_MS,
+  UNRESOLVED_ATTEMPT_HOLD_LIMIT_HOURS,
   type AlertScheduler,
   type AlertStatus,
 } from "./alerts";
@@ -2453,6 +2455,194 @@ describe.skipIf(databaseUrl === "")("F-203 deadline alerts", () => {
         expect(rows[0]?.status).toBe("sent");
       });
 
+      it("refuses the send when the handoff outlived the margin the boundary reserved", async () => {
+        // THE ASSERTION, DRIVEN. The boundary reserves room for the request and for reaching it;
+        // a statement inserted after the answer spends that reservation, and the key then reaches
+        // the provider outside the window it deduplicates within. Rather than trusting that no
+        // such statement is ever added, the send checks how long it took to get here and refuses.
+        //
+        // The delay is applied to the clock rather than to a real wait, and only to the reading
+        // taken at the check, which is exactly the shape of an inserted wait: the boundary answered
+        // when it answered, and more time than the margin allows passed before the handoff.
+        const eventId = await createEvent(scenario("C"));
+        const alertId = await insertDueAlert(eventId, "slow-handoff@example.test", 2);
+        const provider = fakeProvider();
+
+        const realNow = Date.now.bind(Date);
+        let answered = false;
+        let boundaryReadingTaken = false;
+        const query = Client.prototype.query as (...args: unknown[]) => unknown;
+        const querySpy = vi
+          .spyOn(Client.prototype, "query")
+          .mockImplementation(function (this: Client, ...args: unknown[]) {
+            const first = args[0];
+            const text =
+              typeof first === "string" ? first : ((first as { text?: string })?.text ?? "");
+            const result = query.apply(this, args) as Promise<unknown>;
+            if (!text.includes("AS shut")) return result;
+            return result.then((rows) => {
+              answered = true;
+              return rows;
+            });
+          } as typeof Client.prototype.query);
+        const clockSpy = vi.spyOn(Date, "now").mockImplementation(() => {
+          if (!answered) return realNow();
+          if (!boundaryReadingTaken) {
+            boundaryReadingTaken = true;
+            return realNow();
+          }
+          return realNow() + SEND_BOUNDARY_MARGIN_MS;
+        });
+        try {
+          await createAlertPoller({
+            database: pool,
+            senders: provider.senders,
+            jurisdiction: ruleset.jurisdiction,
+          }).tick();
+        } finally {
+          clockSpy.mockRestore();
+          querySpy.mockRestore();
+        }
+
+        expect(provider.attempts.map((message) => message.recipient)).not.toContain(
+          "slow-handoff@example.test",
+        );
+        // Nothing was handed over, so the intent it wrote is closed rather than left to become a
+        // hold recorded by the statement that refused to send.
+        const recorded = await attemptsOf(alertId);
+        expect(recorded).toHaveLength(1);
+        expect(recorded[0]?.outcome_recorded_at).not.toBeNull();
+        const { rows } = await pool.query<{ status: string }>(
+          "SELECT status FROM alerts WHERE id = $1",
+          [alertId],
+        );
+        expect(rows[0]?.status).toBe("pending");
+      });
+
+      it("retries an alert whose unresolved attempt is older than the hold limit", async () => {
+        // SPEC-CONFLICT #240, resolved by the product owner on 2026-08-04: the hold is bounded.
+        // Past `UNRESOLVED_ATTEMPT_HOLD_LIMIT_HOURS` the outcome has stopped being knowable — the
+        // provider's own window closed a day earlier and nothing in this product will learn any
+        // more by waiting — so the alert goes back in the queue and F-203's "nothing is lost"
+        // holds again. What is accepted at this edge is a possible second copy, which is the trade
+        // the owner chose over a reminder that is never delivered at all.
+        const eventId = await createEvent(scenario("C"));
+        const alertId = await insertDueAlert(eventId, "past-the-bound@example.test", 2);
+        await recordAttempt(alertId, UNRESOLVED_ATTEMPT_HOLD_LIMIT_HOURS + 1, false);
+        const provider = fakeProvider();
+
+        const summary = await createAlertPoller({
+          database: pool,
+          senders: provider.senders,
+          jurisdiction: ruleset.jurisdiction,
+        }).tick();
+
+        expect(provider.attempts.map((message) => message.recipient)).toContain(
+          "past-the-bound@example.test",
+        );
+        expect(summary.heldForReconciliation).toBe(0);
+        const { rows } = await pool.query<{ status: string }>(
+          "SELECT status FROM alerts WHERE id = $1",
+          [alertId],
+        );
+        expect(rows[0]?.status).toBe("sent");
+      });
+
+      it("still holds an alert whose unresolved attempt is inside the hold limit", async () => {
+        // The other side of the same line, so the bound cannot be widened into no hold at all.
+        // An hour short of the limit the attempt is still the ambiguous one the hold is for: a
+        // person can still check the provider for the key, and a retry now would be the duplicate
+        // that check exists to avoid.
+        const eventId = await createEvent(scenario("C"));
+        const alertId = await insertDueAlert(eventId, "inside-the-bound@example.test", 2);
+        await recordAttempt(alertId, UNRESOLVED_ATTEMPT_HOLD_LIMIT_HOURS - 1, false);
+        const provider = fakeProvider();
+
+        const summary = await createAlertPoller({
+          database: pool,
+          senders: provider.senders,
+          jurisdiction: ruleset.jurisdiction,
+        }).tick();
+
+        expect(provider.attempts.map((message) => message.recipient)).not.toContain(
+          "inside-the-bound@example.test",
+        );
+        expect(summary.heldForReconciliation).toBeGreaterThanOrEqual(1);
+        const { rows } = await pool.query<{ status: string }>(
+          "SELECT status FROM alerts WHERE id = $1",
+          [alertId],
+        );
+        expect(rows[0]?.status).toBe("pending");
+      });
+
+
+      it("keeps back enough of the window for the provider request itself", async () => {
+        // THE FOURTH FINDING ON THIS MARGIN, and the one the boundary check itself opened. Asking
+        // the question with nothing reserved permits a send whose key can still reach Resend after
+        // the window closes: `sender(...)` has DNS, TCP/TLS and the request body in front of it,
+        // all of them inside `PROVIDER_TIMEOUT_MS` and none of them instant. So the boundary keeps
+        // `SEND_BOUNDARY_MARGIN_MS` back, and an attempt that crosses into it during the last
+        // statement is held rather than retried.
+        //
+        // Driven the same way the case above it is: the cutoff is crossed during the boundary
+        // statement, at a moment no earlier check could have seen.
+        const eventId = await createEvent(scenario("C"));
+        const alertId = await insertDueAlert(eventId, "handoff@example.test", 2);
+        await recordAttemptMsAgo(
+          alertId,
+          PROVIDER_DEDUP_WINDOW_HOURS * 3_600_000 - DEDUP_WINDOW_CLAIM_MARGIN_MS * 4,
+        );
+        const provider = fakeProvider();
+        // Inside the 24 hours by half the margin, so a zero-margin boundary rules it sendable and
+        // the request can still land outside them.
+        const insideTheHandoffMargin = `${PROVIDER_DEDUP_WINDOW_HOURS * 3_600_000 - SEND_BOUNDARY_MARGIN_MS / 2} milliseconds`;
+
+        const query = Client.prototype.query as (...args: unknown[]) => unknown;
+        const spy = vi
+          .spyOn(Client.prototype, "query")
+          .mockImplementation(function (this: Client, ...args: unknown[]) {
+            const first = args[0];
+            const text =
+              typeof first === "string" ? first : ((first as { text?: string })?.text ?? "");
+            if (!text.includes("controlling_apply_by")) return query.apply(this, args);
+            return (async () => {
+              const { rows } = await pool.query<{ open: number }>(
+                `SELECT count(*)::int AS open FROM alert_send_attempts
+                  WHERE alert_id = $1 AND outcome_recorded_at IS NULL`,
+                [alertId],
+              );
+              if ((rows[0]?.open ?? 0) >= 2) {
+                await pool.query(
+                  `UPDATE alert_send_attempts
+                      SET attempted_at = current_timestamp - $2::interval
+                    WHERE alert_id = $1
+                      AND attempted_at < current_timestamp - interval '1 hour'`,
+                  [alertId, insideTheHandoffMargin],
+                );
+              }
+              return query.apply(this, args);
+            })();
+          } as typeof Client.prototype.query);
+        try {
+          await createAlertPoller({
+            database: pool,
+            senders: provider.senders,
+            jurisdiction: ruleset.jurisdiction,
+          }).tick();
+        } finally {
+          spy.mockRestore();
+        }
+
+        expect(provider.attempts.map((message) => message.recipient)).not.toContain(
+          "handoff@example.test",
+        );
+        const { rows } = await pool.query<{ status: string }>(
+          "SELECT status FROM alerts WHERE id = $1",
+          [alertId],
+        );
+        expect(rows[0]?.status).toBe("pending");
+      });
+
       it("delivers a revived alert instead of holding it on the withdrawn schedule's attempt", async () => {
         // THE HOLD OUTLIVING ITS SCHEDULE, which is the worse failure of the two this predicate
         // can produce. A regeneration cancels an alert whose attempt nobody saw the end of; a
@@ -2567,6 +2757,54 @@ describe.skipIf(databaseUrl === "")("F-203 deadline alerts", () => {
           "+15555550199",
           "legacy-untried@example.test",
         ]);
+      });
+
+      it("holds a backfilled attempt for the provider's window and then retries it", async () => {
+        // WHAT THE SEEDED STAMP HAS TO ACHIEVE, in one case, because it is two facts and either
+        // one alone is wrong. The upgrade cannot tell when the pre-014 attempt happened, so it
+        // must not retry those rows into a provider that may still be holding the message: held
+        // at the upgrade. And it must not hold them for good either, which is the permanent hold
+        // #240 was raised about, over the largest population on the system: retried once the
+        // window the stamp claims has passed.
+        //
+        // Both halves are asserted softly so a run before the change reports both rather than
+        // stopping at the first.
+        const eventId = await createEvent(scenario("C"));
+        const backfilled = await insertDueAlert(eventId, "backfilled@example.test", 30, {
+          status: "failed",
+        });
+
+        await seedLegacyAttempts();
+
+        const atUpgrade = fakeProvider();
+        const held = await createAlertPoller({
+          database: pool,
+          senders: atUpgrade.senders,
+          jurisdiction: ruleset.jurisdiction,
+        }).tick();
+        expect.soft(atUpgrade.attempts.map((message) => message.recipient)).not.toContain(
+          "backfilled@example.test",
+        );
+        expect.soft(held.heldForReconciliation).toBe(1);
+
+        // The window the stamp claims, gone by: same effect as the poller running a day later.
+        await pool.query(
+          `UPDATE alert_send_attempts
+              SET attempted_at = attempted_at - ($2 || ' hours')::interval
+            WHERE alert_id = $1`,
+          [backfilled, PROVIDER_DEDUP_WINDOW_HOURS + 1],
+        );
+        const later = fakeProvider();
+        const retried = await createAlertPoller({
+          database: pool,
+          senders: later.senders,
+          jurisdiction: ruleset.jurisdiction,
+        }).tick();
+
+        expect.soft(later.delivered.map((message) => message.recipient)).toContain(
+          "backfilled@example.test",
+        );
+        expect(retried.heldForReconciliation).toBe(0);
       });
 
       it("backfills a single local failure, whose count cannot rule out a crashed attempt", async () => {

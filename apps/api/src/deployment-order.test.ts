@@ -58,7 +58,14 @@ describe("F-203 rollout constraints the runbook has to carry", () => {
     // mechanism from drifting apart, and names the signal so the deployer can send it by hand.
     const bootstrap = read("apps/api/src/index.ts");
     expect(bootstrap).toContain('process.once("SIGTERM"');
-    expect(bootstrap).toContain("await alertPoller.stop()");
+    // Called, and awaited before the exit ALONGSIDE the HTTP drain rather than behind it. A stop
+    // nobody waits for is the same missing drain; a stop queued behind the last request keeps the
+    // interval claiming alerts and starting sends after the signal, which is how a host that gives
+    // up on a long shutdown kills one of them mid-transaction. `shutdown.test.ts` drives both
+    // properties against the real process; this keeps the runbook's instruction and the mechanism
+    // it names from drifting apart.
+    expect(bootstrap).toContain("alertPoller.stop()");
+    expect(bootstrap).toMatch(/await Promise\.all\(\[[\s\S]*pollerStopped[\s\S]*\]\)/);
 
     expect(releaseOrder).toContain("SIGTERM");
   });

@@ -81,8 +81,11 @@ type Shutdown = { code: number | null; signal: NodeJS.Signals | null; output: st
  */
 function bootThenSignal(
   signal: NodeJS.Signals,
-  whileServing: (port: number, sendSignal: () => void) => Promise<void> = async (_port, send) =>
-    send(),
+  whileServing: (
+    port: number,
+    sendSignal: () => void,
+    outputSoFar: () => string,
+  ) => Promise<void> = async (_port, send) => send(),
 ): Promise<Shutdown> {
   return new Promise((settle, fail) => {
     void (async () => {
@@ -119,7 +122,11 @@ function bootThenSignal(
         // testing a shutdown with nothing to drain.
         if (!signalled && output.includes("listening on")) {
           signalled = true;
-          void whileServing(port, () => child.kill(signal)).catch(fail);
+          void whileServing(
+            port,
+            () => child.kill(signal),
+            () => output,
+          ).catch(fail);
         }
       };
       child.stdout.on("data", readyOrDone);
@@ -182,6 +189,49 @@ async function answerAcrossTheSignal(port: number, sendSignal: () => void): Prom
   return answer;
 }
 
+/**
+ * Hold one request open across the signal and report what the process had printed while it was
+ * still holding it.
+ *
+ * The same shape as `answerAcrossTheSignal`, asking the other question: not whether the request is
+ * answered, but what the shutdown got on with while it waited. The poller's stop is the work that
+ * must not be queued behind an organizer's slow upload, because until it lands the interval keeps
+ * claiming alerts and starting provider sends after SIGTERM — and a host that eventually gives up
+ * on a long shutdown kills one of those mid-transaction, which is the unrecorded attempt this whole
+ * branch exists to prevent.
+ */
+async function outputWhileARequestIsHeld(
+  port: number,
+  sendSignal: () => void,
+  outputSoFar: () => string,
+  // Reported as it is read rather than returned, because the process exits once the request is
+  // let go and `bootThenSignal` settles on that exit, which can be before this function returns.
+  report: (printedWhileHeld: string) => void,
+): Promise<void> {
+  const body = JSON.stringify({ still: "in flight" });
+  const socket = connect(port, "127.0.0.1");
+  await new Promise<void>((resolve, reject) => {
+    socket.once("connect", resolve);
+    socket.once("error", reject);
+  });
+  socket.write(
+    `POST /health HTTP/1.1\r\nHost: 127.0.0.1:${port}\r\nContent-Type: application/json\r\n` +
+      `Content-Length: ${body.length}\r\nConnection: close\r\n\r\n`,
+  );
+  socket.write(body.slice(0, 4));
+  await delay(250);
+  sendSignal();
+  // Long enough for a shutdown that stops the poller first to have said so, and short enough that
+  // this is still the same request the server is holding.
+  await delay(3_000);
+  report(outputSoFar());
+  socket.write(body.slice(4));
+  await new Promise<void>((resolve) => {
+    socket.once("close", () => resolve());
+    socket.once("error", () => resolve());
+  });
+}
+
 describe.runIf(databaseUrl.length > 0)("the api drains before it exits", () => {
   it("stops the alert poller and waits for the tick in flight on SIGTERM", async () => {
     const result = await bootThenSignal("SIGTERM");
@@ -202,6 +252,25 @@ describe.runIf(databaseUrl.length > 0)("the api drains before it exits", () => {
     expect(result.code, result.output).toBe(0);
     expect(result.output).toMatch(/draining/i);
     expect(result.output).toMatch(/alert poller drained; exiting/i);
+  }, 90_000);
+
+  it("stops claiming alerts without waiting for a slow request to finish", async () => {
+    // THE POLLER'S STOP IS NOT QUEUED BEHIND THE HTTP DRAIN. Both are shutdown work and neither
+    // depends on the other, but ordered one after the other the poller keeps its interval running
+    // for as long as the slowest request takes: it goes on claiming alerts and handing them to a
+    // provider after the host has already asked the process to go. The host's patience is finite,
+    // and what it eventually kills is a send that started after SIGTERM, mid-transaction, leaving
+    // exactly the unrecorded attempt this branch is about.
+    let printedWhileHeld = "";
+    const result = await bootThenSignal("SIGTERM", async (port, sendSignal, outputSoFar) => {
+      await outputWhileARequestIsHeld(port, sendSignal, outputSoFar, (printed) => {
+        printedWhileHeld = printed;
+      });
+    });
+
+    expect(printedWhileHeld, result.output).toMatch(/alert poller stopped claiming alerts/i);
+    expect(result.signal, result.output).toBeNull();
+    expect(result.code, result.output).toBe(0);
   }, 90_000);
 
   it("answers a request that was in flight when the signal arrived", async () => {

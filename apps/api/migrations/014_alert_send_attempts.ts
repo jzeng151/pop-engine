@@ -1,4 +1,5 @@
 import type { ColumnDefinitions, MigrationBuilder } from "node-pg-migrate";
+import { PROVIDER_DEDUP_WINDOW_HOURS } from "../src/alerts";
 
 export const shorthands: ColumnDefinitions | undefined = undefined;
 
@@ -117,18 +118,38 @@ export function up(pgm: MigrationBuilder): void {
   // receives twice is not a close trade, and F-203 already refuses the mirror image of it where
   // `alerts.ts` refuses to hold a row by age. Seeded, therefore, and the uncertainty preserved.
   //
-  // `-infinity` RATHER THAN A DATE, because the attempt time is not merely unknown, it is
-  // unknowable from anything on the row — nothing recorded when the last attempt happened. Any
-  // stamp this migration invented would be a claim about a provider's dedup window that no
-  // evidence supports, and a recent-looking one would be the permissive reading again, wearing a
-  // timestamp. Older than every window, from every reader, without naming a number that would then
-  // have to be kept in step with `PROVIDER_DEDUP_WINDOW_HOURS`.
+  // THE STAMP IS THE UPGRADE, LESS THE PROVIDER'S DEDUP WINDOW, and it encodes exactly one claim:
+  // this attempt is at least as old as the window Resend honours a repeated `Idempotency-Key` for.
+  // Nothing on the row says when the attempt happened, so that is the strongest thing the evidence
+  // carries — and it is the NEWEST stamp consistent with it, which is what makes it the safe one:
+  // an older stamp would release the row sooner, not later.
   //
-  // The seeded rows are unresolved and stay that way: nobody ever did find out what the provider
-  // did with these, which is exactly what a hold says. The way out is the way out for any hold — a
-  // person checks the provider for the key and then marks the alert sent or clears the attempt.
+  // WHY NOT `-infinity`, which this seed used to write. It said "older than every window, from
+  // every reader", and that reading was correct while a hold had no end. Under the bounded hold the
+  // product owner recorded on 2026-08-04 (`docs/BASELINE.md`, resolving SPEC-CONFLICT #240), a row
+  // is held from `PROVIDER_DEDUP_WINDOW_HOURS` after its attempt until
+  // `UNRESOLVED_ATTEMPT_HOLD_LIMIT_HOURS` after it, and an attempt time older than every bound is
+  // past the far edge as well as the near one: every seeded row would have been retried on the
+  // first tick after the upgrade, which is the duplicate burst this seed exists to prevent.
+  //
+  // WHY NOT THE UPGRADE ITSELF, the other obvious anchor. The near edge is what makes a retry safe,
+  // so a row stamped now is one the poller may retry immediately and freely for the next
+  // `PROVIDER_DEDUP_WINDOW_HOURS` — the same burst, arriving by the permissive reading rather than
+  // the permanent one. The stamp has to sit at or before the near edge for the hold to begin at the
+  // upgrade at all.
+  //
+  // So a seeded row is held from the upgrade, and retried one dedup window after it: the same hold
+  // LENGTH every other row gets, from the same predicate, with no value in this column meaning
+  // something different from its neighbours. The rows stay unresolved throughout, because nobody
+  // ever did find out what the provider did with them, and the two ways out are the two any hold
+  // has — a person checks the provider for the key and then marks the alert sent or clears the
+  // attempt, or the limit passes and the poller retries it.
+  //
+  // The interval is written from `PROVIDER_DEDUP_WINDOW_HOURS` rather than as a literal, so the
+  // claim this stamp makes and the window it is a claim about cannot drift apart.
   pgm.sql(`INSERT INTO alert_send_attempts (alert_id, idempotency_key, attempted_at)
-           SELECT id, idempotency_key, '-infinity'::timestamptz
+           SELECT id, idempotency_key,
+                  clock_timestamp() - interval '${PROVIDER_DEDUP_WINDOW_HOURS} hours'
              FROM alerts
             WHERE status = 'failed'
               AND channel = 'email'
