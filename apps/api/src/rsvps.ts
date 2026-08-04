@@ -7,7 +7,7 @@ import type { Pool, PoolClient, QueryResult, QueryResultRow } from "pg";
 // F-302 RSVP / guest list (ARCHITECTURE.md API Surface + rsvps schema).
 //
 // Admission is `events.capacity`, the confirmed venue/event capacity, and a NULL capacity means
-// no enforced limit (spec AC 2, resolving T-5 / SPEC-CONFLICT #209 on 2026-08-03). It used to be
+// no enforced limit (spec AC 2, resolving SPEC-CONFLICT #209 on 2026-08-03). It used to be
 // F-101 `headcount`, which was wrong in a way worth recording: `headcount` is a regulatory input
 // that drives the 75+ assembly gate, the DOHMH thresholds and the Parks exactly-20 conflict, so
 // admitting against it meant raising an RSVP cap silently moved the event's permit findings. The
@@ -241,14 +241,36 @@ export type ListRsvpsResult =
   | {
       status: 200;
       body: {
-        event: { id: string; name: string; capacity: number | null; event_date: string };
+        event: {
+          id: string;
+          name: string;
+          capacity: number | null;
+          /** Compatibility window only; see `listRsvps`. Removed with the web rollout. */
+          headcount: number;
+          event_date: string;
+        };
         rsvps: RsvpRow[];
         confirmed_count: number;
       };
     }
   | { status: 400 | 404; body: { error: string } };
 
-/** Organizer guest list: every RSVP row plus count vs confirmed capacity (null = no limit). */
+/**
+ * Organizer guest list: every RSVP row plus count vs confirmed capacity (null = no limit).
+ *
+ * The response carries BOTH contract generations for now. `docs/ARCHITECTURE.md:9` rolls web and
+ * API independently, so between the two deployments one side speaks the pre-rename contract, and
+ * a web build that predates the rename rejects any response without `event.headcount`: the guest
+ * list empties and the cancel controls go with it until the second deployment finishes. Serving
+ * the old field alongside the new one means neither deployment order breaks the page.
+ *
+ * `headcount` keeps its own meaning here, the `events.headcount` column, which is what the
+ * pre-rename API returned. It is not capacity under an old name: `headcount` is a regulatory
+ * input driving the 75-plus assembly gate, the DOHMH thresholds and the Parks exactly-20
+ * conflict, and it must not be made to carry another value. Admission is `capacity` alone.
+ *
+ * `specs/F-302-rsvp-guest-list.md` records what removing `headcount` from this response needs.
+ */
 export async function listRsvps(database: Queryable, eventId: string): Promise<ListRsvpsResult> {
   if (!UUID.test(eventId)) {
     return { status: 400, body: { error: "That event link is not valid." } };
@@ -258,9 +280,10 @@ export async function listRsvps(database: Queryable, eventId: string): Promise<L
     id: string;
     name: string;
     capacity: number | null;
+    headcount: number;
     event_date: string;
   }>(
-    `SELECT id, name, capacity, event_date::text AS event_date
+    `SELECT id, name, capacity, headcount, event_date::text AS event_date
        FROM events
       WHERE id = $1`,
     [eventId],
@@ -285,6 +308,7 @@ export async function listRsvps(database: Queryable, eventId: string): Promise<L
         id: event.id,
         name: event.name,
         capacity: event.capacity,
+        headcount: event.headcount,
         event_date: event.event_date,
       },
       rsvps,

@@ -252,4 +252,25 @@ describe("SPEC-CONFLICT resolutions ratified 2026-08-02", () => {
       "never retains the previous value, substitutes a default, or writes",
     );
   });
+
+  // Added 2026-08-03 with #209's resolution. The register renumbered twice while this decision was
+  // open: the admission-limit row was T-5, then T-6, and T-5 is now the unrelated open
+  // ruleset-regeneration race. A comment carrying the row number therefore sends a maintainer to
+  // whichever question happens to sit at that number today. The issue number does not move, so the
+  // implementation cites that and nothing else. Expressed as "no register row here" rather than as
+  // a list of the two wordings that have already been wrong, because the third would be a third
+  // wording.
+  it("#209: the admission-limit implementation cites the issue, not a register row", () => {
+    const sources = [
+      "apps/api/src/rsvps.ts",
+      "apps/api/src/rsvps.test.ts",
+      "apps/web/app/events/[id]/guests/guest-list.test.tsx",
+    ];
+
+    for (const path of sources) {
+      const source = read(path);
+      expect(source, `${path} cites the admission-limit conflict`).toContain("SPEC-CONFLICT #209");
+      expect(source.match(/\bT-\d+\b/g), `${path} names no register row`).toBeNull();
+    }
+  });
 });
