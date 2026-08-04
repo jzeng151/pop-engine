@@ -95,7 +95,9 @@ the alert attempt record; the conditions for dropping each are stated with it.
    deployment start beside it. Scale the api service to zero (or stop the current deployment), wait
    for the process to go, then start the new build; confirm no api process from the previous build
    is still running when the migration executes, and `Migrations complete!` in the new build's logs
-   before returning the service to traffic.
+   before returning the service to traffic. **Write down the UTC time at which you confirmed the
+   last previous-build process was gone**, to the second; the step below calls it `T_stop` and
+   needs the real value.
 
    **On this rollout the api you are stopping cannot drain, and you must not wait for it to.** The
    drain ships in the build that carries migration 014, so the process being stopped predates the
@@ -106,14 +108,68 @@ the alert attempt record; the conditions for dropping each are stated with it.
    `alert poller drained; exiting`; wait for that second line then. For this one, wait only for the
    process to be gone.
 
-   **What makes this one-off window safe instead is the provider's deduplication window, so
-   complete the rollout well inside 24 hours.** A send the old build was killed in the middle of
-   (accepted by the provider, its transaction never committed) is left `pending`, and a build that
-   predates the table writes no attempt row for it. The new poller therefore reads it as due and
-   retries it, carrying the same `Idempotency-Key` the first send carried. Resend honours a
-   repeated key for 24 hours, so inside that window the retry is deduplicated and the organizer
-   receives one reminder; past it the same retry is a second copy of the same reminder. Do not
-   leave the api stopped overnight for this rollout.
+   **What makes this one-off window safe instead is the provider's deduplication window, anchored
+   at `T_stop`.** A send the old build was killed in the middle of (accepted by the provider, its
+   transaction never committed) is left `pending`, and a build that predates the table writes no
+   attempt row for it. The new poller therefore reads it as due and retries it, carrying the same
+   `Idempotency-Key` the first send carried. Resend honours a repeated key for 24 hours, so inside
+   that window the retry is deduplicated and the organizer receives one reminder; past it the same
+   retry is a second copy of the same reminder.
+
+   That window is measured from when the old build reached the provider, and `T_stop` is the latest
+   moment any of those sends can have: after it there was no process left to send. Finishing the
+   deployment quickly is not the same guarantee and cannot be substituted for one. The new build
+   stamps its retry's attempt row at the time of the retry, and the hold is measured from that
+   stamp, so a provider or network outage that starts after the new api is up, runs past
+   `T_stop + 24h` and recovers before the retry's own 24 hours are out still reads as retryable
+   when Resend has already forgotten the key. Nothing in the rollout controls when the provider
+   comes back, so the anchor has to be written down rather than deduced from how long the
+   deployment took.
+
+   So, once `Migrations complete!` has appeared, run this once against the same database, with your
+   recorded `T_stop` substituted in all three places:
+
+   ```sql
+   INSERT INTO alert_send_attempts (alert_id, idempotency_key, attempted_at)
+        SELECT id, idempotency_key, TIMESTAMPTZ '<T_stop>'
+          FROM alerts
+         WHERE status IN ('pending', 'failed')
+           AND channel = 'email'
+           AND send_at <= TIMESTAMPTZ '<T_stop>'
+           AND coalesce(payload->>'test', 'false') <> 'true'
+           AND NOT EXISTS (SELECT 1 FROM alert_send_attempts already
+                            WHERE already.alert_id = alerts.id
+                              AND already.attempted_at = TIMESTAMPTZ '<T_stop>');
+   ```
+
+   That is one unresolved attempt, stamped at `T_stop`, on every alert the stopped build could have
+   had in flight. The api then treats those rows the way it treats any other attempt nobody saw the
+   end of: they are retried freely for the 24 hours Resend still deduplicates the key within, and
+   from `T_stop + 24h` they are held for reconciliation instead of sent again. The duplicate the
+   anchor exists to prevent becomes a held alert the organizer is told about, whatever the provider
+   does in between.
+
+   **Verify it landed.** The statement reports the number of rows it stamped; running it a second
+   time must report `INSERT 0 0`, and
+
+   ```sql
+   SELECT count(*) FROM alert_send_attempts WHERE attempted_at = TIMESTAMPTZ '<T_stop>';
+   ```
+
+   must equal the first number. Run it before `T_stop + 24h`; run it as soon as the migration
+   finishes if you can, because until it has run those alerts are unanchored.
+
+   The cost is stated so it is not a surprise: an alert that was due at `T_stop`, was never actually
+   handed to anybody, and still cannot be delivered 24 hours later is held rather than retried. That
+   is the same trade migration 014's backfill already makes for the failed rows it seeds, and the
+   population is only what was due at the instant of the stop, and a poller that is keeping up leaves
+   almost nothing there. A drain on the stopped process would remove the need for the anchor
+   entirely, and cannot be used here: no released build has the drain without migration 014, so
+   there is no precursor to deploy.
+
+   Drop this step at the same time as the rest of step 2, once `014_alert_send_attempts` has been
+   applied to the environment. From the next rollout on the drain does this instead, by leaving no
+   send in flight to anchor.
 
    Migration 014 creates `alert_send_attempts` and seeds it from
    the alerts that had already failed, and from then on every reader treats an alert with no attempt

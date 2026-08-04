@@ -153,10 +153,46 @@ const PROVEN_BEFORE_HANDOFF = new Set([
   // them unproven meant a certificate outage lasting past the dedup window permanently held every
   // alert behind it, even though no duplicate was ever possible.
   "ERR_TLS_CERT_ALTNAME_INVALID",
-  "UNABLE_TO_VERIFY_LEAF_SIGNATURE",
+  // THE WHOLE OF NODE'S CHAIN-VERIFICATION TABLE, listed rather than sampled, which is the third
+  // round this set has been corrected in and the reason it is now closed. A verdict on the peer's
+  // certificate chain is produced by one thing, OpenSSL building and checking the chain, and
+  // Node's client asks for it in one place, at `secureConnect`, before undici writes a request
+  // byte; a client never re-asks on renegotiation. So the rule's question has the same answer for
+  // every member of the table, and adding whichever one somebody reproduced last left the rest to
+  // hold their alerts for the same reason the reported one did. The names below are Node's own
+  // `X509ErrorCode` mapping (v24.18.1), which is what arrives as `code` on the cause chain.
+  //
+  // `UNSPECIFIED`, the table's remaining entry, is REJECTED: it is what Node reports for a verify
+  // error the mapping does not name, so it identifies no failure and names no phase, which is the
+  // ground `UND_ERR` and `UND_ERR_INFO` were rejected on above.
+  "UNABLE_TO_GET_ISSUER_CERT",
+  "UNABLE_TO_GET_ISSUER_CERT_LOCALLY",
+  "UNABLE_TO_GET_CRL",
+  "UNABLE_TO_DECRYPT_CERT_SIGNATURE",
+  "UNABLE_TO_DECRYPT_CRL_SIGNATURE",
+  "UNABLE_TO_DECODE_ISSUER_PUBLIC_KEY",
+  "CERT_SIGNATURE_FAILURE",
+  "CRL_SIGNATURE_FAILURE",
+  "CERT_NOT_YET_VALID",
+  "CERT_HAS_EXPIRED",
+  "CRL_NOT_YET_VALID",
+  "CRL_HAS_EXPIRED",
+  "ERROR_IN_CERT_NOT_BEFORE_FIELD",
+  "ERROR_IN_CERT_NOT_AFTER_FIELD",
+  "ERROR_IN_CRL_LAST_UPDATE_FIELD",
+  "ERROR_IN_CRL_NEXT_UPDATE_FIELD",
+  "OUT_OF_MEM",
   "DEPTH_ZERO_SELF_SIGNED_CERT",
   "SELF_SIGNED_CERT_IN_CHAIN",
-  "CERT_HAS_EXPIRED",
+  "UNABLE_TO_VERIFY_LEAF_SIGNATURE",
+  "CERT_CHAIN_TOO_LONG",
+  "CERT_REVOKED",
+  "INVALID_CA",
+  "PATH_LENGTH_EXCEEDED",
+  "INVALID_PURPOSE",
+  "CERT_UNTRUSTED",
+  "CERT_REJECTED",
+  "HOSTNAME_MISMATCH",
 ]);
 
 /**

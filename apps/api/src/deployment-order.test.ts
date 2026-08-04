@@ -92,6 +92,43 @@ describe("F-203 rollout constraints the runbook has to carry", () => {
     expect(prose).toMatch(new RegExp(`${PROVIDER_DEDUP_WINDOW_HOURS}[- ]?hour`, "i"));
   });
 
+  it("anchors the pre-migration hold to when the old api stopped", () => {
+    // WHAT "COMPLETE THE ROLLOUT INSIDE 24 HOURS" DOES NOT BOUND. The window this step protects
+    // starts when the old build handed a message to Resend, and the only thing the new build can
+    // stamp is when IT tried. A send accepted at T whose transaction never committed is left
+    // `pending` with no attempt row (migration 014's backfill covers `failed` rows only), so the
+    // new poller retries it and stamps an attempt at T+delta. The hold is measured from that stamp,
+    // so an outage that runs past T+24h and recovers before T+delta+24h reads as retryable when
+    // Resend has already forgotten the key, and the organizer gets the reminder twice. Finishing
+    // the deployment quickly makes delta small; it does not put the retry inside the original
+    // send's window, because nothing here controls when the provider comes back.
+    //
+    // SO THE RUNBOOK HAS TO NAME THE ANCHOR AND AN ACTION THAT SETS IT. The latest moment any
+    // pre-migration send can have reached the provider is the moment the old process was gone, and
+    // the mechanism that turns that into behavior already exists: an unresolved attempt stamped at
+    // that moment makes the alert freely retryable for one dedup window after it and held rather
+    // than duplicated afterwards. That is a statement a deployer runs and a count they can check,
+    // which is what this case pins.
+    const alerts = read("apps/api/src/alerts.ts");
+    // The hold is measured from the OLDEST unresolved attempt, which is what makes a stamped row
+    // move the bound rather than be ignored behind a newer retry's own attempt.
+    expect(alerts).toContain("min(attempt.attempted_at)");
+    // And the population the backfill leaves uncovered, which is what the stamp is for.
+    expect(read("apps/api/migrations/014_alert_send_attempts.ts")).toContain(
+      "WHERE status = 'failed'",
+    );
+
+    const prose = releaseOrder.replace(/\s+/g, " ");
+    // Named, so the deployer records it rather than inferring it from the deployment's duration.
+    expect(releaseOrder).toContain("T_stop");
+    // Performable: the statement that sets the anchor is written out, not described.
+    expect(releaseOrder).toContain("INSERT INTO alert_send_attempts");
+    // Verifiable: re-running it is the check, so the deployer can tell it landed.
+    expect(prose).toMatch(/INSERT 0 0/);
+    // And the claim that does not hold is gone rather than sitting beside the one that does.
+    expect(prose).not.toMatch(/complete the rollout well inside 24 hours/i);
+  });
+
   it("describes the attempt row as an intent rather than a completed handoff", () => {
     // THE FOURTH CORRECTION OF ONE CLAIM, which is why it is pinned rather than only fixed again.
     // The row is written BEFORE `sender(...)` is called and on its own connection, so a process

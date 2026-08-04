@@ -1744,6 +1744,113 @@ describe.skipIf(databaseUrl === "")("F-203 deadline alerts", () => {
       });
 
       /**
+       * A writer pool whose next connection attempt times out once, on the acquisition rather than
+       * on a statement.
+       *
+       * `maxUses: 1` is what makes the refusal land where it has to. `pg` hands a checked-in client
+       * straight back out, so a pool still holding the one the intent was written on never calls
+       * `connect` again and a connection-level failure has nothing to happen to; discarded after a
+       * single checkout, every later acquisition has to establish a connection, which is the wait a
+       * transient PostgreSQL timeout lands in. The pool is derived from these options
+       * (`attemptWriterFor`), so the writer inherits it.
+       *
+       * One refusal, not a broken pool: the settlement that follows must be able to get a
+       * connection, because a recovery that cannot reach the database at all is not a case any
+       * code here can resolve.
+       */
+      const poolWhoseNextConnectionTimesOut = (
+        label: string,
+      ): { readonly pool: Pool; readonly timeOutTheNextConnection: () => void } => {
+        let refusalsLeft = 0;
+        class TimesOutConnecting extends Client {
+          constructor(config?: ClientConfig) {
+            super(config);
+            const connect = this.connect.bind(this) as (...args: unknown[]) => unknown;
+            // Reported through the callback when one is given, because that is how `pg-pool` asks:
+            // a rejected promise it never looks at leaves the acquisition waiting for ever, which
+            // would be a hung test rather than the failure under test.
+            this.connect = ((...args: unknown[]) => {
+              if (refusalsLeft === 0) return connect(...args);
+              refusalsLeft -= 1;
+              const refusal = Object.assign(new Error("timeout expired"), { code: "ETIMEDOUT" });
+              const callback = args[0];
+              if (typeof callback !== "function") return Promise.reject(refusal);
+              queueMicrotask(() => (callback as (error: Error) => void)(refusal));
+              return undefined;
+            }) as typeof this.connect;
+          }
+        }
+        return {
+          pool: new Pool({
+            connectionString: `${databaseUrl}${databaseUrl.includes("?") ? "&" : "?"}application_name=${label}`,
+            maxUses: 1,
+            Client: TimesOutConnecting as unknown as new () => ClientBase,
+          }),
+          timeOutTheNextConnection: () => {
+            refusalsLeft = 1;
+          },
+        };
+      };
+
+      it("settles a proven non-delivery when the recovery cannot get a connection", async () => {
+        // THE RECOVERY'S OWN FIRST STEP WAS OUTSIDE THE RECOVERY. The proven non-delivery is
+        // written on the attempt writer's connection and written AGAIN on a fresh one when the
+        // first write is refused, and both of those are statements. Getting the connection to make
+        // the statement on is not: it happened before the `try`, so a writer pool whose idle
+        // connection had gone and whose reconnect timed out threw straight out of the delivery. The
+        // sending transaction rolled back with the mark-failed inside it and the committed intent
+        // was left unresolved: a KNOWN non-delivery recorded as the one state nothing clears by
+        // itself, produced by the outage the poller exists to ride out.
+        //
+        // The provider is unreachable here and the sending pool is healthy, which is the pairing
+        // the escape needs: this side has proof nothing was handed over, and no way to write it.
+        const eventId = await createEvent(scenario("C"));
+        const alertId = await insertDueAlert(eventId, "recovery-connect@example.test", 2);
+        const writer = poolWhoseNextConnectionTimesOut("recovery_connect");
+        const unreachable: AlertSenders = {
+          sms: fakeProvider().senders.sms,
+          email: async () => {
+            // Armed between the committed intent and the recovery, so the acquisition the
+            // recovery makes is the one that fails and everything before it succeeded.
+            writer.timeOutTheNextConnection();
+            throw new AlertDeliveryError("email provider unreachable: ECONNREFUSED");
+          },
+        };
+
+        const summary = await createAlertPoller({
+          database: writer.pool,
+          senders: unreachable,
+          jurisdiction: ruleset.jurisdiction,
+        }).tick();
+        await writer.pool.end();
+
+        // The outage is recorded as an outage: counted, marked, and left for the next tick.
+        expect(summary.failed).toBe(1);
+        expect((await alertsOf(eventId))[0]?.status).toBe("failed");
+        const recorded = await attemptsOf(alertId);
+        expect(recorded).toHaveLength(1);
+        expect(recorded[0]?.outcome_recorded_at).not.toBeNull();
+
+        // And the consequence that makes it worth settling: however long the outage lasts, the
+        // alert is still the poller's to send rather than a person's to chase.
+        await pool.query(
+          `UPDATE alert_send_attempts
+              SET attempted_at = current_timestamp - ($2 || ' hours')::interval
+            WHERE alert_id = $1`,
+          [alertId, PROVIDER_DEDUP_WINDOW_HOURS + 1],
+        );
+        const provider = fakeProvider();
+        const after = await createAlertPoller({
+          database: pool,
+          senders: provider.senders,
+          jurisdiction: ruleset.jurisdiction,
+        }).tick();
+
+        expect(after.heldForReconciliation).toBe(0);
+        expect((await alertsOf(eventId))[0]?.status).toBe("sent");
+      });
+
+      /**
        * A writer whose intent INSERT takes so long that the jurisdiction's day changes over it.
        *
        * The day is moved rather than waited out, because the wait is the only part of this that is
@@ -6974,6 +7081,81 @@ describe("F-203 delivery channels (AC 5)", () => {
     expect((reset as AlertDeliveryError).outcomeObserved, "ECONNRESET stays unresolved").toBe(
       false,
     );
+  });
+
+  it("resolves the attempt for every certificate-verification verdict Node can report", async () => {
+    // THE WHOLE TABLE RATHER THAN THE CODE SOMEBODY HIT. Three rounds of this whitelist added
+    // certificate codes one report at a time, and the membership rule in `alert-delivery.ts` had
+    // covered all of them since the first: a chain verification verdict is produced while OpenSSL
+    // builds and checks the chain, which is the handshake, and Node's client checks `verifyError()`
+    // once, at `secureConnect`, before undici writes a request byte. There is no path that raises
+    // one of these after the body was written, so every one of them qualifies.
+    //
+    // The list is Node's own `X509ErrorCode` table, read out of the v24.18.1 binary rather than
+    // recalled, so a code Node cannot report is not asserted about and one it can report is not
+    // missed. `UNABLE_TO_GET_ISSUER_CERT_LOCALLY` is the one the review reproduced; it was
+    // reproduced again here against a local leaf-plus-intermediate chain whose root was untrusted,
+    // and the server saw no application byte.
+    const verificationCodes = [
+      "UNABLE_TO_GET_ISSUER_CERT",
+      "UNABLE_TO_GET_ISSUER_CERT_LOCALLY",
+      "UNABLE_TO_GET_CRL",
+      "UNABLE_TO_DECRYPT_CERT_SIGNATURE",
+      "UNABLE_TO_DECRYPT_CRL_SIGNATURE",
+      "UNABLE_TO_DECODE_ISSUER_PUBLIC_KEY",
+      "CERT_SIGNATURE_FAILURE",
+      "CRL_SIGNATURE_FAILURE",
+      "CERT_NOT_YET_VALID",
+      "CERT_HAS_EXPIRED",
+      "CRL_NOT_YET_VALID",
+      "CRL_HAS_EXPIRED",
+      "ERROR_IN_CERT_NOT_BEFORE_FIELD",
+      "ERROR_IN_CERT_NOT_AFTER_FIELD",
+      "ERROR_IN_CRL_LAST_UPDATE_FIELD",
+      "ERROR_IN_CRL_NEXT_UPDATE_FIELD",
+      "OUT_OF_MEM",
+      "DEPTH_ZERO_SELF_SIGNED_CERT",
+      "SELF_SIGNED_CERT_IN_CHAIN",
+      "UNABLE_TO_VERIFY_LEAF_SIGNATURE",
+      "CERT_CHAIN_TOO_LONG",
+      "CERT_REVOKED",
+      "INVALID_CA",
+      "PATH_LENGTH_EXCEEDED",
+      "INVALID_PURPOSE",
+      "CERT_UNTRUSTED",
+      "CERT_REJECTED",
+      "HOSTNAME_MISMATCH",
+    ];
+
+    const senderFor = (code: string) =>
+      createResendEmailSender({
+        apiKey: "re_test",
+        from: "PopEngine <noreply@example.test>",
+        fetch: (async () => {
+          const cause = Object.assign(new Error("certificate verification failed"), { code });
+          throw Object.assign(new TypeError("fetch failed"), { cause });
+        }) as unknown as typeof globalThis.fetch,
+      });
+
+    for (const code of verificationCodes) {
+      const error = await senderFor(code)
+        .call(null, message)
+        .catch((thrown: unknown) => thrown);
+      expect((error as AlertDeliveryError).outcomeObserved, code).toBe(true);
+    }
+
+    // AND THE ONE ENTRY OF THAT TABLE THAT IS REJECTED, asserted so the rule's answer is the one
+    // recorded rather than the one a later reader assumes. `UNSPECIFIED` is what Node reports for
+    // a verify error its table does not name, so it says nothing about certificates at all: it is
+    // one code standing for whatever OpenSSL raised, which is the same ground `UND_ERR` and
+    // `UND_ERR_INFO` were rejected on. A code that names no phase cannot prove one.
+    const unspecified = await senderFor("UNSPECIFIED")
+      .call(null, message)
+      .catch((thrown: unknown) => thrown);
+    expect(
+      (unspecified as AlertDeliveryError).outcomeObserved,
+      "UNSPECIFIED stays unresolved",
+    ).toBe(false);
   });
 
   it("resolves the attempt when the connection attempt itself timed out", async () => {

@@ -2283,14 +2283,31 @@ async function deliverClaimed(
   // path: this pool holds `SEND_CONCURRENCY` connections and a tick starts that many workers, so a
   // refusal answered by a live backend leaves every worker holding a client none of them may wait
   // on a pool for.
+  //
+  // AND GETTING THE CONNECTION IS PART OF WHAT IS RECOVERED, which is where this was wrong. The
+  // second write exists because the first one can be refused, and it was written to cover the
+  // statement while leaving the acquisition in front of it: this pool holds no connection open
+  // across a provider call, so between the intent and here its client can be dropped and the
+  // reconnect is a fresh wait on the database, the transient connect timeout the sending client
+  // never sees, because it is holding its own connection throughout. Raised outside the `try`,
+  // that rejection carried a committed intent out of the delivery, the sending transaction rolled
+  // back with the mark-failed still in it, and a non-delivery this side had PROVED was left
+  // unresolved: the one state nothing clears by itself, reached over exactly the outage the poller
+  // is supposed to ride out.
+  //
+  // The settlement is what recovers it, on a connection it asks for itself, so a pool that has one
+  // to give a moment later still records what happened.
   const recordProvenNonDelivery = async (): Promise<void> => {
     if (attemptId === null) return;
     const writerPool = attemptWriterFor(database);
-    const writer = await writerPool.connect();
+    let writer: PoolClient | null = null;
     try {
+      writer = await writerPool.connect();
       await resolveAttempt(writer);
     } catch {
-      writer.release();
+      // Only where one was actually taken: a refused acquisition leaves nothing to give back, and
+      // the settlement asks this pool for a connection either way.
+      writer?.release();
       await settleUnacknowledgedIntent(writerPool, row, attemptId);
       return;
     }
