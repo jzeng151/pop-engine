@@ -30,7 +30,7 @@ Event staff can perform only their assigned door operations and validate attende
 
 ## Inputs, Outputs, State, Validation, and Errors
 
-- Inputs are an exact authorized staff-assignment generation and event-credential version; outputs are minimal validation result and append-only attempt/entry record.
+- Inputs are an exact authorized staff-assignment generation and event-credential version, plus, on issuance, the subject, category, expiry, and a stable request identity; outputs are the issued credential, minimal validation result, and append-only attempt/entry record.
 - Credential state is active → revoked or expired; validation is event-bound and reveals only the minimum door decision.
 - Unknown/malformed/wrong-event credentials deny without disclosing private attendee/vendor data.
 - Missing or unresolved material data stays visibly unset, unknown, pending, or failed as appropriate; it never becomes a successful or complete result.
@@ -61,6 +61,8 @@ Exact HTTP, JSON Schema, migration, job, and provider shapes belong in their rev
 3. **F411-AC-03:** Revoked, expired, malformed, guessed, or wrong-event credentials deny without revealing identity/contact details and append one idempotent non-sensitive attempt with the denial category.
 4. **F411-AC-04:** Vendor and performer categories remain distinct from attendee and do not create RSVP, consent, or regulatory status.
 5. **F411-AC-05:** Removing a staff assignment advances its generation and serializes against validation's claim of the prior generation; a winning removal blocks that validation and every later protected action, while preserving prior attempt attribution.
+6. **F411-AC-06:** Issuance is an acceptance criterion, not a setup step: only an actor holding the approved issuing permission for that exact event can issue a credential, and the issuing transaction binds in one commit the event, the subject the credential admits, exactly one category from the approved category list, the expiry instant, the initial active state, and an opaque high-entropy token that no other issued credential holds. An issuance missing any of those bindings is rejected and creates nothing, so F411-AC-02, F411-AC-03, and F411-AC-04 can rely on every stored credential carrying them and the door feature is usable without seeded credentials. The issue request carries a client-generated request identity committed in that same transaction, so a retry after a lost response returns the original credential rather than issuing a second live token for the same subject; a deliberate second credential sends a new identity. Uniqueness over subject and category is not that enforcement: one subject may legitimately hold two credentials, so it would refuse a real issuance.
+7. **F411-AC-07:** Credential validation is rate limited per event and per validating staff assignment, and a rejected attempt over that limit denies, appends its non-sensitive attempt record under F411-AC-03, and is visibly reported to the door operator rather than silently dropped. The exact limit and window are not approved today: they belong to the credential lifecycle and token threat model named in the Approval Blockers, and until that approval names them this criterion is testable only as "a configured finite limit is enforced and exceeded attempts deny," not against a specific number. This is stated here rather than only under Privacy and security because a repository agent implements acceptance criteria, and an unenforced limit leaves the opaque token guessable at whatever rate the door endpoint answers.
 
 ## Fixtures and Verification
 
@@ -82,5 +84,5 @@ Exact HTTP, JSON Schema, migration, job, and provider shapes belong in their rev
 
 ## Approval Blockers
 
-- Approve credential lifecycle/token threat model, category list, and staff permission matrix.
+- Approve credential lifecycle/token threat model, category list, and staff permission matrix. The threat model must name the exact validation rate limit and window that F411-AC-07 leaves unpinned, and the permission matrix must name which role holds the F411-AC-06 issuing permission.
 - Assign the owner and independent reviewer, approve this spec, and add it to `docs/BASELINE.md`.

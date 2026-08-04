@@ -30,7 +30,7 @@ An organizer can start from a past event's confirmed inputs while PopEngine alwa
 
 ## Inputs, Outputs, State, Validation, and Errors
 
-- Inputs are one authorized source revision/template and a stable creation-request identity; output is a new Event whose first immutable revision carries the copied answers and source provenance, normally `incomplete`.
+- Inputs are one authorized source revision/template, the new Event's stable metadata, and a stable creation-request identity; output is a new Event whose first immutable revision carries the copied answers and source provenance, normally `incomplete`.
 - The copied answers are reviewed and corrected through ordinary F-107 saves; every changed save appends one immutable revision and advances the current pointer, and evaluation pins the current baseline ruleset, calendar, and the `complete` revision it ran against.
 - Fields no longer present/compatible in the current intake registry are omitted and reported, never coerced.
 - Missing or unresolved material data stays visibly unset, unknown, pending, or failed as appropriate; it never becomes a successful or complete result.
@@ -56,7 +56,7 @@ Exact HTTP, JSON Schema, migration, job, and provider shapes belong in their rev
 
 ## Acceptance Criteria
 
-1. **F503-AC-01:** Creating from a past event copies only the approved organizer-input allow-list into the first immutable revision of a new stable Event identity. The creation request binds its stable request identity to that Event and original revision result; a recognized lost-response retry returns the same result without another Event, while deliberate repeated duplication uses a new request identity.
+1. **F503-AC-01:** Creating from a past event copies only the approved organizer-input allow-list into the first immutable revision of a new stable Event identity. The creation request binds its stable request identity to that Event and original revision result; a recognized lost-response retry returns the same result without another Event, while deliberate repeated duplication uses a new request identity. The request also supplies the new Event's stable metadata, at minimum the organizer-facing name, and creation is rejected without it. That metadata is not copied from the source and is not carried by the allow-list: `docs/EVENT-REVISION-CONTRACT.md:59-65` keeps the organizer-facing name outside `answers_json` as stable Event metadata, while `apps/api/migrations/001_initial_schema.ts:18` requires `events.name` at insertion, so a creation contract naming only a source revision and a request identity would leave an implementer to copy an unpinned source name, invent a default, or solicit a value this spec never declared. The actor must be authorized to read the source revision or template in the same workspace as the new Event; a source outside that workspace is rejected without disclosing whether it exists. Added 2026-08-04.
 2. **F503-AC-02:** No finding, verdict, deadline, application, file, contact, RSVP, check-in, incident, or outcome record is copied.
 3. **F503-AC-03:** Removed/incompatible registry fields are omitted with an explicit review warning, not mapped by guess.
 4. **F503-AC-04:** Each changed save appends exactly one immutable revision and advances the current pointer; when the appended revision is `complete`, it is evaluated with the then-current approved ruleset/calendar and the exact artifact version is stored. No separate submission transition exists and no mutable draft holds the answers.

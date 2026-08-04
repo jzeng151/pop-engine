@@ -30,7 +30,7 @@ Event staff can maintain manual item counts and receive deterministic low-stock 
 
 ## Inputs, Outputs, State, Validation, and Errors
 
-- Inputs are item, integer adjustment/current count, threshold, and source; outputs are append-only adjustments and derived current/low-stock state.
+- Inputs are item, integer adjustment/current count, threshold, source, and a stable request identity on item creation; outputs are append-only adjustments and derived current/low-stock state.
 - Low-stock transition occurs when known count becomes at or below threshold; unknown/stale count is separate and never reported healthy.
 - Duplicate provider events are idempotent; out-of-order events follow the approved cursor/version policy.
 - Missing or unresolved material data stays visibly unset, unknown, pending, or failed as appropriate; it never becomes a successful or complete result.
@@ -64,6 +64,7 @@ Exact HTTP, JSON Schema, migration, job, and provider shapes belong in their rev
 6. **F408-AC-06:** For distinct verified Square events delivered out of order, the approved provider cursor/version ordering rejects or records the delayed older event without allowing it to regress current count, freshness, or low-stock state.
 7. **F408-AC-07:** Disconnect and verified-event application compete on the same mapping version/lock; event application atomically verifies the active mapping and mutates inventory, while a winning disconnect prevents that mutation and all later provider events. Provider-derived inventory becomes stale or unavailable while manual counts remain usable.
 8. **F408-AC-08:** An operation that SETS an absolute value — a current count or a threshold — names the exact item generation it was composed against and commits only by compare-and-swap on it; an operation naming a superseded generation is rejected, changes no count, threshold, freshness, or low-stock state, and returns the current item for the staff member to recompose against. A stable operation identity under F408-AC-01 makes a replay safe but does not make a stale value correct, so two tabs composing distinct absolute values from one observed state are both valid without it and the delayed one overwrites the newer count and spuriously creates or reverses a low-stock transition under F408-AC-02. Append-only delta adjustments carry no such generation and continue to accumulate independently in any order.
+9. **F408-AC-09:** Item creation carries its own client-generated request identity, and the transaction that creates the item commits that identity under a uniqueness constraint scoped to the event, so a retry after a lost response returns the original item and its F408-AC-02 transition result instead of creating a second item and a second low-stock alert. F408-AC-01's operation identity does not reach this case: it is scoped to adjustments of an item that already exists. A deliberate second item sends a new identity. Uniqueness over item name or recorded attributes is not that enforcement: an event may legitimately stock two items whose recorded attributes are identical, so it would refuse a real item.
 
 ## Fixtures and Verification
 
