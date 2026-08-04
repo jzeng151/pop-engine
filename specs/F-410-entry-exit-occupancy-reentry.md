@@ -26,6 +26,7 @@ Door staff can record both entry and exit so PopEngine can show current occupanc
 - F-401 and F-402; F-409 when offline behavior is enabled.
 - Approved attendee identity, directional-event, correction, and capacity-warning contracts.
 - Baseline at draft time: PRD, Roadmap, Design, and Phase 0–1.5 Architecture approved 2026-07-22; `ARCHITECTURE-FUTURE.md` approved as a planning target 2026-07-25; NYC ruleset `nyc.v2.7`, rules schema `popengine-rules/v2`, and scenario fixtures v5 where regulatory output is consumed.
+- Operand binding for client-supplied identities: `specs/F-411-staff-roles-credentialed-entry.md` F411-AC-08 states once, for this whole branch, that a client-supplied identity is committed with the operands that determine its recorded result and that a reuse carrying different operands is a conflict rather than a replay. F410-AC-03 and F410-AC-07 both rely on it. F-411 is PROPOSED, so that rule is not an approved input today and this spec is not implementable against it until F-411 is approved or the rule is promoted to an approved shared invariant; F411-AC-08 records both paths.
 - The approval PR must re-pin any baseline version that changes before approval. A proposed or superseded input blocks implementation.
 
 ## Inputs, Outputs, State, Validation, and Errors
@@ -68,9 +69,16 @@ Exact HTTP, JSON Schema, migration, job, and provider shapes belong in their rev
 
    AC-02 requires duplicate and replayed operations to be idempotent, and nothing else in this spec gives an online operation an identifier to be idempotent on. F-409's operation ID exists only on the offline path, so an implementation reading these criteria alone would have to deduplicate an online operation by payload, which AC-01's re-entry sequence makes wrong by construction: it would drop the second genuine entry of an attendee who left and came back. Storing the rejected outcome as well as the accepted one is what keeps a replayed invalid direction from raising a second AC-03 conflict for one scan.
 
+8. **F410-AC-08:** Every directional operation names the event it acts in and is admitted only by the actor's current F-703 door permission for that exact event, re-read server-side from stored role and membership at the moment of the write and compared inside the same transaction that compare-and-swaps the attendee's directional state under F410-AC-05. A request failing that check is refused before any durable write: it records no directional event, changes no occupancy, commits no F410-AC-07 identity row, and discloses nothing about whether the attendee or the event exists. The check is at the write and not at session start, so a permission removed while an operation is in flight causes that operation to fail rather than commit. Corrections under F410-AC-03 already require authorization and keep the permission they name; this criterion adds the ordinary entry and exit path beside them rather than replacing it.
+
+   Only the correction path said this, and the ordinary path is the one that runs all day. F-702's tenancy check passes for any legitimate workspace member, and AC-01, AC-05 and AC-07 accept and count an operation without asking anything else, so a same-workspace viewer or lower-privilege contributor could drive event-day occupancy and its history while every criterion passed. Occupancy is what F-402 reports and what F410-AC-04 supplies as the precondition for occupancy language at all, so a corrupted count is a false operational claim rather than a private inconvenience.
+
+   The permission itself is F-703's to define and this criterion does not name a role: it requires that the approved door permission for that exact event exist and be checked, and the Approval Blockers carry naming it. Until F-703 names it, this criterion is testable only as "an actor without the approved door permission for that event is refused before any durable write, and an actor whose permission is removed mid-flight does not commit," not against a specific role name.
+
 ## Fixtures and Verification
 
 - Planned automated fixture IDs are the acceptance IDs above; each must map one-to-one to a runnable test before approval can claim implementation readiness.
+- F410-AC-08 includes a fixture in which a same-workspace member without the door permission submits an entry and is refused with no directional event, no occupancy change, and no identity row, and one in which the permission is removed while an operation is in flight and that operation fails rather than commits.
 - F410-AC-07 includes a matched-replay fixture proving occupancy and history are unchanged and the stored outcome is returned, and two mismatched-reuse fixtures: one in which a second device presents an identity already committed for a different attendee, and one in which a device re-presents a committed identity with the opposite direction. Each is refused as a conflict, leaves occupancy and history untouched, and returns no outcome belonging to the stored operation.
 - Regulatory fixtures: none; this feature does not define regulatory ground truth.
 - Security-sensitive and cross-workspace paths require negative authorization tests; provider paths require success, duplicate-delivery, retry, invalid-signature, and permanent-failure tests where applicable.
@@ -89,5 +97,5 @@ Exact HTTP, JSON Schema, migration, job, and provider shapes belong in their rev
 
 ## Approval Blockers
 
-- Approve directional state machine, correction policy, attendee correlation, and occupancy coverage wording.
+- Approve directional state machine, correction policy, attendee correlation, and occupancy coverage wording. The approval must also name, with F-703, the door permission F410-AC-08 requires for an ordinary entry or exit, because that criterion checks a permission no approved artifact defines today and may not invent one.
 - Assign the owner and independent reviewer, approve this spec, and add it to `docs/BASELINE.md`.
