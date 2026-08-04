@@ -174,10 +174,17 @@ async function insertPlan(
 ): Promise<{ id: string; generatedAt: string }> {
   const planId = randomUUID();
   const { rows } = await client.query<{ generated_at: Date }>(
+    // `generated_at` is written rather than defaulted. The column default is `current_timestamp`,
+    // which PostgreSQL fixes at TRANSACTION START, so a generation that opened its transaction
+    // first and inserted last carried the earlier stamp. Every reader treats this column as the
+    // plan order, and `refuseRulesetDowngrade` and `latest` below both do, so timestamp order
+    // that disagrees with insertion order lets AC 12 compare against a superseded plan and lets
+    // `GET` return one. `clock_timestamp()` reads the clock at this statement, which runs while
+    // this generation holds the events row lock, so the stamps follow the order the lock imposes.
     `INSERT INTO permit_plans
        (id, event_id, event_revision, ruleset_version, snapshot_date, verdict, verdict_detail,
-        intake_snapshot)
-     VALUES ($1, $2, $3, $4, $5, $6, $7::jsonb, $8::jsonb)
+        intake_snapshot, generated_at)
+     VALUES ($1, $2, $3, $4, $5, $6, $7::jsonb, $8::jsonb, clock_timestamp())
      RETURNING generated_at`,
     [
       planId,

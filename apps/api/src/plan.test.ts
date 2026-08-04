@@ -3,7 +3,7 @@
 
 import { randomUUID } from "node:crypto";
 import { readFile } from "node:fs/promises";
-import { Pool } from "pg";
+import { Pool, type PoolClient } from "pg";
 import request from "supertest";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import {
@@ -864,5 +864,128 @@ describe.runIf(databaseUrl.length > 0)("plan API (F-201)", () => {
     } finally {
       competing.release();
     }
+  });
+
+  /**
+   * A pool whose generating connection stops between `BEGIN` and the events row lock. Nothing else
+   * is intercepted: the generation runs its own real transaction, and the pause only decides when
+   * it reaches the lock, which is what lets a transaction that STARTS LATER take the lock, insert
+   * and commit first.
+   *
+   * The patched methods are restored on release because `pg` hands the same client object back out
+   * on the next checkout.
+   */
+  type LooseQuery = (...args: unknown[]) => Promise<unknown>;
+  const poolPausedBeforeLock = (onLock: () => void, released: Promise<void>): Pool =>
+    ({
+      connect: async (): Promise<PoolClient> => {
+        const client = await pool.connect();
+        const query = client.query.bind(client) as unknown as LooseQuery;
+        const release = client.release.bind(client);
+        let paused = false;
+        client.query = (async (...args: unknown[]) => {
+          if (!paused && String(args[0]).includes("FOR UPDATE")) {
+            paused = true;
+            onLock();
+            await released;
+          }
+          return query(...args);
+        }) as unknown as PoolClient["query"];
+        client.release = ((...args: unknown[]) => {
+          client.query = query as unknown as PoolClient["query"];
+          client.release = release;
+          return (release as unknown as LooseQuery)(...args);
+        }) as unknown as PoolClient["release"];
+        return client;
+      },
+      query: (...args: unknown[]) => (pool.query as unknown as LooseQuery)(...args),
+    }) as unknown as Pool;
+
+  it("treats the plan inserted last under the lock as the latest, not the one whose transaction started first", async () => {
+    // `generated_at` used to default to `current_timestamp`, which is the TRANSACTION START time,
+    // so a generation that began first and inserted last carried the earlier stamp and lost the
+    // ordering to a plan it supersedes. AC 12's comparison and `GET` both read that ordering.
+    //
+    // This drives the real interleaving rather than approximating one, and the rendezvous is not
+    // the lock the guard already holds: the generation's own transaction is open and paused BEFORE
+    // it takes the lock, the overtaking transaction then begins (later start time), locks, inserts
+    // and commits, and only then is the generation released to lock and insert. Both halves are
+    // deterministic, the pause because the generation cannot proceed until this test resolves it,
+    // and the commit because it completes before the release.
+    const eventId = await insertEvent();
+    let reachedLock = (): void => {};
+    const atLock = new Promise<void>((resolve) => {
+      reachedLock = resolve;
+    });
+    let releaseGeneration = (): void => {};
+    const released = new Promise<void>((resolve) => {
+      releaseGeneration = resolve;
+    });
+
+    const app = createApp({
+      database: pool,
+      intakeContract,
+      today: () => TODAY,
+      planService: createPlanService(
+        poolPausedBeforeLock(() => reachedLock(), released),
+        { ...ruleset, rulesetVersion: "nyc.v2.12" },
+        fixtureCalendar,
+        () => TODAY,
+      ),
+    });
+    const generation = request(app)
+      .post(`/api/events/${eventId}/plan`)
+      .then((response) => response);
+    await atLock;
+
+    const overtakingId = randomUUID();
+    const overtaking = await pool.connect();
+    try {
+      // Begins after the generation's transaction is already open, so the old column default
+      // stamps this row LATER, and it still commits FIRST.
+      await overtaking.query("BEGIN");
+      await overtaking.query("SELECT id FROM events WHERE id = $1 FOR UPDATE", [eventId]);
+      await overtaking.query(
+        `INSERT INTO permit_plans
+           (id, event_id, event_revision, ruleset_version, verdict, verdict_detail, intake_snapshot)
+         VALUES ($1, $2, 1, 'nyc.v2.11', 'conditional', $3::jsonb, '{}'::jsonb)`,
+        [
+          overtakingId,
+          eventId,
+          JSON.stringify({ today: TODAY, calendar_id: ruleset.calendarId, finding_renderings: [] }),
+        ],
+      );
+      await overtaking.query("COMMIT");
+    } finally {
+      overtaking.release();
+    }
+
+    releaseGeneration();
+    const generated = await generation;
+    expect(generated.status).toBe(201);
+    expect(generated.body.rulesetVersion).toBe("nyc.v2.12");
+
+    // The claim, stated on the column itself: the row inserted second carries the later stamp.
+    const { rows: stamps } = await pool.query<{ id: string; generated_at: Date }>(
+      "SELECT id, generated_at FROM permit_plans WHERE event_id = $1 ORDER BY generated_at, id",
+      [eventId],
+    );
+    expect(stamps.map((row) => row.id)).toEqual([overtakingId, generated.body.id]);
+
+    // `GET` returns the plan the organizer just generated, not the row that committed first.
+    const fetched = await request(app).get(`/api/events/${eventId}/plan`);
+    expect(fetched.body.id).toBe(generated.body.id);
+    expect(fetched.body.rulesetVersion).toBe("nyc.v2.12");
+
+    // AC 12 reads the same ordering, which is what makes this a downgrade guard defect rather than
+    // a display one: the guard must compare against nyc.v2.12, so a service still running
+    // nyc.v2.11 is refused. Ordering by transaction start compares against the overtaking row's
+    // nyc.v2.11 instead, calls it equal, and generates the downgrade AC 12 exists to refuse.
+    const downgrade = await request(appOnRulesetVersion("nyc.v2.11")).post(
+      `/api/events/${eventId}/plan`,
+    );
+    expect(downgrade.status).toBe(409);
+    expect(downgrade.body.pinnedRulesetVersion).toBe("nyc.v2.12");
+    expect(await storedPlanVersions(eventId)).toEqual(["nyc.v2.11", "nyc.v2.12"]);
   });
 });
