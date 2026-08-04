@@ -505,6 +505,23 @@ describe.skipIf(databaseUrl === "")("F-203 deadline alerts", () => {
     }
   };
 
+  /**
+   * Move a scheduled alert's filing date off the last day of its own window.
+   *
+   * `insertDuePlan` dates its item TODAY, so a reminder written against it can only be sent today,
+   * and a hold ends on that day rather than outliving the deadline it is about (see
+   * `unresolvedAttemptPastTheCutoff`). A test about what a hold DOES therefore has to put the
+   * filing date where a hold can exist at all.
+   */
+  const moveFilingDateOut = async (alertId: string, days: number): Promise<void> => {
+    await pool.query(
+      `UPDATE permit_plan_items SET latest_apply_date = current_date + $2::int
+        WHERE id IN (SELECT plan_item_id FROM checklist_items
+                      WHERE id = (SELECT checklist_item_id FROM alerts WHERE id = $1))`,
+      [alertId, days],
+    );
+  };
+
   beforeAll(async () => {
     pool = new Pool({ connectionString: databaseUrl });
     ruleset = parseEngineRuleset(JSON.parse(await readFile(rulesFilePath(), "utf8")));
@@ -2331,6 +2348,9 @@ describe.skipIf(databaseUrl === "")("F-203 deadline alerts", () => {
         const eventId = await createEvent(scenario("C"));
         expect(await schedulePastDue(eventId, [reminderOffsets[0] ?? 7])).toBe(1);
         const alertId = (await alertsOf(eventId))[0]?.id ?? "";
+        // Six days of filing window left, so the hold this test is about is bounded by the limit
+        // rather than by the deadline, and it exists to be counted.
+        await moveFilingDateOut(alertId, 6);
         await recordAttempt(alertId, PROVIDER_DEDUP_WINDOW_HOURS + 1, false);
         const poller = createAlertPoller({
           database: pool,
@@ -2719,6 +2739,147 @@ describe.skipIf(databaseUrl === "")("F-203 deadline alerts", () => {
 
         expect(provider.attempts.map((message) => message.recipient)).not.toContain(
           "inside-the-bound@example.test",
+        );
+        expect(summary.heldForReconciliation).toBeGreaterThanOrEqual(1);
+        const { rows } = await pool.query<{ status: string }>(
+          "SELECT status FROM alerts WHERE id = $1",
+          [alertId],
+        );
+        expect(rows[0]?.status).toBe("pending");
+      });
+
+      /**
+       * A pool whose SEND-BOUNDARY statement is refused by the database, on a connection that
+       * survives the refusal.
+       *
+       * The same shape as the refused intent and the refused outcome write above: a statement,
+       * permission or timeout error answered by a server that is still there, which is the case a
+       * dropped connection cannot produce because `pg` discards that client.
+       */
+      const poolRefusingTheSendBoundary = (label: string): Pool => {
+        class RefusesTheBoundary extends Client {
+          constructor(config?: ClientConfig) {
+            super(config);
+            const query = this.query.bind(this) as (...args: unknown[]) => Promise<unknown>;
+            this.query = ((...args: unknown[]) => {
+              const text = args[0];
+              const boundary =
+                typeof text === "string" && text.includes("AS shut") && text.includes("AS held");
+              if (!boundary) return query(...args);
+              return query("SELECT refused_by_the_database()");
+            }) as typeof this.query;
+          }
+        }
+        return new Pool({
+          connectionString: `${databaseUrl}${databaseUrl.includes("?") ? "&" : "?"}application_name=${label}`,
+          Client: RefusesTheBoundary as unknown as new () => ClientBase,
+        });
+      };
+
+      it("settles the intent when the send boundary itself is refused", async () => {
+        // A FALSE UNRESOLVED ATTEMPT, recorded by the statement that guarantees nothing was sent.
+        // The boundary runs after the intent has committed and before `sender(...)` exists, so a
+        // rejection here is proof the provider was never reached — and the exception unwound
+        // through `sendOne` leaving the intent open anyway. Aged past the cutoff, that attempt
+        // pauses the alert for the whole hold while no provider could possibly be holding it,
+        // which is the one state nothing in this product clears by itself.
+        //
+        // Settled on the attempt writer's own connection, like every other proven non-delivery
+        // here: the sending transaction is about to be rolled back and this knowledge has to
+        // survive that.
+        const eventId = await createEvent(scenario("C"));
+        const alertId = await insertDueAlert(eventId, "refused-boundary@example.test", 2);
+        const provider = fakeProvider();
+        const refusing = poolRefusingTheSendBoundary("refused_boundary");
+
+        try {
+          await createAlertPoller({
+            database: refusing,
+            senders: provider.senders,
+            jurisdiction: ruleset.jurisdiction,
+          }).tick();
+        } finally {
+          await refusing.end();
+        }
+
+        expect(provider.attempts).toHaveLength(0);
+        const recorded = await attemptsOf(alertId);
+        expect(recorded).toHaveLength(1);
+        expect(recorded[0]?.outcome_recorded_at).not.toBeNull();
+        // The row itself is untouched, so it is still due and the next tick takes it.
+        const { rows } = await pool.query<{ status: string }>(
+          "SELECT status FROM alerts WHERE id = $1",
+          [alertId],
+        );
+        expect(rows[0]?.status).toBe("pending");
+      });
+
+      it("retries a one-day reminder inside its own window rather than holding it past the deadline", async () => {
+        // THE HOLD IS BOUNDED BY THE ALERT'S OWN REMAINING LIFE AS WELL AS BY THE LIMIT. A
+        // one-day reminder has less lead time than the hold has hours, so 48 hours from its
+        // attempt lands after `latest_apply_date`: the released row reaches the claim, its window
+        // has shut, and it is cancelled without the provider ever being called. The reminder is
+        // lost by the mechanism the product owner bounded the hold to stop losing it, and neither
+        // the 2026-08-04 decision's "the alert is retried once that bound passes" nor F-203's
+        // outage guarantee is delivered by a retry that cannot be delivered.
+        //
+        // So the hold ends at whichever bound comes first, and here that is the window: today is
+        // the last day a retry still reaches the organizer while the filing date can be met, so
+        // the alert goes back in the queue today instead of after it.
+        const eventId = await createEvent(scenario("C"));
+        const alertId = await insertDueAlert(eventId, "one-day@example.test", 1);
+        // The filing date is today: the window is open, and it is open for the last time.
+        await pool.query(
+          `UPDATE alerts SET payload = payload || jsonb_build_object('controlling_apply_by', $2::text)
+            WHERE id = $1`,
+          [alertId, dayFromToday(0)],
+        );
+        // Past the dedup cutoff, so the hold has begun, and well inside the 48-hour limit, so the
+        // limit alone would keep holding it until after the deadline.
+        await recordAttempt(alertId, PROVIDER_DEDUP_WINDOW_HOURS + 1, false);
+        const provider = fakeProvider();
+
+        const summary = await createAlertPoller({
+          database: pool,
+          senders: provider.senders,
+          jurisdiction: ruleset.jurisdiction,
+        }).tick();
+
+        expect(provider.attempts.map((message) => message.recipient)).toContain(
+          "one-day@example.test",
+        );
+        expect(summary.heldForReconciliation).toBe(0);
+        const { rows } = await pool.query<{ status: string }>(
+          "SELECT status FROM alerts WHERE id = $1",
+          [alertId],
+        );
+        expect(rows[0]?.status).toBe("sent");
+      });
+
+      it("still holds a long-lead reminder whose window outlasts the hold limit", async () => {
+        // The other side of that line, so the window bound cannot be widened into no hold at all.
+        // A seven-day reminder has six days of window left, which is longer than the hold, so the
+        // limit is the bound that comes first and the 48 hours the owner approved still apply in
+        // full: a person can check the provider for the key, and a retry now would be the
+        // duplicate that check exists to avoid.
+        const eventId = await createEvent(scenario("C"));
+        const alertId = await insertDueAlert(eventId, "long-lead@example.test", 1);
+        await pool.query(
+          `UPDATE alerts SET payload = payload || jsonb_build_object('controlling_apply_by', $2::text)
+            WHERE id = $1`,
+          [alertId, dayFromToday(6)],
+        );
+        await recordAttempt(alertId, PROVIDER_DEDUP_WINDOW_HOURS + 1, false);
+        const provider = fakeProvider();
+
+        const summary = await createAlertPoller({
+          database: pool,
+          senders: provider.senders,
+          jurisdiction: ruleset.jurisdiction,
+        }).tick();
+
+        expect(provider.attempts.map((message) => message.recipient)).not.toContain(
+          "long-lead@example.test",
         );
         expect(summary.heldForReconciliation).toBeGreaterThanOrEqual(1);
         const { rows } = await pool.query<{ status: string }>(
@@ -5003,6 +5164,9 @@ describe.skipIf(databaseUrl === "")("F-203 deadline alerts", () => {
       await pool.query("UPDATE alerts SET status = 'failed', failure_count = 1 WHERE id = $1", [
         alertId,
       ]);
+      // Six days of filing window left, so the attempt this test is about holds the row rather
+      // than being released on the deadline's own day.
+      await moveFilingDateOut(alertId, 6);
       await pool.query(
         `INSERT INTO alert_send_attempts (alert_id, idempotency_key, attempted_at)
          VALUES ($1, $2, current_timestamp - ($3 || ' hours')::interval)`,
@@ -6472,6 +6636,9 @@ describe.skipIf(databaseUrl === "")("F-203 deadline alerts", () => {
       await schedulePastDue(eventId, [reminderOffsets[0] ?? 7]);
       const [row] = await alertsOf(eventId);
       const alertId = row?.id ?? "";
+      // Six days of filing window left, so the row is held by the limit rather than released on
+      // the last day it could be sent on, which is what the first assertion below is about.
+      await moveFilingDateOut(alertId, 6);
       await pool.query(
         `INSERT INTO alert_send_attempts (alert_id, idempotency_key, attempted_at)
          VALUES ($1, $2, current_timestamp - ($3 || ' hours')::interval)`,
