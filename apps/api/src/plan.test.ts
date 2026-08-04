@@ -876,10 +876,14 @@ describe.runIf(databaseUrl.length > 0)("plan API (F-201)", () => {
    * on the next checkout.
    */
   type LooseQuery = (...args: unknown[]) => Promise<unknown>;
-  const poolPausedBeforeLock = (onLock: () => void, released: Promise<void>): Pool =>
+  const poolPausedBeforeLock = (
+    onLock: () => void,
+    released: Promise<void>,
+    base: Pool = pool,
+  ): Pool =>
     ({
       connect: async (): Promise<PoolClient> => {
-        const client = await pool.connect();
+        const client = await base.connect();
         const query = client.query.bind(client) as unknown as LooseQuery;
         const release = client.release.bind(client);
         let paused = false;
@@ -898,7 +902,7 @@ describe.runIf(databaseUrl.length > 0)("plan API (F-201)", () => {
         }) as unknown as PoolClient["release"];
         return client;
       },
-      query: (...args: unknown[]) => (pool.query as unknown as LooseQuery)(...args),
+      query: (...args: unknown[]) => (base.query as unknown as LooseQuery)(...args),
     }) as unknown as Pool;
 
   it("treats the plan inserted last under the lock as the latest, not the one whose transaction started first", async () => {
@@ -987,5 +991,128 @@ describe.runIf(databaseUrl.length > 0)("plan API (F-201)", () => {
     expect(downgrade.status).toBe(409);
     expect(downgrade.body.pinnedRulesetVersion).toBe("nyc.v2.12");
     expect(await storedPlanVersions(eventId)).toEqual(["nyc.v2.11", "nyc.v2.12"]);
+  });
+
+  /**
+   * A pool whose sessions read a frozen `clock_timestamp()`. PostgreSQL searches `pg_catalog` first
+   * only while it is implicit; naming it explicitly puts it at the listed position, so a same-named
+   * function in an earlier schema wins. The connections below therefore run the real INSERT against
+   * a clock that returns one constant, which is what makes the equal-stamp case an actual
+   * interleaving rather than a description of one.
+   *
+   * Nothing else about the statement changes, and only these sessions are affected: the schema is
+   * invisible to any session that does not put it on its search path.
+   */
+  const FROZEN_INSTANT = "2026-08-04 12:00:00+00";
+  const frozenClockPool = async (): Promise<Pool> => {
+    await pool.query("CREATE SCHEMA IF NOT EXISTS frozen_clock");
+    await pool.query(
+      `CREATE OR REPLACE FUNCTION frozen_clock.clock_timestamp() RETURNS timestamptz
+         LANGUAGE sql IMMUTABLE AS $$ SELECT timestamptz '${FROZEN_INSTANT}' $$`,
+    );
+    return new Pool({
+      connectionString: databaseUrl,
+      options: "-c search_path=frozen_clock,pg_catalog,public",
+    });
+  };
+
+  it("orders the plan inserted second under the lock after the first even when the clock returns the same instant for both", async () => {
+    // The stored order must come from the lock, not from the clock. `clock_timestamp()` alone is
+    // still a wall clock: two inserts serialized on the events row lock can read the same instant
+    // (and a backward clock step is worse), and an equal stamp leaves the order to be settled by a
+    // random uuid, which is arbitrary. Then `GET` and AC 12's comparison can select the plan that
+    // was superseded, and permit a nyc.v2.11 generation after a nyc.v2.12 one.
+    //
+    // The equal-clock case is forced rather than hoped for: both generations run against the frozen
+    // clock above, so both inserts read the same instant. The interleaving is real and its order is
+    // fixed by the harness — the first generation's transaction is open and paused BEFORE it takes
+    // the lock, the second generation then runs end to end through the same service, and only after
+    // it commits is the first released to lock and insert. So the row inserted second under the
+    // lock is known independently of the stamps this asserts on.
+    const eventId = await insertEvent();
+    const frozen = await frozenClockPool();
+    let reachedLock = (): void => {};
+    const atLock = new Promise<void>((resolve) => {
+      reachedLock = resolve;
+    });
+    let releaseGeneration = (): void => {};
+    const released = new Promise<void>((resolve) => {
+      releaseGeneration = resolve;
+    });
+
+    const onFrozenClock = (rulesetVersion: string, database: Pool) =>
+      createApp({
+        database: pool,
+        intakeContract,
+        today: () => TODAY,
+        planService: createPlanService(
+          database,
+          { ...ruleset, rulesetVersion },
+          fixtureCalendar,
+          () => TODAY,
+        ),
+      });
+
+    try {
+      const secondApp = onFrozenClock(
+        "nyc.v2.12",
+        poolPausedBeforeLock(() => reachedLock(), released, frozen),
+      );
+      const second = request(secondApp)
+        .post(`/api/events/${eventId}/plan`)
+        .then((response) => response);
+      await atLock;
+
+      // Runs while the other generation is parked before the lock, so it locks, inserts and commits
+      // first, on the same frozen instant.
+      const first = await request(onFrozenClock("nyc.v2.11", frozen)).post(
+        `/api/events/${eventId}/plan`,
+      );
+      expect(first.status).toBe(201);
+
+      releaseGeneration();
+      const generated = await second;
+      expect(generated.status).toBe(201);
+
+      // The claim: the second insert's stored order strictly exceeds the first's, on a clock that
+      // handed both the same value. Equal stamps fail here, which is the finding.
+      //
+      // Compared in the database rather than in JavaScript: a `Date` truncates to milliseconds, so
+      // it cannot represent a step at `timestamptz`'s own resolution, and every reader of this
+      // column orders in SQL anyway.
+      const { rows: stamps } = await pool.query<{
+        id: string;
+        on_frozen_instant: boolean;
+        one_microsecond_later: boolean;
+      }>(
+        `SELECT id,
+                generated_at = timestamptz '${FROZEN_INSTANT}' AS on_frozen_instant,
+                generated_at = timestamptz '${FROZEN_INSTANT}' + interval '1 microsecond'
+                  AS one_microsecond_later
+           FROM permit_plans WHERE event_id = $1 ORDER BY generated_at, id`,
+        [eventId],
+      );
+      expect(stamps.map((row) => row.id)).toEqual([first.body.id, generated.body.id]);
+      // The first insert read the frozen clock, and the second stored the smallest value that
+      // still exceeds it — derived from the row it supersedes, not from the clock that tied.
+      expect(stamps.map((row) => row.on_frozen_instant)).toEqual([true, false]);
+      expect(stamps.map((row) => row.one_microsecond_later)).toEqual([false, true]);
+
+      // What the order is for: the plan inserted second is the latest one read back...
+      const fetched = await request(secondApp).get(`/api/events/${eventId}/plan`);
+      expect(fetched.body.id).toBe(generated.body.id);
+      expect(fetched.body.rulesetVersion).toBe("nyc.v2.12");
+
+      // ...and the one AC 12 compares the next generation against, so nyc.v2.11 is refused rather
+      // than matched against the superseded nyc.v2.11 row and allowed.
+      const downgrade = await request(appOnRulesetVersion("nyc.v2.11")).post(
+        `/api/events/${eventId}/plan`,
+      );
+      expect(downgrade.status).toBe(409);
+      expect(downgrade.body.pinnedRulesetVersion).toBe("nyc.v2.12");
+      expect(await storedPlanVersions(eventId)).toEqual(["nyc.v2.11", "nyc.v2.12"]);
+    } finally {
+      await frozen.end();
+    }
   });
 });

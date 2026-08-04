@@ -174,17 +174,30 @@ async function insertPlan(
 ): Promise<{ id: string; generatedAt: string }> {
   const planId = randomUUID();
   const { rows } = await client.query<{ generated_at: Date }>(
-    // `generated_at` is written rather than defaulted. The column default is `current_timestamp`,
-    // which PostgreSQL fixes at TRANSACTION START, so a generation that opened its transaction
-    // first and inserted last carried the earlier stamp. Every reader treats this column as the
-    // plan order, and `refuseRulesetDowngrade` and `latest` below both do, so timestamp order
-    // that disagrees with insertion order lets AC 12 compare against a superseded plan and lets
-    // `GET` return one. `clock_timestamp()` reads the clock at this statement, which runs while
-    // this generation holds the events row lock, so the stamps follow the order the lock imposes.
+    // `generated_at` is written rather than defaulted, and clamped rather than trusted. Every
+    // reader treats this column as the plan order — `refuseRulesetDowngrade` and `latest` below
+    // both do — so an order that disagrees with insertion order lets AC 12 compare against a
+    // superseded plan and lets `GET` return one.
+    //
+    // The column default is `current_timestamp`, which PostgreSQL fixes at TRANSACTION START, so a
+    // generation that opened its transaction first and inserted last carried the earlier stamp.
+    // `clock_timestamp()` reads the clock at this statement instead, but a clock is not an order:
+    // two inserts serialized on the events row lock can read the same instant, and a backward step
+    // can hand the later insert an earlier one. `greatest` against the preceding plan's stamp is
+    // what makes this an order. The subquery runs while this generation holds the events row lock,
+    // which every generation for this event must take, so it sees every plan that can precede this
+    // one, and the stored value strictly exceeds all of them whatever the clock says. `greatest`
+    // ignores the null the subquery returns for a first plan, which then stores the clock reading.
+    //
+    // Microsecond is `timestamptz`'s own resolution, so it is the smallest step that is still a
+    // distinct value: the stamps stay readable as insertion times and cannot collide.
     `INSERT INTO permit_plans
        (id, event_id, event_revision, ruleset_version, snapshot_date, verdict, verdict_detail,
         intake_snapshot, generated_at)
-     VALUES ($1, $2, $3, $4, $5, $6, $7::jsonb, $8::jsonb, clock_timestamp())
+     VALUES ($1, $2, $3, $4, $5, $6, $7::jsonb, $8::jsonb,
+             greatest(clock_timestamp(),
+                      (SELECT max(generated_at) FROM permit_plans WHERE event_id = $2)
+                        + interval '1 microsecond'))
      RETURNING generated_at`,
     [
       planId,
@@ -275,6 +288,11 @@ async function refuseRulesetDowngrade(
   eventId: string,
   rulesetVersion: string,
 ): Promise<void> {
+  // `generated_at` is clamped at insert to strictly exceed every plan already stored for this
+  // event, so it is a total order here and this read has exactly one answer. The `id` tie-break is
+  // a uuid, which would settle a tie arbitrarily rather than by insertion order; it can no longer
+  // decide anything between plans written under the lock, and remains only so that two rows
+  // predating the clamp that share a transaction-start stamp still read back the same way twice.
   const { rows } = await client.query<{ ruleset_version: string }>(
     `SELECT ruleset_version FROM permit_plans WHERE event_id = $1
       ORDER BY generated_at DESC, id DESC LIMIT 1`,
@@ -357,6 +375,8 @@ export function createPlanService(
 
     async latest(eventId) {
       await loadEvent(eventId);
+      // Same order the downgrade guard reads, for the same reason: the plan this returns is the
+      // one the next generation is checked against, so the two must not be able to disagree.
       const { rows } = await pool.query<PlanRow>(
         `SELECT id, event_revision, ruleset_version, snapshot_date, verdict, verdict_detail,
                 generated_at
