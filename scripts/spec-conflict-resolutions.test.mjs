@@ -160,6 +160,13 @@ describe("SPEC-CONFLICT resolutions ratified 2026-08-02", () => {
     expect(comparator).toContain("material unknown that can change the finding set");
     expect(historical).toContain("docs/proposals/permit-burden-v1.ts");
 
+    // The metric reads two scalars off a deduplicated finding. One is guarded at ruleset load and
+    // one is not, and the spec has to say which is which rather than assume both hold. #239 owns
+    // the unguarded half; while it is open the metric is an approval blocker, not a criterion.
+    expect(comparator).toContain("rejectMixedDedupeVerificationStatuses()");
+    expect(comparator).toContain("Disposition has no such guard");
+    expect(comparator).toContain("#239");
+
     // The invariant, stated once and asserted directly rather than parsed out of prose: for each
     // of the three engine enumerations, the two burden sets COVER it exactly and are DISJOINT.
     // This replaced a guard that read the spec's sentences and was repaired four times, each fix
@@ -310,10 +317,17 @@ describe("PR #225 review round, 2026-08-04", () => {
     }
   });
 
-  it("F-103 accepts no half-persisted comparison", () => {
+  it("F-103 accepts no half-persisted comparison and no comparison in plan history", () => {
     const criteria = criteriaOf("specs/F-103-scope-comparator.md");
     expect(criteria).toContain("F103-AC-06");
     expect(criteria).toContain("persists both plans or neither");
+    // The half-persist rule was never the whole defect. A comparison that succeeded and then
+    // committed both sides as F-201 generations moved the organizer's latest plan to a
+    // configuration they did not choose, which is what AC-06 originally allowed in terms.
+    expect(criteria).toContain("never F-201 generations");
+    expect(criteria).toContain("PlanService.latest()");
+    expect(criteria).toContain("F103-AC-07");
+    expect(criteria).toContain("only when the organizer explicitly selects it");
   });
 
   it("F-405 accepts idempotent source creation and serialized source edits", () => {
