@@ -3,7 +3,7 @@
 
 import { randomUUID } from "node:crypto";
 import type { Pool, PoolClient } from "pg";
-import { evaluate } from "@pop-engine/engine";
+import { compareToPinned, evaluate } from "@pop-engine/engine";
 import type {
   EngineRuleset,
   EventIntake,
@@ -31,6 +31,37 @@ export class EventNotFoundError extends Error {
   constructor(eventId: string) {
     super(`event ${eventId} not found`);
     this.name = "EventNotFoundError";
+  }
+}
+
+/**
+ * A generation that would rebuild a plan from a ruleset older than the one the plan it supersedes
+ * pinned (F-201 AC 12). The superseded plan was shown to an organizer, so a requirement that only
+ * the newer ruleset publishes would disappear from a replacement that looks internally consistent
+ * and says nothing about its basis having got worse.
+ *
+ * Both versions and the direction ride on the error rather than only in prose: an endpoint that
+ * fails closed and cannot be diagnosed is its own harm, and the one thing an operator needs to know
+ * is which two rulesets are involved and which way round they stand.
+ */
+export class PlanRulesetDowngradeError extends Error {
+  constructor(
+    readonly rulesetVersion: string,
+    readonly pinnedRulesetVersion: string,
+    readonly standing: "older" | "different",
+  ) {
+    super(
+      standing === "older"
+        ? `plan generation refused: the latest plan for this event pinned ruleset ${pinnedRulesetVersion}, ` +
+            `and this service is running ${rulesetVersion}, which is older. Regenerating would rebuild the ` +
+            `plan from superseded rules and can drop a requirement the organizer was already shown. ` +
+            `Generate again from a service running ${pinnedRulesetVersion} or newer.`
+        : `plan generation refused: the latest plan for this event pinned ruleset ${pinnedRulesetVersion}, ` +
+            `this service is running ${rulesetVersion}, and the two cannot be ordered. Nothing establishes ` +
+            `that regenerating would not move the plan backwards, so it is refused. Generate again from a ` +
+            `service running ${pinnedRulesetVersion} or a later version of it.`,
+    );
+    this.name = "PlanRulesetDowngradeError";
   }
 }
 
@@ -205,6 +236,53 @@ async function insertPlan(
   return { id: planId, generatedAt: (rows[0]?.generated_at ?? new Date()).toISOString() };
 }
 
+/**
+ * Serializes this generation against every other generation for the same event.
+ *
+ * The precondition below is a read followed by a write, so it is only a guard if nothing can
+ * commit a plan in between, which is the exact defect it replaces, where the browser decided on
+ * reads that had already returned. `permit_plans` has no row to lock (the offending row is the one
+ * that does not exist yet) and a feature branch adds no constraint, so the lock goes on the parent
+ * `events` row, which every generation for this event must take. Under READ COMMITTED a generation
+ * that blocks here re-reads on a fresh snapshot once the holder commits, so the competing plan is
+ * visible to the check below. SERIALIZABLE would also close it, at the cost of 40001 retries on an
+ * endpoint that writes an immutable row, which is a worse trade for one lock on one row.
+ */
+async function lockEventForGeneration(client: PoolClient, eventId: string): Promise<void> {
+  await client.query("SELECT id FROM events WHERE id = $1 FOR UPDATE", [eventId]);
+}
+
+/**
+ * F-201 AC 12. Refuses when this service's ruleset is older than the version the latest stored plan
+ * pinned, or when the two cannot be ordered at all.
+ *
+ * Unorderable pairs (a second jurisdiction, an unparseable version) are refused rather than
+ * allowed. Allowing them reopens the hole this exists to close, and the failure it prevents is
+ * silently dropping a regulatory requirement an organizer was already shown. The cost is a lane
+ * that fails closed after a jurisdiction rename until a plan is pinned to the new prefix, and that
+ * cost is paid down by the error naming both versions and the direction rather than reading as a
+ * generic failure.
+ */
+async function refuseRulesetDowngrade(
+  client: PoolClient,
+  eventId: string,
+  rulesetVersion: string,
+): Promise<void> {
+  const { rows } = await client.query<{ ruleset_version: string }>(
+    `SELECT ruleset_version FROM permit_plans WHERE event_id = $1
+      ORDER BY generated_at DESC, id DESC LIMIT 1`,
+    [eventId],
+  );
+  const pinned = rows[0]?.ruleset_version;
+  // No stored plan means nothing to supersede: a first plan is safe on any ruleset.
+  if (pinned === undefined) return;
+
+  const standing = compareToPinned(rulesetVersion, pinned);
+  if (standing === "older" || standing === "different") {
+    throw new PlanRulesetDowngradeError(rulesetVersion, pinned, standing);
+  }
+}
+
 export function createPlanService(
   pool: Pool,
   ruleset: EngineRuleset,
@@ -236,6 +314,8 @@ export function createPlanService(
       const client = await pool.connect();
       try {
         await client.query("BEGIN");
+        await lockEventForGeneration(client, eventId);
+        await refuseRulesetDowngrade(client, eventId, ruleset.rulesetVersion);
         const { id, generatedAt } = await insertPlan(
           client,
           eventId,

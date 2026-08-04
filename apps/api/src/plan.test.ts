@@ -670,4 +670,199 @@ describe.runIf(databaseUrl.length > 0)("plan API (F-201)", () => {
     expect(noPlanYet.status).toBe(404);
     expect(noPlanYet.body.error).toContain("no plan generated");
   });
+
+  /**
+   * F-201 AC 12: regeneration may not rebuild a plan from a ruleset older than the one the plan it
+   * supersedes pinned. The stored plan was shown to an organizer; rebuilding it from superseded
+   * rules can drop a requirement they were already told about, and the replacement looks
+   * internally consistent, so nothing afterwards says the basis got worse.
+   *
+   * The service's ruleset is the axis under test, so these build a service on a stated version
+   * rather than the one the repository happens to publish. The plan row each generation stores
+   * pins whatever version its service ran.
+   */
+  const appOnRulesetVersion = (rulesetVersion: string) =>
+    createApp({
+      database: pool,
+      intakeContract,
+      today: () => TODAY,
+      planService: createPlanService(
+        pool,
+        { ...ruleset, rulesetVersion },
+        fixtureCalendar,
+        () => TODAY,
+      ),
+    });
+
+  const storedPlanVersions = async (eventId: string): Promise<string[]> => {
+    const { rows } = await pool.query<{ ruleset_version: string }>(
+      "SELECT ruleset_version FROM permit_plans WHERE event_id = $1 ORDER BY generated_at, id",
+      [eventId],
+    );
+    return rows.map((row) => row.ruleset_version);
+  };
+
+  it("refuses to regenerate from a ruleset older than the stored plan pinned, and writes nothing", async () => {
+    const eventId = await insertEvent();
+    expect(
+      (await request(appOnRulesetVersion("nyc.v2.11")).post(`/api/events/${eventId}/plan`)).status,
+    ).toBe(201);
+
+    const downgrade = await request(appOnRulesetVersion("nyc.v2.10")).post(
+      `/api/events/${eventId}/plan`,
+    );
+
+    expect(downgrade.status).toBe(409);
+    // Diagnosable, not just refused: an operator reading this response learns which two versions
+    // are involved and which way round they stand, which is what tells them the service is behind.
+    expect(downgrade.body.rulesetVersion).toBe("nyc.v2.10");
+    expect(downgrade.body.pinnedRulesetVersion).toBe("nyc.v2.11");
+    expect(downgrade.body.standing).toBe("older");
+    expect(downgrade.body.error).toContain("nyc.v2.11");
+    // The refusal is the whole point: a rolled-back transaction leaves the plan the organizer has.
+    expect(await storedPlanVersions(eventId)).toEqual(["nyc.v2.11"]);
+  });
+
+  it("regenerates on the same ruleset version, which is the ordinary case", async () => {
+    const eventId = await insertEvent();
+    const app = appOnRulesetVersion("nyc.v2.11");
+    expect((await request(app).post(`/api/events/${eventId}/plan`)).status).toBe(201);
+
+    // An organizer edits their event and regenerates while nothing has been published in between.
+    // This is what the button is for, and the guard must not touch it.
+    expect((await request(app).post(`/api/events/${eventId}/plan`)).status).toBe(201);
+    expect(await storedPlanVersions(eventId)).toEqual(["nyc.v2.11", "nyc.v2.11"]);
+  });
+
+  it("regenerates on a newer ruleset version", async () => {
+    const eventId = await insertEvent();
+    expect(
+      (await request(appOnRulesetVersion("nyc.v2.11")).post(`/api/events/${eventId}/plan`)).status,
+    ).toBe(201);
+
+    // Minor ordered as a number, not a string: v2.11 is newer than v2.9, and v3.0 newer than both.
+    expect(
+      (await request(appOnRulesetVersion("nyc.v2.12")).post(`/api/events/${eventId}/plan`)).status,
+    ).toBe(201);
+    expect(
+      (await request(appOnRulesetVersion("nyc.v3.0")).post(`/api/events/${eventId}/plan`)).status,
+    ).toBe(201);
+    expect(await storedPlanVersions(eventId)).toEqual(["nyc.v2.11", "nyc.v2.12", "nyc.v3.0"]);
+  });
+
+  it("refuses a pair of versions that cannot be ordered, and says that is why", async () => {
+    const eventId = await insertEvent();
+    expect(
+      (await request(appOnRulesetVersion("nyc.v2.11")).post(`/api/events/${eventId}/plan`)).status,
+    ).toBe(201);
+
+    // A different jurisdiction and an unparseable version are the same situation: nothing
+    // establishes that generating would not move the plan backwards, so it is refused. Fail-closed
+    // is only defensible if an operator can tell it apart from a downgrade, so `standing` says so.
+    for (const unorderable of ["bos.v1.0", "draft"]) {
+      const refused = await request(appOnRulesetVersion(unorderable)).post(
+        `/api/events/${eventId}/plan`,
+      );
+      expect(refused.status).toBe(409);
+      expect(refused.body.standing).toBe("different");
+      expect(refused.body.rulesetVersion).toBe(unorderable);
+      expect(refused.body.pinnedRulesetVersion).toBe("nyc.v2.11");
+      expect(refused.body.error).toContain("cannot be ordered");
+    }
+    expect(await storedPlanVersions(eventId)).toEqual(["nyc.v2.11"]);
+  });
+
+  it("refuses when both versions carry the same unparseable label", async () => {
+    const eventId = await insertEvent();
+    const app = appOnRulesetVersion("draft");
+    // Nothing is stored yet, so the first generation is safe on any label and pins this one.
+    expect((await request(app).post(`/api/events/${eventId}/plan`)).status).toBe(201);
+
+    // Two artifacts both labelled `draft` are two unknown artifacts. The label being reused says
+    // nothing about their regulatory content, so the pair is still unorderable and is refused.
+    const refused = await request(app).post(`/api/events/${eventId}/plan`);
+
+    expect(refused.status).toBe(409);
+    expect(refused.body.standing).toBe("different");
+    expect(refused.body.rulesetVersion).toBe("draft");
+    expect(refused.body.pinnedRulesetVersion).toBe("draft");
+    expect(refused.body.error).toContain("cannot be ordered");
+    expect(await storedPlanVersions(eventId)).toEqual(["draft"]);
+  });
+
+  it("refuses when a newer-pinned plan is stored between the generation's read and its insert", async () => {
+    // The race the browser check cannot close (#89 RULES_FILE skew): the generating request starts
+    // when no newer plan exists, and another deployment commits one before it inserts.
+    //
+    // This DOES drive a real interleaving rather than approximating one, and it does so through the
+    // guard's own serialization point: the competing transaction takes the events row lock first,
+    // inserts its newer-pinned plan, and holds the lock uncommitted while the generation blocks on
+    // it. The commit is what releases the generation, so the generation's read of the latest plan
+    // provably happens after the competing insert is committed and visible.
+    //
+    // What it does NOT prove: that some other serialization scheme would refuse. The rendezvous is
+    // the lock this implementation takes, so the test is evidence about this guard, not about the
+    // ordering of two unsynchronized inserts in general.
+    const eventId = await insertEvent();
+    const competing = await pool.connect();
+
+    try {
+      await competing.query("BEGIN");
+      await competing.query("SELECT id FROM events WHERE id = $1 FOR UPDATE", [eventId]);
+      await competing.query(
+        `INSERT INTO permit_plans
+           (id, event_id, event_revision, ruleset_version, verdict, verdict_detail, intake_snapshot)
+         VALUES ($1, $2, 1, 'nyc.v2.12', 'conditional', $3::jsonb, '{}'::jsonb)`,
+        [
+          randomUUID(),
+          eventId,
+          JSON.stringify({ today: TODAY, calendar_id: ruleset.calendarId, finding_renderings: [] }),
+        ],
+      );
+
+      const generation = request(appOnRulesetVersion("nyc.v2.11"))
+        .post(`/api/events/${eventId}/plan`)
+        .then((response) => response);
+
+      // Wait for the generation to be genuinely blocked on a lock before releasing it. Polling is
+      // what makes the interleaving deterministic rather than timing-dependent: the commit below
+      // happens only once the generation is known to be waiting.
+      //
+      // Scoped to this database and to the statement the generation blocks at, the way the F-202
+      // checklist concurrency test is. Any-ungranted-lock-anywhere would report blocked for an
+      // unrelated backend in the cluster, the competing transaction would commit before the
+      // generation reached its lock, and the test would pass on the already-committed row without
+      // ever exercising the serialization it exists to prove.
+      const blockedOnEventLock = async (): Promise<boolean> => {
+        const { rows } = await pool.query(
+          `SELECT 1 FROM pg_stat_activity
+            WHERE datname = current_database()
+              AND wait_event_type = 'Lock'
+              AND query LIKE 'SELECT id FROM events WHERE id = $1 FOR UPDATE%'`,
+        );
+        return rows.length > 0;
+      };
+      let blocked = false;
+      for (let attempt = 0; attempt < 100 && !blocked; attempt += 1) {
+        blocked = await blockedOnEventLock();
+        if (!blocked) await new Promise((resolve) => setTimeout(resolve, 50));
+      }
+      expect(
+        blocked,
+        "the generation never blocked on the events row lock, so nothing serialized it and this " +
+          "test asserted nothing about the interleaving",
+      ).toBe(true);
+
+      await competing.query("COMMIT");
+      const response = await generation;
+
+      expect(response.status).toBe(409);
+      expect(response.body.standing).toBe("older");
+      expect(response.body.pinnedRulesetVersion).toBe("nyc.v2.12");
+      // The generation's own row is the one that must not exist.
+      expect(await storedPlanVersions(eventId)).toEqual(["nyc.v2.12"]);
+    } finally {
+      competing.release();
+    }
+  });
 });

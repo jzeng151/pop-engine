@@ -1452,13 +1452,23 @@ describe.runIf(databaseUrl.length > 0)("F-202 compliance checklist", () => {
       await generatePlan(eventId);
       const api = appWith(fakeStorage());
 
-      /** The generation's own backend, waiting on a lock at the statement this test is about. */
-      const blockedOnInsert = async (): Promise<boolean> => {
+      /**
+       * The generation's own backend, waiting on a lock at either statement that can serialize it.
+       *
+       * F-201's regeneration downgrade guard now takes the same `events` row lock explicitly at the
+       * start of the generating transaction, because its precondition is a read followed by a write
+       * and the implicit FK lock arrives too late to serialize the read. So the generation blocks
+       * there rather than at the insert. Both statements are matched: the property under test and
+       * the non-vacuity assertion below are unchanged, and the test still fails if a future edit
+       * removes both the explicit lock and the foreign key.
+       */
+      const blockedOnGeneration = async (): Promise<boolean> => {
         const { rows } = await pool.query(
           `SELECT 1 FROM pg_stat_activity
             WHERE datname = current_database()
               AND wait_event_type = 'Lock'
-              AND query LIKE 'INSERT INTO permit_plans%'`,
+              AND (query LIKE 'INSERT INTO permit_plans%'
+                   OR query LIKE 'SELECT id FROM events WHERE id = $1 FOR UPDATE%')`,
         );
         return rows.length > 0;
       };
@@ -1484,13 +1494,13 @@ describe.runIf(databaseUrl.length > 0)("F-202 compliance checklist", () => {
         const deadline = Date.now() + 10_000;
         let blocked = false;
         while (!blocked && Date.now() < deadline && !settled) {
-          blocked = await blockedOnInsert();
+          blocked = await blockedOnGeneration();
           if (!blocked) await new Promise((resolve) => setTimeout(resolve, 25));
         }
         expect(
           blocked,
-          "the generation never blocked on a lock at INSERT INTO permit_plans, so nothing " +
-            "serialized it and this test asserted nothing",
+          "the generation never blocked on a lock at its event-row lock or at INSERT INTO " +
+            "permit_plans, so nothing serialized it and this test asserted nothing",
         ).toBe(true);
 
         const { rows } = await holder.query<{ count: string }>(
