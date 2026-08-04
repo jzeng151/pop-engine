@@ -26,6 +26,7 @@ Event staff can maintain manual item counts and receive deterministic low-stock 
 - F-402 dashboard, F-703 roles, and approved jobs/outbox for notifications.
 - Square path additionally requires provider/webhook ADR; manual counts must work without it.
 - Baseline at draft time: PRD, Roadmap, Design, and Phase 0–1.5 Architecture approved 2026-07-22; `ARCHITECTURE-FUTURE.md` approved as a planning target 2026-07-25; NYC ruleset `nyc.v2.7`, rules schema `popengine-rules/v2`, and scenario fixtures v5 where regulatory output is consumed.
+- Operand binding for client-supplied identities: `specs/F-411-staff-roles-credentialed-entry.md` F411-AC-08 states once, for this whole branch, that a client-supplied identity is committed with the operands that determine its recorded result and that a reuse carrying different operands is a conflict rather than a replay. Every identity criterion below relies on it. F-411 is PROPOSED, so that rule is not an approved input today and this spec is not implementable against it until F-411 is approved or the rule is promoted to an approved shared invariant; F411-AC-08 records both paths.
 - The approval PR must re-pin any baseline version that changes before approval. A proposed or superseded input blocks implementation.
 
 ## Inputs, Outputs, State, Validation, and Errors
@@ -56,7 +57,7 @@ Exact HTTP, JSON Schema, migration, job, and provider shapes belong in their rev
 
 ## Acceptance Criteria
 
-1. **F408-AC-01:** Manual integer adjustments bind a stable operation identity to actor/time/reason/source history, deterministically derive current count, and return the original result without reapplying on replay.
+1. **F408-AC-01:** Manual integer adjustments bind a stable operation identity to actor/time/reason/source history, deterministically derive current count, and return the original result without reapplying on replay. That identity binds its operands under the rule `F411-AC-08` states once for every client-supplied identity on this branch: it is committed together with the request fields that determine the recorded result, including every aggregate, version, and generation the request names, and a later request presenting the same identity with any different operand is refused as a conflict rather than being answered with the stored result. The identity is still the key and the operands are only a precondition on reusing it, so this is not the content uniqueness this criterion already forbids.
 2. **F408-AC-02:** Creating an item with a known count at/below its threshold, first resolving an unknown/stale count to known at/below, or changing a known item from above threshold to at/below creates one low-stock transition/alert; the reverse known-low to known-above change records one recovery transition. Initialization above threshold creates no transition. Notification jobs pin the item generation, deliver in generation order after rechecking it, and suppress a stale low-stock alert after recovery; retries/repeated reads do not duplicate either transition or notification.
 3. **F408-AC-03:** Unknown or stale count is labeled and cannot appear in-stock.
 4. **F408-AC-04:** Invalid, replayed, duplicate, out-of-scope, or unverified Square events cannot change inventory.

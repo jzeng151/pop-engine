@@ -26,6 +26,7 @@ An organizer can create an editable draft to an agency from confirmed event/appl
 - F-208/F-209 confirmed records and F-304 AI gateway.
 - Approved drafting purposes/templates, data selection, prompt/model, privacy, and prohibited-claim evaluation.
 - Baseline at draft time: PRD, Roadmap, Design, and Phase 0–1.5 Architecture approved 2026-07-22; `ARCHITECTURE-FUTURE.md` approved as a planning target 2026-07-25; NYC ruleset `nyc.v2.7`, rules schema `popengine-rules/v2`, and scenario fixtures v5 where regulatory output is consumed.
+- Operand binding for client-supplied identities: `specs/F-411-staff-roles-credentialed-entry.md` F411-AC-08 states once, for this whole branch, that a client-supplied identity is committed with the operands that determine its recorded result and that a reuse carrying different operands is a conflict rather than a replay. Every identity criterion below relies on it. F-411 is PROPOSED, so that rule is not an approved input today and this spec is not implementable against it until F-411 is approved or the rule is promoted to an approved shared invariant; F411-AC-08 records both paths.
 - The approval PR must re-pin any baseline version that changes before approval. A proposed or superseded input blocks implementation.
 
 ## Inputs, Outputs, State, Validation, and Errors
