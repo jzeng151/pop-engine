@@ -44,7 +44,7 @@ const listBody = {
 };
 
 describe("GuestListView", () => {
-  // T-5 (SPEC-CONFLICT #209), resolved 2026-08-03: a null capacity is no confirmed limit, so the
+  // SPEC-CONFLICT #209, resolved 2026-08-03: a null capacity is no confirmed limit, so the
   // count is shown on its own rather than against a number the organizer never set.
   it("shows the count alone when no capacity is confirmed", async () => {
     vi.stubGlobal(

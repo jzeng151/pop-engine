@@ -16,6 +16,10 @@ export type GuestRsvp = {
 };
 
 export type GuestList = {
+  /**
+   * `capacity` is the limit the responding API enforces: this contract's `event.capacity`, or a
+   * pre-rename API's `event.headcount`. See `readLimit`.
+   */
   event: { id: string; name: string; capacity: number | null; event_date: string };
   rsvps: GuestRsvp[];
   confirmed_count: number;
@@ -44,14 +48,39 @@ function failureMessage(body: unknown, fallback: string): string {
   return typeof error === "string" && error.length > 0 ? error : fallback;
 }
 
+/**
+ * The admission limit, read from whichever contract generation the API speaks.
+ *
+ * `docs/ARCHITECTURE.md:9` rolls web and API independently, so this build can be talking to an
+ * API that predates the `headcount` to `capacity` rename. Requiring `capacity` would reject that
+ * response outright, emptying the guest list and taking the cancel controls with it until the API
+ * deployment lands. The limit a pre-rename API serves under `headcount` is the limit that API
+ * actually enforces, so it is read as the limit rather than discarded.
+ *
+ * A PRESENT `capacity` always wins, including when it is null: null is a current API stating that
+ * no limit is confirmed, which is a different fact from an old API not having the field at all.
+ * Only an absent `capacity` falls back. `undefined` signals a shape this page cannot read.
+ *
+ * `specs/F-302-rsvp-guest-list.md` records what removing this fallback needs.
+ */
+function readLimit(event: Record<string, unknown>): number | null | undefined {
+  if ("capacity" in event) {
+    return typeof event.capacity === "number" || event.capacity === null
+      ? event.capacity
+      : undefined;
+  }
+  return typeof event.headcount === "number" ? event.headcount : undefined;
+}
+
 function parseList(body: unknown): GuestList | null {
   const record = asRecord(body);
   const event = asRecord(record?.event);
+  const capacity = event === null ? undefined : readLimit(event);
   if (
     event === null ||
     typeof event.id !== "string" ||
     typeof event.name !== "string" ||
-    !(typeof event.capacity === "number" || event.capacity === null) ||
+    capacity === undefined ||
     typeof event.event_date !== "string" ||
     !Array.isArray(record?.rsvps) ||
     typeof record.confirmed_count !== "number"
@@ -62,7 +91,7 @@ function parseList(body: unknown): GuestList | null {
     event: {
       id: event.id,
       name: event.name,
-      capacity: event.capacity,
+      capacity,
       event_date: event.event_date,
     },
     rsvps: record.rsvps as GuestRsvp[],

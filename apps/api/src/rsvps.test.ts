@@ -106,6 +106,35 @@ describe.runIf(databaseUrl.length > 0)("F-302 RSVP endpoints (database)", () => 
     expect(listed.body.rsvps).toHaveLength(1);
   });
 
+  // `docs/ARCHITECTURE.md:9` rolls web and API independently, so between the two deployments one
+  // side speaks the pre-rename contract. A web build that predates this change reads
+  // `event.headcount` and rejects the whole response without it, which takes the guest list and
+  // its cancel controls down until the second deployment finishes. The guest list therefore
+  // serves both generations until the web rollout is complete; see the removal preconditions in
+  // `specs/F-302-rsvp-guest-list.md`.
+  it("serves the pre-rename headcount alongside capacity on the guest list", async () => {
+    const { id: eventId } = await createEvent({ capacity: 5, headcount: 40 });
+
+    const listed = await request(api).get(`/api/events/${eventId}/guests`);
+
+    expect(listed.status).toBe(200);
+    expect(listed.body.event.capacity).toBe(5);
+    // The legacy field keeps its own meaning: the `events.headcount` column, which is what the
+    // pre-rename API returned and what a pre-rename client renders. It is not capacity under an
+    // old name — `headcount` is a regulatory input and must not be made to carry another value.
+    expect(listed.body.event.headcount).toBe(40);
+  });
+
+  it("still serves headcount on the guest list when no capacity is confirmed", async () => {
+    const { id: eventId } = await createEvent({ capacity: null, headcount: 40 });
+
+    const listed = await request(api).get(`/api/events/${eventId}/guests`);
+
+    expect(listed.status).toBe(200);
+    expect(listed.body.event.capacity).toBeNull();
+    expect(listed.body.event.headcount).toBe(40);
+  });
+
   it("updates a duplicate email instead of double-counting", async () => {
     const { id: eventId } = await createEvent({ capacity: 5 });
     const first = await request(api)
@@ -142,7 +171,7 @@ describe.runIf(databaseUrl.length > 0)("F-302 RSVP endpoints (database)", () => 
     expect(full.body.error).toBe("event is full");
   });
 
-  // T-5 (SPEC-CONFLICT #209), resolved 2026-08-03: admission is `capacity`, and a null capacity
+  // SPEC-CONFLICT #209, resolved 2026-08-03: admission is `capacity`, and a null capacity
   // means no enforced limit. `headcount` is a regulatory input — it drives the 75+ assembly gate,
   // the DOHMH thresholds and the Parks exactly-20 conflict — so admitting against it would let a
   // marketing decision move a permit finding.
