@@ -112,9 +112,23 @@ describe("the stale-plan notice on the event overview", () => {
 
     expect(await screen.findByText(/edited since its plan was generated/)).toBeDefined();
     expect(screen.getByText(/Regenerating is not offered here/).textContent).toContain(
-      "would drop requirements you have already been shown",
+      "is not guaranteed to reproduce the requirements you have already been shown",
     );
     expect(screen.queryByRole("button", { name: "Regenerate plan" })).toBeNull();
+  });
+
+  // `docs/BASELINE.md:60-63` records that v2.11 changed no trigger, finding or verdict, so a
+  // service merely behind on v2.10 drops nothing. Version ordering establishes only that the
+  // output COULD differ, so the refusal may not state a consequence as certain — neither that
+  // requirements would be dropped nor that the plan would differ.
+  it("does not state a rebuild's consequence as certain", async () => {
+    respondWith();
+
+    renderNotice();
+
+    const refusal = await screen.findByText(/Regenerating is not offered here/);
+    expect(refusal.textContent).not.toMatch(/would drop/);
+    expect(refusal.textContent).not.toMatch(/would differ/);
   });
 
   // The refusal ends on the plan it leaves alone, and on this surface that plan is not the one the

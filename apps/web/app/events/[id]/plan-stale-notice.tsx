@@ -39,9 +39,9 @@ import { loadEvent } from "../../intake/events-api";
 const REGENERATION_NOT_OFFERED =
   "Regenerating is not offered here. Whether it is safe depends on which rules the service is " +
   "running at the moment the plan is rebuilt, and nothing this page can read settles that: the " +
-  "answer can change between the check and the rebuild, and rebuilding from rules older than this " +
-  'plan\'s would drop requirements you have already been shown. The plan under "Open permit plan" ' +
-  "is unchanged.";
+  "answer can change between the check and the rebuild, and a rebuild from rules older than this " +
+  "plan's is not guaranteed to reproduce the requirements you have already been shown. The plan " +
+  'under "Open permit plan" is unchanged.';
 
 export function PlanStaleNotice({ apiBaseUrl, eventId }: { apiBaseUrl: string; eventId: string }) {
   const [stale, setStale] = useState(false);
