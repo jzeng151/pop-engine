@@ -12,18 +12,18 @@ An organizer can track policy, coverage, additional-insured, certificate status,
 
 **In scope**
 
-- Create certificate records linked to F-205/F-202 requirements and record policy reference, coverage, additional-insured text, status, expiration, and private file.
+- Create certificate records linked to the F-201 insurance plan items (R10/R11) and their F-202 checklist elements, and record policy reference, coverage, additional-insured text, status, expiration, and private file.
 - Show gaps between the published requirement and organizer-confirmed certificate facts.
 - Preserve history for replacement and expiration.
 
 **Non-goals**
 
 - Insurance sales, broker integration, legal sufficiency determination, OCR, or automatic agency acceptance.
-- Changing F-205 regulatory findings.
+- Changing the F-201 insurance findings or the F-205 card that surfaces them.
 
 ## Dependencies and Baseline
 
-- F-205, F-202, F-209 controlled documents, and the F-701/F-702/F-703 gate.
+- F-201, F-205, F-202, F-209 controlled documents, and the F-701/F-702/F-703 gate.
 - Approved certificate status/money/date and upload contracts.
 - Baseline at draft time: PRD, Roadmap, Design, and Phase 0–1.5 Architecture approved 2026-07-22; `ARCHITECTURE-FUTURE.md` approved as a planning target 2026-07-25; NYC ruleset `nyc.v2.7`, rules schema `popengine-rules/v2`, and scenario fixtures v5 where regulatory output is consumed.
 - The approval PR must re-pin any baseline version that changes before approval. A proposed or superseded input blocks implementation.
@@ -61,9 +61,9 @@ Exact HTTP, JSON Schema, migration, job, and provider shapes belong in their rev
 3. **F210-AC-03:** Replacement preserves the earlier version and follows F210-AC-08; expiration uses the approved timezone/date rule.
 4. **F210-AC-04:** The UI never labels a certificate legally sufficient or agency accepted without an explicit authoritative record.
 5. **F210-AC-05:** Unsafe or unauthorized files are unavailable and cannot create a recorded certificate version.
-6. **F210-AC-06:** When a new plan supersedes or removes the linked F-205 finding, the prior requirement-to-certificate projection becomes stale while certificate history remains intact; a current finding requires explicit handling and is never guessed or silently remapped to old evidence.
+6. **F210-AC-06:** A certificate links to the F-201 plan item that carries the insurance requirement (the R10 `insurance` item or the R11 `note` item) by that item's identity and version, and to the F-202 checklist element derived from it, never to F-205 state. Approved F-205 owns no finding of its own: its acceptance criteria consume the existing R10/R11 plan items from F-201, F205-AC-04 links its card to the R10 checklist item, and F205-AC-05 states that removing F-205 loses only the dedicated card while the insurance findings still appear in the plan from F-201. Pinning the finding to F-205 would therefore either invent a second record for one requirement or leave this projection following a card rather than the plan item it displays. When a new plan supersedes or removes that pinned F-201 item, the prior requirement-to-certificate projection becomes stale while certificate history remains intact; a current finding requires explicit handling and is never guessed or silently remapped to old evidence. Removing or disabling the F-205 card alone changes nothing here, because the pinned item survives it.
 7. **F210-AC-07:** Every certificate stays in private storage; each download issuance rechecks workspace authorization and scan state and returns only a short-lived signed URL. Authorization loss blocks new URLs, and already issued direct-storage URLs retain only their disclosed bounded validity until expiry.
-8. **F210-AC-08:** A replacement names the exact certificate version it was composed against and commits only by compare-and-swap on that version: one transaction appends the new version and advances the current-certificate projection while the named version is still current. A replacement naming a superseded version is rejected, is not appended, and returns the current version for the organizer to resubmit against. Every replacement carries a stable request identity, so a retry returns its original recorded outcome instead of appending a second version. Concurrent replacements of one certificate therefore end with exactly one accepted current version and explicit rejections, never a last-write-wins projection that hides a confirmed update.
+8. **F210-AC-08:** A replacement names the exact certificate version it was composed against and commits only by compare-and-swap on that version: one transaction appends the new version and advances the current-certificate projection while the named version is still current. A replacement naming a superseded version is rejected, is not appended, and returns the current version for the organizer to resubmit against. Every replacement carries a stable request identity, so a retry returns its original recorded outcome instead of appending a second version. Concurrent replacements of one certificate therefore end with exactly one accepted current version and explicit rejections, never a last-write-wins projection that hides a confirmed update. "Replacement" here is every appended certificate version, not only a new file: a change to the policy reference, certificate status, entered source, dates, coverage, or additional-insured text AC-01 records is appended and compare-and-swapped on the same terms, so no field listed there can be edited without naming the certificate version it was composed against.
 9. **F210-AC-09:** Creating a certificate binds the request to a stable client-supplied request identity, committed with the first version under a uniqueness constraint scoped to the insurance finding it satisfies. A retry presenting the same identity returns the original certificate and its first version and appends nothing; a deliberately separate certificate uses a new identity. This is request identity, never content uniqueness: two genuinely distinct certificates carrying the same policy reference, dates, and coverage are both created, and a repeated identity is never rejected as a duplicate value.
 
    AC-08 gives replacements this behaviour and starts at the second version, so the first one is the gap. When creation commits and its response is lost, the retry appends a second certificate record and a second private file reference for one upload. AC-01 makes both well-formed and AC-06 links both to the same finding, so nothing marks either superseded and the organizer's current evidence has two candidates with no rule to choose between them.
@@ -71,7 +71,7 @@ Exact HTTP, JSON Schema, migration, job, and provider shapes belong in their rev
 ## Fixtures and Verification
 
 - Planned automated fixture IDs are the acceptance IDs above; each must map one-to-one to a runnable test before approval can claim implementation readiness.
-- Regulatory fixtures: Use approved F-205 finding scenarios; all certificate data and files are synthetic.
+- Regulatory fixtures: Use the approved insurance-finding scenarios F-205 exercises (A, C, D, E), whose R10/R11 items come from F-201; all certificate data and files are synthetic.
 - Security-sensitive and cross-workspace paths require negative authorization tests; provider paths require success, duplicate-delivery, retry, invalid-signature, and permanent-failure tests where applicable.
 
 ## Allowed Footprint and Coordination

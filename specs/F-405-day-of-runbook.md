@@ -68,7 +68,7 @@ Exact HTTP, JSON Schema, migration, job, and provider shapes belong in their rev
 
 8. **F405-AC-08:** Every update and delete of an F-405-owned source record names the record version it was made against and commits only while that version is still current; otherwise it is rejected as a conflict with a reload-and-reconcile path, never applied as a last-write-wins overwrite. These operations carry AC-07's stable request identity as well, so a lost-response retry is not re-applied against a version that has since moved.
 
-   AC-06 pins and compare-and-swaps the whole source set at publication, which stops a stale snapshot being published, and it cannot recover a lost update: two organizer tabs editing the same load-in task, contact, or assignment from one observed state both commit, the later write erases the earlier confirmed correction, and every subsequent generation publishes the surviving value as correct. Nothing records that the correction existed, so there is nothing for AC-06 to notice.
+   AC-06 pins and compare-and-swaps the whole source set at publication, which stops a stale snapshot being published and cannot on its own recover a lost update. What follows is the reason for the rule above, not an outcome this criterion allows. Without the record-version comparison, two organizer tabs editing the same load-in task, contact, or assignment from one observed state would both commit, the later write would erase the earlier confirmed correction, and every subsequent generation would publish the surviving value as correct. Nothing would record that the correction existed, so there would be nothing for AC-06 to notice.
 
 ## Fixtures and Verification
 
