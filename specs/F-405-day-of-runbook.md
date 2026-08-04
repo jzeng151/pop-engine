@@ -56,12 +56,12 @@ Exact HTTP, JSON Schema, migration, job, and provider shapes belong in their rev
 
 ## Acceptance Criteria
 
-1. **F405-AC-01:** A runbook identifies the exact event revision, plan/ruleset version, generation time, and source update times.
+1. **F405-AC-01:** A runbook is generated only from an accepted plan that is still current for the Event's current revision. In one consistency boundary, generation reads `events.current_revision_id` and `events.current_plan_id` and requires the accepted plan's `event_revision_id` to equal that current revision; `docs/EVENT-REVISION-CONTRACT.md` §2.5 makes a plan stale the moment those differ, so when they differ no runbook is generated, the existing one stays labeled stale under AC-03, and the organizer regenerates the plan first. The snapshot records that revision, that accepted plan, the plan's ruleset version, the generation time, and the source update times; recording those identifiers is a reporting requirement and never a substitute for the check, because displaying a mismatch does not stop the mismatched sources being published as the current event-day sheet.
 2. **F405-AC-02:** Confirmed permit numbers, load-in tasks, ordinary operational contacts, emergency contacts, and F-405-owned runbook assignments appear once, link back to their source record, and keep the two contact categories distinct. A runbook assignment records only the organizer-entered assignee label and runbook duty needed for the event-day sheet; it is not an F-213 task, membership assignment, or task-status workflow.
 3. **F405-AC-03:** Missing, unknown, conflict, research-required, expired, or stale values are visibly labeled and prevent a complete/ready claim; no confirmed emergency contact produces an explicit unavailable warning.
 4. **F405-AC-04:** Changing a source record marks the prior runbook stale; regeneration creates current output without rewriting source history.
 5. **F405-AC-05:** The approved print viewport produces readable ordering and no clipped critical content.
-6. **F405-AC-06:** Generation pins the complete permit, contact, assignment, and other source-version set; publication compare-and-swaps that set, so a concurrent source correction rejects the stale in-flight snapshot.
+6. **F405-AC-06:** Generation pins the complete permit, contact, assignment, and other source-version set together with AC-01's current revision and accepted plan; publication compare-and-swaps all of them, so a concurrent source correction, revision save, or plan acceptance rejects the stale in-flight snapshot rather than publishing it as current.
 
 ## Fixtures and Verification
 
