@@ -5,13 +5,13 @@
 // render that notice itself; since the edit save redirects to this overview, the affordance has
 // to live where the organizer lands or the criterion has nowhere to happen.
 //
-// The criterion's marking is met here. Its one click is NOT, and the tests say so rather than
-// covering its absence: no check a browser can make holds across the write it would authorise
-// (see the notice's own comment, and `docs/OPEN-QUESTIONS.md` T-5). The cases that asserted the
-// button's behaviour are removed with the button — twelve of them, listed on the PR — because a
-// test kept green against an affordance that no longer exists asserts nothing.
+// The one click is offered here again. What changed is not this component's confidence: it is
+// that `POST /api/events/:id/plan` now refuses a ruleset downgrade inside the transaction that
+// inserts (F-201 AC 12), so the precondition is checked where both facts are visible at once.
+// This surface therefore asks and reports, and makes no check of its own that a write could
+// outrun: the tests below assert the absence of those reads, not just the presence of the button.
 
-import { cleanup, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { useLayoutEffect } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -28,35 +28,22 @@ const eventResponse = (planStale: boolean, revision = 3) =>
     { headers: { "Content-Type": "application/json" }, status: 200 },
   );
 
-// A STALE plan is one generated for an earlier revision than the event's, which is what the API's
-// `plan_stale: true` means. These fixtures used to say `plan_stale: true` while the plan named the
-// event's current revision — a state the API cannot produce — so `eventRevision` defaults to one
-// behind `eventResponse`'s default of 3.
-const planResponse = (rulesetVersion = PINNED_VERSION, eventRevision = 2) =>
+/** What the endpoint's downgrade guard answers with (F-201 AC 12). */
+const downgradeRefusal = (standing: "older" | "different", rulesetVersion: string) =>
   new Response(
     JSON.stringify({
-      eventRevision,
+      error: "plan generation refused: …",
       rulesetVersion,
-      snapshotDate: "2026-07-01",
-      verdict: "CONDITIONAL",
-      verdictDetail: {
-        minSlackDays: null,
-        missingFacts: [],
-        blockingFinding: null,
-        missedRuleIds: [],
-        unresolvedTimelines: [],
-        rescopeSuggestions: [],
-      },
-      generatedAt: "2026-08-02T12:00:00.000Z",
-      findings: [],
+      pinnedRulesetVersion: PINNED_VERSION,
+      standing,
     }),
-    { headers: { "Content-Type": "application/json" }, status: 200 },
+    { headers: { "Content-Type": "application/json" }, status: 409 },
   );
 
-const metaResponse = (rulesetVersion = PINNED_VERSION) =>
-  new Response(JSON.stringify({ ruleset_version: rulesetVersion, snapshot_date: "2026-07-01" }), {
+const generatedResponse = () =>
+  new Response(JSON.stringify({ eventRevision: 3 }), {
     headers: { "Content-Type": "application/json" },
-    status: 200,
+    status: 201,
   });
 
 let fetchMock: ReturnType<typeof vi.fn>;
@@ -71,18 +58,27 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
+const isPost = (init?: RequestInit) => init?.method === "POST";
+
 /**
- * Answers the one call this notice makes: the event.
+ * Answers the two calls this notice makes: the event, and the regeneration itself.
  *
- * Anything else fails the request rather than answering it. The notice reads the plan, the running
- * ruleset and the regeneration endpoint no more, because each of those existed to decide or perform
- * a write it cannot establish the safety of; a request for one is a regression, and this is what
- * keeps it from being a silent one.
+ * Anything else fails the request rather than answering it. The plan and the running ruleset are
+ * NOT read here, and that is the point of the change rather than an oversight: reading them would
+ * be the client deciding whether its own write is safe, which is the shape #232 removed. A request
+ * for either is a regression, and this is what keeps it from being a silent one.
  */
-const respondWith = ({ event = () => eventResponse(true) }: { event?: () => Response } = {}) => {
+const respondWith = ({
+  event = () => eventResponse(true),
+  post = () => generatedResponse(),
+}: { event?: () => Response; post?: () => Response | Promise<Response> } = {}) => {
   fetchMock.mockImplementation(async (url: string, init?: RequestInit) => {
-    if (init?.method !== undefined || url.endsWith("/plan") || url.endsWith("/api/rules/meta")) {
-      throw new Error(`unexpected request: ${init?.method ?? "GET"} ${url}`);
+    if (isPost(init)) {
+      if (!String(url).endsWith("/plan")) throw new Error(`unexpected POST: ${String(url)}`);
+      return post();
+    }
+    if (String(url).endsWith("/plan") || String(url).endsWith("/api/rules/meta")) {
+      throw new Error(`unexpected guard read: ${String(url)}`);
     }
     return event();
   });
@@ -95,6 +91,22 @@ const notice = (eventId: string) => (
   <PlanStaleNotice apiBaseUrl="https://api.example.com" eventId={eventId} />
 );
 
+const regenerateButton = () => screen.queryByRole("button", { name: "Regenerate plan" });
+
+const clickRegenerate = async () => {
+  const button = await screen.findByRole("button", { name: "Regenerate plan" });
+  fireEvent.click(button);
+};
+
+/** Every request the component made, as (url, init) pairs. `mock.calls` itself is untyped. */
+const requests = (): readonly { url: string; init?: RequestInit }[] =>
+  fetchMock.mock.calls.map((call) => ({
+    url: String(call[0]),
+    init: call[1] as RequestInit | undefined,
+  }));
+
+const postCount = () => requests().filter((request) => isPost(request.init)).length;
+
 describe("the stale-plan notice on the event overview", () => {
   it("says nothing at all when the plan is current", async () => {
     respondWith({ event: () => eventResponse(false) });
@@ -103,49 +115,292 @@ describe("the stale-plan notice on the event overview", () => {
 
     await vi.waitFor(() => expect(fetchMock).toHaveBeenCalled());
     expect(screen.queryByText(/edited since its plan was generated/)).toBeNull();
+    expect(regenerateButton()).toBeNull();
   });
 
-  it("reports the stale plan and says why it does not offer to regenerate it", async () => {
+  it("offers the regeneration once the read reports the plan stale", async () => {
     respondWith();
 
     renderNotice();
 
     expect(await screen.findByText(/edited since its plan was generated/)).toBeDefined();
-    expect(screen.getByText(/Regenerating is not offered here/).textContent).toContain(
-      "is not guaranteed to reproduce the requirements you have already been shown",
+    expect(await screen.findByRole("button", { name: "Regenerate plan" })).toBeDefined();
+  });
+
+  /**
+   * The reads this notice does NOT make. Three rounds of #232 tried to establish from the browser
+   * that a regeneration would not rebuild the plan from an older ruleset, by reading the plan's
+   * pinned version and `/api/rules/meta` before writing. All of them decided on reads that had
+   * already returned. The endpoint decides now, so those reads are gone; asking for either would
+   * be rebuilding a guard that cannot hold across its own write.
+   */
+  it("makes no guard read of its own before regenerating", async () => {
+    respondWith();
+
+    renderNotice();
+    await clickRegenerate();
+
+    await vi.waitFor(() => expect(postCount()).toBe(1));
+    expect(requests().some((request) => request.url.endsWith("/api/rules/meta"))).toBe(false);
+    expect(
+      requests().some((request) => !isPost(request.init) && request.url.endsWith("/plan")),
+    ).toBe(false);
+  });
+
+  it("clears the notice when the regeneration succeeds and the event reads back current", async () => {
+    let stale = true;
+    respondWith({
+      event: () => eventResponse(stale, 4),
+      post: () => {
+        stale = false;
+        return generatedResponse();
+      },
+    });
+
+    renderNotice();
+    await clickRegenerate();
+
+    expect(await screen.findByText(/Plan regenerated for revision 4\./)).toBeDefined();
+    expect(screen.queryByText(/edited since its plan was generated/)).toBeNull();
+    expect(regenerateButton()).toBeNull();
+  });
+});
+
+describe("the endpoint's downgrade refusal", () => {
+  const refusalText = async () =>
+    (await screen.findByText(/Your plan was not regenerated/)).textContent ?? "";
+
+  it("names both versions and which way round they stand", async () => {
+    respondWith({ post: () => downgradeRefusal("older", "nyc.v2.10") });
+
+    renderNotice();
+    await clickRegenerate();
+
+    const text = await refusalText();
+    expect(text).toContain("nyc.v2.11");
+    expect(text).toContain("nyc.v2.10");
+    expect(text).toContain("which is older");
+  });
+
+  // Version ordering establishes only that the rebuild COULD differ. `docs/BASELINE.md` records
+  // bumps that moved no finding at all, so a service merely behind drops nothing in those cases.
+  // The copy is regulatory-adjacent and may not state a consequence it has not established.
+  it("does not claim requirements were dropped", async () => {
+    respondWith({ post: () => downgradeRefusal("older", "nyc.v2.10") });
+
+    renderNotice();
+    await clickRegenerate();
+
+    const text = await refusalText();
+    expect(text).not.toMatch(/dropped|would drop|were removed|are missing/);
+    expect(text).toContain(
+      "not guaranteed to reproduce the requirements you have already been shown",
     );
-    expect(screen.queryByRole("button", { name: "Regenerate plan" })).toBeNull();
   });
 
-  // `docs/BASELINE.md:60-63` records that v2.11 changed no trigger, finding or verdict, so a
-  // service merely behind on v2.10 drops nothing. Version ordering establishes only that the
-  // output COULD differ, so the refusal may not state a consequence as certain — neither that
-  // requirements would be dropped nor that the plan would differ.
-  it("does not state a rebuild's consequence as certain", async () => {
-    respondWith();
+  it("says the stored plan is untouched and names the link it is behind", async () => {
+    respondWith({ post: () => downgradeRefusal("older", "nyc.v2.10") });
+
+    renderNotice();
+    await clickRegenerate();
+
+    const text = await refusalText();
+    expect(text).toContain("nothing about it has changed");
+    expect(text).toContain("Open permit plan");
+    expect(text).not.toContain("the plan below");
+  });
+
+  it("tells the organizer what would make regenerating work", async () => {
+    respondWith({ post: () => downgradeRefusal("older", "nyc.v2.10") });
+
+    renderNotice();
+    await clickRegenerate();
+
+    expect(await refusalText()).toContain(
+      "once the service is running nyc.v2.11 or a later version of it",
+    );
+  });
+
+  // An unorderable pair is refused for a different reason than an older one, and saying "older"
+  // about a version nothing established an order for would be a false statement about the service.
+  it("says two versions cannot be ordered rather than calling one of them older", async () => {
+    respondWith({ post: () => downgradeRefusal("different", "sfo.v1.0") });
+
+    renderNotice();
+    await clickRegenerate();
+
+    const text = await refusalText();
+    expect(text).toContain("the two versions cannot be ordered");
+    expect(text).not.toContain("which is older");
+    expect(text).toContain("sfo.v1.0");
+  });
+
+  // A retry posts the same request to the same service and is refused the same way. Leaving the
+  // button up invites the organizer to press it until something changes that only a deployment can.
+  it("leaves no retry that would repeat the same refusal", async () => {
+    respondWith({ post: () => downgradeRefusal("older", "nyc.v2.10") });
+
+    renderNotice();
+    await clickRegenerate();
+
+    await screen.findByText(/Your plan was not regenerated/);
+    expect(regenerateButton()).toBeNull();
+    expect(postCount()).toBe(1);
+    // The warning itself stands: the plan really is stale, and the refusal did not change that.
+    expect(screen.getByText(/edited since its plan was generated/)).toBeDefined();
+  });
+
+  // A 409 from this endpoint IS the guard, and it decides before it inserts, so the refusal and the
+  // fact that nothing was stored are both certain even when the versions cannot be read off the
+  // body. The retry stays withheld on that alone; only the specifics fall back to the api's prose.
+  it("still withholds the retry when the refusal does not name the versions readably", async () => {
+    respondWith({
+      post: () =>
+        new Response(JSON.stringify({ error: "plan generation refused: nyc.v2.11 vs nyc.v2.10" }), {
+          headers: { "Content-Type": "application/json" },
+          status: 409,
+        }),
+    });
+
+    renderNotice();
+    await clickRegenerate();
+
+    const refusal = await screen.findByText(/Your plan was not regenerated/);
+    expect(refusal.textContent).toContain("did not name the two ruleset versions");
+    expect(refusal.textContent).toContain("plan generation refused: nyc.v2.11 vs nyc.v2.10");
+    expect(regenerateButton()).toBeNull();
+    expect(postCount()).toBe(1);
+  });
+
+  it("announces the refusal", async () => {
+    respondWith({ post: () => downgradeRefusal("older", "nyc.v2.10") });
+
+    renderNotice();
+    await clickRegenerate();
+
+    const refusal = await screen.findByText(/Your plan was not regenerated/);
+    expect(refusal.getAttribute("role")).toBe("alert");
+  });
+});
+
+describe("a regeneration whose outcome is not known", () => {
+  /**
+   * A POST that failed on the wire may still have reached the api and committed, which stores an
+   * immutable plan (AD-7) this browser never saw a response for. Re-offering the button on the
+   * strength of the error alone therefore writes a second plan for one organizer action. The
+   * button comes back only on an explicit "still stale" read AFTER the POST.
+   */
+  it("withholds the retry when a failed POST cannot be shown to have stored nothing", async () => {
+    let eventReads = 0;
+    fetchMock.mockImplementation(async (url: string, init?: RequestInit) => {
+      if (isPost(init)) throw new Error("connection reset");
+      eventReads += 1;
+      // The read AFTER the POST cannot answer, so nothing withdraws or restores the button.
+      if (eventReads > 1) return new Response("", { status: 503 });
+      return eventResponse(true);
+    });
+
+    renderNotice();
+    await clickRegenerate();
+
+    const withheld = await screen.findByText(/it is not known whether a plan was stored/);
+    expect(withheld.textContent).toContain("Reload this page to check");
+    expect(regenerateButton()).toBeNull();
+    expect(screen.getByText(/edited since its plan was generated/)).toBeDefined();
+  });
+
+  it("keeps the retry when the read after a failed POST reports the plan still stale", async () => {
+    fetchMock.mockImplementation(async (url: string, init?: RequestInit) => {
+      if (isPost(init)) throw new Error("connection reset");
+      return eventResponse(true);
+    });
+
+    renderNotice();
+    await clickRegenerate();
+
+    expect(await screen.findByText(/The API could not be reached\./)).toBeDefined();
+    expect(regenerateButton()).not.toBeNull();
+  });
+
+  /**
+   * `loadEvent` normalises a missing `plan_stale` to `false`, which is right for a reader asking
+   * "is it stale" and wrong for this one, asking "was freshness confirmed". A 2xx body that omits
+   * the field would otherwise read as an answer.
+   */
+  it("does not treat an unanswered staleness question as a confirmed regeneration", async () => {
+    let posted = false;
+    fetchMock.mockImplementation(async (url: string, init?: RequestInit) => {
+      if (isPost(init)) {
+        posted = true;
+        return generatedResponse();
+      }
+      if (!posted) return eventResponse(true);
+      return new Response(JSON.stringify({ event: { id: "event-9", revision_counter: 4 } }), {
+        headers: { "Content-Type": "application/json" },
+        status: 200,
+      });
+    });
+
+    renderNotice();
+    await clickRegenerate();
+
+    expect(await screen.findByText(/it did not report whether the plan is current/)).toBeDefined();
+    expect(screen.getByText(/edited since its plan was generated/)).toBeDefined();
+    expect(regenerateButton()).toBeNull();
+  });
+
+  it("keeps the warning up when a stored plan cannot be confirmed by a re-read", async () => {
+    let posted = false;
+    fetchMock.mockImplementation(async (url: string, init?: RequestInit) => {
+      if (isPost(init)) {
+        posted = true;
+        return generatedResponse();
+      }
+      if (!posted) return eventResponse(true);
+      return new Response("", { status: 503 });
+    });
+
+    renderNotice();
+    await clickRegenerate();
+
+    expect(await screen.findByText(/regenerating again would store a second plan/)).toBeDefined();
+    expect(screen.getByText(/edited since its plan was generated/)).toBeDefined();
+    expect(regenerateButton()).toBeNull();
+  });
+
+  // The api answered, so nothing was written and the event is still stale by the read that follows.
+  it("reports an api-reported failure and leaves the retry", async () => {
+    respondWith({
+      post: () =>
+        new Response(JSON.stringify({ error: "plan generation failed" }), {
+          headers: { "Content-Type": "application/json" },
+          status: 500,
+        }),
+    });
+
+    renderNotice();
+    await clickRegenerate();
+
+    expect(await screen.findByText("plan generation failed")).toBeDefined();
+    expect(regenerateButton()).not.toBeNull();
+  });
+
+  // The overview must not claim a plan is current because the event could not be read.
+  it("says nothing when the event cannot be loaded", async () => {
+    respondWith({ event: () => new Response("", { status: 500 }) });
 
     renderNotice();
 
-    const refusal = await screen.findByText(/Regenerating is not offered here/);
-    expect(refusal.textContent).not.toMatch(/would drop/);
-    expect(refusal.textContent).not.toMatch(/would differ/);
+    await vi.waitFor(() => expect(fetchMock).toHaveBeenCalled());
+    expect(screen.queryByText(/edited since its plan was generated/)).toBeNull();
+    expect(regenerateButton()).toBeNull();
   });
+});
 
-  // The refusal ends on the plan it leaves alone, and on this surface that plan is not the one the
-  // sentence is read from — the overview only links to it. Naming the link is what stops the
-  // sentence telling the organizer they are already looking at a regulatory artifact.
-  it("names the permit-plan link as the plan it leaves alone", async () => {
-    respondWith();
-
-    renderNotice();
-
-    const refusal = await screen.findByText(/Regenerating is not offered here/);
-    expect(refusal.textContent).toContain("Open permit plan");
-    expect(refusal.textContent).not.toContain("the plan below");
-  });
-
+describe("event identity and announcement", () => {
   // React reuses a component instance across a prop change, so the state below belongs to whichever
-  // event was last read. Left alone it states an edit to the event now on screen that nobody made.
+  // event was last read. Left alone it states an edit to the event now on screen that nobody made,
+  // and the button it leaves live posts an immutable plan (AD-7) for that event.
   const respondPerEvent = (staleEventId: string) => {
     fetchMock.mockImplementation(async (url: string) => eventResponse(url.includes(staleEventId)));
   };
@@ -161,7 +416,7 @@ describe("the stale-plan notice on the event overview", () => {
     await vi.waitFor(() =>
       expect(screen.queryByText(/edited since its plan was generated/)).toBeNull(),
     );
-    expect(screen.queryByText(/Regenerating is not offered here/)).toBeNull();
+    expect(regenerateButton()).toBeNull();
   });
 
   /**
@@ -193,29 +448,18 @@ describe("the stale-plan notice on the event overview", () => {
     await screen.findByText(/edited since its plan was generated/);
 
     let committedWarning: string | null = null;
+    let committedButton: HTMLElement | null = null;
     onNoticeCommitted = () => {
       committedWarning =
         screen.queryByText(/edited since its plan was generated/)?.textContent ?? null;
+      committedButton = regenerateButton();
     };
     rerender(noticeWithProbe("event-10"));
 
     expect(committedWarning).toBeNull();
+    expect(committedButton).toBeNull();
   });
 
-  // The overview must not claim a plan is current because the event could not be read.
-  it("says nothing when the event cannot be loaded", async () => {
-    respondWith({ event: () => new Response("", { status: 500 }) });
-
-    renderNotice();
-
-    await vi.waitFor(() => expect(fetchMock).toHaveBeenCalled());
-    expect(screen.queryByText(/edited since its plan was generated/)).toBeNull();
-    expect(screen.queryByText(/Regenerating is not offered here/)).toBeNull();
-  });
-});
-
-// Both added 2026-08-03 from the #232 review.
-describe("event identity and announcement", () => {
   // What this test DOES prove: a read for a previous event, landing after the component has been
   // handed another one, never installs the previous event's warning.
   //
@@ -246,6 +490,26 @@ describe("event identity and announcement", () => {
     expect(screen.queryByText(/edited since its plan was generated/)).toBeNull();
   });
 
+  // A regeneration for the event the organizer has navigated away from says nothing about the one
+  // now on screen: the POST never touched it.
+  it("reports no outcome for an event it has been handed away from", async () => {
+    let releasePost: (r: Response) => void = () => {};
+    fetchMock.mockImplementation(async (url: string, init?: RequestInit) => {
+      if (isPost(init)) return new Promise<Response>((resolve) => (releasePost = resolve));
+      return eventResponse(url.includes("event-9"));
+    });
+
+    const view = renderNotice();
+    await clickRegenerate();
+    await vi.waitFor(() => expect(postCount()).toBe(1));
+
+    view.rerender(notice("event-10"));
+    releasePost(downgradeRefusal("older", "nyc.v2.10"));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(screen.queryByText(/Your plan was not regenerated/)).toBeNull();
+  });
+
   // Regression: the intake form rendered this asynchronous state inside `.intake__saved`, which
   // carried aria-live="polite". Moving the affordance to the overview dropped that.
   it("announces the stale warning, which appears only after the read resolves", async () => {
@@ -257,64 +521,5 @@ describe("event identity and announcement", () => {
     const region = warning.closest("[aria-live]");
     expect(region).not.toBeNull();
     expect(region?.getAttribute("aria-live")).toBe("polite");
-  });
-});
-
-// The write this notice used to make, and why it does not make it.
-describe("what the notice refuses to conclude", () => {
-  /**
-   * The ordering the fourth #232 round names: the state the downgrade guard decides on moves
-   * between the reads that would authorise a regeneration and the write itself, and no read a
-   * browser can make reports that it moved.
-   *
-   * 1. the event read reports the plan stale, pinned nyc.v2.11;
-   * 2. the plan and the running-ruleset reads are answered by a deployment still on nyc.v2.11, so
-   *    every input this page can gather says regenerating is safe;
-   * 3. once both have been answered, another deployment stores a plan pinned nyc.v2.12. That is
-   *    the state that makes the write a downgrade, and it is the state no client read reports:
-   *    the plan read has already returned, and reading it again only moves the same window.
-   *
-   * So the assertion is NOT that the page detects step 3. It cannot, no ordering of client reads
-   * can, and that is the finding rather than a gap in this test. It is that the page never issues
-   * a write whose safety it cannot establish at the moment of writing: nothing is offered and no
-   * POST is made, while the one thing the page CAN establish — that the plan is stale — is stated.
-   *
-   * Against the code this round reviewed, steps 1 and 2 open the button and the click writes. The
-   * fixed page makes no guard reads at all, so step 3 has nothing to move under: `writes` stays
-   * empty because the write is refused, not because the race was won.
-   *
-   * This says what this surface does and nothing more. The same regeneration is still offered by
-   * the plan view, and the same interleaving still reaches it; refusing it there needs the
-   * precondition checked where the plan is written (`docs/OPEN-QUESTIONS.md` T-5).
-   */
-  it("makes no write it cannot establish the safety of at the moment of writing", async () => {
-    let storedPlanVersion = PINNED_VERSION;
-    let guardReadsAnswered = 0;
-    const writes: string[] = [];
-    fetchMock.mockImplementation(async (url: string, init?: RequestInit) => {
-      if (init?.method === "POST") {
-        // What the api holds when the write lands, which is what decides whether it is a downgrade.
-        writes.push(storedPlanVersion);
-        return new Response(JSON.stringify({ eventRevision: 3 }), {
-          headers: { "Content-Type": "application/json" },
-          status: 201,
-        });
-      }
-      if (String(url).includes("/api/rules/meta") || String(url).endsWith("/plan")) {
-        guardReadsAnswered += 1;
-        // Step 3, once the guard has everything it asked for and before it can act on it.
-        if (guardReadsAnswered === 2) storedPlanVersion = "nyc.v2.12";
-        return String(url).includes("/api/rules/meta")
-          ? metaResponse(PINNED_VERSION)
-          : planResponse(PINNED_VERSION, 2);
-      }
-      return eventResponse(true, 3);
-    });
-
-    render(<PlanStaleNotice apiBaseUrl="https://api.example.com" eventId="event-9" />);
-
-    expect(await screen.findByText(/edited since its plan was generated/)).toBeDefined();
-    expect(screen.queryByRole("button", { name: "Regenerate plan" })).toBeNull();
-    expect(writes).toHaveLength(0);
   });
 });

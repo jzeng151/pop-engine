@@ -109,12 +109,14 @@ const isNearEmpty = (findings: PlanResponse["findings"]): boolean =>
  *
  * What this cannot do is hold across the write it authorises. It decides on reads that have
  * already returned, and another deployment can store a plan pinned to a newer ruleset in the
- * interval before the POST, which no client read observes. The event overview's stale-plan notice
- * (F-101 AC 8) stopped offering the operation for that reason (#232); this page still offers it,
- * because it is also the only route to a FIRST plan, which has nothing to downgrade. Closing the
- * interval for the rest needs the precondition checked where the plan is written
- * (`docs/OPEN-QUESTIONS.md` T-5); until then this comparison narrows the window and does not
- * close it. It is no longer exported: the overview was the only other caller.
+ * interval before the POST, which no client read observes. That interval is closed at the endpoint
+ * now: `POST /api/events/:id/plan` refuses a downgrade inside the transaction that inserts, under a
+ * row lock (F-201 AC 12, `docs/OPEN-QUESTIONS.md` T-5). This comparison is what the page says
+ * BEFORE offering, so an organizer is told why the button is absent rather than shown a 409 after
+ * pressing it; correctness no longer rests on it. The event overview's stale-plan notice (F-101
+ * AC 8) makes no such comparison and attempts the write instead. Either shape is safe now, and
+ * this one keeps a refusal the page can already state out of a round trip. It is not exported: the
+ * overview was the only other caller.
  *
  * `preservedPlan` is how the caller's own screen refers to the plan the refusal preserves, because
  * the two surfaces sit in different places relative to it: the plan view renders it directly under

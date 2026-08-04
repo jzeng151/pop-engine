@@ -24,6 +24,29 @@ export type LoadedEvent = {
 
 export type LoadResult = { ok: true; loaded: LoadedEvent } | { ok: false; message: string };
 
+/**
+ * The endpoint's ruleset-downgrade refusal (F-201 AC 12), as the browser receives it.
+ *
+ * `pinnedRulesetVersion` is what the plan this generation would have superseded pinned, and
+ * `rulesetVersion` is what the service that refused is running. Both travel with the refusal
+ * because a refusal an organizer cannot be told the reason for is its own harm.
+ */
+export type RegenerationRefusal = {
+  readonly rulesetVersion: string;
+  readonly pinnedRulesetVersion: string;
+  readonly standing: "older" | "different";
+};
+
+export type PlanRegenerationResult =
+  | { ok: true }
+  /**
+   * `refused` is the 409 above. It decides before it inserts, so it is certain that nothing was
+   * stored and that the same request to the same deployment is refused identically. `refusal` is
+   * the detail behind it, null when the body did not carry it in a form this can read.
+   */
+  | { ok: false; refused: true; refusal: RegenerationRefusal | null; message: string }
+  | { ok: false; refused: false; message: string };
+
 const UNREACHABLE = "The API could not be reached.";
 
 async function readJson(response: Response): Promise<unknown> {
@@ -83,4 +106,58 @@ export async function loadEvent(apiBaseUrl: string, eventId: string): Promise<Lo
       plan_stale_reported: typeof asRecord(body)?.plan_stale === "boolean",
     },
   };
+}
+
+/**
+ * The two versions and the direction, read off a 409 body, or null if it did not carry them.
+ *
+ * A 409 that cannot be read this way is reported as an ordinary failure rather than guessed at:
+ * the copy this feeds names both versions and says which is older, and stating either wrongly is
+ * worse than falling back to the endpoint's own sentence.
+ */
+function readRefusal(body: unknown): RegenerationRefusal | null {
+  const record = asRecord(body);
+  if (record === null) return null;
+  const { rulesetVersion, pinnedRulesetVersion, standing } = record;
+  if (typeof rulesetVersion !== "string" || typeof pinnedRulesetVersion !== "string") return null;
+  if (standing !== "older" && standing !== "different") return null;
+  return { rulesetVersion, pinnedRulesetVersion, standing };
+}
+
+/**
+ * One-click plan regeneration (F-101 spec #8). The endpoint is F-201's
+ * (`POST /api/events/:id/plan`, ARCHITECTURE.md API Surface); intake only asks for it and reports
+ * what came back. Plans are immutable snapshots (AD-7), so regeneration is a new plan for the
+ * current revision, never a patch.
+ *
+ * This does not decide whether generating is safe before asking. F-201 AC 12 puts that decision
+ * inside the transaction that inserts, under a row lock, which is the only place both the ruleset
+ * being evaluated with and the plan being superseded are visible at once. So the browser attempts
+ * the write and handles the answer, including the 409 the guard returns.
+ */
+export async function regeneratePlan(
+  apiBaseUrl: string,
+  eventId: string,
+): Promise<PlanRegenerationResult> {
+  let response: Response;
+  try {
+    response = await fetch(`${apiBaseUrl}/api/events/${eventId}/plan`, {
+      method: "POST",
+      ...CREDENTIALED,
+    });
+  } catch {
+    return { ok: false, refused: false, message: UNREACHABLE };
+  }
+
+  const body = await readJson(response);
+  if (!response.ok) {
+    const message = failureMessage(
+      body,
+      `The plan could not be regenerated (HTTP ${response.status}).`,
+    );
+    return response.status === 409
+      ? { ok: false, refused: true, refusal: readRefusal(body), message }
+      : { ok: false, refused: false, message };
+  }
+  return { ok: true };
 }
