@@ -1961,6 +1961,35 @@ describe.skipIf(databaseUrl === "")("F-203 deadline alerts", () => {
         expect(logged).not.toContain(demo);
       });
 
+      it("does not tell the operator a held alert reached a provider", async () => {
+        // THE WEAKEST CASE THE SENTENCE HAS TO BE TRUE OF, which is the same case the organizer's
+        // notice was corrected for two rounds ago and this log still asserted past. The attempt is
+        // recorded BEFORE `sender(...)` is called, on its own connection, so a process that dies in
+        // the gap between that record and the call leaves exactly the evidence a process that died
+        // mid-send leaves. After downtime longer than the dedup window that row is a hold like any
+        // other. An operator reconciling it is being sent to the provider to look for a message
+        // that may never have left this process, and the telemetry must say which of those it
+        // knows: neither.
+        const eventId = await createEvent(scenario("C"));
+        const alertId = await insertDueAlert(eventId, "unreconciled@example.test", 2);
+        await recordAttempt(alertId, PROVIDER_DEDUP_WINDOW_HOURS + 1, false);
+        const warned = vi.spyOn(console, "warn").mockImplementation(() => {});
+
+        await createAlertPoller({
+          database: pool,
+          senders: fakeProvider().senders,
+          jurisdiction: ruleset.jurisdiction,
+        }).tick();
+
+        const logged = warned.mock.calls.map((call) => String(call[0])).join("\n");
+        warned.mockRestore();
+        const hold = logged.split("\n").find((line) => line.includes(alertId)) ?? "";
+        expect(hold, "the hold is still reported").not.toBe("");
+        // It may say a send was attempted. It may not say the provider ended up with it.
+        expect(hold).toMatch(/attempted/i);
+        expect(hold).not.toMatch(/were handed to a provider/i);
+      });
+
       it("does not report an obsolete alert's aged attempt as needing a human", async () => {
         // A HOLD IS A CLAIM THAT ONLY A PERSON CAN CLEAR, so it must not be made about a row the
         // product can clear itself. The scan already refuses alerts whose plan the event has been
@@ -2626,7 +2655,7 @@ describe.skipIf(databaseUrl === "")("F-203 deadline alerts", () => {
 
       poller.start();
       await new Promise((resolve) => setTimeout(resolve, 700));
-      poller.stop();
+      await poller.stop();
 
       const rows = await alertsOf(eventId);
       expect(rows).toHaveLength(6);
@@ -2647,10 +2676,42 @@ describe.skipIf(databaseUrl === "")("F-203 deadline alerts", () => {
       poller.start();
       poller.start(); // idempotent: a second start must not run two timers
       await new Promise((resolve) => setTimeout(resolve, 100));
-      poller.stop();
-      poller.stop();
+      await poller.stop();
+      await poller.stop();
 
       expect(provider.delivered).toHaveLength(2);
+      expect((await alertsOf(eventId)).every((row) => row.status === "sent")).toBe(true);
+    });
+
+    it("finishes the send already in flight before it reports itself stopped", async () => {
+      // WHAT THE ROLLOUT RUNBOOK ASKS FOR. DEPLOY.md has the deployer stop the old api before the
+      // new build applies migration 014, because a send that predates the attempt table is
+      // invisible to it. Stopping mid-send is exactly the thing that creates such a send: the
+      // provider accepts, the process goes away before the transaction commits, and the alert is
+      // left `pending`, which the backfill does not cover (it seeds only `failed` rows), so
+      // the new poller reads it as never attempted and may deliver it again past the dedup window.
+      //
+      // So `stop()` has to be awaitable and has to settle the work already in flight. It still
+      // takes no NEW work the moment it is called; that half already held.
+      const eventId = await createEvent(scenario("C"));
+      expect(await schedulePastDue(eventId, [reminderOffsets[0] ?? 7])).toBe(1);
+      const provider = fakeProvider();
+      // Long enough that the send is unambiguously mid-flight when the stop arrives.
+      provider.beforeSend = () => new Promise((resolve) => setTimeout(resolve, 300));
+      const poller = createAlertPoller({
+        jurisdiction: ruleset.jurisdiction,
+        database: pool,
+        senders: provider.senders,
+        intervalMs: 5,
+      });
+
+      poller.start();
+      await new Promise((resolve) => setTimeout(resolve, 60));
+      await poller.stop();
+
+      // Recorded, not merely delivered: an accepted send whose row never committed is the
+      // unrecorded attempt the migration ordering cannot repair.
+      expect(provider.delivered).toHaveLength(1);
       expect((await alertsOf(eventId)).every((row) => row.status === "sent")).toBe(true);
     });
   });
@@ -4608,7 +4669,7 @@ describe.skipIf(databaseUrl === "")("F-203 deadline alerts", () => {
           { timeout: 20_000, interval: 250 },
         );
       } finally {
-        poller.stop();
+        await poller.stop();
         reviewer.release();
       }
 
@@ -5015,7 +5076,7 @@ describe.skipIf(databaseUrl === "")("F-203 deadline alerts", () => {
           { timeout: 30_000, interval: 250 },
         );
       } finally {
-        poller.stop();
+        await poller.stop();
       }
 
       // The whole set went out without waiting for the next scheduled scan, which is the bound
@@ -5118,7 +5179,7 @@ describe.skipIf(databaseUrl === "")("F-203 deadline alerts", () => {
           { timeout: 20_000, interval: 250 },
         );
       } finally {
-        poller.stop();
+        await poller.stop();
       }
 
       expect(Date.now() - startedAt).toBeLessThan(POLL_INTERVAL_MS);
@@ -6070,6 +6131,61 @@ describe("F-203 delivery channels (AC 5)", () => {
     // One attempt this side cannot account for is enough to leave the attempt open, and the
     // aggregate's own code says the opposite.
     expect(await observed(["ECONNREFUSED", "ECONNRESET"]), "one unproven attempt").toBe(false);
+  });
+
+  it("resolves the attempt when an address inside the connect aggregate timed out", async () => {
+    // A CHILD OF THE CONNECT AGGREGATE IS ONE ADDRESS'S CONNECT ATTEMPT, so `ETIMEDOUT` there is a
+    // TCP connection that never came up: no socket existed for an HTTP byte to be written and
+    // Resend cannot be holding the message. The same code arriving on its own says no such thing,
+    // since a socket that was already carrying the request can time out too, which is why this is a
+    // fact about where the code appears rather than about the code.
+    //
+    // Left unresolved, an outage in which every address times out leaves each attempt open, and
+    // once the oldest ages past the dedup window the alert is held for a person for good.
+    const connectAggregate = (codes: readonly string[]) => {
+      const errors = codes.map((code) =>
+        Object.assign(new Error(`connect ${code} 203.0.113.7:443`), {
+          code,
+          syscall: "connect",
+        }),
+      );
+      const combined = Object.assign(new AggregateError(errors), { code: errors[0]?.code });
+      return Object.assign(new TypeError("fetch failed"), { cause: combined });
+    };
+    const observed = async (thrown: unknown) =>
+      (
+        (await createResendEmailSender({
+          apiKey: "re_test",
+          from: "PopEngine <noreply@example.test>",
+          fetch: (async () => {
+            throw thrown;
+          }) as unknown as typeof globalThis.fetch,
+        })
+          .call(null, message)
+          .catch((error: unknown) => error)) as AlertDeliveryError
+      ).outcomeObserved;
+
+    expect(await observed(connectAggregate(["ETIMEDOUT"])), "the only address timed out").toBe(
+      true,
+    );
+    expect(
+      await observed(connectAggregate(["ETIMEDOUT", "ETIMEDOUT"])),
+      "every address timed out",
+    ).toBe(true);
+    expect(
+      await observed(connectAggregate(["ECONNREFUSED", "ETIMEDOUT"])),
+      "one refused, one timed out, both before any byte",
+    ).toBe(true);
+    // The other half of the rule, and the reason the classifier cannot simply admit the code: on
+    // its own `ETIMEDOUT` can be a socket that already carried the request going quiet.
+    expect(
+      await observed(
+        Object.assign(new TypeError("fetch failed"), {
+          cause: Object.assign(new Error("read ETIMEDOUT"), { code: "ETIMEDOUT" }),
+        }),
+      ),
+      "ETIMEDOUT outside the aggregate stays unresolved",
+    ).toBe(false);
   });
 
   it("sends email through Resend and hands it the idempotency key", async () => {

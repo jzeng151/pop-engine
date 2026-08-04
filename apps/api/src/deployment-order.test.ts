@@ -46,6 +46,22 @@ describe("F-203 rollout constraints the runbook has to carry", () => {
     );
   });
 
+  it("names a drain the api can actually perform", () => {
+    // THE OTHER DIRECTION OF THE SAME PAIRING. The two cases either side of this one ask whether
+    // the runbook still states a constraint the code rests on. This one asks whether the code still
+    // performs an action the runbook instructs, which is the failure that is worse than a missing
+    // step: a deployer who reads "let it drain" and scales the service to zero believes they
+    // drained it, and a process killed between the provider accepting and the row committing
+    // leaves the `pending` alert migration 014's backfill does not cover. Whether the drain WORKS
+    // is `shutdown.test.ts`, which signals the real process; this keeps the instruction and the
+    // mechanism from drifting apart, and names the signal so the deployer can send it by hand.
+    const bootstrap = read("apps/api/src/index.ts");
+    expect(bootstrap).toContain('process.once("SIGTERM"');
+    expect(bootstrap).toContain("await alertPoller.stop()");
+
+    expect(releaseOrder).toContain("SIGTERM");
+  });
+
   it("tells a deployer to deploy web before the api for the reconciliation notice", () => {
     // WHY THE CODE NEEDS THIS. The api stops counting a reconciliation-held alert among the
     // failures (the failure notice promises retries that have ended for it) and reports it under

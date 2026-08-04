@@ -378,8 +378,14 @@ export const PROVIDER_DEDUP_WINDOW_HOURS = 24;
 export const DEDUP_WINDOW_CLAIM_MARGIN_MS = TICK_BUDGET_MS + PROVIDER_TIMEOUT_MS;
 
 /**
- * An alert that was handed to a provider and whose outcome nobody ever saw, long enough ago that
- * the provider would no longer recognise the key.
+ * An alert whose send was attempted and whose outcome nobody ever saw, long enough ago that a
+ * provider holding it would no longer recognise the key.
+ *
+ * ATTEMPTED, WHICH IS WEAKER THAN HANDED OVER AND HAS TO STAY SO WHEREVER THIS IS DESCRIBED. The
+ * attempt row is written before `sender(...)` is called, so a process that died between the two
+ * leaves precisely what one that died mid-send leaves, and this predicate cannot tell them apart.
+ * Every reader of it (the poller's telemetry, the organizer's notice) says "attempted" for that
+ * reason, and the stronger claim has had to be taken back out of three of them.
  *
  * NOT AN AGE TEST ON THE ALERT, and that is the whole distinction issue #166 turns on. A pending
  * row with no recorded attempt is safe to send at any age — it cannot duplicate a delivery that
@@ -2270,8 +2276,9 @@ export type AlertTickSummary = {
    */
   readonly skipped: number;
   /**
-   * Due alerts that were handed to a provider, whose outcome was never observed, and whose
-   * attempt is now older than the provider's dedup window.
+   * Due alerts whose send was attempted, whose outcome was never observed, and whose attempt is
+   * now older than the provider's dedup window. Attempted rather than handed over: the attempt is
+   * recorded before the sender runs, so a process that died in between counts here too.
    *
    * NOT a subset of `abandoned`, and not work this tick failed to reach: no tick will ever send
    * these. Retrying one may deliver a second copy to the same person, so it waits for a human to
@@ -2300,7 +2307,16 @@ export type AlertPoller = {
   /** One pass over everything due. Exposed so tests drive the poller without waiting on a timer. */
   tick(): Promise<AlertTickSummary>;
   start(): void;
-  stop(): void;
+  /**
+   * Stop taking work, and settle what is already in flight.
+   *
+   * Awaitable because a process that exits mid-send is how an alert acquires an attempt nothing
+   * recorded: the provider accepts, the row's transaction never commits, and the alert is left
+   * `pending`, which reads as never attempted to every later reader, including the one migration
+   * 014 creates. DEPLOY.md's release order asks a deployer to drain the old api for exactly that
+   * reason, and a drain nobody can await is an instruction the process cannot carry out.
+   */
+  stop(): Promise<void>;
 };
 
 export function createAlertPoller(dependencies: {
@@ -2462,9 +2478,16 @@ export function createAlertPoller(dependencies: {
     );
     if (held.length > 0) {
       // Ids only. The row's recipient is contact data and does not go in a log (AGENTS.md).
+      //
+      // ATTEMPTED, NOT HANDED OVER, and the difference is the whole of what the operator reading
+      // this is about to go and find out. The attempt is recorded before `sender(...)` runs, so a
+      // process that died in that gap leaves the same evidence as one that died mid-send; past the
+      // cutoff both are this line. Asserting the handoff sends a reconciliation after a message
+      // that may never have left this process, and says the one thing this side does not know.
       console.warn(
-        `${held.length} alert(s) were handed to a provider with no recorded outcome, long enough ` +
-          `ago that its ${PROVIDER_DEDUP_WINDOW_HOURS}h dedup window would have closed before a ` +
+        `${held.length} alert(s) were recorded as attempted sends whose outcome never came back, ` +
+          `so this side cannot tell whether a provider ended up holding them, long enough ago ` +
+          `that its ${PROVIDER_DEDUP_WINDOW_HOURS}h dedup window would have closed before a ` +
           `retry could land, so they are held rather than retried: ` +
           `${held.map((row) => row.id).join(", ")}`,
       );
@@ -2647,7 +2670,7 @@ export function createAlertPoller(dependencies: {
       // The poller must never be the reason the process stays up.
       timer.unref();
     },
-    stop() {
+    async stop() {
       // The flag as well as the timer: clearing the timer stops the NEXT tick, and a tick already
       // running would otherwise work through its whole batch after the caller believes the poller
       // is off — still claiming rows and still sending them.
@@ -2658,6 +2681,14 @@ export function createAlertPoller(dependencies: {
       chasingSince = null;
       if (timer !== null) clearInterval(timer);
       timer = null;
+      // AND THEN THE SEND ALREADY IN FLIGHT, which the flag above cannot reach: it stops the
+      // worker taking the NEXT row, and the row in its hand is inside a provider call with its
+      // transaction open. Exiting there is what leaves a send nothing recorded: accepted by the
+      // provider, `pending` in the database, invisible to the attempt record afterwards.
+      //
+      // The rejection is not this caller's to handle: `start` already logs a failed tick, and a
+      // shutdown that threw because the last tick did would skip everything after it.
+      await runningTick?.catch(() => undefined);
     },
   };
 }
@@ -2953,7 +2984,7 @@ export async function failedDeliveries(
  * A channel with alerts the poller will never take again, counted so the organizer is told.
  *
  * THE DIFFERENCE BETWEEN "STILL TRYING" AND "STOPPED", which is the one distinction the checklist
- * could not draw. An alert handed to a provider whose answer nobody saw stops being claimable once
+ * could not draw. An alert whose send was attempted and whose answer nobody saw stops being claimable once
  * the provider's dedup window has closed on it, because a retry past that point is a second
  * delivery rather than a deduplicated one. Nothing in the poller moves it afterwards. Neither
  * surface reported that: a crash leaves the row `pending`, which `failedDeliveries` correctly says

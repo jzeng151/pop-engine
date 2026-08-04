@@ -86,7 +86,13 @@ the alert attempt record; the conditions for dropping each are stated with it.
    deployment start beside it. Scale the api service to zero (or stop the current deployment), let
    it drain, then start the new build; confirm no api process from the previous build is still
    running when the migration executes, and `Migrations complete!` in the new build's logs before
-   returning the service to traffic. Migration 014 creates `alert_send_attempts` and seeds it from
+   returning the service to traffic. Draining is a `SIGTERM` (`SIGINT` does the same), which is what
+   Railway sends on a stop or a scale to zero: the api stops the alert poller, waits for the send in
+   flight to finish recording its outcome, and exits 0. It logs a line naming the signal and then
+   `alert poller drained; exiting`. Wait for that second line, or for the process to go, rather than
+   for a fixed number of seconds; if the host escalates to `SIGKILL` first, a send the provider
+   accepted can be left `pending` and unrecorded, which is exactly the row this ordering exists to
+   prevent. Migration 014 creates `alert_send_attempts` and seeds it from
    the alerts that had already failed, and from then on every reader treats an alert with no attempt
    row as one nothing was ever handed over for. An api process from the previous build sends without
    writing attempt rows, so anything it sends after the backfill commits is invisible to that

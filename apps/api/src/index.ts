@@ -98,7 +98,7 @@ if (verifyAccessToken === null) {
   );
 }
 
-createApp({
+const server = createApp({
   database: pool,
   intakeContract: parseIntakeContract(ruleset.document),
   today,
@@ -112,3 +112,31 @@ createApp({
   // In-process, in the long-lived api (AD-1/AD-4): no queue, no second service.
   alertPoller.start();
 });
+
+// THE DRAIN DEPLOY.md'S RELEASE ORDER ASKS FOR. The runbook has the deployer stop this build
+// before the next one applies migration 014, because a send from a build that predates
+// `alert_send_attempts` writes no attempt row and the backfill is a point-in-time sweep that
+// cannot reach it. Stopping is also the moment most likely to produce such a send: killed between
+// the provider accepting and the row's transaction committing, the alert stays `pending`, the
+// backfill seeds only `failed` rows, and the new poller reads it as never attempted and can
+// deliver it a second time once the provider's dedup window has closed.
+//
+// So the process has to be able to carry the instruction out: stop taking new work, let the tick
+// in flight finish recording what it did, and only then go. Nothing here retries or forces
+// anything: `stop()` settles because a send is bounded by the provider timeout.
+//
+// SIGINT as well as SIGTERM: a host stopping the service sends SIGTERM and a local run sends
+// SIGINT, and an alert mid-send does not care which arrived.
+const drainThenExit = (signal: NodeJS.Signals): void => {
+  void (async () => {
+    console.log(`${signal} received; draining the alert poller before exit`);
+    // New requests stop here; the poller's own work is what the await below is for.
+    server.close();
+    await alertPoller.stop();
+    await Promise.all([alertPool.end(), pool.end()]);
+    console.log("alert poller drained; exiting");
+    process.exit(0);
+  })();
+};
+process.once("SIGTERM", drainThenExit);
+process.once("SIGINT", drainThenExit);

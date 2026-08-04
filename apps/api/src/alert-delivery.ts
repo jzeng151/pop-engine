@@ -94,9 +94,17 @@ export const PROVIDER_TIMEOUT_MS = 10_000;
  * somebody has reported it yet: a code belongs here when EVERY path that can raise it lies before
  * the first request byte is written: name resolution, connection establishment, or the TLS
  * handshake. One path that can raise it after the body was written disqualifies the code, however
- * rare that path is, because the code is the whole of what this side ever learns. It is a rule
- * about the code, not about the outage: "in this outage nothing was sent" is not membership,
- * because the next occurrence of the same code need not be that outage.
+ * rare that path is, because what this side learns is the code and the position it arrived in,
+ * nothing else. It is a rule about that pair, not about the outage: "in this outage nothing was
+ * sent" is not membership, because the next occurrence of the same code need not be that outage.
+ *
+ * THE POSITION IS PART OF THE PAIR, which is what `PROVEN_INSIDE_A_CONNECT_ATTEMPT` below is for.
+ * A code that arrives as a child of the connect aggregate is reporting ONE ADDRESS'S CONNECTION
+ * ATTEMPT and can report nothing else, so for such a child the rule's question is only whether
+ * every path that raises it DURING A CONNECTION ATTEMPT precedes the first request byte, which is
+ * all of them, since the attempt is what failed. The same code at the top of the chain is a
+ * different pair and is judged by the paragraph above, which still rejects it. A code proven only
+ * in that position goes in the second set, never in this one.
  *
  * The asymmetry is deliberate and is why the rule demands proof rather than likelihood. A code
  * wrongly left out costs retries through an outage, which is the spec's edge case working. A code
@@ -106,7 +114,9 @@ export const PROVIDER_TIMEOUT_MS = 10_000;
  * EVALUATED AND REJECTED by that rule, recorded so they are not re-derived one report at a time:
  *   - `ECONNRESET`, `ETIMEDOUT`, `UND_ERR_SOCKET`: each can arrive while connecting AND after the
  *     request body was written and accepted. The code cannot say which happened. (`ECONNRESET` was
- *     excluded on this ground in an earlier round and stays excluded.)
+ *     excluded on this ground in an earlier round and stays excluded. `ETIMEDOUT` is rejected HERE
+ *     and admitted as a connect-aggregate child by the set below; that is the position rule
+ *     working, not an exception to it.)
  *   - `UND_ERR_HEADERS_TIMEOUT`, `UND_ERR_BODY_TIMEOUT`, `UND_ERR_RES_CONTENT_LENGTH_MISMATCH`,
  *     `UND_ERR_RES_EXCEEDED_MAX_SIZE`, `UND_ERR_REQUEST_RETRY`, `UND_ERR_RESPONSE`,
  *     `UND_ERR_HEADERS_OVERFLOW`, `HPE_*`: the request was fully written; the provider may be
@@ -149,19 +159,37 @@ const PROVEN_BEFORE_HANDOFF = new Set([
   "CERT_HAS_EXPIRED",
 ]);
 
+/**
+ * Codes proven before the handoff ONLY as a child of the connect aggregate.
+ *
+ * `ETIMEDOUT` is ambiguous on its own: a socket already carrying the request can go quiet and
+ * report it. Inside the aggregate it cannot be that, because each child IS one address's
+ * connection attempt and no socket usable for an HTTP write ever came out of it. Added 2026-08-04:
+ * an outage in which every address timed out left each attempt open, and the alert was then held
+ * for a person permanently once the oldest aged past the dedup window, though nothing was sent.
+ */
+const PROVEN_INSIDE_A_CONNECT_ATTEMPT = new Set(["ETIMEDOUT"]);
+
 /** `fetch` wraps a transport failure, so the errno naming it sits on the cause chain. */
-function failedBeforeHandoff(error: unknown): boolean {
+function failedBeforeHandoff(error: unknown, insideAConnectAttempt = false): boolean {
   for (let link: unknown = error; link instanceof Error; link = link.cause) {
     // A dual-stack connect fails with one error PER ADDRESS TRIED, and Node copies only the first
     // attempt's code onto the aggregate. Reading that code alone judges the whole connect by
     // whichever address happened to be tried first, in both directions: it can claim proof the
     // other attempts do not support, and it can hide proof they do. So every attempt is read, and
     // one this side cannot account for leaves the attempt open.
+    // Each child is read AS a connection attempt, which is the context the aggregate carries and
+    // the code alone loses: `ETIMEDOUT` here is a connect that never came up, and the same code on
+    // its own is not.
     if (link instanceof AggregateError) {
-      return link.errors.length > 0 && link.errors.every((cause) => failedBeforeHandoff(cause));
+      return (
+        link.errors.length > 0 && link.errors.every((cause) => failedBeforeHandoff(cause, true))
+      );
     }
     const { code } = link as { code?: unknown };
-    if (typeof code === "string" && PROVEN_BEFORE_HANDOFF.has(code)) return true;
+    if (typeof code !== "string") continue;
+    if (PROVEN_BEFORE_HANDOFF.has(code)) return true;
+    if (insideAConnectAttempt && PROVEN_INSIDE_A_CONNECT_ATTEMPT.has(code)) return true;
   }
   return false;
 }
