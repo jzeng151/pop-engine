@@ -274,3 +274,70 @@ describe("SPEC-CONFLICT resolutions ratified 2026-08-02", () => {
     }
   });
 });
+
+/**
+ * Added 2026-08-04 with the PR #225 review round. Each of these criteria was absent once, and the
+ * spec read as complete without it: nothing on the page contradicted an implementation that
+ * delivered a stale alert, skipped the backfill, left half a comparison persisted, or lost a
+ * confirmed correction. So each is asserted against the spec's parsed Acceptance Criteria section
+ * rather than the whole file, which is the difference between "the spec accepts this" and "the
+ * spec mentions this somewhere".
+ */
+describe("PR #225 review round, 2026-08-04", () => {
+  const criteriaOf = (path) => {
+    const criteria = section(read(path), "## Acceptance Criteria");
+    expect(criteria, `${path} states acceptance criteria`).not.toBeNull();
+    return criteria;
+  };
+
+  it("F-107 accepts the delivery fence and the backfill/writer-authority cutover", () => {
+    const criteria = criteriaOf("specs/F-107-save-resume.md");
+
+    // §2.5: the pointer advance and the provider handoff share one fence. The recheck-then-send
+    // shape is the one an implementation reaches for, so its rejection is asserted directly.
+    expect(criteria).toContain("F107-AC-09");
+    expect(criteria).toContain("linearizable through one shared eligibility fence");
+    expect(criteria).toContain("A recheck followed by an unfenced provider call does not satisfy");
+
+    // §2.6: the backfill and the boundary are one criterion, and both failure paths abort.
+    expect(criteria).toContain("F107-AC-10");
+    expect(criteria).toContain("aborts the transaction rather than partially mutating");
+    expect(criteria).toContain("If F-107 cannot prove the boundary, the migration aborts");
+
+    // §2.7's part of it: three provenance states, not one. Collapsing them passes §2.6's letter.
+    for (const sentinel of ["legacy_unrecorded", "not_applicable"]) {
+      expect(criteria, `F-107 keeps the ${sentinel} provenance state distinct`).toContain(sentinel);
+    }
+  });
+
+  it("F-103 accepts no half-persisted comparison", () => {
+    const criteria = criteriaOf("specs/F-103-scope-comparator.md");
+    expect(criteria).toContain("F103-AC-06");
+    expect(criteria).toContain("persists both plans or neither");
+  });
+
+  it("F-405 accepts idempotent source creation and serialized source edits", () => {
+    const criteria = criteriaOf("specs/F-405-day-of-runbook.md");
+    expect(criteria).toContain("F405-AC-07");
+    expect(criteria).toContain("stable client-supplied request identity");
+    // The wrong reading of idempotency is content uniqueness, which would reject a real second
+    // load-in task that happens to read the same. The criterion excludes it in terms.
+    expect(criteria).toContain("never content uniqueness");
+    expect(criteria).toContain("F405-AC-08");
+    expect(criteria).toContain("never applied as a last-write-wins overwrite");
+  });
+
+  // The compatibility window kept the guest list RENDERING in either deployment order and was
+  // described as making the window order-independent, which it never did: api-first, the legacy
+  // page shows `headcount` as a limit the api does not enforce. #236 owns the defect; the claim
+  // is the part that had to go, and it must not come back into either artifact that carried it.
+  it("nothing claims the capacity compatibility window is order-independent", () => {
+    for (const path of ["apps/api/src/rsvps.ts", "specs/F-302-rsvp-guest-list.md"]) {
+      const source = read(path);
+      expect(source, `${path} points at the deferred defect`).toContain("#236");
+      expect(source, `${path} does not claim both deployment orders are safe`).not.toMatch(
+        /neither deployment order breaks/i,
+      );
+    }
+  });
+});

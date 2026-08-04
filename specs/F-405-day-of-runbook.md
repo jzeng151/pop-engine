@@ -44,13 +44,13 @@ An organizer can generate one current event-day sheet containing confirmed permi
 
 ## System Impact
 
-| Concern              | Proposed impact                                                                                                                                                             |
-| -------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| API                  | Minimal load-in task, operational-contact, and runbook-assignment CRUD plus runbook preview/generate/read operations require approved OpenAPI contracts.                    |
-| Schema               | Forward migration for minimal F-405-owned load-in task, contact, and runbook-assignment records; add an immutable runbook snapshot/reference only if retention is approved. |
-| Jobs                 | None for the minimal synchronous runbook; asynchronous document rendering requires a separately approved job.                                                               |
-| Providers            | None.                                                                                                                                                                       |
-| Privacy and security | Organizer-only/private by default; printed/downloaded output is explicitly warned as containing contacts, staff labels, and operational details.                            |
+| Concern              | Proposed impact                                                                                                                                                                                                                            |
+| -------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| API                  | Minimal load-in task, operational-contact, and runbook-assignment CRUD plus runbook preview/generate/read operations require approved OpenAPI contracts, including the request-identity and record-version shapes AC-07 and AC-08 require. |
+| Schema               | Forward migration for minimal F-405-owned load-in task, contact, and runbook-assignment records; add an immutable runbook snapshot/reference only if retention is approved.                                                                |
+| Jobs                 | None for the minimal synchronous runbook; asynchronous document rendering requires a separately approved job.                                                                                                                              |
+| Providers            | None.                                                                                                                                                                                                                                      |
+| Privacy and security | Organizer-only/private by default; printed/downloaded output is explicitly warned as containing contacts, staff labels, and operational details.                                                                                           |
 
 Exact HTTP, JSON Schema, migration, job, and provider shapes belong in their reviewed machine contracts; this proposal does not authorize parallel local types or edits to merged migrations.
 
@@ -62,6 +62,13 @@ Exact HTTP, JSON Schema, migration, job, and provider shapes belong in their rev
 4. **F405-AC-04:** Changing a source record marks the prior runbook stale; regeneration creates current output without rewriting source history.
 5. **F405-AC-05:** The approved print viewport produces readable ordering and no clipped critical content.
 6. **F405-AC-06:** Generation pins the complete permit, contact, assignment, and other source-version set together with AC-01's current revision and accepted plan; publication compare-and-swaps all of them, so a concurrent source correction, revision save, or plan acceptance rejects the stale in-flight snapshot rather than publishing it as current.
+7. **F405-AC-07:** Creating a load-in task, an operational or emergency contact, or a runbook assignment binds the request to a stable client-supplied request identity. A retry carrying the same identity returns the original source record and creates no second row; a deliberately separate record uses a new identity. This is request identity, never content uniqueness: two genuinely distinct load-in tasks that read the same are both created, and a repeated identity is never rejected as a duplicate value.
+
+   F-405 newly owns these CRUD operations, so nothing upstream supplies the guarantee. When a create commits and its response is lost, the organizer retries and a second source row appears. AC-02 includes each distinct source record once and links it back, so the duplicate is correct by AC-02 and still shows the same load-in task, contact, or assignment twice on the event-day sheet the crew reads.
+
+8. **F405-AC-08:** Every update and delete of an F-405-owned source record names the record version it was made against and commits only while that version is still current; otherwise it is rejected as a conflict with a reload-and-reconcile path, never applied as a last-write-wins overwrite. These operations carry AC-07's stable request identity as well, so a lost-response retry is not re-applied against a version that has since moved.
+
+   AC-06 pins and compare-and-swaps the whole source set at publication, which stops a stale snapshot being published, and it cannot recover a lost update: two organizer tabs editing the same load-in task, contact, or assignment from one observed state both commit, the later write erases the earlier confirmed correction, and every subsequent generation publishes the surviving value as correct. Nothing records that the correction existed, so there is nothing for AC-06 to notice.
 
 ## Fixtures and Verification
 

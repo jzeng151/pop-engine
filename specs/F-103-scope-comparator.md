@@ -69,6 +69,9 @@ Exact HTTP, JSON Schema, migration, job, and provider shapes belong in their rev
 3. **F103-AC-03:** Permit burden derives only from typed plan output using the exact shared `permit-burden/v1` kind/disposition filters, final-finding identity, deduplication rule, and definite/unresolved treatment above. Earliest feasible dates come only from F-106 candidate-date evaluations for the same explicit shared target month and engine context; neither value comes from prose parsing or a second rules implementation.
 4. **F103-AC-04:** Unknown, conflict, research-required, or evaluation failure remains visible and cannot make a configuration appear better by omission.
 5. **F103-AC-05:** Swapping left and right preserves each plan and reverses only directional comparison labels.
+6. **F103-AC-06:** A comparison persists both plans or neither. Both configurations finish evaluating before anything is persisted and the two immutable plans commit in one transaction, or the comparison's evaluations stay ephemeral until both succeed and only then become normal F-201 generations. A failure in either evaluation, or in the commit, leaves no plan behind, so a `failed` comparison adds nothing to plan history.
+
+   AC-01 already requires both configurations to share one engine context, and AC-04 requires the failure to stay visible. Neither reaches the residue. F-201 generations are durable and participate in latest-plan reads, so persisting the first plan and then failing the second mutates organizer-visible plan history for a comparison that produced no comparison: the organizer's latest plan silently becomes one side of an abandoned what-if they never chose. Persistence is the point at which that becomes irreversible, so the criterion constrains persistence rather than reporting.
 
 ## Fixtures and Verification
 

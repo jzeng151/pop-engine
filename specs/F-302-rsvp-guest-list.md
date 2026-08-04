@@ -33,6 +33,15 @@ As an attendee who found the event page, I RSVP with name and email in seconds; 
      falls back to `event.headcount` only when `capacity` is absent. A pre-rename API enforces
      `headcount`, so that fallback shows the limit that API is actually applying.
 
+   **What this window does not do (corrected 2026-08-04; no approval, no scope change).** It keeps
+   the page rendering in either deployment order. It does not make the window order-independent.
+   Deployed api-first, a pre-rename web build reads `event.headcount` as the enforced limit while
+   this API admits against `capacity`: the organizer sees "5 of 40 confirmed" against a limit of 5,
+   or a finite limit at all when `capacity` is null and nothing is ever refused. That defect
+   survives the shape compatibility above, and issue #236 carries it together with the choice
+   between a semantics-preserving compatibility response and a rollout that removes the window.
+   Neither is decided here.
+
    **Removing `headcount` from this response needs, in this order:** (1) every deployed web build
    reading the guest list is at or past the rename, which for the access-gated demo means the web
    deployment that carries this change has rolled out and no rollback target predating it remains

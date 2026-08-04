@@ -262,7 +262,15 @@ export type ListRsvpsResult =
  * API independently, so between the two deployments one side speaks the pre-rename contract, and
  * a web build that predates the rename rejects any response without `event.headcount`: the guest
  * list empties and the cancel controls go with it until the second deployment finishes. Serving
- * the old field alongside the new one means neither deployment order breaks the page.
+ * the old field alongside the new one keeps the page rendering in either deployment order.
+ *
+ * It does not make the window order-independent, and this comment previously said it did. Shape is
+ * what both orders survive; meaning is not. Deployed api-first, the pre-rename web build reads this
+ * `headcount` as the enforced limit while `createRsvp` below admits against `capacity`, so an
+ * organizer is shown "5 of 40 confirmed" against a limit of 5, or a finite limit at all when
+ * `capacity` is null and nothing is ever refused. Issue #236 carries that defect and the choice
+ * between a semantics-preserving compatibility response and a rollout that removes the window; it
+ * is deliberately not decided here.
  *
  * `headcount` keeps its own meaning here, the `events.headcount` column, which is what the
  * pre-rename API returned. It is not capacity under an old name: `headcount` is a regulatory
