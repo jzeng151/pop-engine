@@ -30,7 +30,7 @@ Authorized event staff can record timestamped incidents and private attachments 
 
 ## Inputs, Outputs, State, Validation, and Errors
 
-- Inputs are staff-confirmed event/time/description and optional safe files; outputs are append-only incident and addendum records.
+- Inputs are staff-confirmed event/time/description, optional safe files, and a stable request identity on each create and each addendum append; outputs are append-only incident and addendum records.
 - State is recorded with later addenda/correction markers; unsafe attachments remain quarantined and separate from incident status.
 - The event's incident-export source generation advances on any incident, addendum/correction, or retention removal; every queued or staged export pins that generation.
 - Unknown time/category or conflicting accounts remain explicit and are not reconciled by the system.
@@ -58,7 +58,7 @@ Exact HTTP, JSON Schema, migration, job, and provider shapes belong in their rev
 ## Acceptance Criteria
 
 1. **F412-AC-01:** An authorized staff member records staff-confirmed occurrence time separately from immutable server recorded-at time/actor and retrieves the incident only inside the correct event/workspace. Occurrence time may be explicitly unknown; both values are displayed without substituting one for the other. The create request carries a client-generated request identity, and the creating transaction commits it under a uniqueness constraint scoped to the event, so a retry after a lost response returns the original incident rather than appending a second one that would then read as a separate occurrence in history and exports. A deliberate second entry sends a new identity. Uniqueness over the payload is not that enforcement: two genuinely separate incidents may carry identical event, time, and description values, so it would refuse a real record.
-2. **F412-AC-02:** Correction or follow-up appends a timestamped addendum and cannot rewrite the original account.
+2. **F412-AC-02:** Correction or follow-up appends a timestamped addendum and cannot rewrite the original account. The append request carries its own client-generated request identity, and the transaction that appends the addendum commits that identity under a uniqueness constraint scoped to the incident, so a retry after a lost response returns the original addendum instead of appending the same historical statement twice and advancing the incident-export generation a second time. AC-01's identity does not reach this case: it is scoped to incident creation and says nothing about later appends. A deliberate second addendum sends a new identity. Uniqueness over the addendum text is not that enforcement: a genuine later correction may repeat an earlier statement verbatim, so it would refuse a real append.
 3. **F412-AC-03:** Unknown/conflicting details remain labeled and the system never generates a legal, medical, or emergency classification.
 4. **F412-AC-04:** Unsafe/unauthorized files remain unavailable and do not erase the text incident.
 5. **F412-AC-05:** Export/retention behavior matches the approved policy and records the actor/action.

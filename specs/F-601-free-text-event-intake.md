@@ -32,7 +32,7 @@ An organizer can describe an event in free text and receive proposed structured 
 
 ## Inputs, Outputs, State, Validation, and Errors
 
-- Input is bounded free text plus registry/version; output is field-level proposals with provenance and no committed answers.
+- Input is bounded free text, registry/version, and a stable run-request identity; output is field-level proposals with provenance and no committed answers.
 - Each proposal is pending → accepted/edited/rejected; only accepted/edited values enter the draft.
 - Unsupported concepts, ambiguity, missing material facts, model failure, and unsafe content remain visible through F-109 or manual intake. A confirmed unmatched-scope item is a scope-support input outside the engine answer registry.
 - Missing or unresolved material data stays visibly unset, unknown, pending, or failed as appropriate; it never becomes a successful or complete result.
@@ -63,6 +63,7 @@ Exact HTTP, JSON Schema, migration, job, and provider shapes belong in their rev
 3. **F601-AC-03:** Evaluation remains blocked until the organizer confirms the original description is fully represented and can manually add any model-omitted unmatched-scope item; every material concept with no current registry field must then be rejected as inapplicable or confirmed as unmatched scope. Confirmed unmatched scope enters F-109, never the engine answer set, and cannot yield a complete-plan claim.
 4. **F601-AC-04:** Rejecting a proposal leaves the corresponding answer absent; editing uses normal F-101 validation.
 5. **F601-AC-05:** Provider/model/prompt failure preserves the original text and offers the complete manual F-101 path.
+6. **F601-AC-06:** The start-run request carries a client-generated request identity, and the transaction that creates the run commits that identity under a uniqueness constraint scoped to the draft. A retry presenting the same identity returns the original run and its proposals instead of starting a second one, so a run that commits with a lost response cannot consume provider quota twice or leave two independently actionable proposal sets. Deliberate regeneration from the same or edited text sends a new identity and is therefore never mistaken for a retry. Uniqueness over the submitted text is not that enforcement: identical text is a legitimate second run, so it would refuse deliberate regeneration while a lost create response still produced two runs.
 
 ## Fixtures and Verification
 
