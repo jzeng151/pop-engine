@@ -188,6 +188,14 @@ export function failedDeliveryNotice(failure: {
  * page cannot see whether a regeneration is coming and must not guess, so it qualifies the claim
  * to the schedule it CAN see: nothing on this one will send them again.
  *
+ * NOR EVEN ON THAT SCHEDULE UNCONDITIONALLY, because the exit from the hold is the action this
+ * notice itself asks for. Checking with the sending service has two answers, and one of them is
+ * that no message is there: the operator clears or resolves the unresolved attempt (`alerts.ts`
+ * and migration 014 both document that as the way out), the alert stays pending or failed on the
+ * same `send_at`, and the next poll sends it. No cancellation and no revival are involved. So the
+ * promise holds only while the attempt stays as it is, and the sentence says so rather than
+ * ruling out a send the reconciliation is there to release.
+ *
  * "the sending service" rather than the provider's name, which is an operational detail an
  * organizer has no account with and cannot ring up.
  */
@@ -201,13 +209,15 @@ export function reconciliationHoldNotice(hold: { channel: string; heldCount: num
   const their = one ? "its" : "their";
   const dates = one ? "the filing date it covers" : "the filing dates they cover";
   const attempted = one ? "an attempted send" : "attempted sends";
+  const stay = one ? "stays" : "stay";
   return (
     `${hold.heldCount} ${name} ${alerts} for this event ${were} recorded as ${attempted}, and no ` +
     `outcome ever came back: PopEngine cannot tell whether ${they} reached the sending service ` +
     `at all. Too much time has passed to try ${them} again safely, so PopEngine has stopped: ` +
-    `nothing on ${their} current schedule will send ${them} again. Someone has to check with the ` +
-    `sending service whether ${they} went out; until then, do not count on ${them} to remind you ` +
-    `of ${dates}.`
+    `nothing on ${their} current schedule will send ${them} again while ${they} ${stay} recorded ` +
+    `this way. Someone has to check with the sending service whether ${they} went out, and what ` +
+    `that check records decides whether this schedule sends ${them} after all; until then, do ` +
+    `not count on ${them} to remind you of ${dates}.`
   );
 }
 

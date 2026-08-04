@@ -1527,9 +1527,10 @@ describe("F-203 · a channel that failed to deliver is reported to the organizer
       "2 email alerts for this event were recorded as attempted sends, and no outcome ever came " +
         "back: PopEngine cannot tell whether they reached the sending service at all. Too much " +
         "time has passed to try them again safely, so PopEngine has stopped: nothing on their " +
-        "current schedule will send them again. Someone has to check with the sending service " +
-        "whether they went out; until then, do not count on them to remind you of the filing " +
-        "dates they cover.",
+        "current schedule will send them again while they stay recorded this way. Someone has to " +
+        "check with the sending service whether they went out, and what that check records " +
+        "decides whether this schedule sends them after all; until then, do not count on them to " +
+        "remind you of the filing dates they cover.",
     );
     expect(notice.getAttribute("role")).toBe("alert");
     // The claim that broke this: nothing here may promise a retry that is not going to happen.
@@ -1556,6 +1557,33 @@ describe("F-203 · a channel that failed to deliver is reported to the organizer
     const notice = screen.getByText(/no outcome ever came back/);
     expect(notice.textContent).not.toMatch(/will not be sent again on (its|their) own/);
     expect(notice.textContent).toContain("current schedule");
+  });
+
+  it("does not rule out a send that reconciliation can release", async () => {
+    // THE EXIT FROM THE HOLD, which this notice was writing as if it did not exist. Checking with
+    // the sending service is the action the last sentence asks for, and one of its two answers is
+    // that no message is there: the operator then clears or resolves the unresolved attempt, and
+    // the alert — still pending or failed, still on the same send_at — is sent by the next poll.
+    // No cancellation and no regeneration are involved, so "nothing on their current schedule will
+    // send them again" was false about the very outcome the notice is steering towards. It is true
+    // only while the attempt stays as it is, and the copy has to say which.
+    stubApi({
+      [GET_CHECKLIST]: checklistOf({
+        created: true,
+        alertsHeldForReconciliation: [{ channel: "email", heldCount: 2 }],
+      }),
+    });
+
+    await renderView();
+
+    const notice = screen.getByText(/no outcome ever came back/);
+    expect(notice.textContent).toContain(
+      "nothing on their current schedule will send them again while they stay recorded this way",
+    );
+    // And the check is named as what can change that, rather than only as an errand.
+    expect(notice.textContent).toMatch(/what that check records decides whether/);
+    // The promise this notice may not make in an unqualified form.
+    expect(notice.textContent).not.toMatch(/will send them again\./);
   });
 
   it("does not assert a handoff it cannot prove happened", async () => {
@@ -1598,9 +1626,10 @@ describe("F-203 · a channel that failed to deliver is reported to the organizer
       "1 email alert for this event was recorded as an attempted send, and no outcome ever came " +
         "back: PopEngine cannot tell whether it reached the sending service at all. Too much " +
         "time has passed to try it again safely, so PopEngine has stopped: nothing on its " +
-        "current schedule will send it again. Someone has to check with the sending service " +
-        "whether it went out; until then, do not count on it to remind you of the filing date it " +
-        "covers.",
+        "current schedule will send it again while it stays recorded this way. Someone has to " +
+        "check with the sending service whether it went out, and what that check records decides " +
+        "whether this schedule sends it after all; until then, do not count on it to remind you " +
+        "of the filing date it covers.",
     );
   });
 

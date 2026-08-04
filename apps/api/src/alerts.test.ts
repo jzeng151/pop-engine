@@ -10,8 +10,8 @@
 import { randomUUID } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import type { MigrationBuilder } from "node-pg-migrate";
-import { Pool } from "pg";
-import type { PoolClient } from "pg";
+import { Client, Pool } from "pg";
+import type { ClientBase, ClientConfig, PoolClient } from "pg";
 import request from "supertest";
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import { CONFIRM_WITH_AGENCY, parseEngineRuleset, parseIntakeContract } from "@pop-engine/engine";
@@ -1650,6 +1650,119 @@ describe.skipIf(databaseUrl === "")("F-203 deadline alerts", () => {
 
         expect(summary.heldForReconciliation).toBe(0);
         expect((await alertsOf(eventId))[0]?.status).toBe("sent");
+      });
+
+      /**
+       * A pool whose attempt-intent INSERT never comes back, which is what a writer connection
+       * dropped around that statement looks like from this process.
+       *
+       * `committed` picks which side of the commit the connection went away on: the statement
+       * reaching PostgreSQL and the row landing, with only the answer lost, or nothing arriving at
+       * all. Both leave the same evidence here — a rejected promise and no attempt id.
+       *
+       * A CONNECTION STRING OF ITS OWN, because the attempt writer is cached per database target
+       * and derived from these options: sharing the suite's would either hand this test the healthy
+       * writer or leave a sabotaged one behind for every test after it.
+       */
+      const poolLosingTheIntentAcknowledgement = (label: string, committed: boolean): Pool => {
+        let lost = false;
+        class LosesTheAcknowledgement extends Client {
+          constructor(config?: ClientConfig) {
+            super(config);
+            const query = this.query.bind(this) as (...args: unknown[]) => Promise<unknown>;
+            this.query = ((...args: unknown[]) => {
+              const text = args[0];
+              const intent =
+                typeof text === "string" && text.includes("INSERT INTO alert_send_attempts");
+              if (!intent || lost) return query(...args);
+              lost = true;
+              const gone = new Error("Connection terminated unexpectedly");
+              if (!committed) return Promise.reject(gone);
+              return query(...args).then(() => {
+                throw gone;
+              });
+            }) as typeof this.query;
+          }
+        }
+        return new Pool({
+          connectionString: `${databaseUrl}${databaseUrl.includes("?") ? "&" : "?"}application_name=${label}`,
+          Client: LosesTheAcknowledgement as unknown as new () => ClientBase,
+        });
+      };
+
+      it("resolves an attempt whose insert acknowledgement is lost", async () => {
+        // ONE LAYER UP FROM THE CRASH THIS TABLE WAS BUILT FOR. PostgreSQL commits the autocommit
+        // INSERT and the writer connection drops before RETURNING reaches this process, so
+        // `recordAttemptIntent` rejects and the sender is never invoked. The attempt is committed
+        // and unresolved while nothing was handed to anybody, and once it ages past the dedup
+        // cutoff it excludes the alert from every scan and every claim — a deadline reminder that
+        // provably never left the process, never delivered at all.
+        //
+        // WHY RESOLVING IS SAFE HERE AND NOT IN MIGRATION 014. That backfill holds rows because
+        // nothing on them can prove a provider was never reached. This path can: the failure is
+        // upstream of the sender, so no provider can be holding this message, and the one thing a
+        // person would go and check is already known.
+        const eventId = await createEvent(scenario("C"));
+        const alertId = await insertDueAlert(eventId, "lost-ack@example.test", 2);
+        const provider = fakeProvider();
+        const losing = poolLosingTheIntentAcknowledgement("lost_ack_committed", true);
+
+        await createAlertPoller({
+          database: losing,
+          senders: provider.senders,
+          jurisdiction: ruleset.jurisdiction,
+        }).tick();
+        await losing.end();
+
+        // Nothing was handed over: this failure sits between the record and the sender.
+        expect(provider.attempts).toHaveLength(0);
+        const recorded = await attemptsOf(alertId);
+        expect(recorded).toHaveLength(1);
+        expect(recorded[0]?.outcome_recorded_at).not.toBeNull();
+
+        // And the consequence that makes it worth recording: however long the outage lasts, the
+        // alert is still the poller's to send rather than a person's to chase.
+        await pool.query(
+          `UPDATE alert_send_attempts
+              SET attempted_at = current_timestamp - ($2 || ' hours')::interval
+            WHERE alert_id = $1`,
+          [alertId, PROVIDER_DEDUP_WINDOW_HOURS + 1],
+        );
+        const summary = await createAlertPoller({
+          database: pool,
+          senders: provider.senders,
+          jurisdiction: ruleset.jurisdiction,
+        }).tick();
+
+        expect(summary.heldForReconciliation).toBe(0);
+        expect((await alertsOf(eventId))[0]?.status).toBe("sent");
+      });
+
+      it("settles an intent whose row this process never saw arrive", async () => {
+        // THE OTHER HALF OF THE SAME AMBIGUITY, and the reason the resolution is written as an
+        // insert of the id this side generated rather than an update of whatever can be found. A
+        // dropped connection can be observed here while the backend is still running the INSERT,
+        // so a reconciliation that only updated an existing row would find nothing and the attempt
+        // would land unresolved a moment afterwards — the same permanent hold, one race further
+        // along. Inserting the known id either records the resolved attempt or waits for the one in
+        // flight and resolves that, so neither ordering can leave the alert held.
+        const eventId = await createEvent(scenario("C"));
+        const alertId = await insertDueAlert(eventId, "no-ack@example.test", 2);
+        const provider = fakeProvider();
+        const losing = poolLosingTheIntentAcknowledgement("lost_ack_uncommitted", false);
+
+        await createAlertPoller({
+          database: losing,
+          senders: provider.senders,
+          jurisdiction: ruleset.jurisdiction,
+        }).tick();
+        await losing.end();
+
+        expect(provider.attempts).toHaveLength(0);
+        const recorded = await attemptsOf(alertId);
+        expect(recorded).toHaveLength(1);
+        expect(recorded[0]?.outcome_recorded_at).not.toBeNull();
+        expect(recorded[0]?.idempotency_key).toBe(alertId);
       });
 
       it("sends a pending alert with no recorded attempt however long it has been due", async () => {

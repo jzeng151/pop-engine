@@ -1885,21 +1885,69 @@ function attemptWriterFor(database: Pool): Pool {
  * the claim permitted. Returning null means it is not, and nothing is sent.
  *
  * Asked INSIDE the insert, so there is no second gap between the question and the record.
+ *
+ * THE ID IS GENERATED HERE RATHER THAN BY THE DATABASE, so the row can be named without the
+ * answer. An autocommit INSERT commits before its result is written back, so a connection that
+ * drops in between leaves a committed, unresolved attempt and a rejected promise: the send never
+ * happened, and with a server-side default nothing in this process knew which row to say so about.
+ * Aged past the cutoff, that attempt excluded the alert from every scan for good — a reminder
+ * nobody ever handed over, never delivered.
  */
-async function recordAttemptIntent(
-  database: Pool,
-  row: DueAlertRow,
-): Promise<string | null> {
-  const client = await attemptWriterFor(database).connect();
+async function recordAttemptIntent(database: Pool, row: DueAlertRow): Promise<string | null> {
+  const writer = attemptWriterFor(database);
+  const attemptId = randomUUID();
+  const client = await writer.connect();
   try {
     const { rows } = await client.query<{ id: string }>(
-      `INSERT INTO alert_send_attempts (alert_id, idempotency_key)
-            SELECT alerts.id, $2 FROM alerts
+      `INSERT INTO alert_send_attempts (id, alert_id, idempotency_key)
+            SELECT $3, alerts.id, $2 FROM alerts
              WHERE alerts.id = $1 AND NOT ${HAS_AN_UNRESOLVED_ATTEMPT}
          RETURNING id`,
-      [row.id, row.idempotency_key],
+      [row.id, row.idempotency_key, attemptId],
     );
     return rows[0]?.id ?? null;
+  } catch (error) {
+    await settleUnacknowledgedIntent(writer, row, attemptId);
+    throw error;
+  } finally {
+    client.release();
+  }
+}
+
+/**
+ * Close an intent whose insert this process never got an answer for.
+ *
+ * RESOLVED RATHER THAN HELD, which is the opposite of what migration 014 does with its own
+ * unknowns and is the right way round for this one. A hold says nobody can tell what a provider
+ * did with the message; here the sender has not run, so there is no message and no provider to ask
+ * — the state is not ambiguous, only the acknowledgement was. Left open, it would be a hold this
+ * side could have ruled out, on a filing reminder that never left the process.
+ *
+ * WRITTEN AS AN INSERT OF THE KNOWN ID, not an update of whatever can be found. The connection can
+ * go away while the backend is still running the original statement, so a search for the row can
+ * miss it and the attempt then lands unresolved a moment later — the same permanent exclusion, one
+ * race further on. Inserting that id either records the resolved attempt or queues on the one in
+ * flight and resolves it, so neither ordering leaves the alert held.
+ *
+ * A ROW THIS WRITES WHERE THE ORIGINAL NEVER LANDED IS TRUE OF WHAT HAPPENED: an attempt was
+ * begun, and nothing was handed over. It is resolved, so no scan, claim or hold count reads it.
+ *
+ * Its own connection, for the reason every write here takes one: the sending transaction is still
+ * open, and this has to commit whatever becomes of it.
+ */
+async function settleUnacknowledgedIntent(
+  writer: Pool,
+  row: DueAlertRow,
+  attemptId: string,
+): Promise<void> {
+  const client = await writer.connect();
+  try {
+    await client.query(
+      `INSERT INTO alert_send_attempts (id, alert_id, idempotency_key, outcome_recorded_at)
+            VALUES ($1, $2, $3, clock_timestamp())
+       ON CONFLICT (id) DO UPDATE SET outcome_recorded_at = clock_timestamp()`,
+      [attemptId, row.id, row.idempotency_key],
+    );
   } finally {
     client.release();
   }
