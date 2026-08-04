@@ -156,8 +156,10 @@ export function failedDeliveryNotice(failure: {
     `regenerate the plan and review the checklist to start it again.`;
   // AND THE ACTION DOES NOT ALWAYS WORK, which the sentence above promised it did. An alert
   // carrying an attempt nobody saw the end of is upserted in place by the regeneration rather than
-  // cancelled, and only a row revived from `cancelled` has its attempt superseded — so the review
-  // refreshes the schedule and the row stops for reconciliation instead of retrying. Sending an
+  // cancelled, and a review supersedes an attempt only on a row revived from `cancelled` — so the
+  // review refreshes the schedule and the row stops for reconciliation instead of retrying. (A
+  // retry past the hold bound supersedes an attempt too, but that is the poller sending, not
+  // anything this notice can offer an organizer.) Sending an
   // organizer to do the one thing they believe is left, when it will not start their reminder
   // again, is worse than the silence this notice exists to break.
   //
@@ -174,9 +176,9 @@ export function failedDeliveryNotice(failure: {
 /**
  * An alert PopEngine has stopped on, said as stopping rather than as failing.
  *
- * THE THIRD FACT, and the one that was being reported as one of the other two. A message handed to
- * a provider whose answer nobody saw stops being retryable once the provider would no longer
- * recognise the key, because a retry past that point is a second copy to the same person rather
+ * THE THIRD FACT, and the one that was being reported as one of the other two. An alert recorded as
+ * an attempted send whose outcome nobody saw stops being retryable once the provider would no
+ * longer recognise the key, because a retry past that point is a second copy to the same person rather
  * than a deduplicated one. A crash left that row `pending`, which the failure notice correctly says
  * nothing about, and a lost answer left it `failed`, where the notice above told the organizer
  * PopEngine keeps retrying it. Both readings said delivery was in hand after it had ended.

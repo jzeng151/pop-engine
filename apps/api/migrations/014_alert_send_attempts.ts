@@ -30,13 +30,17 @@ export const shorthands: ColumnDefinitions | undefined = undefined;
  * provider. It is a digest of the destination, never the destination itself (AGENTS.md: no
  * unredacted contact data).
  *
- * `superseded_at` says the SCHEDULE this attempt was made for has ended, and it is a different
+ * `superseded_at` says this attempt has stopped speaking for its alert, and it is a different
  * statement from `outcome_recorded_at`: one is about what the provider did, the other about which
- * queue membership the attempt belongs to. An alert cancelled by a regeneration and revived by a
- * later one comes back as a fresh schedule (`alerts.ts` clears its failure count and backoff for
- * the same reason), and without this the withdrawn schedule's unresolved attempt kept excluding
- * the revived row from every scan for good. Set, never cleared; the attempt stays unresolved
- * because nobody ever did learn what the provider did with it.
+ * send the attempt belongs to. TWO CAUSES SET IT, and a reader that knows only the first
+ * misclassifies the second. An alert cancelled by a regeneration and revived by a later one comes
+ * back as a fresh schedule (`alerts.ts` clears its failure count and backoff for the same reason),
+ * and without this the withdrawn schedule's unresolved attempt kept excluding the revived row from
+ * every scan for good. A retry made after `UNRESOLVED_ATTEMPT_HOLD_LIMIT_HOURS` sets it too, on an
+ * alert nobody cancelled and whose schedule never ended: the retry is the send that speaks for the
+ * alert now, and the attempt it overtook can no longer be duplicated by anything. Set, never
+ * cleared; the attempt stays unresolved either way, because nobody ever did learn what the
+ * provider did with it.
  */
 export function up(pgm: MigrationBuilder): void {
   pgm.createTable("alert_send_attempts", {

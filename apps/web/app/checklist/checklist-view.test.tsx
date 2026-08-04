@@ -1440,8 +1440,8 @@ describe("F-203 · a channel that failed to deliver is reported to the organizer
   it("does not promise the review restarts an alert whose outcome was never observed", async () => {
     // The paused sentence names regeneration and review as the action that starts these again,
     // and for an ordinary stale failure it does. For one carrying an attempt nobody saw the end
-    // of it does not: the scheduler upserts the failed row in place, only a row revived from
-    // cancelled has its attempt superseded, and the refreshed row becomes a reconciliation hold
+    // of it does not: the scheduler upserts the failed row in place, a review supersedes an
+    // attempt only on a row revived from cancelled, and the refreshed row becomes a reconciliation hold
     // instead of a retry. Sending an organizer to do a thing that will not work is worse than
     // saying nothing, because it is the one action they believe is left.
     stubApi({

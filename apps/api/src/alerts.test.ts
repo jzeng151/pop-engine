@@ -1831,6 +1831,159 @@ describe.skipIf(databaseUrl === "")("F-203 deadline alerts", () => {
       });
 
       /**
+       * A pool whose SEND-BOUNDARY statement takes so long that the jurisdiction's day changes
+       * while it is in flight.
+       *
+       * The day is moved rather than waited out, for the reason the intent version above states.
+       * What is different here is WHERE the gap falls: `$2` is the calendar day this process
+       * computed before the statement was issued, so a database or connection that stalls over
+       * local midnight answers a question about yesterday. Advancing the clock inside the wrapped
+       * `query` puts the move after the parameter was bound and before the backend evaluates it,
+       * which is that stall exactly.
+       */
+      const poolCrossingMidnightOnTheSendBoundary = (label: string): Pool => {
+        let crossed = false;
+        class CrossesMidnight extends Client {
+          constructor(config?: ClientConfig) {
+            super(config);
+            const query = this.query.bind(this) as (...args: unknown[]) => Promise<unknown>;
+            this.query = ((...args: unknown[]) => {
+              const text = args[0];
+              const boundary =
+                typeof text === "string" && text.includes("AS shut") && text.includes("AS held");
+              if (boundary && !crossed) {
+                crossed = true;
+                vi.setSystemTime(Date.now() + 24 * 60 * 60 * 1000);
+              }
+              return query(...args);
+            }) as typeof this.query;
+          }
+        }
+        return new Pool({
+          connectionString: `${databaseUrl}${databaseUrl.includes("?") ? "&" : "?"}application_name=${label}`,
+          Client: CrossesMidnight as unknown as new () => ClientBase,
+        });
+      };
+
+      it("does not send on a day the send boundary answered about a different one", async () => {
+        // THE SAME SHAPE A THIRD TIME, and this time inside the statement that was added to close
+        // it. The boundary asks both of this send's questions in one statement so no gap can be
+        // opened between them, but the day it asks them ABOUT is still computed in this process
+        // before the statement is issued, and the statement's own wait is bounded by nothing. A
+        // database that stalls over local midnight answers `FILING_WINDOW_HAS_SHUT` for yesterday,
+        // says false, and the reminder goes out naming a filing date the organizer can no longer
+        // meet — from the path whose job is to retire that row.
+        //
+        // Fails closed, like every other boundary decision here: the answer is not about the day
+        // this send is happening on, so it is not used at all. Nothing is handed over, the intent
+        // is closed because nothing was, and the next tick asks again on the day it is now.
+        const eventId = await createEvent(scenario("C"));
+        const alertId = await insertDueAlert(eventId, "boundary-midnight@example.test", 2);
+        // Still open on the day the boundary was asked about, shut on the day it was answered.
+        await pool.query(
+          `UPDATE alerts SET payload = payload || jsonb_build_object('controlling_apply_by', $2::text)
+            WHERE id = $1`,
+          [alertId, dayFromToday(0)],
+        );
+        const provider = fakeProvider();
+        const crossingMidnight = poolCrossingMidnightOnTheSendBoundary("crossing_boundary");
+
+        // Only `Date`: the poller's waits, and `pg`'s, stay on the real clock.
+        vi.useFakeTimers({ toFake: ["Date"] });
+        let summary;
+        try {
+          summary = await createAlertPoller({
+            database: crossingMidnight,
+            senders: provider.senders,
+            jurisdiction: ruleset.jurisdiction,
+          }).tick();
+        } finally {
+          vi.useRealTimers();
+          await crossingMidnight.end();
+        }
+
+        expect(provider.attempts).toHaveLength(0);
+        expect(summary.sent).toBe(0);
+        expect(summary.failed).toBe(0);
+        // Left as it was rather than retired on an answer about the wrong day: the next tick reads
+        // the row on the day it is then, and that is the tick that cancels it.
+        expect((await alertsOf(eventId))[0]?.status).toBe("pending");
+        const recorded = await attemptsOf(alertId);
+        expect(recorded).toHaveLength(1);
+        expect(recorded[0]?.outcome_recorded_at).not.toBeNull();
+      });
+
+      /**
+       * A pool whose CLAIM takes so long that the jurisdiction's day changes while it is in flight.
+       *
+       * The claim is where the day the expiry decision uses is computed, and the expiry decision
+       * runs after the claim has come back. On the simulated SMS channel that decision is the LAST
+       * filing-window check there is: nothing is handed to a provider, so no attempt is recorded
+       * and the send boundary above is never reached.
+       */
+      const poolCrossingMidnightOnTheClaim = (label: string): Pool => {
+        let crossed = false;
+        class CrossesMidnight extends Client {
+          constructor(config?: ClientConfig) {
+            super(config);
+            const query = this.query.bind(this) as (...args: unknown[]) => Promise<unknown>;
+            this.query = ((...args: unknown[]) => {
+              const text = args[0];
+              const claim =
+                typeof text === "string" && text.includes("FOR NO KEY UPDATE SKIP LOCKED");
+              if (claim && !crossed) {
+                crossed = true;
+                vi.setSystemTime(Date.now() + 24 * 60 * 60 * 1000);
+              }
+              return query(...args);
+            }) as typeof this.query;
+          }
+        }
+        return new Pool({
+          connectionString: `${databaseUrl}${databaseUrl.includes("?") ? "&" : "?"}application_name=${label}`,
+          Client: CrossesMidnight as unknown as new () => ClientBase,
+        });
+      };
+
+      it("retires a window that shut while the claim was in flight, on a channel with no provider", async () => {
+        // THE CHANNEL THE SEND BOUNDARY DOES NOT COVER. The boundary statement runs only where an
+        // intent was recorded, and nothing is recorded for the labelled in-product simulation
+        // because it hands nothing over. So the expiry decision is the last thing that asks
+        // whether this deadline can still be met, and it asks it with a day computed before the
+        // claim — a wait that queues on the event lock and on the alert's own row.
+        //
+        // A simulation is still copy an organizer reads, and telling them to file by a date that
+        // has gone is the same wrong statement whichever channel renders it.
+        const eventId = await createEvent(scenario("C"));
+        const alertId = await insertDueAlert(eventId, "+15550000166", 2, { channel: "sms" });
+        await pool.query(
+          `UPDATE alerts SET payload = payload || jsonb_build_object('controlling_apply_by', $2::text)
+            WHERE id = $1`,
+          [alertId, dayFromToday(0)],
+        );
+        const provider = fakeProvider();
+        const crossingMidnight = poolCrossingMidnightOnTheClaim("crossing_claim");
+
+        vi.useFakeTimers({ toFake: ["Date"] });
+        let summary;
+        try {
+          summary = await createAlertPoller({
+            database: crossingMidnight,
+            senders: provider.senders,
+            jurisdiction: ruleset.jurisdiction,
+          }).tick();
+        } finally {
+          vi.useRealTimers();
+          await crossingMidnight.end();
+        }
+
+        expect(provider.attempts).toHaveLength(0);
+        expect(summary.sent).toBe(0);
+        // Retired, which is what the expiry decision does with a window it finds already shut.
+        expect((await alertsOf(eventId))[0]?.status).toBe("cancelled");
+      });
+
+      /**
        * A pool whose attempt-intent INSERT never comes back, which is what a writer connection
        * dropped around that statement looks like from this process.
        *
@@ -4837,8 +4990,8 @@ describe.skipIf(databaseUrl === "")("F-203 deadline alerts", () => {
       // retrying is PAUSED, under copy naming the action that resumes it: regenerate the plan and
       // review the checklist. That is true of an ordinary stale failure. It is not true of one
       // carrying an attempt nobody saw the end of — the scheduler upserts the failed row in place
-      // rather than cancelling it, and only a row revived from `cancelled` has its attempt
-      // superseded, so the old attempt survives the review and the refreshed row is a
+      // rather than cancelling it, and a review supersedes an attempt only on a row revived from
+      // `cancelled`, so the old attempt survives the review and the refreshed row is a
       // reconciliation hold rather than a retry. The organizer was told to do a thing that would
       // not start it again.
       //

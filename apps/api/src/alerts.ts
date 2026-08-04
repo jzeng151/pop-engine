@@ -2310,12 +2310,36 @@ async function deliverClaimed(
   // 24 hours later, recorded by the statement that refused to send.
   let boundaryAnsweredAt = 0;
   if (attemptId !== null) {
+    const boundaryDay = todayInJurisdiction(jurisdiction, new Date());
     const { rows: boundary } = await client.query<{ shut: boolean; held: boolean }>(
       `SELECT ${FILING_WINDOW_HAS_SHUT("$2")} AS shut, ${HELD_AT_THE_SEND_BOUNDARY} AS held
          FROM alerts WHERE id = $1`,
-      [row.id, todayInJurisdiction(jurisdiction, new Date())],
+      [row.id, boundaryDay],
     );
     boundaryAnsweredAt = Date.now();
+    // THE DAY THE ANSWER WAS ABOUT, which is not necessarily the day it arrived on. The cutoff
+    // half of this statement reads `clock_timestamp()` and is therefore evaluated whenever the
+    // backend gets to it, but the window half is asked about `$2`, a calendar day this process
+    // computed before the statement was issued — and issuing it is another wait nothing bounds: a
+    // stalled backend or a connection that has to be re-established can carry it over local
+    // midnight. Answered then, `FILING_WINDOW_HAS_SHUT` says false about yesterday and the
+    // reminder goes to the provider naming a filing date the organizer can no longer meet.
+    //
+    // RECOMPUTED AND COMPARED rather than trusted, which is the same treatment the margin
+    // assertion below gives the same kind of wait. A day that turned over means the answer is not
+    // about this send, so it is not used at all — not even to cancel, since a decision taken on
+    // the wrong day is wrong in both directions. Fails closed: nothing is handed over, the intent
+    // is closed because nothing was, and the next tick asks both questions again on the day it is
+    // then.
+    if (todayInJurisdiction(jurisdiction, new Date()) !== boundaryDay) {
+      console.warn(
+        `alert ${row.id} crossed a jurisdiction day boundary while the send boundary was in ` +
+          `flight, so its filing-window answer is about ${boundaryDay} and not about the day ` +
+          `this send would happen on; nothing was sent`,
+      );
+      await recordProvenNonDelivery();
+      return null;
+    }
     if (boundary[0]?.shut === true) {
       await resolveAttempt(client);
       await client.query("UPDATE alerts SET status = 'cancelled' WHERE id = $1", [row.id]);
@@ -2526,9 +2550,15 @@ async function sendOne(
     // already here: this is the per-alert safe point, the event row is held, the window recheck
     // lives here for the same reason, and the staleness predicate above is evaluated against a
     // revision no writer is midway through changing. One decision, one place, one lock.
+    //
+    // ASKED ABOUT THE DAY IT IS NOW, not the day the claim was computed for. The claim is a wait
+    // like any other — the event lock, the row's own lock, the statement itself — so `today` can
+    // be yesterday by the time this runs. On the simulated SMS channel this is the LAST filing
+    // window check there is: nothing is handed to a provider, so no intent is recorded and the
+    // send boundary that re-asks the question is never reached.
     const { rows: expired } = await client.query(
       `SELECT 1 FROM alerts WHERE id = $1 AND ${FILING_WINDOW_HAS_SHUT("$2")}`,
-      [alertId, today],
+      [alertId, todayInJurisdiction(jurisdiction, new Date())],
     );
     if (expired[0] !== undefined) {
       // Cancelled rather than left pending, for round 19's reason: the scheduler will refuse to
@@ -3264,10 +3294,11 @@ export type FailedDelivery = {
    * WHAT IT QUALIFIES IS THE PROMISE, not the count. `heldForReview` names the action that resumes
    * a paused failure — regenerate the plan, review the checklist — and that action does resume an
    * ordinary stale failure. It does not resume one carrying an attempt nobody saw the end of: the
-   * scheduler upserts a failed row in place, and only a row revived FROM `cancelled` has its
-   * attempt superseded, so the old attempt survives the review and the refreshed row becomes a
-   * reconciliation hold instead of a retry. The organizer was being told to do something that
-   * would not start it again.
+   * scheduler upserts a failed row in place, and a review supersedes an attempt only on a row
+   * revived FROM `cancelled`, so the old attempt survives the review and the refreshed row becomes
+   * a reconciliation hold instead of a retry. The organizer was being told to do something that
+   * would not start it again. (`recordAttemptIntent` supersedes an overtaken attempt as well, but
+   * that is the poller retrying past the hold bound rather than anything a review does.)
    *
    * ANSWERED HERE BECAUSE NOTHING A CLIENT IS GIVEN CAN SAY IT, which is why `heldForReview` is
    * answered here too: both turn on rows the page never sees. A row counted here with an

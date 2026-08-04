@@ -225,9 +225,11 @@ export type FailedAlertDelivery = {
 /**
  * A channel with alerts the poller has permanently stopped on (F-203).
  *
- * Distinct from a failure: a failure is retried, and this is not. The api counts alerts that were
- * handed to a provider whose answer nobody ever saw, long enough ago that a retry would be a
- * second delivery rather than a deduplicated one, so no tick will take them again.
+ * Distinct from a failure: a failure is retried, and this is not. The api counts alerts recorded as
+ * attempted sends whose outcome nobody ever saw, long enough ago that a retry would be a second
+ * delivery rather than a deduplicated one, so no tick will take them again while the hold lasts.
+ * ATTEMPTED, NOT HANDED OVER: the record is written before the provider is called, so a process
+ * that died in the gap leaves the same evidence with nothing handed over at all.
  */
 export type ReconciliationHold = {
   readonly channel: string;

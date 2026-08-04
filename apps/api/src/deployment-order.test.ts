@@ -145,6 +145,47 @@ describe("F-203 rollout constraints the runbook has to carry", () => {
     expect(prose).not.toMatch(/held out of every scan permanently/i);
   });
 
+  it("describes the attempt row the same way in the baseline as in the architecture record", () => {
+    // THE SIXTH AND SEVENTH CORRECTIONS OF ONE MECHANISM, pinned across BOTH artifacts because
+    // fixing one at a time is what produced seven of them. `docs/BASELINE.md` is the entry point a
+    // contributor is required to read first (AGENTS.md), so a row there saying the table records
+    // an alert that "was handed to a provider" is an implementation input asserting the one thing
+    // this side cannot know — and reconciliation built on it would treat an intent as provider-side
+    // proof.
+    //
+    // AND SUPERSESSION HAS TWO CAUSES, which is the other half. A revival sets `superseded_at`,
+    // and so does a retry made after the hold bound, on an alert nobody cancelled and whose
+    // schedule never ended. An artifact naming only the first tells tooling that every superseded
+    // attempt is evidence of a withdrawn schedule, which misclassifies every retry-overtaken row.
+    //
+    // ASSERTED AS THE ABSENCE OF THE OVERCLAIM AND THE PRESENCE OF THE SECOND CAUSE, not as a
+    // phrasing: either artifact may say what it likes as long as it does not assert the handoff
+    // and does not present revival as the only way the column is set.
+    const baseline = read("docs/BASELINE.md").replace(/\s+/g, " ");
+    const record = baseline.slice(
+      baseline.indexOf("migration 014 adds a new"),
+      baseline.indexOf("It adds no column to `events`"),
+    );
+    expect(record).not.toBe("");
+    expect(record).not.toMatch(/table recording that an alert was handed to a provider/i);
+    expect(record).toMatch(/intent/i);
+    expect(record).toMatch(/two causes/i);
+
+    const architecture = read("docs/ARCHITECTURE.md");
+    const schemaSection = architecture
+      .slice(
+        architecture.indexOf("### alert_send_attempts"),
+        architecture.indexOf("### event_alert_contacts"),
+      )
+      .replace(/\s+/g, " ");
+    expect(schemaSection).not.toMatch(/set only when a cancelled alert is revived/i);
+    expect(schemaSection).toMatch(/two causes/i);
+    // The migration's own column note is the third place a reader meets this column.
+    expect(read("apps/api/migrations/014_alert_send_attempts.ts").replace(/\s+/g, " ")).toMatch(
+      /two causes/i,
+    );
+  });
+
   it("tells a deployer to deploy web before the api for the reconciliation notice", () => {
     // WHY THE CODE NEEDS THIS. The api stops counting a reconciliation-held alert among the
     // failures (the failure notice promises retries that have ended for it) and reports it under
