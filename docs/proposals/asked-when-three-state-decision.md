@@ -48,10 +48,13 @@ left unresolved here (section 4, section 6a item 4, section 7 item 2).
 
 **What the Q1 prototype settled, and what it did not.** It settled that the approved fixture suite
 cannot tell the two semantics apart, and that the change is nonetheless not a no-op on at least one
-intake no fixture covers (section 2). It did not settle correctness across the gate inventory:
+intake no fixture covers (section 2). It did not settle correctness across the gate inventory, and on two counts rather than one:
 attempt B was never exercised with the multi-enum gate `structure_types` blocking, and the source
 trace of why that path looks unsafe is not reproduced here, so neither the failure nor its absence
-has been shown (section 7 item 4). It did not settle the engine-package cost either: attempt B
+has been shown; and on the two gates that publish an `unknown` value, the unchanged branch filter at
+`packages/engine/src/verdict.ts:154-160` strips that value even when the gate is unanswered, so the
+branch table omits a path whose behaviour differs from every path it does enumerate (section 7
+item 4). It did not settle the engine-package cost either: attempt B
 leaves `visibility.ts` untouched, so its diff is a lower bound on implementation size rather than
 the size of a complete implementation (section 6a item 3, section 7 item 2). The engine
 investigation stays open on both counts; section 6a recommends deferring the change, not closing the
@@ -379,7 +382,8 @@ The reasons, in the order they carry weight:
    event: the engine would call a dependent's scope unknown and material while the form does not ask
    it and `validate.ts` rejects an answer to it. That divergence is defensible (the file's header
    comment argues for it) but it should be decided deliberately, not inherited from a diff that
-   happened not to touch the file.
+   happened not to touch the file. Because either outcome is organizer-visible F-101 behaviour, the
+   approvals table below carries that decision as a prerequisite to any implementation approval.
 
 **The trigger that should reopen this. There are two independent routes into the Q1 state, and an
 earlier revision described only the first.**
@@ -571,7 +575,7 @@ Under `docs/DOCUMENTATION-GOVERNANCE.md` §5 and §6:
 
 | If the team decides to                    | Row of the §6 table                                                                                                                                                                                                                                                                                                                                                                                                                  | Required approval                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
 | ----------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Implement the tri-state semantics         | **§5 twice first** (the `F-201:48` reading is unresolved, section 7 item 1; the `ARCHITECTURE.md:83` boundary is contradicted, section 7 item 8), then "Rule trigger, dedupe, branch, deadline, or formula semantics", **plus "Product scope, feature meaning, phase" if resolving `F-201:48` changes what that approved spec requires, plus "Durable architecture decision" if resolving `ARCHITECTURE.md:83` moves that boundary** | **Two prerequisites, both under §5, both ahead of the signatures below: resolve `specs/F-201-permit-plan-generator.md:48`, and reconcile `docs/ARCHITECTURE.md:83` against a semantics that reads a raw NULL as materially unknown.** Only then verification owner (Dev 4) plus engine owner (Dev 1); plus the product owner/team decision if the F-201 resolution moves that spec's scheduled behaviour; plus the architecture owner's ADR approval if the `ARCHITECTURE.md:83` resolution moves that boundary rather than confirming it |
+| Implement the tri-state semantics         | **§5 first** (the `F-201:48` reading is unresolved, section 7 item 1), then "Rule trigger, dedupe, branch, deadline, or formula semantics", **plus "Product scope, feature meaning, phase" for the undecided questionnaire-scoping question (section 6a item 4, section 7 item 2), and again if resolving `F-201:48` changes what that approved spec requires**                                                                                          | **Two prerequisites ahead of the signatures below: resolve `specs/F-201-permit-plan-generator.md:48` under §5, and obtain the product owner/team decision on whether the questionnaire follows the engine into three-state.** Only then verification owner (Dev 4) plus engine owner (Dev 1); plus the product owner/team decision a second time if the F-201 resolution moves that spec's scheduled behaviour                                                                                                                              |
 | Add fixtures distinguishing the semantics | "Executable regulatory expectation" is an approved fixture (§1); the answer key is APPROVED                                                                                                                                                                                                                                                                                                                                          | Both prerequisites and the same pair, plus the answer key's own revision authorization                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
 | Take the ruleset alternative              | Regulatory source/status/content **and** rule semantics **and** shared enum **and** database migration touching shared/core tables                                                                                                                                                                                                                                                                                                   | Verification owner plus rules reviewer, plus engine owner, plus all affected lane owners and the architecture owner for the shared enum, **plus the database owner** for the migration                                                                                                                                                                                                                                                                                                                                                    |
 | Do nothing (this recommendation)          | none                                                                                                                                                                                                                                                                                                                                                                                                                                 | none; the issue stays open                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
@@ -593,33 +597,48 @@ meaning, phase" row adds the product-owner/team-decision capacity on top. This d
 resolve `F-201:48`, does not decide which of the two routes the resolution takes, and records no
 approval of either.
 
-**There is a second prerequisite, and an earlier revision of this table missed it entirely: the
-architecture boundary at `docs/ARCHITECTURE.md:83`.** That line, in an APPROVED document, reads:
-"Unknown-capable active fields use explicit `unknown` values, never NULL-as-unknown." Attempt B does
-the opposite. Its whole mechanism is to read a raw NULL on an in-scope gate as making the gate's
-dependents materially unknown (`blockersFor` in the prototype records a blocker exactly when the raw
-value is `undefined` or `null`), and the gate it does this to in the street-event case of section 2 is
-`obstructs_public_way`, which is one of the unknown-capable fields that sentence is about: it
-publishes `yes`/`no`/`unknown` and `ARCHITECTURE.md:83` says its unknown is the explicit value, not
-the NULL. So the semantics attempt B measures and the technical boundary the architecture document
-approved are contradictory as written, and this is a different conflict from `F-201:48`: that one is
-about scheduled feature behaviour under governance §1's "Approved `specs/F-xxx-*.md`" row, this one
-is about "Technical boundaries and invariants", whose authoritative artifact is
-`docs/ARCHITECTURE.md` plus approved ADRs.
+**The second prerequisite is the questionnaire-scoping decision, and an earlier revision of this
+table let the row authorise implementation without it.** Section 6a item 4 and section 7 item 2
+record it as unresolved: attempt B changes the engine's scoping and leaves `visibility.ts`
+two-state, so the engine would call a dependent's scope unknown and material while the form does not
+ask it and `validate.ts` rejects an answer to it. Either outcome is organizer-visible F-101
+behaviour, whether the divergence is accepted deliberately or the questionnaire is changed to follow
+the engine, so it is "Product scope, feature meaning, phase" under §6 and the product owner/team
+decides it. It also fixes the implementation's size: while it is open, attempt B's two-file diff is a
+lower bound rather than a scope. That is why it belongs in the prerequisite column and not in the
+caveats: a row that sequences only the `F-201:48` question authorises shipping while a controlling,
+organizer-visible behaviour is still undecided. **This document does not decide it, does not state a
+preferred outcome, and records no product-owner approval of either.**
 
-Governance §5 applies to it the same way and in the same order: stop the affected implementation,
-record a `SPEC-CONFLICT` naming both locations (`docs/ARCHITECTURE.md:83` and the semantics in
-section 2) with the user-visible consequence, and **resolve the source artifact first**. That is why
-it is a prerequisite row and not a caveat: a table that sequences only the `F-201:48` question could
-authorise an implementation while an authoritative technical boundary still says the mechanism that
-implementation depends on is not allowed. Two lane owners cannot settle it between them either, for
-the same §5 reason. If the reconciliation confirms the boundary as written, the tri-state semantics
-needs a different mechanism or does not proceed; if it moves the boundary, that is a durable
-architecture decision and §6's "Durable architecture decision or dependency" row requires the
-architecture owner's ADR approval on top of the verification and engine signatures. **This document
-does not resolve `ARCHITECTURE.md:83`, does not say which way the reconciliation should go, and
-records no approval of either outcome.** It records that the conflict exists and that it is due
-before implementation approval.
+**An earlier revision of this table carried a third prerequisite, a §5 reconciliation of the
+architecture boundary at `docs/ARCHITECTURE.md:83`, and it is removed here because the conflict it
+named does not exist.** That line reads: "Unknown-capable active fields use explicit `unknown`
+values, never NULL-as-unknown." It sits in the `events` column description and governs how an
+answer is stored, and attempt B does not store anything: `blockersFor` records a blocker exactly
+when the raw value is `undefined` or `null`, which treats the NULL as unanswered and propagates
+tri-state uncertainty from it, rather than reading it as the organizer's explicit `unknown` answer.
+The two stay distinct in attempt B's own measured behaviour: section 2's Q2 engine probe shows an
+explicit `"unknown"` scoping the four SAPO dependents out and producing a byte-identical plan on
+both trees, while section 2's street-event case, where `obstructs_public_way` is left NULL, is the
+one that moves, from 9 findings to 20. Two approved
+artifacts confirm that reading is the intended one. `docs/EVENT-REVISION-CONTRACT.md:246-248`
+requires that "legacy unanswered/`NULL`, explicit `unknown`, `false`, and other concrete values
+remain distinct", which is a distinctness requirement rather than a bar on deriving uncertainty from
+a NULL, and `docs/ARCHITECTURE.md:249-250`, in the tri-state condition-evaluation section, already
+publishes evaluation deriving `unknown` from a NULL answer ("Null numeric answers on a selected
+structure/generator evaluate `unknown`, not `false`") for the numeric case. So there is no
+contradiction to record and no ADR capacity to add, and the row above is back to the semantics
+signatures plus the two prerequisites it does name.
+
+**What would bring that prerequisite back.** An implementation that collapses the two
+representations rather than keeping them distinct: normalising or backfilling a NULL gate to the
+published `"unknown"` value on write, reading a raw NULL as that answer so the two produce the same
+scoping (for `sapo_event_type`, dependents scoped out rather than branched), or any change that
+makes the stored states indistinguishable to a reader. Any of those contradicts
+`ARCHITECTURE.md:83` and `EVENT-REVISION-CONTRACT.md:246-248` directly, and then §5 applies in full
+and the architecture owner's ADR approval returns with it. Attempt B as measured does none of them,
+which is a statement about the prototype this document measured and not a guarantee about an
+implementation nobody has written yet.
 
 **The database-owner row is not optional and is not held.** The ruleset alternative converts gate
 columns in `events` from `boolean` to text carrying `"unknown"`, which is a forward migration on a
@@ -651,7 +670,9 @@ Stated plainly rather than left as silence:
 2. **Whether the questionnaire should follow the engine into three-state.** Section 6a item 4. This
    is a product and UX decision as much as an engine one, and no artifact in the repo answers it.
    Until it is answered, `visibility.ts` stays in scope for any Q1 implementation and attempt B's
-   two-file diff is a lower bound on implementation size.
+   two-file diff is a lower bound on implementation size. Section 6's approvals table carries it as
+   a prerequisite under §6's "Product scope, feature meaning, phase" row, ahead of the verification
+   and engine-owner signatures.
 3. **The ruleset alternative's answer-key impact.** Unmeasured here and unmeasured in the earlier
    document. Measuring it requires converting the 147 fixture literals section 6b re-prices at
    v2.11 first, because `readFieldValue`
@@ -668,6 +689,33 @@ Stated plainly rather than left as silence:
    here; what stands is that neither the failure nor its absence has been reproduced. Until it is,
    the 1577/1577 result and the diff-size figure are claims about the measured inputs, not about a
    correct implementation.
+
+   **Third, and unlike the other two this one is demonstrable from source rather than unmeasured:
+   attempt B leaves the branch table unable to express the explicit-`unknown` path on the two gates
+   that publish one.** Take a Q1 intake with `obstructs_public_way: "yes"` and `sapo_event_type`
+   unanswered. Attempt B promotes `sapo_event_type` to a blocker (its rule is the raw value being
+   `undefined` or `null`) and then reaches the unchanged branch expansion at
+   `packages/engine/src/verdict.ts:272-306`, which enumerates candidates through `alternativeValues`.
+   That filter, at `packages/engine/src/verdict.ts:154-160`, drops a declared value when
+   `value !== intake[field]` fails **or** when the value is `UNKNOWN_ANSWER` and
+   `RESCOPE_EXCLUDES_UNKNOWN_VALUES` is set, and that constant is `true`
+   (`packages/engine/src/proposals.ts:166`). The second test does not consult the current value, so
+   the published `"unknown"` is stripped even though the raw value here is `null` and `"unknown"` is
+   therefore a value the organizer could still give. The four enumerated branches are
+   `street_event`, `block_party`, `plaza_event` and `other_sapo_class`; the omitted fifth has
+   behaviour none of them has, because it scopes all four size/class dependents out
+   (`street_event_size`, `plaza_level`, `plaza_multiple_blocks`, `has_amusement_ride`, whose
+   `asked_when` expressions each name a specific class), which is the same scoping section 2's Q2
+   engine probe measured. Since the branch signatures and path verdicts at `verdict.ts:298-300` are
+   computed over the enumerated branches only, agreement across them can be reached, and the unknown
+   called immaterial, without the valid explicit-`unknown` path ever being considered.
+   `obstructs_public_way` is the other gate publishing `"unknown"` and sits in the same position at
+   the filter. The constant's own rationale (`proposals.ts:140-165`) is about rescope suggestions,
+   where "telling an organizer to un-know a fact is not a rescope" and `unknown` is correctly never
+   suggested; the branch table is the other caller and does not carry that justification when the
+   field is unanswered. This is recorded, not fixed: nothing in `packages/engine` is changed here,
+   and any fix is a branch-semantics change under §6 with the approvals section 6 names. What it
+   removes is the framing that the unresolved current-gate risk is `structure_types` alone.
 5. **Whether any state, migration or fixture in a lane I did not run could reach the unanswered
    state.** I ran the full 1577-test suite against a live database, which covers every suite in the
    repo. I did not audit the seed or demo tooling.
@@ -684,10 +732,10 @@ Stated plainly rather than left as silence:
    harnesses went with the appendices), so the API validation, the `events` insert, plan
    generation from the stored row and retrieval back into the page are neither exercised nor traced
    here. Nothing measured here suggests they fail; nothing here shows they do not.
-8. **How `docs/ARCHITECTURE.md:83` and a NULL-as-materially-unknown semantics are to be
-   reconciled.** The approved line says unknown-capable active fields use explicit `unknown` values
-   and "never NULL-as-unknown"; attempt B derives material unknownness from a raw NULL on
-   `obstructs_public_way`, which is one of those fields. Section 6's approvals table carries the
-   reconciliation as a §5 prerequisite ahead of the verification and engine-owner signatures. I did
-   not resolve it, I do not have a preferred outcome on the record, and nothing here is an
-   architecture approval.
+8. _(Withdrawn.)_ An earlier revision listed the reconciliation of `docs/ARCHITECTURE.md:83`
+   against a NULL-as-materially-unknown semantics here, and section 6's approvals table carried it
+   as a §5 prerequisite. Both are removed: that line governs storage, attempt B keeps unanswered and
+   explicit `unknown` distinct, and the approved contracts cited in section 6 say the two must stay
+   distinct rather than that uncertainty cannot be derived from a NULL. Section 6 states what would
+   have to be true for the prerequisite to come back. The numbering is kept so earlier
+   cross-references do not silently point at a different item.
