@@ -83,16 +83,29 @@ the alert attempt record; the conditions for dropping each are stated with it.
    what makes it safe against an api that does not send the field yet. Drop this step once the web
    deployment carrying the field is the oldest one in service.
 2. **Stop the running api before the new one applies migration 014**, rather than letting the new
-   deployment start beside it. Scale the api service to zero (or stop the current deployment), let
-   it drain, then start the new build; confirm no api process from the previous build is still
-   running when the migration executes, and `Migrations complete!` in the new build's logs before
-   returning the service to traffic. Draining is a `SIGTERM` (`SIGINT` does the same), which is what
-   Railway sends on a stop or a scale to zero: the api stops the alert poller, waits for the send in
-   flight to finish recording its outcome, and exits 0. It logs a line naming the signal and then
-   `alert poller drained; exiting`. Wait for that second line, or for the process to go, rather than
-   for a fixed number of seconds; if the host escalates to `SIGKILL` first, a send the provider
-   accepted can be left `pending` and unrecorded, which is exactly the row this ordering exists to
-   prevent. Migration 014 creates `alert_send_attempts` and seeds it from
+   deployment start beside it. Scale the api service to zero (or stop the current deployment), wait
+   for the process to go, then start the new build; confirm no api process from the previous build
+   is still running when the migration executes, and `Migrations complete!` in the new build's logs
+   before returning the service to traffic.
+
+   **On this rollout the api you are stopping cannot drain, and you must not wait for it to.** The
+   drain ships in the build that carries migration 014, so the process being stopped predates the
+   handler: it takes `SIGTERM` (or `SIGINT`) at its default disposition and dies where it stands.
+   From the next rollout on, the running api stops its alert poller, waits for the send in flight
+   to finish recording its outcome, exits 0, and logs a line naming the signal and then
+   `alert poller drained; exiting`; wait for that second line then. For this one, wait only for the
+   process to be gone.
+
+   **What makes this one-off window safe instead is the provider's deduplication window, so
+   complete the rollout well inside 24 hours.** A send the old build was killed in the middle of
+   (accepted by the provider, its transaction never committed) is left `pending`, and a build that
+   predates the table writes no attempt row for it. The new poller therefore reads it as due and
+   retries it, carrying the same `Idempotency-Key` the first send carried. Resend honours a
+   repeated key for 24 hours, so inside that window the retry is deduplicated and the organizer
+   receives one reminder; past it the same retry is a second copy of the same reminder. Do not
+   leave the api stopped overnight for this rollout.
+
+   Migration 014 creates `alert_send_attempts` and seeds it from
    the alerts that had already failed, and from then on every reader treats an alert with no attempt
    row as one nothing was ever handed over for. An api process from the previous build sends without
    writing attempt rows, so anything it sends after the backfill commits is invisible to that

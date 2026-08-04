@@ -1994,6 +1994,7 @@ async function deliverClaimed(
   row: DueAlertRow,
   senders: AlertSenders,
   database: Pool,
+  jurisdiction: string,
 ): Promise<{
   status: "sent" | "failed";
   delivery: AlertDelivery | null;
@@ -2030,6 +2031,32 @@ async function deliverClaimed(
       [attemptId],
     );
   };
+  // THE WINDOW IS ASKED AGAIN, for the same reason the cutoff above is and about the same wait.
+  // Getting a connection from the writer's own pool is the one step between the claim and the
+  // provider that no arithmetic bounds: it can queue behind `SEND_CONCURRENCY` other sends or wait
+  // on a new backend, for as long as that takes. The claim checked the filing window immediately
+  // before it and nothing checked it after, so a claim that passed just before local midnight could
+  // hand the message over on a day the deadline it names has already gone, a reminder telling an
+  // organizer to file by yesterday, issued by the path whose job is to retire that row instead.
+  //
+  // `today` is recomputed rather than reused: the stale value is the whole defect, and re-running
+  // the same predicate against it would answer the same way it did before the wait.
+  //
+  // Retired here rather than only left alone, because that is what the claim does with a window it
+  // finds already shut, and the two are now the same decision made at two moments. The attempt is
+  // resolved with it: nothing was handed over, so leaving it open would ask a person to reconcile a
+  // message that never left this process.
+  if (attemptId !== null) {
+    const { rows: shut } = await client.query(
+      `SELECT 1 FROM alerts WHERE id = $1 AND ${FILING_WINDOW_HAS_SHUT("$2")}`,
+      [row.id, todayInJurisdiction(jurisdiction, new Date())],
+    );
+    if (shut[0] !== undefined) {
+      await resolveAttempt(client);
+      await client.query("UPDATE alerts SET status = 'cancelled' WHERE id = $1", [row.id]);
+      return null;
+    }
+  }
   // A DELIVERY IS RECORDED IN THE SENDING TRANSACTION, so a crash that loses the mark-sent loses
   // this too. That is the correct outcome rather than a limitation: the provider is holding a
   // message this side never confirmed, and both writes describe that same lost knowledge.
@@ -2046,14 +2073,35 @@ async function deliverClaimed(
   // ON THE ATTEMPT WRITER'S CONNECTION, the same one the intent was written on and for the same
   // mechanical reason: it commits on its own, immediately, and cannot be rolled back by the send.
   // It updates no key column, so it takes no lock on the `alerts` row the claim is holding.
+  //
+  // AND WRITTEN AGAIN IF THE FIRST WRITE IS REFUSED, because a single statement is not somewhere
+  // knowledge that must survive can be left. A dropped writer connection, or a database that
+  // answers this UPDATE with an error, threw out of the delivery: the sending transaction rolled
+  // back with the mark-failed still inside it, and the attempt stayed unresolved even though this
+  // side had already proved the provider was never reached. No later tick repairs that row (a
+  // retry opens its own attempt and resolves that one), so the unresolved row ages until it passes
+  // the cutoff and holds the alert out of every scan for good, over exactly the outage the poller
+  // is supposed to ride out.
+  //
+  // A FRESH CONNECTION FOR THE SECOND WRITE, which is what the intent-insert acknowledgement path
+  // already does after the same kind of refusal, and with the same statement: an idempotent write
+  // of a known id can only reach the state it was trying to reach, however many times it runs. The
+  // first connection goes back before the second is asked for, for the reason recorded on that
+  // path: this pool holds `SEND_CONCURRENCY` connections and a tick starts that many workers, so a
+  // refusal answered by a live backend leaves every worker holding a client none of them may wait
+  // on a pool for.
   const recordProvenNonDelivery = async (): Promise<void> => {
     if (attemptId === null) return;
-    const writer = await attemptWriterFor(database).connect();
+    const writerPool = attemptWriterFor(database);
+    const writer = await writerPool.connect();
     try {
       await resolveAttempt(writer);
-    } finally {
+    } catch {
       writer.release();
+      await settleUnacknowledgedIntent(writerPool, row, attemptId);
+      return;
     }
+    writer.release();
   };
   try {
     const delivery = await sender({
@@ -2251,7 +2299,7 @@ async function sendOne(
       return null;
     }
 
-    const outcome = await deliverClaimed(client, row, senders, database);
+    const outcome = await deliverClaimed(client, row, senders, database, jurisdiction);
     await client.query("COMMIT");
     return outcome;
   } catch (error) {
@@ -2313,8 +2361,10 @@ export type AlertPoller = {
    * Awaitable because a process that exits mid-send is how an alert acquires an attempt nothing
    * recorded: the provider accepts, the row's transaction never commits, and the alert is left
    * `pending`, which reads as never attempted to every later reader, including the one migration
-   * 014 creates. DEPLOY.md's release order asks a deployer to drain the old api for exactly that
-   * reason, and a drain nobody can await is an instruction the process cannot carry out.
+   * 014 creates. DEPLOY.md's release order asks a deployer to drain the running api for exactly
+   * that reason, and a drain nobody can await is an instruction the process cannot carry out. That
+   * step applies from the rollout after the one introducing this: the build it stops on that one
+   * predates the handler, and the runbook says what covers that single window instead.
    */
   stop(): Promise<void>;
 };

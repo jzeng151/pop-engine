@@ -1653,6 +1653,182 @@ describe.skipIf(databaseUrl === "")("F-203 deadline alerts", () => {
       });
 
       /**
+       * A writer whose outcome UPDATE is refused once by the database, on a connection that
+       * survives the refusal.
+       *
+       * A server that answers with an error is the case the dropped-connection pools cannot
+       * produce: `pg` discards a client whose connection went away, so a retry gets a fresh one by
+       * accident. Here the client stays healthy and stays checked out, which is the shape a
+       * statement, permission or timeout error takes.
+       */
+      const poolRefusingTheFirstOutcomeWrite = (label: string): Pool => {
+        let refused = false;
+        class RefusesTheOutcome extends Client {
+          constructor(config?: ClientConfig) {
+            super(config);
+            const query = this.query.bind(this) as (...args: unknown[]) => Promise<unknown>;
+            this.query = ((...args: unknown[]) => {
+              const text = args[0];
+              const outcome =
+                typeof text === "string" &&
+                text.includes("UPDATE alert_send_attempts SET outcome_recorded_at");
+              if (!outcome || refused) return query(...args);
+              refused = true;
+              return query("SELECT refused_by_the_database()");
+            }) as typeof this.query;
+          }
+        }
+        return new Pool({
+          connectionString: `${databaseUrl}${databaseUrl.includes("?") ? "&" : "?"}application_name=${label}`,
+          Client: RefusesTheOutcome as unknown as new () => ClientBase,
+        });
+      };
+
+      it("writes a proven non-delivery again when the first write is refused", async () => {
+        // KNOWLEDGE THAT MUST SURVIVE, RECORDED BY A WRITE THAT MAY NOT. The connection proved the
+        // provider was never reached, and that proof is written on the attempt writer's own
+        // connection precisely so the sending transaction cannot take it down. One refusal of that
+        // single UPDATE undid the whole arrangement: the exception escaped the delivery, the
+        // sending transaction rolled back with the mark-failed still in it, and the attempt stayed
+        // unresolved: a KNOWN non-delivery turned back into the one state nothing clears by
+        // itself. A later retry cannot repair it either, because a retry opens its own attempt and
+        // resolves that one; this row goes on ageing until it passes the cutoff and holds the
+        // alert out of every scan for good, over an outage the poller was supposed to ride out.
+        //
+        // Written again on a fresh connection rather than given up on, which is what the
+        // intent-insert acknowledgement path already does with the same statement: the update is
+        // idempotent, so repeating it can only reach the state it was trying to reach.
+        const eventId = await createEvent(scenario("C"));
+        const alertId = await insertDueAlert(eventId, "refused-outcome@example.test", 2);
+        const unreachable: AlertSenders = {
+          sms: fakeProvider().senders.sms,
+          email: async () => {
+            throw new AlertDeliveryError("email provider unreachable: ECONNREFUSED");
+          },
+        };
+        const refusing = poolRefusingTheFirstOutcomeWrite("refused_outcome");
+
+        const summary = await createAlertPoller({
+          database: refusing,
+          senders: unreachable,
+          jurisdiction: ruleset.jurisdiction,
+        }).tick();
+        await refusing.end();
+
+        // The outage is recorded as an outage: counted, marked, and left for the next tick.
+        expect(summary.failed).toBe(1);
+        expect((await alertsOf(eventId))[0]?.status).toBe("failed");
+        const recorded = await attemptsOf(alertId);
+        expect(recorded).toHaveLength(1);
+        expect(recorded[0]?.outcome_recorded_at).not.toBeNull();
+
+        // And the consequence that makes the second write worth making: however long the outage
+        // lasts, the alert is still the poller's to send rather than a person's to chase.
+        await pool.query(
+          `UPDATE alert_send_attempts
+              SET attempted_at = current_timestamp - ($2 || ' hours')::interval
+            WHERE alert_id = $1`,
+          [alertId, PROVIDER_DEDUP_WINDOW_HOURS + 1],
+        );
+        const provider = fakeProvider();
+        const after = await createAlertPoller({
+          database: pool,
+          senders: provider.senders,
+          jurisdiction: ruleset.jurisdiction,
+        }).tick();
+
+        expect(after.heldForReconciliation).toBe(0);
+        expect((await alertsOf(eventId))[0]?.status).toBe("sent");
+      });
+
+      /**
+       * A writer whose intent INSERT takes so long that the jurisdiction's day changes over it.
+       *
+       * The day is moved rather than waited out, because the wait is the only part of this that is
+       * incidental: what the code has to survive is the gap between the claim's window check and
+       * the provider call, and a gap is only observable through the value it invalidates.
+       * `todayInJurisdiction` reads the process clock, so advancing the clock across the statement
+       * is that gap, exactly and without spending a day of test time in it.
+       */
+      const poolCrossingMidnightOnTheIntent = (label: string): Pool => {
+        let crossed = false;
+        class CrossesMidnight extends Client {
+          constructor(config?: ClientConfig) {
+            super(config);
+            const query = this.query.bind(this) as (...args: unknown[]) => Promise<unknown>;
+            this.query = ((...args: unknown[]) => {
+              const text = args[0];
+              const intent =
+                typeof text === "string" &&
+                text.includes("INSERT INTO alert_send_attempts") &&
+                text.includes("RETURNING id");
+              if (intent && !crossed) {
+                crossed = true;
+                vi.setSystemTime(Date.now() + 24 * 60 * 60 * 1000);
+              }
+              return query(...args);
+            }) as typeof this.query;
+          }
+        }
+        return new Pool({
+          connectionString: `${databaseUrl}${databaseUrl.includes("?") ? "&" : "?"}application_name=${label}`,
+          Client: CrossesMidnight as unknown as new () => ClientBase,
+        });
+      };
+
+      it("asks again whether the filing window is still open after waiting for the writer", async () => {
+        // THE ONE STEP BETWEEN THE CLAIM AND THE PROVIDER THAT NO ARITHMETIC BOUNDS, asked about a
+        // second thing. The claim already re-asks the dedup cutoff after this wait, for exactly
+        // this reason: getting a connection from the writer's own pool can queue behind
+        // SEND_CONCURRENCY other sends for as long as that takes. The filing window was checked
+        // just before it and never again, so a claim that passed at 23:59 could hand the message
+        // to the provider on a day the deadline it names has already gone, in reminder copy telling
+        // an organizer to file by a date that is now yesterday, from the one path that is supposed
+        // to retire such a row instead.
+        //
+        // The answer is the same as everywhere else in this file: a decision made about an alert
+        // is revalidated where the alert is acted on, rather than the earlier check being made
+        // stronger. Nothing is sent, and the row takes the cancellation it would have taken had
+        // the claim run a minute later.
+        const eventId = await createEvent(scenario("C"));
+        const alertId = await insertDueAlert(eventId, "past-midnight@example.test", 2);
+        // Still open when the claim reads it, and shut by the time the writer answers.
+        await pool.query(
+          `UPDATE alerts SET payload = payload || jsonb_build_object('controlling_apply_by', $2::text)
+            WHERE id = $1`,
+          [alertId, dayFromToday(0)],
+        );
+        const provider = fakeProvider();
+        const crossingMidnight = poolCrossingMidnightOnTheIntent("crossing_midnight");
+
+        // Only `Date`: the poller's waits, and `pg`'s, stay on the real clock.
+        vi.useFakeTimers({ toFake: ["Date"] });
+        let summary;
+        try {
+          summary = await createAlertPoller({
+            database: crossingMidnight,
+            senders: provider.senders,
+            jurisdiction: ruleset.jurisdiction,
+          }).tick();
+        } finally {
+          vi.useRealTimers();
+          await crossingMidnight.end();
+        }
+
+        expect(provider.attempts).toHaveLength(0);
+        expect(summary.sent).toBe(0);
+        expect(summary.failed).toBe(0);
+        // Retired rather than left pending, which is what the claim does with a window that had
+        // already shut when it read it.
+        expect((await alertsOf(eventId))[0]?.status).toBe("cancelled");
+        // And the attempt this send did open is closed, because nothing was handed over: an
+        // unresolved one would ask a person to reconcile a message that never left the process.
+        const recorded = await attemptsOf(alertId);
+        expect(recorded).toHaveLength(1);
+        expect(recorded[0]?.outcome_recorded_at).not.toBeNull();
+      });
+
+      /**
        * A pool whose attempt-intent INSERT never comes back, which is what a writer connection
        * dropped around that statement looks like from this process.
        *

@@ -113,17 +113,26 @@ const server = createApp({
   alertPoller.start();
 });
 
-// THE DRAIN DEPLOY.md'S RELEASE ORDER ASKS FOR. The runbook has the deployer stop this build
-// before the next one applies migration 014, because a send from a build that predates
-// `alert_send_attempts` writes no attempt row and the backfill is a point-in-time sweep that
-// cannot reach it. Stopping is also the moment most likely to produce such a send: killed between
-// the provider accepting and the row's transaction committing, the alert stays `pending`, the
-// backfill seeds only `failed` rows, and the new poller reads it as never attempted and can
-// deliver it a second time once the provider's dedup window has closed.
+// THE DRAIN DEPLOY.md'S RELEASE ORDER ASKS FOR, FROM THE ROLLOUT AFTER THIS ONE. The runbook has
+// the deployer stop the running api before the next build applies migration 014, because a send
+// from a build that predates `alert_send_attempts` writes no attempt row and the backfill is a
+// point-in-time sweep that cannot reach it. Stopping is also the moment most likely to produce such
+// a send: killed between the provider accepting and the row's transaction committing, the alert
+// stays `pending`, the backfill seeds only `failed` rows, and the new poller reads it as never
+// attempted and can deliver it a second time once the provider's dedup window has closed.
 //
-// So the process has to be able to carry the instruction out: stop taking new work, let the tick
-// in flight finish recording what it did, and only then go. Nothing here retries or forces
-// anything: `stop()` settles because a send is bounded by the provider timeout.
+// WHICH THIS HANDLER CANNOT PREVENT ON THE RELEASE THAT INTRODUCES IT, and saying so is the point.
+// The process the runbook has stopped is running the PREVIOUS build. On this release that build
+// predates this handler, so it has no drain to perform and no line to print, and a step telling a
+// deployer to wait for one would be a step they believe they carried out. DEPLOY.md's release
+// order says so and names what covers that one window instead: the stranded send is retried by the
+// new poller under the same `Idempotency-Key`, which the provider deduplicates for 24 hours, so
+// the rollout has to finish inside them. From the next rollout on, the process being stopped is
+// one that ran this file, and this is what carries the instruction out.
+//
+// Stop taking new work, let the tick in flight finish recording what it did, and only then go.
+// Nothing here retries or forces anything: `stop()` settles because a send is bounded by the
+// provider timeout.
 //
 // SIGINT as well as SIGTERM: a host stopping the service sends SIGTERM and a local run sends
 // SIGINT, and an alert mid-send does not care which arrived.

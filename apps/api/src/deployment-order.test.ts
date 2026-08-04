@@ -1,6 +1,7 @@
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
+import { PROVIDER_DEDUP_WINDOW_HOURS } from "./alerts";
 
 // F-203 issue #166. Two of this feature's guarantees are not properties of the code alone: they
 // hold only while the two services and the migration are rolled out in a particular order, and
@@ -60,6 +61,28 @@ describe("F-203 rollout constraints the runbook has to carry", () => {
     expect(bootstrap).toContain("await alertPoller.stop()");
 
     expect(releaseOrder).toContain("SIGTERM");
+  });
+
+  it("does not ask the previous build for a drain that ships with this one", () => {
+    // THE STEP AND THE RELEASE IT IS WRITTEN FOR. The case above pairs the drain in `index.ts`
+    // with the runbook line that names it, and both are right, from the NEXT rollout on. The api
+    // step 2 has a deployer stop is running the PREVIOUS build, and on this one release that build
+    // predates the handler entirely: it has no drain, it dies where it stands, and a deployer
+    // waiting for `alert poller drained; exiting` from it is waiting for a line nothing will
+    // print. An instruction that cannot be carried out is worse than a missing one, because the
+    // deployer believes they carried it out.
+    //
+    // SO THE RUNBOOK HAS TO NAME WHAT ACTUALLY MAKES THIS WINDOW SAFE, and it is not the drain. A
+    // send the old build was killed in the middle of is left `pending` with no attempt row, so the
+    // new poller reads it as due and retries it, carrying the SAME key to the provider, which
+    // deduplicates it for `PROVIDER_DEDUP_WINDOW_HOURS`. Inside that window the retry is the same
+    // delivery; outside it, it is a second copy of the reminder. That makes the bound on this
+    // rollout a real number a deployer can work to, and it is the number this file pins.
+    expect(read("apps/api/src/alerts.ts")).toContain("idempotencyKey: providerKey(row)");
+
+    const prose = releaseOrder.replace(/\s+/g, " ");
+    expect(prose).toMatch(/predates (this|that|the) (drain|handler)/i);
+    expect(prose).toMatch(new RegExp(`${PROVIDER_DEDUP_WINDOW_HOURS}[- ]?hour`, "i"));
   });
 
   it("tells a deployer to deploy web before the api for the reconciliation notice", () => {
