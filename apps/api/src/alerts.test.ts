@@ -2575,6 +2575,57 @@ describe.skipIf(databaseUrl === "")("F-203 deadline alerts", () => {
         expect(rows[0]?.status).toBe("pending");
       });
 
+      it("releases an outage at the bound measured from the first unresolved attempt", async () => {
+        // WHAT AN OUTAGE ACTUALLY LEAVES BEHIND, which one attempt cannot show. Nothing holds an
+        // alert for the first `PROVIDER_DEDUP_WINDOW_HOURS` after its first attempt (the provider
+        // deduplicates a repeat of the key inside that window), so every tick of an ambiguous
+        // outage retries the row and opens an attempt of its own. Read per attempt, the 48-hour
+        // bound then starts again from the newest of them: an attempt made an hour before the hold
+        // began keeps the alert suppressed for 23 hours after the first attempt's bound passed.
+        // That is the open-ended suppression SPEC-CONFLICT #240 was raised about, arriving more
+        // slowly, and the bound the product owner approved on 2026-08-04 is 48 hours from the
+        // attempt the hold is measured from, not 48 hours from whichever retry ran last.
+        const eventId = await createEvent(scenario("C"));
+        const alertId = await insertDueAlert(eventId, "outage@example.test", 2);
+        await recordAttempt(alertId, UNRESOLVED_ATTEMPT_HOLD_LIMIT_HOURS + 1, false);
+        // The retries the outage produced before the hold could begin, one per hour across the
+        // whole pre-hold window, the newest of them an hour inside the dedup cutoff.
+        for (
+          let hoursAgo = UNRESOLVED_ATTEMPT_HOLD_LIMIT_HOURS - 1;
+          hoursAgo > PROVIDER_DEDUP_WINDOW_HOURS;
+          hoursAgo -= 1
+        ) {
+          await recordAttempt(alertId, hoursAgo, false);
+        }
+        const provider = fakeProvider();
+
+        const summary = await createAlertPoller({
+          database: pool,
+          senders: provider.senders,
+          jurisdiction: ruleset.jurisdiction,
+        }).tick();
+
+        expect(provider.attempts.map((message) => message.recipient)).toContain(
+          "outage@example.test",
+        );
+        expect(summary.heldForReconciliation).toBe(0);
+        const { rows } = await pool.query<{ status: string }>(
+          "SELECT status FROM alerts WHERE id = $1",
+          [alertId],
+        );
+        expect(rows[0]?.status).toBe("sent");
+        // AND THE RELEASED ATTEMPTS STOP SPEAKING FOR THE ROW, which is what keeps the next hold a
+        // hold. Left unresolved, the oldest of them would anchor every later bound in the past and
+        // no attempt could ever hold this alert again, so an outage that keeps producing
+        // unobserved outcomes would send on every tick. Superseded by the send that overtook
+        // them, the hold restarts from the attempt this tick opened.
+        const attempts = await attemptsOf(alertId);
+        expect(
+          attempts.filter(
+            (attempt) => attempt.outcome_recorded_at === null && attempt.superseded_at === null,
+          ),
+        ).toEqual([]);
+      });
 
       it("keeps back enough of the window for the provider request itself", async () => {
         // THE FOURTH FINDING ON THIS MARGIN, and the one the boundary check itself opened. Asking
@@ -4742,6 +4793,42 @@ describe.skipIf(databaseUrl === "")("F-203 deadline alerts", () => {
         eventId,
       ]);
 
+      expect(await reconciliationHolds(pool, eventId, todayHere())).toEqual([]);
+    });
+
+    it("says nothing about an attempted alert the poller is only waiting for the date on", async () => {
+      // NOT DUE IS NOT HELD, and the two counts have to answer that the same way. A regeneration
+      // that moves a previously attempted dependency alert forward keeps the row and its
+      // unresolved attempt and rewrites `send_at`, so the alert carries the evidence of a hold
+      // while the poller is doing nothing but waiting for a future date. The tick's own count asks
+      // `send_at <= current_timestamp` and says nothing about it; this one did not ask, so the
+      // checklist told the organizer PopEngine had paused a filing reminder and sent them after
+      // the sending service about a message nobody is holding. If the bound passes before that
+      // date the alert simply sends, and the reconciliation they were asked for was never real.
+      const eventId = await createEvent(scenario("C"));
+      const alertId = randomUUID();
+      await pool.query(
+        `INSERT INTO alerts (id, event_id, alert_type, channel, recipient, idempotency_key,
+                             send_at, status, failure_count, payload)
+         VALUES ($1, $2, 'deadline_reminder', 'email', 'organizer@example.test', $3,
+                 current_timestamp + interval '3 days', 'pending', 0,
+                 '{"subject":"file it","body":"file it"}'::jsonb)`,
+        [alertId, eventId, alertId],
+      );
+      await pool.query(
+        `INSERT INTO alert_send_attempts (alert_id, idempotency_key, attempted_at)
+         VALUES ($1, $2, current_timestamp - ($3 || ' hours')::interval)`,
+        [alertId, alertId, PROVIDER_DEDUP_WINDOW_HOURS + 1],
+      );
+      const provider = fakeProvider();
+
+      const summary = await createAlertPoller({
+        database: pool,
+        senders: provider.senders,
+        jurisdiction: ruleset.jurisdiction,
+      }).tick();
+
+      expect(summary.heldForReconciliation).toBe(0);
       expect(await reconciliationHolds(pool, eventId, todayHere())).toEqual([]);
     });
 

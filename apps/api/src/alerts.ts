@@ -462,6 +462,22 @@ export const SEND_BOUNDARY_MARGIN_MS = PROVIDER_TIMEOUT_MS + SEND_BOUNDARY_HANDO
  * hold under the new attempt rather than sending on every tick: at most one possible duplicate per
  * alert per limit.
  *
+ * MEASURED FROM THE FIRST UNRESOLVED ATTEMPT, WHICH IS WHY THIS ASKS FOR A MINIMUM RATHER THAN FOR
+ * ANY ROW. Nothing holds an alert for the dedup window after its first attempt, so an ambiguous
+ * outage retries it on every tick of that window and each retry opens an attempt of its own. Asked
+ * as "does SOME unresolved attempt sit between the two edges", the bound then restarts from the
+ * newest of them: an attempt made just before the hold began kept the alert suppressed for nearly
+ * another dedup window past the point the first attempt's own bound had run out, and every cycle
+ * of a continuing outage moved that further out again. That is the open-ended suppression #240 was
+ * raised about, arriving more slowly, and 48 hours from whichever retry ran last is not the 48
+ * hours the owner approved. The oldest unresolved attempt is the one the hold is measured from, so
+ * the alert is released no later than `UNRESOLVED_ATTEMPT_HOLD_LIMIT_HOURS` after it, whatever the
+ * outage does in between.
+ *
+ * THAT ONLY STAYS A HOLD BECAUSE A RETRY RETIRES WHAT IT OVERTOOK: see `recordAttemptIntent`. An
+ * attempt left unresolved past its bound would anchor every later bound in the past, so no attempt
+ * could hold this alert again and the outage would send on every tick from then on.
+ *
  * A BACKFILLED `-infinity` IS PAST EVERY LIMIT, and that is the right reading of it rather than an
  * oversight. Migration 014 seeded that value precisely because the attempt time is unknowable, so
  * no bound measured from it can ever contain the row, and nothing will ever make it knowable. Those
@@ -482,10 +498,14 @@ const unresolvedAttemptPastTheCutoff = (now: string, marginMs: number): string =
         WHERE attempt.alert_id = alerts.id
           AND attempt.outcome_recorded_at IS NULL
           AND attempt.superseded_at IS NULL
-          AND attempt.attempted_at
+       -- HAVING rather than a second WHERE clause, so this stays one boolean over one aggregate:
+       -- an alert with no unresolved attempt produces a NULL minimum, the group is filtered out,
+       -- and EXISTS is false. Written as a scalar subquery instead it would be NULL there, and
+       -- every reader that NEGATES this predicate would drop the row rather than send it.
+       HAVING min(attempt.attempted_at)
               < ${now} - interval '${PROVIDER_DEDUP_WINDOW_HOURS} hours'
                        + interval '${marginMs} milliseconds'
-          AND attempt.attempted_at
+          AND min(attempt.attempted_at)
               >= ${now} - interval '${UNRESOLVED_ATTEMPT_HOLD_LIMIT_HOURS} hours'
      )`;
 
@@ -493,6 +513,44 @@ const HAS_AN_UNRESOLVED_ATTEMPT = unresolvedAttemptPastTheCutoff(
   "current_timestamp",
   DEDUP_WINDOW_CLAIM_MARGIN_MS,
 );
+
+/**
+ * An alert the poller has stopped on, written once for both readers of it.
+ *
+ * THE ONLY DEFINITION OF A HOLD, because two of them disagreed. The tick counts a held alert to
+ * warn an operator, and the checklist counts one to tell an organizer that PopEngine has paused a
+ * filing reminder and that only a person checking with the sending service resolves it. Those are
+ * the same claim about the same row, and they were two statements listing their own conditions:
+ * the tick asked whether the alert was DUE and the checklist did not. A regeneration that moves a
+ * previously attempted alert forward keeps the row and its unresolved attempt and rewrites
+ * `send_at`, so the organizer was sent after the provider about a reminder the poller was doing
+ * nothing but waiting for a date on, and if the bound passes first it simply sends, which makes
+ * the reconciliation they were asked for a thing that was never happening. Copy an organizer reads
+ * about a filing deadline does not get to be false in order to be present.
+ *
+ * A SECOND MATCHING FILTER WOULD BE THE SAME DEFECT AGAIN, one edit from now. Both readers take
+ * this expression, so the next condition either side gains is a condition both sides gain.
+ *
+ * WHAT THE PRODUCT RETIRES BY ITSELF IS NOT A HOLD, which is what the staleness and shut-window
+ * exclusions are for. Regeneration cancels a row the organizer's own edit has moved past, and the
+ * next tick withdraws one whose filing window has closed; the scan and the claim let that second
+ * one through deliberately so it can be cancelled without being sent. Saying that only a person
+ * checking with the sending service resolves either would be a false alarm, and a false alarm on
+ * every tick is also how a genuine hold gets buried. A demo send (AC 6) is excluded for the same
+ * reason: nobody is waiting on it and no deadline is behind it.
+ *
+ * The day is a parameter because the two statements bind it in different positions, and it is the
+ * jurisdiction's day for the reason `FILING_WINDOW_HAS_SHUT` states: a hold is only a hold while
+ * the deadline it is about still exists.
+ */
+const HELD_FOR_RECONCILIATION = (day: string): string => `(
+       alerts.status IN ('pending', 'failed')
+       AND alerts.send_at <= current_timestamp
+       AND coalesce(alerts.payload->>'test', 'false') <> 'true'
+       AND ${NOT_FROM_A_STALE_PLAN}
+       AND NOT ${FILING_WINDOW_HAS_SHUT(day)}
+       AND ${HAS_AN_UNRESOLVED_ATTEMPT}
+     )`;
 
 /**
  * The same question asked at the last statement before the provider, reserving what that statement
@@ -2014,6 +2072,21 @@ function attemptWriterFor(database: Pool): Pool {
  * happened, and with a server-side default nothing in this process knew which row to say so about.
  * Aged past the cutoff, that attempt excluded the alert from every scan for good — a reminder
  * nobody ever handed over, never delivered.
+ *
+ * AND IT RETIRES WHAT THIS SEND OVERTOOK, which is what leaves the next hold something to be
+ * measured from. The hold is measured from the alert's FIRST unresolved attempt (see
+ * `unresolvedAttemptPastTheCutoff`), so an attempt whose provider window closed before this send
+ * was made can no longer be duplicated by anything and can no longer say anything about the
+ * alert. Left unresolved it would anchor every later bound in the past, no attempt could hold the
+ * row again, and an outage that keeps producing unobserved outcomes would send on every tick. This
+ * send is the one that speaks for the alert now, so those attempts are superseded by it, in the
+ * same sense and the same column a revived schedule uses. They stay UNRESOLVED, because nobody did
+ * find out what the provider did with them.
+ *
+ * CONDITIONAL ON THE INSERT, and in one statement with it. A held alert is exactly one whose oldest
+ * unresolved attempt sits between the two edges, so a retirement that ran when the insert was
+ * refused would clear the hold it was refused by. Made to depend on the inserted row, it runs only
+ * where a send is actually being recorded, and it commits or is lost with it.
  */
 async function recordAttemptIntent(database: Pool, row: DueAlertRow): Promise<string | null> {
   const writer = attemptWriterFor(database);
@@ -2022,10 +2095,22 @@ async function recordAttemptIntent(database: Pool, row: DueAlertRow): Promise<st
   let recorded: string | null;
   try {
     const { rows } = await client.query<{ id: string }>(
-      `INSERT INTO alert_send_attempts (id, alert_id, idempotency_key)
-            SELECT $3, alerts.id, $2 FROM alerts
-             WHERE alerts.id = $1 AND NOT ${HAS_AN_UNRESOLVED_ATTEMPT}
-         RETURNING id`,
+      `WITH recorded AS (
+         INSERT INTO alert_send_attempts (id, alert_id, idempotency_key)
+              SELECT $3, alerts.id, $2 FROM alerts
+               WHERE alerts.id = $1 AND NOT ${HAS_AN_UNRESOLVED_ATTEMPT}
+           RETURNING id
+       ), overtaken AS (
+         UPDATE alert_send_attempts AS attempt
+            SET superseded_at = clock_timestamp()
+          WHERE attempt.alert_id = $1
+            AND attempt.outcome_recorded_at IS NULL
+            AND attempt.superseded_at IS NULL
+            AND attempt.attempted_at
+                < clock_timestamp() - interval '${PROVIDER_DEDUP_WINDOW_HOURS} hours'
+            AND EXISTS (SELECT 1 FROM recorded)
+       )
+       SELECT id FROM recorded`,
       [row.id, row.idempotency_key, attemptId],
     );
     recorded = rows[0]?.id ?? null;
@@ -2670,13 +2755,7 @@ export function createAlertPoller(dependencies: {
     // AC 6 demo is an operator action against no deadline: nobody is waiting on it, so warning
     // about one only buries the genuine holds this counter exists to make visible.
     const { rows: held } = await database.query<{ id: string }>(
-      `SELECT id FROM alerts
-        WHERE status IN ('pending', 'failed')
-          AND send_at <= current_timestamp
-          AND coalesce(payload->>'test', 'false') <> 'true'
-          AND ${NOT_FROM_A_STALE_PLAN}
-          AND NOT ${FILING_WINDOW_HAS_SHUT("$1")}
-          AND ${HAS_AN_UNRESOLVED_ATTEMPT}`,
+      `SELECT id FROM alerts WHERE ${HELD_FOR_RECONCILIATION("$1")}`,
       [today],
     );
     if (held.length > 0) {
@@ -3311,17 +3390,13 @@ export async function alertDeliveryHealth(
               WHERE status = 'failed'
                 AND NOT (${HAS_AN_UNRESOLVED_ATTEMPT} AND ${NOT_FROM_A_STALE_PLAN})
             ) AS attempted_without_outcome,
-            -- A SHUT WINDOW IS NOT A HOLD, the same exclusion the tick's own count makes and for
-            -- the same reason. The scan and the claim let such a row through deliberately, so
-            -- PopEngine can cancel it without sending; telling the organizer that only a person
-            -- checking with the sending service resolves it would be a false alarm about a row the
-            -- next tick retires by itself. It is not counted as a failure either: it is not being
-            -- retried, it is being withdrawn.
-            count(*) FILTER (
-              WHERE ${NOT_FROM_A_STALE_PLAN}
-                AND ${HAS_AN_UNRESOLVED_ATTEMPT}
-                AND NOT ${FILING_WINDOW_HAS_SHUT("$2")}
-            )::int AS hold_count
+            -- THE TICK'S OWN DEFINITION OF A HOLD, taken rather than restated. This count and the
+            -- one the poller logs are the same claim about the same row, and listing the
+            -- conditions here a second time is what let them disagree: a shut window and a stale
+            -- plan were excluded on both sides, and being DUE was excluded only on the tick's, so
+            -- an alert a regeneration had moved into the future was named here as one PopEngine
+            -- had paused. See HELD_FOR_RECONCILIATION for what each exclusion is for.
+            count(*) FILTER (WHERE ${HELD_FOR_RECONCILIATION("$2")})::int AS hold_count
        FROM alerts
       WHERE event_id = $1
         AND status IN ('pending', 'failed')
