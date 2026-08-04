@@ -3626,6 +3626,103 @@ describe.skipIf(databaseUrl === "")("F-203 deadline alerts", () => {
     });
   });
 
+  describe("the rollout pause DEPLOY.md runs before migration 014", () => {
+    // WHAT THE RUNBOOK CLAIMS AND THIS PROVES. Migration 014's release has to stop an api that
+    // predates the drain, and a send that build was killed inside is left `pending` with nothing
+    // recording when the provider was reached. DEPLOY.md's release order no longer guesses that
+    // instant: it has the deployer push `next_attempt_at` past the rollout while the old build is
+    // still running, on the strength of two properties of the code the deployer cannot see.
+    //
+    // The first is that the statement WAITS. The claim holds the alert's row lock across the
+    // provider call, so an UPDATE over the same rows cannot commit while a send is in flight, and
+    // the deployer's statement returning is what tells them nothing is mid-send. The second is
+    // that the pause and the un-pause bracket the queue exactly: nothing is claimed while
+    // `next_attempt_at` sits in the future, and clearing it back to null makes the same alert
+    // deliverable again. An instruction whose effect nobody has run is the defect this section
+    // has already had twice, so the three statements the runbook prints are exercised here.
+    it("waits for the send in flight, stops the queue, and gives it back on the un-pause", async () => {
+      const eventId = await createEvent(scenario("C"));
+      const writeDueAlert = async (recipient: string): Promise<string> => {
+        const alertId = randomUUID();
+        await pool.query(
+          `INSERT INTO alerts (id, event_id, alert_type, channel, recipient, idempotency_key,
+                               send_at, status, payload)
+           VALUES ($1, $2, 'deadline_reminder', 'email', $3, $4,
+                   current_timestamp - interval '1 hour', 'pending',
+                   '{"subject":"file it","body":"file it"}'::jsonb)`,
+          [alertId, eventId, recipient, alertId],
+        );
+        return alertId;
+      };
+      const statusOf = async (alertId: string): Promise<string> =>
+        (await pool.query<{ status: string }>("SELECT status FROM alerts WHERE id = $1", [alertId]))
+          .rows[0]?.status ?? "";
+
+      const inFlight = await writeDueAlert("in-flight@example.test");
+      const provider = fakeProvider();
+      let releaseTheSend = (): void => {};
+      const handedOver = new Promise<void>((entered) => {
+        provider.beforeSend = () =>
+          new Promise<void>((resume) => {
+            releaseTheSend = resume;
+            entered();
+          });
+      });
+      const poller = createAlertPoller({
+        database: pool,
+        senders: provider.senders,
+        jurisdiction: ruleset.jurisdiction,
+      });
+      const tickHoldingTheSend = poller.tick();
+      await handedOver;
+
+      // Written after the tick has scanned, so it is the alert the pause has to catch rather than
+      // one this tick was already going to send. It stands for a checklist created during the
+      // rollout, which is the population step c of the runbook exists to list.
+      const queued = await writeDueAlert("queued@example.test");
+
+      const resumeAt = "2099-01-01T00:00:00Z";
+      let pauseReturned = false;
+      const pause = pool
+        .query(
+          `UPDATE alerts SET next_attempt_at = $1
+            WHERE status IN ('pending', 'failed') AND channel = 'email'`,
+          [resumeAt],
+        )
+        .then((result) => {
+          pauseReturned = true;
+          return result;
+        });
+
+      // Long enough to be an answer rather than a race: the send is parked indefinitely, so a
+      // statement that was going to commit without waiting has had every chance to.
+      await new Promise((settle) => setTimeout(settle, 250));
+      expect(pauseReturned).toBe(false);
+
+      releaseTheSend();
+      await tickHoldingTheSend;
+      await pause;
+
+      // The send it waited for finished recording its outcome, so the pause left it alone: the
+      // row it could not have paused mid-send is `sent` rather than pending with a future retry.
+      expect(await statusOf(inFlight)).toBe("sent");
+      expect(provider.delivered).toHaveLength(1);
+
+      provider.beforeSend = null;
+      await poller.tick();
+      // Paused, so a build still running claims nothing: the queued alert is untouched.
+      expect(provider.delivered).toHaveLength(1);
+      expect(await statusOf(queued)).toBe("pending");
+
+      await pool.query("UPDATE alerts SET next_attempt_at = NULL WHERE next_attempt_at = $1", [
+        resumeAt,
+      ]);
+      await poller.tick();
+      expect(provider.delivered).toHaveLength(2);
+      expect(await statusOf(queued)).toBe("sent");
+    });
+  });
+
   describe("AC 7 — regeneration recomputes pending alerts and never re-sends a sent one", () => {
     it("cancels what the new plan no longer calls for, keeps what it still does, and leaves sent alerts alone", async () => {
       const eventId = await createEvent(scenario("C"));

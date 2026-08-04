@@ -92,40 +92,50 @@ describe("F-203 rollout constraints the runbook has to carry", () => {
     expect(prose).toMatch(new RegExp(`${PROVIDER_DEDUP_WINDOW_HOURS}[- ]?hour`, "i"));
   });
 
-  it("anchors the pre-migration hold to when the old api stopped", () => {
-    // WHAT "COMPLETE THE ROLLOUT INSIDE 24 HOURS" DOES NOT BOUND. The window this step protects
-    // starts when the old build handed a message to Resend, and the only thing the new build can
-    // stamp is when IT tried. A send accepted at T whose transaction never committed is left
-    // `pending` with no attempt row (migration 014's backfill covers `failed` rows only), so the
-    // new poller retries it and stamps an attempt at T+delta. The hold is measured from that stamp,
-    // so an outage that runs past T+24h and recovers before T+delta+24h reads as retryable when
-    // Resend has already forgotten the key, and the organizer gets the reminder twice. Finishing
-    // the deployment quickly makes delta small; it does not put the retry inside the original
-    // send's window, because nothing here controls when the provider comes back.
+  it("empties the old build's queue before the stop instead of anchoring a hold to it", () => {
+    // WHAT NO STAMP CAN DO, which is why this case pins a quiesce rather than a better anchor.
+    // The window this step protects starts when the old build handed a message to Resend, and
+    // nothing on the row records that instant: a send accepted at T whose transaction never
+    // committed rolls back everything it wrote, and migration 014's backfill covers `failed` rows
+    // only. Any stamp the runbook picks is therefore a guess about T. Stamp it late, at the moment
+    // the process was gone, and the hold starts after Resend has already forgotten the key; stamp
+    // it early enough to be a true lower bound on an unknowable T and it is already past
+    // `UNRESOLVED_ATTEMPT_HOLD_LIMIT_HOURS`, which releases the row on the first tick rather than
+    // holding it. The bound is the product owner's 2026-08-04 decision and is not this runbook's
+    // to widen, so the third finding on this section is answered by removing the guess instead of
+    // moving it.
     //
-    // SO THE RUNBOOK HAS TO NAME THE ANCHOR AND AN ACTION THAT SETS IT. The latest moment any
-    // pre-migration send can have reached the provider is the moment the old process was gone, and
-    // the mechanism that turns that into behavior already exists: an unresolved attempt stamped at
-    // that moment makes the alert freely retryable for one dedup window after it and held rather
-    // than duplicated afterwards. That is a statement a deployer runs and a count they can check,
-    // which is what this case pins.
+    // SO THE RUNBOOK HAS TO LEAVE NOTHING IN FLIGHT TO ANCHOR. The old build claims an alert only
+    // while `next_attempt_at` has passed and holds the row locked across the provider call, so a
+    // blocking UPDATE that pushes `next_attempt_at` past the rollout cannot return until every
+    // send in flight has recorded its outcome, and no send can start after it. That is a statement
+    // a deployer runs, a count they can check, and an un-pause they can confirm, which is what
+    // this case pins.
     const alerts = read("apps/api/src/alerts.ts");
-    // The hold is measured from the OLDEST unresolved attempt, which is what makes a stamped row
-    // move the bound rather than be ignored behind a newer retry's own attempt.
-    expect(alerts).toContain("min(attempt.attempted_at)");
-    // And the population the backfill leaves uncovered, which is what the stamp is for.
+    // The gate the pause acts on. If the claim ever stopped honouring `next_attempt_at` the pause
+    // would stop stopping anything, and the un-pause would stop releasing anything.
+    expect(alerts).toContain(
+      "AND (next_attempt_at IS NULL OR next_attempt_at <= current_timestamp)",
+    );
+    // And the population the backfill leaves uncovered, which is what the pause is for.
     expect(read("apps/api/migrations/014_alert_send_attempts.ts")).toContain(
       "WHERE status = 'failed'",
     );
 
     const prose = releaseOrder.replace(/\s+/g, " ");
+    // The invariant itself, stated where the procedure is, so the next finding on this section is
+    // checked against it rather than against the last wording.
+    expect(prose).toMatch(/no alert can have been handed to a provider before the instant/i);
     // Named, so the deployer records it rather than inferring it from the deployment's duration.
     expect(releaseOrder).toContain("T_stop");
-    // Performable: the statement that sets the anchor is written out, not described.
-    expect(releaseOrder).toContain("INSERT INTO alert_send_attempts");
-    // Verifiable: re-running it is the check, so the deployer can tell it landed.
-    expect(prose).toMatch(/INSERT 0 0/);
-    // And the claim that does not hold is gone rather than sitting beside the one that does.
+    // Performable: all three statements are written out, not described.
+    expect(releaseOrder).toContain("SET next_attempt_at = TIMESTAMPTZ '<T_resume>'");
+    expect(releaseOrder).toContain("SET next_attempt_at = NULL");
+    // Confirmable: the escape hatch is a count the deployer reads, and it has an expected value.
+    expect(prose).toMatch(/must be 0/i);
+    // And the guesses that do not hold are gone rather than sitting beside the procedure that does.
+    expect(releaseOrder).not.toContain("INSERT INTO alert_send_attempts");
+    expect(prose).not.toMatch(/anchored at `?T_stop/i);
     expect(prose).not.toMatch(/complete the rollout well inside 24 hours/i);
   });
 
