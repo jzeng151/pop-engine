@@ -1,6 +1,6 @@
 # F-306 · RSVP Waitlist
 
-**Status:** PROPOSED (2026-07-26) — approval blocked by `docs/OPEN-QUESTIONS.md` T-6 / [SPEC-CONFLICT #209](https://github.com/jzeng151/pop-engine/issues/209); not implementable until approved and listed in `docs/BASELINE.md`.
+**Status:** PROPOSED (2026-07-26) — `docs/OPEN-QUESTIONS.md` T-6 / [SPEC-CONFLICT #209](https://github.com/jzeng151/pop-engine/issues/209) was resolved 2026-08-03 and no longer blocks this spec. The approvals listed under Approval Blockers below are still outstanding; not implementable until approved and listed in `docs/BASELINE.md`.
 
 **Phase:** 3 · **Issue:** [#36](https://github.com/jzeng151/pop-engine/issues/36) · **Owner:** TBD · **Reviewer:** product owner plus affected architecture, contract, security, and lane owners (TBD) · **Approval date:** —
 
@@ -25,13 +25,13 @@ When registration capacity is full, an attendee can join a deterministic waitlis
 
 - F-302 capacity-aware RSVP, F-403 contact/transactional messaging policy, and approved jobs/outbox.
 - Stable public event token and event timezone.
-- T-6 / SPEC-CONFLICT #209 must approve one shared F-302/F-306 admission-limit source and semantics; this spec does not choose between F-101 `headcount` and the separate confirmed `capacity`.
+- **T-6 / SPEC-CONFLICT #209 is resolved 2026-08-03, product-owner approved:** the shared F-302/F-306 admission limit is `events.capacity`, the confirmed venue/event capacity, and a null `capacity` means no confirmed limit. F-101 `headcount` is not the limit; it is a regulatory input and admitting against it would let a guest-limit change move a permit finding. A null capacity therefore never fills, so this waitlist has nothing to promote into and stays empty by construction rather than by a special case.
 - Baseline at draft time: PRD, Roadmap, Design, and Phase 0–1.5 Architecture approved 2026-07-22; `ARCHITECTURE-FUTURE.md` approved as a planning target 2026-07-25; NYC ruleset `nyc.v2.7`, rules schema `popengine-rules/v2`, and scenario fixtures v5 where regulatory output is consumed.
 - The approval PR must re-pin any baseline version that changes before approval. A proposed or superseded input blocks implementation.
 
 ## Inputs, Outputs, State, Validation, and Errors
 
-- Inputs are event and lifecycle generation, contact, and the approved shared F-302/F-306 admission-limit version; outputs are confirmed RSVP or ordered waitlist entry. Join and promotion remain unavailable while T-6 is unresolved.
+- Inputs are event and lifecycle generation, contact, and the shared F-302/F-306 admission limit T-6 resolved, `events.capacity`; outputs are confirmed RSVP or ordered waitlist entry. Join and promotion remain unavailable until this spec is approved.
 - State is waitlisted → promoted/confirmed, withdrawn, or expired; transitions are atomic and idempotent.
 - Duplicate contact submissions return current state only to the authenticated attendee or holder of that entry's receipt credential; other callers receive a non-disclosing result. A suppressed marketing contact may still receive only the policy-approved transactional promotion notice.
 - Missing or unresolved material data stays visibly unset, unknown, pending, or failed as appropriate; it never becomes a successful or complete result.
@@ -57,7 +57,7 @@ Exact HTTP, JSON Schema, migration, job, and provider shapes belong in their rev
 
 ## Acceptance Criteria
 
-1. **F306-AC-01:** At the approved shared F-302/F-306 admission limit, an eligible registration creates one ordered waitlist entry rather than an RSVP; no admission decision is available before T-6 resolves that limit.
+1. **F306-AC-01:** At the shared F-302/F-306 admission limit, a confirmed `events.capacity`, an eligible registration creates one ordered waitlist entry rather than an RSVP; a null capacity is no confirmed limit, so the event never fills and nothing is waitlisted.
 2. **F306-AC-02:** For any positive availability delta under the approved shared admission limit, one transaction promotes the earliest eligible entries up to all available places and inserts each durable promotion-notice outbox record; it cannot overbook or silently promote without notice work under concurrent workers/requests.
 3. **F306-AC-03:** Duplicate join, cancellation, webhook, or retry actions do not create duplicate entries, RSVPs, or promotion messages.
 4. **F306-AC-04:** Withdrawal or ineligibility before claim skips that entry without reordering remaining eligible entries.
@@ -85,5 +85,5 @@ Exact HTTP, JSON Schema, migration, job, and provider shapes belong in their rev
 
 ## Approval Blockers
 
-- Resolve T-6 / SPEC-CONFLICT #209 and approve the shared F-302/F-306 admission limit plus ordering, eligibility, promotion-expiry, notification-channel, and capacity-change policy.
+- ~~Resolve T-6 / SPEC-CONFLICT #209 and approve the shared F-302/F-306 admission limit~~ **resolved 2026-08-03: the shared limit is `events.capacity`.** Still to approve: ordering, eligibility, promotion-expiry, notification-channel, and capacity-change policy.
 - Assign the owner and independent reviewer, approve this spec, and add it to `docs/BASELINE.md`.

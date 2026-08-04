@@ -5,7 +5,13 @@ import { Router, type Request, type Response } from "express";
 import type { Pool, PoolClient, QueryResult, QueryResultRow } from "pg";
 
 // F-302 RSVP / guest list (ARCHITECTURE.md API Surface + rsvps schema).
-// Capacity is F-101 headcount (spec AC 2) — not events.capacity (that gauge is F-402).
+//
+// Admission is `events.capacity`, the confirmed venue/event capacity, and a NULL capacity means
+// no enforced limit (spec AC 2, resolving T-5 / SPEC-CONFLICT #209 on 2026-08-03). It used to be
+// F-101 `headcount`, which was wrong in a way worth recording: `headcount` is a regulatory input
+// that drives the 75+ assembly gate, the DOHMH thresholds and the Parks exactly-20 conflict, so
+// admitting against it meant raising an RSVP cap silently moved the event's permit findings. The
+// same column also feeds F-402's gauge, which is the shape F-306 promotes into.
 // Public POST requires F-301 public_page_published so unpublished events cannot collect RSVPs.
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -74,14 +80,19 @@ function readRsvpBody(
 type EventCapacity = {
   id: string;
   name: string;
-  headcount: number;
+  /** Null when no capacity is confirmed: admission is then unlimited, never zero. */
+  capacity: number | null;
   event_date: string;
   public_page_published: boolean;
 };
 
+/** Full only when a capacity is confirmed and already met. A null capacity never refuses. */
+const isFull = (event: EventCapacity, confirmed: number): boolean =>
+  event.capacity !== null && confirmed >= event.capacity;
+
 async function lockEvent(client: Queryable, eventId: string): Promise<EventCapacity | null> {
   const { rows } = await client.query<EventCapacity>(
-    `SELECT id, name, headcount, event_date::text AS event_date, public_page_published
+    `SELECT id, name, capacity, event_date::text AS event_date, public_page_published
        FROM events
       WHERE id = $1
       FOR UPDATE`,
@@ -120,12 +131,13 @@ async function withTransaction<T>(
 }
 
 export type CreateRsvpResult =
-  | { status: 200 | 201; body: { rsvp: RsvpRow; confirmed_count: number; headcount: number } }
+  | { status: 200 | 201; body: { rsvp: RsvpRow; confirmed_count: number; capacity: number | null } }
   | { status: 400 | 404; body: { error: string } };
 
 /**
  * Create or update an RSVP. Duplicate email on the same event updates the row
- * (spec AC 3). New confirmed seats are refused at headcount with "event is full".
+ * (spec AC 3). New confirmed seats are refused at a confirmed capacity with "event is full";
+ * an event with no confirmed capacity is never refused for being full.
  * Count checks run under the event row lock so concurrent RSVPs cannot overbook.
  */
 export async function createRsvp(
@@ -170,7 +182,7 @@ export async function createRsvp(
       const reactivating = existing.status === "cancelled";
       if (reactivating) {
         const confirmed = await countConfirmed(client, eventId);
-        if (confirmed >= event.headcount) {
+        if (isFull(event, confirmed)) {
           return { status: 400, body: { error: "event is full" } };
         }
       }
@@ -193,13 +205,13 @@ export async function createRsvp(
         body: {
           rsvp,
           confirmed_count: await countConfirmed(client, eventId),
-          headcount: event.headcount,
+          capacity: event.capacity,
         },
       };
     }
 
     const confirmed = await countConfirmed(client, eventId);
-    if (confirmed >= event.headcount) {
+    if (isFull(event, confirmed)) {
       return { status: 400, body: { error: "event is full" } };
     }
 
@@ -219,7 +231,7 @@ export async function createRsvp(
       body: {
         rsvp,
         confirmed_count: confirmed + 1,
-        headcount: event.headcount,
+        capacity: event.capacity,
       },
     };
   });
@@ -229,14 +241,14 @@ export type ListRsvpsResult =
   | {
       status: 200;
       body: {
-        event: { id: string; name: string; headcount: number; event_date: string };
+        event: { id: string; name: string; capacity: number | null; event_date: string };
         rsvps: RsvpRow[];
         confirmed_count: number;
       };
     }
   | { status: 400 | 404; body: { error: string } };
 
-/** Organizer guest list: every RSVP row plus count vs headcount. */
+/** Organizer guest list: every RSVP row plus count vs confirmed capacity (null = no limit). */
 export async function listRsvps(database: Queryable, eventId: string): Promise<ListRsvpsResult> {
   if (!UUID.test(eventId)) {
     return { status: 400, body: { error: "That event link is not valid." } };
@@ -245,10 +257,10 @@ export async function listRsvps(database: Queryable, eventId: string): Promise<L
   const { rows: events } = await database.query<{
     id: string;
     name: string;
-    headcount: number;
+    capacity: number | null;
     event_date: string;
   }>(
-    `SELECT id, name, headcount, event_date::text AS event_date
+    `SELECT id, name, capacity, event_date::text AS event_date
        FROM events
       WHERE id = $1`,
     [eventId],
@@ -272,7 +284,7 @@ export async function listRsvps(database: Queryable, eventId: string): Promise<L
       event: {
         id: event.id,
         name: event.name,
-        headcount: event.headcount,
+        capacity: event.capacity,
         event_date: event.event_date,
       },
       rsvps,
@@ -282,7 +294,7 @@ export async function listRsvps(database: Queryable, eventId: string): Promise<L
 }
 
 export type CancelRsvpResult =
-  | { status: 200; body: { rsvp: RsvpRow; confirmed_count: number; headcount: number } }
+  | { status: 200; body: { rsvp: RsvpRow; confirmed_count: number; capacity: number | null } }
   | { status: 400 | 404; body: { error: string } };
 
 /** Organizer cancel: status → cancelled, frees a confirmed seat (spec AC 5). */
@@ -318,7 +330,7 @@ export async function cancelRsvp(
       body: {
         rsvp,
         confirmed_count: await countConfirmed(client, eventId),
-        headcount: event.headcount,
+        capacity: event.capacity,
       },
     };
   });
