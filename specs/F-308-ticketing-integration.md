@@ -69,9 +69,14 @@ Exact HTTP, JSON Schema, migration, job, and provider shapes belong in their rev
 
     AC-02 deduplicates provider events and registrations for one stable mapping, which is the provider side of a run and not the run itself; a second run carries the same mappings and passes that check. When the create transaction commits and its response is lost, the retry starts a second export run over the same records: a second CSV of attendee contacts in private storage with its own retention clock and its own AC-09 revocation surface, a second set of AC-07 transfer claims to account for, and two runs whose AC-03 partial-failure outcomes the organizer must reconcile for one authorized action.
 
+11. **F308-AC-11:** Starting provider authorization issues a single-use callback state that the server stores bound to the initiating actor, the workspace, the provider, and the exact approved redirect target, on the same terms `F212-AC-06` states in full. The callback rejects any request whose state is missing, unrecognized, expired, already consumed, or bound to a different actor, workspace, provider, or redirect; a rejection stores no credential and creates no connection or mapping, and a successful callback retires its state so a replayed callback cannot bind a second time. Disconnecting under AC-05 advances the connection generation and invalidates every outstanding state issued against the prior generation, so a delayed callback cannot silently reconnect the workspace after the organizer was told the connection was removed.
+
+    This is the callback half of `F702-AC-10`, which requires every externally initiated callback to name the workspace it acts in and to have that binding established by the server when the flow starts rather than read from whatever browser session presents the callback. AC-01 through AC-10 all pass for a connection an attacker established: the attacker begins authorization against their own provider account, induces an authenticated organizer to open the callback, and the organizer's workspace is bound to the attacker's ticketing account, after which AC-01's own export sends that event's registration data, including the contact fields the transfer basis admitted, to the attacker. AC-04 does not reach this, because it governs what a webhook may do once a connection exists and says nothing about how the connection came to exist. State entropy and lifetime are not established by any approved artifact today; they belong to the provider credential contract named in the Approval Blockers, so until that approval names them this criterion is testable only as "an unguessable single-use state is required, bound, verified, and consumed before credentials are stored, and disconnect invalidates every outstanding state," not against a specific length or expiry.
+
 ## Fixtures and Verification
 
 - Planned automated fixture IDs are the acceptance IDs above; each must map one-to-one to a runnable test before approval can claim implementation readiness.
+- F308-AC-11 includes a cross-workspace callback fixture in which a state issued for one workspace is presented while a different workspace is active and is rejected with no credential stored, a replayed-callback fixture, and a fixture proving a callback whose state was issued before a disconnect creates no connection.
 - Regulatory fixtures: none; this feature does not define regulatory ground truth.
 - Security-sensitive and cross-workspace paths require negative authorization tests; provider paths require success, duplicate-delivery, retry, invalid-signature, and permanent-failure tests where applicable.
 
@@ -89,6 +94,6 @@ Exact HTTP, JSON Schema, migration, job, and provider shapes belong in their rev
 
 ## Approval Blockers
 
-- Select/approve one provider and its field mapping, terms, credentials, webhook, retention, and deletion behavior.
+- Select/approve one provider and its field mapping, terms, credentials, webhook, retention, and deletion behavior. The credential contract must name the callback-state entropy and lifetime that F308-AC-11 leaves unpinned.
 - Approve the CSV field allow-list, complete dangerous-prefix escaping rule, authorization, retention, and short-lived download contract.
 - Assign the owner and independent reviewer, approve this spec, and add it to `docs/BASELINE.md`.
