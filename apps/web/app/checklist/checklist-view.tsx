@@ -169,6 +169,14 @@ export function failedDeliveryNotice(failure: {
  * on today, and it stops at their own reminders: it says not to rely on this alert, and says
  * nothing about the filing itself, which is the ruleset's to describe and not this sentence's.
  *
+ * NOR MAY IT SAY THIS ALERT CAN NEVER GO OUT AGAIN, which is what "will not be sent again on its
+ * own" said. A regeneration cancels a held alert and the next review revives it as a FRESH
+ * schedule: `alerts.ts` supersedes the unresolved attempt on purpose, because an attempt speaks
+ * for the schedule it was made for, and the revived row is then sent like any other. So an
+ * organizer who regenerates can receive precisely the second copy that sentence ruled out. The
+ * page cannot see whether a regeneration is coming and must not guess, so it qualifies the claim
+ * to the schedule it CAN see: nothing on this one will send them again.
+ *
  * "the sending service" rather than the provider's name, which is an operational detail an
  * organizer has no account with and cannot ring up.
  */
@@ -184,9 +192,9 @@ export function reconciliationHoldNotice(hold: { channel: string; heldCount: num
   return (
     `${hold.heldCount} ${name} ${alerts} for this event ${were} handed to the sending service ` +
     `and no answer came back. Too much time has passed to try ${them} again safely, so PopEngine ` +
-    `has stopped: ${they} will not be sent again on ${their} own. Someone has to check with the ` +
-    `sending service whether ${they} arrived; until then, do not count on ${them} to remind you ` +
-    `of ${dates}.`
+    `has stopped: nothing on ${their} current schedule will send ${them} again. Someone has to ` +
+    `check with the sending service whether ${they} arrived; until then, do not count on ${them} ` +
+    `to remind you of ${dates}.`
   );
 }
 

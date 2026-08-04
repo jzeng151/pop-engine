@@ -543,7 +543,12 @@ async function acknowledgedPlanId(database: Queryable, eventId: string): Promise
   return rows[0]?.plan_id ?? null;
 }
 
-async function checklistView(database: Queryable, eventId: string, plan: LatestPlan) {
+async function checklistView(
+  database: Queryable,
+  eventId: string,
+  plan: LatestPlan,
+  today: string,
+) {
   const items = await checklistRows(database, eventId);
   const struck = await struckChecklistItemIds(database, eventId, plan.id, items);
   const latestItems = await planItems(database, plan.id);
@@ -616,7 +621,7 @@ async function checklistView(database: Queryable, eventId: string, plan: LatestP
   // queries with real time between them, and the hold predicate turns on how old an attempt is —
   // so a row crossing the dedup cutoff in the gap arrived under both notices at once, one saying
   // PopEngine keeps retrying it and the other saying retrying has stopped.
-  const alertHealth = await alertDeliveryHealth(database, eventId);
+  const alertHealth = await alertDeliveryHealth(database, eventId, today);
 
   return {
     eventId,
@@ -899,7 +904,18 @@ async function metadataOutcome(
   }
 }
 
-export function createChecklistRouter(dependencies: ChecklistDependencies): Router {
+export function createChecklistRouter(
+  dependencies: ChecklistDependencies,
+  /**
+   * The api's one clock (index.ts), passed rather than read here.
+   *
+   * The checklist reports which alerts the poller has stopped on, and that classification turns on
+   * whether a filing window has shut — a question about the jurisdiction's calendar day, which is
+   * the day `sendOne` reads when it retires the same row. Two answers to it would put the page and
+   * the poller in disagreement about which alerts need a person.
+   */
+  today: () => string,
+): Router {
   const { database, storage, scheduleAlerts } = dependencies;
   const router = Router();
 
@@ -985,7 +1001,7 @@ export function createChecklistRouter(dependencies: ChecklistDependencies): Rout
         // Read under the same row lock as everything above, so a regeneration committing mid
         // request lands either wholly before this comparison or wholly after it.
         if (displayedPlanId !== plan.id) {
-          const current = await checklistView(client, eventId, plan);
+          const current = await checklistView(client, eventId, plan, today());
           await client.query("ROLLBACK");
           res.status(409).json({
             error: `plan ${displayedPlanId} is no longer the latest plan for event ${eventId}; nothing was recorded — review the current plan shown here and submit again`,
@@ -999,7 +1015,7 @@ export function createChecklistRouter(dependencies: ChecklistDependencies): Rout
         // inside the same transaction, so the checklist and its alerts commit together (AC 7: a
         // regeneration reviewed here is also where pending alerts are recomputed).
         const alerts = await scheduleAlerts(client, eventId, plan.id, parsed.contacts);
-        const view = await checklistView(client, eventId, plan);
+        const view = await checklistView(client, eventId, plan, today());
         await client.query("COMMIT");
         // A second call creates nothing and returns the checklist that already exists.
         res.status(created > 0 ? 201 : 200).json({ ...view, alerts });
@@ -1022,7 +1038,7 @@ export function createChecklistRouter(dependencies: ChecklistDependencies): Rout
         notFound(res, `no plan generated for event ${eventId}`);
         return;
       }
-      res.json(await checklistView(database, eventId, plan));
+      res.json(await checklistView(database, eventId, plan, today()));
     }),
   );
 

@@ -1872,6 +1872,19 @@ function attemptWriterFor(database: Pool): Pool {
  * It cannot write to the `alerts` row either — the claim holds it — so the intent is a child row.
  * A foreign key takes only FOR KEY SHARE on the parent, which is compatible with the claim's
  * FOR NO KEY UPDATE, so the insert does not queue behind the send it is recording.
+ *
+ * AND THE CUTOFF IS ASKED AGAIN HERE, because getting this connection is the one step between the
+ * claim and the provider that no arithmetic bounds. Everything else the margin covers is a
+ * statement on a connection the sending transaction already holds; this one is taken from a second
+ * pool, so it can queue behind `SEND_CONCURRENCY` other sends or wait on a new backend, for as
+ * long as that takes. `DEDUP_WINDOW_CLAIM_MARGIN_MS` is what the claim reserved for the rest of the
+ * work, and a wait that outlasts it puts the repeated key at the provider after the 24 hours it
+ * deduplicates within — the second delivery the hold exists to prevent, arriving through the very
+ * statement that records it. Re-asking is the answer rather than a timeout on the wait: a bound
+ * would only make the overrun shorter, while the predicate says whether this send is still the one
+ * the claim permitted. Returning null means it is not, and nothing is sent.
+ *
+ * Asked INSIDE the insert, so there is no second gap between the question and the record.
  */
 async function recordAttemptIntent(
   database: Pool,
@@ -1880,7 +1893,10 @@ async function recordAttemptIntent(
   const client = await attemptWriterFor(database).connect();
   try {
     const { rows } = await client.query<{ id: string }>(
-      `INSERT INTO alert_send_attempts (alert_id, idempotency_key) VALUES ($1, $2) RETURNING id`,
+      `INSERT INTO alert_send_attempts (alert_id, idempotency_key)
+            SELECT alerts.id, $2 FROM alerts
+             WHERE alerts.id = $1 AND NOT ${HAS_AN_UNRESOLVED_ATTEMPT}
+         RETURNING id`,
       [row.id, row.idempotency_key],
     );
     return rows[0]?.id ?? null;
@@ -1909,7 +1925,11 @@ async function deliverClaimed(
   row: DueAlertRow,
   senders: AlertSenders,
   database: Pool,
-): Promise<{ status: "sent" | "failed"; delivery: AlertDelivery | null; error: string | null }> {
+): Promise<{
+  status: "sent" | "failed";
+  delivery: AlertDelivery | null;
+  error: string | null;
+} | null> {
   const sender = senders[row.channel];
   // NOTHING TO RECONCILE WHERE NOTHING IS HANDED OVER. The intent exists to catch one state: a
   // provider holding a message whose outcome this side never learned. The SMS channel is the
@@ -1925,8 +1945,15 @@ async function deliverClaimed(
   // see — the same inference `alert-delivery.ts` refuses when it records what a send actually was
   // on the row rather than leaving a reader to work it out. A live SMS sender is marked as
   // reaching a provider by saying nothing, so this needs no edit on the day one lands.
-  const attemptId =
-    sender.reachesAProvider === false ? null : await recordAttemptIntent(database, row);
+  let attemptId: string | null = null;
+  if (sender.reachesAProvider !== false) {
+    attemptId = await recordAttemptIntent(database, row);
+    // The claim permitted this send and the wait for the writer's connection outlived what the
+    // claim reserved, so the permission has expired: the key would reach the provider outside the
+    // window it deduplicates within. Nothing is sent and nothing is marked, so the row is exactly
+    // what it was and the next tick reads it as the hold it has become.
+    if (attemptId === null) return null;
+  }
   // Written in the SENDING transaction, so a crash that loses the mark-sent loses this too. That
   // is the correct outcome rather than a limitation: both describe the same lost knowledge.
   const recordOutcome = async (): Promise<void> => {
@@ -2822,8 +2849,9 @@ export type FailedDelivery = {
 export async function failedDeliveries(
   database: Queryable,
   eventId: string,
+  today: string,
 ): Promise<FailedDelivery[]> {
-  return (await alertDeliveryHealth(database, eventId)).failedDeliveries;
+  return (await alertDeliveryHealth(database, eventId, today)).failedDeliveries;
 }
 
 /**
@@ -2848,8 +2876,9 @@ export async function failedDeliveries(
  * it IS that predicate.
  *
  * Pending as well as failed, because the crash case is the silent one. Test rows are excluded for
- * the reason they are excluded everywhere else, and stale-plan rows because regeneration cancels
- * them rather than a person reconciling them.
+ * the reason they are excluded everywhere else, stale-plan rows because regeneration cancels them
+ * rather than a person reconciling them, and rows whose filing window has shut because the next
+ * tick cancels those without asking anybody anything.
  */
 export type ReconciliationHold = {
   readonly channel: AlertChannel;
@@ -2860,8 +2889,9 @@ export type ReconciliationHold = {
 export async function reconciliationHolds(
   database: Queryable,
   eventId: string,
+  today: string,
 ): Promise<ReconciliationHold[]> {
-  return (await alertDeliveryHealth(database, eventId)).reconciliationHolds;
+  return (await alertDeliveryHealth(database, eventId, today)).reconciliationHolds;
 }
 
 /**
@@ -2883,6 +2913,13 @@ export async function reconciliationHolds(
 export async function alertDeliveryHealth(
   database: Queryable,
   eventId: string,
+  /**
+   * The jurisdiction's calendar day, because a hold is only a hold while the deadline still exists.
+   *
+   * Passed in rather than read here for the reason the poller states: there is no honest default
+   * for which jurisdiction's day this is, and the api already computes one clock for everything.
+   */
+  today: string,
 ): Promise<{
   readonly failedDeliveries: FailedDelivery[];
   readonly reconciliationHolds: ReconciliationHold[];
@@ -2902,8 +2939,16 @@ export async function alertDeliveryHealth(
               WHERE status = 'failed'
                 AND NOT (${HAS_AN_UNRESOLVED_ATTEMPT} AND ${NOT_FROM_A_STALE_PLAN})
             ) AS held_for_review,
+            -- A SHUT WINDOW IS NOT A HOLD, the same exclusion the tick's own count makes and for
+            -- the same reason. The scan and the claim let such a row through deliberately, so
+            -- PopEngine can cancel it without sending; telling the organizer that only a person
+            -- checking with the sending service resolves it would be a false alarm about a row the
+            -- next tick retires by itself. It is not counted as a failure either: it is not being
+            -- retried, it is being withdrawn.
             count(*) FILTER (
-              WHERE ${NOT_FROM_A_STALE_PLAN} AND ${HAS_AN_UNRESOLVED_ATTEMPT}
+              WHERE ${NOT_FROM_A_STALE_PLAN}
+                AND ${HAS_AN_UNRESOLVED_ATTEMPT}
+                AND NOT ${FILING_WINDOW_HAS_SHUT("$2")}
             )::int AS hold_count
        FROM alerts
       WHERE event_id = $1
@@ -2911,7 +2956,7 @@ export async function alertDeliveryHealth(
         AND coalesce(payload->>'test', 'false') <> 'true'
       GROUP BY channel
       ORDER BY channel`,
-    [eventId],
+    [eventId, today],
   );
   return {
     // Never zero: absent instead, which is what both notices' "empty means nothing to say" relies

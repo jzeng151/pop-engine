@@ -91,6 +91,18 @@ export function up(pgm: MigrationBuilder): void {
   // read. The literal is repeated here rather than imported because a merged migration must keep
   // meaning what it meant on the day it ran; `alerts.test.ts` pins it against the live sender.
   //
+  // ONE FAILURE, THOUGH, AND NOT MERELY THIS ERROR. `last_error` is the LATEST failure and is
+  // overwritten by every attempt, so it says nothing whatever about the ones before it. A row that
+  // reached Resend, lost its COMMIT to a crash, and was then retried in a deployment whose
+  // credentials had gone carries this exact local message while the earlier provider outcome
+  // stays unknown — the ambiguous history this whole table exists for, skipped on the strength of
+  // an error that postdates it. `failure_count` (migration 008) is the column that can tell the
+  // two apart: exactly one recorded failure, and the error on the row is that failure, so nothing
+  // ever reached a provider. More than one, and the earlier attempts are unaccounted for, so the
+  // row is seeded and the uncertainty is preserved. A legacy row that predates 008 counts zero,
+  // which is not one, so it is seeded too — that is the same conservative reading, since a row
+  // whose attempt history is unrecorded is the definition of ambiguous here.
+  //
   // `-infinity` RATHER THAN A DATE, because the attempt time is not merely unknown, it is
   // unknowable from anything on the row — nothing recorded when the last attempt happened. Any
   // stamp this migration invented would be a claim about a provider's dedup window that no
@@ -107,7 +119,8 @@ export function up(pgm: MigrationBuilder): void {
             WHERE status = 'failed'
               AND channel = 'email'
               AND coalesce(payload->>'test', 'false') <> 'true'
-              AND coalesce(payload->>'last_error', '') <> $$RESEND_API_KEY and SMTP_FROM are not configured; email alerts stay pending until they are$$`);
+              AND NOT (failure_count = 1
+                       AND coalesce(payload->>'last_error', '') = $$RESEND_API_KEY and SMTP_FROM are not configured; email alerts stay pending until they are$$)`);
 }
 
 export function down(pgm: MigrationBuilder): void {

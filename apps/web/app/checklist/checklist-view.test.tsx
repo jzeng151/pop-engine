@@ -1525,14 +1525,36 @@ describe("F-203 · a channel that failed to deliver is reported to the organizer
     const notice = screen.getByText(/no answer came back/);
     expect(notice.textContent).toBe(
       "2 email alerts for this event were handed to the sending service and no answer came back. " +
-        "Too much time has passed to try them again safely, so PopEngine has stopped: they will " +
-        "not be sent again on their own. Someone has to check with the sending service whether " +
-        "they arrived; until then, do not count on them to remind you of the filing dates they " +
-        "cover.",
+        "Too much time has passed to try them again safely, so PopEngine has stopped: nothing on " +
+        "their current schedule will send them again. Someone has to check with the sending " +
+        "service whether they arrived; until then, do not count on them to remind you of the " +
+        "filing dates they cover.",
     );
     expect(notice.getAttribute("role")).toBe("alert");
     // The claim that broke this: nothing here may promise a retry that is not going to happen.
     expect(notice.textContent).not.toContain("keeps retrying");
+  });
+
+  it("does not promise a held alert can never be sent again", async () => {
+    // WHAT THIS NOTICE IS NOT ENTITLED TO SAY. A held alert is cancelled by a regeneration and
+    // revived by the next review as a FRESH schedule: the revival supersedes the unresolved
+    // attempt, and the poller then sends the same alert again — which may be the second copy of a
+    // delivery nobody ever observed. Told flatly that these alerts "will not be sent again", an
+    // organizer who regenerates their plan gets exactly the duplicate the sentence ruled out. The
+    // page cannot see whether a regeneration is coming, so it says what it can see: the schedule
+    // these alerts are on now is not going to send them.
+    stubApi({
+      [GET_CHECKLIST]: checklistOf({
+        created: true,
+        alertsHeldForReconciliation: [{ channel: "email", heldCount: 1 }],
+      }),
+    });
+
+    await renderView();
+
+    const notice = screen.getByText(/no answer came back/);
+    expect(notice.textContent).not.toMatch(/will not be sent again on (its|their) own/);
+    expect(notice.textContent).toContain("current schedule");
   });
 
   it("agrees with itself on one stopped alert", async () => {
@@ -1547,9 +1569,10 @@ describe("F-203 · a channel that failed to deliver is reported to the organizer
 
     expect(screen.getByText(/no answer came back/).textContent).toBe(
       "1 email alert for this event was handed to the sending service and no answer came back. " +
-        "Too much time has passed to try it again safely, so PopEngine has stopped: it will not " +
-        "be sent again on its own. Someone has to check with the sending service whether it " +
-        "arrived; until then, do not count on it to remind you of the filing date it covers.",
+        "Too much time has passed to try it again safely, so PopEngine has stopped: nothing on " +
+        "its current schedule will send it again. Someone has to check with the sending service " +
+        "whether it arrived; until then, do not count on it to remind you of the filing date it " +
+        "covers.",
     );
   });
 
