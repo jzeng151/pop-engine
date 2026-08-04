@@ -306,7 +306,9 @@ so they are decided here:
   and the published legend reserves verification to the verification owner. That legend wording is
   `nyc.v2.11`'s, quoted as published and not an instruction to a future signatory: under
   `docs/DOCUMENTATION-GOVERNANCE.md` §6 as amended 2026-08-04 the capacity that may publish a date is
-  the product owner's, which is the same routing the two `verification` rows above now carry. A date
+  the product owner's, which is the same routing the two `verification` rows above now carry. All
+  three are verification-status publication, so §6's closing paragraph still requires a second
+  signatory when the product owner is also the author; naming one capacity does not supply one. A date
   here would print a verification of a fact nobody verified. If the product owner ever publishes one,
   note that `mergeFindings` takes the earliest of two and null if either is missing, so it also
   changes what a merged line would show.
@@ -379,7 +381,7 @@ rather than on preference:
 | Status | Legend text | Why it is not this rule |
 | --- | --- | --- |
 | `SOURCE_CONFIRMED` | "fetch-confirmed primary-source quote on file" | there is no quote on file for this proposition; this is the laundering round 5 already refused |
-| `VERIFIED` | "verification owner confirmed ... (none at publication; only the verification owner assigns this)" | nothing is confirmed, and the legend reserves the value. The quoted wording is `nyc.v2.11`'s as published; the capacity that assigns it is the product owner's per §6 (2026-08-04) |
+| `VERIFIED` | "verification owner confirmed ... (none at publication; only the verification owner assigns this)" | nothing is confirmed, and the legend reserves the value. The quoted wording is `nyc.v2.11`'s as published; the capacity that assigns it is the product owner's per §6 (2026-08-04), with §6's second signatory when the product owner authored the publication |
 | `OFFICIAL_CONFLICT` | "live official pages disagree; both readings encoded" | this is silence in the sources, not disagreement between them |
 | `COVERAGE_GAP` | "combination not modeled by this ruleset version; advisory asserts nothing" | the combination IS modelled once these rules exist, and three further consequences below |
 | `RESEARCH_REQUIRED` | "no primary source located in two research passes" | the only value whose meaning is close, and the loader will not let it stand without a source |
@@ -412,7 +414,8 @@ for "sources located, and expressly silent on this proposition".**
 2. **Amend the published legend** so `RESEARCH_REQUIRED` distinguishes "no source located" from
    "sources located and silent on this fact", and keep the source block. No code change; regulatory
    status content, so the product owner, for the rule and for the
-   rendered copy. Constraint to check before drafting: `apps/web/app/verification-copy-prose.test.ts`
+   rendered copy, plus the second signatory §6's closing paragraph requires when the product owner
+   authored the amendment. Constraint to check before drafting: `apps/web/app/verification-copy-prose.test.ts`
    denies the source-absence family across PRD, DESIGN, F-201, F-206 and `apps/web`, so the amendment
    has to be worded to pass that guard rather than around it.
 3. **Publish the statement with `COVERAGE_GAP`.** Refused above on three counts, recorded as an
@@ -773,7 +776,9 @@ published findings read off the result:
   `docs/DOCUMENTATION-GOVERNANCE.md` §6 "Change classes and approvals", whose "Regulatory
   source/status/content" row and whose "Rule trigger, dedupe, branch, deadline, or formula
   semantics" row both require the product owner. This feature crosses both classes; it no longer
-  crosses two sets of signatories.
+  crosses two sets of signatories. One capacity is still not one signatory: the movement is a
+  regulatory publication, so §6's closing paragraph requires a second signatory whenever the product
+  owner authored it.
 - **Verification research is REQUIRED and is not done.** Whether an existing place-of-assembly
   approval removes the temporary filing for an event held at that venue is **not established in this
   repository**, and the published record is venue-shaped rather than relationship-shaped: the
@@ -802,6 +807,11 @@ Files this feature may touch, and who must be in the room:
 | `apps/api/src/ruleset.ts` | the version literal in the offset diagnostic at `:324`, and the `EXPECTED_RULESET_VERSION` explanation at `:55-60` | product owner |
 | `packages/engine/src/intake/registry.ts`, `packages/engine/src/proposals.ts` | the two engine authority comments, text only | product owner |
 | `apps/web/app/verification-copy.ts`, `plan/plan-line.tsx`, `verification-copy.test.ts`, `verification-copy-prose.test.ts` | the four web authority comments, text only | product owner |
+
+The Owner column names the capacity §6 requires, not the number of signatures. The rows the audit
+below classes as regulatory (the new ruleset, the v2.8 deletion, the `UNCONSUMED_INTAKE_FIELDS`
+entry, the answer key and the new scenario intake) are regulatory publication, so §6's closing
+paragraph requires a second signatory on each whenever the product owner authored it.
 
 ### The new fixture needs three artifacts, not one, and the id is pinned
 
@@ -899,8 +909,10 @@ The rows had been assigned by what a path looks like rather than by what the cha
 whole table is re-derived here against `docs/DOCUMENTATION-GOVERNANCE.md` §6 "Change classes and
 approvals". §6's two relevant rows are "Regulatory source/status/content" and "Rule trigger, dedupe,
 branch, deadline, or formula semantics", and since 2026-08-04 both require the product owner. A
-change can still be in both classes; what it can no longer do is need two different signatories.
-The class column below is the part that still carries information.
+change can still be in both classes; what it can no longer do is need two different capacities.
+It still needs two signatories where §6's closing paragraph says so: every row below marked as a
+regulatory class is a regulatory publication, and the product owner cannot approve one they authored
+alone. The class column below is the part that still carries information.
 
 | Row | Class per §6 | Why, and what changed here |
 | --- | --- | --- |

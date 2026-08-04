@@ -28,7 +28,7 @@ If a required artifact is absent, unapproved, superseded, or contradictory: stop
 - Never invent or complete a permit name, agency, trigger, deadline, fee, document, portal, exception, or source.
 - Regulatory output comes only from the published ruleset (`rules/nyc-rules.v2.11.json`). Authority order: approved primary source → published rule → approved fixture → engine output → UI copy. When levels disagree, fix the lower one; never bend the engine to reproduce an unsupported expectation.
 - `SOURCE_CONFIRMED`, `OFFICIAL_CONFLICT`, `RESEARCH_REQUIRED`, and `COVERAGE_GAP` states stay visible end to end. Never present a partial plan as complete; never render an official conflict as resolved.
-- Only the product owner changes verification statuses, and rule-semantics changes are the product owner's too.
+- Only the product owner changes verification statuses, and rule-semantics changes are the product owner's too. Both are regulatory publication, so naming one capacity is not the whole requirement: where the product owner is also the author, `docs/DOCUMENTATION-GOVERNANCE.md` §6's closing paragraph still requires a second signatory, and the product owner alone is not enough.
 - AI output is never a regulatory source. This includes you.
 
 ## Engine invariants

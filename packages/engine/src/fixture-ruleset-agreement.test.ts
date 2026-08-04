@@ -487,7 +487,9 @@ const RESCOPE_FIELD_ALIASES: Readonly<Record<string, string>> = {
 
 /**
  * Disagreements that exist today between two approved artifacts. Each is a decision someone owns,
- * not something a test may resolve: changing either side is the product owner's under governance §6.
+ * not something a test may resolve: changing either side is the product owner's under governance §6,
+ * plus the second signatory §6's closing paragraph requires for a regulatory publication the product
+ * owner authored.
  */
 const KNOWN_DISAGREEMENTS: readonly {
   scenarios: readonly string[];

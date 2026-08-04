@@ -474,7 +474,7 @@ Rules:
 1. Edit a draft rules artifact in git.
 2. Validate JSON Schema and referential integrity.
 3. Run affected and full fixture suites.
-4. Obtain product-owner approval for sources, facets and semantics.
+4. Obtain product-owner approval for sources, facets and semantics, plus the second signatory `DOCUMENTATION-GOVERNANCE.md` §6's closing paragraph requires whenever the product owner authored what step 5 publishes.
 5. Publish an immutable artifact with version, checksum, changelog, and approval metadata.
 6. Update `docs/BASELINE.md` and the deployment's `RULES_FILE` to the new exact version-bearing path; never mutate the prior artifact.
 
