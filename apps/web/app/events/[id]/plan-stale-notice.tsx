@@ -3,7 +3,12 @@
 import { parseRulesetVersion } from "@pop-engine/engine";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 
-import { loadEvent, regeneratePlan, type RegenerationRefusal } from "../../intake/events-api";
+import {
+  loadEvent,
+  regeneratePlan,
+  type LoadedEvent,
+  type RegenerationRefusal,
+} from "../../intake/events-api";
 
 /**
  * F-101 Acceptance Criterion 8, second half: a plan the event has been edited past is marked
@@ -20,6 +25,37 @@ import { loadEvent, regeneratePlan, type RegenerationRefusal } from "../../intak
  *
  * So this surface does not check and then write. It writes, and reports the answer, including the
  * 409, which carries both versions and which way round they stand.
+ *
+ * Seven rounds each fixed one path through this and left another, so here is the whole of it. Every
+ * state names what it asserts, and every transition into it names the read that supports it.
+ *
+ * QUIET            nothing rendered
+ * WARNED           "the plan is out of date" + live button
+ * WORKING          WARNED with the button disabled while the POST is in flight
+ * FAILED           WARNED + what the api said; the retry is still the right action
+ * NO_RETRY         WARNED + why the button is gone; a retry would repeat or double a write
+ * CLEARED          one announced line, the warning withdrawn
+ *
+ *  1. mount, or a new eventId          -> QUIET. The reset runs in the render phase, so no commit
+ *                                        shows the previous event's warning under the new id.
+ *  2. read fails                       -> QUIET. A read that failed says nothing about the plan.
+ *  3. read says not stale              -> QUIET.
+ *  4. read says stale                  -> WARNED.
+ *  5. click                            -> WORKING. Any previous failure text is dropped first.
+ *  6. 409, versions readable           -> NO_RETRY. The guard decides before it inserts, so nothing
+ *                                        was stored and the same request is refused identically.
+ *  7. 409, versions unreadable         -> NO_RETRY, on the endpoint's own sentence.
+ *  8. other failure, recheck fails     -> NO_RETRY. It may have committed; a retry would double it.
+ *  9. other failure, recheck stale     -> FAILED.
+ * 10. other failure, recheck current   -> CLEARED, without saying the regeneration did it: the POST
+ *                                        reported no outcome, so authorship is what is not known.
+ * 11. other failure, recheck silent    -> NO_RETRY. Unanswered is not an answer.
+ * 12. 2xx, recheck fails               -> NO_RETRY. Unconfirmed is not current.
+ * 13. 2xx, recheck stale               -> FAILED. Stored for an earlier revision (AD-7); the newer
+ *                                        edit is what the warning is now about, so the retry stays.
+ * 14. 2xx, recheck silent              -> NO_RETRY.
+ * 15. 2xx, recheck current             -> CLEARED.
+ * 16. any of 6-15 landing after the component was handed another event -> nothing written at all.
  */
 
 /** Said when the endpoint refused the write because of how the two rulesets stand (F-201 AC 12). */
@@ -99,6 +135,20 @@ const RETRY_WITHHELD =
   "offered again here, because a second attempt would store a second plan if the first one landed. " +
   "Reload this page to check.";
 
+/**
+ * The revision a read confirms the plan is current for, or null if it confirms nothing.
+ *
+ * `loadEvent` normalises a missing `plan_stale` to `false`, which is right for a reader asking
+ * "is it stale" and wrong for this one, which is asking "was freshness confirmed": a 2xx body that
+ * simply omits the field would otherwise clear the warning as though the API had answered. Same for
+ * a revision that is not a number, which would confirm "regenerated for revision undefined".
+ */
+function confirmedCurrentRevision(loaded: LoadedEvent): number | null {
+  const revision = loaded.event.revision_counter;
+  if (!loaded.plan_stale_reported || loaded.plan_stale) return null;
+  return typeof revision === "number" && Number.isFinite(revision) ? revision : null;
+}
+
 export function PlanStaleNotice({ apiBaseUrl, eventId }: { apiBaseUrl: string; eventId: string }) {
   const [stale, setStale] = useState(false);
   const [regenerating, setRegenerating] = useState(false);
@@ -110,7 +160,13 @@ export function PlanStaleNotice({ apiBaseUrl, eventId }: { apiBaseUrl: string; e
    * action, or the endpoint refused and a retry would be refused identically until the service moves.
    */
   const [withheld, setWithheld] = useState<string | null>(null);
-  const [regeneratedRevision, setRegeneratedRevision] = useState<number | null>(null);
+  /**
+   * What is said in place of the warning once a read has confirmed the plan current, and the record
+   * that it has been. Copy rather than a revision number because the two ways of arriving here are
+   * not the same claim: one saw the regeneration succeed, the other only saw the plan turn out
+   * current after a request that never reported its outcome.
+   */
+  const [cleared, setCleared] = useState<string | null>(null);
   /**
    * Which event the state above describes. React keeps one instance across a prop change, so
    * without this the previous event's warning survives into the next one, and the button it
@@ -137,7 +193,7 @@ export function PlanStaleNotice({ apiBaseUrl, eventId }: { apiBaseUrl: string; e
     setRegenerating(false);
     setFailure(null);
     setWithheld(null);
-    setRegeneratedRevision(null);
+    setCleared(null);
   }
 
   // Commit phase, so an abandoned concurrent render cannot advance it, and the LAYOUT phase rather
@@ -172,7 +228,7 @@ export function PlanStaleNotice({ apiBaseUrl, eventId }: { apiBaseUrl: string; e
     };
   }, [apiBaseUrl, eventId]);
 
-  if (!stale && regeneratedRevision === null) return null;
+  if (!stale && cleared === null) return null;
 
   const regenerate = async () => {
     // Every outcome below is about THIS event. If the component has been handed another one while
@@ -212,6 +268,24 @@ export function PlanStaleNotice({ apiBaseUrl, eventId }: { apiBaseUrl: string; e
         setFailure(result.message);
         return;
       }
+      // That same read can settle the other way: an event that explicitly reports its plan current
+      // is not an event whose plan is out of date, whatever became of the POST's answer. Keeping
+      // the warning up here would tell the organizer their plan is stale on a read that says it is
+      // not, and offer to regenerate something that needs no regeneration.
+      //
+      // It is not said to have been regenerated, though. The POST reported no outcome, so which
+      // write left the plan current is exactly what this browser does not know, and the read
+      // establishes the plan's state and not its authorship.
+      const confirmed = recheck.ok ? confirmedCurrentRevision(recheck.loaded) : null;
+      if (confirmed !== null) {
+        setStale(false);
+        setCleared(
+          "The regeneration request failed to report what it did, but this event was re-read " +
+            `afterwards and its plan is current for revision ${confirmed}. There is nothing out of ` +
+            "date and nothing to regenerate.",
+        );
+        return;
+      }
       setWithheld(`${RETRY_WITHHELD} ${result.message}`);
       return;
     }
@@ -236,17 +310,10 @@ export function PlanStaleNotice({ apiBaseUrl, eventId }: { apiBaseUrl: string; e
       return;
     }
 
-    // `loadEvent` normalises a missing `plan_stale` to `false`, which is right for a reader asking
-    // "is it stale" and wrong for this one, which is asking "was freshness confirmed". A 2xx body
-    // that simply omits the field would otherwise clear the warning as though the API had answered.
-    // Same for a revision that is not a number: the confirmation would read "regenerated for
-    // revision undefined". Either is the stored-but-unconfirmed outcome, not a success.
-    const revision = recheck.loaded.event.revision_counter;
-    const confirmed =
-      recheck.loaded.plan_stale_reported &&
-      typeof revision === "number" &&
-      Number.isFinite(revision);
-    if (!confirmed) {
+    // A read that answers neither the staleness question nor the revision is the
+    // stored-but-unconfirmed outcome, not a success.
+    const confirmed = confirmedCurrentRevision(recheck.loaded);
+    if (confirmed === null) {
       setWithheld(
         `${STORED_UNCONFIRMED} The event was read, but it did not report whether the plan is current.`,
       );
@@ -254,13 +321,13 @@ export function PlanStaleNotice({ apiBaseUrl, eventId }: { apiBaseUrl: string; e
     }
 
     setStale(false);
-    setRegeneratedRevision(revision);
+    setCleared(`Plan regenerated for revision ${confirmed}.`);
   };
 
   if (!stale) {
     return (
       <p aria-live="polite" className="riso-overview__notice" role="status">
-        Plan regenerated for revision {regeneratedRevision}.
+        {cleared}
       </p>
     );
   }

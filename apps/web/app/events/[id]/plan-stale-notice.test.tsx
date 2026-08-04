@@ -165,9 +165,12 @@ describe("the stale-plan notice on the event overview", () => {
     renderNotice();
     await clickRegenerate();
 
-    expect(await screen.findByText(/Plan regenerated for revision 4\./)).toBeDefined();
+    const cleared = await screen.findByText(/Plan regenerated for revision 4\./);
     expect(screen.queryByText(/edited since its plan was generated/)).toBeNull();
     expect(regenerateButton()).toBeNull();
+    // The warning was announced when it went up, so its withdrawal is announced too: a
+    // screen-reader user who pressed the button hears the outcome rather than silence.
+    expect(cleared.closest("[aria-live]")?.getAttribute("aria-live")).toBe("polite");
   });
 });
 
@@ -334,6 +337,63 @@ describe("a regeneration whose outcome is not known", () => {
     expect(withheld.textContent).toContain("Reload this page to check");
     expect(regenerateButton()).toBeNull();
     expect(screen.getByText(/edited since its plan was generated/)).toBeDefined();
+  });
+
+  /**
+   * The mirror of the case above, and the reason this component exists. A POST whose outcome was
+   * lost may still have committed, and the read that follows can settle it outright: an event that
+   * explicitly reports its plan current is not an event whose plan is out of date. Withholding the
+   * retry and leaving the warning up would tell the organizer their plan is stale on a read that
+   * says it is not, and invite a regeneration of something that needs none.
+   */
+  it("clears the notice when the read after a failed POST reports the plan current", async () => {
+    let posted = false;
+    fetchMock.mockImplementation(async (url: string, init?: RequestInit) => {
+      if (isPost(init)) {
+        posted = true;
+        throw new Error("connection reset");
+      }
+      return eventResponse(posted ? false : true, 4);
+    });
+
+    renderNotice();
+    await clickRegenerate();
+
+    const cleared = await screen.findByText(/its plan is current for revision 4/);
+    expect(cleared.textContent).toContain("nothing out of date and nothing to regenerate");
+    // The POST said nothing about what it did, so neither does this: the read establishes the
+    // plan's state, not which write left it that way.
+    expect(cleared.textContent).not.toContain("Plan regenerated for revision");
+    expect(screen.queryByText(/edited since its plan was generated/)).toBeNull();
+    expect(screen.queryByText(/it is not known whether a plan was stored/)).toBeNull();
+    expect(regenerateButton()).toBeNull();
+  });
+
+  /**
+   * The same read, without the revision the confirmation would name. "Regenerated for revision
+   * undefined" is not a report, so this stays the outcome it can support: something may have been
+   * stored, and a second attempt would store a second plan.
+   */
+  it("still withholds the retry when a failed POST reads back current without a revision", async () => {
+    let posted = false;
+    fetchMock.mockImplementation(async (url: string, init?: RequestInit) => {
+      if (isPost(init)) {
+        posted = true;
+        throw new Error("connection reset");
+      }
+      if (!posted) return eventResponse(true);
+      return new Response(
+        JSON.stringify({ event: { id: "event-9", revision_counter: null }, plan_stale: false }),
+        { headers: { "Content-Type": "application/json" }, status: 200 },
+      );
+    });
+
+    renderNotice();
+    await clickRegenerate();
+
+    expect(await screen.findByText(/it is not known whether a plan was stored/)).toBeDefined();
+    expect(screen.getByText(/edited since its plan was generated/)).toBeDefined();
+    expect(regenerateButton()).toBeNull();
   });
 
   it("keeps the retry when the read after a failed POST reports the plan still stale", async () => {
