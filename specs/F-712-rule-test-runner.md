@@ -24,6 +24,7 @@ Rules reviewers can run affected scenarios quickly and the full approved suite b
 ## Dependencies and Baseline
 
 - F-710 drafts and approved engine/fixture contracts.
+- F-703 separate platform rules-admin role, which `F712-AC-07` requires at every run status read, result read, and export. No earlier revision of this spec declared it, which is why nothing here was bound by `F703-AC-04`. F-703 is PROPOSED, so that role is not an approved input today and this spec is not implementable against it until F-703 is approved.
 - F-714 is a downstream consumer of immutable F-712 run results, not a prerequisite for the runner.
 - Approved isolated runner, resource limits, coverage mapping, and artifact checksum contract.
 - Baseline at draft time: PRD, Roadmap, Design, and Phase 0–1.5 Architecture approved 2026-07-22; `ARCHITECTURE-FUTURE.md` approved as a planning target 2026-07-25; NYC ruleset `nyc.v2.7`, rules schema `popengine-rules/v2`, and scenario fixtures v5 where regulatory output is consumed.
@@ -86,9 +87,16 @@ Exact HTTP, JSON Schema, migration, job, and provider shapes belong in their rev
 
    AC-01 records the input tuple, which cannot tell a retry from a deliberate rerun because both carry the same tuple by construction. When the create transaction commits and its response is lost, the retry enqueues a second isolated full-suite job: runner capacity is spent twice, and two result artifacts exist for one intended run, each usable as an F-714 gate artifact for the same checksum.
 
+7. **F712-AC-07:** Reading a run's status, reading its result, and exporting either are rules-admin functions and are admitted only by the separate platform rules-admin role, on the terms `F703-AC-04` states for every such function rather than on a second formulation stated here. The acting actor's current platform authority is read server-side at each of those operations, never from the session or a client-supplied role claim, and never derives from a workspace role, per F-703's deny-by-default state rule and the separation `F703-AC-04` keeps. A refusal returns no run, no result, no provenance, and no response that distinguishes a run the actor may not see from one that does not exist.
+
+   AC-03's transition table already names an authorized platform administrator for create and for both cancellations, so the writes are covered and the reads are not. AC-01 requires a run to record the exact candidate bytes and checksum, engine, fixture set and version, calendar, `today`, and command, and AC-05 makes the result artifact byte-stable, so the read path hands out the full provenance of an unpublished candidate ruleset and its per-fixture diffs. Every criterion in this spec passes for an ordinary workspace member reading that, because outside the transition table no criterion asks who the actor is. The rules-admin scope was written only in the System Impact row, which creates no acceptance criterion.
+
+   F-703 is PROPOSED and is not listed in `docs/BASELINE.md`, so until it is approved this criterion is testable only as "every run status read, result read, and export is refused unless the acting actor holds the separate platform rules-admin role, read server-side at that operation, and a refusal discloses nothing about what exists", not against a named role identifier, matrix entry, or grant path, which F-703's own approval blockers reserve.
+
 ## Fixtures and Verification
 
 - Planned automated fixture IDs are the acceptance IDs above; each must map one-to-one to a runnable test before approval can claim implementation readiness.
+- F712-AC-07 includes a negative fixture per operation in which an authenticated actor holding no platform rules-admin role, including a workspace owner, is refused a run status read, a result read, and an export, with a response indistinguishable from the one for a run that does not exist; and a fixture in which the role is revoked after a run completes and the later result read and export are refused.
 - F712-AC-03 includes a concurrent cancellation-versus-completion fixture in both orders, proving one terminal transition wins, that no cancelled run carries a result F-714 could consume, and that a late cancellation overwrites no committed result.
 - F712-AC-03 also includes one fixture per transition in its table, and a concurrent R-02-versus-R-03 fixture in both orders proving that a cancellation of a `queued` run either prevents the worker claim entirely, with no runner capacity spent and no result recorded, or is refused with `running` and never both.
 - Regulatory fixtures: The complete approved regulatory fixture suite plus schema-invalid, unexercised semantic branch, missing numeric boundary, evaluation-error, timeout, and determinism runner fixtures.
@@ -109,4 +117,5 @@ Exact HTTP, JSON Schema, migration, job, and provider shapes belong in their rev
 ## Approval Blockers
 
 - Approve runner isolation/resources, coverage metadata, result artifact, full-suite gate, and equivalence to existing CI. The isolation and resource approval must name which terminal state a timeout records, which F712-AC-03's R-06 leaves unpinned.
+- Approve F-703, whose role/action matrix and platform-role administration path are what make `F712-AC-07`, and the authorized platform administrator already named in F712-AC-03's table, testable against a named role rather than against the shape of a check.
 - Assign the owner and independent reviewer, approve this spec, and add it to `docs/BASELINE.md`.
