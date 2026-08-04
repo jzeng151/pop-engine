@@ -453,15 +453,6 @@ describe("loading a saved event to edit it", () => {
     expect(router.push).toHaveBeenCalledWith("/events/event-9");
   });
 
-  it("carries a standing plan-stale flag through the load", async () => {
-    fetchMock.mockResolvedValueOnce(
-      jsonResponse(200, { event: storedEvent, warnings: [], plan_stale: true }),
-    );
-    renderForm("event-9");
-    await waitFor(() => expect(screen.getByText(/out of date/)).toBeDefined());
-    expect(screen.getByRole("button", { name: "Regenerate plan" })).toBeDefined();
-  });
-
   it("drops a load that lands after the form has gone", async () => {
     let releaseEvent: (response: Response) => void = () => {};
     fetchMock.mockImplementationOnce(
@@ -977,121 +968,8 @@ describe("editing a saved event", () => {
   });
 });
 
-describe("the regenerate control (spec #8)", () => {
-  const saveThenStalePlan = async () => {
-    fetchMock.mockImplementationOnce(async (_url: string, init: RequestInit) =>
-      jsonResponse(200, {
-        ...savedEvent({ ...JSON.parse(String(init.body)), revision_counter: 2 }),
-        plan_stale: true,
-      }),
-    );
-    const user = renderForm();
-    await answerParkEvent(user);
-    await save(user);
-    await waitFor(() => expect(screen.getByText(/out of date/)).toBeDefined());
-    return user;
-  };
-
-  it("stays hidden while the plan is current", async () => {
-    const user = renderForm();
-    await answerParkEvent(user);
-    await save(user);
-    await waitFor(() => expect(screen.getByText(/Saved as revision 1/)).toBeDefined());
-    expect(screen.queryByRole("button", { name: /Regenerate/ })).toBeNull();
-  });
-
-  it("offers one enabled click, then reports the regenerated revision", async () => {
-    const user = await saveThenStalePlan();
-    const button = screen.getByRole("button", { name: "Regenerate plan" });
-    expect(button.hasAttribute("disabled")).toBe(false);
-
-    let releasePlan: (response: Response) => void = () => {};
-    fetchMock.mockImplementationOnce(
-      () => new Promise<Response>((resolve) => (releasePlan = resolve)),
-    );
-    await user.click(button);
-
-    // In flight: the control names what it is doing and refuses a second click.
-    const inFlight = screen.getByRole("button", { name: "Regenerating plan…" });
-    expect(inFlight.hasAttribute("disabled")).toBe(true);
-
-    releasePlan(jsonResponse(201, { verdict: "feasible" }));
-    await waitFor(() => expect(screen.getByText(/Plan regenerated for revision 2/)).toBeDefined());
-    expect(screen.queryByText(/out of date/)).toBeNull();
-
-    const [url, init] = fetchMock.mock.calls[1] as [string, RequestInit];
-    expect(url).toBe("https://api.example.com/api/events/event-1/plan");
-    expect(init.method).toBe("POST");
-  });
-
-  it("ignores a plan that finishes after the event has moved on", async () => {
-    // The race: regeneration for revision 2 is in flight, the organizer saves revision
-    // 3, and the older plan lands afterwards. Clearing the stale state then would hide
-    // the warning and leave no button for the revision actually on screen.
-    const user = await saveThenStalePlan();
-
-    let releasePlan: (response: Response) => void = () => {};
-    fetchMock.mockImplementationOnce(
-      () => new Promise<Response>((resolve) => (releasePlan = resolve)),
-    );
-    await user.click(screen.getByRole("button", { name: "Regenerate plan" }));
-
-    fetchMock.mockImplementationOnce(async (_url: string, init: RequestInit) =>
-      jsonResponse(200, {
-        ...savedEvent({ ...JSON.parse(String(init.body)), revision_counter: 3 }),
-        plan_stale: true,
-      }),
-    );
-    await fillField(user, "headcount", "151");
-    await save(user);
-    await waitFor(() => expect(screen.getByText(/Saved as revision 3/)).toBeDefined());
-
-    releasePlan(jsonResponse(201, { verdict: "feasible", eventRevision: 2 }));
-    await waitFor(() =>
-      expect(screen.getByRole("button", { name: "Regenerate plan" }).hasAttribute("disabled")).toBe(
-        false,
-      ),
-    );
-    expect(screen.getByText(/out of date/)).toBeDefined();
-    expect(screen.queryByText(/Plan regenerated/)).toBeNull();
-  });
-
-  it("ignores a plan that names a revision other than the one on screen", async () => {
-    const user = await saveThenStalePlan();
-    fetchMock.mockResolvedValueOnce(jsonResponse(201, { verdict: "feasible", eventRevision: 1 }));
-    await user.click(screen.getByRole("button", { name: "Regenerate plan" }));
-
-    await waitFor(() =>
-      expect(screen.getByRole("button", { name: "Regenerate plan" }).hasAttribute("disabled")).toBe(
-        false,
-      ),
-    );
-    expect(screen.getByText(/out of date/)).toBeDefined();
-    expect(screen.queryByText(/Plan regenerated/)).toBeNull();
-  });
-
-  it("accepts a plan that does not name a revision, since the event has not moved", async () => {
-    // The plan endpoint is F-201's and may not report the revision. When the event has
-    // not moved while the call was in flight, that is still this revision's plan.
-    const user = await saveThenStalePlan();
-    fetchMock.mockResolvedValueOnce(jsonResponse(201, { verdict: "feasible" }));
-    await user.click(screen.getByRole("button", { name: "Regenerate plan" }));
-
-    await waitFor(() => expect(screen.getByText(/Plan regenerated for revision 2/)).toBeDefined());
-  });
-
-  it("keeps the stale banner and shows why when regeneration fails", async () => {
-    const user = await saveThenStalePlan();
-    fetchMock.mockResolvedValueOnce(jsonResponse(404, {}));
-    await user.click(screen.getByRole("button", { name: "Regenerate plan" }));
-
-    expect((await screen.findByRole("alert")).textContent).toBe(
-      "The plan could not be regenerated (HTTP 404).",
-    );
-    // The plan is still stale: a failed regeneration must not read as a fresh plan.
-    expect(screen.getByText(/out of date/)).toBeDefined();
-    expect(screen.getByRole("button", { name: "Regenerate plan" }).hasAttribute("disabled")).toBe(
-      false,
-    );
-  });
-});
+// The spec #8 regenerate control moved to the event overview when the intake save began
+// redirecting there; its coverage lives in
+// apps/web/app/events/[id]/plan-stale-notice.test.tsx. One case did not move: a plan that
+// lands after a *concurrent save* has advanced the revision. That race needed a save and a
+// regeneration on one screen, and the overview has no save on it.

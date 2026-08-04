@@ -1851,6 +1851,9 @@ describe("regenerating while the service is behind the plan's ruleset", () => {
     expect(refused?.textContent).toContain("generated from ruleset nyc.v2.3");
     expect(refused?.textContent).toContain("service is currently running nyc.v2.2");
     expect(refused?.textContent).toContain("not a problem with your event");
+    // Here the preserved plan really is rendered under this notice, so this surface is the one
+    // entitled to say so. Every other caller supplies its own referent.
+    expect(refused?.textContent).toContain("the plan below");
   });
 
   it("refuses a version it cannot order, for the same reason", async () => {
