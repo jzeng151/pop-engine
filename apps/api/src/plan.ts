@@ -3,7 +3,7 @@
 
 import { randomUUID } from "node:crypto";
 import type { Pool, PoolClient } from "pg";
-import { evaluate } from "@pop-engine/engine";
+import { compareToPinned, evaluate } from "@pop-engine/engine";
 import type {
   EngineRuleset,
   EventIntake,
@@ -31,6 +31,37 @@ export class EventNotFoundError extends Error {
   constructor(eventId: string) {
     super(`event ${eventId} not found`);
     this.name = "EventNotFoundError";
+  }
+}
+
+/**
+ * A generation that would rebuild a plan from a ruleset older than the one the plan it supersedes
+ * pinned (F-201 AC 12). The superseded plan was shown to an organizer, so a requirement that only
+ * the newer ruleset publishes would disappear from a replacement that looks internally consistent
+ * and says nothing about its basis having got worse.
+ *
+ * Both versions and the direction ride on the error rather than only in prose: an endpoint that
+ * fails closed and cannot be diagnosed is its own harm, and the one thing an operator needs to know
+ * is which two rulesets are involved and which way round they stand.
+ */
+export class PlanRulesetDowngradeError extends Error {
+  constructor(
+    readonly rulesetVersion: string,
+    readonly pinnedRulesetVersion: string,
+    readonly standing: "older" | "different",
+  ) {
+    super(
+      standing === "older"
+        ? `plan generation refused: the latest plan for this event pinned ruleset ${pinnedRulesetVersion}, ` +
+            `and this service is running ${rulesetVersion}, which is older. Regenerating would rebuild the ` +
+            `plan from superseded rules and can drop a requirement the organizer was already shown. ` +
+            `Generate again from a service running ${pinnedRulesetVersion} or newer.`
+        : `plan generation refused: the latest plan for this event pinned ruleset ${pinnedRulesetVersion}, ` +
+            `this service is running ${rulesetVersion}, and the two cannot be ordered. Nothing establishes ` +
+            `that regenerating would not move the plan backwards, so it is refused. Generate again from a ` +
+            `service running ${pinnedRulesetVersion} or a later version of it.`,
+    );
+    this.name = "PlanRulesetDowngradeError";
   }
 }
 
@@ -143,10 +174,30 @@ async function insertPlan(
 ): Promise<{ id: string; generatedAt: string }> {
   const planId = randomUUID();
   const { rows } = await client.query<{ generated_at: Date }>(
+    // `generated_at` is written rather than defaulted, and clamped rather than trusted. Every
+    // reader treats this column as the plan order — `refuseRulesetDowngrade` and `latest` below
+    // both do — so an order that disagrees with insertion order lets AC 12 compare against a
+    // superseded plan and lets `GET` return one.
+    //
+    // The column default is `current_timestamp`, which PostgreSQL fixes at TRANSACTION START, so a
+    // generation that opened its transaction first and inserted last carried the earlier stamp.
+    // `clock_timestamp()` reads the clock at this statement instead, but a clock is not an order:
+    // two inserts serialized on the events row lock can read the same instant, and a backward step
+    // can hand the later insert an earlier one. `greatest` against the preceding plan's stamp is
+    // what makes this an order. The subquery runs while this generation holds the events row lock,
+    // which every generation for this event must take, so it sees every plan that can precede this
+    // one, and the stored value strictly exceeds all of them whatever the clock says. `greatest`
+    // ignores the null the subquery returns for a first plan, which then stores the clock reading.
+    //
+    // Microsecond is `timestamptz`'s own resolution, so it is the smallest step that is still a
+    // distinct value: the stamps stay readable as insertion times and cannot collide.
     `INSERT INTO permit_plans
        (id, event_id, event_revision, ruleset_version, snapshot_date, verdict, verdict_detail,
-        intake_snapshot)
-     VALUES ($1, $2, $3, $4, $5, $6, $7::jsonb, $8::jsonb)
+        intake_snapshot, generated_at)
+     VALUES ($1, $2, $3, $4, $5, $6, $7::jsonb, $8::jsonb,
+             greatest(clock_timestamp(),
+                      (SELECT max(generated_at) FROM permit_plans WHERE event_id = $2)
+                        + interval '1 microsecond'))
      RETURNING generated_at`,
     [
       planId,
@@ -205,6 +256,58 @@ async function insertPlan(
   return { id: planId, generatedAt: (rows[0]?.generated_at ?? new Date()).toISOString() };
 }
 
+/**
+ * Serializes this generation against every other generation for the same event.
+ *
+ * The precondition below is a read followed by a write, so it is only a guard if nothing can
+ * commit a plan in between, which is the exact defect it replaces, where the browser decided on
+ * reads that had already returned. `permit_plans` has no row to lock (the offending row is the one
+ * that does not exist yet) and a feature branch adds no constraint, so the lock goes on the parent
+ * `events` row, which every generation for this event must take. Under READ COMMITTED a generation
+ * that blocks here re-reads on a fresh snapshot once the holder commits, so the competing plan is
+ * visible to the check below. SERIALIZABLE would also close it, at the cost of 40001 retries on an
+ * endpoint that writes an immutable row, which is a worse trade for one lock on one row.
+ */
+async function lockEventForGeneration(client: PoolClient, eventId: string): Promise<void> {
+  await client.query("SELECT id FROM events WHERE id = $1 FOR UPDATE", [eventId]);
+}
+
+/**
+ * F-201 AC 12. Refuses when this service's ruleset is older than the version the latest stored plan
+ * pinned, or when the two cannot be ordered at all.
+ *
+ * Unorderable pairs (a second jurisdiction, an unparseable version) are refused rather than
+ * allowed. Allowing them reopens the hole this exists to close, and the failure it prevents is
+ * silently dropping a regulatory requirement an organizer was already shown. The cost is a lane
+ * that fails closed after a jurisdiction rename until a plan is pinned to the new prefix, and that
+ * cost is paid down by the error naming both versions and the direction rather than reading as a
+ * generic failure.
+ */
+async function refuseRulesetDowngrade(
+  client: PoolClient,
+  eventId: string,
+  rulesetVersion: string,
+): Promise<void> {
+  // `generated_at` is clamped at insert to strictly exceed every plan already stored for this
+  // event, so it is a total order here and this read has exactly one answer. The `id` tie-break is
+  // a uuid, which would settle a tie arbitrarily rather than by insertion order; it can no longer
+  // decide anything between plans written under the lock, and remains only so that two rows
+  // predating the clamp that share a transaction-start stamp still read back the same way twice.
+  const { rows } = await client.query<{ ruleset_version: string }>(
+    `SELECT ruleset_version FROM permit_plans WHERE event_id = $1
+      ORDER BY generated_at DESC, id DESC LIMIT 1`,
+    [eventId],
+  );
+  const pinned = rows[0]?.ruleset_version;
+  // No stored plan means nothing to supersede: a first plan is safe on any ruleset.
+  if (pinned === undefined) return;
+
+  const standing = compareToPinned(rulesetVersion, pinned);
+  if (standing === "older" || standing === "different") {
+    throw new PlanRulesetDowngradeError(rulesetVersion, pinned, standing);
+  }
+}
+
 export function createPlanService(
   pool: Pool,
   ruleset: EngineRuleset,
@@ -236,6 +339,8 @@ export function createPlanService(
       const client = await pool.connect();
       try {
         await client.query("BEGIN");
+        await lockEventForGeneration(client, eventId);
+        await refuseRulesetDowngrade(client, eventId, ruleset.rulesetVersion);
         const { id, generatedAt } = await insertPlan(
           client,
           eventId,
@@ -270,6 +375,8 @@ export function createPlanService(
 
     async latest(eventId) {
       await loadEvent(eventId);
+      // Same order the downgrade guard reads, for the same reason: the plan this returns is the
+      // one the next generation is checked against, so the two must not be able to disagree.
       const { rows } = await pool.query<PlanRow>(
         `SELECT id, event_revision, ruleset_version, snapshot_date, verdict, verdict_detail,
                 generated_at

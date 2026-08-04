@@ -4,7 +4,12 @@ import { createAlertsRouter, type AlertsDependencies } from "./alerts";
 import { createCheckinsRouter } from "./checkins";
 import { createChecklistRouter, type ChecklistDependencies } from "./checklist";
 import { createEventsRouter, type EventsDependencies } from "./events";
-import { EventNotFoundError, PlanIntegrityError, type PlanService } from "./plan";
+import {
+  EventNotFoundError,
+  PlanIntegrityError,
+  PlanRulesetDowngradeError,
+  type PlanService,
+} from "./plan";
 import { createParksRouter } from "./parks";
 import { createPublicPageRouter } from "./public-page";
 import { createRsvpsRouter } from "./rsvps";
@@ -155,6 +160,18 @@ function registerPlanRoutes(app: Express, planService: PlanService): void {
       .catch((error: unknown) => {
         if (error instanceof EventNotFoundError) {
           res.status(404).json({ error: error.message });
+          return;
+        }
+        // F-201 AC 12. 409, not 500: the request was well formed and the service is working; the
+        // state of the deployment is what makes it unsafe to write. The two versions and the
+        // direction are named so a fail-closed lane can be diagnosed from the response alone.
+        if (error instanceof PlanRulesetDowngradeError) {
+          res.status(409).json({
+            error: error.message,
+            rulesetVersion: error.rulesetVersion,
+            pinnedRulesetVersion: error.pinnedRulesetVersion,
+            standing: error.standing,
+          });
           return;
         }
         respondWithFailure(res, error, "plan generation failed");

@@ -1,3 +1,4 @@
+import { compareToPinned } from "@pop-engine/engine";
 import type { RulesMetaResponse } from "./plan-api";
 
 // F-206 AC 1 and AC 4: every plan and checklist view states which rules snapshot produced what
@@ -36,51 +37,11 @@ export function formatSnapshotDate(isoDate: string): string {
 }
 
 /**
- * `nyc.vMAJOR.MINOR` is the only ruleset version shape BASELINE.md declares, so the parts are
- * parsed and compared as numbers. String comparison would order v2.10 below v2.9.
+ * The ruleset-version ordering moved to `@pop-engine/engine` so the F-201 generation guard orders
+ * these values the same way this banner does. Re-exported under the names this app's call sites
+ * already import; the ordering itself has one implementation, not two (CONTRIBUTING "Code Style").
  */
-const RULESET_VERSION = /^([a-z-]+)\.v(\d+)\.(\d+)$/;
-
-type ParsedVersion = { jurisdiction: string; major: number; minor: number };
-
-export function parseRulesetVersion(version: string): ParsedVersion | null {
-  const parsed = RULESET_VERSION.exec(version);
-  if (parsed === null) return null;
-  return {
-    jurisdiction: parsed[1] ?? "",
-    major: Number(parsed[2]),
-    minor: Number(parsed[3]),
-  };
-}
-
-/**
- * How the service's live ruleset stands relative to the one a plan pinned.
- *
- * "different" covers a version either side cannot be parsed, and versions from two different
- * jurisdictions, because neither can be ordered. A rollback is a real operation now that three
- * versions are published, and telling an organizer to regenerate onto an OLDER ruleset would
- * downgrade their plan — so directional copy is only used when the direction is actually known.
- */
-export function compareToPinned(
-  live: string,
-  pinned: string,
-): "same" | "newer" | "older" | "different" {
-  if (live === pinned) return "same";
-  const liveVersion = parseRulesetVersion(live);
-  const pinnedVersion = parseRulesetVersion(pinned);
-  if (
-    liveVersion === null ||
-    pinnedVersion === null ||
-    liveVersion.jurisdiction !== pinnedVersion.jurisdiction
-  ) {
-    return "different";
-  }
-  if (liveVersion.major !== pinnedVersion.major) {
-    return liveVersion.major > pinnedVersion.major ? "newer" : "older";
-  }
-  if (liveVersion.minor === pinnedVersion.minor) return "different";
-  return liveVersion.minor > pinnedVersion.minor ? "newer" : "older";
-}
+export { compareToPinned, parseRulesetVersion } from "@pop-engine/engine";
 
 export function SnapshotBanner({
   rulesetVersion,

@@ -35,6 +35,7 @@ export function describeEngine(): string {
 
 export { evaluate } from "./evaluate";
 export { parseEngineRuleset, triggerFields } from "./ruleset";
+export { compareToPinned, parseRulesetVersion } from "./ruleset-version";
 export {
   addCalendarDays,
   countBusinessDays,

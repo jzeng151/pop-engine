@@ -3,7 +3,7 @@
 
 import { randomUUID } from "node:crypto";
 import { readFile } from "node:fs/promises";
-import { Pool } from "pg";
+import { Pool, type PoolClient } from "pg";
 import request from "supertest";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import {
@@ -669,5 +669,450 @@ describe.runIf(databaseUrl.length > 0)("plan API (F-201)", () => {
     const noPlanYet = await request(app).get(`/api/events/${eventId}/plan`);
     expect(noPlanYet.status).toBe(404);
     expect(noPlanYet.body.error).toContain("no plan generated");
+  });
+
+  /**
+   * F-201 AC 12: regeneration may not rebuild a plan from a ruleset older than the one the plan it
+   * supersedes pinned. The stored plan was shown to an organizer; rebuilding it from superseded
+   * rules can drop a requirement they were already told about, and the replacement looks
+   * internally consistent, so nothing afterwards says the basis got worse.
+   *
+   * The service's ruleset is the axis under test, so these build a service on a stated version
+   * rather than the one the repository happens to publish. The plan row each generation stores
+   * pins whatever version its service ran.
+   */
+  const appOnRulesetVersion = (rulesetVersion: string) =>
+    createApp({
+      database: pool,
+      intakeContract,
+      today: () => TODAY,
+      planService: createPlanService(
+        pool,
+        { ...ruleset, rulesetVersion },
+        fixtureCalendar,
+        () => TODAY,
+      ),
+    });
+
+  const storedPlanVersions = async (eventId: string): Promise<string[]> => {
+    const { rows } = await pool.query<{ ruleset_version: string }>(
+      "SELECT ruleset_version FROM permit_plans WHERE event_id = $1 ORDER BY generated_at, id",
+      [eventId],
+    );
+    return rows.map((row) => row.ruleset_version);
+  };
+
+  it("refuses to regenerate from a ruleset older than the stored plan pinned, and writes nothing", async () => {
+    const eventId = await insertEvent();
+    expect(
+      (await request(appOnRulesetVersion("nyc.v2.11")).post(`/api/events/${eventId}/plan`)).status,
+    ).toBe(201);
+
+    const downgrade = await request(appOnRulesetVersion("nyc.v2.10")).post(
+      `/api/events/${eventId}/plan`,
+    );
+
+    expect(downgrade.status).toBe(409);
+    // Diagnosable, not just refused: an operator reading this response learns which two versions
+    // are involved and which way round they stand, which is what tells them the service is behind.
+    expect(downgrade.body.rulesetVersion).toBe("nyc.v2.10");
+    expect(downgrade.body.pinnedRulesetVersion).toBe("nyc.v2.11");
+    expect(downgrade.body.standing).toBe("older");
+    expect(downgrade.body.error).toContain("nyc.v2.11");
+    // The refusal is the whole point: a rolled-back transaction leaves the plan the organizer has.
+    expect(await storedPlanVersions(eventId)).toEqual(["nyc.v2.11"]);
+  });
+
+  it("regenerates on the same ruleset version, which is the ordinary case", async () => {
+    const eventId = await insertEvent();
+    const app = appOnRulesetVersion("nyc.v2.11");
+    expect((await request(app).post(`/api/events/${eventId}/plan`)).status).toBe(201);
+
+    // An organizer edits their event and regenerates while nothing has been published in between.
+    // This is what the button is for, and the guard must not touch it.
+    expect((await request(app).post(`/api/events/${eventId}/plan`)).status).toBe(201);
+    expect(await storedPlanVersions(eventId)).toEqual(["nyc.v2.11", "nyc.v2.11"]);
+  });
+
+  it("regenerates on a newer ruleset version", async () => {
+    const eventId = await insertEvent();
+    expect(
+      (await request(appOnRulesetVersion("nyc.v2.11")).post(`/api/events/${eventId}/plan`)).status,
+    ).toBe(201);
+
+    // Minor ordered as a number, not a string: v2.11 is newer than v2.9, and v3.0 newer than both.
+    expect(
+      (await request(appOnRulesetVersion("nyc.v2.12")).post(`/api/events/${eventId}/plan`)).status,
+    ).toBe(201);
+    expect(
+      (await request(appOnRulesetVersion("nyc.v3.0")).post(`/api/events/${eventId}/plan`)).status,
+    ).toBe(201);
+    expect(await storedPlanVersions(eventId)).toEqual(["nyc.v2.11", "nyc.v2.12", "nyc.v3.0"]);
+  });
+
+  it("refuses a pair of versions that cannot be ordered, and says that is why", async () => {
+    const eventId = await insertEvent();
+    expect(
+      (await request(appOnRulesetVersion("nyc.v2.11")).post(`/api/events/${eventId}/plan`)).status,
+    ).toBe(201);
+
+    // A different jurisdiction and an unparseable version are the same situation: nothing
+    // establishes that generating would not move the plan backwards, so it is refused. Fail-closed
+    // is only defensible if an operator can tell it apart from a downgrade, so `standing` says so.
+    for (const unorderable of ["bos.v1.0", "draft"]) {
+      const refused = await request(appOnRulesetVersion(unorderable)).post(
+        `/api/events/${eventId}/plan`,
+      );
+      expect(refused.status).toBe(409);
+      expect(refused.body.standing).toBe("different");
+      expect(refused.body.rulesetVersion).toBe(unorderable);
+      expect(refused.body.pinnedRulesetVersion).toBe("nyc.v2.11");
+      expect(refused.body.error).toContain("cannot be ordered");
+    }
+    expect(await storedPlanVersions(eventId)).toEqual(["nyc.v2.11"]);
+  });
+
+  it("refuses when both versions carry the same unparseable label", async () => {
+    const eventId = await insertEvent();
+    const app = appOnRulesetVersion("draft");
+    // Nothing is stored yet, so the first generation is safe on any label and pins this one.
+    expect((await request(app).post(`/api/events/${eventId}/plan`)).status).toBe(201);
+
+    // Two artifacts both labelled `draft` are two unknown artifacts. The label being reused says
+    // nothing about their regulatory content, so the pair is still unorderable and is refused.
+    const refused = await request(app).post(`/api/events/${eventId}/plan`);
+
+    expect(refused.status).toBe(409);
+    expect(refused.body.standing).toBe("different");
+    expect(refused.body.rulesetVersion).toBe("draft");
+    expect(refused.body.pinnedRulesetVersion).toBe("draft");
+    expect(refused.body.error).toContain("cannot be ordered");
+    expect(await storedPlanVersions(eventId)).toEqual(["draft"]);
+  });
+
+  it("refuses when a newer-pinned plan is stored between the generation's read and its insert", async () => {
+    // The race the browser check cannot close (#89 RULES_FILE skew): the generating request starts
+    // when no newer plan exists, and another deployment commits one before it inserts.
+    //
+    // This DOES drive a real interleaving rather than approximating one, and it does so through the
+    // guard's own serialization point: the competing transaction takes the events row lock first,
+    // inserts its newer-pinned plan, and holds the lock uncommitted while the generation blocks on
+    // it. The commit is what releases the generation, so the generation's read of the latest plan
+    // provably happens after the competing insert is committed and visible.
+    //
+    // What it does NOT prove: that some other serialization scheme would refuse. The rendezvous is
+    // the lock this implementation takes, so the test is evidence about this guard, not about the
+    // ordering of two unsynchronized inserts in general.
+    const eventId = await insertEvent();
+    const competing = await pool.connect();
+
+    try {
+      await competing.query("BEGIN");
+      await competing.query("SELECT id FROM events WHERE id = $1 FOR UPDATE", [eventId]);
+      await competing.query(
+        `INSERT INTO permit_plans
+           (id, event_id, event_revision, ruleset_version, verdict, verdict_detail, intake_snapshot)
+         VALUES ($1, $2, 1, 'nyc.v2.12', 'conditional', $3::jsonb, '{}'::jsonb)`,
+        [
+          randomUUID(),
+          eventId,
+          JSON.stringify({ today: TODAY, calendar_id: ruleset.calendarId, finding_renderings: [] }),
+        ],
+      );
+
+      const generation = request(appOnRulesetVersion("nyc.v2.11"))
+        .post(`/api/events/${eventId}/plan`)
+        .then((response) => response);
+
+      // Wait for the generation to be genuinely blocked on a lock before releasing it. Polling is
+      // what makes the interleaving deterministic rather than timing-dependent: the commit below
+      // happens only once the generation is known to be waiting.
+      //
+      // Scoped to this database and to the statement the generation blocks at, the way the F-202
+      // checklist concurrency test is. Any-ungranted-lock-anywhere would report blocked for an
+      // unrelated backend in the cluster, the competing transaction would commit before the
+      // generation reached its lock, and the test would pass on the already-committed row without
+      // ever exercising the serialization it exists to prove.
+      const blockedOnEventLock = async (): Promise<boolean> => {
+        const { rows } = await pool.query(
+          `SELECT 1 FROM pg_stat_activity
+            WHERE datname = current_database()
+              AND wait_event_type = 'Lock'
+              AND query LIKE 'SELECT id FROM events WHERE id = $1 FOR UPDATE%'`,
+        );
+        return rows.length > 0;
+      };
+      let blocked = false;
+      for (let attempt = 0; attempt < 100 && !blocked; attempt += 1) {
+        blocked = await blockedOnEventLock();
+        if (!blocked) await new Promise((resolve) => setTimeout(resolve, 50));
+      }
+      expect(
+        blocked,
+        "the generation never blocked on the events row lock, so nothing serialized it and this " +
+          "test asserted nothing about the interleaving",
+      ).toBe(true);
+
+      await competing.query("COMMIT");
+      const response = await generation;
+
+      expect(response.status).toBe(409);
+      expect(response.body.standing).toBe("older");
+      expect(response.body.pinnedRulesetVersion).toBe("nyc.v2.12");
+      // The generation's own row is the one that must not exist.
+      expect(await storedPlanVersions(eventId)).toEqual(["nyc.v2.12"]);
+    } finally {
+      competing.release();
+    }
+  });
+
+  /**
+   * A pool whose generating connection stops between `BEGIN` and the events row lock. Nothing else
+   * is intercepted: the generation runs its own real transaction, and the pause only decides when
+   * it reaches the lock, which is what lets a transaction that STARTS LATER take the lock, insert
+   * and commit first.
+   *
+   * The patched methods are restored on release because `pg` hands the same client object back out
+   * on the next checkout.
+   */
+  type LooseQuery = (...args: unknown[]) => Promise<unknown>;
+  const poolPausedBeforeLock = (
+    onLock: () => void,
+    released: Promise<void>,
+    base: Pool = pool,
+  ): Pool =>
+    ({
+      connect: async (): Promise<PoolClient> => {
+        const client = await base.connect();
+        const query = client.query.bind(client) as unknown as LooseQuery;
+        const release = client.release.bind(client);
+        let paused = false;
+        client.query = (async (...args: unknown[]) => {
+          if (!paused && String(args[0]).includes("FOR UPDATE")) {
+            paused = true;
+            onLock();
+            await released;
+          }
+          return query(...args);
+        }) as unknown as PoolClient["query"];
+        client.release = ((...args: unknown[]) => {
+          client.query = query as unknown as PoolClient["query"];
+          client.release = release;
+          return (release as unknown as LooseQuery)(...args);
+        }) as unknown as PoolClient["release"];
+        return client;
+      },
+      query: (...args: unknown[]) => (base.query as unknown as LooseQuery)(...args),
+    }) as unknown as Pool;
+
+  it("treats the plan inserted last under the lock as the latest, not the one whose transaction started first", async () => {
+    // `generated_at` used to default to `current_timestamp`, which is the TRANSACTION START time,
+    // so a generation that began first and inserted last carried the earlier stamp and lost the
+    // ordering to a plan it supersedes. AC 12's comparison and `GET` both read that ordering.
+    //
+    // This drives the real interleaving rather than approximating one, and the rendezvous is not
+    // the lock the guard already holds: the generation's own transaction is open and paused BEFORE
+    // it takes the lock, the overtaking transaction then begins (later start time), locks, inserts
+    // and commits, and only then is the generation released to lock and insert. Both halves are
+    // deterministic, the pause because the generation cannot proceed until this test resolves it,
+    // and the commit because it completes before the release.
+    const eventId = await insertEvent();
+    let reachedLock = (): void => {};
+    const atLock = new Promise<void>((resolve) => {
+      reachedLock = resolve;
+    });
+    let releaseGeneration = (): void => {};
+    const released = new Promise<void>((resolve) => {
+      releaseGeneration = resolve;
+    });
+
+    const app = createApp({
+      database: pool,
+      intakeContract,
+      today: () => TODAY,
+      planService: createPlanService(
+        poolPausedBeforeLock(() => reachedLock(), released),
+        { ...ruleset, rulesetVersion: "nyc.v2.12" },
+        fixtureCalendar,
+        () => TODAY,
+      ),
+    });
+    const generation = request(app)
+      .post(`/api/events/${eventId}/plan`)
+      .then((response) => response);
+    await atLock;
+
+    const overtakingId = randomUUID();
+    const overtaking = await pool.connect();
+    try {
+      // Begins after the generation's transaction is already open, so the old column default
+      // stamps this row LATER, and it still commits FIRST.
+      await overtaking.query("BEGIN");
+      await overtaking.query("SELECT id FROM events WHERE id = $1 FOR UPDATE", [eventId]);
+      await overtaking.query(
+        `INSERT INTO permit_plans
+           (id, event_id, event_revision, ruleset_version, verdict, verdict_detail, intake_snapshot)
+         VALUES ($1, $2, 1, 'nyc.v2.11', 'conditional', $3::jsonb, '{}'::jsonb)`,
+        [
+          overtakingId,
+          eventId,
+          JSON.stringify({ today: TODAY, calendar_id: ruleset.calendarId, finding_renderings: [] }),
+        ],
+      );
+      await overtaking.query("COMMIT");
+    } finally {
+      overtaking.release();
+    }
+
+    releaseGeneration();
+    const generated = await generation;
+    expect(generated.status).toBe(201);
+    expect(generated.body.rulesetVersion).toBe("nyc.v2.12");
+
+    // The claim, stated on the column itself: the row inserted second carries the later stamp.
+    const { rows: stamps } = await pool.query<{ id: string; generated_at: Date }>(
+      "SELECT id, generated_at FROM permit_plans WHERE event_id = $1 ORDER BY generated_at, id",
+      [eventId],
+    );
+    expect(stamps.map((row) => row.id)).toEqual([overtakingId, generated.body.id]);
+
+    // `GET` returns the plan the organizer just generated, not the row that committed first.
+    const fetched = await request(app).get(`/api/events/${eventId}/plan`);
+    expect(fetched.body.id).toBe(generated.body.id);
+    expect(fetched.body.rulesetVersion).toBe("nyc.v2.12");
+
+    // AC 12 reads the same ordering, which is what makes this a downgrade guard defect rather than
+    // a display one: the guard must compare against nyc.v2.12, so a service still running
+    // nyc.v2.11 is refused. Ordering by transaction start compares against the overtaking row's
+    // nyc.v2.11 instead, calls it equal, and generates the downgrade AC 12 exists to refuse.
+    const downgrade = await request(appOnRulesetVersion("nyc.v2.11")).post(
+      `/api/events/${eventId}/plan`,
+    );
+    expect(downgrade.status).toBe(409);
+    expect(downgrade.body.pinnedRulesetVersion).toBe("nyc.v2.12");
+    expect(await storedPlanVersions(eventId)).toEqual(["nyc.v2.11", "nyc.v2.12"]);
+  });
+
+  /**
+   * A pool whose sessions read a frozen `clock_timestamp()`. PostgreSQL searches `pg_catalog` first
+   * only while it is implicit; naming it explicitly puts it at the listed position, so a same-named
+   * function in an earlier schema wins. The connections below therefore run the real INSERT against
+   * a clock that returns one constant, which is what makes the equal-stamp case an actual
+   * interleaving rather than a description of one.
+   *
+   * Nothing else about the statement changes, and only these sessions are affected: the schema is
+   * invisible to any session that does not put it on its search path.
+   */
+  const FROZEN_INSTANT = "2026-08-04 12:00:00+00";
+  const frozenClockPool = async (): Promise<Pool> => {
+    await pool.query("CREATE SCHEMA IF NOT EXISTS frozen_clock");
+    await pool.query(
+      `CREATE OR REPLACE FUNCTION frozen_clock.clock_timestamp() RETURNS timestamptz
+         LANGUAGE sql IMMUTABLE AS $$ SELECT timestamptz '${FROZEN_INSTANT}' $$`,
+    );
+    return new Pool({
+      connectionString: databaseUrl,
+      options: "-c search_path=frozen_clock,pg_catalog,public",
+    });
+  };
+
+  it("orders the plan inserted second under the lock after the first even when the clock returns the same instant for both", async () => {
+    // The stored order must come from the lock, not from the clock. `clock_timestamp()` alone is
+    // still a wall clock: two inserts serialized on the events row lock can read the same instant
+    // (and a backward clock step is worse), and an equal stamp leaves the order to be settled by a
+    // random uuid, which is arbitrary. Then `GET` and AC 12's comparison can select the plan that
+    // was superseded, and permit a nyc.v2.11 generation after a nyc.v2.12 one.
+    //
+    // The equal-clock case is forced rather than hoped for: both generations run against the frozen
+    // clock above, so both inserts read the same instant. The interleaving is real and its order is
+    // fixed by the harness — the first generation's transaction is open and paused BEFORE it takes
+    // the lock, the second generation then runs end to end through the same service, and only after
+    // it commits is the first released to lock and insert. So the row inserted second under the
+    // lock is known independently of the stamps this asserts on.
+    const eventId = await insertEvent();
+    const frozen = await frozenClockPool();
+    let reachedLock = (): void => {};
+    const atLock = new Promise<void>((resolve) => {
+      reachedLock = resolve;
+    });
+    let releaseGeneration = (): void => {};
+    const released = new Promise<void>((resolve) => {
+      releaseGeneration = resolve;
+    });
+
+    const onFrozenClock = (rulesetVersion: string, database: Pool) =>
+      createApp({
+        database: pool,
+        intakeContract,
+        today: () => TODAY,
+        planService: createPlanService(
+          database,
+          { ...ruleset, rulesetVersion },
+          fixtureCalendar,
+          () => TODAY,
+        ),
+      });
+
+    try {
+      const secondApp = onFrozenClock(
+        "nyc.v2.12",
+        poolPausedBeforeLock(() => reachedLock(), released, frozen),
+      );
+      const second = request(secondApp)
+        .post(`/api/events/${eventId}/plan`)
+        .then((response) => response);
+      await atLock;
+
+      // Runs while the other generation is parked before the lock, so it locks, inserts and commits
+      // first, on the same frozen instant.
+      const first = await request(onFrozenClock("nyc.v2.11", frozen)).post(
+        `/api/events/${eventId}/plan`,
+      );
+      expect(first.status).toBe(201);
+
+      releaseGeneration();
+      const generated = await second;
+      expect(generated.status).toBe(201);
+
+      // The claim: the second insert's stored order strictly exceeds the first's, on a clock that
+      // handed both the same value. Equal stamps fail here, which is the finding.
+      //
+      // Compared in the database rather than in JavaScript: a `Date` truncates to milliseconds, so
+      // it cannot represent a step at `timestamptz`'s own resolution, and every reader of this
+      // column orders in SQL anyway.
+      const { rows: stamps } = await pool.query<{
+        id: string;
+        on_frozen_instant: boolean;
+        one_microsecond_later: boolean;
+      }>(
+        `SELECT id,
+                generated_at = timestamptz '${FROZEN_INSTANT}' AS on_frozen_instant,
+                generated_at = timestamptz '${FROZEN_INSTANT}' + interval '1 microsecond'
+                  AS one_microsecond_later
+           FROM permit_plans WHERE event_id = $1 ORDER BY generated_at, id`,
+        [eventId],
+      );
+      expect(stamps.map((row) => row.id)).toEqual([first.body.id, generated.body.id]);
+      // The first insert read the frozen clock, and the second stored the smallest value that
+      // still exceeds it — derived from the row it supersedes, not from the clock that tied.
+      expect(stamps.map((row) => row.on_frozen_instant)).toEqual([true, false]);
+      expect(stamps.map((row) => row.one_microsecond_later)).toEqual([false, true]);
+
+      // What the order is for: the plan inserted second is the latest one read back...
+      const fetched = await request(secondApp).get(`/api/events/${eventId}/plan`);
+      expect(fetched.body.id).toBe(generated.body.id);
+      expect(fetched.body.rulesetVersion).toBe("nyc.v2.12");
+
+      // ...and the one AC 12 compares the next generation against, so nyc.v2.11 is refused rather
+      // than matched against the superseded nyc.v2.11 row and allowed.
+      const downgrade = await request(appOnRulesetVersion("nyc.v2.11")).post(
+        `/api/events/${eventId}/plan`,
+      );
+      expect(downgrade.status).toBe(409);
+      expect(downgrade.body.pinnedRulesetVersion).toBe("nyc.v2.12");
+      expect(await storedPlanVersions(eventId)).toEqual(["nyc.v2.11", "nyc.v2.12"]);
+    } finally {
+      await frozen.end();
+    }
   });
 });

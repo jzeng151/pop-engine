@@ -1776,6 +1776,9 @@ describe("ordering the live ruleset against the pinned one", () => {
     expect(compareToPinned("nyc.v2.3", "draft")).toBe("different");
     // Two jurisdictions have no ordering between them at all.
     expect(compareToPinned("bos.v1.0", "nyc.v2.3")).toBe("different");
+    // Identical strings are not evidence of identical content unless they are versions. Two
+    // artifacts both labelled `draft` are two unknown artifacts, so they stay unorderable.
+    expect(compareToPinned("draft", "draft")).toBe("different");
   });
 
   it("says the service is on an older ruleset after a rollback, without advising regeneration", async () => {
