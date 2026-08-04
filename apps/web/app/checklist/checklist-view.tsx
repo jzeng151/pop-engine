@@ -164,10 +164,21 @@ export function failedDeliveryNotice(failure: {
  * WHAT IT MAY AND MAY NOT SAY. It may not say the message did not arrive: nobody knows, and that
  * uncertainty is the reason for the hold. It may not promise a retry, a schedule, or anyone in
  * particular acting, because none of those is happening. What is true and useful is the shape of
- * the state: it was sent to the provider, no answer came back, PopEngine has stopped, and only a
- * person checking with the provider changes that. The last clause is the one an organizer can act
- * on today, and it stops at their own reminders: it says not to rely on this alert, and says
- * nothing about the filing itself, which is the ruleset's to describe and not this sentence's.
+ * the state: a send was attempted, no outcome was ever recorded, PopEngine has stopped, and only a
+ * person checking with the sending service changes that. The last clause is the one an organizer
+ * can act on today, and it stops at their own reminders: it says not to rely on this alert, and
+ * says nothing about the filing itself, which is the ruleset's to describe and not this sentence's.
+ *
+ * NOR MAY IT SAY THE HANDOFF HAPPENED, which is what "were handed to the sending service" said and
+ * what the whole notice was built on. The attempt is recorded BEFORE the provider is called, on
+ * its own connection, exactly so a process that dies mid-send leaves evidence — and a process that
+ * dies in the gap between that record and the call leaves the SAME evidence with nothing handed
+ * over at all. After downtime longer than the dedup window that row is a hold like any other, so
+ * the weakest case this string has to be true of is a send that never left the process. Every
+ * clause is written against that case: the record is an attempted send, the outcome is missing
+ * rather than negative, and what a person checks is whether anything went out rather than whether
+ * it arrived. Copy an organizer reads about a filing deadline does not get to assume the stronger
+ * reading because it is the commoner one.
  *
  * NOR MAY IT SAY THIS ALERT CAN NEVER GO OUT AGAIN, which is what "will not be sent again on its
  * own" said. A regeneration cancels a held alert and the next review revives it as a FRESH
@@ -189,12 +200,14 @@ export function reconciliationHoldNotice(hold: { channel: string; heldCount: num
   const they = one ? "it" : "they";
   const their = one ? "its" : "their";
   const dates = one ? "the filing date it covers" : "the filing dates they cover";
+  const attempted = one ? "an attempted send" : "attempted sends";
   return (
-    `${hold.heldCount} ${name} ${alerts} for this event ${were} handed to the sending service ` +
-    `and no answer came back. Too much time has passed to try ${them} again safely, so PopEngine ` +
-    `has stopped: nothing on ${their} current schedule will send ${them} again. Someone has to ` +
-    `check with the sending service whether ${they} arrived; until then, do not count on ${them} ` +
-    `to remind you of ${dates}.`
+    `${hold.heldCount} ${name} ${alerts} for this event ${were} recorded as ${attempted}, and no ` +
+    `outcome ever came back: PopEngine cannot tell whether ${they} reached the sending service ` +
+    `at all. Too much time has passed to try ${them} again safely, so PopEngine has stopped: ` +
+    `nothing on ${their} current schedule will send ${them} again. Someone has to check with the ` +
+    `sending service whether ${they} went out; until then, do not count on ${them} to remind you ` +
+    `of ${dates}.`
   );
 }
 

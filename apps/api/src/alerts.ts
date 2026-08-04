@@ -2356,10 +2356,18 @@ export function createAlertPoller(dependencies: {
     // same reason staleness is. This tick is about to cancel that row rather than leave it for a
     // person, and warning that it needs reconciling in the same pass that retires it is the false
     // alarm the staleness predicate was added to stop.
+    //
+    // AND NEITHER IS A DEMO SEND, which migration 014 and the organizer's own notice already
+    // refuse and this count did not. A test row whose intent committed before the api went down
+    // never reaches `retireFailedTestAlert`, so it comes back due and unresolved and ages past the
+    // cutoff like any other — and was then named on every tick as a permanent reconciliation. An
+    // AC 6 demo is an operator action against no deadline: nobody is waiting on it, so warning
+    // about one only buries the genuine holds this counter exists to make visible.
     const { rows: held } = await database.query<{ id: string }>(
       `SELECT id FROM alerts
         WHERE status IN ('pending', 'failed')
           AND send_at <= current_timestamp
+          AND coalesce(payload->>'test', 'false') <> 'true'
           AND ${NOT_FROM_A_STALE_PLAN}
           AND NOT ${FILING_WINDOW_HAS_SHUT("$1")}
           AND ${HAS_AN_UNRESOLVED_ATTEMPT}`,

@@ -1443,6 +1443,8 @@ describe.skipIf(databaseUrl === "")("F-203 deadline alerts", () => {
           readonly lastError?: string;
           /** How many sends this row has recorded, which `last_error` describes only the last of. */
           readonly failureCount?: number;
+          /** AC 6's demo marker, which every organizer-facing and operational read excludes. */
+          readonly test?: boolean;
         } = {},
       ): Promise<string> => {
         const alertId = randomUUID();
@@ -1460,7 +1462,10 @@ describe.skipIf(databaseUrl === "")("F-203 deadline alerts", () => {
             alertId,
             row.channel ?? "email",
             row.status ?? "pending",
-            JSON.stringify(row.lastError === undefined ? {} : { last_error: row.lastError }),
+            JSON.stringify({
+              ...(row.lastError === undefined ? {} : { last_error: row.lastError }),
+              ...(row.test === true ? { test: true } : {}),
+            }),
             row.failureCount ?? (row.status === "failed" ? 1 : 0),
           ],
         );
@@ -1627,6 +1632,35 @@ describe.skipIf(databaseUrl === "")("F-203 deadline alerts", () => {
           [alertId],
         );
         expect(rows[0]?.status).toBe("pending");
+      });
+
+      it("does not report a stranded demo send as needing a human", async () => {
+        // THE SAME RULE THE MIGRATION AND THE ORGANIZER'S NOTICE ALREADY FOLLOW, missing from the
+        // one read an operator watches. A test send whose intent committed before the api went
+        // down comes back due, unresolved and past the dedup cutoff — the endpoint that would have
+        // retired it is long gone — so the tick counted and named it as a permanent provider
+        // reconciliation on every 60s pass. An AC 6 demo is an operator action against no
+        // deadline: nobody is waiting on it, and warning about one buries the genuine hold beside
+        // it, which is the whole value of a counter that is supposed to be rare.
+        const eventId = await createEvent(scenario("C"));
+        const demo = await insertDueAlert(eventId, "demo@example.test", 2, { test: true });
+        const real = await insertDueAlert(eventId, "unreconciled@example.test", 2);
+        await recordAttempt(demo, PROVIDER_DEDUP_WINDOW_HOURS + 1, false);
+        await recordAttempt(real, PROVIDER_DEDUP_WINDOW_HOURS + 1, false);
+        const warned = vi.spyOn(console, "warn").mockImplementation(() => {});
+
+        const summary = await createAlertPoller({
+          database: pool,
+          senders: fakeProvider().senders,
+          jurisdiction: ruleset.jurisdiction,
+        }).tick();
+
+        // The real one still counts, so this excludes demo rows rather than the hold itself.
+        expect(summary.heldForReconciliation).toBe(1);
+        const logged = warned.mock.calls.map((call) => String(call[0])).join("\n");
+        warned.mockRestore();
+        expect(logged).toContain(real);
+        expect(logged).not.toContain(demo);
       });
 
       it("does not report an obsolete alert's aged attempt as needing a human", async () => {

@@ -1522,13 +1522,14 @@ describe("F-203 · a channel that failed to deliver is reported to the organizer
 
     await renderView();
 
-    const notice = screen.getByText(/no answer came back/);
+    const notice = screen.getByText(/no outcome ever came back/);
     expect(notice.textContent).toBe(
-      "2 email alerts for this event were handed to the sending service and no answer came back. " +
-        "Too much time has passed to try them again safely, so PopEngine has stopped: nothing on " +
-        "their current schedule will send them again. Someone has to check with the sending " +
-        "service whether they arrived; until then, do not count on them to remind you of the " +
-        "filing dates they cover.",
+      "2 email alerts for this event were recorded as attempted sends, and no outcome ever came " +
+        "back: PopEngine cannot tell whether they reached the sending service at all. Too much " +
+        "time has passed to try them again safely, so PopEngine has stopped: nothing on their " +
+        "current schedule will send them again. Someone has to check with the sending service " +
+        "whether they went out; until then, do not count on them to remind you of the filing " +
+        "dates they cover.",
     );
     expect(notice.getAttribute("role")).toBe("alert");
     // The claim that broke this: nothing here may promise a retry that is not going to happen.
@@ -1552,9 +1553,35 @@ describe("F-203 · a channel that failed to deliver is reported to the organizer
 
     await renderView();
 
-    const notice = screen.getByText(/no answer came back/);
+    const notice = screen.getByText(/no outcome ever came back/);
     expect(notice.textContent).not.toMatch(/will not be sent again on (its|their) own/);
     expect(notice.textContent).toContain("current schedule");
+  });
+
+  it("does not assert a handoff it cannot prove happened", async () => {
+    // THE WEAKEST CASE THIS ONE STRING HAS TO BE TRUE OF. The attempt is recorded BEFORE the
+    // provider is called, on its own connection, precisely so a process that dies mid-send leaves
+    // evidence. A process that dies just after that record and before the sender runs leaves the
+    // same evidence with nothing handed over at all, and after downtime longer than the dedup
+    // window that row becomes a hold. Told flatly that the alert was handed to the sending
+    // service, an organizer goes to reconcile a message the provider may never have seen — and on
+    // a filing deadline that is a claim the page has no evidence for. Every clause has to hold in
+    // that case, not only in the one where the send really did go out.
+    stubApi({
+      [GET_CHECKLIST]: checklistOf({
+        created: true,
+        alertsHeldForReconciliation: [{ channel: "email", heldCount: 1 }],
+      }),
+    });
+
+    await renderView();
+
+    const notice = screen.getByText(/no outcome ever came back/);
+    expect(notice.textContent).not.toMatch(/(was|were) handed to the sending service/);
+    expect(notice.textContent).toMatch(/attempted send/);
+    // Nor may the action presume the message reached anybody: what a person checks is whether
+    // anything went out, which is the question this state leaves open.
+    expect(notice.textContent).not.toMatch(/whether (it|they) arrived/);
   });
 
   it("agrees with itself on one stopped alert", async () => {
@@ -1567,11 +1594,12 @@ describe("F-203 · a channel that failed to deliver is reported to the organizer
 
     await renderView();
 
-    expect(screen.getByText(/no answer came back/).textContent).toBe(
-      "1 email alert for this event was handed to the sending service and no answer came back. " +
-        "Too much time has passed to try it again safely, so PopEngine has stopped: nothing on " +
-        "its current schedule will send it again. Someone has to check with the sending service " +
-        "whether it arrived; until then, do not count on it to remind you of the filing date it " +
+    expect(screen.getByText(/no outcome ever came back/).textContent).toBe(
+      "1 email alert for this event was recorded as an attempted send, and no outcome ever came " +
+        "back: PopEngine cannot tell whether it reached the sending service at all. Too much " +
+        "time has passed to try it again safely, so PopEngine has stopped: nothing on its " +
+        "current schedule will send it again. Someone has to check with the sending service " +
+        "whether it went out; until then, do not count on it to remind you of the filing date it " +
         "covers.",
     );
   });
@@ -1583,7 +1611,7 @@ describe("F-203 · a channel that failed to deliver is reported to the organizer
 
     await renderView();
 
-    expect(screen.queryByText(/no answer came back/)).toBeNull();
+    expect(screen.queryByText(/no outcome ever came back/)).toBeNull();
   });
 
   it("keeps a stopped alert and a retrying failure as separate statements", async () => {
@@ -1601,7 +1629,7 @@ describe("F-203 · a channel that failed to deliver is reported to the organizer
     await renderView();
 
     const retrying = screen.getByText(/not been confirmed as delivered/);
-    const stopped = screen.getByText(/no answer came back/);
+    const stopped = screen.getByText(/no outcome ever came back/);
     expect(retrying).not.toBe(stopped);
     expect(retrying.textContent).toContain("PopEngine keeps retrying them");
     expect(stopped.textContent).not.toContain("keeps retrying");
