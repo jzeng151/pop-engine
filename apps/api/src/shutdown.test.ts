@@ -1,4 +1,4 @@
-// The drain DEPLOY.md's release order asks for, driven against the real process.
+// The drain DEPLOY.md's release order asks for, driven against the process the host actually signals.
 //
 // Migration 014 backfills an attempt row for every already-failed email alert, and from then on
 // every reader treats an alert with no attempt row as one nothing was ever handed over for. The
@@ -10,16 +10,26 @@
 //
 // A runbook step the code cannot perform is worse than no step, because the deployer believes they
 // performed it. So this drives the real bootstrap in a subprocess and sends it the signal a host
-// sends: the process must stop the poller, wait for the tick in flight, and exit of its own accord.
-// Asserting on the file's text would prove only that a handler is written somewhere.
+// sends: the process must stop accepting work, finish what it is holding, and exit of its own
+// accord. Asserting on the file's text would prove only that a handler is written somewhere.
+//
+// AND IT DRIVES THE COMMAND THE RUNBOOK PUBLISHES, rather than one that resembles it. A drain is
+// only reached by a process that receives the signal, so which process the host's SIGTERM lands on
+// is part of the mechanism and not a deployment detail. A package runner in front of the api dies
+// at its default disposition and leaves the api it started running, holding the inherited pipes:
+// green in a test that spawns the api directly, no drain at all in production. The start command
+// is therefore READ OUT OF `DEPLOY.md` and run through a shell exactly as the host runs it, so the
+// runbook and this suite cannot drift apart — changing one without the other fails here.
 
 import { spawn } from "node:child_process";
+import { readFileSync } from "node:fs";
+import { connect, createServer, type AddressInfo } from "node:net";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import { rulesFilePath } from "./ruleset";
 
 const databaseUrl = process.env.DATABASE_URL ?? "";
-const apiDirectory = fileURLToPath(new URL("..", import.meta.url));
+const repoRoot = fileURLToPath(new URL("../../..", import.meta.url));
 
 /**
  * How long to let the api take before the test gives up on it and reports what it had.
@@ -31,61 +41,145 @@ const apiDirectory = fileURLToPath(new URL("..", import.meta.url));
  */
 const GIVE_UP_MS = 60_000;
 
-/** Boot the api, wait until it is serving, then send `signal` and report how it went out. */
-function bootThenSignal(signal: NodeJS.Signals): Promise<{
-  code: number | null;
-  signal: NodeJS.Signals | null;
-  output: string;
-}> {
-  return new Promise((settle, fail) => {
-    // NO PACKAGE-RUNNER IN FRONT OF IT, and that is the whole point rather than a tidy-up. The
-    // subject of this test is which process receives the signal: `npx tsx src/index.ts` puts
-    // `npm exec` between the test and the api, and `npm exec` under the npm that ships with
-    // Node 22 — which is CI's — takes the default disposition and dies on SIGTERM without passing
-    // it on. The api it started stays up holding the inherited pipes, so `close` never fires, the
-    // drain is never asked for, and the case can only end by timing out. It passed locally on a
-    // newer npm that happens to forward, which is the worst way for a shutdown test to be wrong:
-    // green where it proves nothing.
-    //
-    // `--import tsx` loads the TypeScript loader into THIS process instead of spawning a second
-    // one, so the pid the test signals is the pid that runs `index.ts` and installed the handler.
-    // The deployed api is started by the `tsx` binary (DEPLOY.md §4), which does forward signals
-    // to the process it starts; what is removed here is only the test's own extra layer.
-    const child = spawn(process.execPath, ["--import", "tsx", "src/index.ts"], {
-      cwd: apiDirectory,
-      env: {
-        ...process.env,
-        RULES_FILE: rulesFilePath(),
-        DATABASE_URL: databaseUrl,
-        PORT: "0",
-      },
-    });
-    let output = "";
-    let signalled = false;
-    const giveUp = setTimeout(() => {
-      output += `\n[test] no exit ${GIVE_UP_MS}ms after boot; killing\n`;
-      child.kill("SIGKILL");
-    }, GIVE_UP_MS);
-    const readyOrDone = (chunk: Buffer): void => {
-      output += chunk.toString();
-      // The listen callback, which is also where the poller starts: signalling before it means
-      // testing a shutdown with nothing to drain.
-      if (!signalled && output.includes("listening on")) {
-        signalled = true;
-        child.kill(signal);
-      }
-    };
-    child.stdout.on("data", readyOrDone);
-    child.stderr.on("data", readyOrDone);
-    child.on("error", (error) => {
-      clearTimeout(giveUp);
-      fail(error);
-    });
-    child.on("close", (code, closedBy) => {
-      clearTimeout(giveUp);
-      settle({ code, signal: closedBy, output });
+/**
+ * The api start command as the runbook publishes it, which is the thing under test.
+ *
+ * Parsed rather than repeated, because a copy here would pass while the deployed command changed
+ * underneath it, which is the exact failure this suite exists to catch.
+ */
+function deployedStartCommand(): string {
+  const runbook = readFileSync(new URL("../../../DEPLOY.md", import.meta.url), "utf8");
+  const command = /-\s+\*\*api\*\*:\s+start command\s+`([^`]+)`/.exec(runbook)?.[1];
+  if (command === undefined) {
+    throw new Error("DEPLOY.md no longer publishes an api start command this suite can run");
+  }
+  return command;
+}
+
+/** A port the api can have to itself, so the test can reach it while it is serving. */
+function freePort(): Promise<number> {
+  return new Promise((resolve, reject) => {
+    const probe = createServer();
+    probe.on("error", reject);
+    probe.listen(0, "127.0.0.1", () => {
+      const { port } = probe.address() as AddressInfo;
+      probe.close(() => resolve(port));
     });
   });
+}
+
+const delay = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms));
+
+type Shutdown = { code: number | null; signal: NodeJS.Signals | null; output: string };
+
+/**
+ * Boot the api the way the host does, wait until it is serving, then signal it and report how it
+ * went out.
+ *
+ * `whileServing` straddles the signal: it is handed the port and the function that sends it, so a
+ * case can have a request in flight at the moment the signal arrives.
+ */
+function bootThenSignal(
+  signal: NodeJS.Signals,
+  whileServing: (port: number, sendSignal: () => void) => Promise<void> = async (_port, send) =>
+    send(),
+): Promise<Shutdown> {
+  return new Promise((settle, fail) => {
+    void (async () => {
+      const port = await freePort();
+      // Through a shell, in its own process group, because that is the shape a host runs: the
+      // command string is the container's entry process and the signal goes to it alone.
+      const child = spawn("sh", ["-c", deployedStartCommand()], {
+        cwd: repoRoot,
+        detached: true,
+        env: {
+          ...process.env,
+          RULES_FILE: rulesFilePath(),
+          DATABASE_URL: databaseUrl,
+          PORT: String(port),
+        },
+      });
+      const killGroup = (): void => {
+        if (child.pid === undefined) return;
+        try {
+          process.kill(-child.pid, "SIGKILL");
+        } catch {
+          // Already gone, which is the outcome this was asking for.
+        }
+      };
+      let output = "";
+      let signalled = false;
+      const giveUp = setTimeout(() => {
+        output += `\n[test] no exit ${GIVE_UP_MS}ms after boot; killing the process group\n`;
+        killGroup();
+      }, GIVE_UP_MS);
+      const readyOrDone = (chunk: Buffer): void => {
+        output += chunk.toString();
+        // The listen callback, which is also where the poller starts: signalling before it means
+        // testing a shutdown with nothing to drain.
+        if (!signalled && output.includes("listening on")) {
+          signalled = true;
+          void whileServing(port, () => child.kill(signal)).catch(fail);
+        }
+      };
+      child.stdout.on("data", readyOrDone);
+      child.stderr.on("data", readyOrDone);
+      child.on("error", (error) => {
+        clearTimeout(giveUp);
+        fail(error);
+      });
+      // ON `exit` RATHER THAN `close`, because the defect this suite is for leaves a process alive
+      // holding the inherited pipes. `close` waits for those pipes, so a runner that dies without
+      // passing the signal on would report as a bare timeout naming nothing instead of as the
+      // failed shutdown it is.
+      child.on("exit", (code, closedBy) => {
+        clearTimeout(giveUp);
+        // Anything the command left behind goes with it, so one case cannot strand a port or a
+        // database connection into the next.
+        setTimeout(killGroup, 100);
+        settle({ code, signal: closedBy, output });
+      });
+    })();
+  });
+}
+
+/**
+ * Hold one request open across the signal and report what the api answered.
+ *
+ * A DOCUMENT UPLOAD IS THE CASE THIS STANDS IN FOR. That request spends its long phase inside
+ * `storage.put(...)` holding no database client, so ending the pools proves nothing about it: both
+ * `end()` calls resolve immediately and an exit taken on them alone drops the organizer's upload
+ * after the bytes were accepted and before the metadata was recorded. A body the test finishes
+ * sending after the signal puts a request in exactly that state — accepted, unanswered, holding
+ * nothing the pools know about — without needing a bucket.
+ */
+async function answerAcrossTheSignal(port: number, sendSignal: () => void): Promise<string> {
+  const body = JSON.stringify({ still: "in flight" });
+  const socket = connect(port, "127.0.0.1");
+  await new Promise<void>((resolve, reject) => {
+    socket.once("connect", resolve);
+    socket.once("error", reject);
+  });
+  let answer = "";
+  socket.on("data", (chunk: Buffer) => {
+    answer += chunk.toString();
+  });
+  socket.write(
+    `POST /health HTTP/1.1\r\nHost: 127.0.0.1:${port}\r\nContent-Type: application/json\r\n` +
+      `Content-Length: ${body.length}\r\nConnection: close\r\n\r\n`,
+  );
+  // Headers only. The body parser is now waiting for the rest, which is what makes this a request
+  // the server is holding rather than a socket sitting idle.
+  socket.write(body.slice(0, 4));
+  await delay(250);
+  sendSignal();
+  await delay(500);
+  socket.write(body.slice(4));
+  await new Promise<void>((resolve) => {
+    socket.once("close", () => resolve());
+    socket.once("error", () => resolve());
+  });
+  return answer;
 }
 
 describe.runIf(databaseUrl.length > 0)("the api drains before it exits", () => {
@@ -97,7 +191,8 @@ describe.runIf(databaseUrl.length > 0)("the api drains before it exits", () => {
     // The output rides along on the failure so a bad shutdown says what the process did.
     expect(result.signal, result.output).toBeNull();
     expect(result.code, result.output).toBe(0);
-    expect(result.output).toMatch(/draining the alert poller/i);
+    expect(result.output).toMatch(/draining/i);
+    expect(result.output).toMatch(/alert poller drained; exiting/i);
   }, 90_000);
 
   it("drains on SIGINT too, which is what a local run and some hosts send", async () => {
@@ -105,6 +200,20 @@ describe.runIf(databaseUrl.length > 0)("the api drains before it exits", () => {
 
     expect(result.signal, result.output).toBeNull();
     expect(result.code, result.output).toBe(0);
-    expect(result.output).toMatch(/draining the alert poller/i);
+    expect(result.output).toMatch(/draining/i);
+    expect(result.output).toMatch(/alert poller drained; exiting/i);
+  }, 90_000);
+
+  it("answers a request that was in flight when the signal arrived", async () => {
+    let answer = "";
+    const result = await bootThenSignal("SIGTERM", async (port, sendSignal) => {
+      answer = await answerAcrossTheSignal(port, sendSignal);
+    });
+
+    // The organizer's request got a reply rather than a dropped socket. Which reply does not
+    // matter — `POST /health` is not a route — only that the process stayed to give one.
+    expect(answer, result.output).toMatch(/^HTTP\/1\.1 \d{3}/);
+    expect(result.signal, result.output).toBeNull();
+    expect(result.code, result.output).toBe(0);
   }, 90_000);
 });

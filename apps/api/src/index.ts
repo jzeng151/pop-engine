@@ -138,9 +138,24 @@ const server = createApp({
 // SIGINT, and an alert mid-send does not care which arrived.
 const drainThenExit = (signal: NodeJS.Signals): void => {
   void (async () => {
-    console.log(`${signal} received; draining the alert poller before exit`);
-    // New requests stop here; the poller's own work is what the await below is for.
-    server.close();
+    console.log(`${signal} received; draining in-flight requests and the alert poller before exit`);
+    // AWAITED, BECAUSE `close()` ONLY STARTS THIS. It stops the listener taking new connections
+    // and then reports through its callback when the last request has been answered; returning
+    // from it says nothing about the requests already running. Ending the pools is not a stand-in
+    // for that wait either: a document upload spends its long phase inside `storage.put(...)`
+    // holding no database client, so both `end()` calls resolve while it is still going and the
+    // exit below takes the organizer's request with it, after the bytes were accepted and before
+    // the metadata was recorded.
+    //
+    // IDLE KEEP-ALIVE SOCKETS ARE CLOSED RATHER THAN WAITED ON. A browser holds its connection
+    // open between requests, and `close()` waits for every connection, so without this the drain
+    // would last as long as an idle tab rather than as long as the work. A connection with no
+    // request on it has nothing to lose by going.
+    await new Promise<void>((drained) => {
+      server.close(() => drained());
+      server.closeIdleConnections();
+    });
+    // Then the poller's own work, which no HTTP request is holding.
     await alertPoller.stop();
     await Promise.all([alertPool.end(), pool.end()]);
     console.log("alert poller drained; exiting");

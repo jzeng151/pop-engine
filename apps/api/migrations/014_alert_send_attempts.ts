@@ -3,7 +3,11 @@ import type { ColumnDefinitions, MigrationBuilder } from "node-pg-migrate";
 export const shorthands: ColumnDefinitions | undefined = undefined;
 
 /**
- * That PopEngine handed an alert to a provider, recorded BEFORE the handoff.
+ * That PopEngine was about to hand an alert to a provider, recorded BEFORE the handoff.
+ *
+ * An intent rather than a receipt: the row is written before `sender(...)` is called, so a process
+ * that dies in between leaves exactly what one that died mid-send leaves. Nothing reading this
+ * table can say the provider ended up with the message.
  *
  * Until now nothing was written until a send had already succeeded, so a process that died between
  * the provider accepting the message and the COMMIT left a row byte-identical to one that had never

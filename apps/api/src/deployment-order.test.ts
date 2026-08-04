@@ -85,6 +85,35 @@ describe("F-203 rollout constraints the runbook has to carry", () => {
     expect(prose).toMatch(new RegExp(`${PROVIDER_DEDUP_WINDOW_HOURS}[- ]?hour`, "i"));
   });
 
+  it("describes the attempt row as an intent rather than a completed handoff", () => {
+    // THE FOURTH CORRECTION OF ONE CLAIM, which is why it is pinned rather than only fixed again.
+    // The row is written BEFORE `sender(...)` is called and on its own connection, so a process
+    // that dies in between leaves exactly what one that died mid-send leaves: an attempt whose
+    // handoff is possible and not certain. The organizer's notice, the tick's telemetry and the
+    // hold log each had the stronger reading taken back out of them; the authoritative schema
+    // section still defined the row as proof the alert "was handed" over and dated it "at the
+    // moment of the handoff", which is the description every future implementation reads first.
+    //
+    // ASSERTED AS THE ABSENCE OF THE OVERCLAIM rather than as a phrasing, because what must not
+    // return is the certainty, not a particular sentence. The section may say whatever it likes
+    // about an attempted send.
+    expect(read("apps/api/src/alerts.ts")).toContain("Record that this alert is ABOUT to be handed");
+
+    const architecture = read("docs/ARCHITECTURE.md");
+    const schemaSection = architecture.slice(
+      architecture.indexOf("### alert_send_attempts"),
+      architecture.indexOf("### event_alert_contacts"),
+    );
+    const prose = schemaSection.replace(/\s+/g, " ");
+    expect(prose).not.toBe("");
+    expect(prose).not.toMatch(/(was|were) handed to a provider/i);
+    expect(prose).not.toMatch(/at the moment of the handoff/i);
+    // The migration's own header is the other place a reader meets this table first.
+    expect(read("apps/api/migrations/014_alert_send_attempts.ts").replace(/\s+/g, " ")).not.toMatch(
+      /PopEngine handed an alert to a provider/i,
+    );
+  });
+
   it("tells a deployer to deploy web before the api for the reconciliation notice", () => {
     // WHY THE CODE NEEDS THIS. The api stops counting a reconciliation-held alert among the
     // failures (the failure notice promises retries that have ended for it) and reports it under

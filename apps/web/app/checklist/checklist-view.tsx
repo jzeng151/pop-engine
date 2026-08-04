@@ -129,6 +129,7 @@ export function failedDeliveryNotice(failure: {
   channel: string;
   failedCount: number;
   heldForReview?: boolean;
+  attemptedWithoutOutcome?: boolean;
 }): string {
   const name = CHANNEL_NAMES[failure.channel] ?? failure.channel;
   const alerts = failure.failedCount === 1 ? "alert" : "alerts";
@@ -144,11 +145,29 @@ export function failedDeliveryNotice(failure: {
   // Read from the plans the FAILED ROWS hang off, not from the latest plan, which is what
   // `planStale` describes. Between a regeneration and a review the latest plan is current while
   // these rows still point at the old revision and stay unclaimable.
-  return failure.heldForReview === true
-    ? `${lead} Retrying is paused because this event changed after their plan was made: ` +
-        `regenerate the plan and review the checklist to start it again.`
-    : `${lead} PopEngine keeps retrying them. If the ${name} address below is wrong, correcting ` +
-        `it will redirect the alerts that have not gone out.`;
+  if (failure.heldForReview !== true) {
+    return (
+      `${lead} PopEngine keeps retrying them. If the ${name} address below is wrong, correcting ` +
+      `it will redirect the alerts that have not gone out.`
+    );
+  }
+  const paused =
+    `${lead} Retrying is paused because this event changed after their plan was made: ` +
+    `regenerate the plan and review the checklist to start it again.`;
+  // AND THE ACTION DOES NOT ALWAYS WORK, which the sentence above promised it did. An alert
+  // carrying an attempt nobody saw the end of is upserted in place by the regeneration rather than
+  // cancelled, and only a row revived from `cancelled` has its attempt superseded — so the review
+  // refreshes the schedule and the row stops for reconciliation instead of retrying. Sending an
+  // organizer to do the one thing they believe is left, when it will not start their reminder
+  // again, is worse than the silence this notice exists to break.
+  //
+  // Both sentences, because both are true of the channel: the rows without an open attempt DO
+  // resume. The count is per channel and cannot be split without saying which alert is which,
+  // which is not something this page is given.
+  return failure.attemptedWithoutOutcome === true
+    ? `${paused} That will not restart any that were already attempted with no outcome recorded: ` +
+        `those stay stopped until someone checks with the sending service.`
+    : paused;
 }
 
 /**

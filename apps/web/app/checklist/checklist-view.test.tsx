@@ -1437,6 +1437,32 @@ describe("F-203 · a channel that failed to deliver is reported to the organizer
     expect(notice.textContent).not.toContain("PopEngine keeps retrying them");
   });
 
+  it("does not promise the review restarts an alert whose outcome was never observed", async () => {
+    // The paused sentence names regeneration and review as the action that starts these again,
+    // and for an ordinary stale failure it does. For one carrying an attempt nobody saw the end
+    // of it does not: the scheduler upserts the failed row in place, only a row revived from
+    // cancelled has its attempt superseded, and the refreshed row becomes a reconciliation hold
+    // instead of a retry. Sending an organizer to do a thing that will not work is worse than
+    // saying nothing, because it is the one action they believe is left.
+    stubApi({
+      [GET_CHECKLIST]: checklistOf({
+        created: true,
+        failedAlertDeliveries: [
+          { channel: "email", failedCount: 2, heldForReview: true, attemptedWithoutOutcome: true },
+        ],
+      }),
+    });
+
+    await renderView();
+
+    const notice = screen.getByText(/not been confirmed as delivered/);
+    expect(notice.textContent).toContain("Retrying is paused because this event changed");
+    expect(notice.textContent).toContain(
+      "will not restart any that were already attempted with no outcome recorded",
+    );
+    expect(notice.textContent).toContain("checks with the sending service");
+  });
+
   it("does not turn an unknown delivery outcome into a definite non-delivery", async () => {
     // A provider timeout or a lost response is recorded as failed while the message MAY have
     // arrived, which is the whole reason this feature hands the provider an idempotency key and

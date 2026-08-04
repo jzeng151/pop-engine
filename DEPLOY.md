@@ -59,8 +59,17 @@ contracts and enforcement are separately approved and ship.
 
 One project, two services from this monorepo. Set each service's root directory to the repo root; Railway installs the pnpm workspace.
 
-- **api**: start command `pnpm --filter api start`. No build step (runs via tsx).
+- **api**: start command `cd apps/api && pnpm migrate up && exec node --import tsx src/index.ts`. No build step (the tsx loader runs the TypeScript source in process).
 - **web**: build command `pnpm --filter web build`, start command `pnpm --filter web start`.
+
+The api command is written that way because of which process receives the host's `SIGTERM`. The
+api's drain (below, and `apps/api/src/index.ts`) only runs in the process that gets the signal, and
+`pnpm --filter api start` puts pnpm and the lifecycle shell it spawns in front of the api: pnpm
+takes the signal at its default disposition and the api it started keeps running until the host
+kills it, so the drain never happens and a send can be stranded exactly as the release order below
+describes. `exec` makes the api itself the process the host started, with no runner left in front of
+it. Migrations still run first and finish before the `exec`. `apps/api/src/shutdown.test.ts` reads
+this command out of this file and signals it, so the two cannot drift apart.
 
 1. New Project, Deploy from GitHub repo, `jzeng151/pop-engine`.
 2. Add the two services with the commands above.
@@ -91,7 +100,8 @@ the alert attempt record; the conditions for dropping each are stated with it.
    **On this rollout the api you are stopping cannot drain, and you must not wait for it to.** The
    drain ships in the build that carries migration 014, so the process being stopped predates the
    handler: it takes `SIGTERM` (or `SIGINT`) at its default disposition and dies where it stands.
-   From the next rollout on, the running api stops its alert poller, waits for the send in flight
+   From the next rollout on, the running api stops accepting requests, finishes the ones it is
+   already holding, stops its alert poller, waits for the send in flight
    to finish recording its outcome, exits 0, and logs a line naming the signal and then
    `alert poller drained; exiting`; wait for that second line then. For this one, wait only for the
    process to be gone.

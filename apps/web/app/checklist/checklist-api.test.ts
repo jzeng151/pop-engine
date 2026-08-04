@@ -137,6 +137,57 @@ describe("loadChecklist", () => {
     expect(result.ok && result.checklist.alertsHeldForReconciliation).toEqual([]);
   });
 
+  it("reads a failed delivery from an API that does not qualify the paused notice yet", async () => {
+    // Same rollout, one field further in: web goes first, so this page meets an api whose failed
+    // deliveries carry no `attemptedWithoutOutcome`. Refusing the body would cost the organizer
+    // the whole checklist over a qualification, and inventing `false` would be a claim the api did
+    // not make. Absent stays absent and the notice says what it said before.
+    stubFetch(async () =>
+      jsonResponse(
+        200,
+        checklistBody({
+          created: true,
+          items: [trackedItem()],
+          failedAlertDeliveries: [{ channel: "email", failedCount: 1, heldForReview: true }],
+        }),
+      ),
+    );
+
+    const result = await loadChecklist("https://api.example.com", "event-1");
+
+    expect(result).toMatchObject({ ok: true });
+    expect(result.ok && result.checklist.failedAlertDeliveries[0]?.attemptedWithoutOutcome).toBe(
+      undefined,
+    );
+  });
+
+  it("refuses a failed delivery whose qualification is not a boolean", async () => {
+    // Optional is not unchecked: a field this page reads still has to prove its type when it is
+    // there, which is the consumed-type discipline the rest of this suite pins.
+    stubFetch(async () =>
+      jsonResponse(
+        200,
+        checklistBody({
+          created: true,
+          items: [trackedItem()],
+          failedAlertDeliveries: [
+            {
+              channel: "email",
+              failedCount: 1,
+              heldForReview: true,
+              attemptedWithoutOutcome: "yes",
+            },
+          ],
+        }),
+      ),
+    );
+
+    await expect(loadChecklist("https://api.example.com", "event-1")).resolves.toMatchObject({
+      ok: false,
+      message: "The API returned a checklist this page cannot read.",
+    });
+  });
+
   it("refuses a row whose source plan is missing its snapshot pair", async () => {
     stubFetch(async () =>
       jsonResponse(

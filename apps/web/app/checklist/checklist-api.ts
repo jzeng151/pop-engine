@@ -21,6 +21,7 @@ import type {
 } from "@pop-engine/engine";
 import { CREDENTIALED } from "../intake/events-api";
 import {
+  absentOr,
   arrayOf,
   asRecord,
   type FieldChecks,
@@ -209,6 +210,16 @@ export type FailedAlertDelivery = {
   readonly failedCount: number;
   /** Whether these rows are held because their own plan is behind the event, not the latest one. */
   readonly heldForReview: boolean;
+  /**
+   * Whether any of them was attempted with no outcome ever recorded, which the paused sentence has
+   * to qualify: a review restarts an ordinary held row and does not restart one of these.
+   *
+   * OPTIONAL FOR THE ROLLOUT, and for the same reason `alertsHeldForReconciliation` is defaulted
+   * below: web deploys BEFORE the api (`DEPLOY.md`, "Release order"), so this page runs for a while
+   * against an api that does not send the field. Absent is read as "not known", and the notice then
+   * says what it said before rather than making a claim in either direction.
+   */
+  readonly attemptedWithoutOutcome?: boolean;
 };
 
 /**
@@ -489,6 +500,7 @@ const FAILED_DELIVERY_CHECKS: FieldChecks<FailedAlertDelivery> = {
   channel: isString,
   failedCount: isNumber,
   heldForReview: isBoolean,
+  attemptedWithoutOutcome: absentOr(isBoolean),
 };
 
 const RECONCILIATION_HOLD_CHECKS: FieldChecks<ReconciliationHold> = {

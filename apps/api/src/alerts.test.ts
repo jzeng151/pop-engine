@@ -2347,6 +2347,84 @@ describe.skipIf(databaseUrl === "")("F-203 deadline alerts", () => {
         ).toBeGreaterThanOrEqual(1);
       });
 
+      it("refuses the send when the last wait before the provider took the rest of the window", async () => {
+        // THE SAME DEFECT ONE STEP FURTHER ALONG, and the third time it has been found in this
+        // shape. The claim reserves a margin, the intent insert re-asks the cutoff, and then
+        // another unbounded statement was added between that revalidation and `sender(...)`: under
+        // database load a wait longer than the margin's remainder puts the repeated key at the
+        // provider outside the 24 hours it deduplicates within, which is the duplicate the whole
+        // mechanism exists to prevent.
+        //
+        // SO THE QUESTION IS ASKED AT THE SEND BOUNDARY rather than bounded one statement at a
+        // time. This case pins that boundary: the cutoff is crossed during the LAST statement
+        // before the provider, at a moment no earlier check could have seen, and nothing is sent.
+        // A fourth statement inserted in front of the sender cannot reopen it.
+        const eventId = await createEvent(scenario("C"));
+        const alertId = await insertDueAlert(eventId, "boundary@example.test", 2);
+        // Well inside the window: every check before the boundary rules this retryable, which is
+        // what the case above it asserts about the same age.
+        await recordAttemptMsAgo(
+          alertId,
+          PROVIDER_DEDUP_WINDOW_HOURS * 3_600_000 - DEDUP_WINDOW_CLAIM_MARGIN_MS * 4,
+        );
+        const provider = fakeProvider();
+
+        const query = Client.prototype.query as (...args: unknown[]) => unknown;
+        // The intent has been written by the time a SECOND unresolved attempt exists for this
+        // alert, so that count identifies the send boundary without the test having to know how
+        // many statements the claim runs. Aging the older attempt there is exactly what a stall
+        // longer than the reserved margin would have done.
+        const spy = vi
+          .spyOn(Client.prototype, "query")
+          .mockImplementation(function (this: Client, ...args: unknown[]) {
+            const first = args[0];
+            const text =
+              typeof first === "string" ? first : ((first as { text?: string })?.text ?? "");
+            if (!text.includes("controlling_apply_by")) return query.apply(this, args);
+            return (async () => {
+              const { rows } = await pool.query<{ open: number }>(
+                `SELECT count(*)::int AS open FROM alert_send_attempts
+                  WHERE alert_id = $1 AND outcome_recorded_at IS NULL`,
+                [alertId],
+              );
+              if ((rows[0]?.open ?? 0) >= 2) {
+                await pool.query(
+                  `UPDATE alert_send_attempts
+                      SET attempted_at = current_timestamp - ($2 || ' hours')::interval
+                    WHERE alert_id = $1
+                      AND attempted_at < current_timestamp - interval '1 hour'`,
+                  [alertId, PROVIDER_DEDUP_WINDOW_HOURS + 1],
+                );
+              }
+              return query.apply(this, args);
+            })();
+          } as typeof Client.prototype.query);
+        try {
+          await createAlertPoller({
+            database: pool,
+            senders: provider.senders,
+            jurisdiction: ruleset.jurisdiction,
+          }).tick();
+        } finally {
+          spy.mockRestore();
+        }
+
+        expect(provider.attempts.map((message) => message.recipient)).not.toContain(
+          "boundary@example.test",
+        );
+        // Neither sent nor marked, so the next tick reads the row as the hold it has become.
+        const { rows } = await pool.query<{ status: string }>(
+          "SELECT status FROM alerts WHERE id = $1",
+          [alertId],
+        );
+        expect(rows[0]?.status).toBe("pending");
+        // The intent this send wrote is CLOSED, because nothing was handed over on it. Left open
+        // it would be a second reconciliation hold recorded by the path that refused to send.
+        const recorded = await attemptsOf(alertId);
+        expect(recorded).toHaveLength(2);
+        expect(recorded.filter((attempt) => attempt.outcome_recorded_at === null)).toHaveLength(1);
+      });
+
       it("still retries an attempt with the whole margin left before the window closes", async () => {
         // The other side of the same line, so the margin cannot be widened into an age test. Well
         // inside the window a retry is what the provider deduplicates, and withholding it would
@@ -4253,7 +4331,9 @@ describe.skipIf(databaseUrl === "")("F-203 deadline alerts", () => {
       }).tick();
 
       const failures = await failedDeliveries(pool, eventId, todayHere());
-      expect(failures).toEqual([{ channel: "email", failedCount: 2, heldForReview: false }]);
+      expect(failures).toEqual([
+        { channel: "email", failedCount: 2, heldForReview: false, attemptedWithoutOutcome: false },
+      ]);
       // The provider's words stay on the row for an operator; they can name a recipient.
       expect(JSON.stringify(failures)).not.toContain("550");
     });
@@ -4280,7 +4360,7 @@ describe.skipIf(databaseUrl === "")("F-203 deadline alerts", () => {
       });
       await poller.tick();
       expect(await failedDeliveries(pool, eventId, todayHere())).toEqual([
-        { channel: "email", failedCount: 1, heldForReview: false },
+        { channel: "email", failedCount: 1, heldForReview: false, attemptedWithoutOutcome: false },
       ]);
 
       provider.fail = null;
@@ -4403,7 +4483,7 @@ describe.skipIf(databaseUrl === "")("F-203 deadline alerts", () => {
       }).tick();
 
       expect(await failedDeliveries(pool, eventId, todayHere())).toEqual([
-        { channel: "email", failedCount: 1, heldForReview: false },
+        { channel: "email", failedCount: 1, heldForReview: false, attemptedWithoutOutcome: false },
       ]);
       expect(await reconciliationHolds(pool, eventId, todayHere())).toEqual([]);
     });
@@ -4425,6 +4505,67 @@ describe.skipIf(databaseUrl === "")("F-203 deadline alerts", () => {
       ]);
 
       expect(await reconciliationHolds(pool, eventId, todayHere())).toEqual([]);
+    });
+
+    it("does not promise a review will restart a stale alert whose outcome was never observed", async () => {
+      // THE PROMISE THE ROW CANNOT KEEP. A stale failed alert is reported as a failure whose
+      // retrying is PAUSED, under copy naming the action that resumes it: regenerate the plan and
+      // review the checklist. That is true of an ordinary stale failure. It is not true of one
+      // carrying an attempt nobody saw the end of — the scheduler upserts the failed row in place
+      // rather than cancelling it, and only a row revived from `cancelled` has its attempt
+      // superseded, so the old attempt survives the review and the refreshed row is a
+      // reconciliation hold rather than a retry. The organizer was told to do a thing that would
+      // not start it again.
+      //
+      // ANSWERED HERE BECAUSE THE PAGE CANNOT WORK IT OUT, which is the same reason `heldForReview`
+      // is answered here: the classification depends on an attempt row no client is given.
+      const eventId = await createEvent(scenario("C"));
+      await schedulePastDue(eventId, [reminderOffsets[0] ?? 7]);
+      const alertId = (await alertsOf(eventId))[0]?.id ?? "";
+      await pool.query("UPDATE alerts SET status = 'failed', failure_count = 1 WHERE id = $1", [
+        alertId,
+      ]);
+      await pool.query(
+        `INSERT INTO alert_send_attempts (alert_id, idempotency_key, attempted_at)
+         VALUES ($1, $2, current_timestamp - ($3 || ' hours')::interval)`,
+        [alertId, alertId, PROVIDER_DEDUP_WINDOW_HOURS + 1],
+      );
+      await pool.query("UPDATE events SET revision_counter = revision_counter + 1 WHERE id = $1", [
+        eventId,
+      ]);
+
+      expect(await failedDeliveries(pool, eventId, todayHere())).toEqual([
+        {
+          channel: "email",
+          failedCount: 1,
+          heldForReview: true,
+          attemptedWithoutOutcome: true,
+        },
+      ]);
+    });
+
+    it("still promises the review for a stale failure that was never attempted blind", async () => {
+      // The other side of the line, so the qualification cannot spread to every paused failure. A
+      // stale row whose failures were all observed IS restarted by a regeneration and a review,
+      // and the sentence naming that action is the one an organizer can act on.
+      const eventId = await createEvent(scenario("C"));
+      await schedulePastDue(eventId, [reminderOffsets[0] ?? 7]);
+      const alertId = (await alertsOf(eventId))[0]?.id ?? "";
+      await pool.query("UPDATE alerts SET status = 'failed', failure_count = 1 WHERE id = $1", [
+        alertId,
+      ]);
+      await pool.query("UPDATE events SET revision_counter = revision_counter + 1 WHERE id = $1", [
+        eventId,
+      ]);
+
+      expect(await failedDeliveries(pool, eventId, todayHere())).toEqual([
+        {
+          channel: "email",
+          failedCount: 1,
+          heldForReview: true,
+          attemptedWithoutOutcome: false,
+        },
+      ]);
     });
 
     it("never puts one alert under both notices at once", async () => {

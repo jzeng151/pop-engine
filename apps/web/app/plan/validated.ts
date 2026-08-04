@@ -81,6 +81,19 @@ export const nullOr =
   (value: unknown): value is T | null =>
     value === null || check(value);
 
+/**
+ * A field an api build older than this page does not send yet.
+ *
+ * Distinct from `nullOr`, and the distinction is what it lets a caller say: null is an answer the
+ * api gave, absent is one it has not learned to give. A reader of an absent field must not turn it
+ * into a value — the notices that consume one say what they said before rather than claiming
+ * either way. Narrow on purpose: each use names the rollout it exists for.
+ */
+export const absentOr =
+  <T>(check: (value: unknown) => value is T) =>
+  (value: unknown): value is T | undefined =>
+    value === undefined || check(value);
+
 export const arrayOf =
   <T>(check: (value: unknown) => value is T) =>
   (value: unknown): value is readonly T[] =>
