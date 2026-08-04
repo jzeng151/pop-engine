@@ -67,6 +67,35 @@ One project, two services from this monorepo. Set each service's root directory 
 3. Set env vars per service from `apps/api/.env.example` and `apps/web/.env.example`. Point `WEB_ORIGIN` (api) at the web URL, `NEXT_PUBLIC_API_BASE_URL` (web) at the api URL, and `NEXT_PUBLIC_SITE_URL` at the exact public web origin.
 4. Connect the deploy branch. The demo environment is seeded once and not redeployed after final rehearsal.
 
+### Release order
+
+The two services deploy separately and the api runs `pnpm migrate up` as it starts, so a rollout is
+a window in which two builds and one schema are all live at once. Two F-203 guarantees hold only if
+that window is opened in this order. Both are one-off constraints for the release that introduces
+the alert attempt record; the conditions for dropping each are stated with it.
+
+1. **Deploy the web service first, then the api.** The api stops counting an alert it has
+   permanently stopped on among the failures it says are being retried, and reports it under
+   `alertsHeldForReconciliation` instead. A web build older than that field renders neither, so an
+   alert nobody will send again would have no organizer-facing warning at all until the web service
+   catches up. Deployed web-first the window is empty: this web build reads an absent
+   `alertsHeldForReconciliation` as none and renders the rest of the checklist normally, which is
+   what makes it safe against an api that does not send the field yet. Drop this step once the web
+   deployment carrying the field is the oldest one in service.
+2. **Stop the running api before the new one applies migration 014**, rather than letting the new
+   deployment start beside it. Scale the api service to zero (or stop the current deployment), let
+   it drain, then start the new build; confirm no api process from the previous build is still
+   running when the migration executes, and `Migrations complete!` in the new build's logs before
+   returning the service to traffic. Migration 014 creates `alert_send_attempts` and seeds it from
+   the alerts that had already failed, and from then on every reader treats an alert with no attempt
+   row as one nothing was ever handed over for. An api process from the previous build sends without
+   writing attempt rows, so anything it sends after the backfill commits is invisible to that
+   record for good: a crash or a lost response on such a send leaves an alert the new poller reads
+   as never attempted and may deliver again after the provider's deduplication window has closed,
+   which for an organizer is the same deadline reminder arriving twice. The backfill is a
+   point-in-time sweep and cannot cover it; only the ordering can. Drop this step once
+   `014_alert_send_attempts` has been applied to the environment.
+
 ## 5. Cloudflare Access (demo gate, AD-12)
 
 The gate remains host-level. The F-701 Supabase foundation does not authorize workspaces or roles

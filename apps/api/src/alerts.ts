@@ -1954,14 +1954,37 @@ async function deliverClaimed(
     // what it was and the next tick reads it as the hold it has become.
     if (attemptId === null) return null;
   }
-  // Written in the SENDING transaction, so a crash that loses the mark-sent loses this too. That
-  // is the correct outcome rather than a limitation: both describe the same lost knowledge.
-  const recordOutcome = async (): Promise<void> => {
+  const resolveAttempt = async (queryable: Queryable): Promise<void> => {
     if (attemptId === null) return;
-    await client.query(
+    await queryable.query(
       "UPDATE alert_send_attempts SET outcome_recorded_at = clock_timestamp() WHERE id = $1",
       [attemptId],
     );
+  };
+  // A DELIVERY IS RECORDED IN THE SENDING TRANSACTION, so a crash that loses the mark-sent loses
+  // this too. That is the correct outcome rather than a limitation: the provider is holding a
+  // message this side never confirmed, and both writes describe that same lost knowledge.
+  const recordDelivery = async (): Promise<void> => resolveAttempt(client);
+  // A PROVEN NON-DELIVERY IS NOT, and the difference is which way the loss falls. This side knows
+  // the provider was never reached, so nothing can be duplicated by a retry and the attempt is
+  // closed. Written on the sending connection, that knowledge rolled back with the mark-failed
+  // whenever the process died holding it, and an outage lasting past the provider's dedup window
+  // then left the next process reading a KNOWN non-delivery as an unresolved attempt: the alert is
+  // held out of every poll and named as a message someone must reconcile against a provider that
+  // never had it. A hold is the one state nothing in this product clears by itself, so the
+  // evidence that rules it out has to survive independently of the transaction that learned it.
+  //
+  // ON THE ATTEMPT WRITER'S CONNECTION, the same one the intent was written on and for the same
+  // mechanical reason: it commits on its own, immediately, and cannot be rolled back by the send.
+  // It updates no key column, so it takes no lock on the `alerts` row the claim is holding.
+  const recordProvenNonDelivery = async (): Promise<void> => {
+    if (attemptId === null) return;
+    const writer = await attemptWriterFor(database).connect();
+    try {
+      await resolveAttempt(writer);
+    } finally {
+      writer.release();
+    }
   };
   try {
     const delivery = await sender({
@@ -1981,7 +2004,7 @@ async function deliverClaimed(
         WHERE id = $1`,
       [row.id, JSON.stringify({ delivery })],
     );
-    await recordOutcome();
+    await recordDelivery();
     return { status: "sent", delivery, error: null };
   } catch (error) {
     const message =
@@ -1992,7 +2015,8 @@ async function deliverClaimed(
     // being retried for as long as the outage lasts (spec edge case: nothing is lost). A timeout
     // is not an answer, and an unrecognised throw is not one either, so those are left open and
     // reconciled rather than retried once the provider's dedup window has passed.
-    if (error instanceof AlertDeliveryError && error.outcomeObserved) await recordOutcome();
+    if (error instanceof AlertDeliveryError && error.outcomeObserved)
+      await recordProvenNonDelivery();
     // Failed, counted, and left for the next tick. Nothing is lost while a provider is down
     // (spec edge case); the count is what distinguishes a blip from an address that never works.
     await client.query(
@@ -2932,6 +2956,20 @@ export async function alertDeliveryHealth(
   readonly failedDeliveries: FailedDelivery[];
   readonly reconciliationHolds: ReconciliationHold[];
 }> {
+  // A HELD ALERT LEAVES THE FAILURE COUNT AND ARRIVES UNDER ITS OWN FIELD, which is a change of
+  // shape and therefore a rollout question rather than only an endpoint one. Web and api deploy
+  // separately (`docs/ARCHITECTURE.md`), so for the length of an api-first rollout a web build that
+  // predates `alertsHeldForReconciliation` would render neither notice about such an alert: the
+  // organizer would be told nothing at all about a reminder nobody will send again.
+  //
+  // ORDERED RATHER THAN PAPERED OVER, and the alternative is what decides it. The only field an
+  // older web build renders here is the failure count, and every sentence it can put on one is a
+  // promise about what happens next: PopEngine keeps retrying them, or retrying is paused until
+  // the plan is regenerated. Both are false of an alert the poller has stopped on, and copy an
+  // organizer reads about a filing deadline does not get to be false in order to be present. So the
+  // window is closed instead of filled: `DEPLOY.md` "Release order" puts the web service first,
+  // this build's reader already treats the field as absent-means-none for the converse order, and
+  // `apps/api/src/deployment-order.test.ts` fails if that step is dropped while this split stands.
   const { rows } = await database.query<{
     channel: AlertChannel;
     failed_count: number;

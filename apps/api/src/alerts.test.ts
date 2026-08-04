@@ -1583,6 +1583,75 @@ describe.skipIf(databaseUrl === "")("F-203 deadline alerts", () => {
         expect(recorded[0]?.outcome_recorded_at).not.toBeNull();
       });
 
+      it("keeps a proven non-delivery recorded when the sending transaction dies with it", async () => {
+        // KNOWLEDGE THIS SIDE HAS AND THEN LOSES. A connection the host refused proves the request
+        // never reached the provider, so the attempt is closed and the alert goes on being
+        // retried for as long as the outage lasts (spec edge case). Written on the sending
+        // connection, that proof rolled back with the mark-failed when the process died, and the
+        // attempt was left open, which is the state that means nobody knows. An outage that outlasts
+        // provider's dedup window then turns a KNOWN non-delivery into a permanent hold: the next
+        // process refuses a send that could never have duplicated anything, and a person is asked
+        // to reconcile a message nothing ever handed over.
+        //
+        // So a proven outcome is written where the intent was written: its own connection,
+        // committed on its own. A success is not, and that asymmetry is the point rather than an
+        // oversight, because a mark-sent that rolls back leaves a message the provider may be holding,
+        // which is exactly the uncertainty the open attempt is there to record.
+        const eventId = await createEvent(scenario("C"));
+        expect(await schedulePastDue(eventId, [1])).toBe(1);
+        const alertId = (await alertsOf(eventId))[0]?.id ?? "";
+        const refused: AlertSenders = {
+          sms: fakeProvider().senders.sms,
+          email: async () => {
+            throw new AlertDeliveryError("email provider unreachable: ECONNREFUSED");
+          },
+        };
+
+        // The same sabotage the crash tests use: every write to `alerts` fails, so the
+        // transaction that learned the outcome never commits.
+        const doomed = new Pool({ connectionString: databaseUrl });
+        const crashing = Object.create(pool) as Pool;
+        crashing.query = pool.query.bind(pool) as Pool["query"];
+        crashing.connect = (async () => {
+          const client = await doomed.connect();
+          const query = client.query.bind(client);
+          client.query = ((...args: unknown[]) =>
+            typeof args[0] === "string" && args[0].includes("UPDATE alerts")
+              ? Promise.reject(new Error("connection terminated unexpectedly"))
+              : query(...(args as Parameters<typeof query>))) as typeof client.query;
+          return client;
+        }) as Pool["connect"];
+
+        await createAlertPoller({
+          jurisdiction: ruleset.jurisdiction,
+          database: crashing,
+          senders: refused,
+        }).tick();
+        await doomed.end();
+
+        const recorded = await attemptsOf(alertId);
+        expect(recorded).toHaveLength(1);
+        expect(recorded[0]?.outcome_recorded_at).not.toBeNull();
+
+        // And the consequence that makes it worth recording: however long the outage lasts, the
+        // alert is still the poller's to send rather than a person's to chase.
+        await pool.query(
+          `UPDATE alert_send_attempts
+              SET attempted_at = current_timestamp - ($2 || ' hours')::interval
+            WHERE alert_id = $1`,
+          [alertId, PROVIDER_DEDUP_WINDOW_HOURS + 1],
+        );
+        const provider = fakeProvider();
+        const summary = await createAlertPoller({
+          database: pool,
+          senders: provider.senders,
+          jurisdiction: ruleset.jurisdiction,
+        }).tick();
+
+        expect(summary.heldForReconciliation).toBe(0);
+        expect((await alertsOf(eventId))[0]?.status).toBe("sent");
+      });
+
       it("sends a pending alert with no recorded attempt however long it has been due", async () => {
         // THE CONSTRAINT ISSUE #166 MEASURED. Suppressing by age alone is the cheap version of
         // this fix and it is the wrong trade: it turns one possible duplicate into systematic

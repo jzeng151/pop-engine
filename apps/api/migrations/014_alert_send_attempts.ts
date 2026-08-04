@@ -65,6 +65,17 @@ export function up(pgm: MigrationBuilder): void {
   // one the provider deduplicates. Left unseeded, the mechanism this migration exists for would
   // start life blind to the whole population it was written to protect.
   //
+  // A POINT IN TIME, WHICH IS WHY THE ROLLOUT HAS AN ORDER. This statement sweeps once. An api
+  // process from the build before this one sends without writing attempt rows, so anything it
+  // sends after this commits is a row in the old shape that no later sweep would find: absence of
+  // an attempt would say "never handed over" about a send that may be sitting at the provider, and
+  // a retry past the dedup window would be a second deadline reminder at a real organizer. Nothing
+  // in this repository can stop a process that is running the previous build, so the constraint is
+  // recorded where the person doing the rollout works, in `DEPLOY.md` under "Release order": stop
+  // the running api, then let the new build apply this. The guard in
+  // `apps/api/src/deployment-order.test.ts` fails if that step goes missing while this backfill
+  // and its readers are still here.
+  //
   // FAILED ONLY, and that boundary is the decision rather than a detail. `failed` is the one state
   // that is proof of an attempt. A legacy `pending` row is the ordinary case — not yet due, or due
   // and never picked up — so seeding those would hold an entire queue on the possibility that one
