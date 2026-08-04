@@ -285,7 +285,7 @@ both artifacts move in the same commit.
 | `verification.status` | cannot be settled inside this spec | same | **BLOCKED**: contract conflict, see below |
 | `verification.qualification` | records the silence, and is USER-VISIBLE, not metadata | same | **BLOCKED** on the product owner, as published prose |
 | `verification.evidence` | points at the existing record of the silence; not rendered | same | **BLOCKED** on the product owner |
-| `verification.last_verified_date` | ABSENT | ABSENT | PINNED as absent, and only the verification owner may ever add one |
+| `verification.last_verified_date` | ABSENT | ABSENT | PINNED as absent; adding one is the product owner's, per §6 as amended 2026-08-04 |
 | `exercised_by_scenarios` | `["F", "A-rescope"]` | `["F", "A-rescope", <the new explicit-no fixture>]` | PINNED per rule, derived against each trigger |
 
 **The three that had slipped the table, each read in `parseRule` and in the renderer rather than
@@ -303,10 +303,13 @@ so they are decided here:
 - **`verification.last_verified_date`** renders as "last verified <date>" in the detail panel
   (`plan-line.tsx:224`). ABSENT, and this one is not a preference: F-206 Acceptance Criterion 5 says a
   date is stored only when every contributing rule publishes one and that no other date may stand in,
-  and the published legend reserves verification to the verification owner. A date here would print a
-  verification of a fact nobody verified. If the verification owner ever publishes one, note that
-  `mergeFindings` takes the earliest of two and null if either is missing, so it also changes what a
-  merged line would show.
+  and the published legend reserves verification to the verification owner. That legend wording is
+  `nyc.v2.11`'s, quoted as published and not an instruction to a future signatory: under
+  `docs/DOCUMENTATION-GOVERNANCE.md` §6 as amended 2026-08-04 the capacity that may publish a date is
+  the product owner's, which is the same routing the two `verification` rows above now carry. A date
+  here would print a verification of a fact nobody verified. If the product owner ever publishes one,
+  note that `mergeFindings` takes the earliest of two and null if either is missing, so it also
+  changes what a merged line would show.
 
 **And one correction inside the row above them.** `verification.qualification` was marked BLOCKED as
 though it were metadata. It is not: `findings.ts:61` appends it to `notes`, so whatever it says is
@@ -376,7 +379,7 @@ rather than on preference:
 | Status | Legend text | Why it is not this rule |
 | --- | --- | --- |
 | `SOURCE_CONFIRMED` | "fetch-confirmed primary-source quote on file" | there is no quote on file for this proposition; this is the laundering round 5 already refused |
-| `VERIFIED` | "verification owner confirmed ... (none at publication; only the verification owner assigns this)" | nothing is confirmed, and the legend reserves the value |
+| `VERIFIED` | "verification owner confirmed ... (none at publication; only the verification owner assigns this)" | nothing is confirmed, and the legend reserves the value. The quoted wording is `nyc.v2.11`'s as published; the capacity that assigns it is the product owner's per §6 (2026-08-04) |
 | `OFFICIAL_CONFLICT` | "live official pages disagree; both readings encoded" | this is silence in the sources, not disagreement between them |
 | `COVERAGE_GAP` | "combination not modeled by this ruleset version; advisory asserts nothing" | the combination IS modelled once these rules exist, and three further consequences below |
 | `RESEARCH_REQUIRED` | "no primary source located in two research passes" | the only value whose meaning is close, and the loader will not let it stand without a source |
@@ -1382,7 +1385,7 @@ of work are already promised the next ruleset version, and a fourth wants a publ
 2. **DEPENDENCY. Issue #89** is open on this field, which is where the collected-but-unread state is
    tracked. Recorded so the two are read together; nobody owes this spec anything for it, and publishing
    the rules is what would close it.
-3. **PREREQUISITE, rules owner. The named-confirmation rule from issue #107 currently excludes this
+3. **PREREQUISITE, product owner. The named-confirmation rule from issue #107 currently excludes this
    field.** The decision
    recorded there on 2026-07-28 is:
 
