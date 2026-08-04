@@ -88,17 +88,21 @@ Contributors must not:
 
 ## 6. Change classes and approvals
 
-| Change                                                       | Required approval                                 |
-| ------------------------------------------------------------ | ------------------------------------------------- |
-| Regulatory source/status/content                             | Verification owner plus rules reviewer            |
-| Rule trigger, dedupe, branch, deadline, or formula semantics | Verification owner plus engine owner              |
-| Event Input, rules schema, OpenAPI, shared enum              | All affected lane owners and architecture owner   |
-| Database migration touching shared/core tables               | Database owner plus all affected lane owners      |
-| Product scope, feature meaning, phase                        | Product owner/team decision                       |
-| Durable architecture decision or dependency                  | Architecture ADR approval                         |
-| UI copy only                                                 | Feature owner, unless it makes a regulatory claim |
+PopEngine is a solo project, so approvals name one capacity. The product owner approves; no row names a separate architecture, security, database, verification, rules-reviewer or lane-owner capacity (product owner, 2026-08-04; recorded in `docs/BASELINE.md`).
 
-**Recorded demo overwrite — PR #137 only (2026-07-27).** After the other lane owners were unavailable, `@jzeng151` explicitly invoked a one-time product-owner overwrite of the all-lane and teammate-review requirements for the initial Event and Event Revision ratification. It authorizes access-gated synthetic-data demo implementation against that bounded contract. It attributes no approval to another account, creates no precedent for later contract or migration changes, and does not authorize production activation. Strict ratification by all affected lane owners and the architecture owner remains due before the F-701–F-703 production gate can open.
+| Change                                                       | Required approval |
+| ------------------------------------------------------------ | ----------------- |
+| Regulatory source/status/content                             | Product owner     |
+| Rule trigger, dedupe, branch, deadline, or formula semantics | Product owner     |
+| Event Input, rules schema, OpenAPI, shared enum              | Product owner     |
+| Database migration touching shared/core tables               | Product owner     |
+| Product scope, feature meaning, phase                        | Product owner     |
+| Durable architecture decision or dependency                  | Product owner     |
+| UI copy only                                                 | Product owner     |
+
+This table states what a future approval requires. It does not restate an approval already given: an approval recorded in named capacities under the rules then in force stays on the record in the words it was given.
+
+**Recorded demo overwrite — PR #137 only (2026-07-27).** After the other lane owners were unavailable, `@jzeng151` explicitly invoked a one-time product-owner overwrite of the all-lane and teammate-review requirements for the initial Event and Event Revision ratification. It authorizes access-gated synthetic-data demo implementation against that bounded contract. It attributes no approval to another account, creates no precedent for later contract or migration changes, and does not authorize production activation. Strict ratification remains due before the F-701–F-703 production gate can open; the sentences above record what happened on 2026-07-27, and who must sign that ratification is now the table above, the product owner.
 
 No person approves their own regulatory publication alone. The author and source reviewer should be distinct whenever the team size permits.
 

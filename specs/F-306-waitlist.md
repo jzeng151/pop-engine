@@ -2,7 +2,7 @@
 
 **Status:** PROPOSED (2026-07-26) — `docs/OPEN-QUESTIONS.md` T-6 / [SPEC-CONFLICT #209](https://github.com/jzeng151/pop-engine/issues/209) was resolved 2026-08-03 and no longer blocks this spec. The approvals listed under Approval Blockers below are still outstanding; not implementable until approved and listed in `docs/BASELINE.md`.
 
-**Phase:** 3 · **Issue:** [#36](https://github.com/jzeng151/pop-engine/issues/36) · **Owner:** TBD · **Reviewer:** product owner plus affected architecture, contract, security, and lane owners (TBD) · **Approval date:** —
+**Phase:** 3 · **Issue:** [#36](https://github.com/jzeng151/pop-engine/issues/36) · **Owner:** TBD · **Reviewer:** product owner · **Approval date:** —
 
 ## Purpose and User Outcome
 

@@ -1,6 +1,6 @@
 # PopEngine — Verification Source Dossier
 
-**Purpose:** Primary-source research record for the regulatory items in `OPEN-QUESTIONS.md` §2, begun 2026-07-22. **Nothing in this document is a verification.** Only the verification owner (Dev 4) may promote a fact in a new immutable rules publication, per the process note. SUPPORT / CONTRADICT / NOT ADDRESS labels are researchers' candidate assessments of fetched text against the encoded claim, for triage only.
+**Purpose:** Primary-source research record for the regulatory items in `OPEN-QUESTIONS.md` §2, begun 2026-07-22. **Nothing in this document is a verification.** Only the product owner may promote a fact in a new immutable rules publication, per the process note. SUPPORT / CONTRADICT / NOT ADDRESS labels are researchers' candidate assessments of fetched text against the encoded claim, for triage only.
 
 **Method:** Every URL below was fetched on 2026-07-22 and its content read before quoting; unfetched links were excluded. Note for re-verification: most nyc.gov, nycgovparks.org, and codelibrary.amlegal.com pages block generic fetchers (HTTP 403) and were retrieved with a browser user-agent; a normal browser will open them fine. Beware stale Fire Code PDFs: URLs without "-2022" in the filename serve the 2014 code.
 

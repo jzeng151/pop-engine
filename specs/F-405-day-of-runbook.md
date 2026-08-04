@@ -2,7 +2,7 @@
 
 **Status:** PROPOSED (2026-07-26) — ready for review; not implementable until approved and listed in `docs/BASELINE.md`.
 
-**Phase:** 2 · **Issue:** [#25](https://github.com/jzeng151/pop-engine/issues/25) · **Owner:** TBD · **Reviewer:** product owner plus affected architecture, contract, security, and lane owners (TBD) · **Approval date:** —
+**Phase:** 2 · **Issue:** [#25](https://github.com/jzeng151/pop-engine/issues/25) · **Owner:** TBD · **Reviewer:** product owner · **Approval date:** —
 
 ## Purpose and User Outcome
 

@@ -49,7 +49,7 @@ AI may draft and extract; it may never make the authoritative permit determinati
 - Every plan line shows its verification status. Source-bearing lines cite an official source; a COVERAGE_GAP finding that carries no citation visibly states that the combination is not covered by this ruleset version, and never invents a citation or implies a source is merely missing (that is RESEARCH_REQUIRED's meaning; the published legend calls COVERAGE_GAP "combination not modeled by this ruleset version").
 - The full fixture suite passes (6 scenarios + boundary fixtures, `test-scenario-answer-key.md` v7): 100% of expected findings, zero false omissions, zero false additions, correct verdicts.
 - Zero fabricated permit facts; RESEARCH_REQUIRED renders "confirm with agency"; OFFICIAL_CONFLICT renders both readings.
-- The ruleset's SOURCE_CONFIRMED facts are checked against their primary sources in a browser and promoted per fact to VERIFIED by the verification owner before the demo.
+- The ruleset's SOURCE_CONFIRMED facts are checked against their primary sources in a browser and promoted per fact to VERIFIED by the product owner before the demo.
 - Nothing in the core path is mocked, seeded, or hardcoded to look like engine output.
 
 ## Green Gate (target end of day 8) — the demo decision point
