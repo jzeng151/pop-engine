@@ -65,12 +65,12 @@ Permitted demo fallbacks for stretch features: seeded RSVP data, simulated email
 
 ## Team Lanes (Phase 0–1.5)
 
-One integration point (the `events` schema — ratified for the access-gated demo 2026-07-27 through PR #137's recorded overwrite; strict production ratification and later shared/core-table changes remain team decisions); four lanes with minimal merge conflicts:
+One integration point (the `events` schema — ratified for the access-gated demo 2026-07-27 through PR #137's recorded overwrite; strict production ratification and later shared/core-table changes remain the product owner's approval under `DOCUMENTATION-GOVERNANCE.md` §6, 2026-08-04); four lanes with minimal merge conflicts:
 
 - **Dev 1 — Rules engine + verdict:** F-201, F-102; owns engine fidelity to `rules/nyc-rules.v2.11.json` and the fixture suite. Verify: full fixture suite (scenarios + boundaries) passes as automated tests.
 - **Dev 2 — Intake + plan UI:** F-101 (incl. contradiction checks, "I don't know"), F-110, F-206, plan rendering. Verify: Scenario A renders end-to-end with citations + snapshot banner; Scenario F records and reloads both assembly-document confirmations.
 - **Dev 3 — Checklist + portals:** F-202, F-204. Verify: plan converts to checklist; every permit links to its portal with its document list.
-- **Dev 4 — Alerts + platform:** F-203, DB migrations, deploy, demo environment; **owns verification sign-off**: confirms the ruleset's SOURCE_CONFIRMED facts in a browser (evidence pre-collected in `VERIFICATION-SOURCES.md`) and works the open research items (OPEN-QUESTIONS §2). Verify: a seeded deadline fires a real email/SMS; browser-confirmed facts are promoted per fact from SOURCE_CONFIRMED to VERIFIED.
+- **Dev 4 — Alerts + platform:** F-203, DB migrations, deploy, demo environment; **works the verification evidence** (the sign-off itself is the product owner's under `DOCUMENTATION-GOVERNANCE.md` §6, 2026-08-04): confirms the ruleset's SOURCE_CONFIRMED facts in a browser (evidence pre-collected in `VERIFICATION-SOURCES.md`) and works the open research items (OPEN-QUESTIONS §2). Verify: a seeded deadline fires a real email/SMS; browser-confirmed facts are promoted per fact from SOURCE_CONFIRMED to VERIFIED.
 
 Track B staffing is the team's kickoff call (default suggestion: Dev 3 → F-301/F-302 and Dev 4 → F-401/F-402 as their core items complete; F-205 stays with Dev 1 but begins only after the F-201/F-202 views merge). F-705 has no default suggestion and no lane: it already shipped, and the work it can still attract is chrome that any lane's route change touches. The invariant from Decision 10: a dev holding an unmerged core blocker works the blocker first, and parallel Track B branches never touch core-path files.
 

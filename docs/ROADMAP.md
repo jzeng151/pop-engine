@@ -50,7 +50,7 @@ Worked separately from the core per `DESIGN.md` Decision 10; doubles as the fall
 - **F-208 · Application Status Tracking** — application number, submitted date, agency status, revisions, inspection, decision, conditions.
 - **F-209 · Fee & Document Ledger** — estimated/invoiced/paid fees; required vs. submitted documents; final permits + expirations.
 - **F-212 · Calendar Export & Sync** — deadlines, inspections, milestones to external calendars.
-- **F-303 · QR Marketing Assets** — printable QR poster/flyer for the event page; reuses F-401's QR infra.
+- **F-303 · QR Marketing Assets** — printable QR poster/flyer for the event page; reuses F-401's QR infra. **Rehearsal use only** (product owner, 2026-08-04; scope statement in `PRD.md`, decision in `BASELINE.md`, closing `OPEN-QUESTIONS.md` T-7): the event page these assets point at is anonymously reachable only during the rehearsal/demo window, and an F-303 spec may not authorize production exposure of it.
 - **F-304 · Announcement Composer** — AI-drafted event copy (IG caption, email, SMS) from intake data; composer, not publisher.
 - **F-305 · Reminder Campaigns** — scheduled email/SMS to RSVPs (T-7, T-1, day-of); reuses F-203's Twilio plumbing.
 - **F-403 · Lead Capture & Consent** — check-in doubles as opt-in lead collection; entry/marketing/SMS consent kept separate.

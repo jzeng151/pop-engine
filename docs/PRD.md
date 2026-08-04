@@ -208,7 +208,7 @@ Phasing lives in `ROADMAP.md`. Requirement statements here are directional, one 
 - **F-208** — User can track each application: number, submitted date, agency status, revision requests, inspection, decision, approval conditions.
 - **F-209** — User can track estimated/invoiced/paid fees and required vs. submitted documents, including final permits and expirations.
 - **F-212** — User can export deadlines, inspections, and milestones to external calendars.
-- **F-303** — User can print QR poster/flyer assets pointing at the event page.
+- **F-303** — User can print QR poster/flyer assets pointing at the event page. **Restricted to rehearsal use** (product owner, 2026-08-04; recorded in `BASELINE.md`, closing `OPEN-QUESTIONS.md` T-7): approved F-301 makes the event page anonymously reachable only during the rehearsal/demo window, no hardened production public-route contract is approved, and an F-303 spec may not authorize production exposure of the event page. Lifting the restriction is a product-scope decision that returns to this document.
 - **F-304** — User can generate AI-drafted announcement copy (IG, email, SMS) from intake data, edit, and copy out; no social publishing.
 - **F-305** — RSVPs receive scheduled reminders (T-7, T-1, day-of with directions).
 - **F-403** — Check-in doubles as opt-in lead capture; entry, marketing-email, and SMS consent are separate; marketing consent is never required for entry.

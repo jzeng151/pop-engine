@@ -88,7 +88,7 @@ Contributors must not:
 
 ## 6. Change classes and approvals
 
-PopEngine is a solo project, so approvals name one capacity. The product owner approves; no row names a separate architecture, security, database, verification, rules-reviewer or lane-owner capacity (product owner, 2026-08-04; recorded in `docs/BASELINE.md`).
+PopEngine is a solo project, so approvals name one capacity. The product owner approves; no row names a separate architecture, security, database, verification, rules-reviewer or lane-owner capacity (product owner, 2026-08-04; recorded in `docs/BASELINE.md`). This says which capacity a future approval requires. It does not license approving alone where this section forbids it: the first sentence of this section's closing paragraph is unconditional and is not relaxed by the table.
 
 | Change                                                       | Required approval |
 | ------------------------------------------------------------ | ----------------- |

@@ -112,5 +112,5 @@ Exact HTTP, JSON Schema, migration, job, and provider shapes belong in their rev
 - Approve the OpenAPI/JSON Schema and compatibility package that implement the already approved Event Revision, stale-write, and registry-upgrade behavior.
 - Approve the compatibility package's mappings, recovery entries, and lossless transforms that F107-AC-10 executes; the migration cannot be written against an unapproved package.
 - Approve the plan-acceptance contract and the reviewed message-job/OpenAPI contracts that define the shared delivery eligibility fence F107-AC-09 requires the save to join. F-107 cannot define that fence alone.
-- Resolve any required shared events-schema change through the all-lane gate.
+- Resolve any required shared events-schema change through `docs/DOCUMENTATION-GOVERNANCE.md` §6's product-owner approval.
 - Assign the owner and independent reviewer, approve this spec, and add it to `docs/BASELINE.md`.
