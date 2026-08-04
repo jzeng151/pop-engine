@@ -57,7 +57,7 @@ Exact HTTP, JSON Schema, migration, job, and provider shapes belong in their rev
 
 ## Acceptance Criteria
 
-1. **F412-AC-01:** An authorized staff member records staff-confirmed occurrence time separately from immutable server recorded-at time/actor and retrieves the incident only inside the correct event/workspace. Occurrence time may be explicitly unknown; both values are displayed without substituting one for the other.
+1. **F412-AC-01:** An authorized staff member records staff-confirmed occurrence time separately from immutable server recorded-at time/actor and retrieves the incident only inside the correct event/workspace. Occurrence time may be explicitly unknown; both values are displayed without substituting one for the other. The create request carries a client-generated request identity, and the creating transaction commits it under a uniqueness constraint scoped to the event, so a retry after a lost response returns the original incident rather than appending a second one that would then read as a separate occurrence in history and exports. A deliberate second entry sends a new identity. Uniqueness over the payload is not that enforcement: two genuinely separate incidents may carry identical event, time, and description values, so it would refuse a real record.
 2. **F412-AC-02:** Correction or follow-up appends a timestamped addendum and cannot rewrite the original account.
 3. **F412-AC-03:** Unknown/conflicting details remain labeled and the system never generates a legal, medical, or emergency classification.
 4. **F412-AC-04:** Unsafe/unauthorized files remain unavailable and do not erase the text incident.
