@@ -25,6 +25,7 @@ An organizer can compare permit burden, cost, preparation time, and attendance a
 
 - F-406/F-407 confirmed outcome snapshots and retained immutable plan/application data. F407-AC-01 freezes attendance versus RSVP, leads, P&L, and permit-timeline adherence; it does not carry permit burden, so F-502 pins the immutable plan each burden value is read from rather than inferring one from a snapshot (F502-AC-07).
 - Approved comparison metrics and compatibility rules.
+- The approved plan-acceptance contract that defines and populates `events.current_plan_id`, plus its named owner. F502-AC-07 makes that accepted-plan pointer the default permit-burden source, and the approved Event Revision contract assigns the pointer to separate plan-acceptance work, so implementing F-502 after only its other prerequisites can find no such pointer. F-502 does not invent one: until that contract is approved, either it is a prerequisite of this spec or an approved pre-cutover burden source is named here in its place.
 - F-103 and the exact shared `permit-burden/v1` definition and fixtures that resolve [SPEC-CONFLICT #208](https://github.com/jzeng151/pop-engine/issues/208).
 - Baseline at draft time: PRD, Roadmap, Design, and Phase 0–1.5 Architecture approved 2026-07-22; `ARCHITECTURE-FUTURE.md` approved as a planning target 2026-07-25; NYC ruleset `nyc.v2.7`, rules schema `popengine-rules/v2`, and scenario fixtures v5 where regulatory output is consumed.
 - The approval PR must re-pin any baseline version that changes before approval. A proposed or superseded input blocks implementation.
@@ -86,4 +87,5 @@ Exact HTTP, JSON Schema, migration, job, and provider shapes belong in their rev
 ## Approval Blockers
 
 - Approve metric compatibility, minimum source coverage, unit/currency behavior, and selected-event limit.
+- Approve the plan-acceptance contract that supplies `events.current_plan_id`, and name its owner, or approve an explicit pre-cutover permit-burden source for F502-AC-07.
 - Assign the owner and independent reviewer, approve this spec, and add it to `docs/BASELINE.md`.

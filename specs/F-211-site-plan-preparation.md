@@ -31,7 +31,7 @@ An organizer can assemble a site-plan checklist, dimensions, and versioned uploa
 ## Inputs, Outputs, State, Validation, and Errors
 
 - Inputs are source-backed checklist elements, organizer dimensions/notes, and files; outputs are a current site-plan projection with immutable versions.
-- Version state is upload pending → scanning → available or rejected; replacement creates a new version. **A replacement names the exact current version it advances from and is applied by compare-and-swap**, so two organizers replacing the same current file concurrently do not both append and race to become the current projection — the later one is rejected against the version it did not see rather than silently hiding a confirmed replacement the other organizer was told had succeeded. Retries carry a stable request identity, so a re-sent replacement is the same replacement rather than a second one. Added 2026-08-03; preserving the earlier immutable version is not sufficient on its own, because both writes succeed and only the projection pointer races.
+- Version state is upload pending → scanning → available or rejected; replacement creates a new version and follows F211-AC-08, which is where the compare-and-swap and retry-identity rule is binding.
 - Unknown dimensions or conflicting instructions remain visible and prevent a complete claim.
 - Missing or unresolved material data stays visibly unset, unknown, pending, or failed as appropriate; it never becomes a successful or complete result.
 - Invalid input produces a field or action-specific error without partial mutation. Retriable external failures preserve the user's confirmed state and expose a safe retry.
@@ -58,11 +58,12 @@ Exact HTTP, JSON Schema, migration, job, and provider shapes belong in their rev
 
 1. **F211-AC-01:** Every preparation checklist element is either linked to an approved published rule or visibly labeled user-recorded/non-regulatory with exact organizer-confirmed agency-instruction evidence; the latter cannot mutate the plan/ruleset or support an official completeness claim.
 2. **F211-AC-02:** Dimensions require explicit units and validate approved ranges without inferring missing values.
-3. **F211-AC-03:** Replacing a file preserves earlier version metadata and never edits a merged migration or immutable plan.
+3. **F211-AC-03:** Replacing a file preserves earlier version metadata, follows F211-AC-08, and never edits a merged migration or immutable plan.
 4. **F211-AC-04:** Unknown/conflicting elements remain visible and prevent the interface from claiming the site plan complete.
 5. **F211-AC-05:** Unauthorized, unsafe, oversized, or mismatched files cannot be viewed or marked available.
 6. **F211-AC-06:** Each download issuance rechecks workspace role, ownership, and scan state and returns only a short-lived signed URL; authorization loss blocks new URLs and issued direct-storage URLs retain only bounded validity until expiry.
 7. **F211-AC-07:** Every preparation element, dimension set, and uploaded plan pins the exact finding/plan version; supersession or removal marks the preparation visibly stale and prevents a current/complete claim without rewriting its history.
+8. **F211-AC-08:** A replacement names the exact site-plan file version it was composed against and commits only by compare-and-swap on that version: one transaction appends the new version and advances the current-site-plan projection while the named version is still current. A replacement naming a superseded version is rejected, is not appended, and returns the current version for the organizer to resubmit against. Every replacement carries a stable request identity, so a retry returns its original recorded outcome instead of appending a second version. Concurrent replacements of one site-plan file therefore end with exactly one accepted current version and explicit rejections, never a last-write-wins projection that hides a confirmed replacement the other organizer was told had succeeded. Preserving the earlier immutable version under F211-AC-03 is not sufficient on its own, because both writes succeed and only the projection pointer races.
 
 ## Fixtures and Verification
 

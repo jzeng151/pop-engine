@@ -30,7 +30,7 @@ Given a complete event scope and target month, an organizer can see the earliest
 
 ## Inputs, Outputs, State, Validation, and Errors
 
-- Inputs are an exact complete non-date scope revision, the target draft version to which a selected date may be applied, target month, explicit `today`, ruleset, and holiday calendar; output is a deterministic candidate-date result set pinned to both versions.
+- Inputs are one exact complete non-date scope Event Revision, a target month, explicit `today`, the ruleset, and the holiday calendar; output is a deterministic candidate-date result set pinned to that one revision plus the ruleset and calendar versions it evaluated with. That same revision is what a selected date is applied against as `base_revision_id` under F106-AC-05: there is no separate target draft version, because `docs/EVENT-REVISION-CONTRACT.md` §2.2 makes `event_revisions.answers_json` the sole questionnaire authority and no independently versioned event draft exists to name.
 - Each candidate is a full evaluation. Evaluation errors are failed candidates, never no-requirement or feasible results.
 - Unknown/conflict/research-required inputs propagate through each verdict and remain visible in the result explanation.
 - Missing or unresolved material data stays visibly unset, unknown, pending, or failed as appropriate; it never becomes a successful or complete result.

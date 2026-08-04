@@ -63,6 +63,7 @@ Exact HTTP, JSON Schema, migration, job, and provider shapes belong in their rev
 5. **F305-AC-05:** Cancellation stops unclaimed and pre-`sending` leased jobs before provider delivery; a job that already claimed the non-cancellable `sending` state continues as accounted already-sending work under AC-03. Attempts/history remain preserved and sent, suppressed, failed, already-sending, and cancelled counts stay accurate.
 6. **F305-AC-06:** The day-of reminder includes confirmed directions pinned and linked to their source record/version. Missing or unconfirmed directions block that reminder, and a directions-source change invalidates and replaces unsent work under AC-01.
 7. **F305-AC-07:** Scheduling rejects a cancelled or archived event. A transition to either state advances the lifecycle generation and atomically cancels every job that has not claimed `sending`; already-sending work remains accounted under AC-03 and no replacement reminder is scheduled.
+8. **F305-AC-08:** Schedule creation carries a stable request identity supplied before the campaign exists, and the transaction that creates the campaign commits that identity; a recognized replay returns the original campaign and creates no second one, while a deliberate second campaign uses a new identity. F305-AC-04's per `recipient/campaign/channel` guarantee does not reach this case, because two campaigns each deliver once to the same recipients and neither exceeds its own limit.
 
 ## Fixtures and Verification
 
