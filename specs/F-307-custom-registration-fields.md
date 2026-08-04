@@ -31,7 +31,7 @@ An organizer can collect a small, safe set of extra RSVP answers without adding 
 
 ## Inputs, Outputs, State, Validation, and Errors
 
-- Inputs are bounded field definitions using an approved purpose key; outputs are a versioned public form projection and validated answer set.
+- Inputs are bounded field definitions using an approved purpose key, a stable request identity on definition creation, and the exact draft version each later draft change was composed against under F307-AC-07; outputs are a versioned public form projection and validated answer set.
 - Draft fields become active only on publish; each draft and active-form pointer is versioned, and changing an active definition creates a new version while preserving prior answers.
 - Unknown field type/version, oversized text, invalid option, or omitted required answer rejects the submission without partial RSVP mutation.
 - Missing or unresolved material data stays visibly unset, unknown, pending, or failed as appropriate; it never becomes a successful or complete result.
@@ -63,6 +63,10 @@ Exact HTTP, JSON Schema, migration, job, and provider shapes belong in their rev
 4. **F307-AC-04:** User text renders and exports as data, never HTML, script, formula, or engine input.
 5. **F307-AC-05:** Only approved non-sensitive purpose keys and supported field types can be published; organizer-controlled labels, help text, and options are validated against the approved prohibited-data policy, and disallowed definitions are rejected. The form displays mandatory prohibited-data guidance and applies the approved retention/deletion policy; the feature does not claim to classify arbitrary attendee answers.
 6. **F307-AC-06:** While an active form has required custom answers, F-306 waitlist join and promotion remain unavailable unless an approved shared contract pins the exact form/answer versions to the waitlist entry, validates them at join and promotion, and atomically links the validated answer set to the promoted RSVP. The system cannot silently drop required answers or create unapproved waitlist-answer storage.
+
+7. **F307-AC-07:** Creating a draft field definition binds the request to a stable client-supplied request identity, committed with the definition under a uniqueness constraint scoped to the event's draft form. A retry presenting the same identity returns the original definition and adds no second field; a deliberately separate field sends a new identity. This is request identity, never content uniqueness: an organizer may legitimately define two fields carrying the same type, label, help text, options, required flag, and purpose key, so the definition may not serve as the key, and a repeated identity is never rejected as a duplicate value. Every later change to the draft names the exact draft version it was composed against and commits only by compare-and-swap on that version. That is every mutable part of the definition, not only its label: type, label, help text, required flag, order, options, purpose key, and the removal of a field are each composed against a named version on the same terms, and a stale change is rejected, mutates nothing, and returns the current draft for the organizer to reload and recompose against.
+
+   AC-03 compare-and-swaps the reviewed draft version at publish, which stops a publish built from a draft the organizer did not review and cannot recover an edit already lost inside the draft. Without the comparison above, two organizers editing one draft from a single observed version both report success and the later write erases the earlier confirmed correction, so AC-03 publishes a draft that is perfectly current and silently missing it. Without the identity, a lost create response puts the same custom question on the public form twice, and AC-02 then validates two required answers against attendees who were shown one.
 
 ## Fixtures and Verification
 

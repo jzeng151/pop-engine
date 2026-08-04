@@ -30,7 +30,7 @@ An organizer can export event and registration data to one established ticketing
 
 ## Inputs, Outputs, State, Validation, and Errors
 
-- Inputs are authorized event, selected records, and connection; outputs are provider mapping/results or bounded CSV.
+- Inputs are authorized event, selected records, connection, and a stable request identity on each export-run creation; outputs are provider mapping/results or bounded CSV.
 - Export state is draft → queued → completed, partially failed, cancelled, or failed; retries preserve mapping/idempotency.
 - Provider changes never mutate PopEngine RSVP truth in the first release.
 - Missing or unresolved material data stays visibly unset, unknown, pending, or failed as appropriate; it never becomes a successful or complete result.
@@ -65,6 +65,9 @@ Exact HTTP, JSON Schema, migration, job, and provider shapes belong in their rev
 7. **F308-AC-07:** Transfer atomically claims a non-cancellable `sending` state after the final export, connection, and eligibility generation check; cancellation, disconnect, consent withdrawal, suppression, and deletion serialize against claims, prevent only work not yet sending, report already-sending work explicitly, and account for every in-flight claim.
 8. **F308-AC-08:** Export generation pins the exact source contact and registration record versions whose values the organizer reviewed, the same pin AC-09 already requires of CSV artifacts. Every queued or leased record rechecks current transfer basis, suppression, and deletion state immediately before the provider call, and compares each pinned source version against the current one; a contact that is no longer eligible is excluded and reported without transfer, and a record whose pinned version no longer matches is excluded and reported rather than sent. The transfer as a whole is rejected or rebuilt from a fresh reviewed export before it may claim `sending`. Without the pin the eligibility rechecks all pass while the values themselves have changed since preview, so the job sends stale PII or a newly changed value the organizer never confirmed.
 9. **F308-AC-09:** CSV artifacts pin source contact/eligibility versions; deletion, suppression, or loss of transfer basis revokes every server-controlled staged artifact and signed URL containing that record and requires regeneration. Already saved local copies cannot be recalled.
+10. **F308-AC-10:** Creating an export run, including the AC-06 CSV fallback, binds the request to a stable client-supplied request identity, committed with the run under a uniqueness constraint scoped to the event. A retry presenting the same identity returns the original run and, once complete, its original outcome and staged artifact, enqueues no second job, and stages no second file; a deliberately separate export sends a new identity. This is request identity, never content uniqueness: two genuinely distinct exports over the same selected records, connection, and pinned source versions are both produced, and a repeated identity is never rejected as a duplicate value.
+
+    AC-02 deduplicates provider events and registrations for one stable mapping, which is the provider side of a run and not the run itself; a second run carries the same mappings and passes that check. When the create transaction commits and its response is lost, the retry starts a second export run over the same records: a second CSV of attendee contacts in private storage with its own retention clock and its own AC-09 revocation surface, a second set of AC-07 transfer claims to account for, and two runs whose AC-03 partial-failure outcomes the organizer must reconcile for one authorized action.
 
 ## Fixtures and Verification
 

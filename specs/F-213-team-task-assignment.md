@@ -31,7 +31,7 @@ An authorized organizer can assign a requirement or operational task to an activ
 
 ## Inputs, Outputs, State, Validation, and Errors
 
-- Inputs are an exact source-record version, title, active member, and optional confirmed due date; output is a workspace-scoped task and history.
+- Inputs are an exact source-record version, title, active member, optional confirmed due date, a stable request identity on creation and on every update, and the exact task version each update was composed against; output is a workspace-scoped task and history.
 - Task state is open → completed or cancelled, with reopen if approved; reassignment appends history.
 - Removing a member leaves historical attribution and unassigns or blocks active work according to the approved policy.
 - Missing or unresolved material data stays visibly unset, unknown, pending, or failed as appropriate; it never becomes a successful or complete result.
@@ -61,7 +61,7 @@ Exact HTTP, JSON Schema, migration, job, and provider shapes belong in their rev
 2. **F213-AC-02:** Reassign, unassign, complete, cancel, and approved reopen actions preserve actor/timestamp history.
 3. **F213-AC-03:** Completing a task does not mark a permit, application, document, or regulatory finding complete.
 4. **F213-AC-04:** Assignment and member removal serialize on membership (or use an equivalent database invariant), so their race cannot leave an open task assigned to an inactive member; historical attribution remains.
-5. **F213-AC-05:** Concurrent stale updates are rejected rather than silently losing a status or assignee change.
+5. **F213-AC-05:** Every update names the exact task version it was composed against and commits only by compare-and-swap on that version; a stale update is rejected as a conflict, mutates nothing, and returns the current task for the actor to reload and reconcile, never a last-write-wins overwrite. That is every mutable task field, not only status and assignee: the AC-02 reassign, unassign, complete, cancel, and approved reopen transitions, and equally the title, the optional confirmed due date, and the AC-06 source pin, are each composed against a named version on the same terms, because two tabs editing one task from a single observed version otherwise both succeed and the later write erases a change the earlier actor was told had saved. Each update also carries a stable client-supplied request identity committed with the history entry it appends, so a lost-response retry returns its original recorded outcome instead of appending a second history entry or re-applying a change against a version that has since moved.
 6. **F213-AC-06:** Each task pins its exact checklist, application, or runbook source version. When that source is superseded or removed, active work is visibly source-stale and cannot appear current; history remains, and the approved policy determines whether the task is cancelled or requires review.
 7. **F213-AC-07:** Task creation carries a client-supplied stable request identity and commits it with the task in one transaction; a replay of that identity returns the original task instead of appending a second one, and a deliberate second task from the same source uses a new identity and is created normally. Source uniqueness cannot stand in for this, because F-213 allows several deliberate tasks against one source record, so deduplicating on the source would refuse legitimate work while a lost create response would still leave two indistinguishable tasks.
 
