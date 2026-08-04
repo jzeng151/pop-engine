@@ -1897,6 +1897,7 @@ async function recordAttemptIntent(database: Pool, row: DueAlertRow): Promise<st
   const writer = attemptWriterFor(database);
   const attemptId = randomUUID();
   const client = await writer.connect();
+  let recorded: string | null;
   try {
     const { rows } = await client.query<{ id: string }>(
       `INSERT INTO alert_send_attempts (id, alert_id, idempotency_key)
@@ -1905,13 +1906,27 @@ async function recordAttemptIntent(database: Pool, row: DueAlertRow): Promise<st
          RETURNING id`,
       [row.id, row.idempotency_key, attemptId],
     );
-    return rows[0]?.id ?? null;
+    recorded = rows[0]?.id ?? null;
   } catch (error) {
+    // GIVEN BACK BEFORE THE RECOVERY ASKS FOR ONE, which is the difference between recovering and
+    // wedging. This pool holds `SEND_CONCURRENCY` connections and a tick starts that many workers,
+    // so a refusal that comes from the database rather than from a dropped connection (a
+    // statement, permission or timeout error) leaves every worker holding a live client that
+    // `pg` has no reason to evict. Settling first meant all of them waited on a pool none of them
+    // could return anything to, with the poller's alert transactions open for as long as that
+    // lasted: no reminder sent, by the path added to stop reminders being lost.
+    //
+    // NOTHING THE SETTLEMENT NEEDS GOES BACK WITH IT. It resolves `attemptId`, generated in this
+    // process, against a row named by `row`, both values this frame holds, and it has always
+    // written them on a second connection of its own, so this one never carried any of its state.
+    // There is no open transaction to abandon either: the insert is autocommit, and the answer that
+    // rejected it is the server's, so the statement is finished on the backend before this runs.
+    client.release();
     await settleUnacknowledgedIntent(writer, row, attemptId);
     throw error;
-  } finally {
-    client.release();
   }
+  client.release();
+  return recorded;
 }
 
 /**

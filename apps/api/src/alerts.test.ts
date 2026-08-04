@@ -1765,6 +1765,122 @@ describe.skipIf(databaseUrl === "")("F-203 deadline alerts", () => {
         expect(recorded[0]?.idempotency_key).toBe(alertId);
       });
 
+      /**
+       * A writer whose intent INSERT is refused by the database itself, on a connection that
+       * survives the refusal.
+       *
+       * THE EVICTION IS WHAT THE POOLS ABOVE HIDE. They lose the connection, so `pg` discards the
+       * client and its pool slot comes back whether or not the code releases it. A statement,
+       * permission or timeout error is answered by a server that is still there: the client stays
+       * healthy and stays checked out, and the slot returns only when it is released.
+       *
+       * ALL OF THEM AT ONCE, held at the barrier until every worker's insert is in flight, because
+       * that is the state the deadlock needs and staggering makes it a coin toss. Nothing here is
+       * contrived by the barrier: eight sends is what a tick starts, and one database refusing one
+       * statement refuses it for all eight.
+       */
+      const poolRefusingEveryIntent = (label: string, atOnce: number): Pool => {
+        let arrived = 0;
+        let allHaveArrived: () => void = () => {};
+        const everyIntentIsHolding = new Promise<void>((resolve) => {
+          allHaveArrived = resolve;
+        });
+        class RefusesTheIntent extends Client {
+          constructor(config?: ClientConfig) {
+            super(config);
+            const query = this.query.bind(this) as (...args: unknown[]) => Promise<unknown>;
+            this.query = ((...args: unknown[]) => {
+              const text = args[0];
+              const intent =
+                typeof text === "string" &&
+                text.includes("INSERT INTO alert_send_attempts") &&
+                text.includes("RETURNING id");
+              if (!intent) return query(...args);
+              arrived += 1;
+              if (arrived === atOnce) allHaveArrived();
+              // The refusal is the server's rather than this process's, which is the whole point:
+              // the connection is still good afterwards and the settlement that follows has to be
+              // able to get one of its own.
+              return everyIntentIsHolding.then(() => query("SELECT refused_by_the_database()"));
+            }) as typeof this.query;
+          }
+        }
+        return new Pool({
+          connectionString: `${databaseUrl}${databaseUrl.includes("?") ? "&" : "?"}application_name=${label}`,
+          Client: RefusesTheIntent as unknown as new () => ClientBase,
+        });
+      };
+
+      it("settles a whole tick of refused intents without waiting on the connections it holds", async () => {
+        // THE RECOVERY MUST NOT COMPETE FOR THE RESOURCE IT IS RECOVERING FROM. A tick starts
+        // `SEND_CONCURRENCY` workers and the attempt writer holds exactly that many connections,
+        // so when the database refuses all of their inserts together, every worker is holding one
+        // and needs a second to settle what it began. Settling before releasing meant no worker
+        // could ever release: the poller held its alert transactions open indefinitely and every
+        // deadline reminder stopped, which is the one outcome this feature exists to prevent.
+        const label = "intent_refused_by_database";
+        const eventId = await createEvent(scenario("C"));
+        const alertIds: string[] = [];
+        for (let index = 0; index < SEND_CONCURRENCY; index += 1)
+          alertIds.push(await insertDueAlert(eventId, `refused-${index}@example.test`, 2));
+        const provider = fakeProvider();
+        const refusing = poolRefusingEveryIntent(label, SEND_CONCURRENCY);
+
+        const tick = createAlertPoller({
+          database: refusing,
+          senders: provider.senders,
+          jurisdiction: ruleset.jurisdiction,
+        }).tick();
+        // A bound of its own, because the regression is not a wrong answer but no answer: without
+        // one this test stops CI instead of failing it.
+        let wedged: ReturnType<typeof setTimeout> | undefined;
+        try {
+          await Promise.race([
+            tick,
+            new Promise((_resolve, reject) => {
+              wedged = setTimeout(
+                () =>
+                  reject(
+                    new Error(
+                      "the tick never finished: the attempt writer starved its own recovery",
+                    ),
+                  ),
+                20_000,
+              );
+            }),
+          ]);
+        } catch (error) {
+          // Everything still stuck is stuck holding an alert claim and an event lock, which the
+          // suite's own cleanup would then queue behind forever.
+          await pool.query(
+            "SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE application_name = $1",
+            [label],
+          );
+          throw error;
+        } finally {
+          clearTimeout(wedged);
+        }
+        await refusing.end();
+
+        // Nothing reached a provider: this failure is upstream of the sender.
+        expect(provider.attempts).toHaveLength(0);
+        // AND THE SETTLEMENT SURVIVED THE EARLY RELEASE, which is the half of the fix that could
+        // have been traded away. Settling needs the id this process generated and the alert it
+        // belongs to, both values it is already holding, and it writes them on a connection of
+        // its own in either ordering, so the connection given back first was never carrying
+        // anything the resolution reads. Left unresolved, each of these attempts would age past
+        // the dedup cutoff and take its alert out of every later scan for good.
+        for (const alertId of alertIds) {
+          const recorded = await attemptsOf(alertId);
+          expect(recorded).toHaveLength(1);
+          expect(recorded[0]?.outcome_recorded_at).not.toBeNull();
+        }
+        // Still pending, so all eight go out as soon as the database stops refusing.
+        const after = await alertsOf(eventId);
+        expect(after).toHaveLength(SEND_CONCURRENCY);
+        expect(after.every((row) => row.status === "pending")).toBe(true);
+      }, 30_000);
+
       it("sends a pending alert with no recorded attempt however long it has been due", async () => {
         // THE CONSTRAINT ISSUE #166 MEASURED. Suppressing by age alone is the cheap version of
         // this fix and it is the wrong trade: it turns one possible duplicate into systematic
