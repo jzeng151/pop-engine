@@ -44,34 +44,34 @@ that gives 19.
 
 The 20 gated fields, with the gate they depend on:
 
-| Field | Gate expression |
-| --- | --- |
-| `obstructs_public_way` | `location_type in street/sidewalk/plaza` |
-| `sapo_event_type` | `obstructs_public_way != no` |
-| `street_event_size` | `sapo_event_type = street_event` |
-| `plaza_level` | `sapo_event_type = plaza_event` |
-| `plaza_multiple_blocks` | `sapo_event_type = plaza_event` |
-| `has_amusement_ride` | `sapo_event_type = block_party` |
-| `food_vendor_count` | `food_present` |
-| `food_affinity_private_exception_claimed` | `food_present AND event_open_to_public != yes` |
-| `sound_audible_from_public_way` | `amplified_sound AND location_type = private_venue` |
-| `tent_area_sqft` | `tent_canopy` |
-| `tent_days_in_place` | `tent_canopy` |
-| `stage_height_ft` | `stage_platform_scaffold` |
-| `stage_area_sqft` | `stage_platform_scaffold` |
-| `structure_over_10ft_tall` | `structure_types != none` |
-| `generator_gasoline_gallons` | `generator_present` |
-| `generator_diesel_gallons` | `generator_present` |
-| `generator_kw` | `generator_present` |
-| `battery_system_kwh` | `battery_present` |
-| `venue_license_covers_event_area` | `alcohol AND location_type = private_venue` |
-| `venue_has_assembly_approval` | `location_type = private_venue AND headcount gte 75` |
+| Field                                     | Gate expression                                      |
+| ----------------------------------------- | ---------------------------------------------------- |
+| `obstructs_public_way`                    | `location_type in street/sidewalk/plaza`             |
+| `sapo_event_type`                         | `obstructs_public_way != no`                         |
+| `street_event_size`                       | `sapo_event_type = street_event`                     |
+| `plaza_level`                             | `sapo_event_type = plaza_event`                      |
+| `plaza_multiple_blocks`                   | `sapo_event_type = plaza_event`                      |
+| `has_amusement_ride`                      | `sapo_event_type = block_party`                      |
+| `food_vendor_count`                       | `food_present`                                       |
+| `food_affinity_private_exception_claimed` | `food_present AND event_open_to_public != yes`       |
+| `sound_audible_from_public_way`           | `amplified_sound AND location_type = private_venue`  |
+| `tent_area_sqft`                          | `tent_canopy`                                        |
+| `tent_days_in_place`                      | `tent_canopy`                                        |
+| `stage_height_ft`                         | `stage_platform_scaffold`                            |
+| `stage_area_sqft`                         | `stage_platform_scaffold`                            |
+| `structure_over_10ft_tall`                | `structure_types != none`                            |
+| `generator_gasoline_gallons`              | `generator_present`                                  |
+| `generator_diesel_gallons`                | `generator_present`                                  |
+| `generator_kw`                            | `generator_present`                                  |
+| `battery_system_kwh`                      | `battery_present`                                    |
+| `venue_license_covers_event_area`         | `alcohol AND location_type = private_venue`          |
+| `venue_has_assembly_approval`             | `location_type = private_venue AND headcount gte 75` |
 
 The other 13 are ungated roots: `borough`, `location_type`, `headcount`, `event_date`,
 `event_open_to_public`, `food_present`, `selling_anything`, `amplified_sound`, `structure_types`,
 `open_flame_or_cooking`, `generator_present`, `battery_present`, `alcohol`.
 
-**The number that matters more is 11**, the fields that act *as* a gate, because only those can
+**The number that matters more is 11**, the fields that act _as_ a gate, because only those can
 supply the "unanswered" state the change is about: `alcohol`, `amplified_sound`, `battery_present`,
 `event_open_to_public`, `food_present`, `generator_present`, `headcount`, `location_type`,
 `obstructs_public_way`, `sapo_event_type`, `structure_types`.
@@ -85,23 +85,23 @@ none of them gates anything.
 saying which.** That was wrong to write and it was read as a schema fact. Checked against a live
 database after `migrate up`, not by reading migrations:
 
-| Gate field | registry `nullable` | schema |
-| --- | --- | --- |
-| `alcohol` | false | NOT NULL |
-| `amplified_sound` | false | NOT NULL |
-| `event_open_to_public` | false | NOT NULL |
-| `food_present` | false | NOT NULL |
-| `generator_present` | false | NOT NULL |
-| `headcount` | false | NOT NULL |
-| `location_type` | false | NOT NULL |
-| `structure_types` | false | NOT NULL |
-| **`battery_present`** | false | **nullable** |
-| **`obstructs_public_way`** | false | **nullable** |
-| **`sapo_event_type`** | false | **nullable** |
+| Gate field                 | registry `nullable` | schema       |
+| -------------------------- | ------------------- | ------------ |
+| `alcohol`                  | false               | NOT NULL     |
+| `amplified_sound`          | false               | NOT NULL     |
+| `event_open_to_public`     | false               | NOT NULL     |
+| `food_present`             | false               | NOT NULL     |
+| `generator_present`        | false               | NOT NULL     |
+| `headcount`                | false               | NOT NULL     |
+| `location_type`            | false               | NOT NULL     |
+| `structure_types`          | false               | NOT NULL     |
+| **`battery_present`**      | false               | **nullable** |
+| **`obstructs_public_way`** | false               | **nullable** |
+| **`sapo_event_type`**      | false               | **nullable** |
 
 So eight of the eleven are NOT NULL in the schema and **three are nullable**. Two of the thirteen
 tokens that appear in `asked_when` expressions, `tent_canopy` and `stage_platform_scaffold`, are
-*values* of `structure_types` rather than fields, which is why the field count is 11 and not 13;
+_values_ of `structure_types` rather than fields, which is why the field count is 11 and not 13;
 all 11 fields are columns.
 
 The two nullable SAPO gates are nullable because they are themselves gated and are legitimately
@@ -140,14 +140,14 @@ no behaviour change.
 **First attempt** (a gate that is in scope and unanswered makes its dependents indeterminate;
 indeterminate resolves to `unknown` rather than `not_asked`):
 
-| Suite | Result |
-| --- | --- |
-| `packages/engine/src/acceptance.test.ts` (answer key, scenarios A-F + boundaries) | **39/39 pass** |
-| `packages/engine/src/fixture-ruleset-agreement.test.ts` | 92/92 pass |
-| `packages/engine/src/intake/intake.test.ts` | 76/76 pass |
-| `packages/engine/src/engine.test.ts` | **11 of 74 fail** |
-| `apps/api/src/plan.test.ts` | **4 of 21 fail** |
-| everything else | pass |
+| Suite                                                                             | Result            |
+| --------------------------------------------------------------------------------- | ----------------- |
+| `packages/engine/src/acceptance.test.ts` (answer key, scenarios A-F + boundaries) | **39/39 pass**    |
+| `packages/engine/src/fixture-ruleset-agreement.test.ts`                           | 92/92 pass        |
+| `packages/engine/src/intake/intake.test.ts`                                       | 76/76 pass        |
+| `packages/engine/src/engine.test.ts`                                              | **11 of 74 fail** |
+| `apps/api/src/plan.test.ts`                                                       | **4 of 21 fail**  |
+| everything else                                                                   | pass              |
 
 15 failures out of ~1000. Of the 15: 5 verdict flips toward `CONDITIONAL`, 1 extra `triggeredBy`
 contribution, 4 plan-item count changes, and 5 `RangeError: Maximum call stack size exceeded`.
@@ -181,14 +181,14 @@ Adding `battery_present: false` to those two fixture objects, one line each, cle
 **The residual 5 were all the stack overflow, and it is not a fixture artefact.**
 `verdict.ts:evaluateConditional` resolves unknowns by substituting each candidate value and
 recursing. It terminates today because every branch removes an unknown. Under the first attempt it
-did not, because a field that is unknown *for want of its gate's answer* is not resolved by
+did not, because a field that is unknown _for want of its gate's answer_ is not resolved by
 supplying that field's own value, so the resolver branched on a field it could not settle and the
 unknown set stopped shrinking.
 
 **Second attempt**, and rounds 1 and 2 of this document reported its result as the headline. It
-added a rule that an indeterminate field whose own value *is* present counts as answered. That
+added a rule that an indeterminate field whose own value _is_ present counts as answered. That
 terminates and passes 1163/1163, **but it is a different and narrower change than issue #108 asks
-for**, because under it the three states only diverge when the gate *and* the dependent are both
+for**, because under it the three states only diverge when the gate _and_ the dependent are both
 unanswered. Reporting its number as "the answer key does not move" was measuring one thing and
 quoting it about another, and the number was relayed to the product owner and to an external
 reviewer on that basis.
@@ -196,7 +196,7 @@ reviewer on that basis.
 **Third attempt, round 3: target #108's semantics and fix the immediate recursion.** The dependent
 resolves unknown whatever its own stored value is, which is the requested behaviour for a
 single-level gate. The non-termination was in `evaluateConditional` branching on a field it could
-not settle. A dependent that is unknown *for want of its gate's answer* is not resolved by
+not settle. A dependent that is unknown _for want of its gate's answer_ is not resolved by
 supplying the dependent's value, so that branch never shrank the unknown set. **Branching on the
 blocking GATE does shrink that case**, because every branch answers a gate and there are finitely
 many gates. It does not make the scope resolver order-independent or implement three-valued
@@ -233,11 +233,11 @@ change at all (see the note under 4).
 **Failure counts across the three attempts.** All six cells re-measured for round 5 on the one tree
 named at the top, back to back, 1163 tests each:
 
-| Attempt | Semantics | Branching | Fixtures unedited | After 2 fixture lines | Non-termination |
-| --- | --- | --- | --- | --- | --- |
-| 1 | as #108 asks | original | 15 fail | 5 fail | 5 fixtures |
-| 2 | narrower | original | **0 fail** | 0 fail | none |
-| 3 | targets #108; order-dependent | on the gate | 6 fail | **0 fail** | none |
+| Attempt | Semantics                     | Branching   | Fixtures unedited | After 2 fixture lines | Non-termination |
+| ------- | ----------------------------- | ----------- | ----------------- | --------------------- | --------------- |
+| 1       | as #108 asks                  | original    | 15 fail           | 5 fail                | 5 fixtures      |
+| 2       | narrower                      | original    | **0 fail**        | 0 fail                | none            |
+| 3       | targets #108; order-dependent | on the gate | 6 fail            | **0 fail**            | none            |
 
 **Attempt 2's first cell was wrong in rounds 3 and 4**, which reported 15 there. It is 0: under the
 narrower rule a dependent that HAS a stored value counts as answered, and both fixture objects store
@@ -251,10 +251,10 @@ heading.** Measured on this tree with the appendix patch applied, on a street ev
 `obstructs_public_way` is unanswered, so `sapo_event_type` is indeterminate and `street_event_size`
 depends on it:
 
-| what is asked first | `street_event_size` in scope | indeterminate | blockers |
-| ------------------- | ---------------------------- | ------------- | -------- |
-| the dependent, on a cold resolver | false | **false** | **none** |
-| the parent, then the dependent    | false | true          | `obstructs_public_way` |
+| what is asked first               | `street_event_size` in scope | indeterminate | blockers               |
+| --------------------------------- | ---------------------------- | ------------- | ---------------------- |
+| the dependent, on a cold resolver | false                        | **false**     | **none**               |
+| the parent, then the dependent    | false                        | true          | `obstructs_public_way` |
 
 The cause is in `blockersFor`: it returns early on `!isInScope(clause.field)` WITHOUT re-reading
 `indeterminate`, and that very call is what records the parent as indeterminate. So on a cold
@@ -311,7 +311,7 @@ fixture lines clear.
   edit cannot leave a gate in scope and unanswered either.
 - `public-page.ts`'s UPDATE touches publication fields only, never intake.
 
-A gate *is* NULL whenever it was legitimately never asked: with `location_type = park`,
+A gate _is_ NULL whenever it was legitimately never asked: with `location_type = park`,
 `obstructs_public_way` and `sapo_event_type` are both NULL. That is the correct outcome, not a
 masquerade, and the current two-state behaviour gets it right.
 
@@ -324,11 +324,11 @@ The remaining routes to "in scope, unanswered" are:
    than by reading them, over every value the column can hold:
 
    | `battery_system_kwh` | resulting `battery_present` |
-   | --- | --- |
-   | NULL | false |
-   | 0 | false |
-   | 5 | true |
-   | -1 | **NULL** |
+   | -------------------- | --------------------------- |
+   | NULL                 | false                       |
+   | 0                    | false                       |
+   | 5                    | true                        |
+   | -1                   | **NULL**                    |
 
    Total over every value the API can produce, because `validateIntake` rejects a negative quantity
    on every submission. The negative is the one uncovered case, and migration 006's comment
@@ -339,6 +339,7 @@ The remaining routes to "in scope, unanswered" are:
    So v2.5 is evidence that this route can be CLOSED by a migration author who notices, not
    evidence that it happens. What migration 006 also records is that a migration facing real rows
    could not have written that backfill.
+
 2. **Direct SQL that omits columns.** Real, and how the 4 `plan.test.ts` failures arose, but not a
    route the API uses: `events.ts` names every registry column on every insert and update.
 3. **An in-memory intake record missing a key**, which is how the 11 `engine.test.ts` failures
@@ -412,7 +413,7 @@ identically, in `packages/engine/src/types.ts` and `packages/engine/src/intake/v
 `index.ts` re-exporting the `visibility.ts` one.
 
 **Rounds 1 to 3 budgeted two coordinated edits for that. That was the wrong reading: the duplicate
-is a defect, not a cost to plan around.** `AGENTS.md:42` requires shared types to be imported from
+is a defect, not a cost to plan around.** `AGENTS.md:44` requires shared types to be imported from
 `packages/engine` and never redefined, and the same authority argument applies inside the engine:
 budgeting both edits preserves a second declaration of a type that should have exactly one. Nothing
 in either site needs a separate definition, and they have not drifted only because nobody has edited
@@ -451,11 +452,11 @@ remove, and it understated the runtime state.
 
 For `location_type = street` with `obstructs_public_way` NULL:
 
-| Field | Today (two-state) | Proposed (three-state) |
-| --- | --- | --- |
-| `battery_present` | in scope, NULL -> unknown | in scope, NULL -> **unanswered** |
-| `obstructs_public_way` | in scope, NULL -> unknown | in scope, NULL -> **unanswered** |
-| `sapo_event_type` | gate `!= no` is false -> **not asked** | gate `!= no` is **unknown** -> **scope unknown** |
+| Field                  | Today (two-state)                      | Proposed (three-state)                           |
+| ---------------------- | -------------------------------------- | ------------------------------------------------ |
+| `battery_present`      | in scope, NULL -> unknown              | in scope, NULL -> **unanswered**                 |
+| `obstructs_public_way` | in scope, NULL -> unknown              | in scope, NULL -> **unanswered**                 |
+| `sapo_event_type`      | gate `!= no` is false -> **not asked** | gate `!= no` is **unknown** -> **scope unknown** |
 
 For `location_type = park`, where `obstructs_public_way` is legitimately out of scope, both columns
 agree: `obstructs_public_way` and `sapo_event_type` are not asked, and `battery_present` is
@@ -611,6 +612,7 @@ corrected price:
 
    These fail QUIETLY: a trigger comparing `bool true` against a stored `"yes"` stops matching, and
    every finding behind it leaves the plan with no error anywhere.
+
 3. **`packages/engine/src/intake/validate.ts`**, also missed. `intakeWarnings` has two direct
    `applicable("alcohol") === true` checks, at the block-party eligibility conflict and the
    alcohol-in-public-space coverage gap. With enum strings both stop firing, silently, so the two
@@ -650,6 +652,7 @@ corrected price:
    the item that gates the others: point 6 below says this option's answer-key impact has never been
    measured, and it cannot be measured until the fixtures submit strings, because every scenario
    fails validation first.
+
 5. A new published ruleset version and a migration per changed column (boolean to text). The form
    control does **not** change: `Control` already renders every declared enum value as a radio option
    and returns the selected string.
@@ -659,7 +662,7 @@ corrected price:
    assumed to move nothing.
 
 What it buys: the distinction is expressible by an organizer who genuinely does not know, which is a
-case the engine change does *not* address, because that change only helps where nobody was asked at
+case the engine change does _not_ address, because that change only helps where nobody was asked at
 all.
 
 **What it DOES do for route 1, which rounds 1 to 4 denied.** A gate introduced as an enum carrying
@@ -761,6 +764,7 @@ Three more, and the first is the most serious error in the history of this docum
    never a property of the semantics.** It was a property of branching on a field that could not
    settle the unknown, and rounds 1 and 2 mistook the second for the first and weakened the
    semantics to avoid it.
+
 6. **The chained-gate table was stated under today's semantics while arguing for the new ones**
    (section 4). Under three-state a NULL `obstructs_public_way` makes `sapo_event_type`'s scope
    unknown, not "not asked". The corrected table costs the loader a three-valued transitive walk
@@ -895,7 +899,6 @@ Issue #174 corrected three remaining findings:
 26. **The enum option priced a form-control change that does not exist.** The shared `Control`
     already renders declared enum values and returns the selected string, so the cost is removed.
 
-
 ---
 
 ## Appendix: the three patches
@@ -921,27 +924,27 @@ index 21a68b8..36873c9 100644
 @@ -30,7 +30,11 @@ export type TriggerEvaluation = {
    readonly triggeredBy: readonly TriggeredBy[];
  };
- 
+
 -export type ScopeResolver = { isInScope: (field: string) => boolean };
 +export type ScopeResolver = {
 +  isInScope: (field: string) => boolean;
 +  isIndeterminate?: (field: string) => boolean;
 +  blockersOf?: (field: string) => readonly string[];
 +};
- 
+
  /**
   * Evaluate the registry's `asked_when` scoping. The published expressions are a closed set of
 @@ -178,11 +182,21 @@ export function createScopeResolver(intake: EventIntake, ruleset: EngineRuleset)
    const cache = new Map<string, boolean>();
    const resolving = new Set<string>();
- 
+
 +  const indeterminate = new Map<string, readonly string[]>();
 +
    const valueOf = (field: string): IntakeValue => {
      if (!isInScope(field)) return null;
      return intake[field] ?? null;
    };
- 
+
 +  const blockersFor = (clause: AskedWhenClause): readonly string[] => {
 +    if (indeterminate.has(clause.field)) return indeterminate.get(clause.field) as readonly string[];
 +    if (resolving.has(clause.field)) return [];
@@ -954,7 +957,7 @@ index 21a68b8..36873c9 100644
      const value = valueOf(clause.field);
      switch (clause.kind) {
 @@ -224,6 +238,12 @@ export function createScopeResolver(intake: EventIntake, ruleset: EngineRuleset)
- 
+
      resolving.add(field);
      try {
 +      const blockers = [...new Set(definition.askedWhenClauses.flatMap(blockersFor))];
@@ -969,7 +972,7 @@ index 21a68b8..36873c9 100644
 @@ -232,11 +252,21 @@ export function createScopeResolver(intake: EventIntake, ruleset: EngineRuleset)
      }
    }
- 
+
 -  return { isInScope };
 +  const settle = (field: string): void => {
 +    if (!resolving.has(field)) isInScope(field);
@@ -980,7 +983,7 @@ index 21a68b8..36873c9 100644
 +    blockersOf: (field: string) => { settle(field); return indeterminate.get(field) ?? []; },
 +  };
  }
- 
+
  function resolveAnswer(field: string, intake: EventIntake, scope: ScopeResolver): ResolvedAnswer {
 -  if (!scope.isInScope(field)) return { state: "not_asked" };
 +  if (!scope.isInScope(field)) {
@@ -1002,27 +1005,27 @@ index 21a68b8..fa65493 100644
 @@ -30,7 +30,11 @@ export type TriggerEvaluation = {
    readonly triggeredBy: readonly TriggeredBy[];
  };
- 
+
 -export type ScopeResolver = { isInScope: (field: string) => boolean };
 +export type ScopeResolver = {
 +  isInScope: (field: string) => boolean;
 +  isIndeterminate?: (field: string) => boolean;
 +  blockersOf?: (field: string) => readonly string[];
 +};
- 
+
  /**
   * Evaluate the registry's `asked_when` scoping. The published expressions are a closed set of
 @@ -178,11 +182,21 @@ export function createScopeResolver(intake: EventIntake, ruleset: EngineRuleset)
    const cache = new Map<string, boolean>();
    const resolving = new Set<string>();
- 
+
 +  const indeterminate = new Map<string, readonly string[]>();
 +
    const valueOf = (field: string): IntakeValue => {
      if (!isInScope(field)) return null;
      return intake[field] ?? null;
    };
- 
+
 +  const blockersFor = (clause: AskedWhenClause): readonly string[] => {
 +    if (indeterminate.has(clause.field)) return indeterminate.get(clause.field) as readonly string[];
 +    if (resolving.has(clause.field)) return [];
@@ -1035,7 +1038,7 @@ index 21a68b8..fa65493 100644
      const value = valueOf(clause.field);
      switch (clause.kind) {
 @@ -224,6 +238,12 @@ export function createScopeResolver(intake: EventIntake, ruleset: EngineRuleset)
- 
+
      resolving.add(field);
      try {
 +      const blockers = [...new Set(definition.askedWhenClauses.flatMap(blockersFor))];
@@ -1050,7 +1053,7 @@ index 21a68b8..fa65493 100644
 @@ -232,11 +252,25 @@ export function createScopeResolver(intake: EventIntake, ruleset: EngineRuleset)
      }
    }
- 
+
 -  return { isInScope };
 +  const settle = (field: string): void => {
 +    if (!resolving.has(field)) isInScope(field);
@@ -1061,7 +1064,7 @@ index 21a68b8..fa65493 100644
 +    blockersOf: (field: string) => { settle(field); return indeterminate.get(field) ?? []; },
 +  };
  }
- 
+
  function resolveAnswer(field: string, intake: EventIntake, scope: ScopeResolver): ResolvedAnswer {
 -  if (!scope.isInScope(field)) return { state: "not_asked" };
 +  if (!scope.isInScope(field)) {
@@ -1087,27 +1090,27 @@ index 21a68b8..36873c9 100644
 @@ -30,7 +30,11 @@ export type TriggerEvaluation = {
    readonly triggeredBy: readonly TriggeredBy[];
  };
- 
+
 -export type ScopeResolver = { isInScope: (field: string) => boolean };
 +export type ScopeResolver = {
 +  isInScope: (field: string) => boolean;
 +  isIndeterminate?: (field: string) => boolean;
 +  blockersOf?: (field: string) => readonly string[];
 +};
- 
+
  /**
   * Evaluate the registry's `asked_when` scoping. The published expressions are a closed set of
 @@ -178,11 +182,21 @@ export function createScopeResolver(intake: EventIntake, ruleset: EngineRuleset)
    const cache = new Map<string, boolean>();
    const resolving = new Set<string>();
- 
+
 +  const indeterminate = new Map<string, readonly string[]>();
 +
    const valueOf = (field: string): IntakeValue => {
      if (!isInScope(field)) return null;
      return intake[field] ?? null;
    };
- 
+
 +  const blockersFor = (clause: AskedWhenClause): readonly string[] => {
 +    if (indeterminate.has(clause.field)) return indeterminate.get(clause.field) as readonly string[];
 +    if (resolving.has(clause.field)) return [];
@@ -1120,7 +1123,7 @@ index 21a68b8..36873c9 100644
      const value = valueOf(clause.field);
      switch (clause.kind) {
 @@ -224,6 +238,12 @@ export function createScopeResolver(intake: EventIntake, ruleset: EngineRuleset)
- 
+
      resolving.add(field);
      try {
 +      const blockers = [...new Set(definition.askedWhenClauses.flatMap(blockersFor))];
@@ -1135,7 +1138,7 @@ index 21a68b8..36873c9 100644
 @@ -232,11 +252,21 @@ export function createScopeResolver(intake: EventIntake, ruleset: EngineRuleset)
      }
    }
- 
+
 -  return { isInScope };
 +  const settle = (field: string): void => {
 +    if (!resolving.has(field)) isInScope(field);
@@ -1146,7 +1149,7 @@ index 21a68b8..36873c9 100644
 +    blockersOf: (field: string) => { settle(field); return indeterminate.get(field) ?? []; },
 +  };
  }
- 
+
  function resolveAnswer(field: string, intake: EventIntake, scope: ScopeResolver): ResolvedAnswer {
 -  if (!scope.isInScope(field)) return { state: "not_asked" };
 +  if (!scope.isInScope(field)) {
@@ -1172,7 +1175,7 @@ index 795a497..670b280 100644
 @@ -182,9 +182,16 @@ function evaluateConditional(
        reason: finding.timelineUnresolvedReason as string,
      }));
- 
+
 +  const scopeForBranching = createScopeResolver(intake, ruleset);
 +  const branchable = new Set<string>();
 +  for (const field of resolved.unknownFields) {
@@ -1184,7 +1187,54 @@ index 795a497..670b280 100644
      .map((definition) => definition.field)
 -    .filter((field) => resolved.unknownFields.includes(field));
 +    .filter((field) => branchable.has(field));
- 
+
    const missingFacts: MissingFact[] = [];
    const pathVerdicts: Verdict[] = [];
 ```
+
+---
+
+## Corrections from the issue #108 decision brief
+
+> **These corrections have a DIFFERENT measurement basis from the rest of this document.** Everything
+> above was measured at merge-base `481e1f6`, ruleset `nyc-rules.v2.8.json`, suite size 1163, and the
+> reproduction recipe in the header applies to it. The corrections below were measured at `c700698`,
+> ruleset `nyc-rules.v2.11.json`, Node v24.18.1, PostgreSQL 18.4, suite size **1577**, and report
+> v2.11 results. They were first taken at `f8d6fc3` and rerun at `c700698`, the decision brief's
+> current merge base, on 2026-08-03; the suite size is the only figure the rerun moved. Following
+> this document's stated checkout will NOT reproduce them. The prototype patches and probe
+> harnesses behind them are on the branch `archive/issue-108-probe-appendices`. This note
+> exists because appending them without it would have made the header's provenance declaration false
+> for part of its own document.
+
+Added 2026-08-03. These corrections were written in `asked-when-three-state-decision.md` and are moved here, to the document they correct, when that brief was cut back to its decision. Nothing about them changed in the move.
+
+Recorded so that document's readers can find them. None is a criticism of that document's method;
+four of the five are the ruleset moving underneath it.
+
+1. **"20 of 33, and it was 20 at v2.5, v2.6, v2.7 and v2.8"** (section 1 of this document) is right
+   for those versions and still right at v2.9, v2.10 and v2.11. Its added claim that it "did not find a
+   reading of the registry that gives 19" is too strong: 19 is the count at v2.1, v2.2, v2.3 and
+   v2.4, where the total is 32. The issue's error is the pairing, not the 19.
+2. **"All 11 gates"** (sections 1 and 4 of this document) is 10 at v2.11. `event_open_to_public`
+   stopped gating anything when v2.9 removed `food_affinity_private_exception_claimed`.
+3. **This document's gated-field table** lists `food_affinity_private_exception_claimed` and
+   `venue_has_assembly_approval`, both removed at v2.9, and omits `venue_paco_covers_exact_event` and
+   `venue_fdny_pa_permit_current_for_event_space`, both added there.
+4. **This document's attempt-1 failure profile (15 failures, 10 of them assertion failures) no
+   longer reproduces.** At v2.11 attempt A gives 6 failures, all non-termination, no assertion failures. The
+   10 assertion failures came from two fixture objects omitting `battery_present`, which answer key
+   v4 has since written down. Its "the two fixture lines" remedy is no longer needed.
+5. **This document's attempt 3 is order-dependent and mishandles `false AND unknown`**, which its
+   own round 8 records as unmeasured. Both are fixed in attempt B here and both fixes are measured;
+   the suite still passes 1577/1577. Section 7's conclusion above that "the answer-key impact and
+   implementation size of a correct, order-independent implementation therefore remain unmeasured"
+   is now partly measured: zero answer-key movement on the inputs run, and two files at +61/-5 for
+   the engine half. Both figures are bounded rather than settled. +61/-5 is a lower bound on size,
+   because `visibility.ts` is left out and the divergence that creates is unresolved (section 6a
+   item 4 of `asked-when-three-state-decision.md`). And "a correct implementation" is not what was
+   measured: attempt B is unexercised on a multi-enum gate (section 2 and section 7 item 4 of
+   `asked-when-three-state-decision.md`), so that clause of this document's own conclusion still
+   stands.
+
+---
