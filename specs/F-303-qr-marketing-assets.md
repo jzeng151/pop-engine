@@ -24,6 +24,7 @@ An organizer can print a clear event flyer or poster whose QR sends attendees to
 ## Dependencies and Baseline
 
 - F-301 published public event page and F-401 QR infrastructure.
+- The F-701/F-702/F-703 gate. F-702 supplies the workspace membership boundary the event whose asset is generated resolves against and F-703 supplies the permission matrix `F303-AC-06` checks; F-701 supplies the authenticated actor both read from. All three are PROPOSED, so the gate is not an approved input today and this spec is not implementable against it until they are approved and listed in `docs/BASELINE.md`.
 - A stable public slug/token contract from `ARCHITECTURE-FUTURE.md`.
 - Under approved F-301 AC 6, anonymous exposure exists only during rehearsal; production activation requires T-7 / SPEC-CONFLICT #210 to approve a hardened production route or explicitly restrict this feature to rehearsal.
 - Baseline at draft time: PRD, Roadmap, Design, and Phase 0–1.5 Architecture approved 2026-07-22; `ARCHITECTURE-FUTURE.md` approved as a planning target 2026-07-25; NYC ruleset `nyc.v2.7`, rules schema `popengine-rules/v2`, and scenario fixtures v5 where regulatory output is consumed.
@@ -63,10 +64,17 @@ Exact HTTP, JSON Schema, migration, job, and provider shapes belong in their rev
 4. **F303-AC-04:** The print view contains event name, concise call to action, QR, and readable fallback URL without clipped content at the approved paper size.
 5. **F303-AC-05:** Printing or regenerating the asset does not mutate the event, public page, or QR destination.
 
+6. **F303-AC-06:** Every organizer-facing operation this feature defines names the event it acts in and the workspace that owns it, and is admitted only by the acting actor's current F-702 membership of that workspace together with the F-703 permission approved for the action, both re-read server-side from stored membership and role at the moment of the operation. That covers generating, regenerating, previewing, printing, and downloading the asset under F303-AC-01 through F303-AC-05, and reading its readiness state under F303-AC-03. A request failing the check is refused before the asset is produced and before the event name, call to action, canonical URL, publication state, or readiness reason is disclosed, and its response does not distinguish an event that does not exist from one the actor may not see. The check is at the operation and not at session start or workspace switch, so authority removed while a request is in flight causes that request to fail. This criterion does not reach the published public page the QR resolves to, which F-301 governs and which is anonymous by design.
+
+   Without this criterion AC-01 through AC-05 all pass for a caller who names another workspace's event. They fix the QR destination, the scan rehearsal, the readiness gate, the print layout, and the absence of mutation, and not one of them asks who the actor is. AC-03 makes readiness follow F-301's effective anonymous-route exposure, so an unpublished or access-gated event still answers the readiness question and still yields its name and canonical URL to whoever can name it, which is a disclosure about an event its organizer has not published.
+
+   One input this criterion needs is not established by any approved artifact today and is not invented here. F-703 is PROPOSED and names no role set, so the permission above cannot be named. Until F-703 is approved this criterion is testable only as "every generation, preview, readiness read, print, and download is refused unless the acting actor holds an active membership of the workspace that owns the named event, read server-side at that operation, and a refusal discloses nothing about whether that event exists", not against a named role or permission identifier. Naming the asset generation and download permissions with F-703 is an approval blocker below.
+
 ## Fixtures and Verification
 
 - Automated fixtures map F303-AC-01 and F303-AC-03–05 one-to-one to runnable tests. F303-AC-02 is a documented manual release rehearsal using the approved paper size, phone camera, and distance; automated coverage verifies the encoded URL, rendered dimensions, and decoder compatibility but cannot replace the physical rehearsal.
 - Regulatory fixtures: none; this feature does not define regulatory ground truth.
+- F303-AC-06 includes a fixture in which an actor holding no membership of the owning workspace names a valid unpublished event and is refused at generation, at the readiness read, and at print and download, with a response that does not distinguish absence from denial.
 - Security-sensitive and cross-workspace paths require negative authorization tests; provider paths require success, duplicate-delivery, retry, invalid-signature, and permanent-failure tests where applicable.
 
 ## Allowed Footprint and Coordination
@@ -84,4 +92,5 @@ Exact HTTP, JSON Schema, migration, job, and provider shapes belong in their rev
 ## Approval Blockers
 
 - Resolve T-7 / SPEC-CONFLICT #210, then approve paper size, scan-distance rehearsal, public-slug lifecycle, production exposure or explicit rehearsal-only scope, and final public copy.
+- Approve F-701, F-702, and F-703, and name with F-703 the asset generation and download permissions `F303-AC-06` checks. That criterion checks a permission no approved artifact defines today and may not invent one, so until the matrix names them it is testable only at the membership level stated there.
 - Assign the owner and independent reviewer, approve this spec, and add it to `docs/BASELINE.md`.

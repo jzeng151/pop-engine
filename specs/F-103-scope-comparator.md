@@ -24,6 +24,7 @@ An organizer can compare two event configurations using two complete engine eval
 ## Dependencies and Baseline
 
 - F-101, F-201, F-102, F-106 Date Advisor, and approved Event Revisions.
+- The F-701/F-702/F-703 gate. F-702 supplies the workspace membership boundary the compared Event and its revisions resolves against and F-703 supplies the permission matrix `F103-AC-08` checks; F-701 supplies the authenticated actor both read from. All three are PROPOSED, so the gate is not an approved input today and this spec is not implementable against it until they are approved and listed in `docs/BASELINE.md`.
 - Stable plan/finding identity and plan-diff contracts from `ARCHITECTURE-FUTURE.md`.
 - Baseline at draft time: PRD, Roadmap, Design, and Phase 0–1.5 Architecture approved 2026-07-22; `ARCHITECTURE-FUTURE.md` approved as a planning target 2026-07-25; NYC ruleset `nyc.v2.7`, rules schema `popengine-rules/v2`, and scenario fixtures v5 where regulatory output is consumed.
 - The approval PR must re-pin any baseline version that changes before approval. A proposed or superseded input blocks implementation.
@@ -81,6 +82,12 @@ Exact HTTP, JSON Schema, migration, job, and provider shapes belong in their rev
 
    Only the ephemeral form is implementable against what is approved today. Persisted comparison artifacts would need an approved OpenAPI resource and an ordered migration for a table that latest-plan reads do not touch, and the System Impact table above gates both on an approved retained-history need. Until that exists, a comparison holds its two evaluations for the life of the request and stores nothing.
 
+8. **F103-AC-08:** Every operation this feature defines names the Event it acts in and the workspace that owns it, and is admitted only by the acting actor's current F-702 membership of that workspace together with the F-703 permission approved for the action, both re-read server-side from stored membership and role at the moment of the operation and, for a write, inside the same transaction that commits it. That covers the reads as well as the writes: composing and reading a comparison and its two evaluation results under F103-AC-01 through F103-AC-06, and the explicit selection that creates an F-201 generation under F103-AC-07. A request failing the check is refused before any durable write and before any finding, disposition, permit-burden value, or configuration is disclosed, and its response does not distinguish an Event or comparison that does not exist from one the actor may not see. The check is at the operation and not at session start or workspace switch, so authority removed while a request is in flight causes that request to fail rather than commit.
+
+   Without this criterion AC-01 through AC-07 all pass for a caller who names another workspace's Event. They fix determinism, the added, removed, and changed finding sets, the permit-burden derivation, the visibility of unknown and failed states, the symmetry of a swap, and the single-generation rule, and not one of them asks who the actor is. A comparison discloses the full typed finding set of both configurations, and AC-07 additionally commits an immutable F-201 generation against the selected one, so the surface that criterion set leaves open both reads another organizer's regulatory plan and writes to their Event.
+
+   One input this criterion needs is not established by any approved artifact today and is not invented here. F-703 is PROPOSED and names no role set, so the permission above cannot be named. Until F-703 is approved this criterion is testable only as "every comparison composition, read, and generation selection is refused unless the acting actor holds an active membership of the workspace that owns the named Event, read server-side at that operation, and a refusal discloses nothing about whether that Event exists", not against a named role or permission identifier. Naming the comparison read and generation-selection permissions with F-703 is an approval blocker below.
+
 ## Fixtures and Verification
 
 - Planned automated fixture IDs are the acceptance IDs above; each must map one-to-one to a runnable test before approval can claim implementation readiness.
@@ -89,6 +96,7 @@ Exact HTTP, JSON Schema, migration, job, and provider shapes belong in their rev
 - `F103-BURDEN-02`: Scenario B's required `not_calculable` DOHMH finding contributes one definite unit; its advisory and named-confirmation findings contribute none.
 - `F103-BURDEN-03`: the Parks exactly-20 `OFFICIAL_CONFLICT` finding contributes one unresolved unit, while a material unknown that can change the finding set makes the breakdown unavailable rather than favorable.
 - `F103-BURDEN-04`: swapping the same two plans preserves each breakdown and reverses only directional finding labels.
+- F103-AC-08 includes a fixture in which an actor holding no membership of the owning workspace names a valid Event and comparison identifier and is refused at composition, at read, and at generation selection, with a response that does not distinguish absence from denial.
 - Security-sensitive and cross-workspace paths require negative authorization tests; provider paths require success, duplicate-delivery, retry, invalid-signature, and permanent-failure tests where applicable.
 
 ## Allowed Footprint and Coordination
@@ -107,4 +115,5 @@ Exact HTTP, JSON Schema, migration, job, and provider shapes belong in their rev
 
 - Approve Event Revision, finding-identity, plan-diff, and F-106 earliest-feasible-date contracts.
 - Close issue [#239](https://github.com/jzeng151/pop-engine/issues/239). Until a merged finding's `disposition` is either guarded against mixing within a dedupe group or carried per contributing rule, `permit-burden/v1`'s definite/unresolved split reads a scalar chosen by ruleset order and AC-03 cannot be satisfied truthfully.
+- Approve F-701, F-702, and F-703, and name with F-703 the comparison read and generation-selection permissions `F103-AC-08` checks. That criterion checks a permission no approved artifact defines today and may not invent one, so until the matrix names them it is testable only at the membership level stated there.
 - Assign the owner and independent reviewer, approve this spec, and add it to `docs/BASELINE.md`.

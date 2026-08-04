@@ -23,7 +23,7 @@ A workspace can review late submissions, revisions, unexpected requirements, and
 
 ## Dependencies and Baseline
 
-- F-208 retained application history, F-702 workspace boundary, and approved metric definitions.
+- F-208 retained application history, the F-701/F-702/F-703 gate, and approved metric definitions. F-702 supplies only the workspace membership boundary; the role and permission source `F501-AC-06` and `F501-AC-08` check is F-703's permission matrix, which no earlier revision of this spec declared, so nothing here was bound by it. Naming F-702 alone left AC-06's membership and role recheck with no approved role source, and an implementer confined to this spec's inputs could satisfy it only by inventing an analytics role outside the shared model or by reducing downloads to a membership-only check. F-701, F-702, and F-703 are all PROPOSED, so the gate is not an approved input today and this spec is not implementable against it until they are approved and listed in `docs/BASELINE.md`.
 - F-407 confirmed post-mortem metric snapshots, upstream of this feature under the canonical build order `F-104 → F-406 → F-407 → F-501/F-502` (`docs/DESIGN.md` Dependency Graph). F-501 reads only a confirmed snapshot version (F-407's per-event current confirmed pointer, or an explicitly selected older confirmed version that stays labeled historical) and creates, mutates, or supersedes no **F-407-owned outcome** snapshot. Its own report snapshots under F501-AC-05 are unaffected: narrowed 2026-08-03 because the prohibition had been written to cover any metric snapshot, which AC-05 requires F-501 to publish and the System Impact section permits, so the spec could not be implemented as written.
 - F-704 supplies broader action history only where a metric explicitly needs it.
 - Baseline at draft time: PRD, Roadmap, Design, and Phase 0–1.5 Architecture approved 2026-07-22; `ARCHITECTURE-FUTURE.md` approved as a planning target 2026-07-25; NYC ruleset `nyc.v2.7`, rules schema `popengine-rules/v2`, and scenario fixtures v5 where regulatory output is consumed.
@@ -70,10 +70,17 @@ Exact HTTP, JSON Schema, migration, job, and provider shapes belong in their rev
 
    The operations that write durable state in this feature are snapshot refresh and publication under F501-AC-05 and export creation under this criterion; each binds its own request identity, and the two identities are separate because one refresh may back several exports and one export may be retried without republishing. Download issuance under F501-AC-06 stages no new artifact and creates no snapshot, so it needs no identity of its own; it recomputes authorization on each issuance instead.
 
+8. **F501-AC-08:** Every operation this feature defines names the workspace it acts in, and is admitted only by the acting actor's current F-702 membership of that workspace together with the F-703 permission approved for the action, both re-read server-side from stored membership and role at the moment of the operation and, for a write, inside the same transaction that commits it. That covers the reads as well as the writes: the refresh and snapshot publication under F501-AC-05, export creation under F501-AC-07, download issuance under F501-AC-06, and every metric read, filter, drill-down, and cached-result read under F501-AC-01 through F501-AC-04. The F-703 matrix must name the analytics query, export, and download actions separately, because a permission set that stops at membership makes AC-06's role recheck unimplementable and admits any workspace member to the whole permit-performance history and its exports. A request failing the check is refused before any durable write and before any metric value, denominator, coverage count, or drilled-down source record is disclosed. The check is at the operation and not at session start or workspace switch, so authority removed while a request is in flight causes that request to fail rather than commit.
+
+   AC-04 states the outcome, that a cross-workspace query, filter, export, cached result, or drill-down discloses no foreign record, and does not say what is checked or when. AC-06 does name a membership and role recheck, but only at download issuance and only against a role no declared dependency supplies. This criterion names the check, its source, and its moment for every operation, and it is stated as an acceptance criterion because an implementation is built to the acceptance criteria.
+
+   One input this criterion needs is not established by any approved artifact today and is not invented here. F-703 is PROPOSED and names no role set, so the analytics query, export, and download permissions above cannot be named. Until F-703 is approved this criterion is testable only as "every refresh, metric read, filter, drill-down, export creation, and download is refused unless the acting actor holds an active membership of the named workspace, read server-side at that operation, and a refusal discloses nothing about whether a record exists", not against a named role or permission identifier. Naming those three actions with F-703 is an approval blocker below.
+
 ## Fixtures and Verification
 
 - Planned automated fixture IDs are the acceptance IDs above; each must map one-to-one to a runnable test before approval can claim implementation readiness.
 - Regulatory fixtures: Synthetic multi-event histories reference approved plan findings; analytics expectations are non-regulatory feature fixtures.
+- F501-AC-08 includes a fixture in which an actor holding no membership of a workspace names it and is refused at refresh, at every metric read and drill-down, at export creation, and at download, with a response that does not distinguish absence from denial, and a fixture in which membership is removed after an export is staged and the later download is refused.
 - Security-sensitive and cross-workspace paths require negative authorization tests; provider paths require success, duplicate-delivery, retry, invalid-signature, and permanent-failure tests where applicable.
 
 ## Allowed Footprint and Coordination
@@ -90,5 +97,6 @@ Exact HTTP, JSON Schema, migration, job, and provider shapes belong in their rev
 
 ## Approval Blockers
 
-- Approve metric definitions, dimensions/filters, coverage policy, retention, and authorization.
+- Approve metric definitions, dimensions/filters, coverage policy, and retention.
+- Approve F-701, F-702, and F-703, and name with F-703 the analytics query, export, and download actions `F501-AC-06` and `F501-AC-08` check. Those criteria check permissions no approved artifact defines today and may not invent one, so until the matrix names them they are testable only at the membership level stated in AC-08.
 - Assign the owner and independent reviewer, approve this spec, and add it to `docs/BASELINE.md`.
