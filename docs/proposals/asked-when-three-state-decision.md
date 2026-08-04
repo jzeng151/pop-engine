@@ -6,7 +6,7 @@ This document recommends an action on issue #108. It changes no engine code, no 
 fixture, no schema and no manifest entry. The branch carrying it changes **two** documents: this
 one, and `docs/proposals/asked-when-three-state-measurement.md`, which receives the corrections
 this document used to carry in a section of its own — they correct that document, so they belong
-in it. Nothing here is implementable until the approvals named in section 7 are given.
+in it. Nothing here is implementable until the approvals named in section 6 are given.
 
 **Relationship to the existing measurement.** `docs/proposals/asked-when-three-state-measurement.md`
 is the prior artifact. It is pinned to merge-base `481e1f6` and ruleset **nyc.v2.8**, and the
@@ -20,25 +20,25 @@ repeat it. What this one does is:
 - state a recommendation, which the earlier document explicitly declined to do.
 
 Where the two disagree, the disagreement is called out in place. Corrections to the earlier
-document are collected in section 7 so its readers can find them.
+document are no longer collected here: they were moved into that document itself, which is where
+its readers will find them.
 
 **Which of issue #108's two inputs this document measures. Read this before any number below.**
 The issue names one behaviour but there are two distinct inputs that produce it, and they do not
 behave the same way.
 
 - **Q1, the gate that is in scope and UNANSWERED**: raw `undefined` or `null`. Every failure
-  count, prototype and plan diff in sections 3, 3a and 4 is Q1, and Q1 is the question PR #167
+  count, prototype and plan diff in sections 2 and 4 is Q1, and Q1 is the question PR #167
   measured.
 - **Q2, the gate that was ASKED and ANSWERED `"unknown"`.** The merged
   `docs/proposals/unknown-gate-measurement.md:136-138` identifies Q2 as the case issue #108's own
-  title describes, and distinguishes it from PR #167's. **The prototype in the appendix does not
-  touch Q2.** Its blocker list (`blockersFor`) records a gate only when the raw value is `undefined`
+  title describes, and distinguishes it from PR #167's. **The prototype does not touch Q2.** Its blocker list (`blockersFor`) records a gate only when the raw value is `undefined`
   or `null`, so a gate answered `"unknown"` scopes its dependents out under the patch exactly as it
   does today. Verified by running the same intake on both trees: byte-identical plans
   (section 2).
 
 **Consequence, stated plainly: this document does not dispose of issue #108.** For Q1 it disposes of
-the **engine** question and nothing wider. Sections 3, 3a and 4 measure what `packages/engine`
+the **engine** question and nothing wider. Sections 2 and 4 measure what `packages/engine`
 produces and what an engine-level change would cost; the Q1 probe called `evaluate`
 directly, because a Q1 intake cannot be submitted through the API at all (section 4). That is an
 engine measurement, not an end-to-end one, and this document does not claim to have run Q1 through
@@ -160,8 +160,9 @@ none of them gates anything. That is what makes the state unreachable through th
 
 ## 2. Blast radius, and what the prototype does and does not settle
 
-Everything in this section about Q1 is measured on the attempt-B prototype described in section 4;
-the prototype is not on this branch and this document does not publish it. The probe harnesses and
+Everything in this section about Q1 is measured on the attempt-B prototype; the prototype is not on
+this branch and this document does not publish it, so what it does is described only by its effects
+here. The probe harnesses and
 the full patches were published here until 2026-08-03 and were removed with the rest of the
 appendices; they are on `archive/issue-108-probe-appendices` if a reader needs to re-derive a number.
 
@@ -193,11 +194,17 @@ CONDITIONAL contract. On the questionnaire side, the shipped `IntakeForm` asks `
 once `obstructs_public_way` is `yes`, offers all five registry values with `"unknown"` labelled
 "I don't know", and carries that answer into the submission verbatim.
 
-## 3. Whether `IntakeValue` can represent "unanswered"
+## 3. Whether `IntakeValue` can distinguish "unanswered"
 
-**No.** `IntakeValue` is `string | number | boolean | readonly string[] | null`, and `null` carries
-at least four distinct meanings that only the registry plus the scope resolver can tell apart:
-never asked; asked, nullable, deliberately blank; asked and unanswered; absent from a partial write.
+**It can represent it; it cannot distinguish it. An earlier revision answered "no" to the
+representation question, and that was wrong:** `packages/engine/src/types.ts:8-12` assigns exactly
+that meaning, an absent key or `null` means "asked, not answered". What the type cannot do is tell
+that meaning apart from the others sharing the encoding. `IntakeValue` is
+`string | number | boolean | readonly string[] | null`, and `null` carries at least four distinct
+meanings that only the registry plus the scope resolver can tell apart: never asked; asked,
+nullable, deliberately blank; asked and unanswered; absent from a partial write. So what is missing
+is a discriminator, not a representation, and a change that added a second representation would be
+answering the wrong question.
 
 Recorded and not fixed, because it is out of this task's scope: the type is declared twice,
 identically, at `packages/engine/src/types.ts:5` and
@@ -208,15 +215,15 @@ and it is independent of issue #108.
 ## 4. Whether the Q1 state can arise at all
 
 **Not through the API. Re-verified against current code, not carried forward. This section is Q1
-only; Q2 is reachable and storable, per section 2.**
+only; Q2 is reachable, and storable on a source reading, per section 2.**
 
 - `packages/engine/src/intake/validate.ts:299`: `if (!isProvided(submission, field.field) && !field.nullable)` raises `required`. All 10 gate fields omit `nullable` in the registry (section 1), so an asked gate cannot be submitted blank.
 - `apps/api/src/events.ts:151` and `:164`: both `INSERT` and `UPDATE` build their column list from `intakeColumnNames(intakeContract)`, the full registry, and pass `values[column] ?? null` for each. No column is ever skipped on write, so a partial-column insert cannot happen through the API.
 - `validate.ts:285-297` rejects an answer to a question the registry does not consider asked, so a stale answer cannot revive a dependent either.
 
 A gate _is_ NULL whenever it was legitimately never asked (`location_type = park` leaves
-`obstructs_public_way` and `sapo_event_type` NULL). Attempt B leaves that case alone; the fourth
-probe row in section 2 is exactly this check.
+`obstructs_public_way` and `sapo_event_type` NULL). Attempt B leaves that case alone; the park probe
+that checked it was removed with the appendices and its result is not reported here.
 
 **No `asked_when` expression has ever been widened.** Checked across all twelve published artifacts
 (section 1 table, re-derived to include v1, v2.1 and v2.2): within the string grammar, which runs
@@ -234,10 +241,11 @@ here.
 raises `required` only for a field that is not `nullable`, so the barrier is that none of the ten
 gate fields carries `nullable: true` and none of the eight fields that do gates anything. An intake
 contract that put those two facts together (a `nullable` gate, by either of the two forms section
-7a names) would make the Q1 state reachable on a newly created row, with no prior row and no
-widening. The nullable-gate probe measured one step of that: an in-scope registry-nullable field left
-unanswered validates clean and is carried into the record to persist as `null`. The write itself is
-source-traced through `events.ts:145` and `:154`, not run.
+6a names) would make the Q1 state reachable on a newly created row, with no prior row and no
+widening, **but only where the `events` column can hold the NULL, which for seven of the ten gates
+it cannot** (section 6a, route 2). The nullable-gate probe measured one step of that: an in-scope
+registry-nullable field left unanswered validates clean and is carried into the record to persist as
+`null`. The write itself is source-traced through `events.ts:145` and `:154`, not run.
 
 ## 5. The counter-argument, on its merits
 
@@ -258,7 +266,7 @@ attempt B implements.
 
 That said, the sentence is close enough to the change that the engine owner should be the one to
 rule on the reading. I am not treating my reading as settling it. Under governance §5 that ruling
-comes **before** any implementation approval rather than alongside it, which is why section 7's
+comes **before** any implementation approval rather than alongside it, which is why section 6's
 approvals table carries it as a prerequisite row rather than as a caveat.
 
 **Second: would the change reintroduce what nyc.v2.5 removed? Yes, narrowly, and I can name the
@@ -269,8 +277,9 @@ blocks ever listed." Before v2.5, `battery_system_kwh` was always asked and is n
 with no battery left it blank, it resolved `unknown`, and `FDNY-GENERATOR-001` went conditional on
 every such plan. v2.5 added `battery_present` and gated the quantity behind it.
 
-Case 2 in section 2 is that exact finding coming back, on that exact rule, when `battery_present`
-is itself absent. `FDNY-GENERATOR-001` is the only rule in the ruleset whose trigger references
+The battery case of the removed probe set is that exact finding coming back, on that exact rule,
+when `battery_present` is itself absent; section 2 does not report it and this document does not
+publish the run. `FDNY-GENERATOR-001` is the only rule in the ruleset whose trigger references
 `battery_system_kwh`.
 
 **But the reach is narrow and the mechanism is not the same.** v2.5's spurious conditional fired on
@@ -282,7 +291,8 @@ in a strictly smaller set of cases, all of which are cases where something reall
 
 Weighed against that: today's behavior on case 1 withholds four SAPO street-size permits from a
 street event, and although the plan does name the unresolved gate and five other findings behind it
-(section 2), no branch text reaches the four street permits themselves. Spurious conditionals are a
+(measured in the removed probe set, not reported here), no branch text reaches the four street
+permits themselves. Spurious conditionals are a
 real product harm, v2.5 exists because of them, but they are visible to the organizer and
 recoverable by answering a question. A permit no branch text names is recoverable only by answering
 a question the plan does not identify as the one that would produce it.
@@ -304,21 +314,23 @@ The reasons, in the order they carry weight:
    the deployed system cannot currently produce. That is a statement about the registry as
    published, not about the validator: it holds because no gate field is `nullable`, and a
    published contract that made one `nullable` would make the state reachable on a newly created
-   row (section 4, section 6a's trigger). This reason is Q1-specific; it does not transfer to Q2,
-   which section 2 shows is reachable and storable.
+   row wherever the `events` column can hold the NULL, which for three of the ten gates it can
+   (section 4, section 6a's trigger). This reason is Q1-specific; it does not transfer to Q2,
+   which section 2 shows is reachable, and storable on a source reading.
 2. **The approved fixtures cannot tell the two semantics apart** (section 2). Merging a semantics
    change that its own regression suite is blind to is the wrong order of operations regardless of
    which semantics is right. If the change is ever made, the fixtures that distinguish the semantics
-   must be approved and land with it, and the two probe cases in section 2 are the natural
-   candidates.
+   must be approved and land with it, and the street-event case in section 2 is the natural
+   candidate.
 3. **The issue underscopes the change.** `verdict.ts` is not optional: without the branching change
    the plan generator does not terminate on six existing tests. Order-independence and three-valued
    conjunction are two further correctness requirements the issue does not mention. All three are
    fixable and are fixed in attempt B. So the issue's "Scope if changed" list, naming
    `visibility.ts` and `conditions.ts`, is incomplete: `verdict.ts` is required as well. It is
    **not** wrong to name `visibility.ts`: attempt B leaves that file untouched and thereby leaves
-   the divergence in item 4 unresolved, so the two-file diff below is a lower bound on
-   implementation size, not the size of a complete implementation.
+   the divergence in item 4 unresolved, so attempt B's two-file diff, whose size this document no
+   longer publishes, is a lower bound on implementation size rather than the size of a complete
+   implementation.
 4. **`visibility.ts` is an unresolved design question, not a saving.** Attempt B changes the engine's
    scoping and leaves the questionnaire's scoping two-state, so the two would disagree about the same
    event: the engine would call a dependent's scope unknown and material while the form does not ask
@@ -338,20 +350,32 @@ earlier revision described only the first.**
   in-scope-and-unanswered. A widening in a deployment holding no such rows has no old NULL to
   rescope, so it cannot supply the state on its own either.
 
-**Route 2, a nullable gate, needs neither half and produces the state on a newly created row.** It
-was missed by the earlier framing and it is the shorter route. `validate.ts:299` raises `required`
-only `if (!isProvided(submission, field.field) && !field.nullable)`, and `isProvided`
+**Route 2, a nullable gate, needs neither half and can produce the state on a newly created row,
+but not for every gate, and an earlier revision of this section said it did.** It was missed by the
+earlier framing and it is the shorter route where it is open at all. `validate.ts:299` raises
+`required` only `if (!isProvided(submission, field.field) && !field.nullable)`, and `isProvided`
 (`validate.ts:143-144`) counts an explicit `null` as not provided. So the moment a gate field
-carries `nullable: true` in the registry, an in-scope gate may be submitted blank, `events.ts:151`
-and `:164` write the column as `values[column] ?? null`, and the row is created in-scope-and-NULL
-with no prior row and no widening anywhere in its history. Two intake-contract changes reach that
-state:
+carries `nullable: true` in the registry, an in-scope gate may be submitted blank and `events.ts:151`
+and `:164` write the column as `values[column] ?? null`.
 
-- **marking an existing gate `nullable`**; or
+**Where the route stops, and this is the correction.** Validation accepting the blank is not the
+same as the row existing. The write sends SQL `NULL`, and seven of the ten gate columns are
+`NOT NULL` in `events` (section 1's table, read from `information_schema.columns` against a live
+database): `alcohol`, `amplified_sound`, `food_present`, `generator_present`, `headcount`,
+`location_type` and `structure_types`. PostgreSQL rejects that INSERT, so the submission errors and
+no in-scope-and-NULL row is created. Only `battery_present`, `obstructs_public_way` and
+`sapo_event_type` can hold the state as the schema stands. Two intake-contract changes reach the
+route, and they differ in what else they need:
+
+- **marking an existing gate `nullable`**. This produces the persisted state by itself only for the
+  three storage-nullable gates. For the other seven it also needs a forward migration relaxing the
+  column, which is a change to a shared core table and carries its own review (`AGENTS.md:44-45`
+  and the database-owner row of governance §6, as in the approvals table below); or
 - **publishing an `asked_when` that references one of today's eight registry-nullable leaf fields**
   (`tent_area_sqft`, `tent_days_in_place`, `stage_height_ft`, `stage_area_sqft`,
   `generator_gasoline_gallons`, `generator_diesel_gallons`, `generator_kw`, `battery_system_kwh`),
-  which turns a field that is already blank-able into a gate.
+  which turns a field that is already blank-able into a gate. All eight columns are nullable in
+  `events`, so this form needs no migration and is the one route with nothing else in its way.
 
 **Measured at the validator, source-traced past it.** The nullable-gate probe submitted a park event with
 `structure_types: ["tent_canopy"]` and no `tent_area_sqft` to `validateIntake` against the v2.11
@@ -359,30 +383,37 @@ contract on a clean `f8d6fc3`. It returns `errors: []` and `values.tent_area_sqf
 in-scope registry-nullable field, left unanswered, accepted and carried into the record as `null`.
 The probe stops there. It never calls the events router and never executes an INSERT, so "and the
 row is created NULL" is read off `events.ts:145` and `:154` (every registry column written as
-`values[column] ?? null`) rather than reproduced. Route 2's validator half is measured, its
-persistence half is inferred from those two lines, and the only thing today's registry withholds is
+`values[column] ?? null`) plus the column's own nullability, rather than reproduced. `tent_area_sqft`
+is nullable in `events`, so the inference holds for the field the probe used; it would not hold for
+a `NOT NULL` gate column, which is the point above. Route 2's validator half is measured, its
+persistence half is inferred, and the only thing today's registry withholds is
 a gate in that position,
 because none of the ten gate fields is `nullable` and none of the eight nullable fields gates
 anything (section 1). What the engine then does with an in-scope NULL gate is not a new
-measurement: it is `CASE_1` in section 2, where the dependents collapse to `false` and four SAPO
-street permits go unnamed.
+measurement: it is the street-event case in section 2, where the dependents collapse to `false` and
+four SAPO street permits go unnamed.
 
 **The reopening trigger, restated to cover both routes:** whichever comes first of
 
 - the first ruleset publication that **widens** any existing `asked_when` expression;
 - the deployment **acquiring real event rows**;
-- the first intake-contract change that **creates a nullable gate**, by either of route 2's two
-  forms.
+- the first intake-contract change that **creates a nullable gate the schema can leave NULL**: route
+  2's second form, or its first form on `battery_present`, `obstructs_public_way` or
+  `sapo_event_type`, or its first form on any other gate **together with** a migration relaxing that
+  column.
 
 The first two are deliberately the weaker halves of route 1's conjunction rather than the
 conjunction itself, which is a conservative choice and not a claim that either alone makes the
-state reachable. The third is not a weakened half of anything: on its own it makes the state
-reachable on newly created rows.
+state reachable. The third is not a weakened half of anything, but it is narrower than an earlier
+revision of this section claimed: a registry change alone makes the state reachable on newly created
+rows for three of the ten gates, and for the other seven only in conjunction with a schema change.
 
 **Only two of the three carry a reviewer, and an earlier revision said all three did.** A ruleset
 publication that widens an expression is a rule-semantics change and a contract change that creates
 a nullable gate is an Event Input/rules-schema change, so both land on §6's table and reach the same
-reviewers who would have to weigh this document. Row acquisition does not. Ordinary
+reviewers who would have to weigh this document; where the third trigger also needs the column
+relaxed, the migration adds the database owner on top, which is the same row the ruleset alternative
+lands on. Row acquisition does not. Ordinary
 `POST /api/events` traffic creates rows, and no §6 row governs a deployment receiving traffic it was
 built to receive; nobody reviews anything when the first real row lands. So the second trigger can
 fire with nobody noticing that it fired, and treating change approval as the mitigation for it is
@@ -394,22 +425,26 @@ which does not.
 ### 6b. Q2, the gate answered `"unknown"`
 
 **Also do not implement a change now, but on entirely different evidence, and the question is not
-closed.** Sections 3b, 3c and 3d measure Q2 and find:
+closed.** Section 2 summarises the three Q2 probes, whose harnesses were removed with the
+appendices. They find:
 
 - Q2 **is** reachable: the questionnaire offers `"unknown"` and the submission carries it (section
-  3d). Whether the row then stores it is source-traced through `validate.ts`, the `events` check
+  2). Whether the row then stores it is source-traced through `validate.ts`, the `events` check
   constraint and `events.ts`, not measured (section 2). Either way 6a's reason 1, which turns on a
   state no submission can express at all, does not apply to Q2.
-- The prototype in the appendix **does not address** Q2 at all, so 6a's reasons 2, 3 and 4, which
+- The prototype **does not address** Q2 at all, so 6a's reasons 2, 3 and 4, which
   are all statements about that prototype, do not apply to it either.
 - The silent-omission harm issue #108 describes **does not reproduce** on Q2: every requirement the
   scoping withholds is named in the branch table by its published label, on a plan the verdict marks
   CONDITIONAL.
-- That branch table **reaches the screen**. Section 3c runs `CASE_3` through the shipped
-  `VerdictDetailPanel` and reports what it renders: four rows, one per published `sapo_event_type`
+- That branch table **reaches the screen**. The render probe ran the Q2 case through the shipped
+  `VerdictDetailPanel` (section 2 names the renderer and the test that covers it) and reported four
+  rows, one per published `sapo_event_type`
   value, the four street-size permits named by their organizer labels in the `street event` row.
-  This is no longer an inference from engine output.
-- The organizer **can enter it**. Section 3d walks `CASE_3` through the shipped `IntakeForm`: with
+  This is no longer an inference from engine output, though re-deriving it means recovering the
+  harness from the archive branch.
+- The organizer **can enter it**. The questionnaire probe walked the same case through the shipped
+  `IntakeForm` (section 2): with
   `obstructs_public_way: "yes"` the `sapo_event_type` question appears, all five registry values are
   offered, `"unknown"` is labelled "I don't know", the lede says it is stored as unknown and carried
   into the plan, and the submission sends `"unknown"` verbatim. So Q2 is not a state only the API can
@@ -461,9 +496,9 @@ Under `docs/DOCUMENTATION-GOVERNANCE.md` §5 and §6:
 | Do nothing (this recommendation)          | none                                                                                                                                                                                                                                                                                                                                                                                                                                 | none; the issue stays open                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
 
 **The `F-201:48` question is a prerequisite, not a detail, and an earlier revision of this table got
-that wrong by listing only the two owners.** Section 8 item 1 says the brief cannot determine
+that wrong by listing only the two owners.** Section 7 item 1 says the brief cannot determine
 whether the approved sentence at `specs/F-201-permit-plan-generator.md:48` ("a field never asked is
-not a material unknown") forbids the tri-state behaviour. Section 6 gives a reading on which it does
+not a material unknown") forbids the tri-state behaviour. Section 5 gives a reading on which it does
 not, and says the engine owner should be the one to rule; that is still my reading and it is not a
 resolution. Governance §1 makes an approved `specs/F-xxx-*.md` authoritative for scheduled feature
 behaviour, and `AGENTS.md:15` and governance §5 say what happens when an artifact in that position
@@ -482,7 +517,7 @@ architecture boundary at `docs/ARCHITECTURE.md:83`.** That line, in an APPROVED 
 "Unknown-capable active fields use explicit `unknown` values, never NULL-as-unknown." Attempt B does
 the opposite. Its whole mechanism is to read a raw NULL on an in-scope gate as making the gate's
 dependents materially unknown (`blockersFor` in the prototype records a blocker exactly when the raw
-value is `undefined` or `null`), and the gate it does this to in `CASE_1` is
+value is `undefined` or `null`), and the gate it does this to in the street-event case of section 2 is
 `obstructs_public_way`, which is one of the unknown-capable fields that sentence is about: it
 publishes `yes`/`no`/`unknown` and `ARCHITECTURE.md:83` says its unknown is the explicit value, not
 the NULL. So the semantics attempt B measures and the technical boundary the architecture document
@@ -527,15 +562,15 @@ holds none of the approvals in the table above and implements nothing.
 
 Stated plainly rather than left as silence:
 
-1. **Whether the engine owner reads `F-201:48` as forbidding the change.** Section 6 gives my reading
+1. **Whether the engine owner reads `F-201:48` as forbidding the change.** Section 5 gives my reading
    and the reason for it. It is a spec-interpretation call and it is theirs, not mine. Because
    `F-201` is approved and authoritative for scheduled feature behaviour (governance §1), §5 makes
-   resolving it the first step rather than a parallel one, and section 7's approvals table states it
+   resolving it the first step rather than a parallel one, and section 6's approvals table states it
    as a prerequisite to any implementation approval.
-2. **Whether the questionnaire should follow the engine into three-state.** Section 7a item 4. This
+2. **Whether the questionnaire should follow the engine into three-state.** Section 6a item 4. This
    is a product and UX decision as much as an engine one, and no artifact in the repo answers it.
-   Until it is answered, `visibility.ts` stays in scope for any Q1 implementation and the +61/-5
-   two-file figure below is a lower bound.
+   Until it is answered, `visibility.ts` stays in scope for any Q1 implementation and attempt B's
+   two-file diff is a lower bound on implementation size.
 3. **The ruleset alternative's answer-key impact.** Unmeasured here and unmeasured in the earlier
    document. Measuring it requires converting 132 fixture literals first, because `readFieldValue`
    rejects a boolean for an enum field, so every scenario fails validation before any answer key is
@@ -546,14 +581,15 @@ Stated plainly rather than left as silence:
    nothing else; a future ruleset introducing disjunction or negation at the expression level would
    need the same analysis redone. Second, and nearer to hand: no run in this document omits
    `structure_types`, the only multi-enum among the ten gates, so attempt B has never been measured
-   with a multi-enum as the blocking gate. Section 3 traces through the source why that path looks
-   unsafe (scalar branch candidates meeting `contains` conditions) and records that neither the
-   failure nor its absence has been reproduced. Until it is, the 1569/1569 and +61/-5 figures are
-   claims about the measured inputs, not about a correct implementation.
+   with a multi-enum as the blocking gate. The source trace of why that path looks unsafe (scalar
+   branch candidates meeting `contains` conditions) went with the appendices and is not reproduced
+   here; what stands is that neither the failure nor its absence has been reproduced. Until it is,
+   the 1569/1569 result and the diff-size figure are claims about the measured inputs, not about a
+   correct implementation.
 5. **Whether any state, migration or fixture in a lane I did not run could reach the unanswered
    state.** I ran the full 1569-test suite against a live database, which covers every suite in the
    repo. I did not audit the seed or demo tooling.
-6. **Whether Q2's branch-table presentation is adequate** (sections 3b, 3c and 3d). Three points on
+6. **Whether Q2's branch-table presentation is adequate** (section 2, section 6b). Three points on
    the path are measured: the questionnaire asks `sapo_event_type` and offers `"unknown"` as "I
    don't know", the engine scopes the four dependents out on that value, and `VerdictDetailPanel`
    renders the four street permits on screen by their published labels. What remains undetermined
@@ -561,15 +597,16 @@ Stated plainly rather than left as silence:
    the plan lines as `may_be_required` findings, and that is a product and engine-owner call rather
    than a measurement.
 7. **Whether the Q2 path holds together end to end when actually run.** Separate from item 6 and
-   settleable by measurement, which item 6 is not. A5 fakes `fetch`, A3 calls `evaluate` directly
-   and A4 renders a plan object in isolation, so the API validation, the `events` insert, plan
+   settleable by measurement, which item 6 is not. The questionnaire probe fakes `fetch`, the engine
+   probe calls `evaluate` directly and the render probe renders a plan object in isolation (all three
+   harnesses went with the appendices), so the API validation, the `events` insert, plan
    generation from the stored row and retrieval back into the page are read from source and not
    exercised (section 2). Nothing in the source reading suggests they fail; nothing here shows they
    do not.
 8. **How `docs/ARCHITECTURE.md:83` and a NULL-as-materially-unknown semantics are to be
    reconciled.** The approved line says unknown-capable active fields use explicit `unknown` values
    and "never NULL-as-unknown"; attempt B derives material unknownness from a raw NULL on
-   `obstructs_public_way`, which is one of those fields. Section 7's approvals table carries the
+   `obstructs_public_way`, which is one of those fields. Section 6's approvals table carries the
    reconciliation as a §5 prerequisite ahead of the verification and engine-owner signatures. I did
    not resolve it, I do not have a preferred outcome on the record, and nothing here is an
    architecture approval.
