@@ -1988,66 +1988,21 @@ describe.skipIf(databaseUrl === "")("F-203 deadline alerts", () => {
         ]);
       });
 
-      it("leaves an upgrade's locally-unconfigured failures out of the backfill", async () => {
-        // WHAT THE SEED IS ALLOWED TO ASSUME, and this row breaks the assumption. The backfill
-        // reads `failed` as proof that a provider was handed something, which is true of every
-        // failure that reached one. It is not true of a database that ran without RESEND_API_KEY
-        // or SMTP_FROM: `unconfiguredEmailSender` throws inside this process, so those rows failed
-        // without any provider ever seeing the message. Seeding one gives it an unresolved
-        // `-infinity` attempt, and the hold predicate then stops it for good — so configuring the
-        // credentials later delivers nothing, which is the systematic non-delivery this whole
-        // mechanism exists to avoid. The row's own recorded error is the proof, so it is read.
-        const eventId = await createEvent(scenario("C"));
-        const unconfigured = await insertDueAlert(eventId, "no-credentials@example.test", 30, {
-          status: "failed",
-          lastError: await unconfiguredEmailSender()({
-            recipient: "no-credentials@example.test",
-            subject: "",
-            body: "",
-            idempotencyKey: "",
-          }).then(
-            () => "",
-            (error: Error) => error.message,
-          ),
-        });
-        const reachedAProvider = await insertDueAlert(eventId, "provider@example.test", 30, {
-          status: "failed",
-          lastError: "email provider did not respond within 10000ms",
-        });
-
-        await seedLegacyAttempts();
-
-        expect(await attemptsOf(unconfigured)).toEqual([]);
-        expect(await attemptsOf(reachedAProvider)).toHaveLength(1);
-
-        // And the alert goes out the moment credentials exist, rather than being held forever.
-        const provider = fakeProvider();
-        await createAlertPoller({
-          database: pool,
-          senders: provider.senders,
-          jurisdiction: ruleset.jurisdiction,
-        }).tick();
-
-        expect(provider.delivered.map((message) => message.recipient)).toContain(
-          "no-credentials@example.test",
-        );
-      });
-
-      it("backfills a row whose earlier attempt is hidden behind a local last error", async () => {
-        // WHAT `last_error` IS AND IS NOT EVIDENCE OF. It is the LATEST failure, overwritten by
-        // every attempt, so reading it as a statement about the row's whole history is the one
-        // thing it cannot support. The history that matters here is ordinary: an alert reached
-        // Resend, the process died before the COMMIT, and a later retry ran in a deployment whose
-        // credentials had gone — so the only error the row still carries is the local one, while
-        // the provider outcome of the earlier attempt remains unknown to this day. Skipped on that
-        // evidence, the upgrade starts blind to precisely the crash history the table exists for,
-        // and the first retry after credentials return is a second delivery to a real person.
+      it("backfills a single local failure, whose count cannot rule out a crashed attempt", async () => {
+        // WHY `failure_count` IS NOT THE SEPARATOR EITHER. The count is incremented by the same
+        // transaction that marks the row failed, so the crash this table exists for takes the
+        // increment down with it: a send that reached Resend and lost its COMMIT leaves the count
+        // exactly where it was. A later unconfigured-sender failure then writes count 1 with the
+        // local error, and that row is byte-identical to one that was only ever tried locally.
+        // Reading count 1 as proof of a single local attempt skips the backfill on the strength of
+        // a number the crash erased, and restoring credentials after the provider's dedup window
+        // sends the organizer the deadline alert a second time.
         //
-        // `failure_count` is what separates the two populations, and it is already on the row
-        // (migration 008). One recorded failure whose error is the local one is a row that has
-        // been attempted exactly once, locally: nothing reached a provider and there is nothing to
-        // hold. More than one, and the earlier attempts are unaccounted for, which is the
-        // ambiguity this seed exists to preserve.
+        // WHAT THIS ROW COSTS THE OTHER WAY, because it is the same row a credential-less
+        // deployment produces in bulk and it is now held rather than delivered. Nothing on
+        // `alerts` can separate the two histories, so the seed takes the reading whose failure is
+        // recoverable: a hold is cleared by a person checking the provider for the key, while a
+        // second deadline alert at a real organizer is not recoverable at all.
         const eventId = await createEvent(scenario("C"));
         const localError = await unconfiguredEmailSender()({
           recipient: "no-credentials@example.test",
@@ -2058,33 +2013,28 @@ describe.skipIf(databaseUrl === "")("F-203 deadline alerts", () => {
           () => "",
           (error: Error) => error.message,
         );
-        const onlyEverLocal = await insertDueAlert(eventId, "local-only@example.test", 30, {
+        const crashedThenLocal = await insertDueAlert(eventId, "crash-window@example.test", 30, {
           status: "failed",
           lastError: localError,
+          failureCount: 1,
         });
-        const localAfterAProviderAttempt = await insertDueAlert(
-          eventId,
-          "crashed-then-local@example.test",
-          30,
-          { status: "failed", lastError: localError, failureCount: 2 },
-        );
 
         await seedLegacyAttempts();
 
-        expect(await attemptsOf(onlyEverLocal)).toEqual([]);
-        expect(await attemptsOf(localAfterAProviderAttempt)).toHaveLength(1);
+        expect(await attemptsOf(crashedThenLocal)).toHaveLength(1);
 
-        // And the held row stays held rather than being retried blind once credentials return.
+        // And it is held rather than retried blind once the credentials come back.
         const provider = fakeProvider();
-        await createAlertPoller({
+        const summary = await createAlertPoller({
           database: pool,
           senders: provider.senders,
           jurisdiction: ruleset.jurisdiction,
         }).tick();
 
-        const delivered = provider.delivered.map((message) => message.recipient);
-        expect(delivered).toContain("local-only@example.test");
-        expect(delivered).not.toContain("crashed-then-local@example.test");
+        expect(provider.delivered.map((message) => message.recipient)).not.toContain(
+          "crash-window@example.test",
+        );
+        expect(summary.heldForReconciliation).toBe(1);
       });
 
       it("records no provider attempt for an email channel with no credentials", async () => {
@@ -5608,33 +5558,6 @@ describe("the day an alert is sent on", () => {
 });
 
 // The delivery adapters need no database: they are the seam between the poller and a provider.
-describe("migration 014's backfill exclusions", () => {
-  it("excludes exactly the error the unconfigured email sender records", async () => {
-    // THE DRIFT GUARD FOR A LITERAL THAT CANNOT BE IMPORTED. A merged migration has to keep
-    // meaning what it meant on the day it ran, so it carries the text rather than a reference to
-    // a constant a later PR could reword. This is what stops the two silently parting company:
-    // reword the sender and the backfill starts seeding rows it was written to skip.
-    const sql = vi.fn();
-    migration014({
-      sql,
-      createTable: vi.fn(),
-      createIndex: vi.fn(),
-      func: vi.fn(),
-    } as unknown as MigrationBuilder);
-    const recorded = await unconfiguredEmailSender()({
-      recipient: "organizer@example.test",
-      subject: "",
-      body: "",
-      idempotencyKey: "",
-    }).then(
-      () => "",
-      (error: Error) => error.message,
-    );
-
-    expect(String(sql.mock.calls[0]?.[0])).toContain(`= $$${recorded}$$`);
-  });
-});
-
 describe("F-203 delivery channels (AC 5)", () => {
   const message: AlertMessage = {
     recipient: "organizer@example.test",

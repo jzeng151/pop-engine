@@ -81,27 +81,26 @@ export function up(pgm: MigrationBuilder): void {
   // send is an operator action against no deadline, and a hold on one is an operational warning
   // about a message no organizer was waiting for.
   //
-  // AND SO ARE THE FAILURES THAT NEVER REACHED ANYBODY, which is the one place `failed` is not
-  // proof of a provider handoff. A database that ran without RESEND_API_KEY or SMTP_FROM failed
-  // its email alerts inside the process: `unconfiguredEmailSender` throws before a socket is
-  // opened, so no provider can be holding those messages and no retry of one can be a second
-  // delivery. Seeding them would hold every such row permanently, and the whole point of failing
-  // that way rather than simulating a send is that adding the credentials later delivers the
-  // alert. The row's own recorded error is the only evidence of why it failed, so it is what is
-  // read. The literal is repeated here rather than imported because a merged migration must keep
-  // meaning what it meant on the day it ran; `alerts.test.ts` pins it against the live sender.
+  // A LOCAL FAILURE IS NOT EXEMPTED, and that is a decision this predicate reached by running out
+  // of evidence rather than by preferring the hold. A database that ran without RESEND_API_KEY or
+  // SMTP_FROM failed its email alerts inside the process: `unconfiguredEmailSender` throws before
+  // a socket is opened, so THAT failure reached no provider. What the row cannot say is whether an
+  // EARLIER send did. `last_error` is the latest failure and is overwritten by every attempt.
+  // `failure_count` (migration 008) is incremented by the same transaction that marks the row
+  // failed, so the crash this table exists for takes the increment down with it: a send that
+  // reached Resend and lost its COMMIT leaves the count exactly where it was, and a later
+  // unconfigured failure then records count 1 with the local error — indistinguishable from a row
+  // that was only ever tried locally. No other column carries attempt history at all; that is why
+  // this table is being created. So nothing on an `alerts` row can prove a provider was never
+  // reached, and a predicate that skipped on count 1 would be reading a number a crash erased.
   //
-  // ONE FAILURE, THOUGH, AND NOT MERELY THIS ERROR. `last_error` is the LATEST failure and is
-  // overwritten by every attempt, so it says nothing whatever about the ones before it. A row that
-  // reached Resend, lost its COMMIT to a crash, and was then retried in a deployment whose
-  // credentials had gone carries this exact local message while the earlier provider outcome
-  // stays unknown — the ambiguous history this whole table exists for, skipped on the strength of
-  // an error that postdates it. `failure_count` (migration 008) is the column that can tell the
-  // two apart: exactly one recorded failure, and the error on the row is that failure, so nothing
-  // ever reached a provider. More than one, and the earlier attempts are unaccounted for, so the
-  // row is seeded and the uncertainty is preserved. A legacy row that predates 008 counts zero,
-  // which is not one, so it is seeded too — that is the same conservative reading, since a row
-  // whose attempt history is unrecorded is the definition of ambiguous here.
+  // WHICH WAY THE UNPROVABLE CASE FALLS. Seeding these rows costs a credential-less deployment a
+  // reconciliation hold per failed email alert, cleared the way any hold is cleared: a person
+  // checks the provider for the key and then marks the alert sent or clears the attempt. Skipping
+  // them costs a duplicate deadline alert to an organizer, sent once the credentials return after
+  // the provider's dedup window, with no way back. Operator work against a message a real person
+  // receives twice is not a close trade, and F-203 already refuses the mirror image of it where
+  // `alerts.ts` refuses to hold a row by age. Seeded, therefore, and the uncertainty preserved.
   //
   // `-infinity` RATHER THAN A DATE, because the attempt time is not merely unknown, it is
   // unknowable from anything on the row — nothing recorded when the last attempt happened. Any
@@ -118,9 +117,7 @@ export function up(pgm: MigrationBuilder): void {
              FROM alerts
             WHERE status = 'failed'
               AND channel = 'email'
-              AND coalesce(payload->>'test', 'false') <> 'true'
-              AND NOT (failure_count = 1
-                       AND coalesce(payload->>'last_error', '') = $$RESEND_API_KEY and SMTP_FROM are not configured; email alerts stay pending until they are$$)`);
+              AND coalesce(payload->>'test', 'false') <> 'true'`);
 }
 
 export function down(pgm: MigrationBuilder): void {
