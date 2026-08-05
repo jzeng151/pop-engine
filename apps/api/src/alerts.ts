@@ -517,7 +517,7 @@ export const SEND_BOUNDARY_MARGIN_MS = PROVIDER_TIMEOUT_MS + SEND_BOUNDARY_HANDO
  * before ANY tick can retry it — an attempt left unresolved in the last minutes of the filing date
  * — is cancelled by the next tick and nothing is delivered. No bound saves that row, because there
  * is no moment left to send it in. Whether PopEngine should say anything after a filing date has
- * gone is a product question and not this file's to answer; `docs/OPEN-QUESTIONS.md` T-7 carries it,
+ * gone is a product question and not this file's to answer; `docs/OPEN-QUESTIONS.md` T-10 carries it,
  * and the approved behaviour (a shut window is retired, not announced) stands until it is answered.
  *
  * A BACKFILLED `-infinity` IS PAST EVERY LIMIT, and that is the right reading of it rather than an
