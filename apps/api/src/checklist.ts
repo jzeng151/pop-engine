@@ -32,7 +32,7 @@ import type {
 } from "@pop-engine/engine";
 import {
   alertContacts,
-  failedDeliveries,
+  alertDeliveryHealth,
   parseContacts,
   simulatedDeliveries,
   type AlertScheduler,
@@ -146,6 +146,14 @@ export type ChecklistDependencies = {
    * than optional for the same reason — an absent scheduler would schedule nothing, quietly.
    */
   scheduleAlerts: AlertScheduler;
+  /**
+   * F-203. The checklist reports which alerts the poller has stopped on, and that classification
+   * turns on whether a filing window has shut, a question about the jurisdiction's calendar day,
+   * which is the day `sendOne` reads when it retires the same row. Named here rather than derived,
+   * for the reason the poller states: there is no honest default, and a wrong one classifies holds
+   * on the wrong day.
+   */
+  jurisdiction: string;
 };
 
 type Queryable = {
@@ -543,7 +551,20 @@ async function acknowledgedPlanId(database: Queryable, eventId: string): Promise
   return rows[0]?.plan_id ?? null;
 }
 
-async function checklistView(database: Queryable, eventId: string, plan: LatestPlan) {
+async function checklistView(
+  database: Queryable,
+  eventId: string,
+  plan: LatestPlan,
+  /**
+   * The jurisdiction whose calendar day the health statement classifies holds against.
+   *
+   * The zone rather than a day, and not a clock either: the reads above this one take real time,
+   * a review holds them inside one transaction, and the statement below is issued after all of
+   * them. A day derived anywhere in this process is an answer about a moment before the statement
+   * runs. `alertDeliveryHealth` derives it where the predicate reads it instead.
+   */
+  jurisdiction: string,
+) {
   const items = await checklistRows(database, eventId);
   const struck = await struckChecklistItemIds(database, eventId, plan.id, items);
   const latestItems = await planItems(database, plan.id);
@@ -612,6 +633,11 @@ async function checklistView(database: Queryable, eventId: string, plan: LatestP
   // is offered creation instead (AC 6 flags an existing checklist).
   const acknowledged = await acknowledgedPlanId(database, eventId);
   const planChanged = acknowledged !== null && acknowledged !== plan.id;
+  // F-203: both alert-delivery notices from ONE snapshot. Read separately they were two pool
+  // queries with real time between them, and the hold predicate turns on how old an attempt is —
+  // so a row crossing the dedup cutoff in the gap arrived under both notices at once, one saying
+  // PopEngine keeps retrying it and the other saying retrying has stopped.
+  const alertHealth = await alertDeliveryHealth(database, eventId, jurisdiction);
 
   return {
     eventId,
@@ -642,7 +668,13 @@ async function checklistView(database: Queryable, eventId: string, plan: LatestP
     // F-203: channels whose alerts tried to send and did not, counted from the rows rather than
     // inferred. Kept separate from the simulation above on purpose — "switched off by design" and
     // "tried and failed" are different facts, and collapsing them would misreport both.
-    failedAlertDeliveries: await failedDeliveries(database, eventId),
+    failedAlertDeliveries: alertHealth.failedDeliveries,
+    // F-203: alerts the poller has permanently stopped on, kept apart from the failures above for
+    // the same reason those are kept apart from the simulation. "Still being retried" and "stopped
+    // until a person checks with the provider" are different facts, and the organizer needs the
+    // second one most: nothing else on this page distinguishes an alert that is on its way from
+    // one that is never coming.
+    alertsHeldForReconciliation: alertHealth.reconciliationHolds,
     alertContacts: await alertContacts(database, eventId),
     items: view,
     // Advisories, notifications, prohibitions and notes: shown for context, not tracked.
@@ -889,7 +921,7 @@ async function metadataOutcome(
 }
 
 export function createChecklistRouter(dependencies: ChecklistDependencies): Router {
-  const { database, storage, scheduleAlerts } = dependencies;
+  const { database, storage, scheduleAlerts, jurisdiction } = dependencies;
   const router = Router();
 
   router.post(
@@ -974,7 +1006,7 @@ export function createChecklistRouter(dependencies: ChecklistDependencies): Rout
         // Read under the same row lock as everything above, so a regeneration committing mid
         // request lands either wholly before this comparison or wholly after it.
         if (displayedPlanId !== plan.id) {
-          const current = await checklistView(client, eventId, plan);
+          const current = await checklistView(client, eventId, plan, jurisdiction);
           await client.query("ROLLBACK");
           res.status(409).json({
             error: `plan ${displayedPlanId} is no longer the latest plan for event ${eventId}; nothing was recorded — review the current plan shown here and submit again`,
@@ -988,7 +1020,7 @@ export function createChecklistRouter(dependencies: ChecklistDependencies): Rout
         // inside the same transaction, so the checklist and its alerts commit together (AC 7: a
         // regeneration reviewed here is also where pending alerts are recomputed).
         const alerts = await scheduleAlerts(client, eventId, plan.id, parsed.contacts);
-        const view = await checklistView(client, eventId, plan);
+        const view = await checklistView(client, eventId, plan, jurisdiction);
         await client.query("COMMIT");
         // A second call creates nothing and returns the checklist that already exists.
         res.status(created > 0 ? 201 : 200).json({ ...view, alerts });
@@ -1011,7 +1043,7 @@ export function createChecklistRouter(dependencies: ChecklistDependencies): Rout
         notFound(res, `no plan generated for event ${eventId}`);
         return;
       }
-      res.json(await checklistView(database, eventId, plan));
+      res.json(await checklistView(database, eventId, plan, jurisdiction));
     }),
   );
 

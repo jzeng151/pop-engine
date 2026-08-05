@@ -620,6 +620,10 @@ describe.runIf(databaseUrl.length > 0)("migration 001 and rules sync", () => {
     );
     expect(tables.rows.map(({ table_name }) => table_name)).toEqual(
       [
+        // F-203: that PopEngine was about to hand an alert to a provider, written before the
+        // handoff so a crash between provider-accept and COMMIT is not read as an alert nobody
+        // ever tried (migration 014).
+        "alert_send_attempts",
         "alerts",
         "checkins",
         "checklist_acknowledgements",

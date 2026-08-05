@@ -35,13 +35,43 @@ export type AlertDelivery = {
 
 /** A delivery that did not happen. The alert stays for a later tick; nothing is lost. */
 export class AlertDeliveryError extends Error {
-  constructor(message: string) {
+  /**
+   * Whether the provider actually told us what it did with the message.
+   *
+   * A refusal is an answer: the provider said what it did. A connection that was never established
+   * is as good as one, because nothing was handed over. Anything in between (a timeout, a socket
+   * that died mid-request) is not: the provider may have accepted the message and simply not said
+   * so. That distinction is what `alerts.ts` needs to decide whether a retry past the provider's
+   * dedup window would be a second delivery or a first one, so it is recorded rather than inferred
+   * from the message text.
+   *
+   * True by default: every throw site that knows nothing was delivered leaves it alone, and the
+   * transport path below, which is the one that cannot always tell, says so explicitly.
+   */
+  readonly outcomeObserved: boolean;
+
+  constructor(message: string, options: { readonly outcomeObserved?: boolean } = {}) {
     super(message);
     this.name = "AlertDeliveryError";
+    this.outcomeObserved = options.outcomeObserved ?? true;
   }
 }
 
-export type AlertSender = (message: AlertMessage) => Promise<AlertDelivery>;
+export type AlertSender = ((message: AlertMessage) => Promise<AlertDelivery>) & {
+  /**
+   * Whether this sender hands the message to a party outside this process.
+   *
+   * Read by `alerts.ts` to decide whether an attempt is worth recording at all. The record exists
+   * for one question — did a provider end up holding a message nobody here saw the outcome of —
+   * and a sender that reaches no provider can never produce that state, so recording an intent for
+   * one can only ever manufacture a hold on a message nothing sent.
+   *
+   * Absent means it does reach one, which is the conservative reading: an unmarked sender is
+   * treated as live, so the day a real SMS provider replaces the simulation it records intents
+   * without anyone remembering to say so.
+   */
+  readonly reachesAProvider?: boolean;
+};
 
 export type AlertSenders = Readonly<Record<AlertChannel, AlertSender>>;
 
@@ -56,6 +86,149 @@ export type AlertSenders = Readonly<Record<AlertChannel, AlertSender>>;
  * and the next tick retries it, which is the path the spec's provider-outage edge case describes.
  */
 export const PROVIDER_TIMEOUT_MS = 10_000;
+
+/**
+ * Transport failures that PROVE the request never reached the provider.
+ *
+ * THE MEMBERSHIP RULE, so the next code is added or rejected by the rule rather than by whether
+ * somebody has reported it yet: a code belongs here when EVERY path that can raise it lies before
+ * the first request byte is written: name resolution, connection establishment, or the TLS
+ * handshake. One path that can raise it after the body was written disqualifies the code, however
+ * rare that path is, because what this side learns is the code and the position it arrived in,
+ * nothing else. It is a rule about that pair, not about the outage: "in this outage nothing was
+ * sent" is not membership, because the next occurrence of the same code need not be that outage.
+ *
+ * THE POSITION IS PART OF THE PAIR, which is what `PROVEN_INSIDE_A_CONNECT_ATTEMPT` below is for.
+ * A code that arrives as a child of the connect aggregate is reporting ONE ADDRESS'S CONNECTION
+ * ATTEMPT and can report nothing else, so for such a child the rule's question is only whether
+ * every path that raises it DURING A CONNECTION ATTEMPT precedes the first request byte, which is
+ * all of them, since the attempt is what failed. The same code at the top of the chain is a
+ * different pair and is judged by the paragraph above, which still rejects it. A code proven only
+ * in that position goes in the second set, never in this one.
+ *
+ * The asymmetry is deliberate and is why the rule demands proof rather than likelihood. A code
+ * wrongly left out costs retries through an outage, which is the spec's edge case working. A code
+ * wrongly let in closes the attempt, and a closed attempt is retried past the provider's 24-hour
+ * dedup window, which is the second delivery the attempt record exists to prevent.
+ *
+ * EVALUATED AND REJECTED by that rule, recorded so they are not re-derived one report at a time:
+ *   - `ECONNRESET`, `ETIMEDOUT`, `UND_ERR_SOCKET`: each can arrive while connecting AND after the
+ *     request body was written and accepted. The code cannot say which happened. (`ECONNRESET` was
+ *     excluded on this ground in an earlier round and stays excluded. `ETIMEDOUT` is rejected HERE
+ *     and admitted as a connect-aggregate child by the set below; that is the position rule
+ *     working, not an exception to it.)
+ *   - `UND_ERR_HEADERS_TIMEOUT`, `UND_ERR_BODY_TIMEOUT`, `UND_ERR_RES_CONTENT_LENGTH_MISMATCH`,
+ *     `UND_ERR_RES_EXCEEDED_MAX_SIZE`, `UND_ERR_REQUEST_RETRY`, `UND_ERR_RESPONSE`,
+ *     `UND_ERR_HEADERS_OVERFLOW`, `HPE_*`: the request was fully written; the provider may be
+ *     holding it.
+ *   - `UND_ERR_REQ_CONTENT_LENGTH_MISMATCH`: detected while writing the request body, so bytes
+ *     were already on the socket.
+ *   - `UND_ERR_ABORT`, `UND_ERR_ABORTED`, `UND_ERR_DESTROYED`, `UND_ERR_CLOSED`, `UND_ERR_INFO`,
+ *     `UND_ERR_SOCKS5`, `UND_ERR`: one code for a whole lifecycle or subsystem rather than one
+ *     phase of it, so no path guarantee can be made. This side's own ten-second abort lands here.
+ *   - `UND_ERR_INVALID_ARG`, `UND_ERR_NOT_SUPPORTED`, `UND_ERR_INVALID_RETURN_VALUE`,
+ *     `UND_ERR_BPL_MISSING_UPSTREAM`, `UND_ERR_MAX_ORIGINS_REACHED`, `UND_ERR_WS_*`: not transport
+ *     failures of this request at all. They would be a bug or a misconfiguration here, and a
+ *     retry classification is not the answer to either.
+ */
+const PROVEN_BEFORE_HANDOFF = new Set([
+  // Name resolution and connection establishment: no socket was ever established, so no request
+  // bytes existed to reach Resend.
+  "ENOTFOUND",
+  "EAI_AGAIN",
+  "ECONNREFUSED",
+  "ENETUNREACH",
+  "EHOSTUNREACH",
+  // Undici's own connection-establishment failures, which is the class Node's `fetch` reports
+  // instead of an errno. `UND_ERR_CONNECT_TIMEOUT` is raised by the connect timer, which is
+  // cancelled the moment the socket is usable, so it can only fire with no socket to write to;
+  // `UND_ERR_PRX_TLS` is the TLS connection TO a proxy failing, before the tunnel that would carry
+  // the request exists (reachable whenever a proxy dispatcher is in play, NODE_USE_ENV_PROXY
+  // included). Added 2026-08-04: a connect timeout outage lasting past the dedup window held every
+  // alert behind it for good, though nothing had ever been handed over.
+  "UND_ERR_CONNECT_TIMEOUT",
+  "UND_ERR_PRX_TLS",
+  // TLS handshake failures. The handshake completes before any HTTP byte is written, so a
+  // certificate this side refuses means the request was never sent. Added 2026-08-03: leaving
+  // them unproven meant a certificate outage lasting past the dedup window permanently held every
+  // alert behind it, even though no duplicate was ever possible.
+  "ERR_TLS_CERT_ALTNAME_INVALID",
+  // THE WHOLE OF NODE'S CHAIN-VERIFICATION TABLE, listed rather than sampled, which is the third
+  // round this set has been corrected in and the reason it is now closed. A verdict on the peer's
+  // certificate chain is produced by one thing, OpenSSL building and checking the chain, and
+  // Node's client asks for it in one place, at `secureConnect`, before undici writes a request
+  // byte; a client never re-asks on renegotiation. So the rule's question has the same answer for
+  // every member of the table, and adding whichever one somebody reproduced last left the rest to
+  // hold their alerts for the same reason the reported one did. The names below are Node's own
+  // `X509ErrorCode` mapping (v24.18.1), which is what arrives as `code` on the cause chain.
+  //
+  // `UNSPECIFIED`, the table's remaining entry, is REJECTED: it is what Node reports for a verify
+  // error the mapping does not name, so it identifies no failure and names no phase, which is the
+  // ground `UND_ERR` and `UND_ERR_INFO` were rejected on above.
+  "UNABLE_TO_GET_ISSUER_CERT",
+  "UNABLE_TO_GET_ISSUER_CERT_LOCALLY",
+  "UNABLE_TO_GET_CRL",
+  "UNABLE_TO_DECRYPT_CERT_SIGNATURE",
+  "UNABLE_TO_DECRYPT_CRL_SIGNATURE",
+  "UNABLE_TO_DECODE_ISSUER_PUBLIC_KEY",
+  "CERT_SIGNATURE_FAILURE",
+  "CRL_SIGNATURE_FAILURE",
+  "CERT_NOT_YET_VALID",
+  "CERT_HAS_EXPIRED",
+  "CRL_NOT_YET_VALID",
+  "CRL_HAS_EXPIRED",
+  "ERROR_IN_CERT_NOT_BEFORE_FIELD",
+  "ERROR_IN_CERT_NOT_AFTER_FIELD",
+  "ERROR_IN_CRL_LAST_UPDATE_FIELD",
+  "ERROR_IN_CRL_NEXT_UPDATE_FIELD",
+  "OUT_OF_MEM",
+  "DEPTH_ZERO_SELF_SIGNED_CERT",
+  "SELF_SIGNED_CERT_IN_CHAIN",
+  "UNABLE_TO_VERIFY_LEAF_SIGNATURE",
+  "CERT_CHAIN_TOO_LONG",
+  "CERT_REVOKED",
+  "INVALID_CA",
+  "PATH_LENGTH_EXCEEDED",
+  "INVALID_PURPOSE",
+  "CERT_UNTRUSTED",
+  "CERT_REJECTED",
+  "HOSTNAME_MISMATCH",
+]);
+
+/**
+ * Codes proven before the handoff ONLY as a child of the connect aggregate.
+ *
+ * `ETIMEDOUT` is ambiguous on its own: a socket already carrying the request can go quiet and
+ * report it. Inside the aggregate it cannot be that, because each child IS one address's
+ * connection attempt and no socket usable for an HTTP write ever came out of it. Added 2026-08-04:
+ * an outage in which every address timed out left each attempt open, and the alert was then held
+ * for a person permanently once the oldest aged past the dedup window, though nothing was sent.
+ */
+const PROVEN_INSIDE_A_CONNECT_ATTEMPT = new Set(["ETIMEDOUT"]);
+
+/** `fetch` wraps a transport failure, so the errno naming it sits on the cause chain. */
+function failedBeforeHandoff(error: unknown, insideAConnectAttempt = false): boolean {
+  for (let link: unknown = error; link instanceof Error; link = link.cause) {
+    // A dual-stack connect fails with one error PER ADDRESS TRIED, and Node copies only the first
+    // attempt's code onto the aggregate. Reading that code alone judges the whole connect by
+    // whichever address happened to be tried first, in both directions: it can claim proof the
+    // other attempts do not support, and it can hide proof they do. So every attempt is read, and
+    // one this side cannot account for leaves the attempt open.
+    // Each child is read AS a connection attempt, which is the context the aggregate carries and
+    // the code alone loses: `ETIMEDOUT` here is a connect that never came up, and the same code on
+    // its own is not.
+    if (link instanceof AggregateError) {
+      return (
+        link.errors.length > 0 && link.errors.every((cause) => failedBeforeHandoff(cause, true))
+      );
+    }
+    const { code } = link as { code?: unknown };
+    if (typeof code !== "string") continue;
+    if (PROVEN_BEFORE_HANDOFF.has(code)) return true;
+    if (insideAConnectAttempt && PROVEN_INSIDE_A_CONNECT_ATTEMPT.has(code)) return true;
+  }
+  return false;
+}
 
 /**
  * Email via Resend's HTTP API (BASELINE.md provider baseline; live in the demo).
@@ -102,6 +275,9 @@ export function createResendEmailSender(settings: {
         timedOut
           ? `email provider did not respond within ${timeoutMs}ms`
           : `email provider unreachable: ${error instanceof Error ? error.message : "unknown error"}`,
+        // Resolved only for a failure that proves the request never left. A timeout does not, and
+        // neither does a connection that died after the body was written.
+        { outcomeObserved: failedBeforeHandoff(error) },
       );
     }
     // THE BODY IS RELEASED ON BOTH PATHS, and the throwing one is why this is a comment rather
@@ -114,10 +290,19 @@ export function createResendEmailSender(settings: {
     // Cancelled rather than read, because nothing here wants the contents. The provider's body can
     // echo the recipient, which is contact data (AGENTS.md "do not log unredacted contact data"),
     // so the rejection carries the status and nothing else.
-    await response.body?.cancel();
+    //
+    // Releasing the body must not be able to overrule what the provider already said. A rejected
+    // `cancel()` used to propagate as an ordinary error, which reports the outcome as UNOBSERVED —
+    // so a teardown that kept failing until the oldest attempt aged past the dedup window held the
+    // alert permanently, after a definitive response including a 2xx. The status is the outcome;
+    // this is socket hygiene, and a failure at it is neither the organizer's problem nor evidence
+    // about delivery.
+    await response.body?.cancel().catch(() => undefined);
     if (!response.ok) {
       throw new AlertDeliveryError(
         `email provider rejected the send with status ${response.status}`,
+        // The provider answered. Whatever that answer was, this side observed it.
+        { outcomeObserved: true },
       );
     }
     return { simulated: false, label: null, provider: "resend" };
@@ -132,12 +317,19 @@ export function createResendEmailSender(settings: {
  * (AGENTS.md "do not claim completion while a mock is present"). Failing leaves the alert pending
  * for a later tick, so configuring the key later delivers it rather than losing it.
  */
+export const UNCONFIGURED_EMAIL_ERROR =
+  "RESEND_API_KEY and SMTP_FROM are not configured; email alerts stay pending until they are";
+
 export function unconfiguredEmailSender(): AlertSender {
-  return async () => {
-    throw new AlertDeliveryError(
-      "RESEND_API_KEY and SMTP_FROM are not configured; email alerts stay pending until they are",
-    );
+  const send: AlertSender = async () => {
+    throw new AlertDeliveryError(UNCONFIGURED_EMAIL_ERROR);
   };
+  // NO PROVIDER, for the same reason the SMS simulation carries this: the throw above happens
+  // before a socket is opened, so nothing outside this process can be holding the message. Without
+  // the marker an intent is written before the sender runs, and a crash after that insert and
+  // before the outcome update commits leaves it unresolved forever — which ages into a hold and
+  // keeps the alert out of every poll, so configuring the credentials later delivers nothing.
+  return Object.assign(send, { reachesAProvider: false });
 }
 
 /**
@@ -159,10 +351,11 @@ export const SIMULATED_SMS_LABEL =
  * `SIMULATED_SMS_LABEL` on the alert. Nothing presents it as a delivered message.
  */
 export function createSimulatedSmsSender(record?: (message: AlertMessage) => void): AlertSender {
-  return async (message) => {
+  const send: AlertSender = async (message) => {
     record?.(message);
     return { simulated: true, label: SIMULATED_SMS_LABEL, provider: "simulated" };
   };
+  return Object.assign(send, { reachesAProvider: false });
 }
 
 /**

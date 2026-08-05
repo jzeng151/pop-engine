@@ -98,12 +98,17 @@ if (verifyAccessToken === null) {
   );
 }
 
-createApp({
+const server = createApp({
   database: pool,
   intakeContract: parseIntakeContract(ruleset.document),
   today,
   planService,
-  checklist: { database: pool, storage: documentStorage, scheduleAlerts },
+  checklist: {
+    database: pool,
+    storage: documentStorage,
+    scheduleAlerts,
+    jurisdiction: engineRuleset.jurisdiction,
+  },
   alerts: { jurisdiction: engineRuleset.jurisdiction, database: pool, senders },
   rulesMeta: { rulesetVersion: ruleset.rulesetVersion, snapshotDate: ruleset.snapshotDate },
   ...(verifyAccessToken ? { verifyAccessToken } : {}),
@@ -112,3 +117,69 @@ createApp({
   // In-process, in the long-lived api (AD-1/AD-4): no queue, no second service.
   alertPoller.start();
 });
+
+// THE DRAIN DEPLOY.md'S RELEASE ORDER ASKS FOR, FROM THE ROLLOUT AFTER THIS ONE. The runbook has
+// the deployer stop the running api before the next build applies migration 014, because a send
+// from a build that predates `alert_send_attempts` writes no attempt row and the backfill is a
+// point-in-time sweep that cannot reach it. Stopping is also the moment most likely to produce such
+// a send: killed between the provider accepting and the row's transaction committing, the alert
+// stays `pending`, the backfill seeds only `failed` rows, and the new poller reads it as never
+// attempted and can deliver it a second time once the provider's dedup window has closed.
+//
+// WHICH THIS HANDLER CANNOT PREVENT ON THE RELEASE THAT INTRODUCES IT, and saying so is the point.
+// The process the runbook has stopped is running the PREVIOUS build. On this release that build
+// predates this handler, so it has no drain to perform and no line to print, and a step telling a
+// deployer to wait for one would be a step they believe they carried out. DEPLOY.md's release
+// order says so and names what covers that one window instead: the stranded send is retried by the
+// new poller under the same `Idempotency-Key`, which the provider deduplicates for 24 hours, so
+// the rollout has to finish inside them. From the next rollout on, the process being stopped is
+// one that ran this file, and this is what carries the instruction out.
+//
+// Stop taking new work, let the tick in flight finish recording what it did, and only then go.
+// Nothing here retries or forces anything: `stop()` settles because a send is bounded by the
+// provider timeout.
+//
+// SIGINT as well as SIGTERM: a host stopping the service sends SIGTERM and a local run sends
+// SIGINT, and an alert mid-send does not care which arrived.
+const drainThenExit = (signal: NodeJS.Signals): void => {
+  void (async () => {
+    console.log(`${signal} received; draining in-flight requests and the alert poller before exit`);
+    // AWAITED, BECAUSE `close()` ONLY STARTS THIS. It stops the listener taking new connections
+    // and then reports through its callback when the last request has been answered; returning
+    // from it says nothing about the requests already running. Ending the pools is not a stand-in
+    // for that wait either: a document upload spends its long phase inside `storage.put(...)`
+    // holding no database client, so both `end()` calls resolve while it is still going and the
+    // exit below takes the organizer's request with it, after the bytes were accepted and before
+    // the metadata was recorded.
+    //
+    // IDLE KEEP-ALIVE SOCKETS ARE CLOSED RATHER THAN WAITED ON. A browser holds its connection
+    // open between requests, and `close()` waits for every connection, so without this the drain
+    // would last as long as an idle tab rather than as long as the work. A connection with no
+    // request on it has nothing to lose by going.
+    //
+    // AND STARTED BEFORE THAT WAIT RATHER THAN AFTER IT, because the two are independent work and
+    // only one of them is urgent. Ordered after the drain, the poller kept its interval for as long
+    // as the slowest request took: still claiming alerts and still handing them to a provider after
+    // the host had asked the process to go. Host patience is finite, and what it eventually kills is
+    // one of those new sends mid-transaction — the accepted-but-unrecorded attempt this whole
+    // release exists to stop. `stop()` reaches the send in flight; nothing about it needs the HTTP
+    // side to be finished first, so it is started here and awaited alongside.
+    const pollerStopped = alertPoller.stop().then(() => {
+      // Said out loud, because "the poller stopped taking work" is the fact a deployer watching a
+      // long shutdown needs and the exit line below cannot give them: it comes after both.
+      console.log("alert poller stopped claiming alerts");
+    });
+    await Promise.all([
+      new Promise<void>((drained) => {
+        server.close(() => drained());
+        server.closeIdleConnections();
+      }),
+      pollerStopped,
+    ]);
+    await Promise.all([alertPool.end(), pool.end()]);
+    console.log("alert poller drained; exiting");
+    process.exit(0);
+  })();
+};
+process.once("SIGTERM", drainThenExit);
+process.once("SIGINT", drainThenExit);

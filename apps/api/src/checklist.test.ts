@@ -191,7 +191,7 @@ describe.runIf(databaseUrl.length > 0)("F-202 compliance checklist", () => {
       intakeContract,
       today: () => FIXTURE_TODAY,
       planService: createPlanService(pool, ruleset, fixtureCalendar, () => FIXTURE_TODAY),
-      checklist: { database: pool, storage, scheduleAlerts },
+      checklist: { database: pool, storage, scheduleAlerts, jurisdiction: ruleset.jurisdiction },
     });
 
   /** An event created through the intake endpoint, so it is exactly what F-101 would store. */
@@ -330,7 +330,7 @@ describe.runIf(databaseUrl.length > 0)("F-202 compliance checklist", () => {
         database: pool,
         intakeContract,
         today: () => FIXTURE_TODAY,
-        checklist: { database, storage, scheduleAlerts },
+        checklist: { database, storage, scheduleAlerts, jurisdiction: ruleset.jurisdiction },
       }),
     )
       .post(`/api/checklist-items/${checklistItemId}/documents`)
@@ -2334,7 +2334,12 @@ describe.runIf(databaseUrl.length > 0)("F-202 compliance checklist", () => {
           database: pool,
           intakeContract,
           today: () => FIXTURE_TODAY,
-          checklist: { database: failing, storage: stubborn, scheduleAlerts },
+          checklist: {
+            database: failing,
+            storage: stubborn,
+            scheduleAlerts,
+            jurisdiction: ruleset.jurisdiction,
+          },
         }),
       )
         .post(`/api/checklist-items/${body.items[0]?.id}/documents`)

@@ -129,6 +129,7 @@ export function failedDeliveryNotice(failure: {
   channel: string;
   failedCount: number;
   heldForReview?: boolean;
+  attemptedWithoutOutcome?: boolean;
 }): string {
   const name = CHANNEL_NAMES[failure.channel] ?? failure.channel;
   const alerts = failure.failedCount === 1 ? "alert" : "alerts";
@@ -144,11 +145,111 @@ export function failedDeliveryNotice(failure: {
   // Read from the plans the FAILED ROWS hang off, not from the latest plan, which is what
   // `planStale` describes. Between a regeneration and a review the latest plan is current while
   // these rows still point at the old revision and stay unclaimable.
-  return failure.heldForReview === true
-    ? `${lead} Retrying is paused because this event changed after their plan was made: ` +
-        `regenerate the plan and review the checklist to start it again.`
-    : `${lead} PopEngine keeps retrying them. If the ${name} address below is wrong, correcting ` +
-        `it will redirect the alerts that have not gone out.`;
+  if (failure.heldForReview !== true) {
+    return (
+      `${lead} PopEngine keeps retrying them. If the ${name} address below is wrong, correcting ` +
+      `it will redirect the alerts that have not gone out.`
+    );
+  }
+  const paused =
+    `${lead} Retrying is paused because this event changed after their plan was made: ` +
+    `regenerate the plan and review the checklist to start it again.`;
+  // AND THE ACTION DOES NOT ALWAYS WORK, which the sentence above promised it did. An alert
+  // carrying an attempt nobody saw the end of is upserted in place by the regeneration rather than
+  // cancelled, and a review supersedes an attempt only on a row revived from `cancelled` — so the
+  // review refreshes the schedule and the row stops for reconciliation instead of retrying. (A
+  // retry past the hold bound supersedes an attempt too, but that is the poller sending, not
+  // anything this notice can offer an organizer.) Sending an
+  // organizer to do the one thing they believe is left, when it will not start their reminder
+  // again, is worse than the silence this notice exists to break.
+  //
+  // Both sentences, because both are true of the channel: the rows without an open attempt DO
+  // resume. The count is per channel and cannot be split without saying which alert is which,
+  // which is not something this page is given.
+  return failure.attemptedWithoutOutcome === true
+    ? `${paused} That will not restart any that were already attempted with no outcome recorded: ` +
+        `those stay paused until someone checks with the sending service, or until PopEngine's ` +
+        `own wait on them runs out.`
+    : paused;
+}
+
+/**
+ * An alert PopEngine has stopped on, said as stopping rather than as failing.
+ *
+ * THE THIRD FACT, and the one that was being reported as one of the other two. An alert recorded as
+ * an attempted send whose outcome nobody saw stops being retryable once the provider would no
+ * longer recognise the key, because a retry past that point is a second copy to the same person rather
+ * than a deduplicated one. A crash left that row `pending`, which the failure notice correctly says
+ * nothing about, and a lost answer left it `failed`, where the notice above told the organizer
+ * PopEngine keeps retrying it. Both readings said delivery was in hand after it had ended.
+ *
+ * WHAT IT MAY AND MAY NOT SAY. It may not say the message did not arrive: nobody knows, and that
+ * uncertainty is the reason for the hold. It may not promise a retry, a schedule, or anyone in
+ * particular acting, because none of those is happening. What is true and useful is the shape of
+ * the state: a send was attempted, no outcome was ever recorded, PopEngine has stopped, and only a
+ * person checking with the sending service changes that. The last clause is the one an organizer
+ * can act on today, and it stops at their own reminders: it says not to rely on this alert, and
+ * says nothing about the filing itself, which is the ruleset's to describe and not this sentence's.
+ *
+ * NOR MAY IT SAY THE HANDOFF HAPPENED, which is what "were handed to the sending service" said and
+ * what the whole notice was built on. The attempt is recorded BEFORE the provider is called, on
+ * its own connection, exactly so a process that dies mid-send leaves evidence — and a process that
+ * dies in the gap between that record and the call leaves the SAME evidence with nothing handed
+ * over at all. After downtime longer than the dedup window that row is a hold like any other, so
+ * the weakest case this string has to be true of is a send that never left the process. Every
+ * clause is written against that case: the record is an attempted send, the outcome is missing
+ * rather than negative, and what a person checks is whether anything went out rather than whether
+ * it arrived. Copy an organizer reads about a filing deadline does not get to assume the stronger
+ * reading because it is the commoner one.
+ *
+ * NOR MAY IT SAY THIS ALERT CAN NEVER GO OUT AGAIN, which is what "will not be sent again on its
+ * own" said. A regeneration cancels a held alert and the next review revives it as a FRESH
+ * schedule: `alerts.ts` supersedes the unresolved attempt on purpose, because an attempt speaks
+ * for the schedule it was made for, and the revived row is then sent like any other. So an
+ * organizer who regenerates can receive precisely the second copy that sentence ruled out. The
+ * page cannot see whether a regeneration is coming and must not guess, so it qualifies the claim
+ * to the schedule it CAN see: nothing on this one will send them again.
+ *
+ * NOR EVEN ON THAT SCHEDULE UNCONDITIONALLY, because the exit from the hold is the action this
+ * notice itself asks for. Checking with the sending service has two answers, and one of them is
+ * that no message is there: the operator clears or resolves the unresolved attempt (`alerts.ts`
+ * and migration 014 both document that as the way out), the alert stays pending or failed on the
+ * same `send_at`, and the next poll sends it. No cancellation and no revival are involved. So the
+ * promise holds only while the attempt stays as it is, and the sentence says so rather than
+ * ruling out a send the reconciliation is there to release.
+ *
+ * AND THE HOLD ENDS BY ITSELF, which is the product owner's 2026-08-04 resolution of SPEC-CONFLICT
+ * #240 (`docs/BASELINE.md`) and the last thing this notice was still saying was permanent. Past
+ * `UNRESOLVED_ATTEMPT_HOLD_LIMIT_HOURS` the poller retries the alert on the schedule it is already
+ * on, with nobody having checked anything. So the copy is a pause rather than a stop, and it says
+ * the second copy is possible when the pause ends: an organizer who is told delivery has stopped
+ * and then receives the reminder twice was told something false by the page that was supposed to
+ * be the honest one. The number stays out of the sentence and out of this file — one constant owns
+ * it, in `apps/api/src/alerts.ts`, and a copy of it here would be a second one to keep in step.
+ *
+ * "the sending service" rather than the provider's name, which is an operational detail an
+ * organizer has no account with and cannot ring up.
+ */
+export function reconciliationHoldNotice(hold: { channel: string; heldCount: number }): string {
+  const name = CHANNEL_NAMES[hold.channel] ?? hold.channel;
+  const one = hold.heldCount === 1;
+  const alerts = one ? "alert" : "alerts";
+  const were = one ? "was" : "were";
+  const them = one ? "it" : "them";
+  const they = one ? "it" : "they";
+  const their = one ? "its" : "their";
+  const dates = one ? "the filing date it covers" : "the filing dates they cover";
+  const attempted = one ? "an attempted send" : "attempted sends";
+  return (
+    `${hold.heldCount} ${name} ${alerts} for this event ${were} recorded as ${attempted}, and no ` +
+    `outcome ever came back: PopEngine cannot tell whether ${they} reached the sending service ` +
+    `at all. Too much time has passed to try ${them} again straight away without risking a second ` +
+    `copy, so PopEngine has paused ${them}: nothing on ${their} current schedule sends ${them} ` +
+    `again for now. Someone can check with the sending service whether ${they} went out, and what ` +
+    `that check records decides whether this schedule sends ${them} sooner; if nobody does, ` +
+    `PopEngine tries once more when the pause ends, and that may arrive as a second copy. Until ` +
+    `then, do not count on ${them} to remind you of ${dates}.`
+  );
 }
 
 export function ChecklistView({ apiBaseUrl, eventId }: { apiBaseUrl: string; eventId: string }) {
@@ -537,6 +638,16 @@ export function ChecklistView({ apiBaseUrl, eventId }: { apiBaseUrl: string; eve
       {checklist.failedAlertDeliveries.map((failure) => (
         <p className="checklist__flag" role="alert" key={`failed-${failure.channel}`}>
           {failedDeliveryNotice(failure)}
+        </p>
+      ))}
+
+      {/* A channel PopEngine has stopped on, which is a third fact and not a louder version of the
+          one above. Failing means being retried; this means nobody will try again until a person
+          checks with the sending service. Both can be true of the same channel at once, which is
+          why they are separate blocks rather than a branch inside one sentence. */}
+      {checklist.alertsHeldForReconciliation.map((hold) => (
+        <p className="checklist__flag" role="alert" key={`held-${hold.channel}`}>
+          {reconciliationHoldNotice(hold)}
         </p>
       ))}
 

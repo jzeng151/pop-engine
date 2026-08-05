@@ -14,3 +14,6 @@ coverage/
 .impeccable/
 apps/web/DESIGN.md
 apps/web/PRODUCT.md
+
+# pnpm content-addressable store, never committed
+.pnpm-store/

@@ -59,13 +59,172 @@ contracts and enforcement are separately approved and ship.
 
 One project, two services from this monorepo. Set each service's root directory to the repo root; Railway installs the pnpm workspace.
 
-- **api**: start command `pnpm --filter api start`. No build step (runs via tsx).
+- **api**: start command `cd apps/api && pnpm migrate up && exec node --import tsx src/index.ts`. No build step (the tsx loader runs the TypeScript source in process).
 - **web**: build command `pnpm --filter web build`, start command `pnpm --filter web start`.
+
+The api command is written that way because of which process receives the host's `SIGTERM`. The
+api's drain (below, and `apps/api/src/index.ts`) only runs in the process that gets the signal, and
+`pnpm --filter api start` puts pnpm and the lifecycle shell it spawns in front of the api: pnpm
+takes the signal at its default disposition and the api it started keeps running until the host
+kills it, so the drain never happens and a send can be stranded exactly as the release order below
+describes. `exec` makes the api itself the process the host started, with no runner left in front of
+it. Migrations still run first and finish before the `exec`. `apps/api/src/shutdown.test.ts` reads
+this command out of this file and signals it, so the two cannot drift apart.
 
 1. New Project, Deploy from GitHub repo, `jzeng151/pop-engine`.
 2. Add the two services with the commands above.
 3. Set env vars per service from `apps/api/.env.example` and `apps/web/.env.example`. Point `WEB_ORIGIN` (api) at the web URL, `NEXT_PUBLIC_API_BASE_URL` (web) at the api URL, and `NEXT_PUBLIC_SITE_URL` at the exact public web origin.
 4. Connect the deploy branch. The demo environment is seeded once and not redeployed after final rehearsal.
+
+### Release order
+
+The two services deploy separately and the api runs `pnpm migrate up` as it starts, so a rollout is
+a window in which two builds and one schema are all live at once. Two F-203 guarantees hold only if
+that window is opened in this order. Both are one-off constraints for the release that introduces
+the alert attempt record; the conditions for dropping each are stated with it.
+
+1. **Deploy the web service first, then the api.** The api stops counting an alert it has
+   permanently stopped on among the failures it says are being retried, and reports it under
+   `alertsHeldForReconciliation` instead. A web build older than that field renders neither, so an
+   alert nobody will send again would have no organizer-facing warning at all until the web service
+   catches up. Deployed web-first the window is empty: this web build reads an absent
+   `alertsHeldForReconciliation` as none and renders the rest of the checklist normally, which is
+   what makes it safe against an api that does not send the field yet. Drop this step once the web
+   deployment carrying the field is the oldest one in service.
+2. **Empty the api's alert queue, then stop the running api, before the new one applies migration
+   014**, rather than letting the new deployment start beside it.
+
+   **The invariant every step below is checked against: no alert can have been handed to a provider
+   before the instant this rollout's protection for it begins.** Three findings in a row on this
+   section each moved a protection one step earlier and left the same gap, so the order here is the
+   invariant, then the procedure, then the check of the procedure against the invariant rather than
+   against the previous wording.
+
+   **Why the protection cannot be a stamped attempt row.** A send the old build was killed in the
+   middle of (accepted by the provider, its transaction never committed) is left `pending`, and a
+   build that predates `alert_send_attempts` writes no attempt row for it, so nothing anywhere
+   records when the provider was reached; migration 014's backfill covers `failed` rows only. Any
+   attempt row this rollout writes for such an alert is a guess at that instant, and both directions
+   of the guess fail the invariant. Stamped at the moment the last old process was gone, the hold
+   begins after Resend may already have forgotten the key, which is a window in which a send
+   happened and nothing records it. Stamped early enough to be a true lower bound on an unknowable
+   handoff, it is already past `UNRESOLVED_ATTEMPT_HOLD_LIMIT_HOURS` and the first tick retries the
+   row rather than holding it. The bound is the product owner's decision of 2026-08-04 and is not
+   this runbook's to widen. So the rollout satisfies the invariant by leaving nothing in flight to
+   protect, rather than by protecting something whose handoff time it cannot know.
+
+   **a. Pause the alert queue while the old api is still running.** Pick `<T_resume>`, any UTC
+   timestamp at least 24 hours ahead of the rollout, and write it down; it is a marker, not a
+   deadline. Then run, against the environment's database:
+
+   ```sql
+   UPDATE alerts
+      SET next_attempt_at = TIMESTAMPTZ '<T_resume>'
+    WHERE status IN ('pending', 'failed')
+      AND channel = 'email';
+   ```
+
+   The old build claims an alert only while its status is `pending` or `failed`, its `send_at` has
+   passed, and its `next_attempt_at` is null or past; it re-reads all three under a row lock at the
+   moment of the claim, and holds that lock across the provider call, which
+   `apps/api/src/alert-delivery.ts` bounds at ten seconds. So this statement cannot return until
+   every send that was in flight has committed its outcome, and no send can start after it returns.
+   It can block for a few seconds per alert that is mid-send and **must not be cancelled**; it
+   finishes because every row it has passed stays locked by it until it commits, and the poller's
+   claim skips locked rows. No retry backoff reaches 24 hours, so it moves every row later and none
+   earlier. **Write down the row count it reports**; step e has to report the same one.
+
+   If the statement errors, or the old api dies while it is running, it has guaranteed nothing:
+   re-run it, and if the process is already gone treat every pending or failed email alert as an
+   escape in step c.
+
+   **b. Stop the api.** Scale the api service to zero (or stop the current deployment), wait for the
+   process to go, then confirm no api process from the previous build is still running when the
+   migration executes. **Write down the UTC time at which you confirmed the last previous-build
+   process was gone**, to the second; step c calls it `T_stop`.
+
+   On this rollout the api you are stopping cannot drain, and you must not wait for it to. The drain
+   ships in the build that carries migration 014, so the process being stopped predates the handler:
+   it takes `SIGTERM` (or `SIGINT`) at its default disposition and dies where it stands. From the
+   next rollout on, the running api stops accepting requests, finishes the ones it is already
+   holding, stops its alert poller, waits for the send in flight to finish recording its outcome,
+   exits 0, and logs a line naming the signal and then `alert poller drained; exiting`; wait for
+   that second line then, and steps a, c and e are no longer needed. For this one, wait only for the
+   process to be gone.
+
+   **c. Confirm nothing escaped the pause.** With both recorded values substituted:
+
+   ```sql
+   SELECT id, idempotency_key, send_at
+     FROM alerts
+    WHERE status IN ('pending', 'failed')
+      AND channel = 'email'
+      AND (next_attempt_at IS NULL OR next_attempt_at <> TIMESTAMPTZ '<T_resume>')
+      AND send_at <= TIMESTAMPTZ '<T_stop>';
+   ```
+
+   This lists the email alerts that became claimable after the pause committed and before the
+   process was gone, which a checklist created or regenerated in that gap is the only way to
+   produce. **The count must be 0.** Each row it does return is one the stopped build may have
+   handed over, and no stamp can say when, so it is resolved the way any alert in that state is
+   resolved: a person checks the sending service for a message to the recipient on that row, in that
+   gap, and then marks the alert sent or leaves it to send. Do that before returning the service to
+   traffic. Resend honours a repeated `Idempotency-Key` for 24 hours from the actual handoff, so it
+   cannot be deferred.
+
+   **d. Start the new build** and confirm `Migrations complete!` in its logs.
+
+   **e. Un-pause the queue**, as soon as `Migrations complete!` has appeared:
+
+   ```sql
+   UPDATE alerts
+      SET next_attempt_at = NULL
+    WHERE next_attempt_at = TIMESTAMPTZ '<T_resume>';
+   ```
+
+   It must report the count step a reported, less any row step c listed: a regeneration in that gap
+   clears the pause along with the rest of that row's schedule, which is what put it on step c's
+   list. Then
+
+   ```sql
+   SELECT count(*) FROM alerts WHERE next_attempt_at = TIMESTAMPTZ '<T_resume>';
+   ```
+
+   must be 0. Until this has run, every email alert step a paused is scheduled past the end of the
+   rollout and none of them will send. Only then return the service to traffic.
+
+   The cost is stated so it is not a surprise: a failed alert partway through a retry backoff loses
+   the remainder of it and gets one immediate attempt instead. That is the same trade the scheduler
+   already makes when a regeneration moves a row's `send_at`, and the most it can cost is the
+   fifteen-minute backoff step.
+
+   **Why this satisfies the invariant.** After step a commits, no send is in flight and no email
+   alert can be claimed by the old build, so every alert it did hand over has its outcome recorded
+   and is `sent` or `failed` rather than a row the new poller reads as never attempted. The only
+   alerts that can escape are the ones step c lists, and they are resolved by a person rather than
+   by a guess at their handoff time. Nothing is stamped at an instant this rollout cannot know, so
+   there is no window left in which a send happened and nothing records it.
+
+   **Why not a drain-capable precursor**, which would satisfy the invariant the same way. It would
+   be a build carrying the shutdown handler in `apps/api/src/index.ts` and the poller `stop()` that
+   awaits the tick in flight, and carrying neither migration 014 nor any reader of
+   `alert_send_attempts`. No such build has been released, and cutting one is its own release rather
+   than a step in this one. Step a gets the same property from the database side, out of the build
+   that is actually running, which is why it is written as a statement rather than as a deployment.
+
+   Drop this step at the same time as the rest of step 2, once `014_alert_send_attempts` has been
+   applied to the environment. From the next rollout on the drain does this in the process, by
+   leaving no send in flight at all.
+
+   Migration 014 creates `alert_send_attempts` and seeds it from
+   the alerts that had already failed, and from then on every reader treats an alert with no attempt
+   row as one nothing was ever handed over for. An api process from the previous build sends without
+   writing attempt rows, so anything it sends after the backfill commits is invisible to that
+   record for good: a crash or a lost response on such a send leaves an alert the new poller reads
+   as never attempted and may deliver again after the provider's deduplication window has closed,
+   which for an organizer is the same deadline reminder arriving twice. The backfill is a
+   point-in-time sweep and cannot cover it; only the ordering can. Drop this step once
+   `014_alert_send_attempts` has been applied to the environment.
 
 ## 5. Cloudflare Access (demo gate, AD-12)
 

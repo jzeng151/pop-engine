@@ -19,7 +19,8 @@
 
 import { createHash, randomUUID } from "node:crypto";
 import { Router, type NextFunction, type Request, type Response } from "express";
-import type { Pool, PoolClient, QueryResult, QueryResultRow } from "pg";
+import { Pool } from "pg";
+import type { PoolClient, QueryResult, QueryResultRow } from "pg";
 import { CONFIRM_WITH_AGENCY, DEPENDENCY_SEQUENCING_BINDINGS } from "@pop-engine/engine";
 import type { Deadline, Disposition, VerificationStatus } from "@pop-engine/engine";
 import {
@@ -30,7 +31,12 @@ import {
   type AlertDelivery,
   type AlertSenders,
 } from "./alert-delivery";
-import { instantAtLocalHour, todayInJurisdiction } from "./calendar";
+import {
+  instantAtLocalHour,
+  jurisdictionDayInSql,
+  jurisdictionTimeZone,
+  todayInJurisdiction,
+} from "./calendar";
 import { canonicalOptionalPhone } from "./contact";
 import { calendarDateFrom, renderingKey, type FindingRendering } from "./plan";
 
@@ -262,7 +268,14 @@ const NOT_FROM_A_STALE_PLAN = `NOT EXISTS (
           AND (alerts.payload->>'event_revision')::int < plan_level_event.revision_counter
      )`;
 
-const SEND_CONCURRENCY = 8;
+/**
+ * How many alerts one tick hands to a provider at once.
+ *
+ * Exported because the budget arithmetic is checked against it. The check used to read the poller's
+ * pool size instead, which was the same number until the pool was resized and then quietly said
+ * sixteen waves where the poller runs eight.
+ */
+export const SEND_CONCURRENCY = 8;
 /**
  * How long a tick waits between re-trying alerts a writer's lock made it skip, and for how long.
  *
@@ -338,6 +351,405 @@ export const MAX_ALERTS_PER_TICK = Math.floor(
 
 /** What the poller's own pool has to hold: every concurrent send, plus the scan that feeds them. */
 export const ALERT_POLLER_CONNECTIONS = SEND_CONCURRENCY + 1;
+
+/**
+ * How long the email provider honours a repeated `Idempotency-Key`, per Resend's published
+ * documentation. Inside it a retry of an attempt whose outcome was lost is deduplicated; outside
+ * it the same retry is a second delivery to the same person.
+ *
+ * This is the number that makes an unresolved attempt reconcilable rather than sendable, so it is
+ * named once and read by the scan, the claim and the tests.
+ *
+ * Migration 014's backfill carries a FROZEN COPY of this value rather than a read of it, because
+ * what a migration did to a database it has already run against cannot depend on a number that is
+ * still moving. Changing this constant does not change that seed, and is not meant to: a change to
+ * the provider's window that has to reach existing rows is a new ordered migration.
+ */
+export const PROVIDER_DEDUP_WINDOW_HOURS = 24;
+
+/**
+ * How much of that window is kept in reserve rather than spent, because the decision and the
+ * delivery are not the same moment.
+ *
+ * The predicate below is evaluated at the top of the claim transaction. What still has to happen
+ * before the provider holds the request: the event lock, the claim SELECT, the expiry SELECT, a
+ * connection from the attempt-writer's own pool, the intent INSERT, and then the request in flight.
+ * Reading the cutoff exactly meant an attempt at 23h59m was ruled retryable and the repeated key
+ * arrived after 24h, where the provider deduplicates nothing and the organizer gets a second copy
+ * of the same reminder.
+ *
+ * `TICK_BUDGET_MS + PROVIDER_TIMEOUT_MS` is not a new number: it is the poller's worst-case tick,
+ * already named at the top of this file. It is deliberately generous for a single claim, and it is
+ * the right size because the SCAN uses this predicate too, and a scanned row can wait a whole tick
+ * before its claim runs. One margin that is sound at both sites beats two that have to be kept in
+ * step. Erring large costs a forty-second sliver of an otherwise-permitted retry window, which the
+ * next tick re-offers as a hold; erring small costs a real person a duplicate.
+ */
+export const DEDUP_WINDOW_CLAIM_MARGIN_MS = TICK_BUDGET_MS + PROVIDER_TIMEOUT_MS;
+
+/**
+ * How long an attempt nobody saw the end of holds its alert before the alert is retried anyway.
+ *
+ * THE PRODUCT OWNER'S DECISION OF 2026-08-04, resolving SPEC-CONFLICT #240 against approved F-203
+ * (`docs/BASELINE.md`). The hold used to have no end, so a provider outage presenting as timeouts
+ * for longer than the dedup window withheld a filing reminder for good — the outcome F-203:59 and
+ * AC 2 exist to prevent. Bounded, the hold keeps the suppression over the period where it can help
+ * and gives the reminder back afterwards. This limit is the CEILING HALF OF AN EARLIER-OF: the
+ * owner's same-day resolution of SPEC-CONFLICT #241 (`docs/BASELINE.md`) also ends the hold on the
+ * last day a retry can still reach the organizer inside the filing window, so this number governs
+ * every alert whose lead time outlasts it and the window edge governs the rest. The predicate
+ * below carries both.
+ *
+ * DERIVED, not chosen round. Two things fix the range:
+ *
+ * - The FLOOR is `PROVIDER_DEDUP_WINDOW_HOURS` plus `DEDUP_WINDOW_CLAIM_MARGIN_MS`, because that is
+ *   where the hold starts. A limit at or below it would mean no row is ever held: that is option 1
+ *   in #240, which the owner did not take.
+ * - The CEILING is the six days between F-203's two `deadline_reminder` offsets, 7 days before the
+ *   deadline and 1 day before it. A reminder released later than that arrives after its own
+ *   successor has already gone out, so the release can no longer restore any lead time and can only
+ *   read as a duplicate.
+ *
+ * Between them the limit is also the maximum delay the release adds and, during an outage that
+ * stays ambiguous, the maximum rate of possible duplicates: one per alert per limit, because each
+ * retry opens its own attempt and re-enters the hold under it. Both argue for the smallest value
+ * that still leaves a real reconciliation period, and a limit a few minutes above the floor leaves
+ * none. Two dedup windows is the smallest whole multiple of the only interval the provider actually
+ * publishes that clears the floor — one does not, by the claim margin — and it is a third of the
+ * ceiling.
+ *
+ * WHAT EITHER SIDE OF IT COSTS AN ORGANIZER. Past it: possibly a second copy of a reminder that did
+ * arrive, naming the same deadline, 48 hours after the first, and for a 7-day reminder still five
+ * days before the filing date. Inside it: a reminder whose send never reached anyone is delayed by
+ * up to 48 hours, which a 7-day reminder absorbs and a 1-day reminder does not; held to this limit
+ * alone it would arrive after its deadline, and the window edge of the earlier-of is what releases
+ * it on its last filing day instead. No limit above the floor saves the 1-day reminder from that
+ * delay, because its whole lead time is shorter than the window the provider deduplicates within. That is the cost of holding at
+ * all, and it is why this is the smallest multiple that works rather than a larger one.
+ */
+export const UNRESOLVED_ATTEMPT_HOLD_LIMIT_HOURS = PROVIDER_DEDUP_WINDOW_HOURS * 2;
+
+/**
+ * What the send boundary keeps back for the handoff it sits in front of.
+ *
+ * ASKING WITH NOTHING RESERVED WAS THE FOURTH DEFECT ON THIS MARGIN. Every earlier reader of the
+ * cutoff decides and then waits, so each holds back enough of the window to cover what follows it;
+ * the boundary check was written as the one that needs nothing, on the grounds that the request is
+ * all that follows. The request is not free: `sender(...)` still has DNS, the TCP and TLS
+ * handshakes and the body transmission in front of it, and `alert-delivery.ts` bounds that whole
+ * thing — connection setup included — with `PROVIDER_TIMEOUT_MS`. A key permitted at 23h59m59s can
+ * therefore reach Resend after 24 hours, where it deduplicates nothing.
+ *
+ * SO THE MARGIN IS STATED AS WHAT IT MUST COVER, and it is exactly two things: the bounded provider
+ * request, and the in-process gap between this answer and the request leaving. The second is
+ * `SEND_BOUNDARY_HANDOFF_BUDGET_MS`, and it is ASSERTED rather than assumed at the point of use, so
+ * a fifth statement inserted between the boundary and the sender cannot silently consume the margin
+ * the way the last three did. It fails closed: over budget, nothing is handed over.
+ */
+const SEND_BOUNDARY_HANDOFF_BUDGET_MS = 1_000;
+export const SEND_BOUNDARY_MARGIN_MS = PROVIDER_TIMEOUT_MS + SEND_BOUNDARY_HANDOFF_BUDGET_MS;
+
+/**
+ * An alert whose send was attempted and whose outcome nobody ever saw, long enough ago that a
+ * provider holding it would no longer recognise the key.
+ *
+ * ATTEMPTED, WHICH IS WEAKER THAN HANDED OVER AND HAS TO STAY SO WHEREVER THIS IS DESCRIBED. The
+ * attempt row is written before `sender(...)` is called, so a process that died between the two
+ * leaves precisely what one that died mid-send leaves, and this predicate cannot tell them apart.
+ * Every reader of it (the poller's telemetry, the organizer's notice) says "attempted" for that
+ * reason, and the stronger claim has had to be taken back out of three of them.
+ *
+ * NOT AN AGE TEST ON THE ALERT, and that is the whole distinction issue #166 turns on. A pending
+ * row with no recorded attempt is safe to send at any age — it cannot duplicate a delivery that
+ * never happened, and suppressing it by age would convert one possible duplicate into systematic
+ * non-delivery for a product whose purpose is that a filing deadline does not pass unnoticed. Only
+ * a row that WAS attempted, and whose attempt has no recorded outcome, is ambiguous.
+ *
+ * Held rather than sent and rather than cancelled: sending may deliver a second copy, cancelling
+ * would assert PopEngine no longer intends to send something when in fact nobody knows whether it
+ * arrived. The tick counts these so they can be reconciled against the provider by a human.
+ *
+ * AND HELD FOR A BOUNDED TIME, which is the product owner's 2026-08-04 resolution of SPEC-CONFLICT
+ * #240 (`docs/BASELINE.md`). Past `UNRESOLVED_ATTEMPT_HOLD_LIMIT_HOURS` the attempt stops holding
+ * its alert and the alert is retried, because an unbounded hold is how F-203's outage edge case
+ * ("nothing is lost") was being broken by the mechanism meant to protect a duplicate. The retry
+ * opens an attempt of its own, so an outage that keeps producing unobserved outcomes re-enters the
+ * hold under the new attempt rather than sending on every tick: at most one possible duplicate per
+ * alert per limit.
+ *
+ * MEASURED FROM THE FIRST UNRESOLVED ATTEMPT, WHICH IS WHY THIS ASKS FOR A MINIMUM RATHER THAN FOR
+ * ANY ROW. Nothing holds an alert for the dedup window after its first attempt, so an ambiguous
+ * outage retries it on every tick of that window and each retry opens an attempt of its own. Asked
+ * as "does SOME unresolved attempt sit between the two edges", the bound then restarts from the
+ * newest of them: an attempt made just before the hold began kept the alert suppressed for nearly
+ * another dedup window past the point the first attempt's own bound had run out, and every cycle
+ * of a continuing outage moved that further out again. That is the open-ended suppression #240 was
+ * raised about, arriving more slowly, and 48 hours from whichever retry ran last is not the 48
+ * hours the owner approved. The oldest unresolved attempt is the one the hold is measured from, so
+ * the alert is released no later than `UNRESOLVED_ATTEMPT_HOLD_LIMIT_HOURS` after it, whatever the
+ * outage does in between.
+ *
+ * THAT ONLY STAYS A HOLD BECAUSE A RETRY RETIRES WHAT IT OVERTOOK: see `recordAttemptIntent`. An
+ * attempt left unresolved past its bound would anchor every later bound in the past, so no attempt
+ * could hold this alert again and the outage would send on every tick from then on.
+ *
+ * AND BY THE ALERT'S OWN REMAINING WINDOW, WHICHEVER OF THE TWO COMES FIRST. The limit is a fixed
+ * number of hours and the thing it holds is a reminder that expires, so on any alert with less lead
+ * time than the limit has hours the limit lands after the filing date: the released row reaches the
+ * claim, its window has shut, and it is cancelled without the provider ever being called. That is
+ * the one-day reminder exactly, and for it a 48-hour hold is not a hold but a silent drop — the
+ * outcome F-203:59 and AC 2 exist to prevent, produced by the mechanism that was bounded to stop
+ * producing it. A retry that cannot be delivered is not the retry the 2026-08-04 decision approved.
+ *
+ * So the hold also ends on the last day a retry can still reach the organizer while the filing date
+ * can be met, which is `FILING_WINDOW_HAS_SHUT` asked about TOMORROW: while the window is still
+ * open tomorrow, holding costs the organizer nothing they can still use; once it is not, today is
+ * the last day the queue can do anything with this row and the hold ends here. The limit is
+ * unchanged and still the ceiling — a seven-day reminder has six days of window and is held for the
+ * full 48 hours — and nothing about its recorded approval moves. APPROVED BEHAVIOUR, not a
+ * selected policy: the product owner's 2026-08-04 resolution of SPEC-CONFLICT #241
+ * (`docs/BASELINE.md`) decides the earlier-of in favour of retrying, accepting that on the final
+ * filing day, past the key's expiry, an organizer whose original send did arrive may receive one
+ * correctly dated second copy.
+ *
+ * WHAT THE EARLIER RELEASE COSTS is the same cost the owner already priced at the limit, arriving
+ * sooner: a possible second copy of a reminder that did arrive. The provider still deduplicates a
+ * repeated key inside its own window, so the rate is unchanged at one possible duplicate per alert
+ * per dedup window, and it is spent on the last day the reminder can be acted on rather than on a
+ * day the deadline has already gone.
+ *
+ * WHAT IT DOES NOT REACH, recorded rather than claimed as conformance: an alert whose window shuts
+ * before ANY tick can retry it — an attempt left unresolved in the last minutes of the filing date
+ * — is cancelled by the next tick and nothing is delivered. No bound saves that row, because there
+ * is no moment left to send it in. Whether PopEngine should say anything after a filing date has
+ * gone is a product question and not this file's to answer; `docs/OPEN-QUESTIONS.md` T-10 carries it,
+ * and the approved behaviour (a shut window is retired, not announced) stands until it is answered.
+ *
+ * A BACKFILLED `-infinity` IS PAST EVERY LIMIT, and that is the right reading of it rather than an
+ * oversight. Migration 014 seeded that value precisely because the attempt time is unknowable, so
+ * no bound measured from it can ever contain the row, and nothing will ever make it knowable. Those
+ * rows were retried on every tick before this branch existed, which is what F-203 asks for.
+ *
+ * AN ATTEMPT SPEAKS FOR THE SCHEDULE IT WAS MADE FOR AND NOT FOR A LATER ONE, which is why
+ * `superseded_at` is read here. Scoped to the alert id alone, this predicate outlived the queue
+ * membership it belonged to: a regeneration cancelled a row carrying an unresolved attempt, a
+ * later one revived it as a fresh schedule, and the old attempt then excluded the revived row from
+ * every scan and every claim for good. That is not a duplicate avoided, it is a deadline reminder
+ * that is never delivered — the outcome F-203 exists to prevent, and worse than the duplicate this
+ * hold was added to avoid. The revival supersedes the attempt; the attempt row stays, still
+ * unresolved, because nobody did find out what the provider did with it.
+ */
+const unresolvedAttemptPastTheCutoff = (now: string, marginMs: number, day: string): string => `(
+     EXISTS (
+       SELECT 1
+         FROM alert_send_attempts AS attempt
+        WHERE attempt.alert_id = alerts.id
+          AND attempt.outcome_recorded_at IS NULL
+          AND attempt.superseded_at IS NULL
+       -- HAVING rather than a second WHERE clause, so this stays one boolean over one aggregate:
+       -- an alert with no unresolved attempt produces a NULL minimum, the group is filtered out,
+       -- and EXISTS is false. Written as a scalar subquery instead it would be NULL there, and
+       -- every reader that NEGATES this predicate would drop the row rather than send it.
+       HAVING min(attempt.attempted_at)
+              < ${now} - interval '${PROVIDER_DEDUP_WINDOW_HOURS} hours'
+                       + interval '${marginMs} milliseconds'
+          AND min(attempt.attempted_at)
+              >= ${now} - interval '${UNRESOLVED_ATTEMPT_HOLD_LIMIT_HOURS} hours'
+     )
+     -- THE SECOND BOUND, asked as the first one asked about tomorrow: a hold may keep this alert
+     -- only while tomorrow is still a day the reminder could be sent on. An alert with no filing
+     -- date has no such bound and is held by the limit alone, which is the same reading of a null
+     -- the rest of this file takes: an absent date is not an expired one.
+     AND NOT ${FILING_WINDOW_HAS_SHUT(`(${day}::date + 1)`)}
+   )`;
+
+/**
+ * `statement_timestamp()` RATHER THAN `current_timestamp`, which is the same distinction the send
+ * boundary draws and the same defect on the other side of it. `current_timestamp` is the
+ * TRANSACTION's start, and this predicate is read from inside one: a checklist review holds a
+ * transaction open across several reads so the checklist and its alerts commit together, so an
+ * attempt that crosses the provider's dedup window WHILE the review runs is read as though the
+ * review had only just begun. The response then calls the row a failure PopEngine keeps retrying
+ * while the poller, on its own statement clock, reads the same row as one it has stopped on the
+ * moment `COMMIT` releases the event lock.
+ *
+ * Not `clock_timestamp()` either, and that is not the arbitrary half of the choice: it advances
+ * DURING a statement, this predicate appears four times in the health statement alone, and a
+ * cutoff that could differ between two of them would let one statement disagree with itself,
+ * which is exactly what `alertDeliveryHealth` was written as one statement to prevent.
+ */
+const hasAnUnresolvedAttempt = (day: string): string =>
+  unresolvedAttemptPastTheCutoff("statement_timestamp()", DEDUP_WINDOW_CLAIM_MARGIN_MS, day);
+
+/**
+ * An alert the poller has stopped on, written once for both readers of it.
+ *
+ * THE ONLY DEFINITION OF A HOLD, because two of them disagreed. The tick counts a held alert to
+ * warn an operator, and the checklist counts one to tell an organizer that PopEngine has paused a
+ * filing reminder and that only a person checking with the sending service resolves it. Those are
+ * the same claim about the same row, and they were two statements listing their own conditions:
+ * the tick asked whether the alert was DUE and the checklist did not. A regeneration that moves a
+ * previously attempted alert forward keeps the row and its unresolved attempt and rewrites
+ * `send_at`, so the organizer was sent after the provider about a reminder the poller was doing
+ * nothing but waiting for a date on, and if the bound passes first it simply sends, which makes
+ * the reconciliation they were asked for a thing that was never happening. Copy an organizer reads
+ * about a filing deadline does not get to be false in order to be present.
+ *
+ * A SECOND MATCHING FILTER WOULD BE THE SAME DEFECT AGAIN, one edit from now. Both readers take
+ * this expression, so the next condition either side gains is a condition both sides gain.
+ *
+ * WHAT THE PRODUCT RETIRES BY ITSELF IS NOT A HOLD, which is what the staleness and shut-window
+ * exclusions are for. Regeneration cancels a row the organizer's own edit has moved past, and the
+ * next tick withdraws one whose filing window has closed; the scan and the claim let that second
+ * one through deliberately so it can be cancelled without being sent. Saying that only a person
+ * checking with the sending service resolves either would be a false alarm, and a false alarm on
+ * every tick is also how a genuine hold gets buried. A demo send (AC 6) is excluded for the same
+ * reason: nobody is waiting on it and no deadline is behind it.
+ *
+ * The day is a parameter because the two statements bind their time zone in different positions,
+ * and it is the jurisdiction's day for the reason `FILING_WINDOW_HAS_SHUT` states: a hold is only
+ * a hold while the deadline it is about still exists.
+ */
+const HELD_FOR_RECONCILIATION = (day: string): string => `(
+       alerts.status IN ('pending', 'failed')
+       AND alerts.send_at <= statement_timestamp()
+       AND coalesce(alerts.payload->>'test', 'false') <> 'true'
+       AND ${NOT_FROM_A_STALE_PLAN}
+       AND NOT ${FILING_WINDOW_HAS_SHUT(day)}
+       AND ${hasAnUnresolvedAttempt(day)}
+     )`;
+
+/**
+ * The same question asked at the last statement before the provider, reserving what that statement
+ * still has in front of it.
+ *
+ * WHAT THE MARGIN COVERS, STATED SO IT CAN BE CHECKED: the in-process gap between this answer and
+ * `sender(...)` being called, which `SEND_BOUNDARY_HANDOFF_BUDGET_MS` bounds and
+ * `handoffFitsTheMargin` asserts, plus the provider request itself, which `PROVIDER_TIMEOUT_MS`
+ * bounds end to end including DNS and the TLS handshake. Nothing else may sit between the two, and
+ * the assertion is what makes that a checked property of the code rather than a comment about it.
+ * Reserving nothing here was the fourth defect on this margin: it read the request as instant.
+ *
+ * `clock_timestamp()` RATHER THAN `current_timestamp`, because this runs inside the sending
+ * transaction and `current_timestamp` is that transaction's START. Reading it here would answer as
+ * of the moment the claim opened and miss precisely the elapsed time this check exists to catch.
+ *
+ * ASKED AT THE BOUNDARY RATHER THAN BOUNDING EACH WAIT, which is the third time a step was added
+ * between the revalidation and the send: the writer's connection, then the filing-window recheck.
+ * Bounding them one at a time makes the next insertion the next defect. A statement placed in front
+ * of the sender cannot reopen this, because the question is asked after all of them by
+ * construction.
+ */
+const heldAtTheSendBoundary = (day: string): string =>
+  unresolvedAttemptPastTheCutoff("clock_timestamp()", SEND_BOUNDARY_MARGIN_MS, day);
+
+/**
+ * The other half of that margin: that the handoff it reserved for is the only thing that happened.
+ *
+ * The margin covers a bounded request and a gap this side controls. Only the request is bounded by
+ * anything outside this file, so the gap is the part a later edit can grow — the last three defects
+ * on this margin were each a statement added in front of the sender. Checked at the point of use,
+ * an insertion that spends more than the budget stops the send instead of taking the reservation
+ * with it, and the case it protects (a duplicate reminder to a real organizer) cannot come back
+ * silently.
+ */
+const handoffFitsTheMargin = (boundaryAskedAt: number, now: number): boolean =>
+  now - boundaryAskedAt <= SEND_BOUNDARY_HANDOFF_BUDGET_MS;
+
+/**
+ * The last day the bounded handoff in front of the provider can still be running on.
+ *
+ * The invariant this serves is stated beside the one the dedup margin states, so the fifth defect
+ * on a margin is not a sixth: THE FILING WINDOW MUST STILL BE OPEN WHEN THE REQUEST THAT THE
+ * BOUNDARY PERMITS CAN LAST UNTIL.
+ *
+ * WHY THE BOUNDARY'S OWN ANSWER IS NOT ENOUGH. `FILING_WINDOW_HAS_SHUT` asked about today is true
+ * or false of that whole day, so it says nothing about how much of the day is left. A final-day
+ * reminder reaching the boundary in the last second before local midnight passes it, and
+ * `sender(...)` then has DNS, the TCP and TLS handshakes and the body transmission in front of it,
+ * bounded end to end by `PROVIDER_TIMEOUT_MS`. The message can reach Resend on the day after the
+ * one the window was open on, telling an organizer to file by yesterday: the exact copy the
+ * window check exists to prevent, produced by a check that returned the right answer.
+ *
+ * SO THE WINDOW IS ASKED ABOUT THIS DAY, NOT COMPARED TO IT, and that distinction is the whole of
+ * what the day comparison got wrong. Requiring the handoff to finish on the day the boundary asked
+ * about refuses EVERY alert in the last `SEND_BOUNDARY_MARGIN_MS` of every day, whatever its
+ * deadline is and whether it has one at all: a reminder whose filing date is next week loses those
+ * minutes of every day to a reservation held for the final-day one, and a row with no filing
+ * window (an AC 6 demo, or a `dependency_unlocked` whose gated item has a null
+ * `latest_apply_date`, which F-203 schedules deliberately) is refused to protect a date that does
+ * not exist. A null filing date is not an expired one, here as everywhere else in this file. Only
+ * the alert whose window actually shuts overnight is held back, and it is held back by the same
+ * predicate that decides every other window question.
+ *
+ * NOT A NEW ALLOWANCE, which is the point of naming the quantity rather than subtracting one at
+ * the point of use. What must fit is the bounded handoff, and that is already named:
+ * `SEND_BOUNDARY_MARGIN_MS`, the same reservation the dedup edge keeps back, for the same two
+ * things (the in-process gap and the request). One quantity, two edges; a change to what the
+ * handoff costs moves both.
+ *
+ * DERIVED WHERE IT IS USED, like every other jurisdiction day this file reads: it is a function of
+ * the clock, so a value computed before a wait is an answer about a day the wait may have ended.
+ *
+ * FAILS CLOSED, and nothing is owed afterwards when it does: the window is shutting, so there is
+ * no later moment inside it for a retry to use, and the next tick retires the row.
+ */
+const dayTheHandoffCanLastUntil = (jurisdiction: string, now: number): string =>
+  todayInJurisdiction(jurisdiction, new Date(now + SEND_BOUNDARY_MARGIN_MS));
+
+/**
+ * Ask the send boundary, stamping the margin's anchor as the question goes out.
+ *
+ * THE ANCHOR IS THE QUESTION AND NOT THE ARRIVAL OF THE ANSWER. The result of this statement has a
+ * return trip and an event-loop turn in front of it, so a backend that has already computed
+ * `clock_timestamp()` can have its answer read here appreciably later. Stamped when this frame
+ * resumes, a delayed answer looks exactly as fresh as an instant one: `handoffFitsTheMargin` then
+ * measures only what happened after the delay, passes, and the key reaches the provider outside
+ * the window it deduplicates within — the duplicate reminder this boundary exists to prevent,
+ * permitted by the reservation meant to prevent it.
+ *
+ * ONE CLOCK, DELIBERATELY, and this is the part not to re-derive. The other way to close it is to
+ * return the database's own `clock_timestamp()` and measure from that, which is the moment the
+ * answer is really about. It was not taken: it puts a Postgres clock and this process's clock on
+ * either side of a `SEND_BOUNDARY_HANDOFF_BUDGET_MS` budget of one second, so ordinary NTP drift
+ * or a container clock offset lands directly in the measurement and the guard starts refusing or
+ * permitting sends for a reason that has nothing to do with the gap it exists to measure. A local
+ * stamp taken BEFORE the statement is issued is guaranteed to be at or before the backend's
+ * evaluation whatever the two clocks say, so it can only over-count the gap, and over-counting is
+ * the safe direction for a check whose job is to refuse when the time it reserved has gone.
+ *
+ * STAMPED AND ISSUED IN ONE CALL, so that guarantee is a property of the code rather than a note
+ * about it: there is no separate stamp for a later edit to leave behind when it moves the query,
+ * and nothing can be inserted between the two.
+ */
+async function askTheSendBoundary(
+  client: PoolClient,
+  alertId: string,
+  day: string,
+  handoffDay: string,
+): Promise<{ askedAt: number; shut: boolean; shutByTheHandoffsEnd: boolean; held: boolean }> {
+  const askedAt = Date.now();
+  const { rows } = await client.query<{
+    shut: boolean;
+    shut_by_the_handoffs_end: boolean;
+    held: boolean;
+  }>(
+    // Both window questions in the one statement that already asks the cutoff, for the reason the
+    // statement exists: what went wrong twice was not a question but the gap after it, and a
+    // second round trip for the handoff's day would be a new gap in the place there is none left.
+    `SELECT ${FILING_WINDOW_HAS_SHUT("$2")} AS shut,
+            ${FILING_WINDOW_HAS_SHUT("$3")} AS shut_by_the_handoffs_end,
+            ${heldAtTheSendBoundary("$2")} AS held
+       FROM alerts WHERE id = $1`,
+    [alertId, day, handoffDay],
+  );
+  return {
+    askedAt,
+    shut: rows[0]?.shut === true,
+    shutByTheHandoffsEnd: rows[0]?.shut_by_the_handoffs_end === true,
+    held: rows[0]?.held === true,
+  };
+}
 
 /**
  * How long the test endpoint waits for a poller that claimed its row first.
@@ -1484,14 +1896,23 @@ export function createAlertScheduler(settings: AlertSchedulerSettings): AlertSch
 
     let scheduled = 0;
     const keys: string[] = [];
+    /** Alerts this review brought back from `cancelled`, whose attempts belong to what it ended. */
+    const revived: string[] = [];
     for (const alert of planned) {
       for (const channel of channels) {
         // Non-null: `channels` is filtered on exactly this.
         const recipient = recipientFor(contacts, channel) ?? "";
         const key = idempotencyKey(eventId, alert.identity, channel, recipient);
         keys.push(key);
-        const { rows } = await client.query<{ inserted: boolean }>(
-          `INSERT INTO alerts (id, event_id, checklist_item_id, alert_type, channel, recipient,
+        const { rows } = await client.query<{ id: string; inserted: boolean; revived: boolean }>(
+          // The status BEFORE this statement, which `RETURNING` cannot see: it returns the row as
+          // written, and a revival is only recognisable by what the row was. Read in a CTE, so it
+          // is the same statement's snapshot rather than a second round trip that another
+          // transaction could commit inside.
+          `WITH prior_status AS (
+             SELECT status FROM alerts WHERE idempotency_key = $7
+           )
+           INSERT INTO alerts (id, event_id, checklist_item_id, alert_type, channel, recipient,
                                idempotency_key, send_at, status, payload)
              VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'pending', $9::jsonb)
            ON CONFLICT (idempotency_key) DO UPDATE
@@ -1630,7 +2051,8 @@ export function createAlertScheduler(settings: AlertSchedulerSettings): AlertSch
              WHERE alerts.status IN ('pending', 'cancelled', 'failed')
            -- xmax = 0 is true only for a row this statement inserted, which is what separates a
            -- newly scheduled alert from one that already existed and was recomputed in place.
-           RETURNING xmax = 0 AS inserted`,
+           RETURNING id, xmax = 0 AS inserted,
+                     (SELECT status FROM prior_status) = 'cancelled' AS revived`,
           [
             randomUUID(),
             eventId,
@@ -1654,6 +2076,42 @@ export function createAlertScheduler(settings: AlertSchedulerSettings): AlertSch
           ],
         );
         if (rows[0]?.inserted === true) scheduled += 1;
+        if (rows[0]?.revived === true && rows[0].id !== undefined) revived.push(rows[0].id);
+      }
+    }
+
+    // WHAT THE REVIVAL OWES THE ROW IT BROUGHT BACK. The clause above already treats a return from
+    // cancelled as a fresh schedule — new send_at, no failure count, no backoff, no last_error —
+    // and an attempt made for the withdrawn schedule is the one piece of that lifecycle it could
+    // not reach, because it lives on another table. Left behind, it kept the revived alert out of
+    // every scan and every claim indefinitely once it aged past the provider's dedup window, so a
+    // deadline that came back was never delivered at all.
+    //
+    // SUPERSEDED, NOT RESOLVED, and the two words are not interchangeable here. Writing
+    // `outcome_recorded_at` would claim somebody observed what the provider did with that message,
+    // which nobody did; the row stays unresolved and is still what a reconciliation would read.
+    //
+    // The trade is stated rather than hidden, because it is a real one: if that lost attempt did
+    // arrive, the revived alert is a second copy. A duplicate reminder is a cost an organizer can
+    // absorb, and a filing window that closes unannounced is the failure this feature exists to
+    // prevent — so it is logged loudly and sent, not held forever.
+    if (revived.length > 0) {
+      const { rows: superseded } = await client.query<{ alert_id: string }>(
+        `UPDATE alert_send_attempts SET superseded_at = clock_timestamp()
+          WHERE alert_id = ANY($1::uuid[])
+            AND outcome_recorded_at IS NULL
+            AND superseded_at IS NULL
+          RETURNING alert_id`,
+        [revived],
+      );
+      if (superseded.length > 0) {
+        // Ids only. The recipient is contact data and does not go in a log (AGENTS.md).
+        console.warn(
+          `${superseded.length} attempt(s) with no recorded outcome belonged to an alert schedule ` +
+            `that was cancelled and has now been revived; they no longer hold it back, so the ` +
+            `alert will be sent and may duplicate a delivery nobody observed: ` +
+            `${superseded.map((row) => row.alert_id).join(", ")}`,
+        );
       }
     }
 
@@ -1695,22 +2153,475 @@ type DueAlertRow = {
 };
 
 /**
+ * Where the attempt-intent write gets its connection, which must not be the pool the send already
+ * holds one from.
+ *
+ * A SEND HOLDS ONE CONNECTION AND NEEDS A SECOND, so taking both from one pool deadlocks it: as
+ * soon as concurrent sends fill the pool, every one of them holds a client and waits for another,
+ * and none can release what it holds. The poller's own pool could be oversized around that; the
+ * alerts router cannot, because `POST /events/:id/alerts/test` runs on the API's shared pool and
+ * would take the whole API down with it rather than only itself.
+ *
+ * So intent writes have a pool of their own, derived from the source pool's own connection
+ * settings. It can never be the side that starves: a connection is held for one INSERT and
+ * released, never across a provider call.
+ *
+ * ONE PER DATABASE RATHER THAN PER POOL, because the scarce resource is the server's connection
+ * limit and not the pool object. The api already points two pools at the same database, and giving
+ * each of them a writer would reserve twice the connections for a write that is never the
+ * bottleneck.
+ */
+const attemptWriters = new Map<string, Pool>();
+
+/** What makes two pools the same database, so they can share one writer. */
+function connectionTarget(options: Pool["options"]): string {
+  return JSON.stringify([
+    options.connectionString ?? null,
+    options.host ?? null,
+    options.port ?? null,
+    options.database ?? null,
+    options.user ?? null,
+  ]);
+}
+
+function attemptWriterFor(database: Pool): Pool {
+  const target = connectionTarget(database.options);
+  const existing = attemptWriters.get(target);
+  if (existing !== undefined) return existing;
+  const writer = new Pool({
+    ...database.options,
+    // Every send can be recording its intent at once, because none of them may wait on another's
+    // provider call to reach the provider at all.
+    max: SEND_CONCURRENCY,
+    // Nothing owns this pool's lifetime, since it is derived from another pool rather than built
+    // by a composition root that would close it, so it must not be what keeps a process alive.
+    allowExitOnIdle: true,
+  });
+  attemptWriters.set(target, writer);
+  return writer;
+}
+
+/**
+ * Record that this alert is ABOUT to be handed to a provider, in a transaction of its own.
+ *
+ * ITS OWN CONNECTION, which is the mechanical heart of issue #166. The point of the record is to
+ * survive the transaction that is sending, so it cannot be written by that transaction: a crash
+ * before its COMMIT takes the intent down with the mark-sent it was meant to outlive. A second
+ * connection commits immediately and independently.
+ *
+ * It cannot write to the `alerts` row either — the claim holds it — so the intent is a child row.
+ * A foreign key takes only FOR KEY SHARE on the parent, which is compatible with the claim's
+ * FOR NO KEY UPDATE, so the insert does not queue behind the send it is recording.
+ *
+ * AND THE CUTOFF IS ASKED AGAIN HERE, because getting this connection is the one step between the
+ * claim and the provider that no arithmetic bounds. Everything else the margin covers is a
+ * statement on a connection the sending transaction already holds; this one is taken from a second
+ * pool, so it can queue behind `SEND_CONCURRENCY` other sends or wait on a new backend, for as
+ * long as that takes. `DEDUP_WINDOW_CLAIM_MARGIN_MS` is what the claim reserved for the rest of the
+ * work, and a wait that outlasts it puts the repeated key at the provider after the 24 hours it
+ * deduplicates within — the second delivery the hold exists to prevent, arriving through the very
+ * statement that records it. Re-asking is the answer rather than a timeout on the wait: a bound
+ * would only make the overrun shorter, while the predicate says whether this send is still the one
+ * the claim permitted. Returning null means it is not, and nothing is sent.
+ *
+ * Asked INSIDE the insert, so there is no second gap between the question and the record.
+ *
+ * THE ID IS GENERATED HERE RATHER THAN BY THE DATABASE, so the row can be named without the
+ * answer. An autocommit INSERT commits before its result is written back, so a connection that
+ * drops in between leaves a committed, unresolved attempt and a rejected promise: the send never
+ * happened, and with a server-side default nothing in this process knew which row to say so about.
+ * Aged past the cutoff, that attempt excluded the alert from every scan for good — a reminder
+ * nobody ever handed over, never delivered.
+ *
+ * AND IT RETIRES WHAT THIS SEND OVERTOOK, which is what leaves the next hold something to be
+ * measured from. The hold is measured from the alert's FIRST unresolved attempt (see
+ * `unresolvedAttemptPastTheCutoff`), so an attempt whose provider window closed before this send
+ * was made can no longer be duplicated by anything and can no longer say anything about the
+ * alert. Left unresolved it would anchor every later bound in the past, no attempt could hold the
+ * row again, and an outage that keeps producing unobserved outcomes would send on every tick. This
+ * send is the one that speaks for the alert now, so those attempts are superseded by it, in the
+ * same sense and the same column a revived schedule uses. They stay UNRESOLVED, because nobody did
+ * find out what the provider did with them.
+ *
+ * CONDITIONAL ON THE INSERT, and in one statement with it. A held alert is exactly one whose oldest
+ * unresolved attempt sits between the two edges, so a retirement that ran when the insert was
+ * refused would clear the hold it was refused by. Made to depend on the inserted row, it runs only
+ * where a send is actually being recorded, and it commits or is lost with it.
+ */
+async function recordAttemptIntent(
+  database: Pool,
+  row: DueAlertRow,
+  /**
+   * The jurisdiction's ZONE, because the hold this insert asks about is bounded by the alert's own
+   * filing window as well as by the limit. Supplied by the caller for the same reason every other
+   * reader of a day takes it from one: this file has no honest default for which jurisdiction it is.
+   *
+   * DERIVED BY THE STATEMENT, not at the call and not at the parameter list. Getting this writer's
+   * connection is the wait nothing bounds, the one every comment on this path is about, and issuing
+   * the insert afterwards is another; a day materialized on either side of them can be yesterday by
+   * the time PostgreSQL evaluates the hold's window edge. Sending the zone leaves nothing to go
+   * stale.
+   */
+  timeZone: string,
+): Promise<string | null> {
+  const writer = attemptWriterFor(database);
+  const attemptId = randomUUID();
+  const client = await writer.connect();
+  let recorded: string | null;
+  try {
+    const { rows } = await client.query<{ id: string }>(
+      `WITH recorded AS (
+         INSERT INTO alert_send_attempts (id, alert_id, idempotency_key)
+              SELECT $3, alerts.id, $2 FROM alerts
+               WHERE alerts.id = $1 AND NOT ${hasAnUnresolvedAttempt(jurisdictionDayInSql("$4"))}
+           RETURNING id
+       ), overtaken AS (
+         UPDATE alert_send_attempts AS attempt
+            SET superseded_at = clock_timestamp()
+          WHERE attempt.alert_id = $1
+            AND attempt.outcome_recorded_at IS NULL
+            AND attempt.superseded_at IS NULL
+            AND attempt.attempted_at
+                < clock_timestamp() - interval '${PROVIDER_DEDUP_WINDOW_HOURS} hours'
+            AND EXISTS (SELECT 1 FROM recorded)
+       )
+       SELECT id FROM recorded`,
+      [row.id, row.idempotency_key, attemptId, timeZone],
+    );
+    recorded = rows[0]?.id ?? null;
+  } catch (error) {
+    // GIVEN BACK BEFORE THE RECOVERY ASKS FOR ONE, which is the difference between recovering and
+    // wedging. This pool holds `SEND_CONCURRENCY` connections and a tick starts that many workers,
+    // so a refusal that comes from the database rather than from a dropped connection (a
+    // statement, permission or timeout error) leaves every worker holding a live client that
+    // `pg` has no reason to evict. Settling first meant all of them waited on a pool none of them
+    // could return anything to, with the poller's alert transactions open for as long as that
+    // lasted: no reminder sent, by the path added to stop reminders being lost.
+    //
+    // NOTHING THE SETTLEMENT NEEDS GOES BACK WITH IT. It resolves `attemptId`, generated in this
+    // process, against a row named by `row`, both values this frame holds, and it has always
+    // written them on a second connection of its own, so this one never carried any of its state.
+    // There is no open transaction to abandon either: the insert is autocommit, and the answer that
+    // rejected it is the server's, so the statement is finished on the backend before this runs.
+    client.release();
+    await settleUnacknowledgedIntent(writer, row, attemptId);
+    throw error;
+  }
+  client.release();
+  return recorded;
+}
+
+/**
+ * Close an intent whose insert this process never got an answer for.
+ *
+ * RESOLVED RATHER THAN HELD, which is the opposite of what migration 014 does with its own
+ * unknowns and is the right way round for this one. A hold says nobody can tell what a provider
+ * did with the message; here the sender has not run, so there is no message and no provider to ask
+ * — the state is not ambiguous, only the acknowledgement was. Left open, it would be a hold this
+ * side could have ruled out, on a filing reminder that never left the process.
+ *
+ * WRITTEN AS AN INSERT OF THE KNOWN ID, not an update of whatever can be found. The connection can
+ * go away while the backend is still running the original statement, so a search for the row can
+ * miss it and the attempt then lands unresolved a moment later — the same permanent exclusion, one
+ * race further on. Inserting that id either records the resolved attempt or queues on the one in
+ * flight and resolves it, so neither ordering leaves the alert held.
+ *
+ * A ROW THIS WRITES WHERE THE ORIGINAL NEVER LANDED IS TRUE OF WHAT HAPPENED: an attempt was
+ * begun, and nothing was handed over. It is resolved, so no scan, claim or hold count reads it.
+ *
+ * Its own connection, for the reason every write here takes one: the sending transaction is still
+ * open, and this has to commit whatever becomes of it.
+ */
+async function settleUnacknowledgedIntent(
+  writer: Pool,
+  row: DueAlertRow,
+  attemptId: string,
+): Promise<void> {
+  const client = await writer.connect();
+  try {
+    await client.query(
+      `INSERT INTO alert_send_attempts (id, alert_id, idempotency_key, outcome_recorded_at)
+            VALUES ($1, $2, $3, clock_timestamp())
+       ON CONFLICT (id) DO UPDATE SET outcome_recorded_at = clock_timestamp()`,
+      [attemptId, row.id, row.idempotency_key],
+    );
+  } finally {
+    client.release();
+  }
+}
+
+/**
  * Send one claimed alert and record what happened, in the transaction that claimed it.
  *
- * The claim is `FOR UPDATE SKIP LOCKED`, so two ticks (or two api instances) cannot both hold the
- * same row. Marking happens inside the same transaction as the send, so the only window left is a
- * crash between the provider accepting the message and the COMMIT — after which the row is still
- * pending and the next tick sends the same `idempotency_key` again. That is why the key goes to
- * the provider (AD-13): this side cannot distinguish "never sent" from "sent, mark lost", and the
- * provider can.
+ * The claim is `FOR NO KEY UPDATE SKIP LOCKED`, so two ticks (or two api instances) cannot both
+ * hold the same row. Marking happens inside the same transaction as the send, so the only window
+ * left is a crash between the provider accepting the message and the COMMIT — after which the row
+ * is still pending and the next tick sends the same `idempotency_key` again. That is why the key
+ * goes to the provider (AD-13): this side cannot distinguish "never sent" from "sent, mark lost",
+ * and the provider can.
+ *
+ * THAT DEFERRAL EXPIRES, which is what the intent record above is for. The provider only honours a
+ * repeated key for `PROVIDER_DEDUP_WINDOW_HOURS`; past that the same retry is a second delivery.
+ * So the attempt is written before the send and resolved after it, and a resolution that never
+ * arrives is what a later scan reads to hold the row instead of retrying it blind.
  */
 async function deliverClaimed(
   client: PoolClient,
   row: DueAlertRow,
   senders: AlertSenders,
-): Promise<{ status: "sent" | "failed"; delivery: AlertDelivery | null; error: string | null }> {
+  database: Pool,
+  jurisdiction: string,
+): Promise<SendOutcome | null> {
+  const sender = senders[row.channel];
+  // NOTHING TO RECONCILE WHERE NOTHING IS HANDED OVER. The intent exists to catch one state: a
+  // provider holding a message whose outcome this side never learned. The SMS channel is the
+  // labelled in-product simulation while A2P registration is outstanding, so it has no provider,
+  // no key anyone could look a message up by, and no way for a retry to duplicate a delivery —
+  // the crash this record survives loses nothing but a render. Writing one anyway meant a crash
+  // between the intent and the sending transaction eventually took the alert permanently out of
+  // the queue and told the organizer their text alerts were handed to a sending service, both
+  // about a message that never left the process.
+  //
+  // ASKED OF THE SENDER, not of the channel. `alerts.ts` reads the channel everywhere and could
+  // have excluded `sms` in a word, but that word is a claim about configuration this file cannot
+  // see — the same inference `alert-delivery.ts` refuses when it records what a send actually was
+  // on the row rather than leaving a reader to work it out. A live SMS sender is marked as
+  // reaching a provider by saying nothing, so this needs no edit on the day one lands.
+  let attemptId: string | null = null;
+  if (sender.reachesAProvider !== false) {
+    attemptId = await recordAttemptIntent(database, row, jurisdictionTimeZone(jurisdiction));
+    // The claim permitted this send and the wait for the writer's connection outlived what the
+    // claim reserved, so the permission has expired: the key would reach the provider outside the
+    // window it deduplicates within. Nothing is sent and nothing is marked, so the row is exactly
+    // what it was and the next tick reads it as the hold it has become.
+    if (attemptId === null) return null;
+  }
+  const resolveAttempt = async (queryable: Queryable): Promise<void> => {
+    if (attemptId === null) return;
+    await queryable.query(
+      "UPDATE alert_send_attempts SET outcome_recorded_at = clock_timestamp() WHERE id = $1",
+      [attemptId],
+    );
+  };
+  // A DELIVERY IS RECORDED IN THE SENDING TRANSACTION, so a crash that loses the mark-sent loses
+  // this too. That is the correct outcome rather than a limitation: the provider is holding a
+  // message this side never confirmed, and both writes describe that same lost knowledge.
+  const recordDelivery = async (): Promise<void> => resolveAttempt(client);
+  // A PROVEN NON-DELIVERY IS NOT, and the difference is which way the loss falls. This side knows
+  // the provider was never reached, so nothing can be duplicated by a retry and the attempt is
+  // closed. Written on the sending connection, that knowledge rolled back with the mark-failed
+  // whenever the process died holding it, and an outage lasting past the provider's dedup window
+  // then left the next process reading a KNOWN non-delivery as an unresolved attempt: the alert is
+  // held out of every poll and named as a message someone must reconcile against a provider that
+  // never had it. A hold is the one state nothing in this product clears by itself, so the
+  // evidence that rules it out has to survive independently of the transaction that learned it.
+  //
+  // ON THE ATTEMPT WRITER'S CONNECTION, the same one the intent was written on and for the same
+  // mechanical reason: it commits on its own, immediately, and cannot be rolled back by the send.
+  // It updates no key column, so it takes no lock on the `alerts` row the claim is holding.
+  //
+  // AND WRITTEN AGAIN IF THE FIRST WRITE IS REFUSED, because a single statement is not somewhere
+  // knowledge that must survive can be left. A dropped writer connection, or a database that
+  // answers this UPDATE with an error, threw out of the delivery: the sending transaction rolled
+  // back with the mark-failed still inside it, and the attempt stayed unresolved even though this
+  // side had already proved the provider was never reached. No later tick repairs that row (a
+  // retry opens its own attempt and resolves that one), so the unresolved row ages until it passes
+  // the cutoff and holds the alert out of every scan for good, over exactly the outage the poller
+  // is supposed to ride out.
+  //
+  // A FRESH CONNECTION FOR THE SECOND WRITE, which is what the intent-insert acknowledgement path
+  // already does after the same kind of refusal, and with the same statement: an idempotent write
+  // of a known id can only reach the state it was trying to reach, however many times it runs. The
+  // first connection goes back before the second is asked for, for the reason recorded on that
+  // path: this pool holds `SEND_CONCURRENCY` connections and a tick starts that many workers, so a
+  // refusal answered by a live backend leaves every worker holding a client none of them may wait
+  // on a pool for.
+  //
+  // AND GETTING THE CONNECTION IS PART OF WHAT IS RECOVERED, which is where this was wrong. The
+  // second write exists because the first one can be refused, and it was written to cover the
+  // statement while leaving the acquisition in front of it: this pool holds no connection open
+  // across a provider call, so between the intent and here its client can be dropped and the
+  // reconnect is a fresh wait on the database, the transient connect timeout the sending client
+  // never sees, because it is holding its own connection throughout. Raised outside the `try`,
+  // that rejection carried a committed intent out of the delivery, the sending transaction rolled
+  // back with the mark-failed still in it, and a non-delivery this side had PROVED was left
+  // unresolved: the one state nothing clears by itself, reached over exactly the outage the poller
+  // is supposed to ride out.
+  //
+  // The settlement is what recovers it, on a connection it asks for itself, so a pool that has one
+  // to give a moment later still records what happened.
+  const recordProvenNonDelivery = async (): Promise<void> => {
+    if (attemptId === null) return;
+    const writerPool = attemptWriterFor(database);
+    let writer: PoolClient | null = null;
+    try {
+      writer = await writerPool.connect();
+      await resolveAttempt(writer);
+    } catch {
+      // Only where one was actually taken: a refused acquisition leaves nothing to give back, and
+      // the settlement asks this pool for a connection either way.
+      writer?.release();
+      await settleUnacknowledgedIntent(writerPool, row, attemptId);
+      return;
+    }
+    writer.release();
+  };
+  // THE SEND BOUNDARY: the last statement before the provider, and the place both decisions about
+  // this send are now made.
+  //
+  // BOTH IN ONE STATEMENT, because what went wrong twice was not either question but the gap after
+  // it. The window was asked, then a connection was taken and an intent written; the cutoff was
+  // asked, then the window was asked again. Each answer was correct where it was given and stale by
+  // the time it was used, and each fix bounded one more wait. Asked here there is no gap left to
+  // insert one into: after this line the next thing that happens is the request.
+  //
+  // THE WINDOW, because getting the writer's connection is a wait no arithmetic bounds — it can
+  // queue behind `SEND_CONCURRENCY` other sends or wait on a new backend — so a claim that passed
+  // just before local midnight could hand over copy naming a deadline that has since gone, a
+  // reminder telling an organizer to file by yesterday, issued by the path whose job is to retire
+  // that row. `today` is recomputed rather than reused: the stale value is the whole defect.
+  // Retired here rather than only left alone, because that is what the claim does with a window it
+  // finds already shut, and the two are the same decision made at two moments.
+  //
+  // THE CUTOFF, because that same wait spends the margin the claim reserved for it. Past the
+  // provider's dedup window the repeated key is deduplicated by nobody and the organizer gets a
+  // second copy of the same reminder. Nothing is sent and nothing is marked, so the row is exactly
+  // what it was and the next tick reads it as the hold it has become.
+  //
+  // THE INTENT IS CLOSED ON BOTH PATHS. Nothing was handed over, so an attempt left open would ask
+  // a person to reconcile a message that never left this process — and would itself become a hold
+  // 24 hours later, recorded by the statement that refused to send.
+  //
+  // AND ON THE PATH WHERE THE QUESTION ITSELF IS REFUSED, which is the same statement failing
+  // rather than answering. A rejection here — a dropped connection, a cancelled statement — is
+  // PROOF that the provider was never reached, because the sender is on the other side of this
+  // line, so it is exactly the proven non-delivery every other branch settles. Left to unwind,
+  // the exception carried a committed intent out of `sendOne` and that attempt paused the alert
+  // for the whole hold while no provider could possibly have been holding it.
+  if (attemptId !== null) {
+    const boundaryDay = todayInJurisdiction(jurisdiction, new Date());
+    const handoffDay = dayTheHandoffCanLastUntil(jurisdiction, Date.now());
+    // Stamped by the ask itself, for the reason `askTheSendBoundary` records: an anchor taken when
+    // this frame resumes cannot see the wait it is supposed to be measuring.
+    const boundary = await askTheSendBoundary(client, row.id, boundaryDay, handoffDay).catch(
+      async (error: unknown) => {
+        await recordProvenNonDelivery();
+        throw error;
+      },
+    );
+    // THE DAY THE ANSWER WAS ABOUT, which is not necessarily the day it arrived on. The cutoff
+    // half of this statement reads `clock_timestamp()` and is therefore evaluated whenever the
+    // backend gets to it, but the window half is asked about `$2`, a calendar day this process
+    // computed before the statement was issued — and issuing it is another wait nothing bounds: a
+    // stalled backend or a connection that has to be re-established can carry it over local
+    // midnight. Answered then, `FILING_WINDOW_HAS_SHUT` says false about yesterday and the
+    // reminder goes to the provider naming a filing date the organizer can no longer meet.
+    //
+    // RECOMPUTED AND COMPARED rather than trusted, which is the same treatment the margin
+    // assertion below gives the same kind of wait. A day that turned over means the answer is not
+    // about this send, so it is not used at all — not even to cancel, since a decision taken on
+    // the wrong day is wrong in both directions. Fails closed: nothing is handed over, the intent
+    // is closed because nothing was, and the next tick asks both questions again on the day it is
+    // then.
+    //
+    // BOTH DAYS THE ANSWER WAS ABOUT, since the statement now asks the window twice: once about
+    // the day the boundary is on and once about the day the handoff it permits can last until.
+    // The second turns over first, in the last `SEND_BOUNDARY_MARGIN_MS` of every day, and an
+    // answer computed before that instant says the window is open at a moment it is not.
+    if (
+      todayInJurisdiction(jurisdiction, new Date()) !== boundaryDay ||
+      dayTheHandoffCanLastUntil(jurisdiction, Date.now()) !== handoffDay
+    ) {
+      console.warn(
+        `alert ${row.id} crossed a jurisdiction day boundary while the send boundary was in ` +
+          `flight, so its filing-window answer is about ${boundaryDay} and not about the day ` +
+          `this send would happen on; nothing was sent`,
+      );
+      await recordProvenNonDelivery();
+      // SKIPPED, for the reason the margin refusal below is: this exit takes no decision at all —
+      // not even to cancel — so it leaves the row exactly as due as it found it, with its intent
+      // closed and nothing claiming it. What it needs is the same two questions asked again on the
+      // day it is now, which is one claim away, and reporting it as handled makes the tick wait
+      // out an interval first. On a row whose window is still open that is a delivery delayed for
+      // no reason; on one whose window has shut it is a retirement delayed the same way.
+      return { status: "skipped" };
+    }
+    if (boundary.shut) {
+      // SETTLED WHERE THE SETTLEMENT CAN SURVIVE, which is not here. This statement is the
+      // strongest proof this file ever has that the provider was never reached — the sender is on
+      // the other side of it — and recorded on the sending connection that proof went back with
+      // the transaction whenever the transaction went back. What was left was the alert still
+      // pending and still carrying an unresolved attempt about a message no provider could be
+      // holding: the one state nothing in this product clears by itself, and one an organizer's
+      // own regeneration then carries onto the refreshed reminder, where it can hold that too.
+      //
+      // The independent writer is what every other pre-handoff exit here uses, and this was the
+      // one that did not.
+      await recordProvenNonDelivery();
+      // The cancellation stays in the sending transaction, which is where it belongs: it is a
+      // decision about the alert row this transaction holds the claim on, and if the transaction
+      // is lost the row is simply still due and the next tick retires it on the same answer.
+      await client.query("UPDATE alerts SET status = 'cancelled' WHERE id = $1", [row.id]);
+      return null;
+    }
+    if (boundary.held) {
+      // On the writer's own connection, for the reason `recordProvenNonDelivery` records: this
+      // transaction is about to be rolled back to nothing, and the knowledge that no message left
+      // has to survive that.
+      await recordProvenNonDelivery();
+      return null;
+    }
+    // THE ASSERTION THE MARGIN RESTS ON. Everything above reserved room for one bounded request and
+    // for getting to it; if getting to it took longer than that reservation, the answer above is no
+    // longer the answer for this send and the key could reach the provider outside the window it
+    // deduplicates within. Fails closed, like every other boundary decision here: nothing is handed
+    // over, the intent is closed because nothing was, and the next tick reads the row as it stands.
+    if (!handoffFitsTheMargin(boundary.askedAt, Date.now())) {
+      console.warn(
+        `alert ${row.id} spent more than ${SEND_BOUNDARY_HANDOFF_BUDGET_MS}ms between the send ` +
+          `boundary and the provider handoff, which is the margin the boundary reserved for it; ` +
+          `nothing was sent`,
+      );
+      await recordProvenNonDelivery();
+      // SKIPPED RATHER THAN NULL, because this refusal leaves work nobody is doing. The row is
+      // pending, unmarked and immediately retryable — it was not cancelled, not rescheduled and
+      // not taken by another worker, which is everything `null` is allowed to mean here. Reported
+      // as nothing to do, a non-full scan reads as drained and the poller waits out a whole
+      // interval before asking again; an alert that had already waited nearly one interval before
+      // this tick claimed it then misses AC 2's two-minute bound over an event-loop pause of a
+      // second, with a healthy provider on the other end. Reported as unfinished, the tick's own
+      // skip retry chases it, which is what it does with every other due-but-unclaimed row.
+      //
+      // Round 16 drew this distinction at the alert and round 31 at the tick; this is the same
+      // distinction missing on the one exit that creates the condition itself rather than
+      // discovering it.
+      return { status: "skipped" };
+    }
+    // THE WINDOW EDGE, asked where the dedup margin is asserted and for the same reason. See
+    // `dayTheHandoffCanLastUntil`: the answer above is true of the whole of `boundaryDay` and says
+    // nothing about how much of it is left, so a final-day reminder can pass this boundary with
+    // seconds to spare and still reach the provider after the window has shut, naming a filing
+    // date the organizer can no longer meet. This is the same question asked about the last day
+    // the request can still be running on, so it stops exactly that row and no other: an alert
+    // whose window is open past today, and one that has no window at all, are unaffected by how
+    // little of the day is left.
+    if (boundary.shutByTheHandoffsEnd) {
+      console.warn(
+        `alert ${row.id} reached the send boundary with less than ${SEND_BOUNDARY_MARGIN_MS}ms of ` +
+          `its filing window left in ${jurisdiction}, which is what the bounded handoff in front ` +
+          `of the provider can cost, so the window could shut before the request lands; ` +
+          `nothing was sent`,
+      );
+      await recordProvenNonDelivery();
+      // Null rather than skipped, unlike the margin refusal above: that one is a gap this process
+      // can be through on the very next attempt, and this one is the day ending. There is no later
+      // moment inside the window for a retry to use, so nothing is owed and the next tick retires
+      // the row rather than chasing it.
+      return null;
+    }
+  }
   try {
-    const delivery = await senders[row.channel]({
+    const delivery = await sender({
       recipient: row.recipient,
       subject: row.payload.subject ?? "",
       body: row.payload.body ?? "",
@@ -1727,12 +2638,19 @@ async function deliverClaimed(
         WHERE id = $1`,
       [row.id, JSON.stringify({ delivery })],
     );
+    await recordDelivery();
     return { status: "sent", delivery, error: null };
   } catch (error) {
     const message =
       error instanceof AlertDeliveryError ? error.message : "delivery failed for an unknown reason";
     if (!(error instanceof AlertDeliveryError))
       console.error(`alert ${row.id} delivery failed`, error);
+    // A refusal and an unreachable host are answers, so the attempt is closed and the row keeps
+    // being retried for as long as the outage lasts (spec edge case: nothing is lost). A timeout
+    // is not an answer, and an unrecognised throw is not one either, so those are left open and
+    // reconciled rather than retried once the provider's dedup window has passed.
+    if (error instanceof AlertDeliveryError && error.outcomeObserved)
+      await recordProvenNonDelivery();
     // Failed, counted, and left for the next tick. Nothing is lost while a provider is down
     // (spec edge case); the count is what distinguishes a blip from an address that never works.
     await client.query(
@@ -1830,6 +2748,11 @@ async function sendOne(
     // The event lock above is what makes this recheck meaningful rather than another race: it is
     // held before this reads, so what it reads is a state no review is midway through changing.
     // The lock supplies the safe point; the predicate is still needed to use it.
+    // The ZONE, not the day. This transaction has already waited on the event lock and is about
+    // to wait on the row's, so a day derived here is a day bound into a statement with unbounded
+    // waits behind it; `jurisdictionDayInSql` derives it where the predicates read it instead.
+    const timeZone = jurisdictionTimeZone(jurisdiction);
+    const claimDay = jurisdictionDayInSql("$2");
     const { rows } = await client.query<DueAlertRow>(
       // The staleness check belongs HERE as well as in the scan, and for the same reason the due
       // predicate is re-asked here: the event edit this guards against can commit in the window
@@ -1837,16 +2760,37 @@ async function sendOne(
       // is midway through changing.
       `SELECT id, channel, recipient, idempotency_key, payload
          FROM alerts
-        WHERE id = $1 AND status IN ('pending', 'failed') AND send_at <= current_timestamp
-          AND (next_attempt_at IS NULL OR next_attempt_at <= current_timestamp)
+        WHERE id = $1 AND status IN ('pending', 'failed') AND send_at <= statement_timestamp()
+          AND (next_attempt_at IS NULL OR next_attempt_at <= statement_timestamp())
           AND ${NOT_FROM_A_STALE_PLAN}
+          -- RE-ASKED HERE for the same reason as everything else on this claim: an attempt can
+          -- age past the dedup window between the scan and this, and the decision must be made
+          -- where the alert is acted on.
+          --
+          -- A HOLD STOPS A SEND, NOT AN EXISTENCE. Written as a bare NOT, this predicate also
+          -- stopped the row from reaching the expiry decision below, so a held alert whose filing
+          -- window later shut could never be retired: it stayed pending and was reported as
+          -- needing a person to reconcile it against a provider, about a deadline that can no
+          -- longer be reminded at all. Nothing the hold protects is at risk on that path — a
+          -- cancellation delivers nothing and cannot duplicate anything — so a closed window is
+          -- let through to be retired, and the expiry check three statements down is what it
+          -- reaches. It cannot reach a send: that branch returns before one.
+          AND (NOT ${hasAnUnresolvedAttempt(claimDay)} OR ${FILING_WINDOW_HAS_SHUT(claimDay)})
           -- RE-ASKED HERE, not inherited from the sweep at the top of the tick. See
           -- FILING_WINDOW_HAS_SHUT: the queue this row came from can run for the whole budget,
           -- so a tick that swept before local midnight could deliver a filing date that had since
           -- become yesterday. Read under the event lock, which is what makes it a safe point
           -- rather than another race.
-        FOR UPDATE SKIP LOCKED`,
-      [alertId],
+          --
+          -- FOR NO KEY UPDATE rather than FOR UPDATE, which changes nothing about who may send
+          -- this alert — the two conflict with each other and with every UPDATE, so one worker
+          -- still excludes the others and the reconciler still queues behind a claim. What it
+          -- stops excluding is FOR KEY SHARE, the lock a foreign key takes on the parent row, so
+          -- the attempt-intent insert can commit on its own connection while this transaction is
+          -- still open. Under FOR UPDATE that insert would wait for the send it is recording,
+          -- which is the one thing it must not do.
+        FOR NO KEY UPDATE SKIP LOCKED`,
+      [alertId, timeZone],
     );
     const row = rows[0];
     if (row === undefined) {
@@ -1863,9 +2807,15 @@ async function sendOne(
     // already here: this is the per-alert safe point, the event row is held, the window recheck
     // lives here for the same reason, and the staleness predicate above is evaluated against a
     // revision no writer is midway through changing. One decision, one place, one lock.
+    //
+    // ASKED ABOUT THE DAY IT IS NOW, not the day the claim was computed for. The claim is a wait
+    // like any other — the event lock, the row's own lock, the statement itself — so `today` can
+    // be yesterday by the time this runs. On the simulated SMS channel this is the LAST filing
+    // window check there is: nothing is handed to a provider, so no intent is recorded and the
+    // send boundary that re-asks the question is never reached.
     const { rows: expired } = await client.query(
-      `SELECT 1 FROM alerts WHERE id = $1 AND ${FILING_WINDOW_HAS_SHUT("$2")}`,
-      [alertId, todayInJurisdiction(jurisdiction, new Date())],
+      `SELECT 1 FROM alerts WHERE id = $1 AND ${FILING_WINDOW_HAS_SHUT(jurisdictionDayInSql("$2"))}`,
+      [alertId, timeZone],
     );
     if (expired[0] !== undefined) {
       // Cancelled rather than left pending, for round 19's reason: the scheduler will refuse to
@@ -1876,7 +2826,7 @@ async function sendOne(
       return null;
     }
 
-    const outcome = await deliverClaimed(client, row, senders);
+    const outcome = await deliverClaimed(client, row, senders, database, jurisdiction);
     await client.query("COMMIT");
     return outcome;
   } catch (error) {
@@ -1901,6 +2851,18 @@ export type AlertTickSummary = {
    */
   readonly skipped: number;
   /**
+   * Due alerts whose send was attempted, whose outcome was never observed, and whose attempt is
+   * now older than the provider's dedup window. Attempted rather than handed over: the attempt is
+   * recorded before the sender runs, so a process that died in between counts here too.
+   *
+   * NOT a subset of `abandoned`, and not work this tick failed to reach: no tick claims these
+   * while they are held. Retrying one may deliver a second copy to the same person, so it waits
+   * for a human to reconcile it against the provider, or for `UNRESOLVED_ATTEMPT_HOLD_LIMIT_HOURS`
+   * to pass, after which it is retried anyway. Counted because a queue that stops moving with
+   * nothing failing is otherwise indistinguishable from an empty one.
+   */
+  readonly heldForReconciliation: number;
+  /**
    * Whether this tick reached the end of the work that was due, which is the ONE question the
    * poller has to answer and has been inferring three different ways.
    *
@@ -1921,7 +2883,18 @@ export type AlertPoller = {
   /** One pass over everything due. Exposed so tests drive the poller without waiting on a timer. */
   tick(): Promise<AlertTickSummary>;
   start(): void;
-  stop(): void;
+  /**
+   * Stop taking work, and settle what is already in flight.
+   *
+   * Awaitable because a process that exits mid-send is how an alert acquires an attempt nothing
+   * recorded: the provider accepts, the row's transaction never commits, and the alert is left
+   * `pending`, which reads as never attempted to every later reader, including the one migration
+   * 014 creates. DEPLOY.md's release order asks a deployer to drain the running api for exactly
+   * that reason, and a drain nobody can await is an instruction the process cannot carry out. That
+   * step applies from the rollout after the one introducing this: the build it stops on that one
+   * predates the handler, and the runbook says what covers that single window instead.
+   */
+  stop(): Promise<void>;
 };
 
 export function createAlertPoller(dependencies: {
@@ -1947,6 +2920,17 @@ export function createAlertPoller(dependencies: {
   let stopped = false;
 
   const tick = async (): Promise<AlertTickSummary> => {
+    // EACH STATEMENT ASKS ABOUT THE DAY IT RUNS ON, which is the rule every other reader of a
+    // jurisdiction day in this file arrived at. One day pinned for the whole tick was the older
+    // shape and it read as consistency: the scan can run for the whole budget, so a tick that
+    // started before local midnight counted holds against a day that had gone and warned an
+    // operator about rows the claims behind it, which re-read the day under the event lock, go
+    // on to retire without anyone reconciling anything. The two statements do not need the same
+    // value; they need the right one.
+    // The ZONE, not the day: every statement below derives its own day where it reads it, so
+    // there is no value here for an unbounded wait to make stale.
+    const timeZone = jurisdictionTimeZone(jurisdiction);
+    const day = jurisdictionDayInSql("$1");
     // Ids first, then one transaction per alert. One transaction for the whole batch would hold
     // every send under a single COMMIT, so a crash midway would re-send everything already
     // delivered in it; per row, only the row in flight is ever in doubt.
@@ -1974,9 +2958,14 @@ export function createAlertPoller(dependencies: {
       // destination from the batch rather than only demoting it.
       `SELECT id FROM alerts
         WHERE status IN ('pending', 'failed')
-          AND send_at <= current_timestamp
-          AND (next_attempt_at IS NULL OR next_attempt_at <= current_timestamp)
+          AND send_at <= statement_timestamp()
+          AND (next_attempt_at IS NULL OR next_attempt_at <= statement_timestamp())
           AND ${NOT_FROM_A_STALE_PLAN}
+          -- Excluded from the scan as well as from the claim, so a row awaiting reconciliation
+          -- does not consume a slot in every capped scan for as long as it goes unreconciled.
+          -- Except where its window has shut, for the reason the claim states: a held row still
+          -- has to be able to reach the one path that retires it, and that path sends nothing.
+          AND (NOT ${hasAnUnresolvedAttempt(day)} OR ${FILING_WINDOW_HAS_SHUT(day)})
         -- SAME-INSTANT ROWS ARE ORDERED BY WHAT DEPENDS ON WHAT, not by uuid. A gated window
         -- exactly one reminder offset wide puts the dependency alert and the filing reminder on the
         -- same send_at, and the tiebreak then fell through to id, so which one an organizer saw
@@ -2028,6 +3017,7 @@ export function createAlertPoller(dependencies: {
                  send_at,
                  CASE alert_type WHEN 'dependency_unlocked' THEN 0 ELSE 1 END, id
         LIMIT ${MAX_ALERTS_PER_TICK}`,
+      [timeZone],
     );
     const scanWasFull = rows.length === MAX_ALERTS_PER_TICK;
     if (scanWasFull) {
@@ -2036,6 +3026,52 @@ export function createAlertPoller(dependencies: {
       console.warn(
         `alert poll filled its ${MAX_ALERTS_PER_TICK}-row scan; alerts beyond it wait for the ` +
           `next scan and may exceed the ${DELIVERY_BOUND_MS}ms delivery bound`,
+      );
+    }
+    // WHAT THE SCAN JUST REFUSED TO CLAIM, counted rather than left silent. A held row is due,
+    // undelivered as far as this side knows, and no tick will move it while the hold lasts: the
+    // ways out are a human checking the provider for the key and then either marking the alert
+    // sent or clearing its attempt, or the hold limit passing, after which the poller retries it
+    // and accepts the possible duplicate. Reporting nothing would make that look like an empty
+    // queue, and the first of those two exits is the one that avoids the duplicate.
+    //
+    // NOT ROWS THE PRODUCT CAN RETIRE ITSELF, which is why the scan's staleness predicate is here
+    // too. A hold asserts that only a person checking the provider can resolve this alert, and
+    // that is false of one whose plan the event has been edited past: regeneration cancels it. The
+    // count without the predicate warned about every obsolete row on every tick for as long as an
+    // organizer took to regenerate, which is both a false alarm and the way a genuine hold gets
+    // buried.
+    //
+    // A SHUT WINDOW IS THE OTHER THING THE PRODUCT RETIRES ITSELF, so it is excluded here for the
+    // same reason staleness is. This tick is about to cancel that row rather than leave it for a
+    // person, and warning that it needs reconciling in the same pass that retires it is the false
+    // alarm the staleness predicate was added to stop.
+    //
+    // AND NEITHER IS A DEMO SEND, which migration 014 and the organizer's own notice already
+    // refuse and this count did not. A test row whose intent committed before the api went down
+    // never reaches `retireFailedTestAlert`, so it comes back due and unresolved and ages past the
+    // cutoff like any other — and was then named on every tick as a permanent reconciliation. An
+    // AC 6 demo is an operator action against no deadline: nobody is waiting on it, so warning
+    // about one only buries the genuine holds this counter exists to make visible.
+    const { rows: held } = await database.query<{ id: string }>(
+      `SELECT id FROM alerts WHERE ${HELD_FOR_RECONCILIATION(day)}`,
+      [timeZone],
+    );
+    if (held.length > 0) {
+      // Ids only. The row's recipient is contact data and does not go in a log (AGENTS.md).
+      //
+      // ATTEMPTED, NOT HANDED OVER, and the difference is the whole of what the operator reading
+      // this is about to go and find out. The attempt is recorded before `sender(...)` runs, so a
+      // process that died in that gap leaves the same evidence as one that died mid-send; past the
+      // cutoff both are this line. Asserting the handoff sends a reconciliation after a message
+      // that may never have left this process, and says the one thing this side does not know.
+      console.warn(
+        `${held.length} alert(s) were recorded as attempted sends whose outcome never came back, ` +
+          `so this side cannot tell whether a provider ended up holding them, long enough ago ` +
+          `that its ${PROVIDER_DEDUP_WINDOW_HOURS}h dedup window would have closed before a ` +
+          `retry could land, so they are held rather than retried until they reach ` +
+          `${UNRESOLVED_ATTEMPT_HOLD_LIMIT_HOURS}h, when they are retried anyway: ` +
+          `${held.map((row) => row.id).join(", ")}`,
       );
     }
     // The expiry sweep that used to run here is gone. It took no lock, so it could read a
@@ -2131,7 +3167,14 @@ export function createAlertPoller(dependencies: {
           `they stay due and are taken by the next tick`,
       );
     }
-    return { sent, failed, abandoned, skipped: stillSkipped, drained };
+    return {
+      sent,
+      failed,
+      abandoned,
+      skipped: stillSkipped,
+      heldForReconciliation: held.length,
+      drained,
+    };
   };
 
   /** Set while consecutive ticks keep reporting skipped work, so the chasing cannot run forever. */
@@ -2209,7 +3252,7 @@ export function createAlertPoller(dependencies: {
       // The poller must never be the reason the process stays up.
       timer.unref();
     },
-    stop() {
+    async stop() {
       // The flag as well as the timer: clearing the timer stops the NEXT tick, and a tick already
       // running would otherwise work through its whole batch after the caller believes the poller
       // is off — still claiming rows and still sending them.
@@ -2220,6 +3263,14 @@ export function createAlertPoller(dependencies: {
       chasingSince = null;
       if (timer !== null) clearInterval(timer);
       timer = null;
+      // AND THEN THE SEND ALREADY IN FLIGHT, which the flag above cannot reach: it stops the
+      // worker taking the NEXT row, and the row in its hand is inside a provider call with its
+      // transaction open. Exiting there is what leaves a send nothing recorded: accepted by the
+      // provider, `pending` in the database, invisible to the attempt record afterwards.
+      //
+      // The rejection is not this caller's to handle: `start` already logs a failed tick, and a
+      // shutdown that threw because the last tick did would skip everything after it.
+      await runningTick?.catch(() => undefined);
     },
   };
 }
@@ -2478,6 +3529,16 @@ export async function simulatedDeliveries(
  * Test sends are excluded. A demo alert fired at a deliberately bogus address is an operator
  * action against no deadline, and counting it would tell an organizer their own reminders are
  * failing when they are not. Same predicate the reconciler already uses to leave test rows alone.
+ *
+ * AND SO ARE THE ROWS THE POLLER HAS STOPPED ON, because this count is read under copy that says
+ * retrying continues. An alert whose attempt outlived the provider's dedup window is not taken by
+ * any tick while it is held, so counting it here told an organizer delivery was still being
+ * attempted while it had in fact stopped. Those rows are reported by `reconciliationHolds` instead, which
+ * says what is actually true of them. The stale-plan half of the pair stays HERE rather than
+ * moving: the notice already has a paused branch that names regeneration, which is the action that
+ * resolves it, and the reconciliation notice would send the organizer after the provider instead.
+ * What that branch may NOT do is promise the review starts such a row again, which is what
+ * `attemptedWithoutOutcome` below is for.
  */
 export type FailedDelivery = {
   readonly channel: AlertChannel;
@@ -2491,6 +3552,24 @@ export type FailedDelivery = {
    * work this out from anything else it is given, so it is answered here.
    */
   readonly heldForReview: boolean;
+  /**
+   * Whether any of these rows was attempted with no outcome ever recorded.
+   *
+   * WHAT IT QUALIFIES IS THE PROMISE, not the count. `heldForReview` names the action that resumes
+   * a paused failure — regenerate the plan, review the checklist — and that action does resume an
+   * ordinary stale failure. It does not resume one carrying an attempt nobody saw the end of: the
+   * scheduler upserts a failed row in place, and a review supersedes an attempt only on a row
+   * revived FROM `cancelled`, so the old attempt survives the review and the refreshed row becomes
+   * a reconciliation hold instead of a retry. The organizer was being told to do something that
+   * would not start it again. (`recordAttemptIntent` supersedes an overtaken attempt as well, but
+   * that is the poller retrying past the hold bound rather than anything a review does.)
+   *
+   * ANSWERED HERE BECAUSE NOTHING A CLIENT IS GIVEN CAN SAY IT, which is why `heldForReview` is
+   * answered here too: both turn on rows the page never sees. A row counted here with an
+   * unresolved attempt is necessarily a stale one — a current-plan row in that state leaves this
+   * count for `reconciliationHolds` — so this is the paused-and-will-not-resume case exactly.
+   */
+  readonly attemptedWithoutOutcome: boolean;
   /** Alerts on this channel whose most recent attempt failed. Never zero: absent instead. */
   readonly failedCount: number;
 };
@@ -2498,27 +3577,162 @@ export type FailedDelivery = {
 export async function failedDeliveries(
   database: Queryable,
   eventId: string,
+  jurisdiction: string,
 ): Promise<FailedDelivery[]> {
+  return (await alertDeliveryHealth(database, eventId, jurisdiction)).failedDeliveries;
+}
+
+/**
+ * A channel with alerts the poller will never take again, counted so the organizer is told.
+ *
+ * THE DIFFERENCE BETWEEN "STILL TRYING" AND "STOPPED", which is the one distinction the checklist
+ * could not draw. An alert whose send was attempted and whose answer nobody saw stops being claimable once
+ * the provider's dedup window has closed on it, because a retry past that point is a second
+ * delivery rather than a deduplicated one. Nothing in the poller moves it afterwards. Neither
+ * surface reported that: a crash leaves the row `pending`, which `failedDeliveries` correctly says
+ * nothing about, and a lost answer leaves it `failed`, where it was counted under copy promising
+ * retries that had already ended. For a product whose purpose is that a filing deadline does not
+ * pass unnoticed, telling an organizer delivery continues when it has stopped is the worst thing
+ * available short of losing the alert.
+ *
+ * DERIVED, NOT PERSISTED, and that is deliberate rather than convenient. The hold is a fact about
+ * how old an attempt is, so it becomes true with the passage of time and unwinds the moment
+ * somebody records the outcome or supersedes the attempt. A status column would have to be written
+ * by whichever tick happened to notice and then unwritten by hand, and the row would keep claiming
+ * a hold after the thing that caused it was resolved. Reading it costs one query on a surface that
+ * already runs several, and it cannot disagree with the predicate the poller actually uses because
+ * it IS that predicate.
+ *
+ * Pending as well as failed, because the crash case is the silent one. Test rows are excluded for
+ * the reason they are excluded everywhere else, stale-plan rows because regeneration cancels them
+ * rather than a person reconciling them, and rows whose filing window has shut because the next
+ * tick cancels those without asking anybody anything.
+ */
+export type ReconciliationHold = {
+  readonly channel: AlertChannel;
+  /** Alerts on this channel the poller has stopped on for now. Never zero: absent instead. */
+  readonly heldCount: number;
+};
+
+export async function reconciliationHolds(
+  database: Queryable,
+  eventId: string,
+  jurisdiction: string,
+): Promise<ReconciliationHold[]> {
+  return (await alertDeliveryHealth(database, eventId, jurisdiction)).reconciliationHolds;
+}
+
+/**
+ * Both alert-delivery notices an organizer reads, classified in ONE statement.
+ *
+ * THE TWO ARE ONE QUESTION ASKED TWICE, and asking it twice is what let them contradict each other.
+ * "Still being retried" and "stopped until a person checks with the provider" are complementary by
+ * construction: the same predicate decides which side a row falls on. But the predicate turns on
+ * how OLD an attempt is, so it flips with the passage of time — and two pool queries are two
+ * autocommit snapshots with real time between them. An alert crossing the dedup cutoff in that gap
+ * was counted as a failure by the first and as a hold by the second, so the checklist arrived
+ * carrying both notices about one row: PopEngine keeps retrying this, and PopEngine has stopped
+ * retrying this. The page holds that until it is reloaded.
+ *
+ * One statement cannot disagree with itself, so the classification happens once, over one snapshot,
+ * and the two projections are taken from it. The exported pair above are kept as the narrow reads
+ * for callers that want only one of them; neither restates the predicate.
+ */
+export async function alertDeliveryHealth(
+  database: Queryable,
+  eventId: string,
+  /**
+   * The jurisdiction whose calendar day decides this, because a hold is only a hold while the
+   * deadline still exists.
+   *
+   * Passed in rather than read here for the reason the poller states: there is no honest default
+   * for which jurisdiction's day this is, and a wrong one classifies holds on the wrong day.
+   *
+   * A JURISDICTION RATHER THAN A DAY, which is the rule the claim and the send boundary each
+   * arrived at taken one wait further: A DAY IS DERIVED WHERE IT IS USED, and where it is used is
+   * the statement. A day this process derives, even at the last instruction before the query,
+   * is a value bound into a statement that has an unbounded wait in front of it, so a read
+   * starting just before local midnight can reach PostgreSQL after it and classify a hold against
+   * a day that has gone. What crosses the wire is the zone; `jurisdictionDayInSql` derives the day
+   * where the predicate reads it.
+   */
+  jurisdiction: string,
+): Promise<{
+  readonly failedDeliveries: FailedDelivery[];
+  readonly reconciliationHolds: ReconciliationHold[];
+}> {
+  // A HELD ALERT LEAVES THE FAILURE COUNT AND ARRIVES UNDER ITS OWN FIELD, which is a change of
+  // shape and therefore a rollout question rather than only an endpoint one. Web and api deploy
+  // separately (`docs/ARCHITECTURE.md`), so for the length of an api-first rollout a web build that
+  // predates `alertsHeldForReconciliation` would render neither notice about such an alert: the
+  // organizer would be told nothing at all about a reminder nobody will send again.
+  //
+  // ORDERED RATHER THAN PAPERED OVER, and the alternative is what decides it. The only field an
+  // older web build renders here is the failure count, and every sentence it can put on one is a
+  // promise about what happens next: PopEngine keeps retrying them, or retrying is paused until
+  // the plan is regenerated. Both are false of an alert the poller has stopped on, and copy an
+  // organizer reads about a filing deadline does not get to be false in order to be present. So the
+  // window is closed instead of filled: `DEPLOY.md` "Release order" puts the web service first,
+  // this build's reader already treats the field as absent-means-none for the converse order, and
+  // `apps/api/src/deployment-order.test.ts` fails if that step is dropped while this split stands.
+  const day = jurisdictionDayInSql("$2");
   const { rows } = await database.query<{
     channel: AlertChannel;
-    count: number;
-    held: boolean | null;
+    failed_count: number;
+    held_for_review: boolean | null;
+    attempted_without_outcome: boolean | null;
+    hold_count: number;
   }>(
-    `SELECT channel, count(*)::int AS count,
-            bool_or(NOT (${NOT_FROM_A_STALE_PLAN})) AS held
+    `SELECT channel,
+            count(*) FILTER (
+              WHERE status = 'failed'
+                AND NOT (${hasAnUnresolvedAttempt(day)} AND ${NOT_FROM_A_STALE_PLAN})
+            )::int AS failed_count,
+            bool_or(NOT (${NOT_FROM_A_STALE_PLAN})) FILTER (
+              WHERE status = 'failed'
+                AND NOT (${hasAnUnresolvedAttempt(day)} AND ${NOT_FROM_A_STALE_PLAN})
+            ) AS held_for_review,
+            -- Over the same rows the count is taken from, so it qualifies that count and not some
+            -- other population. See FailedDelivery.attemptedWithoutOutcome: a row reaching this
+            -- filter with an unresolved attempt is a stale one by construction, and a review does
+            -- not start it again.
+            bool_or(${hasAnUnresolvedAttempt(day)}) FILTER (
+              WHERE status = 'failed'
+                AND NOT (${hasAnUnresolvedAttempt(day)} AND ${NOT_FROM_A_STALE_PLAN})
+            ) AS attempted_without_outcome,
+            -- THE TICK'S OWN DEFINITION OF A HOLD, taken rather than restated. This count and the
+            -- one the poller logs are the same claim about the same row, and listing the
+            -- conditions here a second time is what let them disagree: a shut window and a stale
+            -- plan were excluded on both sides, and being DUE was excluded only on the tick's, so
+            -- an alert a regeneration had moved into the future was named here as one PopEngine
+            -- had paused. See HELD_FOR_RECONCILIATION for what each exclusion is for.
+            count(*) FILTER (WHERE ${HELD_FOR_RECONCILIATION(day)})::int AS hold_count
        FROM alerts
       WHERE event_id = $1
-        AND status = 'failed'
+        AND status IN ('pending', 'failed')
         AND coalesce(payload->>'test', 'false') <> 'true'
       GROUP BY channel
       ORDER BY channel`,
-    [eventId],
+    // The ZONE, not the day: the day is derived by the statement above, so nothing about which
+    // calendar day this is can go stale between here and PostgreSQL evaluating it.
+    [eventId, jurisdictionTimeZone(jurisdiction)],
   );
-  return rows.map((row) => ({
-    channel: row.channel,
-    failedCount: row.count,
-    heldForReview: row.held === true,
-  }));
+  return {
+    // Never zero: absent instead, which is what both notices' "empty means nothing to say" relies
+    // on. The row is now per channel rather than per classification, so a channel can qualify for
+    // one count and not the other.
+    failedDeliveries: rows
+      .filter((row) => row.failed_count > 0)
+      .map((row) => ({
+        channel: row.channel,
+        failedCount: row.failed_count,
+        heldForReview: row.held_for_review === true,
+        attemptedWithoutOutcome: row.attempted_without_outcome === true,
+      })),
+    reconciliationHolds: rows
+      .filter((row) => row.hold_count > 0)
+      .map((row) => ({ channel: row.channel, heldCount: row.hold_count })),
+  };
 }
 
 export type AlertView = {

@@ -214,10 +214,45 @@ export class UnmappedJurisdictionError extends Error {
   }
 }
 
-/** `today` in the jurisdiction's own calendar, as an ISO date the engine can take as a parameter. */
-export function todayInJurisdiction(jurisdiction: string, now: Date = new Date()): string {
+/**
+ * The zone a jurisdiction's calendar day belongs to, for the readers that cannot take a day.
+ *
+ * A day is derived from a clock and a zone, and only the zone is a fact about the jurisdiction:
+ * the clock is whichever one the reader is about to act on. Everything in this file that computes
+ * a day reads the mapping through here, and so does every statement that derives its own day in
+ * SQL, which is what keeps the two from disagreeing about which clock a calendar day belongs to.
+ */
+export function jurisdictionTimeZone(jurisdiction: string): string {
   const timeZone = JURISDICTION_TIME_ZONES[jurisdiction];
   if (timeZone === undefined) throw new UnmappedJurisdictionError(jurisdiction);
+  return timeZone;
+}
+
+/**
+ * The jurisdiction's calendar day as SQL derives it, at the moment the statement is evaluated.
+ *
+ * A DAY DERIVED BEFORE A STATEMENT IS A DAY BOUND INTO IT, and that is a different shape from a
+ * day computed early and carried. Every reader here already derives its day as late as this
+ * process can (inline at the call, or from a function invoked while the parameter list is being
+ * built), and that is still one wait short of the decision: issuing a statement is itself a wait
+ * nothing bounds, so a day materialized as a bind parameter can be yesterday by the time
+ * PostgreSQL evaluates the predicate it was bound into. The process cannot notice, because its
+ * own answer is the stale one. So the day crosses the wire as a ZONE and the statement derives the
+ * day, which puts the derivation and the decision in the same evaluation by construction.
+ *
+ * `statement_timestamp()` RATHER THAN `current_timestamp`, for the reason the send path already
+ * records about its own clock: `current_timestamp` is the TRANSACTION's start, and a checklist
+ * review holds one open across several reads. It is also not `clock_timestamp()`, which advances
+ * DURING a statement: these predicates appear several times in one statement and a day that could
+ * differ between two of them would let one statement disagree with itself.
+ */
+export function jurisdictionDayInSql(timeZoneParameter: string): string {
+  return `((statement_timestamp() AT TIME ZONE ${timeZoneParameter})::date)`;
+}
+
+/** `today` in the jurisdiction's own calendar, as an ISO date the engine can take as a parameter. */
+export function todayInJurisdiction(jurisdiction: string, now: Date = new Date()): string {
+  const timeZone = jurisdictionTimeZone(jurisdiction);
   // en-CA formats as YYYY-MM-DD, which is the shape every date in a plan uses.
   return new Intl.DateTimeFormat("en-CA", {
     timeZone,
@@ -240,8 +275,7 @@ export function todayInJurisdiction(jurisdiction: string, now: Date = new Date()
  * two-pass resolution exists to handle.
  */
 export function instantAtLocalHour(jurisdiction: string, isoDate: string, hour: number): Date {
-  const timeZone = JURISDICTION_TIME_ZONES[jurisdiction];
-  if (timeZone === undefined) throw new UnmappedJurisdictionError(jurisdiction);
+  const timeZone = jurisdictionTimeZone(jurisdiction);
   const [year, month, day] = isoDate.split("-").map(Number) as [number, number, number];
   const naive = Date.UTC(year, month - 1, day, hour);
   return new Date(naive - zoneOffsetMs(new Date(naive), timeZone));

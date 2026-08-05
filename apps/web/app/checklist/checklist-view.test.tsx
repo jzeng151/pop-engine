@@ -1437,6 +1437,32 @@ describe("F-203 · a channel that failed to deliver is reported to the organizer
     expect(notice.textContent).not.toContain("PopEngine keeps retrying them");
   });
 
+  it("does not promise the review restarts an alert whose outcome was never observed", async () => {
+    // The paused sentence names regeneration and review as the action that starts these again,
+    // and for an ordinary stale failure it does. For one carrying an attempt nobody saw the end
+    // of it does not: the scheduler upserts the failed row in place, a review supersedes an
+    // attempt only on a row revived from cancelled, and the refreshed row becomes a reconciliation hold
+    // instead of a retry. Sending an organizer to do a thing that will not work is worse than
+    // saying nothing, because it is the one action they believe is left.
+    stubApi({
+      [GET_CHECKLIST]: checklistOf({
+        created: true,
+        failedAlertDeliveries: [
+          { channel: "email", failedCount: 2, heldForReview: true, attemptedWithoutOutcome: true },
+        ],
+      }),
+    });
+
+    await renderView();
+
+    const notice = screen.getByText(/not been confirmed as delivered/);
+    expect(notice.textContent).toContain("Retrying is paused because this event changed");
+    expect(notice.textContent).toContain(
+      "will not restart any that were already attempted with no outcome recorded",
+    );
+    expect(notice.textContent).toContain("checks with the sending service");
+  });
+
   it("does not turn an unknown delivery outcome into a definite non-delivery", async () => {
     // A provider timeout or a lost response is recorded as failed while the message MAY have
     // arrived, which is the whole reason this feature hands the provider an idempotency key and
@@ -1505,6 +1531,169 @@ describe("F-203 · a channel that failed to deliver is reported to the organizer
 
     expect(screen.queryByText(/not been confirmed as delivered/)).toBeNull();
     expect(screen.queryByText(/working|delivering|sent normally/)).toBeNull();
+  });
+
+  it("tells the organizer when delivery has stopped rather than paused or continued", async () => {
+    // THE DISTINCTION THIS PAGE COULD NOT DRAW. An alert the poller has permanently stopped on
+    // reached the organizer either as nothing at all (a crash leaves it pending) or as an ordinary
+    // failure under copy saying PopEngine keeps retrying it. Both told them delivery was in hand.
+    // The one thing this notice has to make possible is telling "still trying" from "stopped, and
+    // a person has to do something", so the words say which of those it is and name the action.
+    stubApi({
+      [GET_CHECKLIST]: checklistOf({
+        created: true,
+        alertsHeldForReconciliation: [{ channel: "email", heldCount: 2 }],
+      }),
+    });
+
+    await renderView();
+
+    const notice = screen.getByText(/no outcome ever came back/);
+    expect(notice.textContent).toBe(
+      "2 email alerts for this event were recorded as attempted sends, and no outcome ever came " +
+        "back: PopEngine cannot tell whether they reached the sending service at all. Too much " +
+        "time has passed to try them again straight away without risking a second copy, so " +
+        "PopEngine has paused them: nothing on their current schedule sends them again for now. " +
+        "Someone can check with the sending service whether they went out, and what that check " +
+        "records decides whether this schedule sends them sooner; if nobody does, PopEngine " +
+        "tries once more when the pause ends, and that may arrive as a second copy. Until then, " +
+        "do not count on them to remind you of the filing dates they cover.",
+    );
+    expect(notice.getAttribute("role")).toBe("alert");
+    // The claim that broke this: nothing here may promise a retry that is not going to happen.
+    expect(notice.textContent).not.toContain("keeps retrying");
+  });
+
+  it("does not promise a held alert can never be sent again", async () => {
+    // WHAT THIS NOTICE IS NOT ENTITLED TO SAY. A held alert is cancelled by a regeneration and
+    // revived by the next review as a FRESH schedule: the revival supersedes the unresolved
+    // attempt, and the poller then sends the same alert again — which may be the second copy of a
+    // delivery nobody ever observed. Told flatly that these alerts "will not be sent again", an
+    // organizer who regenerates their plan gets exactly the duplicate the sentence ruled out. The
+    // page cannot see whether a regeneration is coming, so it says what it can see: the schedule
+    // these alerts are on now is not going to send them.
+    stubApi({
+      [GET_CHECKLIST]: checklistOf({
+        created: true,
+        alertsHeldForReconciliation: [{ channel: "email", heldCount: 1 }],
+      }),
+    });
+
+    await renderView();
+
+    const notice = screen.getByText(/no outcome ever came back/);
+    expect(notice.textContent).not.toMatch(/will not be sent again on (its|their) own/);
+    expect(notice.textContent).toContain("current schedule");
+  });
+
+  it("does not rule out a send that reconciliation can release", async () => {
+    // THE EXIT FROM THE HOLD, which this notice was writing as if it did not exist. Checking with
+    // the sending service is the action the last sentence asks for, and one of its two answers is
+    // that no message is there: the operator then clears or resolves the unresolved attempt, and
+    // the alert — still pending or failed, still on the same send_at — is sent by the next poll.
+    // No cancellation and no regeneration are involved, so "nothing on their current schedule will
+    // send them again" was false about the very outcome the notice is steering towards. It is true
+    // only while the attempt stays as it is, and the copy has to say which.
+    stubApi({
+      [GET_CHECKLIST]: checklistOf({
+        created: true,
+        alertsHeldForReconciliation: [{ channel: "email", heldCount: 2 }],
+      }),
+    });
+
+    await renderView();
+
+    const notice = screen.getByText(/no outcome ever came back/);
+    expect(notice.textContent).toContain(
+      "nothing on their current schedule sends them again for now",
+    );
+    // And the check is named as what can change that, rather than only as an errand.
+    expect(notice.textContent).toMatch(/what that check records decides whether/);
+    // The promise this notice may not make in an unqualified form.
+    expect(notice.textContent).not.toMatch(/will send them again\./);
+    // Nor may "for now" be left to do the work on its own: the hold ends by itself under the
+    // 2026-08-04 bound, and an organizer who is not told that can receive the second copy the
+    // rest of this notice is about after being told delivery had stopped.
+    expect(notice.textContent).toMatch(/tries once more when the pause ends/);
+  });
+
+  it("does not assert a handoff it cannot prove happened", async () => {
+    // THE WEAKEST CASE THIS ONE STRING HAS TO BE TRUE OF. The attempt is recorded BEFORE the
+    // provider is called, on its own connection, precisely so a process that dies mid-send leaves
+    // evidence. A process that dies just after that record and before the sender runs leaves the
+    // same evidence with nothing handed over at all, and after downtime longer than the dedup
+    // window that row becomes a hold. Told flatly that the alert was handed to the sending
+    // service, an organizer goes to reconcile a message the provider may never have seen — and on
+    // a filing deadline that is a claim the page has no evidence for. Every clause has to hold in
+    // that case, not only in the one where the send really did go out.
+    stubApi({
+      [GET_CHECKLIST]: checklistOf({
+        created: true,
+        alertsHeldForReconciliation: [{ channel: "email", heldCount: 1 }],
+      }),
+    });
+
+    await renderView();
+
+    const notice = screen.getByText(/no outcome ever came back/);
+    expect(notice.textContent).not.toMatch(/(was|were) handed to the sending service/);
+    expect(notice.textContent).toMatch(/attempted send/);
+    // Nor may the action presume the message reached anybody: what a person checks is whether
+    // anything went out, which is the question this state leaves open.
+    expect(notice.textContent).not.toMatch(/whether (it|they) arrived/);
+  });
+
+  it("agrees with itself on one stopped alert", async () => {
+    stubApi({
+      [GET_CHECKLIST]: checklistOf({
+        created: true,
+        alertsHeldForReconciliation: [{ channel: "email", heldCount: 1 }],
+      }),
+    });
+
+    await renderView();
+
+    expect(screen.getByText(/no outcome ever came back/).textContent).toBe(
+      "1 email alert for this event was recorded as an attempted send, and no outcome ever came " +
+        "back: PopEngine cannot tell whether it reached the sending service at all. Too much " +
+        "time has passed to try it again straight away without risking a second copy, so " +
+        "PopEngine has paused it: nothing on its current schedule sends it again for now. " +
+        "Someone can check with the sending service whether it went out, and what that check " +
+        "records decides whether this schedule sends it sooner; if nobody does, PopEngine tries " +
+        "once more when the pause ends, and that may arrive as a second copy. Until then, do not " +
+        "count on it to remind you of the filing date it covers.",
+    );
+  });
+
+  it("says nothing when no alert is stopped", async () => {
+    // Same rule as every other notice on this page: an absence is not evidence of health, so
+    // nothing is rendered from one.
+    stubApi({ [GET_CHECKLIST]: checklistOf({ created: true, alertsHeldForReconciliation: [] }) });
+
+    await renderView();
+
+    expect(screen.queryByText(/no outcome ever came back/)).toBeNull();
+  });
+
+  it("keeps a stopped alert and a retrying failure as separate statements", async () => {
+    // The two can be true of one event at once, on the same channel: one alert lost its answer a
+    // day ago and another failed a minute ago. Collapsing them would put the wrong sentence on
+    // one of the two, which is the defect this notice exists to correct.
+    stubApi({
+      [GET_CHECKLIST]: checklistOf({
+        created: true,
+        failedAlertDeliveries: [{ channel: "email", failedCount: 1, heldForReview: false }],
+        alertsHeldForReconciliation: [{ channel: "email", heldCount: 1 }],
+      }),
+    });
+
+    await renderView();
+
+    const retrying = screen.getByText(/not been confirmed as delivered/);
+    const stopped = screen.getByText(/no outcome ever came back/);
+    expect(retrying).not.toBe(stopped);
+    expect(retrying.textContent).toContain("PopEngine keeps retrying them");
+    expect(stopped.textContent).not.toContain("keeps retrying");
   });
 
   it("keeps a switched-off channel and a failing channel as separate statements", async () => {
