@@ -1,7 +1,7 @@
 # PopEngine — Architecture Target (Phase 2+)
 
 **Status:** APPROVED (2026-07-25; §7.1 renamed from "coverage status" to "result completeness" and its `CONDITIONAL` value replaced by `OPEN_FACTS_MAY_CHANGE_OUTCOME` 2026-07-26, resolving a three-way overload of "coverage" and a one-token-two-meanings collision with the shipped `Verdict`. That amendment carries TWO approvals, both given 2026-07-26 and recorded here because the approval class was itself questioned and resolved: the **product owner** approved the feature-meaning change, and because the amendment edits AD-07's row it is a **durable architecture decision** under `DOCUMENTATION-GOVERNANCE.md` §6, so it also carries an **Architecture ADR approval**, given by the product owner acting as architecture owner. §6's "shared enum" row was considered and does not apply, because §7.1's four values are implemented nowhere and nothing consumes them; PR #136 records that reasoning and the point at which it stops holding. §7.1's account of `COVERAGE_GAP` and its relation to the three scope axes is further amended 2026-07-27 under `DOCUMENTATION-GOVERNANCE.md` §2 against the published legend, and is approved under §6 ("Regulatory source/status/content") by the product owner acting as verification owner and rules reviewer. ONE person signed in THREE capacities, all lanes being currently held by one person. §6 states two things about that, and the first is unconditional: "No person approves their own regulatory publication alone. The author and source reviewer should be distinct whenever the team size permits." The first sentence does not bite here because there is no regulatory publication to approve: the amendment asserts no new regulatory fact, changes no rule, trigger, threshold, deadline or verification status, and conforms a lower-authority artifact to the legend already published in `rules/nyc-rules.v2.8.json` under §2's authority hierarchy. The second sentence is the one that applies, and its "whenever the team size permits" is what a single-person team cannot satisfy. Recorded so the sole-approver fact is visible rather than implied. Unlike the §7.1 rename above it carries NO Architecture ADR approval, and that is deliberate rather than an omission: it edits no AD row, so §6's durable-architecture-decision class is not reached. See `BASELINE.md`) — the destination architecture for Phases 2–4 and a planning target only. **This document is NOT the build instruction for Phase 0–1.5; `ARCHITECTURE.md` is.** Approval does not activate workers, tenancy, event revisions, OpenAPI contracts, or the AI gateway. Each requires its scheduled F-id, approved spec, and any named contract or ADR first.
-**Event Revision reconciliation (2026-07-27):** §6.2 is aligned to PR #137's bounded contract under the one-time access-gated-demo overwrite recorded in `DOCUMENTATION-GOVERNANCE.md` §6. `@jzeng151` approved it as product and architecture owner; no other person's approval is implied. Production still requires strict all-lane ratification.
+**Event Revision reconciliation (2026-07-27):** §6.2 is aligned to PR #137's bounded contract under the one-time access-gated-demo overwrite recorded in `DOCUMENTATION-GOVERNANCE.md` §6. `@jzeng151` approved it as product and architecture owner; no other person's approval is implied. Production still requires strict ratification, which the product owner signs under governance §6.
 **Origin:** delivered by an external documentation audit (2026-07-22, `docs/proposals/documentation-audit-2026-07-22.md`); section references to "the supplied rules file"/"v2 scenario suite" predate the corrected baseline and should be read as "the then-current draft."
 **Companion authority:** Product scope lives in `PRD.md`; phase assignment in `ROADMAP.md`; approved feature behavior in `/specs`; regulatory facts in approved primary sources and published rulesets.
 
@@ -40,6 +40,33 @@ PopEngine must:
 
 AD-16 was approved 2026-07-28 by the product owner/user acting as architecture owner through the
 PR #201 follow-up. This records one person's approval in both capacities, not independent reviews.
+
+AD-15's "coordinated review before feature branches consume them" asks for a second party to look at
+a shared contract change. It is not a capacity the 2026-08-04 approvals collapse could reassign.
+AD-15 names four kinds of contract and they do not all land in the same place, so they are split
+rather than answered together.
+
+**Executable fixtures and expected outputs are not exempted.** An approved fixture is
+`DOCUMENTATION-GOVERNANCE.md` §2 level 3 and §1's authoritative artifact for an executable
+regulatory expectation, and `AGENTS.md`'s authority order places it in the regulatory chain below the
+published rule. Changing one changes what the engine is asserted to produce for a permit, deadline
+or verification status, so it is a regulatory publication: §6's closing paragraph's first sentence
+applies to it unconditionally, and a fixture or answer-key expectation the product owner authored
+still requires the second signatory. Nothing in this record or in the 2026-08-04 collapse relaxes
+that, and no capacity collapse can, the first sentence carrying no team-size clause. This is the same
+treatment `docs/VERIFICATION-SOURCES.md`'s answer-key step and
+`packages/engine/src/fixture-ruleset-agreement.test.ts` already carry for a moved expectation.
+
+**The non-regulatory contracts are where the review is unmet.** OpenAPI, JSON Schema and migrations
+that assert no regulatory fact, publish no ruleset and move no verification status never rested on
+§6's closing paragraph's first sentence; they rested on its second, whose "whenever the team size
+permits" a one-person team cannot satisfy. For those, and only those, the coordinated review is
+**UNMET** rather than satisfied. The row stands as written; §6 records the class and what would
+satisfy it, which here is a second contributor with repository access reviewing the contract change
+before a feature branch consumes it. Being unmet is not an exemption: it does not license shipping a
+shared contract change as reviewed, and it is recorded so a reader cannot mistake silence for review.
+The rest of AD-15, that these artifacts are machine-enforced contracts rather than prose, is
+unaffected.
 
 ## 3. System context
 
@@ -474,7 +501,7 @@ Rules:
 1. Edit a draft rules artifact in git.
 2. Validate JSON Schema and referential integrity.
 3. Run affected and full fixture suites.
-4. Obtain verification-owner approval for sources/facets and engine-owner approval for semantics.
+4. Obtain product-owner approval for sources, facets and semantics, plus the second signatory `DOCUMENTATION-GOVERNANCE.md` §6's closing paragraph requires whenever the product owner authored what step 5 publishes.
 5. Publish an immutable artifact with version, checksum, changelog, and approval metadata.
 6. Update `docs/BASELINE.md` and the deployment's `RULES_FILE` to the new exact version-bearing path; never mutate the prior artifact.
 

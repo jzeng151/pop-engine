@@ -45,7 +45,7 @@ say.
 
 **What this decision does NOT resolve, stated here because a resolved blocker invites the assumption
 that the rest went with it.** Approval Blocker 5 stands: the `RESEARCH_REQUIRED` status and the
-loader's source requirement are still in conflict, still blocked on the verification owner, and neither
+loader's source requirement are still in conflict, still blocked on the product owner, and neither
 route unblocks publication. The F-id is still unassigned and the absorption into F-108 is still a
 proposal. And **route 1 narrows what the feature SAYS, not what publishing it costs**: every coupling,
 count, sweep category and approval route derived in rounds 3 to 8 stands unchanged, with one exception
@@ -267,7 +267,7 @@ is the property this section bought.
 **Two rules, not one**, because a rule carries at most one `note_text` and the mapping above needs
 two texts. Their ids are pinned here because the answer key and the test files pin rule ids
 literally, so an implementer choosing them alone would fork the artifact and its expectations. Ids
-are engine identifiers and assert no regulatory fact; a rules reviewer may rename them provided
+are engine identifiers and assert no regulatory fact; the product owner may rename them provided
 both artifacts move in the same commit.
 
 | Field | `DOB-ASSEMBLY-VENUE-APPROVAL-001` | `DOB-ASSEMBLY-VENUE-APPROVAL-002` | Status |
@@ -283,9 +283,9 @@ both artifacts move in the same commit.
 | `output.dedupe_key` | ABSENT | ABSENT | PINNED as absent, decided below |
 | `source.citation`, `source.urls` | cannot be settled inside this spec | same | **BLOCKED**: contract conflict, see below |
 | `verification.status` | cannot be settled inside this spec | same | **BLOCKED**: contract conflict, see below |
-| `verification.qualification` | records the silence, and is USER-VISIBLE, not metadata | same | **BLOCKED** on the verification owner, as published prose |
-| `verification.evidence` | points at the existing record of the silence; not rendered | same | **BLOCKED** on the verification owner |
-| `verification.last_verified_date` | ABSENT | ABSENT | PINNED as absent, and only the verification owner may ever add one |
+| `verification.qualification` | records the silence, and is USER-VISIBLE, not metadata | same | **BLOCKED** on the product owner, as published prose |
+| `verification.evidence` | points at the existing record of the silence; not rendered | same | **BLOCKED** on the product owner |
+| `verification.last_verified_date` | ABSENT | ABSENT | PINNED as absent; adding one is the product owner's, per §6 as amended 2026-08-04 |
 | `exercised_by_scenarios` | `["F", "A-rescope"]` | `["F", "A-rescope", <the new explicit-no fixture>]` | PINNED per rule, derived against each trigger |
 
 **The three that had slipped the table, each read in `parseRule` and in the renderer rather than
@@ -303,10 +303,15 @@ so they are decided here:
 - **`verification.last_verified_date`** renders as "last verified <date>" in the detail panel
   (`plan-line.tsx:224`). ABSENT, and this one is not a preference: F-206 Acceptance Criterion 5 says a
   date is stored only when every contributing rule publishes one and that no other date may stand in,
-  and the published legend reserves verification to the verification owner. A date here would print a
-  verification of a fact nobody verified. If the verification owner ever publishes one, note that
-  `mergeFindings` takes the earliest of two and null if either is missing, so it also changes what a
-  merged line would show.
+  and the published legend reserves verification to the verification owner. That legend wording is
+  `nyc.v2.11`'s, quoted as published and not an instruction to a future signatory: under
+  `docs/DOCUMENTATION-GOVERNANCE.md` §6 as amended 2026-08-04 the capacity that may publish a date is
+  the product owner's, which is the same routing the two `verification` rows above now carry. All
+  three are verification-status publication, so §6's closing paragraph still requires a second
+  signatory when the product owner is also the author; naming one capacity does not supply one. A date
+  here would print a verification of a fact nobody verified. If the product owner ever publishes one,
+  note that `mergeFindings` takes the earliest of two and null if either is missing, so it also
+  changes what a merged line would show.
 
 **And one correction inside the row above them.** `verification.qualification` was marked BLOCKED as
 though it were metadata. It is not: `findings.ts:61` appends it to `notes`, so whatever it says is
@@ -376,7 +381,7 @@ rather than on preference:
 | Status | Legend text | Why it is not this rule |
 | --- | --- | --- |
 | `SOURCE_CONFIRMED` | "fetch-confirmed primary-source quote on file" | there is no quote on file for this proposition; this is the laundering round 5 already refused |
-| `VERIFIED` | "verification owner confirmed ... (none at publication; only the verification owner assigns this)" | nothing is confirmed, and the legend reserves the value |
+| `VERIFIED` | "verification owner confirmed ... (none at publication; only the verification owner assigns this)" | nothing is confirmed, and the legend reserves the value. The quoted wording is `nyc.v2.11`'s as published; the capacity that assigns it is the product owner's per §6 (2026-08-04), with §6's second signatory when the product owner authored the publication |
 | `OFFICIAL_CONFLICT` | "live official pages disagree; both readings encoded" | this is silence in the sources, not disagreement between them |
 | `COVERAGE_GAP` | "combination not modeled by this ruleset version; advisory asserts nothing" | the combination IS modelled once these rules exist, and three further consequences below |
 | `RESEARCH_REQUIRED` | "no primary source located in two research passes" | the only value whose meaning is close, and the loader will not let it stand without a source |
@@ -397,19 +402,20 @@ status's first use, and the conflict above has never been exercised. **This is t
 #170's finding that the schema cannot express a non-regulatory rule: the artifact format has no slot
 for "sources located, and expressly silent on this proposition".**
 
-**BLOCKED on the verification owner. Four options, with their owners, none chosen here:**
+**BLOCKED on the product owner. Four options, with their owners, none chosen here:**
 
 1. **Widen the loader's exemption** so `RESEARCH_REQUIRED` may also omit a source: one condition at
    `apps/api/src/ruleset.ts:486`. The rule then states the honest status and carries no citation,
    which `PlanLine` already renders coherently (`CONFIRM_WITH_AGENCY`, no citation list) and F-206
    Acceptance Criterion 3 already contemplates. Cost: it is a rules-schema contract change, so
-   governance §6's "Event Input, rules schema, OpenAPI, shared enum" row applies, requiring all
-   affected lane owners and the architecture owner, with the **engine owner** named. It also weakens
+   governance §6's "Event Input, rules schema, OpenAPI, shared enum" row applies, requiring the
+   product owner. It also weakens
    the guard for all 33 rules, since any rule could then omit its source by claiming this status.
 2. **Amend the published legend** so `RESEARCH_REQUIRED` distinguishes "no source located" from
    "sources located and silent on this fact", and keep the source block. No code change; regulatory
-   status content, so verification owner plus rules reviewer, plus the documentation owner for the
-   rendered copy. Constraint to check before drafting: `apps/web/app/verification-copy-prose.test.ts`
+   status content, so the product owner, for the rule and for the
+   rendered copy, plus the second signatory §6's closing paragraph requires when the product owner
+   authored the amendment. Constraint to check before drafting: `apps/web/app/verification-copy-prose.test.ts`
    denies the source-absence family across PRD, DESIGN, F-201, F-206 and `apps/web`, so the amendment
    has to be worded to pass that guard rather than around it.
 3. **Publish the statement with `COVERAGE_GAP`.** Refused above on three counts, recorded as an
@@ -419,7 +425,7 @@ for "sources located, and expressly silent on this proposition".**
 
 The author's recommendation, which is not a decision: option 1. It is the only one that leaves the
 artifact stating something true without amending a published meaning that four approved documents and
-a prose guard depend on, and its cost is a contract change that the engine owner reviews rather than a
+a prose guard depend on, and its cost is a contract change that the product owner reviews rather than a
 regulatory claim anyone has to stand behind. **One trap for whoever implements it:** the engine's own
 `parseSource` returns null for an absent source without complaint
 (`packages/engine/src/ruleset.ts:401`), so a source-less rule parses in the engine and the entire
@@ -768,9 +774,11 @@ published findings read off the result:
   one for this field. Adding it is an answer-key change and carries the approvals below.
 - Any answer-key movement is a regulatory publication under the change-class table in
   `docs/DOCUMENTATION-GOVERNANCE.md` §6 "Change classes and approvals", whose "Regulatory
-  source/status/content" row requires the verification owner plus the rules reviewer, and whose
-  "Rule trigger, dedupe, branch, deadline, or formula semantics" row requires the verification owner
-  plus the engine owner. This feature crosses both.
+  source/status/content" row and whose "Rule trigger, dedupe, branch, deadline, or formula
+  semantics" row both require the product owner. This feature crosses both classes; it no longer
+  crosses two sets of signatories. One capacity is still not one signatory: the movement is a
+  regulatory publication, so §6's closing paragraph requires a second signatory whenever the product
+  owner authored it.
 - **Verification research is REQUIRED and is not done.** Whether an existing place-of-assembly
   approval removes the temporary filing for an event held at that venue is **not established in this
   repository**, and the published record is venue-shaped rather than relationship-shaped: the
@@ -787,18 +795,23 @@ Files this feature may touch, and who must be in the room:
 
 | Path | Change | Owner |
 | --- | --- | --- |
-| `rules/nyc-rules.v<next>.json` | new rules, new version, advanced `snapshot_date` | verification owner + rules reviewer + **engine owner** |
-| **`rules/nyc-rules.v2.8.json`** | **deleted** | verification owner + rules reviewer + **engine owner** |
-| `packages/engine/src/ruleset.ts` | remove **only** the `venue_has_assembly_approval` entry from `UNCONSUMED_INTAKE_FIELDS` | engine owner + **verification owner** |
-| `apps/api/src/ruleset.ts` | move `EXPECTED_RULESET_VERSION` and `EXPECTED_RULE_COUNT` | engine owner |
-| `docs/test-scenario-answer-key.md` | expectations | verification owner + rules reviewer + **engine owner** |
+| `rules/nyc-rules.v<next>.json` | new rules, new version, advanced `snapshot_date` | product owner |
+| **`rules/nyc-rules.v2.8.json`** | **deleted** | product owner |
+| `packages/engine/src/ruleset.ts` | remove **only** the `venue_has_assembly_approval` entry from `UNCONSUMED_INTAKE_FIELDS` | product owner |
+| `apps/api/src/ruleset.ts` | move `EXPECTED_RULESET_VERSION` and `EXPECTED_RULE_COUNT` | product owner |
+| `docs/test-scenario-answer-key.md` | expectations | product owner |
 | `docs/BASELINE.md` | current row, new digest, superseded-lineage record | product owner |
-| **`packages/engine/src/intake/scenario-intake-fixtures.ts`** | **the new explicit-`no` scenario's intake** | verification owner + rules reviewer + engine owner |
-| the test files below | version, count and expectation pins | engine owner |
-| the documents below, **including `AGENTS.md` and `CONTRIBUTING.md`** | current-version references | product owner + each artifact's owner |
-| `apps/api/src/ruleset.ts` | the version literal in the offset diagnostic at `:324`, and the `EXPECTED_RULESET_VERSION` explanation at `:55-60` | engine owner |
-| `packages/engine/src/intake/registry.ts`, `packages/engine/src/proposals.ts` | the two engine authority comments, text only | engine owner |
-| `apps/web/app/verification-copy.ts`, `plan/plan-line.tsx`, `verification-copy.test.ts`, `verification-copy-prose.test.ts` | the four web authority comments, text only | web lane owner |
+| **`packages/engine/src/intake/scenario-intake-fixtures.ts`** | **the new explicit-`no` scenario's intake** | product owner |
+| the test files below | version, count and expectation pins | product owner |
+| the documents below, **including `AGENTS.md` and `CONTRIBUTING.md`** | current-version references | product owner |
+| `apps/api/src/ruleset.ts` | the version literal in the offset diagnostic at `:324`, and the `EXPECTED_RULESET_VERSION` explanation at `:55-60` | product owner |
+| `packages/engine/src/intake/registry.ts`, `packages/engine/src/proposals.ts` | the two engine authority comments, text only | product owner |
+| `apps/web/app/verification-copy.ts`, `plan/plan-line.tsx`, `verification-copy.test.ts`, `verification-copy-prose.test.ts` | the four web authority comments, text only | product owner |
+
+The Owner column names the capacity §6 requires, not the number of signatures. The rows the audit
+below classes as regulatory (the new ruleset, the v2.8 deletion, the `UNCONSUMED_INTAKE_FIELDS`
+entry, the answer key and the new scenario intake) are regulatory publication, so §6's closing
+paragraph requires a second signatory on each whenever the product owner authored it.
 
 ### The new fixture needs three artifacts, not one, and the id is pinned
 
@@ -869,18 +882,18 @@ with a hand-built private-venue intake, which is what the measurement above alre
 `packages/engine/src/engine.test.ts` that exists for "engine behaviors the scenario fixtures do not
 reach". That costs one test file already in the footprint, and it moves no metadata, no manifest row,
 no scenario count, and no other spec's acceptance criteria. What it does not do is put the `no` path in
-the approved regulatory record, which is the answer key's job and the verification owner's call.
+the approved regulatory record, which is the answer key's job and the product owner's call.
 Stated as a comparison: **Scenario G costs three artifacts, two existing rules' metadata, the
 manifest's fixtures row, and the fourteen scenario counts enumerated in the sweep below, two of which are
 other features' approved acceptance criteria. The unit case costs one file.**
 
 **PREFERENCE RECORDED, NOT DECIDED, and the condition is the whole of it.** The product owner prefers
-the engine unit test, **if the verification owner agrees it satisfies Acceptance Criterion 3**
-(PR #171, `https://github.com/jzeng151/pop-engine/pull/171#issuecomment-5107886102`). The verification
-owner has not been asked, so **the Scenario G option is not withdrawn** and everything it requires
+the engine unit test, **if it satisfies Acceptance Criterion 3**
+(PR #171, `https://github.com/jzeng151/pop-engine/pull/171#issuecomment-5107886102`). That question
+has not been answered, so **the Scenario G option is not withdrawn** and everything it requires
 stays specified above: the three artifacts, the two metadata edits, the manifest row, the fourteen counts,
 and the two other features' acceptance criteria. Whether a unit case satisfies a criterion about the
-approved regulatory record is a verification-owner call, not a cost comparison, which is why a
+approved regulatory record is the product owner's call, not a cost comparison, which is why a
 preference is all that is recorded here.
 
 **AND THE CHOICE IS APPROVAL BLOCKER 20, a PREREQUISITE, which is a separate act from recording the
@@ -892,36 +905,37 @@ a decision. It says the document cannot be approved while the question is open.
 
 ### Every row audited against the change class it actually describes
 
-The engine owner was missing from the publication row, and a single missing name is not the defect:
-the rows had been assigned by what a path looks like rather than by what the change does, so the
+The rows had been assigned by what a path looks like rather than by what the change does, so the
 whole table is re-derived here against `docs/DOCUMENTATION-GOVERNANCE.md` §6 "Change classes and
-approvals". §6's two relevant rows are "Regulatory source/status/content", requiring the verification
-owner plus the rules reviewer, and "Rule trigger, dedupe, branch, deadline, or formula semantics",
-requiring the verification owner plus the engine owner. A change can be in both classes, and the
-approvals then union rather than choosing.
+approvals". §6's two relevant rows are "Regulatory source/status/content" and "Rule trigger, dedupe,
+branch, deadline, or formula semantics", and since 2026-08-04 both require the product owner. A
+change can still be in both classes; what it can no longer do is need two different capacities.
+It still needs two signatories where §6's closing paragraph says so: every row below marked as a
+regulatory class is a regulatory publication, and the product owner cannot approve one they authored
+alone. The class column below is the part that still carries information.
 
 | Row | Class per §6 | Why, and what changed here |
 | --- | --- | --- |
-| new ruleset file | both | it publishes regulatory content AND two new triggers reading a field no trigger reads today, which is trigger semantics. The engine owner was absent, and this is the row the reviewer cited |
+| new ruleset file | both | it publishes regulatory content AND two new triggers reading a field no trigger reads today, which is trigger semantics |
 | v2.8 deleted | both | the deletion is not separable from the publication: `publishedRulesFile` throws unless exactly one ruleset is present, so the pair is one act, and the deletion removes every published trigger |
-| `UNCONSUMED_INTAKE_FIELDS` entry | engine plus regulatory content | it is engine code, so the engine owner, and its entry text is this repository's record of AC 28-117.1.3's amendment requirement, so deleting it deletes regulatory prose |
-| `apps/api/src/ruleset.ts` constants | neither §6 regulatory row | boot constants asserting nothing regulatory; engine owner alone |
+| `UNCONSUMED_INTAKE_FIELDS` entry | engine plus regulatory content | it is engine code, and its entry text is this repository's record of AC 28-117.1.3's amendment requirement, so deleting it deletes regulatory prose |
+| `apps/api/src/ruleset.ts` constants | neither §6 regulatory row | boot constants asserting nothing regulatory |
 | answer key | both | its expectations move BECAUSE trigger semantics moved, and `fixture-ruleset-agreement.test.ts` checks published rules against this key, so the key is where a trigger change is verified. The Fixtures section already said this feature crosses both rows; the row did not carry it |
 | `docs/BASELINE.md` | approval record | §4 defines the manifest and §6 has no row for it; amending approval status and digests is the product owner's, unchanged |
-| test pins | neither §6 regulatory row | assertions over constants and expectations; engine owner |
-| current-version documents | product scope | each artifact's own owner plus the product owner, unchanged |
+| test pins | neither §6 regulatory row | assertions over constants and expectations |
+| current-version documents | product scope | the product owner, unchanged |
 
 **One row this table does NOT yet grant.** If the verification-status conflict under Outputs is
 resolved by widening the loader's source exemption, that is a change to `apps/api/src/ruleset.ts`
 beyond the two constants this table permits, and it falls under §6's "Event Input, rules schema,
-OpenAPI, shared enum" row, which requires all affected lane owners and the architecture owner. The
+OpenAPI, shared enum" row, which requires the product owner. The
 footprint stays as written until that decision lands, so an implementer who needs the loader change
 returns here rather than treating the existing `apps/api/src/ruleset.ts` row as cover for it.
 
-**This is the fourth trigger-semantics change routed without the engine owner, so the fix is the
-audit rather than the cited cell.** Any future row added to this table states its §6 class in the
-same breath as its owner, and a row whose class includes trigger, dedupe, branch, deadline or formula
-semantics names the engine owner without being asked.
+**Four trigger-semantics changes were routed to the wrong signatories before this table was
+audited, so the fix is the audit rather than any one cited cell.** Any future row added to this
+table states its §6 class in the same breath as its owner. Since 2026-08-04 that owner is the
+product owner for every row, and the class is what the row still has to get right.
 
 ### The current-version documents, DERIVED the same way as the tests
 
@@ -1132,8 +1146,8 @@ count sweep needed:
 **The footprint consequence, named rather than absorbed:** four of the seven are in `apps/web`, a lane
 this feature otherwise does not touch, two are in `packages/engine`, and the seventh is in
 `apps/api/src/ruleset.ts`, which the footprint already permits for the constants themselves. They are
-comment-only edits with no behaviour attached, which makes them cheap, not free: the web lane's owner and
-the engine owner approve their own files, and the footprint gains those paths for comment text only.
+comment-only edits with no behaviour attached, which makes them cheap, not free: the product owner
+approves them, and the footprint gains those paths for comment text only.
 
 **The re-run also found what does NOT move, and it is worth one line so nobody re-derives it.**
 `apps/api/src/ruleset.ts:72` and `apps/web/app/rules-file.ts:128` name `EXPECTED_RULESET_VERSION` without
@@ -1258,8 +1272,7 @@ Rollout is one change or none. In it:
      no `nyc.v2.8`. Appending `nyc.v2.8` is what puts v2.8 in the new artifact's lineage. Left as
      copied, the new file states that the version it replaces never existed.
    - **`status`** is prose carrying the ratification date and every republication. It gains this
-     feature's approval, naming the verification owner, the rules reviewer and the engine owner per
-     the footprint audit above.
+     feature's approval, naming the product owner per the footprint audit above.
    - **`provenance`** is prose whose "CHANGE FROM nyc.v2.7" section describes the DOB-ASSEMBLY-001
      deadline correction. It is rewritten to describe THIS change: two new note rules and the field
      they consume. Left as copied, the new artifact claims v2.8's deadline correction as its own
@@ -1282,7 +1295,7 @@ Rollout is one change or none. In it:
    text, which by the existing pattern says each version was authorized "for the change named in its
    own `provenance`" and so restates no effect, and must keep pointing rather than summarising; and the
    two new rules' `output.note_text` and `verification.qualification`, both already constrained above
-   and the second still BLOCKED on the verification owner, who is the one person who may write it. The
+   and the second still BLOCKED on the product owner, who is the one person who may write it. The
    repository has no `CHANGELOG` file; the changelog for a ruleset IS the `provenance` string's "CHANGE
    FROM" section, which is why that one string is both entries.
 
@@ -1384,7 +1397,7 @@ of work are already promised the next ruleset version, and a fourth wants a publ
 2. **DEPENDENCY. Issue #89** is open on this field, which is where the collected-but-unread state is
    tracked. Recorded so the two are read together; nobody owes this spec anything for it, and publishing
    the rules is what would close it.
-3. **PREREQUISITE, rules owner. The named-confirmation rule from issue #107 currently excludes this
+3. **PREREQUISITE, product owner. The named-confirmation rule from issue #107 currently excludes this
    field.** The decision
    recorded there on 2026-07-28 is:
 
@@ -1393,12 +1406,15 @@ of work are already promised the next ruleset version, and a fourth wants a publ
    `venue_has_assembly_approval` is an unknown-capable enum, so it is deferred by that rule as
    written. This spec's finding is close in kind to a named confirmation. **The tension is
    recorded, not resolved:** whether it is a named confirmation for that rule's purposes, and
-   therefore currently forbidden for exactly this field, is a rules-owner call.
+   therefore currently forbidden for exactly this field, is the product owner's call. Publishing a
+   named confirmation for it is regulatory publication, so it carries the second signatory
+   `docs/DOCUMENTATION-GOVERNANCE.md` §6's closing paragraph requires whenever the product owner
+   authored it; naming one capacity does not supply one.
 4. **DEPENDENCY. DOB-ASSEMBLY-001's coverage confirmation is unimplemented**, and its note records that
    it blocks F-102 Acceptance Criterion 6. That criterion is another feature's and this footprint
    excludes it, per the UI section: this feature produces the data it would render and does not render
    it. No action is owed here.
-5. **PREREQUISITE, verification owner. Verification research** on whether an existing venue approval
+5. **PREREQUISITE, product owner. Verification research** on whether an existing venue approval
    removes the temporary filing, per
    Fixtures and Verification above. Not established; the rule asserts no exemption in either
    direction.
@@ -1406,20 +1422,22 @@ of work are already promised the next ruleset version, and a fourth wants a publ
    same fact. `validateRuleset` requires a source for every verification status except
    `COVERAGE_GAP`, while the published legend defines the only status whose meaning fits,
    `RESEARCH_REQUIRED`, as no source having been located. So these rules cannot be published truthfully
-   without either a loader change (engine owner, plus the architecture owner under §6's rules-schema
-   row) or a legend amendment (verification owner plus rules reviewer). The four options and the
+   without either a loader change (product owner, under §6's rules-schema
+   row) or a legend amendment (product owner, and being regulatory status content it also carries the
+   second signatory §6's closing paragraph requires when the product owner authored it, as option 2
+   under Outputs states). The four options and the
    refusal of each other legend value are under Outputs. Nothing in the current ruleset publishes
    `RESEARCH_REQUIRED`, so this feature would be its first use and the conflict is unexercised. Same
    shape as PR #170's finding that the schema cannot express a non-regulatory rule.
 6. **DEPENDENCY. F-207 · Multi-Jurisdiction** is the home for an operator that travels between
    jurisdictions, and its own approval blocker is SPEC-CONFLICT #130, which is unresolved. Out of scope
    per non-goal 4, so nothing here gates this spec.
-7. **PREREQUISITE, product owner and documentation owner. The manifest glob blocks the filename.** `docs/BASELINE.md` marks `specs/F-*.md` APPROVED, so
+7. **PREREQUISITE, product owner. The manifest glob blocks the filename.** `docs/BASELINE.md` marks `specs/F-*.md` APPROVED, so
    this file cannot carry an `F-` prefix while it is PROPOSED without failing `check:baseline`, and
    a PROPOSED spec is not eligible for a manifest row. Either the glob narrows to the approved
    twelve, or PROPOSED specs live outside `specs/F-*`, or the id and the approval land together.
    Naming this file without the prefix is the only one of those three a worker can do alone, so it
-   is what this branch does. Product owner and documentation owner to decide the general rule.
+   is what this branch does. The product owner decides the general rule.
 8. ~~Round 2's two unbacked claims.~~ **RESOLVED, record.** Review history below.
 9. ~~Round 3's defect created by round 2's narrowing.~~ **RESOLVED, record.** Review history below.
 10. ~~Round 4's shape change.~~ **RESOLVED, record.** Review history below.
@@ -1437,14 +1455,14 @@ of work are already promised the next ruleset version, and a fourth wants a publ
 19. ~~Round 11's four applied findings.~~ **RESOLVED, record.** Review history below. The fifth,
     the collision on the next ruleset version, is blocker 18 above and is open.
 
-17. **PREREQUISITE, documentation owner. Section structure diverges from the house shape,
+17. **PREREQUISITE, product owner. Section structure diverges from the house shape,
     deliberately.** No PROPOSED spec exists in
    this repository to match: all twelve specs under `specs/` are APPROVED and use a shorter
    structure (User Story, Inputs, Outputs, Acceptance Criteria, Edge Cases, Scenarios Exercised).
    This spec follows the fuller structure it was briefed with and keys its criteria `F-1NN-AC-0N`,
    a format no existing spec uses; existing specs number criteria plainly and cross-reference them
    as "Acceptance Criterion N". Whether new specs adopt this structure, or this one is reshaped to
-   match the twelve, is a documentation-owner call.
+   match the twelve, is the product owner's call.
 
 18. **PREREQUISITE, and it is a SCHEDULING DECISION ACROSS LANES rather than this spec's to take. THE
     NEXT RULESET VERSION IS ALREADY PROMISED TO OTHER WORK.** This rollout publishes `v<next>`, which by
@@ -1467,15 +1485,15 @@ of work are already promised the next ruleset version, and a fourth wants a publ
     **Two shapes, and this document takes neither.** One publication carries all of it, in which case the
     atomic set above merges with theirs and the approvals union across lanes. Or this feature takes a
     later version, in which case its rollout renames `v<next>` and its lineage record gains whatever ships
-    first. **Blocked on the owners of the other three**: the engine owner for the `proposals.ts` move, the
-    verification owner for the re-attribution flag that F-202's approved status depends on, and the
-    reconciliation's owner. Nothing here reschedules anyone else's work.
+    first. **Blocked on the other three pieces of work**: the `proposals.ts` move, the
+    re-attribution flag that F-202's approved status depends on, and the reconciliation. All three
+    are the product owner's to sequence. Nothing here reschedules anyone else's work.
 
     **Why it is correctness and not tidiness:** publishing this feature as v2.9 without the
     re-attribution ships a NEW artifact still carrying a source attribution the repository has already
     flagged as misleading, and F-202's approved status would then cite a publication that did not happen.
 
-20. **PREREQUISITE, verification owner. WHICH ROUTE COVERS THE EXPLICIT-`no` PATH must be chosen before
+20. **PREREQUISITE, product owner. WHICH ROUTE COVERS THE EXPLICIT-`no` PATH must be chosen before
     this spec is approved, because the two routes are not the same specification.** Acceptance Criterion 3
     requires the explicit-`no` path covered, and this document specifies BOTH ways of covering it: an
     approved Scenario G, and an engine unit case against the published ruleset. The comparison is under
@@ -1490,11 +1508,11 @@ of work are already promised the next ruleset version, and a fourth wants a publ
     this feature. The gate is on the CHOICE, not on either option.
 
     **The preference is unchanged and is still a preference.** The product owner prefers the engine unit
-    case IF the verification owner agrees it satisfies Acceptance Criterion 3 (PR #171,
+    case IF it satisfies Acceptance Criterion 3 (PR #171,
     `https://github.com/jzeng151/pop-engine/pull/171#issuecomment-5107886102`). The condition is the
-    whole of it, and the verification owner has not been asked. Whether a unit case can satisfy a
-    criterion about the approved regulatory record is theirs to answer and not a cost comparison, which
-    is why recording the preference does not close this. **Both options stay fully specified above until
+    whole of it, and it has not been answered. Whether a unit case can satisfy a
+    criterion about the approved regulatory record is the product owner's to answer and not a cost
+    comparison, which is why recording the preference does not close this. **Both options stay fully specified above until
     it is answered**, and neither is withdrawn by this entry.
 
 21. **PREREQUISITE, product owner. THE LANE IS UNOWNED, and approval cannot assign it retroactively.**
@@ -1502,9 +1520,8 @@ of work are already promised the next ruleset version, and a fourth wants a publ
     list required either to be filled, so the same gap round 11 closed for the route choice was open for
     the lane itself: this spec could reach APPROVED with no owner to implement it and no named approver
     to have approved it. `docs/DOCUMENTATION-GOVERNANCE.md` §6 assigns approvals by CHANGE CLASS and this
-    feature's rollout lands in two of them, so the reviewers are already determined by the footprint
-    audit above: the verification owner and the rules reviewer for the regulatory content, and the engine
-    owner for the trigger semantics. **What is missing is the assignment, not the criteria.** The
+    feature's rollout lands in two of them, and since 2026-08-04 both classes are the product owner's,
+    so the approver is already determined by the footprint audit above. **What is missing is the assignment, not the criteria.** The
     approver named here must also not be the only signatory, per §6's "No person approves their own
     regulatory publication alone", which is a live constraint rather than a formality: `docs/DESIGN.md`
     already records one person signing in three capacities because one person holds every lane, and this

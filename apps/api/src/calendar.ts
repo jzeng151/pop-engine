@@ -24,7 +24,7 @@ export class MissingHolidayCalendarError extends Error {
   constructor(calendarId: string) {
     super(
       `holiday calendar "${calendarId}" has no published holiday list; business-day deadlines ` +
-        `render as "confirm with agency" until the verification owner publishes it`,
+        `render as "confirm with agency" until the product owner publishes it`,
     );
     this.name = "MissingHolidayCalendarError";
   }
@@ -32,7 +32,9 @@ export class MissingHolidayCalendarError extends Error {
 
 /**
  * Published holiday lists, keyed by the calendar id a ruleset pins. Empty on purpose: an entry
- * appears here only when the verification owner publishes the dates for that calendar. A missing
+ * appears here only when the product owner publishes the dates for that calendar, and publishing
+ * one is regulatory publication: `docs/DOCUMENTATION-GOVERNANCE.md` §6's closing paragraph still
+ * requires a second signatory when the product owner authored the list. A missing
  * entry yields `holidays: null`, which the engine reads as "no list published" — distinct from a
  * published list that happens to hold no dates.
  *

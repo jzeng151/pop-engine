@@ -772,8 +772,8 @@ type Queryable = {
  * Where an event's alerts go. Entered at checklist creation and no earlier — there is no auth in
  * the MVP (AD-5), so there is no account to read an address off (spec Inputs).
  *
- * Deliberately not persisted on `events`: that schema is the four-lane contract and a column on it
- * needs all-lane approval (AGENTS.md). The alert rows already carry `recipient` because AD-13 put
+ * Deliberately not persisted on `events`: that schema is a shared contract and a column on it needs
+ * the product owner's approval under governance §6 (AGENTS.md). The alert rows already carry `recipient` because AD-13 put
  * it there, so they are the record, and a regeneration that supplies no contact reads the
  * addresses back off the alerts already scheduled for the event.
  */

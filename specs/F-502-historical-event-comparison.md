@@ -2,7 +2,7 @@
 
 **Status:** PROPOSED (2026-07-26) — ready for review; not implementable until approved and listed in `docs/BASELINE.md`.
 
-**Phase:** 3 · **Issue:** [#47](https://github.com/jzeng151/pop-engine/issues/47) · **Owner:** TBD · **Reviewer:** product owner plus affected architecture, contract, security, and lane owners (TBD) · **Approval date:** —
+**Phase:** 3 · **Issue:** [#47](https://github.com/jzeng151/pop-engine/issues/47) · **Owner:** TBD · **Reviewer:** product owner · **Approval date:** —
 
 ## Purpose and User Outcome
 
@@ -88,4 +88,4 @@ Exact HTTP, JSON Schema, migration, job, and provider shapes belong in their rev
 
 - Approve metric compatibility, minimum source coverage, unit/currency behavior, and selected-event limit.
 - Approve the plan-acceptance contract that supplies `events.current_plan_id`, and name its owner, or approve an explicit pre-cutover permit-burden source for F502-AC-07.
-- Assign the owner and independent reviewer, approve this spec, and add it to `docs/BASELINE.md`.
+- Assign the owner, approve this spec, and add it to `docs/BASELINE.md`. The reviewer capacity is the product owner (`docs/DOCUMENTATION-GOVERNANCE.md` §6, 2026-08-04), which is what this spec's header records. That does not meet the independent reviewer this blocker asked for. Spec approval publishes no ruleset and asserts no regulatory fact, so the requirement never rested on §6's closing paragraph's first sentence; it rested on the second, and a one-person team cannot make the author and the reviewer distinct. §6 records that element UNMET rather than removing it, and names what would satisfy it: a second contributor with repository access who reviews this spec before approval and is named here beside the owner. Until then this blocker is not satisfied and this spec is not approved: it stays PROPOSED under governance §3, its Approval date stays `—`, and it is not implementable and not listed in `docs/BASELINE.md`. The author's own review does not stand in for the missing reviewer, and this line says so rather than leaving the gap to be read as approval.
