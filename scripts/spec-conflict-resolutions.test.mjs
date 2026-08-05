@@ -1,4 +1,4 @@
-import { readFileSync } from "node:fs";
+import { readdirSync, readFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import ts from "typescript";
@@ -441,5 +441,122 @@ describe("T-8 F-601/F-109 dependency-graph row, resolved 2026-08-05", () => {
     expect(t8).toContain("RESOLVED 2026-08-05");
     expect(t8).toContain("AD-17");
     expect(read("docs/ARCHITECTURE-FUTURE.md")).toContain("| AD-17 |");
+  });
+});
+
+/**
+ * Added 2026-08-05 with the DOHMH-trigger removal (issue #235). The claim was that F-101
+ * `headcount` drives "the DOHMH thresholds". No published DOHMH rule reads `headcount` — the four
+ * of them key on `food_present`, `event_open_to_public` and `food_vendor_count` — so the clause
+ * invented a regulatory trigger, which AGENTS.md's first non-negotiable forbids outright.
+ *
+ * It needs a guard because the recurrence is measured, not hypothetical: PR #245 was authored
+ * after the audit that removed the clause and put it back in TWO new places the same morning, one
+ * of which the rebase carried. Governance §5 step 7 asks for exactly this.
+ *
+ * It is asserted in two independent ways, neither of them a banned sentence:
+ *
+ * 1. STRUCTURALLY, against every published ruleset in the tree. The fact the prose got wrong is a
+ *    property of the artifact — which intake fields a DOHMH rule's trigger reads — so it is read
+ *    off the parsed trigger rather than restated here. If a future ruleset ever does publish a
+ *    DOHMH rule keyed on headcount, this assertion fails first and says so, which is the signal to
+ *    revisit the prose rule below rather than to widen it silently.
+ * 2. IN PROSE, as a co-occurrence over parsed blocks. A reintroduction has to name the agency, name
+ *    the count, and attribute one to the other; all three are matched as concept families rather
+ *    than as one phrasing, so "the guest count feeds the Health Department thresholds" trips the
+ *    same guard the original clause does. The block, not the sentence, is the unit: both of the
+ *    sites this defect has actually taken (a dated BASELINE paragraph and a register table row)
+ *    carried the count and the agency in different sentences of one block, so a sentence-level
+ *    check would have watched both go past. Every list item and table row is its own block, so a
+ *    long table cannot hide the claim inside a neighbouring row either.
+ *
+ * The state health department is a different agency and is excluded: `docs/VERIFICATION-SOURCES.md`
+ * quotes SDOH's own attendance threshold, which is a real published fact about SDOH.
+ */
+describe("no DOHMH rule is attributed to headcount, removed 2026-08-05 (#235)", () => {
+  const SCANNED_ROOTS = ["docs", "specs", "apps", "packages", "rules"];
+  const SKIPPED_DIRS = new Set(["node_modules", "dist", "coverage", ".next"]);
+
+  function filesUnder(roots, extensions) {
+    const found = [];
+    const walk = (dir) => {
+      for (const entry of readdirSync(dir, { withFileTypes: true })) {
+        if (SKIPPED_DIRS.has(entry.name)) continue;
+        const path = resolve(dir, entry.name);
+        if (entry.isDirectory()) walk(path);
+        else if (extensions.some((extension) => entry.name.endsWith(extension))) found.push(path);
+      }
+    };
+    for (const root of roots) walk(resolve(repoRoot, root));
+    return found;
+  }
+
+  /** Every `field` a trigger names, at any nesting depth of `all` / `any` / `not`. */
+  function triggerFields(node, into = new Set()) {
+    if (Array.isArray(node)) for (const child of node) triggerFields(child, into);
+    else if (node && typeof node === "object") {
+      if (typeof node.field === "string") into.add(node.field);
+      for (const value of Object.values(node)) triggerFields(value, into);
+    }
+    return into;
+  }
+
+  it("no published ruleset keys a DOHMH rule on an attendee count", () => {
+    const rulesets = filesUnder(SCANNED_ROOTS, [".json"])
+      .map((path) => [path, JSON.parse(readFileSync(path, "utf8"))])
+      .filter(([, artifact]) => Array.isArray(artifact.rules));
+    expect(rulesets.length, "the tree carries at least one published ruleset").toBeGreaterThan(0);
+
+    for (const [path, artifact] of rulesets) {
+      const health = artifact.rules.filter(
+        (rule) => /DOHMH/i.test(rule.id ?? "") || /DOHMH/i.test(rule.output?.agency ?? ""),
+      );
+      for (const rule of health) {
+        expect(
+          [...triggerFields(rule.trigger)],
+          `${path.replace(`${repoRoot}/`, "")}: ${rule.id} reads no attendee count`,
+        ).not.toContain("headcount");
+      }
+    }
+  });
+
+  it("no prose block attributes a city health requirement to an attendee count", () => {
+    // The city agency. `(?<!State )` keeps New York STATE's Department of Health out: SDOH
+    // publishes a real attendance threshold and VERIFICATION-SOURCES.md quotes it.
+    const CITY_HEALTH_AGENCY =
+      /\bDOHMH\b|(?<!State )\bDepartment of Health\b|(?<!State )\bHealth Department\b/i;
+    const ATTENDEE_COUNT =
+      /head ?count|guest ?count|attendee ?count|attendance|crowd size|party size|number of (guests|attendees|people)/i;
+    const ATTRIBUTION =
+      /\bdrive[sn]?\b|\btrigger(s|ed|ing)?\b|\bkeys? on\b|\bgate[sd]?\b|threshold|\bfeeds?\b|\bturns? on\b|\bdepends? on\b|\bgoverns?\b/i;
+
+    /** Paragraphs, list items and table rows. A block ends where the next one begins. */
+    const blocksOf = (text) => {
+      const blocks = [""];
+      for (const line of text.split("\n")) {
+        if (line.trim() === "" || /^[\s/*#-]*([-*+]\s|\d+\.\s|\|)/.test(line)) blocks.push(line);
+        else blocks[blocks.length - 1] += `\n${line}`;
+      }
+      return blocks;
+    };
+
+    const offenders = [];
+    for (const path of filesUnder(SCANNED_ROOTS, [".md", ".ts", ".tsx", ".mjs", ".js"])) {
+      for (const block of blocksOf(readFileSync(path, "utf8"))) {
+        if (
+          CITY_HEALTH_AGENCY.test(block) &&
+          ATTENDEE_COUNT.test(block) &&
+          ATTRIBUTION.test(block)
+        ) {
+          offenders.push(
+            `${path.replace(`${repoRoot}/`, "")}: ${block.replace(/\s+/g, " ").trim().slice(0, 200)}`,
+          );
+        }
+      }
+    }
+    expect(
+      offenders,
+      "no DOHMH rule reads headcount, so nothing may say one does:\n" + offenders.join("\n"),
+    ).toEqual([]);
   });
 });
