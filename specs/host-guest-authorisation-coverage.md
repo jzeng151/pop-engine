@@ -1251,8 +1251,7 @@ The first draft permitted only `packages/engine/src/ruleset.ts` under the engine
 feature **unimplementable**.
 
 Must not touch: `specs/F-102`, the plan view, the checklist, or any file owned by an in-flight core
-feature. Coordination point: F-102's Acceptance Criterion 6 is already unimplemented, and
-DOB-ASSEMBLY-001's note records that its coverage confirmation "blocks F-102 AC 6". This feature
+feature. Coordination point: F-102's Acceptance Criterion 6 is already unimplemented. This feature
 produces the data that criterion would render and does not render it, per the UI section; the two
 remain separate approvals.
 
@@ -1409,8 +1408,8 @@ of work are already promised the next ruleset version, and a fourth wants a publ
    named confirmation for it is regulatory publication, so it is the product owner's approval under
    `docs/DOCUMENTATION-GOVERNANCE.md` §6, and that is the whole requirement even where the product
    owner authored it.
-4. **DEPENDENCY. DOB-ASSEMBLY-001's coverage confirmation is unimplemented**, and its note records that
-   it blocks F-102 Acceptance Criterion 6. That criterion is another feature's and this footprint
+4. **DEPENDENCY. DOB-ASSEMBLY-001's coverage confirmation is unimplemented**, and F-102 Acceptance
+   Criterion 6 is unimplemented with it. That criterion is another feature's and this footprint
    excludes it, per the UI section: this feature produces the data it would render and does not render
    it. No action is owed here.
 5. **PREREQUISITE, product owner. Verification research** on whether an existing venue approval

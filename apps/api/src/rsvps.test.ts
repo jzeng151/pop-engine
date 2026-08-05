@@ -193,9 +193,9 @@ describe.runIf(databaseUrl.length > 0)("F-302 RSVP endpoints (database)", () => 
   });
 
   // SPEC-CONFLICT #209, resolved 2026-08-03: admission is `capacity`, and a null capacity
-  // means no enforced limit. `headcount` is a regulatory input — it drives the 75+ assembly gate,
-  // the DOHMH thresholds and the Parks exactly-20 conflict — so admitting against it would let a
-  // marketing decision move a permit finding.
+  // means no enforced limit. `headcount` is a regulatory input — it drives the 75+ assembly gate
+  // and the Parks exactly-20 conflict — so admitting against it would let a marketing decision
+  // move a permit finding.
   it("does not cap RSVPs when no capacity is confirmed", async () => {
     const { id: eventId, capacity } = await createEvent({ capacity: null, headcount: 1 });
     expect(capacity).toBeNull();
