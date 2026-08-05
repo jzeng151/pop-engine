@@ -1406,7 +1406,10 @@ of work are already promised the next ruleset version, and a fourth wants a publ
    `venue_has_assembly_approval` is an unknown-capable enum, so it is deferred by that rule as
    written. This spec's finding is close in kind to a named confirmation. **The tension is
    recorded, not resolved:** whether it is a named confirmation for that rule's purposes, and
-   therefore currently forbidden for exactly this field, is the product owner's call.
+   therefore currently forbidden for exactly this field, is the product owner's call. Publishing a
+   named confirmation for it is regulatory publication, so it carries the second signatory
+   `docs/DOCUMENTATION-GOVERNANCE.md` §6's closing paragraph requires whenever the product owner
+   authored it; naming one capacity does not supply one.
 4. **DEPENDENCY. DOB-ASSEMBLY-001's coverage confirmation is unimplemented**, and its note records that
    it blocks F-102 Acceptance Criterion 6. That criterion is another feature's and this footprint
    excludes it, per the UI section: this feature produces the data it would render and does not render
@@ -1420,7 +1423,9 @@ of work are already promised the next ruleset version, and a fourth wants a publ
    `COVERAGE_GAP`, while the published legend defines the only status whose meaning fits,
    `RESEARCH_REQUIRED`, as no source having been located. So these rules cannot be published truthfully
    without either a loader change (product owner, under §6's rules-schema
-   row) or a legend amendment (product owner). The four options and the
+   row) or a legend amendment (product owner, and being regulatory status content it also carries the
+   second signatory §6's closing paragraph requires when the product owner authored it, as option 2
+   under Outputs states). The four options and the
    refusal of each other legend value are under Outputs. Nothing in the current ruleset publishes
    `RESEARCH_REQUIRED`, so this feature would be its first use and the conflict is unexercised. Same
    shape as PR #170's finding that the schema cannot express a non-regulatory rule.
