@@ -87,7 +87,7 @@ Track B staffing is the team's kickoff call (default suggestion: Dev 3 → F-301
 - F-701 → F-702 → F-703 → F-704/F-213; F-701/F-702/F-703 jointly gate authenticated user-owned product data and external beta
 - Twilio plumbing: built once for F-203, reused by F-305, F-413
 - QR infra: built once for F-401, reused by F-303
-- F-601 (open-ended intake) → F-109 becomes necessary (scope support states: can we handle the scope the organizer described?)
+- **Consequence note, not a build-order constraint** (product owner, 2026-08-05, ADR AD-17, closing T-8): adding F-601 (open-ended intake) is what makes F-109 necessary (scope support states: can we handle the scope the organizer described?). Unlike every other row here, this one asserts no order between the two features; the order between them comes from their own approval blockers, not from this graph.
 
 ## Demo Plan (permit-planning deep dive)
 

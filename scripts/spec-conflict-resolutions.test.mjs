@@ -401,3 +401,45 @@ describe("F-101 AC 8 restored on the overview, 2026-08-04", () => {
     expect(t5).toContain(restoringSurface);
   });
 });
+
+/**
+ * Added 2026-08-05 with the T-8 closure (SPEC-CONFLICT #225). The defect was a reading, not a
+ * wording: a row that records a CONSEQUENCE sat in a table whose every other row records a build
+ * ORDER, so reading the graph literally put F-601 before F-109 while both proposals require the
+ * reverse. The resolution labels the row rather than sequencing the work, so what has to hold is
+ * structural and is asserted that way: inside the dependency-graph section, the row naming F-601
+ * and F-109 must not be readable as one of that table's ordered rows, and it must say which of the
+ * two things it is. Asserting the absence of the ordering arrow plus the presence of a
+ * self-description leaves the wording free and leaves no way to satisfy the check by restoring the
+ * ordered form.
+ */
+describe("T-8 F-601/F-109 dependency-graph row, resolved 2026-08-05", () => {
+  /** The dependency-graph bullet that names both features. */
+  function row() {
+    const graph = section(read("docs/DESIGN.md"), "## Dependency Graph (build-order constraints)");
+    expect(graph, "docs/DESIGN.md carries the dependency graph").not.toBeNull();
+    const rows = graph
+      .split("\n")
+      .filter((line) => line.startsWith("- ") && line.includes("F-601") && line.includes("F-109"));
+    expect(rows.length, "exactly one graph row relates F-601 and F-109").toBe(1);
+    return rows[0];
+  }
+
+  it("the row carries no build-order arrow", () => {
+    expect(row()).not.toContain("→");
+  });
+
+  it("the row says it is a consequence note rather than a build-order constraint", () => {
+    expect(row()).toMatch(/consequence note, not a build-order constraint/i);
+  });
+
+  it("the register records T-8 resolved and names the ADR that carries it", () => {
+    const t8 = read("docs/OPEN-QUESTIONS.md")
+      .split("\n")
+      .find((line) => line.startsWith("| T-8 "));
+    expect(t8, "docs/OPEN-QUESTIONS.md carries a T-8 row").toBeDefined();
+    expect(t8).toContain("RESOLVED 2026-08-05");
+    expect(t8).toContain("AD-17");
+    expect(read("docs/ARCHITECTURE-FUTURE.md")).toContain("| AD-17 |");
+  });
+});
