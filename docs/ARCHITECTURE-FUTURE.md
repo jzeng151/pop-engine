@@ -41,6 +41,15 @@ PopEngine must:
 AD-16 was approved 2026-07-28 by the product owner/user acting as architecture owner through the
 PR #201 follow-up. This records one person's approval in both capacities, not independent reviews.
 
+AD-15's "coordinated review before feature branches consume them" asks for a second party to look at
+a shared contract change. It is not a capacity the 2026-08-04 approvals collapse could reassign, and
+a shared contract change publishes no ruleset, so `DOCUMENTATION-GOVERNANCE.md` §6's closing
+paragraph's first sentence does not supply the second party either. With one person holding every
+lane the review is **UNMET** rather than satisfied. The row stands as written; §6 records the class
+and what would satisfy it, which here is a second contributor with repository access reviewing the
+contract change before a feature branch consumes it. The rest of AD-15, that these artifacts are
+machine-enforced contracts rather than prose, is unaffected.
+
 ## 3. System context
 
 ```mermaid
