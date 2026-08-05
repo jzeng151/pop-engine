@@ -27,7 +27,7 @@ In order:
 
 - **Branch per feature:** `F-101-event-intake`, `F-201-plan-generator`, etc. Branch from `main`, keep branches short-lived.
 - **Small PRs.** One feature, or one coherent slice of a feature. A PR that can't be reviewed in 15 minutes is too big.
-- **Every PR needs:** a link to its issue, all tests passing, coverage at threshold, and one teammate's review. You cannot merge your own PR unreviewed.
+- **Every PR needs:** a link to its issue, all tests passing, coverage at threshold, and one teammate's review. You cannot merge your own PR unreviewed. The teammate's review asks for a second person, not a capacity, so the 2026-08-04 approvals collapse does not answer it and does not remove it: with one person holding every lane it is **UNMET**, recorded in `docs/DOCUMENTATION-GOVERNANCE.md` §6's 2026-08-05 second-party-review paragraph, and satisfied by a second contributor with repository access reviewing the PR before it merges. Unmet is not a waiver. Where the PR itself publishes a regulatory fact, a ruleset or a verification status, §6's closing paragraph's first sentence applies on its own and is unconditional: a second signatory is still required and merging it unreviewed does not release it.
 - **`main` stays green.** If you break `main`, fixing it is your top priority.
 - **Commit messages:** one line, present tense, say what changed: `Add slack warning to verdict computation`, not `fixes` or `wip`. No AI attributions or tool signatures in commits or PRs.
 
@@ -86,5 +86,5 @@ Thirty-minute rule: if you're blocked for 30 minutes, post in the team channel w
 - [ ] Engine scenario suite still green (all six)
 - [ ] No new dependencies without team sign-off
 - [ ] No schema changes (or team-approved if unavoidable)
-- [ ] PR reviewed by a teammate and linked to its issue
+- [ ] PR reviewed by a teammate and linked to its issue (the teammate half is UNMET on a one-person team; see Golden Rules and `docs/DOCUMENTATION-GOVERNANCE.md` §6, 2026-08-05)
 - [ ] Your lane's verification check from `docs/DESIGN.md` passes
