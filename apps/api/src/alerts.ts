@@ -31,7 +31,12 @@ import {
   type AlertDelivery,
   type AlertSenders,
 } from "./alert-delivery";
-import { instantAtLocalHour, todayInJurisdiction } from "./calendar";
+import {
+  instantAtLocalHour,
+  jurisdictionDayInSql,
+  jurisdictionTimeZone,
+  todayInJurisdiction,
+} from "./calendar";
 import { canonicalOptionalPhone } from "./contact";
 import { calendarDateFrom, renderingKey, type FindingRendering } from "./plan";
 
@@ -558,8 +563,23 @@ const unresolvedAttemptPastTheCutoff = (now: string, marginMs: number, day: stri
      AND NOT ${FILING_WINDOW_HAS_SHUT(`(${day}::date + 1)`)}
    )`;
 
+/**
+ * `statement_timestamp()` RATHER THAN `current_timestamp`, which is the same distinction the send
+ * boundary draws and the same defect on the other side of it. `current_timestamp` is the
+ * TRANSACTION's start, and this predicate is read from inside one: a checklist review holds a
+ * transaction open across several reads so the checklist and its alerts commit together, so an
+ * attempt that crosses the provider's dedup window WHILE the review runs is read as though the
+ * review had only just begun. The response then calls the row a failure PopEngine keeps retrying
+ * while the poller, on its own statement clock, reads the same row as one it has stopped on the
+ * moment `COMMIT` releases the event lock.
+ *
+ * Not `clock_timestamp()` either, and that is not the arbitrary half of the choice: it advances
+ * DURING a statement, this predicate appears four times in the health statement alone, and a
+ * cutoff that could differ between two of them would let one statement disagree with itself,
+ * which is exactly what `alertDeliveryHealth` was written as one statement to prevent.
+ */
 const hasAnUnresolvedAttempt = (day: string): string =>
-  unresolvedAttemptPastTheCutoff("current_timestamp", DEDUP_WINDOW_CLAIM_MARGIN_MS, day);
+  unresolvedAttemptPastTheCutoff("statement_timestamp()", DEDUP_WINDOW_CLAIM_MARGIN_MS, day);
 
 /**
  * An alert the poller has stopped on, written once for both readers of it.
@@ -586,13 +606,13 @@ const hasAnUnresolvedAttempt = (day: string): string =>
  * every tick is also how a genuine hold gets buried. A demo send (AC 6) is excluded for the same
  * reason: nobody is waiting on it and no deadline is behind it.
  *
- * The day is a parameter because the two statements bind it in different positions, and it is the
- * jurisdiction's day for the reason `FILING_WINDOW_HAS_SHUT` states: a hold is only a hold while
- * the deadline it is about still exists.
+ * The day is a parameter because the two statements bind their time zone in different positions,
+ * and it is the jurisdiction's day for the reason `FILING_WINDOW_HAS_SHUT` states: a hold is only
+ * a hold while the deadline it is about still exists.
  */
 const HELD_FOR_RECONCILIATION = (day: string): string => `(
        alerts.status IN ('pending', 'failed')
-       AND alerts.send_at <= current_timestamp
+       AND alerts.send_at <= statement_timestamp()
        AND coalesce(alerts.payload->>'test', 'false') <> 'true'
        AND ${NOT_FROM_A_STALE_PLAN}
        AND NOT ${FILING_WINDOW_HAS_SHUT(day)}
@@ -2232,16 +2252,17 @@ async function recordAttemptIntent(
   database: Pool,
   row: DueAlertRow,
   /**
-   * The jurisdiction's day, because the hold this insert asks about is bounded by the alert's own
+   * The jurisdiction's ZONE, because the hold this insert asks about is bounded by the alert's own
    * filing window as well as by the limit. Supplied by the caller for the same reason every other
    * reader of a day takes it from one: this file has no honest default for which jurisdiction it is.
    *
-   * ASKED FOR AT THE STATEMENT, not at the call. Getting this writer's connection is the wait
-   * nothing bounds, the one every comment on this path is about, so a day computed before it can
-   * be yesterday by the time the insert runs, and the hold's own window edge would then be measured
-   * against a day that has gone.
+   * DERIVED BY THE STATEMENT, not at the call and not at the parameter list. Getting this writer's
+   * connection is the wait nothing bounds, the one every comment on this path is about, and issuing
+   * the insert afterwards is another; a day materialized on either side of them can be yesterday by
+   * the time PostgreSQL evaluates the hold's window edge. Sending the zone leaves nothing to go
+   * stale.
    */
-  day: () => string,
+  timeZone: string,
 ): Promise<string | null> {
   const writer = attemptWriterFor(database);
   const attemptId = randomUUID();
@@ -2252,7 +2273,7 @@ async function recordAttemptIntent(
       `WITH recorded AS (
          INSERT INTO alert_send_attempts (id, alert_id, idempotency_key)
               SELECT $3, alerts.id, $2 FROM alerts
-               WHERE alerts.id = $1 AND NOT ${hasAnUnresolvedAttempt("$4")}
+               WHERE alerts.id = $1 AND NOT ${hasAnUnresolvedAttempt(jurisdictionDayInSql("$4"))}
            RETURNING id
        ), overtaken AS (
          UPDATE alert_send_attempts AS attempt
@@ -2265,7 +2286,7 @@ async function recordAttemptIntent(
             AND EXISTS (SELECT 1 FROM recorded)
        )
        SELECT id FROM recorded`,
-      [row.id, row.idempotency_key, attemptId, day()],
+      [row.id, row.idempotency_key, attemptId, timeZone],
     );
     recorded = rows[0]?.id ?? null;
   } catch (error) {
@@ -2368,9 +2389,7 @@ async function deliverClaimed(
   // reaching a provider by saying nothing, so this needs no edit on the day one lands.
   let attemptId: string | null = null;
   if (sender.reachesAProvider !== false) {
-    attemptId = await recordAttemptIntent(database, row, () =>
-      todayInJurisdiction(jurisdiction, new Date()),
-    );
+    attemptId = await recordAttemptIntent(database, row, jurisdictionTimeZone(jurisdiction));
     // The claim permitted this send and the wait for the writer's connection outlived what the
     // claim reserved, so the permission has expired: the key would reach the provider outside the
     // window it deduplicates within. Nothing is sent and nothing is marked, so the row is exactly
@@ -2729,7 +2748,11 @@ async function sendOne(
     // The event lock above is what makes this recheck meaningful rather than another race: it is
     // held before this reads, so what it reads is a state no review is midway through changing.
     // The lock supplies the safe point; the predicate is still needed to use it.
-    const today = todayInJurisdiction(jurisdiction, new Date());
+    // The ZONE, not the day. This transaction has already waited on the event lock and is about
+    // to wait on the row's, so a day derived here is a day bound into a statement with unbounded
+    // waits behind it; `jurisdictionDayInSql` derives it where the predicates read it instead.
+    const timeZone = jurisdictionTimeZone(jurisdiction);
+    const claimDay = jurisdictionDayInSql("$2");
     const { rows } = await client.query<DueAlertRow>(
       // The staleness check belongs HERE as well as in the scan, and for the same reason the due
       // predicate is re-asked here: the event edit this guards against can commit in the window
@@ -2737,8 +2760,8 @@ async function sendOne(
       // is midway through changing.
       `SELECT id, channel, recipient, idempotency_key, payload
          FROM alerts
-        WHERE id = $1 AND status IN ('pending', 'failed') AND send_at <= current_timestamp
-          AND (next_attempt_at IS NULL OR next_attempt_at <= current_timestamp)
+        WHERE id = $1 AND status IN ('pending', 'failed') AND send_at <= statement_timestamp()
+          AND (next_attempt_at IS NULL OR next_attempt_at <= statement_timestamp())
           AND ${NOT_FROM_A_STALE_PLAN}
           -- RE-ASKED HERE for the same reason as everything else on this claim: an attempt can
           -- age past the dedup window between the scan and this, and the decision must be made
@@ -2752,7 +2775,7 @@ async function sendOne(
           -- cancellation delivers nothing and cannot duplicate anything — so a closed window is
           -- let through to be retired, and the expiry check three statements down is what it
           -- reaches. It cannot reach a send: that branch returns before one.
-          AND (NOT ${hasAnUnresolvedAttempt("$2")} OR ${FILING_WINDOW_HAS_SHUT("$2")})
+          AND (NOT ${hasAnUnresolvedAttempt(claimDay)} OR ${FILING_WINDOW_HAS_SHUT(claimDay)})
           -- RE-ASKED HERE, not inherited from the sweep at the top of the tick. See
           -- FILING_WINDOW_HAS_SHUT: the queue this row came from can run for the whole budget,
           -- so a tick that swept before local midnight could deliver a filing date that had since
@@ -2767,7 +2790,7 @@ async function sendOne(
           -- still open. Under FOR UPDATE that insert would wait for the send it is recording,
           -- which is the one thing it must not do.
         FOR NO KEY UPDATE SKIP LOCKED`,
-      [alertId, today],
+      [alertId, timeZone],
     );
     const row = rows[0];
     if (row === undefined) {
@@ -2791,8 +2814,8 @@ async function sendOne(
     // window check there is: nothing is handed to a provider, so no intent is recorded and the
     // send boundary that re-asks the question is never reached.
     const { rows: expired } = await client.query(
-      `SELECT 1 FROM alerts WHERE id = $1 AND ${FILING_WINDOW_HAS_SHUT("$2")}`,
-      [alertId, todayInJurisdiction(jurisdiction, new Date())],
+      `SELECT 1 FROM alerts WHERE id = $1 AND ${FILING_WINDOW_HAS_SHUT(jurisdictionDayInSql("$2"))}`,
+      [alertId, timeZone],
     );
     if (expired[0] !== undefined) {
       // Cancelled rather than left pending, for round 19's reason: the scheduler will refuse to
@@ -2904,7 +2927,10 @@ export function createAlertPoller(dependencies: {
     // operator about rows the claims behind it, which re-read the day under the event lock, go
     // on to retire without anyone reconciling anything. The two statements do not need the same
     // value; they need the right one.
-    const today = (): string => todayInJurisdiction(jurisdiction, new Date());
+    // The ZONE, not the day: every statement below derives its own day where it reads it, so
+    // there is no value here for an unbounded wait to make stale.
+    const timeZone = jurisdictionTimeZone(jurisdiction);
+    const day = jurisdictionDayInSql("$1");
     // Ids first, then one transaction per alert. One transaction for the whole batch would hold
     // every send under a single COMMIT, so a crash midway would re-send everything already
     // delivered in it; per row, only the row in flight is ever in doubt.
@@ -2932,14 +2958,14 @@ export function createAlertPoller(dependencies: {
       // destination from the batch rather than only demoting it.
       `SELECT id FROM alerts
         WHERE status IN ('pending', 'failed')
-          AND send_at <= current_timestamp
-          AND (next_attempt_at IS NULL OR next_attempt_at <= current_timestamp)
+          AND send_at <= statement_timestamp()
+          AND (next_attempt_at IS NULL OR next_attempt_at <= statement_timestamp())
           AND ${NOT_FROM_A_STALE_PLAN}
           -- Excluded from the scan as well as from the claim, so a row awaiting reconciliation
           -- does not consume a slot in every capped scan for as long as it goes unreconciled.
           -- Except where its window has shut, for the reason the claim states: a held row still
           -- has to be able to reach the one path that retires it, and that path sends nothing.
-          AND (NOT ${hasAnUnresolvedAttempt("$1")} OR ${FILING_WINDOW_HAS_SHUT("$1")})
+          AND (NOT ${hasAnUnresolvedAttempt(day)} OR ${FILING_WINDOW_HAS_SHUT(day)})
         -- SAME-INSTANT ROWS ARE ORDERED BY WHAT DEPENDS ON WHAT, not by uuid. A gated window
         -- exactly one reminder offset wide puts the dependency alert and the filing reminder on the
         -- same send_at, and the tiebreak then fell through to id, so which one an organizer saw
@@ -2991,7 +3017,7 @@ export function createAlertPoller(dependencies: {
                  send_at,
                  CASE alert_type WHEN 'dependency_unlocked' THEN 0 ELSE 1 END, id
         LIMIT ${MAX_ALERTS_PER_TICK}`,
-      [today()],
+      [timeZone],
     );
     const scanWasFull = rows.length === MAX_ALERTS_PER_TICK;
     if (scanWasFull) {
@@ -3028,8 +3054,8 @@ export function createAlertPoller(dependencies: {
     // AC 6 demo is an operator action against no deadline: nobody is waiting on it, so warning
     // about one only buries the genuine holds this counter exists to make visible.
     const { rows: held } = await database.query<{ id: string }>(
-      `SELECT id FROM alerts WHERE ${HELD_FOR_RECONCILIATION("$1")}`,
-      [today()],
+      `SELECT id FROM alerts WHERE ${HELD_FOR_RECONCILIATION(day)}`,
+      [timeZone],
     );
     if (held.length > 0) {
       // Ids only. The row's recipient is contact data and does not go in a log (AGENTS.md).
@@ -3551,9 +3577,9 @@ export type FailedDelivery = {
 export async function failedDeliveries(
   database: Queryable,
   eventId: string,
-  today: () => string,
+  jurisdiction: string,
 ): Promise<FailedDelivery[]> {
-  return (await alertDeliveryHealth(database, eventId, today)).failedDeliveries;
+  return (await alertDeliveryHealth(database, eventId, jurisdiction)).failedDeliveries;
 }
 
 /**
@@ -3591,9 +3617,9 @@ export type ReconciliationHold = {
 export async function reconciliationHolds(
   database: Queryable,
   eventId: string,
-  today: () => string,
+  jurisdiction: string,
 ): Promise<ReconciliationHold[]> {
-  return (await alertDeliveryHealth(database, eventId, today)).reconciliationHolds;
+  return (await alertDeliveryHealth(database, eventId, jurisdiction)).reconciliationHolds;
 }
 
 /**
@@ -3616,19 +3642,21 @@ export async function alertDeliveryHealth(
   database: Queryable,
   eventId: string,
   /**
-   * The jurisdiction's calendar day, because a hold is only a hold while the deadline still exists.
+   * The jurisdiction whose calendar day decides this, because a hold is only a hold while the
+   * deadline still exists.
    *
    * Passed in rather than read here for the reason the poller states: there is no honest default
-   * for which jurisdiction's day this is, and the api already computes one clock for everything.
+   * for which jurisdiction's day this is, and a wrong one classifies holds on the wrong day.
    *
-   * A FUNCTION RATHER THAN A DAY, and that is the same rule the claim and the send boundary each
-   * arrived at: A DAY IS DERIVED WHERE IT IS USED. The checklist runs several queries before this
-   * one, so a read that starts just before local midnight reaches this statement after it, and a
-   * day computed at the start of the request classifies a hold that the poller's next claim, asking
-   * the day it is by then, does not agree exists. The organizer is then told to check with the
-   * sending service about a reminder nobody is waiting on.
+   * A JURISDICTION RATHER THAN A DAY, which is the rule the claim and the send boundary each
+   * arrived at taken one wait further: A DAY IS DERIVED WHERE IT IS USED, and where it is used is
+   * the statement. A day this process derives, even at the last instruction before the query,
+   * is a value bound into a statement that has an unbounded wait in front of it, so a read
+   * starting just before local midnight can reach PostgreSQL after it and classify a hold against
+   * a day that has gone. What crosses the wire is the zone; `jurisdictionDayInSql` derives the day
+   * where the predicate reads it.
    */
-  today: () => string,
+  jurisdiction: string,
 ): Promise<{
   readonly failedDeliveries: FailedDelivery[];
   readonly reconciliationHolds: ReconciliationHold[];
@@ -3647,6 +3675,7 @@ export async function alertDeliveryHealth(
   // window is closed instead of filled: `DEPLOY.md` "Release order" puts the web service first,
   // this build's reader already treats the field as absent-means-none for the converse order, and
   // `apps/api/src/deployment-order.test.ts` fails if that step is dropped while this split stands.
+  const day = jurisdictionDayInSql("$2");
   const { rows } = await database.query<{
     channel: AlertChannel;
     failed_count: number;
@@ -3657,19 +3686,19 @@ export async function alertDeliveryHealth(
     `SELECT channel,
             count(*) FILTER (
               WHERE status = 'failed'
-                AND NOT (${hasAnUnresolvedAttempt("$2")} AND ${NOT_FROM_A_STALE_PLAN})
+                AND NOT (${hasAnUnresolvedAttempt(day)} AND ${NOT_FROM_A_STALE_PLAN})
             )::int AS failed_count,
             bool_or(NOT (${NOT_FROM_A_STALE_PLAN})) FILTER (
               WHERE status = 'failed'
-                AND NOT (${hasAnUnresolvedAttempt("$2")} AND ${NOT_FROM_A_STALE_PLAN})
+                AND NOT (${hasAnUnresolvedAttempt(day)} AND ${NOT_FROM_A_STALE_PLAN})
             ) AS held_for_review,
             -- Over the same rows the count is taken from, so it qualifies that count and not some
             -- other population. See FailedDelivery.attemptedWithoutOutcome: a row reaching this
             -- filter with an unresolved attempt is a stale one by construction, and a review does
             -- not start it again.
-            bool_or(${hasAnUnresolvedAttempt("$2")}) FILTER (
+            bool_or(${hasAnUnresolvedAttempt(day)}) FILTER (
               WHERE status = 'failed'
-                AND NOT (${hasAnUnresolvedAttempt("$2")} AND ${NOT_FROM_A_STALE_PLAN})
+                AND NOT (${hasAnUnresolvedAttempt(day)} AND ${NOT_FROM_A_STALE_PLAN})
             ) AS attempted_without_outcome,
             -- THE TICK'S OWN DEFINITION OF A HOLD, taken rather than restated. This count and the
             -- one the poller logs are the same claim about the same row, and listing the
@@ -3677,16 +3706,16 @@ export async function alertDeliveryHealth(
             -- plan were excluded on both sides, and being DUE was excluded only on the tick's, so
             -- an alert a regeneration had moved into the future was named here as one PopEngine
             -- had paused. See HELD_FOR_RECONCILIATION for what each exclusion is for.
-            count(*) FILTER (WHERE ${HELD_FOR_RECONCILIATION("$2")})::int AS hold_count
+            count(*) FILTER (WHERE ${HELD_FOR_RECONCILIATION(day)})::int AS hold_count
        FROM alerts
       WHERE event_id = $1
         AND status IN ('pending', 'failed')
         AND coalesce(payload->>'test', 'false') <> 'true'
       GROUP BY channel
       ORDER BY channel`,
-    // Derived here, at the statement that reads it, rather than carried across the reads in front
-    // of it.
-    [eventId, today()],
+    // The ZONE, not the day: the day is derived by the statement above, so nothing about which
+    // calendar day this is can go stale between here and PostgreSQL evaluating it.
+    [eventId, jurisdictionTimeZone(jurisdiction)],
   );
   return {
     // Never zero: absent instead, which is what both notices' "empty means nothing to say" relies

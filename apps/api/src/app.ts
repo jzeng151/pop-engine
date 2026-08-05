@@ -103,7 +103,7 @@ export function createApp(dependencies: AppDependencies): Express {
   app.use(createPublicPageRouter({ database: dependencies.database }));
   if (dependencies.planService !== undefined) registerPlanRoutes(app, dependencies.planService);
   if (dependencies.checklist !== undefined) {
-    app.use("/api", createChecklistRouter(dependencies.checklist, dependencies.today));
+    app.use("/api", createChecklistRouter(dependencies.checklist));
   }
   if (dependencies.alerts !== undefined) {
     app.use("/api", createAlertsRouter(dependencies.alerts));

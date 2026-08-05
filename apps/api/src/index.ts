@@ -103,7 +103,12 @@ const server = createApp({
   intakeContract: parseIntakeContract(ruleset.document),
   today,
   planService,
-  checklist: { database: pool, storage: documentStorage, scheduleAlerts },
+  checklist: {
+    database: pool,
+    storage: documentStorage,
+    scheduleAlerts,
+    jurisdiction: engineRuleset.jurisdiction,
+  },
   alerts: { jurisdiction: engineRuleset.jurisdiction, database: pool, senders },
   rulesMeta: { rulesetVersion: ruleset.rulesetVersion, snapshotDate: ruleset.snapshotDate },
   ...(verifyAccessToken ? { verifyAccessToken } : {}),

@@ -115,7 +115,7 @@ describe("F-203 rollout constraints the runbook has to carry", () => {
     // The gate the pause acts on. If the claim ever stopped honouring `next_attempt_at` the pause
     // would stop stopping anything, and the un-pause would stop releasing anything.
     expect(alerts).toContain(
-      "AND (next_attempt_at IS NULL OR next_attempt_at <= current_timestamp)",
+      "AND (next_attempt_at IS NULL OR next_attempt_at <= statement_timestamp())",
     );
     // And the population the backfill leaves uncovered, which is what the pause is for.
     expect(read("apps/api/migrations/014_alert_send_attempts.ts")).toContain(
@@ -151,7 +151,9 @@ describe("F-203 rollout constraints the runbook has to carry", () => {
     // ASSERTED AS THE ABSENCE OF THE OVERCLAIM rather than as a phrasing, because what must not
     // return is the certainty, not a particular sentence. The section may say whatever it likes
     // about an attempted send.
-    expect(read("apps/api/src/alerts.ts")).toContain("Record that this alert is ABOUT to be handed");
+    expect(read("apps/api/src/alerts.ts")).toContain(
+      "Record that this alert is ABOUT to be handed",
+    );
 
     const architecture = read("docs/ARCHITECTURE.md");
     const schemaSection = architecture.slice(
