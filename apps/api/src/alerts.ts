@@ -1089,11 +1089,11 @@ function reminderCopy(
     // VERIFICATION's qualifications, all flattened, with no marker separating the caveat about a
     // date from a note about anything else. Reading only `deadline_display` therefore dropped the
     // caveat silently, and dropped it
-    // hardest exactly where it matters most: DOB-ASSEMBLY-001 publishes no display string at all,
-    // so its reminder stated a computed calendar date with no hint that the published lead may be
-    // ten BUSINESS days and that the wording is unpinned. A date presented without the doubt the
-    // ruleset attaches to it is a resolved requirement PopEngine invented (AGENTS.md: an
-    // unresolved state stays visible end to end).
+    // hardest exactly where it matters most: DOB-ASSEMBLY-001 carries a long deadline
+    // `qualification` and five notes of its own, so its reminder stated a computed calendar date
+    // with no hint of any of them. A date presented without the doubt the ruleset attaches to it
+    // is a resolved requirement PopEngine invented (AGENTS.md: an unresolved state stays visible
+    // end to end).
     //
     // Quoted, never summarised. Picking which notes "belong to" the deadline would be this file
     // deciding which published qualifications an organizer needs, which is the ruleset's call.
