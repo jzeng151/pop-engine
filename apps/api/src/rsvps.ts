@@ -245,8 +245,12 @@ export type ListRsvpsResult =
           id: string;
           name: string;
           capacity: number | null;
-          /** Compatibility window only; see `listRsvps`. Removed with the web rollout. */
-          headcount: number;
+          /**
+           * Compatibility window only, under the pre-rename name: the same enforced limit as
+           * `capacity`, never the `events.headcount` column. See `listRsvps`. Removed with the
+           * web rollout.
+           */
+          headcount: number | null;
           event_date: string;
         };
         rsvps: RsvpRow[];
@@ -264,18 +268,24 @@ export type ListRsvpsResult =
  * list empties and the cancel controls go with it until the second deployment finishes. Serving
  * the old field alongside the new one keeps the page rendering in either deployment order.
  *
- * It does not make the window order-independent, and this comment previously said it did. Shape is
- * what both orders survive; meaning is not. Deployed api-first, the pre-rename web build reads this
- * `headcount` as the enforced limit while `createRsvp` below admits against `capacity`, so an
- * organizer is shown "5 of 40 confirmed" against a limit of 5, or a finite limit at all when
- * `capacity` is null and nothing is ever refused. Issue #236 carries that defect and the choice
- * between a semantics-preserving compatibility response and a rollout that removes the window; it
- * is deliberately not decided here.
+ * Serving both keys is shape compatibility, and shape is all it was: deployed api-first, the
+ * pre-rename build read this `headcount` as the enforced limit while admission ran against
+ * `capacity`, so an organizer saw "1 of 40 confirmed" while the sixth RSVP was refused at 5. Issue
+ * #236, decided 2026-08-05 by the product owner, fixes the meaning rather than the deploy order:
+ * the compatibility key carries THE LIMIT THIS API ENFORCES, so an old page's denominator is the
+ * number admission applies. It is the pre-rename NAME for the current limit, not the pre-rename
+ * VALUE. The current client prefers a present `capacity` including null, so it never reads this
+ * key and is unaffected; its fallback still covers a genuinely pre-rename API.
  *
- * `headcount` keeps its own meaning here, the `events.headcount` column, which is what the
- * pre-rename API returned. It is not capacity under an old name: `headcount` is a regulatory
- * input driving the 75-plus assembly gate, the DOHMH thresholds and the Parks exactly-20
- * conflict, and it must not be made to carry another value. Admission is `capacity` alone.
+ * A null `capacity` is no confirmed limit and never refuses, and the pre-rename shape has no way
+ * to say that: it carries a number, and any number here would be an enforced limit that nothing
+ * enforces. So the key is null too. A pre-rename page that can only render a number then fails
+ * visibly rather than showing a false one, which is the loss this window accepts instead of the
+ * silent wrong denominator it used to serve. `specs/F-302-rsvp-guest-list.md` records that.
+ *
+ * `events.headcount` is NOT what this response reports and is not read here at all. It stays a
+ * regulatory input driving the 75-plus assembly gate, the DOHMH thresholds and the Parks
+ * exactly-20 conflict, unchanged everywhere it is used as one. Admission is `capacity` alone.
  *
  * `specs/F-302-rsvp-guest-list.md` records what removing `headcount` from this response needs.
  */
@@ -288,10 +298,9 @@ export async function listRsvps(database: Queryable, eventId: string): Promise<L
     id: string;
     name: string;
     capacity: number | null;
-    headcount: number;
     event_date: string;
   }>(
-    `SELECT id, name, capacity, headcount, event_date::text AS event_date
+    `SELECT id, name, capacity, event_date::text AS event_date
        FROM events
       WHERE id = $1`,
     [eventId],
@@ -316,7 +325,8 @@ export async function listRsvps(database: Queryable, eventId: string): Promise<L
         id: event.id,
         name: event.name,
         capacity: event.capacity,
-        headcount: event.headcount,
+        // Same value under the pre-rename name; see the note above.
+        headcount: event.capacity,
         event_date: event.event_date,
       },
       rsvps,
