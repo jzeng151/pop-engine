@@ -172,6 +172,129 @@ describe("provenance (AC 1)", () => {
   });
 });
 
+/**
+ * #239. `dedupeRule` above publishes one disposition and no deadline, so the suite never asked what
+ * a merged finding says when two contributing rules disagree. It said whatever the ruleset listed
+ * first: nyc.v2.11's `dob-structure` group mixes disposition (DOB-TENT-001 takes the permit-kind
+ * default `required`, DOB-TALL-STRUCTURE-001 publishes MAY_BE_REQUIRED) and deadline (15 business
+ * days vs none), so reversing the two rules in the published file, with no regulatory fact
+ * changing, turned a dated `required` line into an undated `may_be_required` one.
+ *
+ * These build the group both ways round and assert the merged finding, not the merge helper.
+ */
+const disposedRule = (
+  id: string,
+  disposition: string | undefined,
+  calendarDays?: number,
+): Record<string, unknown> => {
+  const base = dedupeRule(id, `citation ${id}`);
+  return {
+    ...base,
+    output: {
+      ...base.output,
+      ...(disposition === undefined ? {} : { disposition }),
+      ...(calendarDays === undefined
+        ? {}
+        : { deadline: { type: "published_minimum", calendar_days: calendarDays } }),
+    },
+  };
+};
+
+/** The merged `dob-structure` finding for a group listed in the given order. */
+const mergedGroup = (rules: Record<string, unknown>[]) => {
+  const plan = evaluate(
+    { event_date: "2026-12-04", headcount: 50 },
+    syntheticRuleset(rules),
+    TODAY,
+    {
+      id: "test-calendar@2026",
+      holidays: [],
+    },
+  );
+  expect(plan.findings).toHaveLength(1);
+  return plan.findings[0];
+};
+
+describe("dedupe field merge (#239)", () => {
+  it("takes the strongest contributing disposition, whichever rule is listed first", () => {
+    const forward = mergedGroup([
+      disposedRule("RULE-A", "MAY_BE_REQUIRED"),
+      disposedRule("RULE-B", "REQUIRED"),
+    ]);
+    const reverse = mergedGroup([
+      disposedRule("RULE-B", "REQUIRED"),
+      disposedRule("RULE-A", "MAY_BE_REQUIRED"),
+    ]);
+    expect(forward?.disposition).toBe("required");
+    expect(reverse?.disposition).toBe("required");
+  });
+
+  it("never lets a permit finding erase a blocking one on the same key", () => {
+    // ARCHITECTURE-FUTURE §8.4. The blocking value outranks `required` in both listings.
+    expect(
+      mergedGroup([
+        disposedRule("RULE-A", "REQUIRED"),
+        disposedRule("RULE-B", "PROHIBITED_OR_INELIGIBLE"),
+      ])?.disposition,
+    ).toBe("prohibited_or_ineligible");
+    expect(
+      mergedGroup([
+        disposedRule("RULE-B", "PROHIBITED_OR_INELIGIBLE"),
+        disposedRule("RULE-A", "REQUIRED"),
+      ])?.disposition,
+    ).toBe("prohibited_or_ineligible");
+  });
+
+  it("takes the earlier published filing window, whichever rule is listed first", () => {
+    // 45 days back from 2026-12-04 is the earlier window; taking the later one would tell an
+    // organizer they have three more weeks than the group's own rules publish.
+    const forward = mergedGroup([
+      disposedRule("RULE-A", "REQUIRED", 21),
+      disposedRule("RULE-B", "REQUIRED", 45),
+    ]);
+    const reverse = mergedGroup([
+      disposedRule("RULE-B", "REQUIRED", 45),
+      disposedRule("RULE-A", "REQUIRED", 21),
+    ]);
+    expect(forward?.latestApplyDate).toBe("2026-10-20");
+    expect(reverse?.latestApplyDate).toBe("2026-10-20");
+  });
+
+  it("keeps a dated rule's window when the other member of the group publishes none", () => {
+    const forward = mergedGroup([
+      disposedRule("RULE-A", "REQUIRED", 45),
+      disposedRule("RULE-B", "MAY_BE_REQUIRED"),
+    ]);
+    const reverse = mergedGroup([
+      disposedRule("RULE-B", "MAY_BE_REQUIRED"),
+      disposedRule("RULE-A", "REQUIRED", 45),
+    ]);
+    expect(forward).toMatchObject({ latestApplyDate: "2026-10-20", deadlineStatus: "on_track" });
+    expect(reverse).toMatchObject({ latestApplyDate: "2026-10-20", deadlineStatus: "on_track" });
+  });
+
+  it("renders the same merged finding whichever order the ruleset lists the group in", () => {
+    // The property the defect is. Rule ids, notes and sources stay in contributing order — the
+    // approved contract is that a merged finding retains every contributing rule — so this pins
+    // everything the merge decides rather than concatenates.
+    const rules = [
+      disposedRule("RULE-A", "MAY_BE_REQUIRED"),
+      disposedRule("RULE-B", "REQUIRED", 45),
+    ];
+    const decided = (finding: ReturnType<typeof mergedGroup>) => ({
+      disposition: finding?.disposition,
+      deadline: finding?.deadline,
+      deadlineDisplay: finding?.deadlineDisplay,
+      latestApplyDate: finding?.latestApplyDate,
+      deadlineStatus: finding?.deadlineStatus,
+      slackDays: finding?.slackDays,
+      name: finding?.name,
+      agency: finding?.agency,
+    });
+    expect(decided(mergedGroup(rules))).toEqual(decided(mergedGroup([...rules].reverse())));
+  });
+});
+
 describe("verification treatments", () => {
   it("leaves RESEARCH_REQUIRED confirmation to the renderer instead of duplicating it in notes", () => {
     const plan = evaluate(

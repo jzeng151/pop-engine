@@ -21,6 +21,7 @@ import type {
   DeadlineStatus,
   Disposition,
   TriggeredBy,
+  RuleUserSummary,
   Tristate,
 } from "./types";
 
@@ -111,58 +112,129 @@ function buildFinding(
   };
 }
 
-function mergeFindings(first: Finding, second: Finding): Finding {
-  const firstSummary = first.userSummary ?? null;
-  const secondSummary = second.userSummary ?? null;
-  const userSummary =
-    firstSummary === null
-      ? secondSummary
-      : secondSummary === null
-        ? firstSummary
-        : {
-            heading: firstSummary.heading,
-            points: [...firstSummary.points, ...secondSummary.points],
-          };
-  const carriesVerificationDate =
-    first.lastVerifiedDate !== undefined || second.lastVerifiedDate !== undefined;
-  const lastVerifiedDate =
-    first.lastVerifiedDate === undefined ||
-    first.lastVerifiedDate === null ||
-    second.lastVerifiedDate === undefined ||
-    second.lastVerifiedDate === null
-      ? null
-      : first.lastVerifiedDate < second.lastVerifiedDate
-        ? first.lastVerifiedDate
-        : second.lastVerifiedDate;
+/**
+ * Weakest to strongest. A merged finding carries one disposition where its contributing rules may
+ * publish several, and the group's is the strongest of them: rules sharing a dedupe key are several
+ * published routes to one requirement, so any one of them applying means the requirement applies.
+ * A weaker value would tell an organizer that a filing they must make merely might apply.
+ *
+ * `prohibited_or_ineligible` sits at the top because `ARCHITECTURE-FUTURE.md` §8.4 already settles
+ * that end: a blocking eligibility or prohibition finding is never erased by a permit finding with
+ * the same key.
+ */
+const DISPOSITION_STRENGTH: readonly Disposition[] = [
+  "no_new_requirement",
+  "advisory",
+  "may_be_required",
+  "required",
+  "prohibited_or_ineligible",
+];
+
+function strongerDisposition(strongest: Disposition, finding: Finding): Disposition {
+  return DISPOSITION_STRENGTH.indexOf(finding.disposition) > DISPOSITION_STRENGTH.indexOf(strongest)
+    ? finding.disposition
+    : strongest;
+}
+
+/**
+ * The contributing rule whose published filing window binds the group, and so the rule the merged
+ * line reads as: a dated rule over an undated one, the earlier window between two dated ones, and
+ * the lower rule id when neither of those separates them.
+ *
+ * Earlier rather than later because a merged line shows one date, and showing the later of two
+ * published windows understates urgency — an organizer would still be inside the rendered window
+ * after the real one had closed. The rule-id tie-break is not a judgement about which rule matters
+ * more; it exists so the answer depends on the rules rather than on where they sit in the file.
+ *
+ * A total order over the group, so which member wins does not depend on the order they arrive in,
+ * which is the whole point (#239).
+ */
+function bindsTighter(a: Finding, b: Finding): Finding {
+  if (a.latestApplyDate !== b.latestApplyDate) {
+    if (a.latestApplyDate === null) return b;
+    if (b.latestApplyDate === null) return a;
+    return a.latestApplyDate < b.latestApplyDate ? a : b;
+  }
+  return (a.ruleIds[0] ?? "") <= (b.ruleIds[0] ?? "") ? a : b;
+}
+
+/**
+ * The group's plain-language block: the binding rule's heading over every contributing rule's
+ * points, or absent when no contributing rule publishes one.
+ */
+function mergeUserSummary(group: readonly Finding[], binding: Finding): RuleUserSummary | null {
+  const summaries = group.flatMap((finding) =>
+    finding.userSummary === undefined || finding.userSummary === null ? [] : [finding.userSummary],
+  );
+  if (summaries.length === 0) return null;
+  const heading = binding.userSummary?.heading ?? (summaries[0] as RuleUserSummary).heading;
+  return { heading, points: summaries.flatMap((summary) => summary.points) };
+}
+
+/**
+ * One finding for a dedupe group, retaining every contributing rule, source and trigger reason.
+ *
+ * The merged line reads as its binding rule rather than as whichever rule the ruleset happens to
+ * list first, and carries the group's strongest disposition. Ruleset order is not a regulatory
+ * fact, and until this it decided both: nyc.v2.11's `dob-structure` group mixes disposition and
+ * deadline, so reversing those two rules in the published file turned a `required` finding with a
+ * filing date into a `may_be_required` one with none, no regulatory fact having changed (#239).
+ *
+ * NO APPROVED ARTIFACT STATES THESE MERGED VALUES. `ARCHITECTURE.md` says only that a group merges
+ * deterministically, retaining every contributing rule and source; the precedence table
+ * `ARCHITECTURE-FUTURE.md` §8.4 calls for is Phase 2+ direction and does not exist yet. What is
+ * taken from §8.4 is the two things it settles now — a blocking finding is never erased on a shared
+ * key, and merge order is deterministic rather than incidental array order. The rest is the safe
+ * direction for a regulatory product: understating what an organizer must file, or how soon, is the
+ * failure this cannot risk. Nothing here asserts a new regulatory fact. Every merged value is some
+ * contributing rule's own published value, and every contributing rule stays in `ruleIds` and
+ * `sources`, so neither route to the requirement is hidden.
+ */
+function mergeGroup(group: readonly Finding[]): Finding {
+  const first = group[0] as Finding;
+  if (group.length === 1) return first;
+
+  const binding = group.reduce(bindsTighter);
+  const userSummary = mergeUserSummary(group, binding);
+  const verificationDates = group.map((finding) => finding.lastVerifiedDate);
+  const published = verificationDates.filter((date): date is string => typeof date === "string");
+  const lastVerifiedDate: string | null =
+    published.length === group.length
+      ? published.reduce((earliest, date) => (date < earliest ? date : earliest))
+      : null;
+  const firstNonNull = <T>(values: readonly (T | null)[]): T | null =>
+    values.find((value): value is T => value !== null) ?? null;
+
   return {
-    ...first,
-    ruleIds: [...first.ruleIds, ...second.ruleIds],
-    notes: [...first.notes, ...second.notes],
-    sources: [...first.sources, ...second.sources],
+    ...binding,
+    disposition: group.reduce(strongerDisposition, first.disposition),
+    ruleIds: group.flatMap((finding) => finding.ruleIds),
+    notes: group.flatMap((finding) => finding.notes),
+    sources: group.flatMap((finding) => finding.sources),
     ...(userSummary === null ? {} : { userSummary }),
-    triggeredBy: [...first.triggeredBy, ...second.triggeredBy],
-    deadlineUnknownFields: [...first.deadlineUnknownFields, ...second.deadlineUnknownFields],
-    timelineUnresolvedReason: first.timelineUnresolvedReason ?? second.timelineUnresolvedReason,
-    noteText: first.noteText ?? second.noteText,
-    conflictText: first.conflictText ?? second.conflictText,
-    ...(carriesVerificationDate ? { lastVerifiedDate } : {}),
+    triggeredBy: group.flatMap((finding) => finding.triggeredBy),
+    deadlineUnknownFields: group.flatMap((finding) => finding.deadlineUnknownFields),
+    timelineUnresolvedReason: firstNonNull(group.map((f) => f.timelineUnresolvedReason)),
+    noteText: firstNonNull(group.map((finding) => finding.noteText)),
+    conflictText: firstNonNull(group.map((finding) => finding.conflictText)),
+    ...(verificationDates.some((date) => date !== undefined) ? { lastVerifiedDate } : {}),
   };
 }
 
 /** Findings sharing a dedupe key merge deterministically, retaining every contributing rule and source. */
 function dedupe(findings: readonly { finding: Finding; dedupeKey: string | null }[]): Finding[] {
-  const merged: Finding[] = [];
+  const groups: Finding[][] = [];
   const positionByKey = new Map<string, number>();
   for (const { finding, dedupeKey } of findings) {
     const existing = dedupeKey === null ? undefined : positionByKey.get(dedupeKey);
     if (existing === undefined) {
-      if (dedupeKey !== null) positionByKey.set(dedupeKey, merged.length);
-      merged.push(finding);
+      if (dedupeKey !== null) positionByKey.set(dedupeKey, groups.length);
+      groups.push([finding]);
       continue;
     }
-    merged[existing] = mergeFindings(merged[existing] as Finding, finding);
+    (groups[existing] as Finding[]).push(finding);
   }
-  return merged;
+  return groups.map(mergeGroup);
 }
 
 /**
