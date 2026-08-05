@@ -90,17 +90,23 @@ Contributors must not:
 
 PopEngine is a solo project, so approvals name one capacity. The product owner approves; no row names a separate architecture, security, database, verification, rules-reviewer or lane-owner capacity (product owner, 2026-08-04; recorded in `docs/BASELINE.md`). This says which capacity a future approval requires. It does not license approving alone where this section forbids it: the first sentence of this section's closing paragraph is unconditional and is not relaxed by the table.
 
-| Change                                                       | Required approval |
-| ------------------------------------------------------------ | ----------------- |
-| Regulatory source/status/content                             | Product owner     |
-| Rule trigger, dedupe, branch, deadline, or formula semantics | Product owner     |
-| Event Input, rules schema, OpenAPI, shared enum              | Product owner     |
-| Database migration touching shared/core tables               | Product owner     |
-| Product scope, feature meaning, phase                        | Product owner     |
-| Durable architecture decision or dependency                  | Product owner     |
-| UI copy only                                                 | Product owner     |
+| Change                                                       | Required approval                          |
+| ------------------------------------------------------------ | ------------------------------------------ |
+| Regulatory source/status/content                             | Product owner                              |
+| Rule trigger, dedupe, branch, deadline, or formula semantics | Product owner                              |
+| Event Input, rules schema, OpenAPI, shared enum              | Product owner                              |
+| Database migration touching shared/core tables               | Product owner                              |
+| Product scope, feature meaning, phase                        | Product owner                              |
+| Durable architecture decision or dependency                  | Product owner, recorded as an approved ADR |
+| UI copy that makes no regulatory claim                       | Product owner                              |
 
 This table states what a future approval requires. It does not restate an approval already given: an approval recorded in named capacities under the rules then in force stays on the record in the words it was given.
+
+Two rows carry a requirement that is not a capacity, and naming one approver does not reach either.
+
+A durable architecture decision is still recorded as an approved ADR. The capacity that signs it is the product owner; the record the decision has to leave is unchanged, and an approval that leaves no ADR does not satisfy that row.
+
+Copy-only is a statement about the change, not about the file it lands in. A UI-text change that itself states a permit, agency, trigger, deadline, fee, document, portal, exception, verification status, or plan-completeness fact is regulatory content: it takes the first row, and it is a regulatory publication, so the closing paragraph's first sentence applies and the product owner who wrote that copy is not enough on their own. UI copy is the last level of §2's authority hierarchy, not outside it, and an organizer reading an alert or a checklist reads it as the system's regulatory answer. The copy-only row covers copy that asserts no such fact: navigation and field labels, headings, button text, empty states, and messages about the application itself.
 
 **Recorded demo overwrite — PR #137 only (2026-07-27).** After the other lane owners were unavailable, `@jzeng151` explicitly invoked a one-time product-owner overwrite of the all-lane and teammate-review requirements for the initial Event and Event Revision ratification. It authorizes access-gated synthetic-data demo implementation against that bounded contract. It attributes no approval to another account, creates no precedent for later contract or migration changes, and does not authorize production activation. Strict ratification remains due before the F-701–F-703 production gate can open; the sentences above record what happened on 2026-07-27, and who must sign that ratification is now the table above, the product owner.
 
