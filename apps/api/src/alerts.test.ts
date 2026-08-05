@@ -1138,7 +1138,14 @@ describe.skipIf(databaseUrl === "")("F-203 deadline alerts", () => {
       // the bound and what remains unestablished in the deadline's own `qualification` and the
       // verification's, and `findings.ts` flattens both into `notes` with nothing marking which
       // is which. A builder reading only `deadline_display` dropped them, so the reminder gave a
-      // computed date as though the lead were settled.
+      // computed date as though the lead were settled. That reminder exists HERE and not in
+      // production: since nyc.v2.8 this rule's deadline is `business_days_minimum` and needs the
+      // holiday list `config.business_day_math` pins, and `PUBLISHED_HOLIDAY_CALENDARS` is empty,
+      // so the running product renders it `not_calculable` with no date and schedules no reminder
+      // (`plan.test.ts`). This suite supplies an empty holiday list and therefore does compute one,
+      // which is what makes the dropped-caveat behaviour observable at all. The rule's own
+      // `qualification` says the two disagree by design, so a green run here is not evidence the
+      // production path dates anything.
       //
       // The expected strings are READ FROM THE PUBLISHED RULE rather than written here. The first
       // version quoted v2.7's wording, and v2.8 rewrote it: the assertion broke while the code was
