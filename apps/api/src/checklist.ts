@@ -547,7 +547,12 @@ async function checklistView(
   database: Queryable,
   eventId: string,
   plan: LatestPlan,
-  today: string,
+  /**
+   * The api's clock, passed as the function it is: the reads above this one take real time, and
+   * the health statement below classifies holds by whether a filing window has shut. A day
+   * computed before those reads is an answer about the day the request started on.
+   */
+  today: () => string,
 ) {
   const items = await checklistRows(database, eventId);
   const struck = await struckChecklistItemIds(database, eventId, plan.id, items);
@@ -1001,7 +1006,7 @@ export function createChecklistRouter(
         // Read under the same row lock as everything above, so a regeneration committing mid
         // request lands either wholly before this comparison or wholly after it.
         if (displayedPlanId !== plan.id) {
-          const current = await checklistView(client, eventId, plan, today());
+          const current = await checklistView(client, eventId, plan, today);
           await client.query("ROLLBACK");
           res.status(409).json({
             error: `plan ${displayedPlanId} is no longer the latest plan for event ${eventId}; nothing was recorded — review the current plan shown here and submit again`,
@@ -1015,7 +1020,7 @@ export function createChecklistRouter(
         // inside the same transaction, so the checklist and its alerts commit together (AC 7: a
         // regeneration reviewed here is also where pending alerts are recomputed).
         const alerts = await scheduleAlerts(client, eventId, plan.id, parsed.contacts);
-        const view = await checklistView(client, eventId, plan, today());
+        const view = await checklistView(client, eventId, plan, today);
         await client.query("COMMIT");
         // A second call creates nothing and returns the checklist that already exists.
         res.status(created > 0 ? 201 : 200).json({ ...view, alerts });
@@ -1038,7 +1043,7 @@ export function createChecklistRouter(
         notFound(res, `no plan generated for event ${eventId}`);
         return;
       }
-      res.json(await checklistView(database, eventId, plan, today()));
+      res.json(await checklistView(database, eventId, plan, today));
     }),
   );
 

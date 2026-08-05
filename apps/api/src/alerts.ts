@@ -637,38 +637,45 @@ const handoffFitsTheMargin = (boundaryAskedAt: number, now: number): boolean =>
   now - boundaryAskedAt <= SEND_BOUNDARY_HANDOFF_BUDGET_MS;
 
 /**
- * The invariant the FILING WINDOW's edge must satisfy, stated beside the one the dedup margin
- * states so the fifth defect on a margin is not a sixth: THE DAY THE BOUNDARY'S WINDOW ANSWER IS
- * ABOUT MUST STILL BE THE JURISDICTION'S DAY WHEN THE REQUEST THAT ANSWER PERMITS CAN LAST UNTIL.
+ * The last day the bounded handoff in front of the provider can still be running on.
  *
- * WHY THE ANSWER ALONE IS NOT ENOUGH. `FILING_WINDOW_HAS_SHUT` is asked about `boundaryDay` and is
- * true or false of that whole day, so it says nothing about how much of the day is left. A
- * final-day reminder reaching the boundary in the last second before local midnight passes it,
- * and `sender(...)` then has DNS, the TCP and TLS handshakes and the body transmission in front of
- * it, bounded end to end by `PROVIDER_TIMEOUT_MS`. The message can reach Resend on the day after
- * the one the window was open on, telling an organizer to file by yesterday — the exact copy the
+ * The invariant this serves is stated beside the one the dedup margin states, so the fifth defect
+ * on a margin is not a sixth: THE FILING WINDOW MUST STILL BE OPEN WHEN THE REQUEST THAT THE
+ * BOUNDARY PERMITS CAN LAST UNTIL.
+ *
+ * WHY THE BOUNDARY'S OWN ANSWER IS NOT ENOUGH. `FILING_WINDOW_HAS_SHUT` asked about today is true
+ * or false of that whole day, so it says nothing about how much of the day is left. A final-day
+ * reminder reaching the boundary in the last second before local midnight passes it, and
+ * `sender(...)` then has DNS, the TCP and TLS handshakes and the body transmission in front of it,
+ * bounded end to end by `PROVIDER_TIMEOUT_MS`. The message can reach Resend on the day after the
+ * one the window was open on, telling an organizer to file by yesterday: the exact copy the
  * window check exists to prevent, produced by a check that returned the right answer.
  *
- * NOT A NEW ALLOWANCE, which is the point of writing it here rather than subtracting a number at
+ * SO THE WINDOW IS ASKED ABOUT THIS DAY, NOT COMPARED TO IT, and that distinction is the whole of
+ * what the day comparison got wrong. Requiring the handoff to finish on the day the boundary asked
+ * about refuses EVERY alert in the last `SEND_BOUNDARY_MARGIN_MS` of every day, whatever its
+ * deadline is and whether it has one at all: a reminder whose filing date is next week loses those
+ * minutes of every day to a reservation held for the final-day one, and a row with no filing
+ * window (an AC 6 demo, or a `dependency_unlocked` whose gated item has a null
+ * `latest_apply_date`, which F-203 schedules deliberately) is refused to protect a date that does
+ * not exist. A null filing date is not an expired one, here as everywhere else in this file. Only
+ * the alert whose window actually shuts overnight is held back, and it is held back by the same
+ * predicate that decides every other window question.
+ *
+ * NOT A NEW ALLOWANCE, which is the point of naming the quantity rather than subtracting one at
  * the point of use. What must fit is the bounded handoff, and that is already named:
  * `SEND_BOUNDARY_MARGIN_MS`, the same reservation the dedup edge keeps back, for the same two
  * things (the in-process gap and the request). One quantity, two edges; a change to what the
  * handoff costs moves both.
  *
- * ASSERTED AT THE POINT OF USE, like `handoffFitsTheMargin` and for the reason its note gives: the
- * gap is the part a later edit grows, and a statement inserted in front of the sender must stop
- * the send rather than quietly spend what was reserved. Measured from `now` rather than from the
- * boundary answer, so what is reserved is what is still ahead.
+ * DERIVED WHERE IT IS USED, like every other jurisdiction day this file reads: it is a function of
+ * the clock, so a value computed before a wait is an answer about a day the wait may have ended.
  *
- * FAILS CLOSED, and nothing is owed afterwards: the window is closing, so there is no later moment
- * inside it for a retry to use, and the next tick retires the row rather than sending it.
+ * FAILS CLOSED, and nothing is owed afterwards when it does: the window is shutting, so there is
+ * no later moment inside it for a retry to use, and the next tick retires the row.
  */
-const filingDayCoversTheHandoff = (
-  jurisdiction: string,
-  boundaryDay: string,
-  now: number,
-): boolean =>
-  todayInJurisdiction(jurisdiction, new Date(now + SEND_BOUNDARY_MARGIN_MS)) === boundaryDay;
+const dayTheHandoffCanLastUntil = (jurisdiction: string, now: number): string =>
+  todayInJurisdiction(jurisdiction, new Date(now + SEND_BOUNDARY_MARGIN_MS));
 
 /**
  * Ask the send boundary, stamping the margin's anchor as the question goes out.
@@ -699,14 +706,29 @@ async function askTheSendBoundary(
   client: PoolClient,
   alertId: string,
   day: string,
-): Promise<{ askedAt: number; shut: boolean; held: boolean }> {
+  handoffDay: string,
+): Promise<{ askedAt: number; shut: boolean; shutByTheHandoffsEnd: boolean; held: boolean }> {
   const askedAt = Date.now();
-  const { rows } = await client.query<{ shut: boolean; held: boolean }>(
-    `SELECT ${FILING_WINDOW_HAS_SHUT("$2")} AS shut, ${heldAtTheSendBoundary("$2")} AS held
+  const { rows } = await client.query<{
+    shut: boolean;
+    shut_by_the_handoffs_end: boolean;
+    held: boolean;
+  }>(
+    // Both window questions in the one statement that already asks the cutoff, for the reason the
+    // statement exists: what went wrong twice was not a question but the gap after it, and a
+    // second round trip for the handoff's day would be a new gap in the place there is none left.
+    `SELECT ${FILING_WINDOW_HAS_SHUT("$2")} AS shut,
+            ${FILING_WINDOW_HAS_SHUT("$3")} AS shut_by_the_handoffs_end,
+            ${heldAtTheSendBoundary("$2")} AS held
        FROM alerts WHERE id = $1`,
-    [alertId, day],
+    [alertId, day, handoffDay],
   );
-  return { askedAt, shut: rows[0]?.shut === true, held: rows[0]?.held === true };
+  return {
+    askedAt,
+    shut: rows[0]?.shut === true,
+    shutByTheHandoffsEnd: rows[0]?.shut_by_the_handoffs_end === true,
+    held: rows[0]?.held === true,
+  };
 }
 
 /**
@@ -2211,10 +2233,15 @@ async function recordAttemptIntent(
   row: DueAlertRow,
   /**
    * The jurisdiction's day, because the hold this insert asks about is bounded by the alert's own
-   * filing window as well as by the limit. Computed by the caller for the same reason every other
-   * reader of a day computes it there: this file has no honest default for which jurisdiction it is.
+   * filing window as well as by the limit. Supplied by the caller for the same reason every other
+   * reader of a day takes it from one: this file has no honest default for which jurisdiction it is.
+   *
+   * ASKED FOR AT THE STATEMENT, not at the call. Getting this writer's connection is the wait
+   * nothing bounds, the one every comment on this path is about, so a day computed before it can
+   * be yesterday by the time the insert runs, and the hold's own window edge would then be measured
+   * against a day that has gone.
    */
-  day: string,
+  day: () => string,
 ): Promise<string | null> {
   const writer = attemptWriterFor(database);
   const attemptId = randomUUID();
@@ -2238,7 +2265,7 @@ async function recordAttemptIntent(
             AND EXISTS (SELECT 1 FROM recorded)
        )
        SELECT id FROM recorded`,
-      [row.id, row.idempotency_key, attemptId, day],
+      [row.id, row.idempotency_key, attemptId, day()],
     );
     recorded = rows[0]?.id ?? null;
   } catch (error) {
@@ -2341,9 +2368,7 @@ async function deliverClaimed(
   // reaching a provider by saying nothing, so this needs no edit on the day one lands.
   let attemptId: string | null = null;
   if (sender.reachesAProvider !== false) {
-    attemptId = await recordAttemptIntent(
-      database,
-      row,
+    attemptId = await recordAttemptIntent(database, row, () =>
       todayInJurisdiction(jurisdiction, new Date()),
     );
     // The claim permitted this send and the wait for the writer's connection outlived what the
@@ -2456,9 +2481,10 @@ async function deliverClaimed(
   // for the whole hold while no provider could possibly have been holding it.
   if (attemptId !== null) {
     const boundaryDay = todayInJurisdiction(jurisdiction, new Date());
+    const handoffDay = dayTheHandoffCanLastUntil(jurisdiction, Date.now());
     // Stamped by the ask itself, for the reason `askTheSendBoundary` records: an anchor taken when
     // this frame resumes cannot see the wait it is supposed to be measuring.
-    const boundary = await askTheSendBoundary(client, row.id, boundaryDay).catch(
+    const boundary = await askTheSendBoundary(client, row.id, boundaryDay, handoffDay).catch(
       async (error: unknown) => {
         await recordProvenNonDelivery();
         throw error;
@@ -2478,7 +2504,15 @@ async function deliverClaimed(
     // the wrong day is wrong in both directions. Fails closed: nothing is handed over, the intent
     // is closed because nothing was, and the next tick asks both questions again on the day it is
     // then.
-    if (todayInJurisdiction(jurisdiction, new Date()) !== boundaryDay) {
+    //
+    // BOTH DAYS THE ANSWER WAS ABOUT, since the statement now asks the window twice: once about
+    // the day the boundary is on and once about the day the handoff it permits can last until.
+    // The second turns over first, in the last `SEND_BOUNDARY_MARGIN_MS` of every day, and an
+    // answer computed before that instant says the window is open at a moment it is not.
+    if (
+      todayInJurisdiction(jurisdiction, new Date()) !== boundaryDay ||
+      dayTheHandoffCanLastUntil(jurisdiction, Date.now()) !== handoffDay
+    ) {
       console.warn(
         `alert ${row.id} crossed a jurisdiction day boundary while the send boundary was in ` +
           `flight, so its filing-window answer is about ${boundaryDay} and not about the day ` +
@@ -2544,16 +2578,19 @@ async function deliverClaimed(
       // discovering it.
       return { status: "skipped" };
     }
-    // THE WINDOW EDGE, asserted where the dedup margin is asserted and for the same reason. See
-    // `filingDayCoversTheHandoff`: the answer above is true of the whole of `boundaryDay` and says
+    // THE WINDOW EDGE, asked where the dedup margin is asserted and for the same reason. See
+    // `dayTheHandoffCanLastUntil`: the answer above is true of the whole of `boundaryDay` and says
     // nothing about how much of it is left, so a final-day reminder can pass this boundary with
     // seconds to spare and still reach the provider after the window has shut, naming a filing
-    // date the organizer can no longer meet.
-    if (!filingDayCoversTheHandoff(jurisdiction, boundaryDay, Date.now())) {
+    // date the organizer can no longer meet. This is the same question asked about the last day
+    // the request can still be running on, so it stops exactly that row and no other: an alert
+    // whose window is open past today, and one that has no window at all, are unaffected by how
+    // little of the day is left.
+    if (boundary.shutByTheHandoffsEnd) {
       console.warn(
         `alert ${row.id} reached the send boundary with less than ${SEND_BOUNDARY_MARGIN_MS}ms of ` +
-          `${boundaryDay} left in ${jurisdiction}, which is what the bounded handoff in front of ` +
-          `the provider can cost, so its filing window could shut before the request lands; ` +
+          `its filing window left in ${jurisdiction}, which is what the bounded handoff in front ` +
+          `of the provider can cost, so the window could shut before the request lands; ` +
           `nothing was sent`,
       );
       await recordProvenNonDelivery();
@@ -2860,10 +2897,14 @@ export function createAlertPoller(dependencies: {
   let stopped = false;
 
   const tick = async (): Promise<AlertTickSummary> => {
-    // One calendar day for the whole tick, so the scan, the hold count and every claim behind them
-    // agree about which windows have shut. `sendOne` re-reads it under the event lock, which is the
-    // safe point; this is what the two statements below need to ask the same question.
-    const today = todayInJurisdiction(jurisdiction, new Date());
+    // EACH STATEMENT ASKS ABOUT THE DAY IT RUNS ON, which is the rule every other reader of a
+    // jurisdiction day in this file arrived at. One day pinned for the whole tick was the older
+    // shape and it read as consistency: the scan can run for the whole budget, so a tick that
+    // started before local midnight counted holds against a day that had gone and warned an
+    // operator about rows the claims behind it, which re-read the day under the event lock, go
+    // on to retire without anyone reconciling anything. The two statements do not need the same
+    // value; they need the right one.
+    const today = (): string => todayInJurisdiction(jurisdiction, new Date());
     // Ids first, then one transaction per alert. One transaction for the whole batch would hold
     // every send under a single COMMIT, so a crash midway would re-send everything already
     // delivered in it; per row, only the row in flight is ever in doubt.
@@ -2950,7 +2991,7 @@ export function createAlertPoller(dependencies: {
                  send_at,
                  CASE alert_type WHEN 'dependency_unlocked' THEN 0 ELSE 1 END, id
         LIMIT ${MAX_ALERTS_PER_TICK}`,
-      [today],
+      [today()],
     );
     const scanWasFull = rows.length === MAX_ALERTS_PER_TICK;
     if (scanWasFull) {
@@ -2988,7 +3029,7 @@ export function createAlertPoller(dependencies: {
     // about one only buries the genuine holds this counter exists to make visible.
     const { rows: held } = await database.query<{ id: string }>(
       `SELECT id FROM alerts WHERE ${HELD_FOR_RECONCILIATION("$1")}`,
-      [today],
+      [today()],
     );
     if (held.length > 0) {
       // Ids only. The row's recipient is contact data and does not go in a log (AGENTS.md).
@@ -3510,7 +3551,7 @@ export type FailedDelivery = {
 export async function failedDeliveries(
   database: Queryable,
   eventId: string,
-  today: string,
+  today: () => string,
 ): Promise<FailedDelivery[]> {
   return (await alertDeliveryHealth(database, eventId, today)).failedDeliveries;
 }
@@ -3550,7 +3591,7 @@ export type ReconciliationHold = {
 export async function reconciliationHolds(
   database: Queryable,
   eventId: string,
-  today: string,
+  today: () => string,
 ): Promise<ReconciliationHold[]> {
   return (await alertDeliveryHealth(database, eventId, today)).reconciliationHolds;
 }
@@ -3579,8 +3620,15 @@ export async function alertDeliveryHealth(
    *
    * Passed in rather than read here for the reason the poller states: there is no honest default
    * for which jurisdiction's day this is, and the api already computes one clock for everything.
+   *
+   * A FUNCTION RATHER THAN A DAY, and that is the same rule the claim and the send boundary each
+   * arrived at: A DAY IS DERIVED WHERE IT IS USED. The checklist runs several queries before this
+   * one, so a read that starts just before local midnight reaches this statement after it, and a
+   * day computed at the start of the request classifies a hold that the poller's next claim, asking
+   * the day it is by then, does not agree exists. The organizer is then told to check with the
+   * sending service about a reminder nobody is waiting on.
    */
-  today: string,
+  today: () => string,
 ): Promise<{
   readonly failedDeliveries: FailedDelivery[];
   readonly reconciliationHolds: ReconciliationHold[];
@@ -3636,7 +3684,9 @@ export async function alertDeliveryHealth(
         AND coalesce(payload->>'test', 'false') <> 'true'
       GROUP BY channel
       ORDER BY channel`,
-    [eventId, today],
+    // Derived here, at the statement that reads it, rather than carried across the reads in front
+    // of it.
+    [eventId, today()],
   );
   return {
     // Never zero: absent instead, which is what both notices' "empty means nothing to say" relies

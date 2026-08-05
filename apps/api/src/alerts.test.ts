@@ -2974,8 +2974,7 @@ describe.skipIf(databaseUrl === "")("F-203 deadline alerts", () => {
         const provider = fakeProvider();
 
         const realNow = Date.now.bind(Date);
-        let answered = false;
-        let marginSpent = false;
+        let boundaryAnswers = 0;
         const query = Client.prototype.query as (...args: unknown[]) => unknown;
         const querySpy = vi
           .spyOn(Client.prototype, "query")
@@ -2986,17 +2985,21 @@ describe.skipIf(databaseUrl === "")("F-203 deadline alerts", () => {
             const result = query.apply(this, args) as Promise<unknown>;
             if (!text.includes("AS shut")) return result;
             return result.then((rows) => {
-              answered = true;
+              boundaryAnswers += 1;
               return rows;
             });
           } as typeof Client.prototype.query);
-        // The margin is spent once, on the first send only: the second reading is the real clock
-        // again, so the retry is a healthy handoff and reaches the provider.
-        const clockSpy = vi.spyOn(Date, "now").mockImplementation(() => {
-          if (!answered || marginSpent) return realNow();
-          marginSpent = true;
-          return realNow() + SEND_BOUNDARY_MARGIN_MS;
-        });
+        // The margin is spent on the FIRST send only: everything this process reads after that
+        // boundary answered is a clock that has moved past what the boundary reserved, and from
+        // the second answer on it is the real clock again, so the retry is a healthy handoff and
+        // reaches the provider. Counted per boundary rather than per reading, because how many
+        // times the code between the answer and the handoff looks at the clock is not what this
+        // test is about.
+        const clockSpy = vi
+          .spyOn(Date, "now")
+          .mockImplementation(() =>
+            boundaryAnswers === 1 ? realNow() + SEND_BOUNDARY_MARGIN_MS : realNow(),
+          );
         let summary;
         try {
           summary = await createAlertPoller({
@@ -3110,6 +3113,85 @@ describe.skipIf(databaseUrl === "")("F-203 deadline alerts", () => {
 
         expect(provider.attempts.map((message) => message.recipient)).toContain(
           "window-edge-fits@example.test",
+        );
+        const { rows } = await pool.query<{ status: string }>(
+          "SELECT status FROM alerts WHERE id = $1",
+          [alertId],
+        );
+        expect(rows[0]?.status).toBe("sent");
+      });
+
+      it("sends in the same last minutes of the day when the window is open past today", async () => {
+        // THE RESERVATION IS THE FILING WINDOW'S, NOT THE CALENDAR'S. The refusal above and this
+        // send sit at the same instant of the same day, and the only thing that differs is the
+        // filing date: today there, tomorrow here. Asked as "does the local day still end after
+        // the handoff", both are refused and every ordinary reminder loses its last minutes of
+        // every day to a reservation that exists for the final-day one. Asked as "is the window
+        // still open when the handoff can last until", only the row the window can shut on is
+        // held back, which is what the earlier release was approved to protect.
+        const eventId = await createEvent(scenario("C"));
+        const alertId = await insertDueAlert(eventId, "window-open-tomorrow@example.test", 2);
+        await pool.query(
+          `UPDATE alerts SET payload = payload || jsonb_build_object('controlling_apply_by', $2::text)
+            WHERE id = $1`,
+          [alertId, dayFromToday(1)],
+        );
+        const provider = fakeProvider();
+
+        vi.useFakeTimers({ toFake: ["Date"] });
+        vi.setSystemTime(lastInstantOfToday(SEND_BOUNDARY_MARGIN_MS / 2));
+        try {
+          await createAlertPoller({
+            database: pool,
+            senders: provider.senders,
+            jurisdiction: ruleset.jurisdiction,
+          }).tick();
+        } finally {
+          vi.useRealTimers();
+        }
+
+        expect(provider.attempts.map((message) => message.recipient)).toContain(
+          "window-open-tomorrow@example.test",
+        );
+        const { rows } = await pool.query<{ status: string }>(
+          "SELECT status FROM alerts WHERE id = $1",
+          [alertId],
+        );
+        expect(rows[0]?.status).toBe("sent");
+      });
+
+      it("sends in those minutes for an alert whose gated item has no filing date", async () => {
+        // A NULL FILING DATE IS NOT AN EXPIRED ONE (F-203 Outputs), and it is not a filing window
+        // either: there is nothing here for a day's end to shut, so there is nothing for the
+        // handoff reservation to protect. `dependency_unlocked` is scheduled against a gated item
+        // with a null `latest_apply_date` deliberately (the pinned holiday list is unpublished,
+        // so that is the normal state across the live ruleset rather than an edge), and an AC 6
+        // demo send has no controlling date at all. Refusing either in the last minutes of every
+        // day is a constraint invented from the absence of a date, which the rest of this file
+        // refuses to do.
+        const eventId = await createEvent(scenario("C"));
+        const { checklistItemId } = await insertDuePlan(eventId, { latestApplyDate: null });
+        const alertId = await insertDueAlert(eventId, "no-filing-window@example.test", 2);
+        await pool.query("UPDATE alerts SET checklist_item_id = $2 WHERE id = $1", [
+          alertId,
+          checklistItemId,
+        ]);
+        const provider = fakeProvider();
+
+        vi.useFakeTimers({ toFake: ["Date"] });
+        vi.setSystemTime(lastInstantOfToday(SEND_BOUNDARY_MARGIN_MS / 2));
+        try {
+          await createAlertPoller({
+            database: pool,
+            senders: provider.senders,
+            jurisdiction: ruleset.jurisdiction,
+          }).tick();
+        } finally {
+          vi.useRealTimers();
+        }
+
+        expect(provider.attempts.map((message) => message.recipient)).toContain(
+          "no-filing-window@example.test",
         );
         const { rows } = await pool.query<{ status: string }>(
           "SELECT status FROM alerts WHERE id = $1",
@@ -3580,7 +3662,7 @@ describe.skipIf(databaseUrl === "")("F-203 deadline alerts", () => {
           "legacy-failed@example.test",
         );
         expect(summary.heldForReconciliation).toBe(1);
-        expect(await reconciliationHolds(pool, eventId, todayHere())).toEqual([
+        expect(await reconciliationHolds(pool, eventId, todayHere)).toEqual([
           { channel: "email", heldCount: 1 },
         ]);
         // Seeded unresolved, because nobody did find out what the provider did with it: the row
@@ -3734,7 +3816,7 @@ describe.skipIf(databaseUrl === "")("F-203 deadline alerts", () => {
         expect(summary.sent).toBe(1);
         expect(await attemptsOf(alertId)).toEqual([]);
         expect(summary.heldForReconciliation).toBe(0);
-        expect(await reconciliationHolds(pool, eventId, todayHere())).toEqual([]);
+        expect(await reconciliationHolds(pool, eventId, todayHere)).toEqual([]);
       });
     });
 
@@ -4650,13 +4732,13 @@ describe.skipIf(databaseUrl === "")("F-203 deadline alerts", () => {
           WHERE event_id = $1`,
         [eventId],
       );
-      const warned = await failedDeliveries(pool, eventId, todayHere());
+      const warned = await failedDeliveries(pool, eventId, todayHere);
       expect(warned).toHaveLength(1);
 
       // Save pressed, nothing changed.
       await materialize(eventId, { contactEmail: "dead@example.test" });
 
-      expect(await failedDeliveries(pool, eventId, todayHere())).toEqual(warned);
+      expect(await failedDeliveries(pool, eventId, todayHere)).toEqual(warned);
     });
 
     it("stops warning once the address itself is corrected", async () => {
@@ -4669,11 +4751,11 @@ describe.skipIf(databaseUrl === "")("F-203 deadline alerts", () => {
         `UPDATE alerts SET status = 'failed', failure_count = 2 WHERE event_id = $1`,
         [eventId],
       );
-      expect(await failedDeliveries(pool, eventId, todayHere())).toHaveLength(1);
+      expect(await failedDeliveries(pool, eventId, todayHere)).toHaveLength(1);
 
       await materialize(eventId, { contactEmail: "organizer@example.test" });
 
-      expect(await failedDeliveries(pool, eventId, todayHere())).toEqual([]);
+      expect(await failedDeliveries(pool, eventId, todayHere)).toEqual([]);
     });
 
     it("does not unlock a window whose filing deadline has already passed", async () => {
@@ -5500,7 +5582,7 @@ describe.skipIf(databaseUrl === "")("F-203 deadline alerts", () => {
         jurisdiction: ruleset.jurisdiction,
       }).tick();
 
-      const failures = await failedDeliveries(pool, eventId, todayHere());
+      const failures = await failedDeliveries(pool, eventId, todayHere);
       expect(failures).toEqual([
         { channel: "email", failedCount: 2, heldForReview: false, attemptedWithoutOutcome: false },
       ]);
@@ -5515,7 +5597,7 @@ describe.skipIf(databaseUrl === "")("F-203 deadline alerts", () => {
       await materialize(eventId);
       expect((await alertsOf(eventId)).every((row) => row.status === "pending")).toBe(true);
 
-      expect(await failedDeliveries(pool, eventId, todayHere())).toEqual([]);
+      expect(await failedDeliveries(pool, eventId, todayHere)).toEqual([]);
     });
 
     it("stops reporting a failure once the alert gets through", async () => {
@@ -5529,7 +5611,7 @@ describe.skipIf(databaseUrl === "")("F-203 deadline alerts", () => {
         jurisdiction: ruleset.jurisdiction,
       });
       await poller.tick();
-      expect(await failedDeliveries(pool, eventId, todayHere())).toEqual([
+      expect(await failedDeliveries(pool, eventId, todayHere)).toEqual([
         { channel: "email", failedCount: 1, heldForReview: false, attemptedWithoutOutcome: false },
       ]);
 
@@ -5538,7 +5620,7 @@ describe.skipIf(databaseUrl === "")("F-203 deadline alerts", () => {
 
       // Delivered on the retry, so it is no longer a failure to report — the count follows the
       // rows rather than remembering a state they have left.
-      expect(await failedDeliveries(pool, eventId, todayHere())).toEqual([]);
+      expect(await failedDeliveries(pool, eventId, todayHere)).toEqual([]);
     });
 
     it("does not count a demo test send as a text message for the event", async () => {
@@ -5576,7 +5658,7 @@ describe.skipIf(databaseUrl === "")("F-203 deadline alerts", () => {
         .send({ channel: "email", recipient: "tester@example.test" });
       expect(response.status).toBe(502);
 
-      expect(await failedDeliveries(pool, eventId, todayHere())).toEqual([]);
+      expect(await failedDeliveries(pool, eventId, todayHere)).toEqual([]);
     });
   });
 
@@ -5618,8 +5700,8 @@ describe.skipIf(databaseUrl === "")("F-203 deadline alerts", () => {
       const eventId = await createEvent(scenario("C"));
       await insertHeldAlert(eventId, "pending");
 
-      expect(await failedDeliveries(pool, eventId, todayHere())).toEqual([]);
-      expect(await reconciliationHolds(pool, eventId, todayHere())).toEqual([
+      expect(await failedDeliveries(pool, eventId, todayHere)).toEqual([]);
+      expect(await reconciliationHolds(pool, eventId, todayHere)).toEqual([
         { channel: "email", heldCount: 1 },
       ]);
     });
@@ -5632,8 +5714,8 @@ describe.skipIf(databaseUrl === "")("F-203 deadline alerts", () => {
       const eventId = await createEvent(scenario("C"));
       await insertHeldAlert(eventId, "failed");
 
-      expect(await failedDeliveries(pool, eventId, todayHere())).toEqual([]);
-      expect(await reconciliationHolds(pool, eventId, todayHere())).toEqual([
+      expect(await failedDeliveries(pool, eventId, todayHere)).toEqual([]);
+      expect(await reconciliationHolds(pool, eventId, todayHere)).toEqual([
         { channel: "email", heldCount: 1 },
       ]);
     });
@@ -5652,10 +5734,10 @@ describe.skipIf(databaseUrl === "")("F-203 deadline alerts", () => {
         jurisdiction: ruleset.jurisdiction,
       }).tick();
 
-      expect(await failedDeliveries(pool, eventId, todayHere())).toEqual([
+      expect(await failedDeliveries(pool, eventId, todayHere)).toEqual([
         { channel: "email", failedCount: 1, heldForReview: false, attemptedWithoutOutcome: false },
       ]);
-      expect(await reconciliationHolds(pool, eventId, todayHere())).toEqual([]);
+      expect(await reconciliationHolds(pool, eventId, todayHere)).toEqual([]);
     });
 
     it("says nothing about an alert the organizer's own edit has already retired", async () => {
@@ -5674,7 +5756,7 @@ describe.skipIf(databaseUrl === "")("F-203 deadline alerts", () => {
         eventId,
       ]);
 
-      expect(await reconciliationHolds(pool, eventId, todayHere())).toEqual([]);
+      expect(await reconciliationHolds(pool, eventId, todayHere)).toEqual([]);
     });
 
     it("says nothing about an attempted alert the poller is only waiting for the date on", async () => {
@@ -5710,7 +5792,7 @@ describe.skipIf(databaseUrl === "")("F-203 deadline alerts", () => {
       }).tick();
 
       expect(summary.heldForReconciliation).toBe(0);
-      expect(await reconciliationHolds(pool, eventId, todayHere())).toEqual([]);
+      expect(await reconciliationHolds(pool, eventId, todayHere)).toEqual([]);
     });
 
     it("does not promise a review will restart a stale alert whose outcome was never observed", async () => {
@@ -5743,7 +5825,7 @@ describe.skipIf(databaseUrl === "")("F-203 deadline alerts", () => {
         eventId,
       ]);
 
-      expect(await failedDeliveries(pool, eventId, todayHere())).toEqual([
+      expect(await failedDeliveries(pool, eventId, todayHere)).toEqual([
         {
           channel: "email",
           failedCount: 1,
@@ -5767,7 +5849,7 @@ describe.skipIf(databaseUrl === "")("F-203 deadline alerts", () => {
         eventId,
       ]);
 
-      expect(await failedDeliveries(pool, eventId, todayHere())).toEqual([
+      expect(await failedDeliveries(pool, eventId, todayHere)).toEqual([
         {
           channel: "email",
           failedCount: 1,
@@ -5811,7 +5893,7 @@ describe.skipIf(databaseUrl === "")("F-203 deadline alerts", () => {
         return result;
       }) as Pool["query"];
 
-      const health = await alertDeliveryHealth(crossing, eventId, todayHere());
+      const health = await alertDeliveryHealth(crossing, eventId, todayHere);
 
       expect(crossed).toBe(true);
       expect(health.failedDeliveries.length === 0 || health.reconciliationHolds.length === 0).toBe(
@@ -5856,6 +5938,71 @@ describe.skipIf(databaseUrl === "")("F-203 deadline alerts", () => {
         { channel: "email", heldCount: 1 },
       ]);
       expect(response.body.failedAlertDeliveries).toEqual([]);
+    });
+
+    it("classifies the hold against the day the health statement runs on", async () => {
+      // THE DAY IS DERIVED WHERE IT IS USED, on this surface as well as in the poller. A checklist
+      // read runs several queries before this one and can start just before local midnight and
+      // reach the health statement after it. Classified against the day the request began, an
+      // alert whose window shuts overnight is reported to the organizer as one PopEngine has
+      // paused and only a person checking with the sending service resolves, while the poller's
+      // next claim asks the new day, finds the window shut and cancels it with nobody
+      // reconciling anything. That is the same defect the claim and the send boundary each fixed
+      // by re-asking at the point of action, arriving on the surface an organizer reads.
+      //
+      // The crossing is forced rather than waited out: the day is a function of the process
+      // clock, so moving the clock over one of the preceding queries is that wait exactly.
+      const eventId = await createEvent(scenario("C"));
+      await schedulePastDue(eventId, [reminderOffsets[0] ?? 7]);
+      const alertId = (await alertsOf(eventId))[0]?.id ?? "";
+      // A window open tomorrow and shut the day after, so the hold this read would report exists
+      // today and does not exist on the day the read finishes on.
+      await moveFilingDateOut(alertId, 1);
+      await pool.query(
+        `INSERT INTO alert_send_attempts (alert_id, idempotency_key, attempted_at)
+         VALUES ($1, $2, current_timestamp - ($3 || ' hours')::interval)`,
+        [alertId, alertId, PROVIDER_DEDUP_WINDOW_HOURS + 1],
+      );
+
+      let crossed = false;
+      const crossing = Object.create(pool) as Pool;
+      crossing.query = (async (text: string, values?: unknown[]) => {
+        const result = await pool.query(text as never, values as never);
+        if (!crossed && typeof text === "string" && text.includes("FROM checklist_items")) {
+          crossed = true;
+          vi.setSystemTime(Date.now() + 24 * 60 * 60 * 1000);
+        }
+        return result;
+      }) as Pool["query"];
+
+      vi.useFakeTimers({ toFake: ["Date"] });
+      let response;
+      try {
+        response = await request(
+          createApp({
+            database: crossing,
+            intakeContract,
+            today: () => todayInJurisdiction(ruleset.jurisdiction),
+            planService: createPlanService(pool, ruleset, fixtureCalendar, () => FIXTURE_TODAY),
+            checklist: {
+              database: crossing,
+              storage,
+              scheduleAlerts: schedulerWith(() => new Date(`${FIXTURE_TODAY}T13:00:00Z`)),
+            },
+            alerts: {
+              jurisdiction: ruleset.jurisdiction,
+              database: pool,
+              senders: fakeProvider().senders,
+            },
+          }),
+        ).get(`/api/events/${eventId}/checklist`);
+      } finally {
+        vi.useRealTimers();
+      }
+
+      expect(crossed).toBe(true);
+      expect(response.status).toBe(200);
+      expect(response.body.alertsHeldForReconciliation).toEqual([]);
     });
   });
 
@@ -7187,7 +7334,7 @@ describe.skipIf(databaseUrl === "")("F-203 deadline alerts", () => {
       expect((await alertsOf(eventId))[0]?.status).toBe("cancelled");
       // And it stops being reported as something a person has to chase a provider about.
       expect(summary.heldForReconciliation).toBe(0);
-      expect(await reconciliationHolds(pool, eventId, todayHere())).toEqual([]);
+      expect(await reconciliationHolds(pool, eventId, todayHere)).toEqual([]);
     });
 
     it("does not tell the organizer to chase a provider about a row the next tick retires", async () => {
@@ -7213,7 +7360,7 @@ describe.skipIf(databaseUrl === "")("F-203 deadline alerts", () => {
       );
 
       // While the window is open the hold is real: nothing but a person resolves it.
-      expect(await reconciliationHolds(pool, eventId, todayHere())).toEqual([
+      expect(await reconciliationHolds(pool, eventId, todayHere)).toEqual([
         { channel: "email", heldCount: 1 },
       ]);
 
@@ -7223,10 +7370,10 @@ describe.skipIf(databaseUrl === "")("F-203 deadline alerts", () => {
         [row?.checklist_item_id],
       );
 
-      expect(await reconciliationHolds(pool, eventId, todayHere())).toEqual([]);
+      expect(await reconciliationHolds(pool, eventId, todayHere)).toEqual([]);
       // And it does not reappear as a failure being retried, which would be the same false
       // reassurance one notice over: the row is going to be cancelled, not delivered.
-      expect(await failedDeliveries(pool, eventId, todayHere())).toEqual([]);
+      expect(await failedDeliveries(pool, eventId, todayHere)).toEqual([]);
     });
 
     it("keeps a backoff when the same checklist is submitted twice", async () => {
