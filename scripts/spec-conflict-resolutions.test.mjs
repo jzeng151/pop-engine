@@ -355,3 +355,49 @@ describe("PR #225 review round, 2026-08-04", () => {
     }
   });
 });
+
+/**
+ * Added 2026-08-04 with the F-101 restoration. Three artifacts say whether AC 8's one-click
+ * regeneration is met on the event overview: the spec decides it, the register row that tracked the
+ * gap reports it, and the manifest is what AGENTS.md:11 sends a contributor to FIRST. Two agreeing
+ * and one lagging is what happened: the manifest went on saying the restoration was outstanding
+ * after it landed, so the agreement is asserted rather than assumed.
+ *
+ * Each artifact has to name the surface that restores it. That is the one fact a lagging record
+ * cannot carry: a paragraph written before the change had no file to name. Asserting the naming
+ * rather than a phrasing leaves every artifact free to say it in its own words, and leaves no way
+ * to satisfy the check without having read what shipped.
+ *
+ * `BASELINE.md` records decisions newest first, so the FIRST paragraph mentioning the criterion is
+ * the record a top-down reader believes. Superseded paragraphs below it stay as written.
+ */
+describe("F-101 AC 8 restored on the overview, 2026-08-04", () => {
+  const restoringSurface = "apps/web/app/events/[id]/plan-stale-notice.tsx";
+
+  /** The newest of the manifest's dated records that speaks to this criterion. */
+  function currentBaselineRecord() {
+    const records = read("docs/BASELINE.md")
+      .split(/\n{2,}/)
+      .filter((p) => p.startsWith("**") && p.includes("F-101") && p.includes("regeneration"));
+    expect(records.length, "docs/BASELINE.md records F-101's regeneration at all").toBeGreaterThan(
+      0,
+    );
+    return records[0];
+  }
+
+  it("the manifest's current record names the surface the criterion is met on", () => {
+    expect(currentBaselineRecord()).toContain(restoringSurface);
+  });
+
+  it("the spec's criterion and the register row name the same surface", () => {
+    const criteria = section(read("specs/F-101-event-intake.md"), "## Acceptance Criteria");
+    expect(criteria, "specs/F-101-event-intake.md states acceptance criteria").not.toBeNull();
+    expect(criteria).toContain(restoringSurface);
+
+    const t5 = read("docs/OPEN-QUESTIONS.md")
+      .split("\n")
+      .find((line) => line.startsWith("| T-5 "));
+    expect(t5, "docs/OPEN-QUESTIONS.md carries a T-5 row").toBeDefined();
+    expect(t5).toContain(restoringSurface);
+  });
+});

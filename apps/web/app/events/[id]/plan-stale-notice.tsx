@@ -1,84 +1,218 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { parseRulesetVersion } from "@pop-engine/engine";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 
-import { loadEvent } from "../../intake/events-api";
+import {
+  loadEvent,
+  regeneratePlan,
+  type LoadedEvent,
+  type RegenerationRefusal,
+} from "../../intake/events-api";
 
 /**
  * F-101 Acceptance Criterion 8, second half: a plan the event has been edited past is marked
  * stale and can be regenerated in one click. The intake form raised this until its save began
  * redirecting here, which left the notice mounted on a screen the organizer no longer sees.
  *
- * This surface reports the staleness and does NOT offer the regeneration. That is the fourth
- * #232 round's finding taken at its word rather than approximated, and the reason is in
- * `REGENERATION_NOT_OFFERED`: the criterion's one click is not implemented here until the write
- * can refuse a downgrade itself. AC 8 is therefore only half met on this surface, which is
- * recorded on the PR and as `docs/OPEN-QUESTIONS.md` T-5, not quietly.
+ * The one click was withdrawn from this surface during #232 and is restored here. What changed is
+ * not this component's confidence about the write: it is that `POST /api/events/:id/plan` now
+ * refuses to store a plan rebuilt from a ruleset older than the one the plan it supersedes pinned,
+ * or from one that cannot be ordered against it, decided inside the inserting transaction under a
+ * row lock (F-201 AC 12). That is the only place both facts are visible at once, which is why
+ * three rounds of browser-side checking here could not hold: each decided on reads that had
+ * already returned and then wrote afterwards.
+ *
+ * So this surface does not check and then write. It writes, and reports the answer, including the
+ * 409, which carries both versions and which way round they stand.
+ *
+ * Seven rounds each fixed one path through this and left another, so here is the whole of it. Every
+ * state names what it asserts, and every transition into it names the read that supports it.
+ *
+ * QUIET            nothing rendered
+ * WARNED           "the plan is out of date" + live button
+ * WORKING          WARNED with the button disabled while the POST is in flight
+ * FAILED           WARNED + what the api said; the retry is still the right action
+ * NO_RETRY         WARNED + why the button is gone; a retry would repeat or double a write
+ * CLEARED          one announced line, the warning withdrawn
+ *
+ *  1. mount, or a new eventId          -> QUIET. The reset runs in the render phase, so no commit
+ *                                        shows the previous event's warning under the new id.
+ *  2. read fails                       -> QUIET. A read that failed says nothing about the plan.
+ *  3. read says not stale              -> QUIET.
+ *  4. read says stale                  -> WARNED.
+ *  5. click                            -> WORKING. Any previous failure text is dropped first.
+ *  6. 409, versions readable           -> NO_RETRY. The guard decides before it inserts, so nothing
+ *                                        was stored and the same request is refused identically.
+ *  7. 409, versions unreadable         -> NO_RETRY, on the endpoint's own sentence.
+ *  8. other failure, recheck fails     -> NO_RETRY. It may have committed; a retry would double it.
+ *  9. other failure, recheck stale     -> FAILED.
+ * 10. other failure, recheck current   -> CLEARED, without saying the regeneration did it: the POST
+ *                                        reported no outcome, so authorship is what is not known.
+ * 11. other failure, recheck silent    -> NO_RETRY. Unanswered is not an answer.
+ * 12. 2xx, recheck fails               -> NO_RETRY. Unconfirmed is not current.
+ * 13. 2xx, recheck stale               -> FAILED. Stored for an earlier revision (AD-7); the newer
+ *                                        edit is what the warning is now about, so the retry stays.
+ * 14. 2xx, recheck silent              -> NO_RETRY.
+ * 15. 2xx, recheck current             -> CLEARED.
+ * 16. any of 6-15 landing after the component was handed another event -> nothing written at all.
  */
 
+/** Said when the endpoint refused the write because of how the two rulesets stand (F-201 AC 12). */
+function downgradeRefusalCopy({
+  pinnedRulesetVersion,
+  rulesetVersion,
+  standing,
+}: RegenerationRefusal): string {
+  return (
+    "Your plan was not regenerated, and nothing about it has changed. It was generated from " +
+    `ruleset ${pinnedRulesetVersion}, and the service is currently running ${rulesetVersion}, ` +
+    // Version ordering establishes that the rebuild COULD differ and nothing more: published bumps
+    // have moved no finding at all (`docs/BASELINE.md` lineage rows). Saying a requirement was
+    // dropped would assert a regulatory fact from an ordering that does not carry it.
+    (standing === "older"
+      ? "which is older. A rebuild from older rules is not guaranteed to reproduce the " +
+        "requirements you have already been shown, so the service refused to store one rather " +
+        "than risk it."
+      : "and the two versions cannot be ordered. Nothing establishes that a rebuild would " +
+        "reproduce the requirements you have already been shown, so the service refused to store " +
+        "one rather than risk it.") +
+    " That is about which rules the service is running, not about your event: the plan under " +
+    '"Open permit plan" is still the one those rules produced. ' +
+    // A deployment is the way out only when the pinned version is one a later ruleset can be
+    // ordered against. A plan pinned to a label outside the published form is unorderable against
+    // every version the service could run, including the same label again, so naming a deployment
+    // would name a wait that ends at this same refusal.
+    (parseRulesetVersion(pinnedRulesetVersion) === null
+      ? `Waiting will not clear this: ${pinnedRulesetVersion} is not a published ruleset version, ` +
+        "so no version the service runs can be ordered against it and every attempt is refused the " +
+        "same way. Ask whoever runs this deployment to look at the ruleset version this plan " +
+        "recorded; nothing on this page can settle it."
+      : `Regenerating will work once the service is running ${pinnedRulesetVersion} or a later ` +
+        "version of it, so try again then, or ask whoever runs this deployment which ruleset it " +
+        "is on.")
+  );
+}
+
 /**
- * Why the button is not here.
- *
- * Regeneration evaluates whatever ruleset the SERVICE has loaded, not the one this plan pinned, so
- * offering it while the service sits behind the plan rebuilds the plan from superseded rules and
- * can drop requirements the organizer has already been shown. Three rounds of this component tried
- * to establish from the browser that that will not happen — comparing the pinned version against
- * `/api/rules/meta`, then re-reading staleness after it, then issuing all three reads together.
- * None of them can, and the shape is why rather than the sequencing: every one of them decides on
- * reads that have already returned and then writes afterwards. A plan pinned to a newer ruleset can
- * be stored by another deployment in that interval, and no ordering of client reads observes it —
- * the reads that would have to see it are the ones that already answered.
- *
- * The precondition can only hold where the two facts are seen at once: inside the request that
- * generates and stores the plan, which knows both the ruleset it is about to evaluate with and the
- * plan it is about to supersede. That is `POST /api/events/:id/plan`, F-201's endpoint, and this
- * branch does not touch another lane's endpoint (AGENTS.md scope contract). So this surface refuses
- * rather than races, and says so where an organizer sees it. The stale warning itself stands: it
- * rests on one read that answered, and states nothing about what a write would do.
+ * Said when the endpoint refused but its answer did not name the two versions in a form this can
+ * read. The refusal itself is not in doubt, a 409 from this endpoint being the guard and deciding
+ * before it inserts, so the retry is withheld either way; only the specifics are missing, and the
+ * endpoint's own sentence carries them in prose.
  */
-const REGENERATION_NOT_OFFERED =
-  "Regenerating is not offered here. Whether it is safe depends on which rules the service is " +
-  "running at the moment the plan is rebuilt, and nothing this page can read settles that: the " +
-  "answer can change between the check and the rebuild, and a rebuild from rules older than this " +
-  "plan's is not guaranteed to reproduce the requirements you have already been shown. The plan " +
-  'under "Open permit plan" is unchanged.';
+const REFUSED_WITHOUT_VERSIONS =
+  "Your plan was not regenerated, and nothing about it has changed. The service refused to rebuild " +
+  "it from the rules it is currently running, and did not name the two ruleset versions in a form " +
+  'this page can read. The plan under "Open permit plan" is still the one those rules produced. ' +
+  "Regenerating is not offered again here, because the same request to the same service would be " +
+  "refused the same way. What the service said:";
+
+/** Said when a POST answered 2xx and the read that would confirm the stored plan did not. */
+const STORED_UNCONFIRMED =
+  "Your plan was regenerated, but the event could not be re-read to confirm the new plan is " +
+  "current, so the warning above stays. Reload this page to check; regenerating again would store " +
+  "a second plan.";
+
+/**
+ * Said when the POST stored a plan and the read after it reports the plan stale anyway: the event
+ * was edited again while the generation was running, so the stored plan pins the revision it
+ * evaluated (AD-7) and the warning that is still up is about the newer edit. Returning silently
+ * here would leave the organizer the same warning and the same live button they just pressed, with
+ * nothing said about the plan that landed.
+ */
+const STORED_FOR_EARLIER_REVISION =
+  "Your plan was regenerated and stored, but it was built from an earlier revision of this event: " +
+  "the event was edited again while that was running. The warning above is now about that newer " +
+  "edit. Regenerating again will store another plan, built from the event as it stands now.";
+
+/**
+ * Said when the POST itself came back with no usable outcome. It may have reached the api and
+ * committed before the connection dropped, so it is not known whether a plan was stored, and a
+ * retry would store a second one (AD-7) if it was.
+ */
+const RETRY_WITHHELD =
+  "The regeneration request failed, so it is not known whether a plan was stored. It is not " +
+  "offered again here, because a second attempt would store a second plan if the first one landed. " +
+  "Reload this page to check.";
+
+/**
+ * The revision a read confirms the plan is current for, or null if it confirms nothing.
+ *
+ * `loadEvent` normalises a missing `plan_stale` to `false`, which is right for a reader asking
+ * "is it stale" and wrong for this one, which is asking "was freshness confirmed": a 2xx body that
+ * simply omits the field would otherwise clear the warning as though the API had answered. Same for
+ * a revision that is not a number, which would confirm "regenerated for revision undefined".
+ */
+function confirmedCurrentRevision(loaded: LoadedEvent): number | null {
+  const revision = loaded.event.revision_counter;
+  if (!loaded.plan_stale_reported || loaded.plan_stale) return null;
+  return typeof revision === "number" && Number.isFinite(revision) ? revision : null;
+}
 
 export function PlanStaleNotice({ apiBaseUrl, eventId }: { apiBaseUrl: string; eventId: string }) {
   const [stale, setStale] = useState(false);
+  const [regenerating, setRegenerating] = useState(false);
+  /** An outcome the organizer may act on again: the api answered and stored nothing. */
+  const [failure, setFailure] = useState<string | null>(null);
+  /**
+   * An outcome that withdraws the button, and why. Either a plan may exist and cannot be shown to
+   * be current, where a second POST would write a second immutable plan (AD-7) for one organizer
+   * action, or the endpoint refused and a retry would be refused identically until the service moves.
+   */
+  const [withheld, setWithheld] = useState<string | null>(null);
+  /**
+   * What is said in place of the warning once a read has confirmed the plan current, and the record
+   * that it has been. Copy rather than a revision number because the two ways of arriving here are
+   * not the same claim: one saw the regeneration succeed, the other only saw the plan turn out
+   * current after a request that never reported its outcome.
+   */
+  const [cleared, setCleared] = useState<string | null>(null);
   /**
    * Which event the state above describes. React keeps one instance across a prop change, so
-   * without this the previous event's warning survives into the next one, stating an edit nobody
-   * made to the event now on screen. It is a ref rather than state because the read that installs
-   * the warning has to be checked against the CURRENT event when it lands, not the one captured
-   * when it was started.
+   * without this the previous event's warning survives into the next one, and the button it
+   * leaves enabled posts against the new event, storing an immutable plan (AD-7) for an event
+   * nobody said was stale. It is a ref rather than state because a regeneration already in flight
+   * has to read the CURRENT event when it lands, not the one captured when it was started.
    */
   const describedEventId = useRef(eventId);
   /** The event the last render described, so a render can tell that it has been handed another. */
   const [renderedEventId, setRenderedEventId] = useState(eventId);
 
   // Clearing in an effect would be one render too late: the effect runs after React has already
-  // shown the new event's id under the previous event's warning. Updating here makes React
-  // re-render before anything is committed, so no render can observe the mismatch.
+  // shown the new event's id under the previous event's warning and button, and a click in that
+  // window posts an immutable plan (AD-7) for an event nobody said was stale. Updating here makes
+  // React re-render before anything is committed, so no render can observe the mismatch.
   if (renderedEventId !== eventId) {
     // State only. The identity ref is NOT touched here: React may begin a concurrent render for
     // another event and then abandon it, and a ref mutation survives that abandonment while the
-    // old event stays committed. The in-flight read for the still-visible event would then fail
-    // its identity check and never install its warning. The ref is advanced in the effect below,
-    // which only runs on a commit.
+    // old event stays committed. Every in-flight read and regeneration for the still-visible event
+    // would then fail its identity check, leaving a committed button disabled forever with no
+    // outcome. The ref is advanced in the layout effect below, which only runs on a commit.
     setRenderedEventId(eventId);
     setStale(false);
+    setRegenerating(false);
+    setFailure(null);
+    setWithheld(null);
+    setCleared(null);
   }
+
+  // Commit phase, so an abandoned concurrent render cannot advance it, and the LAYOUT phase rather
+  // than a passive effect because React runs this inside the commit that puts the new event on
+  // screen, before it yields to any microtask. A passive effect leaves a window between that commit
+  // and the effect: a request for the PREVIOUS event resolving inside it still passes the identity
+  // check below and installs the previous event's outcome over the event now on screen, where the
+  // render-phase reset has already cleared everything. That is the whole point of the check.
+  useLayoutEffect(() => {
+    describedEventId.current = eventId;
+  }, [eventId]);
 
   useEffect(() => {
     let mounted = true;
-    // Commit phase, so an abandoned concurrent render cannot advance it. Between the render-phase
-    // reset above and this line the ref still names the previous event, which is safe: that reset
-    // has already hidden the warning, so there is nothing on screen to be wrong about.
-    describedEventId.current = eventId;
     // The result below is about the event that was current when its request went out. `mounted`
     // alone cannot say that: React keeps this instance across an eventId change and runs the
     // cleanup AFTER the new id has committed, so a slow read for the previous event lands with
-    // `mounted` still true and installs that event's warning over the new one.
+    // `mounted` still true and installs that event's warning over the new one. The button it leaves
+    // enabled then posts against the new event and stores an immutable plan (AD-7) nobody asked for.
     const requestedEventId = eventId;
 
     void loadEvent(apiBaseUrl, eventId).then((result) => {
@@ -94,7 +228,109 @@ export function PlanStaleNotice({ apiBaseUrl, eventId }: { apiBaseUrl: string; e
     };
   }, [apiBaseUrl, eventId]);
 
-  if (!stale) return null;
+  if (!stale && cleared === null) return null;
+
+  const regenerate = async () => {
+    // Every outcome below is about THIS event. If the component has been handed another one while
+    // the request was in flight, none of it can be reported: the screen now describes an event the
+    // POST never touched.
+    const regeneratedEventId = eventId;
+    const stillDescribed = () => describedEventId.current === regeneratedEventId;
+
+    setRegenerating(true);
+    setFailure(null);
+    const result = await regeneratePlan(apiBaseUrl, eventId);
+    if (!stillDescribed()) return;
+
+    if (!result.ok) {
+      // The endpoint's guard decides before it inserts, so a refusal stored nothing and is certain
+      // about that. There is nothing to re-read and nothing a retry would change: the same request
+      // to the same deployment is refused the same way.
+      if (result.refused) {
+        setRegenerating(false);
+        setWithheld(
+          result.refusal === null
+            ? `${REFUSED_WITHOUT_VERSIONS} ${result.message}`
+            : downgradeRefusalCopy(result.refusal),
+        );
+        return;
+      }
+
+      // Any other failure may still have reached the api and committed, which stores an immutable
+      // plan (AD-7) this browser never saw a response for. Re-offering the button on the strength
+      // of the error alone therefore writes a second plan for one organizer action. The button
+      // comes back only on an explicit "still stale" read AFTER the POST, not on the state this
+      // component held before it; anything else withholds it and says why.
+      const recheck = await loadEvent(apiBaseUrl, eventId);
+      if (!stillDescribed()) return;
+      setRegenerating(false);
+      if (recheck.ok && recheck.loaded.plan_stale_reported && recheck.loaded.plan_stale) {
+        setFailure(result.message);
+        return;
+      }
+      // That same read can settle the other way: an event that explicitly reports its plan current
+      // is not an event whose plan is out of date, whatever became of the POST's answer. Keeping
+      // the warning up here would tell the organizer their plan is stale on a read that says it is
+      // not, and offer to regenerate something that needs no regeneration.
+      //
+      // It is not said to have been regenerated, though. The POST reported no outcome, so which
+      // write left the plan current is exactly what this browser does not know, and the read
+      // establishes the plan's state and not its authorship.
+      const confirmed = recheck.ok ? confirmedCurrentRevision(recheck.loaded) : null;
+      if (confirmed !== null) {
+        setStale(false);
+        setCleared(
+          "The regeneration request failed to report what it did, but this event was re-read " +
+            `afterwards and its plan is current for revision ${confirmed}. There is nothing out of ` +
+            "date and nothing to regenerate.",
+        );
+        return;
+      }
+      setWithheld(`${RETRY_WITHHELD} ${result.message}`);
+      return;
+    }
+
+    // The event can be edited again while the generation is in flight, so a revision this page read
+    // before the POST is not evidence about the plan that just replaced it: both sides of that
+    // comparison could read 3 while a PATCH moved the event to 4. The API recomputes staleness
+    // against the stored plan on every read, so the warning is cleared on that answer and on
+    // nothing else. An event that cannot be re-read leaves the warning up: unconfirmed is not
+    // current. It is also reported, rather than returned from silently, because the organizer would
+    // otherwise see the same warning and the same live button after a POST that stored a plan,
+    // and press it again.
+    const recheck = await loadEvent(apiBaseUrl, eventId);
+    if (!stillDescribed()) return;
+    setRegenerating(false);
+    if (!recheck.ok) {
+      setWithheld(`${STORED_UNCONFIRMED} ${recheck.message}`);
+      return;
+    }
+    if (recheck.loaded.plan_stale) {
+      setFailure(STORED_FOR_EARLIER_REVISION);
+      return;
+    }
+
+    // A read that answers neither the staleness question nor the revision is the
+    // stored-but-unconfirmed outcome, not a success.
+    const confirmed = confirmedCurrentRevision(recheck.loaded);
+    if (confirmed === null) {
+      setWithheld(
+        `${STORED_UNCONFIRMED} The event was read, but it did not report whether the plan is current.`,
+      );
+      return;
+    }
+
+    setStale(false);
+    setCleared(`Plan regenerated for revision ${confirmed}.`);
+  };
+
+  if (!stale) {
+    return (
+      <p aria-live="polite" className="riso-overview__notice" role="status">
+        {cleared}
+      </p>
+    );
+  }
 
   return (
     // Inserted only once the event read resolves, so a screen-reader user who lands here after an
@@ -104,7 +340,13 @@ export function PlanStaleNotice({ apiBaseUrl, eventId }: { apiBaseUrl: string; e
     // Polite rather than assertive: the plan being out of date is not an interruption.
     <section aria-live="polite" className="riso-overview__notice riso-overview__notice--stale">
       <p>This event has been edited since its plan was generated, so the plan is out of date.</p>
-      <p>{REGENERATION_NOT_OFFERED}</p>
+      {withheld === null && (
+        <button disabled={regenerating} onClick={() => void regenerate()} type="button">
+          {regenerating ? "Regenerating plan…" : "Regenerate plan"}
+        </button>
+      )}
+      {withheld !== null && <p role="alert">{withheld}</p>}
+      {failure !== null && <p role="alert">{failure}</p>}
     </section>
   );
 }
