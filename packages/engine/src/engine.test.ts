@@ -41,7 +41,10 @@ const parkIntake: EventIntake = {
 };
 
 /** A two-rule ruleset in the published shape, for behaviors the current publication does not exercise. */
-function syntheticRuleset(rules: unknown[]): ReturnType<typeof parseEngineRuleset> {
+function syntheticRuleset(
+  rules: unknown[],
+  extraFields: unknown[] = [],
+): ReturnType<typeof parseEngineRuleset> {
   return parseEngineRuleset({
     ruleset_version: "test.v1",
     jurisdiction: "US-NY-NYC",
@@ -54,6 +57,7 @@ function syntheticRuleset(rules: unknown[]): ReturnType<typeof parseEngineRulese
     intake_fields: [
       { field: "event_date", type: "date" },
       { field: "headcount", type: "integer" },
+      ...extraFields,
     ],
     rules,
     advisories: [],
@@ -185,7 +189,8 @@ describe("provenance (AC 1)", () => {
 const disposedRule = (
   id: string,
   disposition: string | undefined,
-  calendarDays?: number,
+  deadline?: Record<string, unknown>,
+  extraOutput: Record<string, unknown> = {},
 ): Record<string, unknown> => {
   const base = dedupeRule(id, `citation ${id}`);
   return {
@@ -193,27 +198,58 @@ const disposedRule = (
     output: {
       ...base.output,
       ...(disposition === undefined ? {} : { disposition }),
-      ...(calendarDays === undefined
-        ? {}
-        : { deadline: { type: "published_minimum", calendar_days: calendarDays } }),
+      ...(deadline === undefined ? {} : { deadline }),
+      ...extraOutput,
     },
   };
 };
 
+/** A published filing window that many calendar days before the event. */
+const calendarWindow = (days: number) => ({ type: "published_minimum", calendar_days: days });
+
+/** A published filing window that needs the holiday list the deployment has not published. */
+const businessWindow = (days: number) => ({ type: "business_days_minimum", business_days: days });
+
 /** The merged `dob-structure` finding for a group listed in the given order. */
-const mergedGroup = (rules: Record<string, unknown>[]) => {
+const mergedGroup = (
+  rules: Record<string, unknown>[],
+  options: {
+    intake?: Record<string, unknown>;
+    holidays?: readonly string[] | null;
+    extraFields?: unknown[];
+  } = {},
+) => {
   const plan = evaluate(
-    { event_date: "2026-12-04", headcount: 50 },
-    syntheticRuleset(rules),
+    { event_date: "2026-12-04", headcount: 50, ...options.intake } as unknown as EventIntake,
+    syntheticRuleset(rules, options.extraFields),
     TODAY,
-    {
-      id: "test-calendar@2026",
-      holidays: [],
-    },
+    { id: "test-calendar@2026", holidays: options.holidays === undefined ? [] : options.holidays },
   );
   expect(plan.findings).toHaveLength(1);
   return plan.findings[0];
 };
+
+/** Every scalar the merge decides, as opposed to the lists it concatenates. */
+const decidedFields = (finding: ReturnType<typeof mergedGroup>) => ({
+  disposition: finding?.disposition,
+  kind: finding?.kind,
+  name: finding?.name,
+  agency: finding?.agency,
+  deadline: finding?.deadline,
+  deadlineDisplay: finding?.deadlineDisplay,
+  latestApplyDate: finding?.latestApplyDate,
+  deadlineStatus: finding?.deadlineStatus,
+  slackDays: finding?.slackDays,
+  feeDisplay: finding?.feeDisplay,
+  portalName: finding?.portalName,
+  portalUrl: finding?.portalUrl,
+  portalInstructions: finding?.portalInstructions,
+  noteText: finding?.noteText,
+  conflictText: finding?.conflictText,
+  timelineUnresolvedReason: finding?.timelineUnresolvedReason,
+  verificationStatus: finding?.verificationStatus,
+  summaryHeading: finding?.userSummary?.heading ?? null,
+});
 
 describe("dedupe field merge (#239)", () => {
   it("takes the strongest contributing disposition, whichever rule is listed first", () => {
@@ -245,32 +281,144 @@ describe("dedupe field merge (#239)", () => {
     ).toBe("prohibited_or_ineligible");
   });
 
+  it("does not let a blocker whose own trigger is unknown make the merged line a blocker", () => {
+    // ARCHITECTURE-FUTURE §8.4: a candidate requirement produced by an unknown branch stays
+    // conditional and is not promoted by deduplication. The blocking route is still named in
+    // `ruleIds`, its note is still carried, and the unanswered field is still asked.
+    const unknownBlocker = {
+      ...disposedRule("RULE-B", "PROHIBITED_OR_INELIGIBLE"),
+      trigger: { all: [{ field: "structure_height_ft", op: "gte", value: 10 }] },
+    };
+    const group = [disposedRule("RULE-A", "REQUIRED"), unknownBlocker];
+    const options = {
+      intake: { structure_height_ft: null },
+      extraFields: [{ field: "structure_height_ft", type: "integer" }],
+    };
+    // The definite permit route still decides the line; the conditional blocker does not.
+    expect(mergedGroup(group, options)?.disposition).toBe("required");
+    expect(mergedGroup([...group].reverse(), options)?.disposition).toBe("required");
+    expect(mergedGroup(group, options)?.ruleIds).toContain("RULE-B");
+  });
+
+  it("reads every displayed scalar off the contributor that supplied the disposition", () => {
+    // No hybrid line: a blocked requirement must not carry a permit's apply-by date, fee or portal.
+    const blocked = mergedGroup([
+      disposedRule("RULE-A", "REQUIRED", calendarWindow(45), {
+        permit_name: "permit route",
+        fee: { display: "$100" },
+        portal: { name: "permit portal", url: "https://example.test/permit" },
+      }),
+      disposedRule("RULE-B", "PROHIBITED_OR_INELIGIBLE", undefined, {
+        permit_name: "barred route",
+        note_text: "not eligible at this location",
+      }),
+    ]);
+    expect(blocked).toMatchObject({
+      disposition: "prohibited_or_ineligible",
+      name: "barred route",
+      latestApplyDate: null,
+      deadline: null,
+      feeDisplay: null,
+      portalName: null,
+      portalUrl: null,
+      noteText: "not eligible at this location",
+    });
+  });
+
   it("takes the earlier published filing window, whichever rule is listed first", () => {
     // 45 days back from 2026-12-04 is the earlier window; taking the later one would tell an
     // organizer they have three more weeks than the group's own rules publish.
     const forward = mergedGroup([
-      disposedRule("RULE-A", "REQUIRED", 21),
-      disposedRule("RULE-B", "REQUIRED", 45),
+      disposedRule("RULE-A", "REQUIRED", calendarWindow(21)),
+      disposedRule("RULE-B", "REQUIRED", calendarWindow(45)),
     ]);
     const reverse = mergedGroup([
-      disposedRule("RULE-B", "REQUIRED", 45),
-      disposedRule("RULE-A", "REQUIRED", 21),
+      disposedRule("RULE-B", "REQUIRED", calendarWindow(45)),
+      disposedRule("RULE-A", "REQUIRED", calendarWindow(21)),
     ]);
     expect(forward?.latestApplyDate).toBe("2026-10-20");
     expect(reverse?.latestApplyDate).toBe("2026-10-20");
   });
 
+  it("binds to the earliest window that is still open, not to one that has closed", () => {
+    // Two published routes to one requirement: the 45-day window closed on 2026-07-06, the
+    // 21-day one is open until 2026-07-30. Binding the closed one renders the requirement missed
+    // while a published route is still available.
+    const group = [
+      disposedRule("RULE-A", "REQUIRED", calendarWindow(45)),
+      disposedRule("RULE-B", "REQUIRED", calendarWindow(21)),
+    ];
+    const options = { intake: { event_date: "2026-08-20" } };
+    for (const listing of [group, [...group].reverse()]) {
+      expect(mergedGroup(listing, options)).toMatchObject({
+        latestApplyDate: "2026-07-30",
+        deadlineStatus: "deadline_approaching",
+      });
+    }
+  });
+
+  it("binds to the earliest window when every published route has closed", () => {
+    const group = [
+      disposedRule("RULE-A", "REQUIRED", calendarWindow(45)),
+      disposedRule("RULE-B", "REQUIRED", calendarWindow(21)),
+    ];
+    const options = { intake: { event_date: "2026-08-01" } };
+    for (const listing of [group, [...group].reverse()]) {
+      expect(mergedGroup(listing, options)).toMatchObject({
+        latestApplyDate: "2026-06-17",
+        deadlineStatus: "published_deadline_missed",
+      });
+    }
+  });
+
+  it("keeps a published window that cannot be dated over a route that publishes none", () => {
+    // The deployed shape of the defect: an uncalculable window and no window at all both leave
+    // `latestApplyDate` null, and the group must still read as the rule that publishes a window.
+    const group = [
+      disposedRule("RULE-A", "MAY_BE_REQUIRED", undefined, { permit_name: "undated route" }),
+      disposedRule("RULE-B", "MAY_BE_REQUIRED", businessWindow(15), {
+        permit_name: "dated route",
+      }),
+    ];
+    const options = { holidays: null };
+    for (const listing of [group, [...group].reverse()]) {
+      expect(mergedGroup(listing, options)).toMatchObject({
+        name: "dated route",
+        deadlineStatus: "not_calculable",
+        latestApplyDate: null,
+      });
+    }
+  });
+
   it("keeps a dated rule's window when the other member of the group publishes none", () => {
     const forward = mergedGroup([
-      disposedRule("RULE-A", "REQUIRED", 45),
+      disposedRule("RULE-A", "REQUIRED", calendarWindow(45)),
       disposedRule("RULE-B", "MAY_BE_REQUIRED"),
     ]);
     const reverse = mergedGroup([
       disposedRule("RULE-B", "MAY_BE_REQUIRED"),
-      disposedRule("RULE-A", "REQUIRED", 45),
+      disposedRule("RULE-A", "REQUIRED", calendarWindow(45)),
     ]);
     expect(forward).toMatchObject({ latestApplyDate: "2026-10-20", deadlineStatus: "on_track" });
     expect(reverse).toMatchObject({ latestApplyDate: "2026-10-20", deadlineStatus: "on_track" });
+  });
+
+  it("reads note, conflict and timeline text off the binding rule rather than the file order", () => {
+    // These three were resolved by position in the ruleset, which is the defect itself.
+    const group = [
+      disposedRule("RULE-A", "MAY_BE_REQUIRED", undefined, { note_text: "undated reading" }),
+      disposedRule("RULE-B", "MAY_BE_REQUIRED", businessWindow(15), {
+        note_text: "dated reading",
+      }),
+    ].map((rule) => ({ ...rule, verification: { status: "OFFICIAL_CONFLICT" } }));
+    const options = { holidays: null };
+    for (const listing of [group, [...group].reverse()]) {
+      expect(mergedGroup(listing, options)).toMatchObject({
+        noteText: "dated reading",
+        conflictText: "dated reading",
+        timelineUnresolvedReason: expect.stringContaining("15 business days"),
+      });
+    }
   });
 
   it("renders the same merged finding whichever order the ruleset lists the group in", () => {
@@ -278,20 +426,86 @@ describe("dedupe field merge (#239)", () => {
     // approved contract is that a merged finding retains every contributing rule — so this pins
     // everything the merge decides rather than concatenates.
     const rules = [
-      disposedRule("RULE-A", "MAY_BE_REQUIRED"),
-      disposedRule("RULE-B", "REQUIRED", 45),
+      disposedRule("RULE-A", "MAY_BE_REQUIRED", undefined, {
+        permit_name: "undated route",
+        note_text: "undated reading",
+        fee: { display: "$25" },
+        portal: { name: "undated portal", instructions: "walk in" },
+        user_summary: {
+          heading: "undated heading",
+          points: [
+            {
+              kind: "overview",
+              text: "undated route",
+              sources: [{ label: "citation", url: "https://example.test/RULE-A" }],
+            },
+          ],
+        },
+      }),
+      disposedRule("RULE-B", "REQUIRED", calendarWindow(45), {
+        permit_name: "dated route",
+        note_text: "dated reading",
+        fee: { display: "$100" },
+        portal: { name: "dated portal", url: "https://example.test/dated" },
+        user_summary: {
+          heading: "dated heading",
+          points: [
+            {
+              kind: "overview",
+              text: "dated route",
+              sources: [{ label: "citation", url: "https://example.test/RULE-B" }],
+            },
+          ],
+        },
+      }),
     ];
-    const decided = (finding: ReturnType<typeof mergedGroup>) => ({
-      disposition: finding?.disposition,
-      deadline: finding?.deadline,
-      deadlineDisplay: finding?.deadlineDisplay,
-      latestApplyDate: finding?.latestApplyDate,
-      deadlineStatus: finding?.deadlineStatus,
-      slackDays: finding?.slackDays,
-      name: finding?.name,
-      agency: finding?.agency,
+    expect(decidedFields(mergedGroup(rules))).toEqual(
+      decidedFields(mergedGroup([...rules].reverse())),
+    );
+  });
+
+  it("merges the published dob-structure group against the deployed holiday configuration", () => {
+    // `apps/api/src/calendar.ts` publishes no holiday list, so production evaluates with
+    // `holidays: null` and DOB-TENT-001's 15-business-day window is real but not calculable,
+    // while DOB-TALL-STRUCTURE-001 publishes no window at all. Both leave `latestApplyDate`
+    // null, so the group's binding rule cannot be chosen on that field alone. Every other engine
+    // test injects `holidays: []`, which dates DOB-TENT-001 and hides this entirely.
+    const tentIntake: EventIntake = {
+      ...parkIntake,
+      event_date: "2026-12-04",
+      structure_types: ["tent_canopy"],
+      tent_area_sqft: 500,
+      tent_days_in_place: 2,
+      structure_over_10ft_tall: "yes",
+    };
+    const merged = (holidays: readonly string[] | null) =>
+      evaluate(tentIntake, ruleset, TODAY, { id: ruleset.calendarId, holidays }).findings.find(
+        (finding) => finding.ruleIds.includes("DOB-TENT-001"),
+      );
+
+    const deployed = merged(null);
+    expect(deployed?.ruleIds).toEqual(["DOB-TENT-001", "DOB-TALL-STRUCTURE-001"]);
+    expect(deployed).toMatchObject({
+      disposition: "required",
+      name: "DOB permit — tent/canopy over 400 gross sq ft or in place 30+ days",
+      deadlineStatus: "not_calculable",
+      latestApplyDate: null,
+      feeDisplay: "TUP: $100 initial 30 days, $130 per additional period — confirm instrument",
     });
-    expect(decided(mergedGroup(rules))).toEqual(decided(mergedGroup([...rules].reverse())));
+    expect(deployed?.userSummary?.heading).toBe(
+      "Buildings Department approval for a tent or canopy",
+    );
+    expect(deployed?.timelineUnresolvedReason).toContain("15 business days");
+    // DOB-TENT-001 publishes no `note_text`, so the other route's published note is not dropped.
+    expect(deployed?.noteText).toContain("over 10 feet tall require a permit");
+
+    // The same group, same rules, with the holiday list a published calendar would carry.
+    expect(merged([])).toMatchObject({
+      disposition: "required",
+      name: "DOB permit — tent/canopy over 400 gross sq ft or in place 30+ days",
+      deadlineStatus: "on_track",
+      latestApplyDate: "2026-11-13",
+    });
   });
 });
 

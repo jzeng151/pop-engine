@@ -114,9 +114,10 @@ function buildFinding(
 
 /**
  * Weakest to strongest. A merged finding carries one disposition where its contributing rules may
- * publish several, and the group's is the strongest of them: rules sharing a dedupe key are several
- * published routes to one requirement, so any one of them applying means the requirement applies.
- * A weaker value would tell an organizer that a filing they must make merely might apply.
+ * publish several, and the group's is the strongest any contributing route still offers: rules
+ * sharing a dedupe key are several published routes to one requirement, so any one of them applying
+ * means the requirement applies. A weaker value would tell an organizer that a filing they must
+ * make merely might apply.
  *
  * `prohibited_or_ineligible` sits at the top because `ARCHITECTURE-FUTURE.md` §8.4 already settles
  * that end: a blocking eligibility or prohibition finding is never erased by a permit finding with
@@ -130,15 +131,69 @@ const DISPOSITION_STRENGTH: readonly Disposition[] = [
   "prohibited_or_ineligible",
 ];
 
-function strongerDisposition(strongest: Disposition, finding: Finding): Disposition {
-  return DISPOSITION_STRENGTH.indexOf(finding.disposition) > DISPOSITION_STRENGTH.indexOf(strongest)
-    ? finding.disposition
+/** The strongest a route whose own trigger did not resolve can contribute (§8.4, and see below). */
+const UNRESOLVED_ROUTE_CEILING: Disposition = "may_be_required";
+
+/**
+ * One contributing route to a group's requirement: its finding, and whether its own trigger
+ * resolved. The trigger result is not on `Finding` and is not published anywhere; it is carried
+ * here only so the merge can honor §8.4's "candidate requirements produced by official-conflict or
+ * unknown branches remain conditional; they are not promoted by deduplication".
+ */
+type Contribution = { readonly finding: Finding; readonly triggerResult: Tristate };
+
+/**
+ * What a route contributes to the group's disposition, which is its own published value except
+ * that an unresolved route cannot carry the group past `may_be_required`. `resolveDisposition()`
+ * already applies that to a `required` rule on its own finding; a `prohibited_or_ineligible` one
+ * keeps its published value there, because a single conditional blocker still renders as the
+ * blocking answer it publishes. What §8.4 forbids is deduplication promoting it: merging would
+ * make an unanswered question the whole line's definite blocker, so a plan could call an event
+ * ineligible when the missing answer may remove the blocker. The route stays in `ruleIds`,
+ * `sources`, `notes` and `triggeredBy`, and its unanswered field stays a material unknown, so the
+ * conditional blocker is asked about rather than dropped.
+ */
+function contributedDisposition({ finding, triggerResult }: Contribution): Disposition {
+  if (triggerResult !== "unknown") return finding.disposition;
+  return DISPOSITION_STRENGTH.indexOf(finding.disposition) >
+    DISPOSITION_STRENGTH.indexOf(UNRESOLVED_ROUTE_CEILING)
+    ? UNRESOLVED_ROUTE_CEILING
+    : finding.disposition;
+}
+
+function strongerDisposition(strongest: Disposition, contribution: Contribution): Disposition {
+  const contributed = contributedDisposition(contribution);
+  return DISPOSITION_STRENGTH.indexOf(contributed) > DISPOSITION_STRENGTH.indexOf(strongest)
+    ? contributed
     : strongest;
 }
 
 /**
+ * How available a route's filing window is, lowest first. A group's members are alternative
+ * published routes to one requirement, so the route that binds the merged line is the tightest one
+ * the organizer can still use:
+ *
+ * 0. a published window the engine could not date. It constrains filing and its width is unknown,
+ *    so it cannot be ranked behind a window that happens to be datable, which would render the
+ *    group `on_track` while one of its routes has an uncomputed window. It is also what the
+ *    deployed configuration produces: with no published holiday list, DOB-TENT-001's 15-business-day
+ *    window is real and `not_calculable`, and ranking it behind a rule that publishes no window at
+ *    all lost the window, its status, its fee and its summary in production (#244 review).
+ * 1. a published window that is dated and still open.
+ * 2. a published window that has closed. A closed route is no longer a route, so it never binds
+ *    while another is open; a group whose routes have all closed still renders as missed.
+ * 3. no published window at all. Such a route says nothing about when the requirement must be
+ *    filed, so it cannot decide the group's timeline.
+ */
+function windowAvailability(finding: Finding): number {
+  if (finding.deadline === null) return 3;
+  if (finding.deadlineStatus === "published_deadline_missed") return 2;
+  return finding.latestApplyDate === null ? 0 : 1;
+}
+
+/**
  * The contributing rule whose published filing window binds the group, and so the rule the merged
- * line reads as: a dated rule over an undated one, the earlier window between two dated ones, and
+ * line reads as: the most available window (above), the earlier of two equally available ones, and
  * the lower rule id when neither of those separates them.
  *
  * Earlier rather than later because a merged line shows one date, and showing the later of two
@@ -149,13 +204,17 @@ function strongerDisposition(strongest: Disposition, finding: Finding): Disposit
  * A total order over the group, so which member wins does not depend on the order they arrive in,
  * which is the whole point (#239).
  */
-function bindsTighter(a: Finding, b: Finding): Finding {
-  if (a.latestApplyDate !== b.latestApplyDate) {
-    if (a.latestApplyDate === null) return b;
-    if (b.latestApplyDate === null) return a;
-    return a.latestApplyDate < b.latestApplyDate ? a : b;
+function compareBinding(a: Finding, b: Finding): number {
+  const available = windowAvailability(a) - windowAvailability(b);
+  if (available !== 0) return available;
+  if (
+    a.latestApplyDate !== b.latestApplyDate &&
+    a.latestApplyDate !== null &&
+    b.latestApplyDate !== null
+  ) {
+    return a.latestApplyDate < b.latestApplyDate ? -1 : 1;
   }
-  return (a.ruleIds[0] ?? "") <= (b.ruleIds[0] ?? "") ? a : b;
+  return (a.ruleIds[0] ?? "") <= (b.ruleIds[0] ?? "") ? -1 : 1;
 }
 
 /**
@@ -174,65 +233,109 @@ function mergeUserSummary(group: readonly Finding[], binding: Finding): RuleUser
 /**
  * One finding for a dedupe group, retaining every contributing rule, source and trigger reason.
  *
- * The merged line reads as its binding rule rather than as whichever rule the ruleset happens to
- * list first, and carries the group's strongest disposition. Ruleset order is not a regulatory
- * fact, and until this it decided both: nyc.v2.11's `dob-structure` group mixes disposition and
- * deadline, so reversing those two rules in the published file turned a `required` finding with a
- * filing date into a `may_be_required` one with none, no regulatory fact having changed (#239).
+ * ONE RULE DECIDES EVERY FIELD, and it is a reading of what a dedupe group is: its members are
+ * alternative published routes to one requirement. That reading gives three classes of field.
+ *
+ * 1. `disposition` is the strongest any route still offers, because any one route applying means
+ *    the requirement applies. An unresolved route is capped at `may_be_required` per §8.4.
+ * 2. Every scalar the organizer would act on, meaning `name`, `agency`, `deadline`, `deadlineDisplay`,
+ *    `latestApplyDate`, `deadlineStatus`, `slackDays`, `feeDisplay`, `portalName`, `portalUrl`,
+ *    `portalInstructions`, the summary heading and `verificationStatus`, comes from ONE route, the
+ *    binding rule, so the line describes a filing an organizer can actually make. The binding rule
+ *    is the route that supplies the merged disposition and binds tightest (`compareBinding`).
+ *    Taking the disposition from one route and the filing detail from another is what produced
+ *    hybrids: a blocked requirement carrying a permit's apply-by date, fee and portal (#244
+ *    review). None of these fields falls back to another route, because a value acted on has to
+ *    belong to the route the line describes.
+ * 3. `ruleIds`, `notes`, `sources`, `triggeredBy`, `deadlineUnknownFields` and the summary points
+ *    concatenate over every route in contributing order, which is the approved contract that a
+ *    merged finding retains every contributing rule and source. `lastVerifiedDate` is the earliest
+ *    across the group when every route publishes one; it is fact provenance, not a rendered filing
+ *    detail.
+ * 4. The three published text fields (`noteText`, `conflictText` and `timelineUnresolvedReason`)
+ *    are the binding route's, and where the binding route publishes none they fall back through the
+ *    remaining routes in the same binding order. They are single-valued, so they cannot concatenate
+ *    like `notes`, and they carry text that must not be dropped: a scope or eligibility caveat,
+ *    both readings of an official conflict, and the reason a published window could not be dated,
+ *    which `verdict.ts` reads to keep a plan conditional. The fallback is ordered by the same total
+ *    order, so it is not the file order the defect was, and it only ever fills a field the binding
+ *    route leaves empty.
+ *
+ * THE LOSING ROUTES' `feeDisplay` AND PORTAL FIELDS ARE NOT RENDERED ON THE MERGED LINE. That is a
+ * consequence of (2) and is stated rather than left implicit: two fees or two portals on one line
+ * would read as two payments or two filings, which no artifact supports. Nothing is fabricated and
+ * the alternate route is not hidden: it keeps its rule id, citation, notes, trigger reasons and
+ * its own summary points (including any fee or action point it publishes), so an organizer sees
+ * that a second published route exists and what it says.
+ *
+ * Ruleset order is not a regulatory fact, and until this it decided all of the above: nyc.v2.11's
+ * `dob-structure` group mixes disposition and deadline, so reversing those two rules in the
+ * published file turned a `required` finding with a filing date into a `may_be_required` one with
+ * none, no regulatory fact having changed (#239).
  *
  * NO APPROVED ARTIFACT STATES THESE MERGED VALUES. `ARCHITECTURE.md` says only that a group merges
  * deterministically, retaining every contributing rule and source; the precedence table
  * `ARCHITECTURE-FUTURE.md` §8.4 calls for is Phase 2+ direction and does not exist yet. What is
- * taken from §8.4 is the two things it settles now — a blocking finding is never erased on a shared
- * key, and merge order is deterministic rather than incidental array order. The rest is the safe
+ * taken from §8.4 is the three things it settles now, that a blocking finding is never erased on a
+ * shared key, an unknown or official-conflict branch's candidate is not promoted by deduplication,
+ * and merge order is deterministic rather than incidental array order. The rest is the safe
  * direction for a regulatory product: understating what an organizer must file, or how soon, is the
- * failure this cannot risk. Nothing here asserts a new regulatory fact. Every merged value is some
- * contributing rule's own published value, and every contributing rule stays in `ruleIds` and
- * `sources`, so neither route to the requirement is hidden.
+ * failure this cannot risk. It is approved as product scope (`docs/BASELINE.md`, AD-18). Nothing
+ * here asserts a new regulatory fact. Every merged value is some contributing rule's own published
+ * value, and every contributing rule stays in `ruleIds` and `sources`.
  */
-function mergeGroup(group: readonly Finding[]): Finding {
-  const first = group[0] as Finding;
-  if (group.length === 1) return first;
+function mergeGroup(group: readonly Contribution[]): Finding {
+  const first = group[0] as Contribution;
+  if (group.length === 1) return first.finding;
 
-  const binding = group.reduce(bindsTighter);
-  const userSummary = mergeUserSummary(group, binding);
-  const verificationDates = group.map((finding) => finding.lastVerifiedDate);
+  const disposition = group.reduce(strongerDisposition, contributedDisposition(first));
+  const binding = group
+    .filter((contribution) => contributedDisposition(contribution) === disposition)
+    .map((contribution) => contribution.finding)
+    .sort(compareBinding)[0] as Finding;
+  const findings = group.map((contribution) => contribution.finding);
+  // The binding route first, then the rest in the same order, for the text fields it leaves empty.
+  const byBinding = [binding, ...findings.filter((f) => f !== binding).sort(compareBinding)];
+  const publishedText = (read: (finding: Finding) => string | null): string | null =>
+    byBinding.map(read).find((text) => text !== null) ?? null;
+  const userSummary = mergeUserSummary(findings, binding);
+  const verificationDates = findings.map((finding) => finding.lastVerifiedDate);
   const published = verificationDates.filter((date): date is string => typeof date === "string");
   const lastVerifiedDate: string | null =
     published.length === group.length
       ? published.reduce((earliest, date) => (date < earliest ? date : earliest))
       : null;
-  const firstNonNull = <T>(values: readonly (T | null)[]): T | null =>
-    values.find((value): value is T => value !== null) ?? null;
 
   return {
     ...binding,
-    disposition: group.reduce(strongerDisposition, first.disposition),
-    ruleIds: group.flatMap((finding) => finding.ruleIds),
-    notes: group.flatMap((finding) => finding.notes),
-    sources: group.flatMap((finding) => finding.sources),
+    disposition,
+    ruleIds: findings.flatMap((finding) => finding.ruleIds),
+    notes: findings.flatMap((finding) => finding.notes),
+    sources: findings.flatMap((finding) => finding.sources),
     ...(userSummary === null ? {} : { userSummary }),
-    triggeredBy: group.flatMap((finding) => finding.triggeredBy),
-    deadlineUnknownFields: group.flatMap((finding) => finding.deadlineUnknownFields),
-    timelineUnresolvedReason: firstNonNull(group.map((f) => f.timelineUnresolvedReason)),
-    noteText: firstNonNull(group.map((finding) => finding.noteText)),
-    conflictText: firstNonNull(group.map((finding) => finding.conflictText)),
+    triggeredBy: findings.flatMap((finding) => finding.triggeredBy),
+    deadlineUnknownFields: findings.flatMap((finding) => finding.deadlineUnknownFields),
+    noteText: publishedText((finding) => finding.noteText),
+    conflictText: publishedText((finding) => finding.conflictText),
+    timelineUnresolvedReason: publishedText((finding) => finding.timelineUnresolvedReason),
     ...(verificationDates.some((date) => date !== undefined) ? { lastVerifiedDate } : {}),
   };
 }
 
 /** Findings sharing a dedupe key merge deterministically, retaining every contributing rule and source. */
-function dedupe(findings: readonly { finding: Finding; dedupeKey: string | null }[]): Finding[] {
-  const groups: Finding[][] = [];
+function dedupe(
+  findings: readonly (Contribution & { readonly dedupeKey: string | null })[],
+): Finding[] {
+  const groups: Contribution[][] = [];
   const positionByKey = new Map<string, number>();
-  for (const { finding, dedupeKey } of findings) {
+  for (const { dedupeKey, ...contribution } of findings) {
     const existing = dedupeKey === null ? undefined : positionByKey.get(dedupeKey);
     if (existing === undefined) {
       if (dedupeKey !== null) positionByKey.set(dedupeKey, groups.length);
-      groups.push([finding]);
+      groups.push([contribution]);
       continue;
     }
-    (groups[existing] as Finding[]).push(finding);
+    (groups[existing] as Contribution[]).push(contribution);
   }
   return groups.map(mergeGroup);
 }
@@ -337,7 +440,7 @@ export function resolveFindings(
   const scope = createScopeResolver(intake, ruleset);
   const deadlineContext: DeadlineContext = { ...context, scope };
   const trace: EvaluationTraceEntry[] = [];
-  const triggered: { finding: Finding; dedupeKey: string | null }[] = [];
+  const triggered: (Contribution & { dedupeKey: string | null })[] = [];
   const unknownFields = new Set<string>();
 
   for (const rule of ruleset.rules) {
@@ -348,7 +451,7 @@ export function resolveFindings(
     const finding = buildFinding(rule, evaluation.result, evaluation.triggeredBy, deadlineContext);
     // An unknown that surfaces while dating a finding is as material as one from its trigger.
     for (const field of finding.deadlineUnknownFields) unknownFields.add(field);
-    triggered.push({ finding, dedupeKey: rule.dedupeKey });
+    triggered.push({ finding, triggerResult: evaluation.result, dedupeKey: rule.dedupeKey });
   }
 
   return {

@@ -39,6 +39,7 @@ PopEngine must:
 | AD-16 | Use Supabase Auth as F-701's single identity and session provider, with email/password and Google OAuth as its two authentication methods. | Next.js uses Supabase's App Router SSR/PKCE cookie flow; protected Express routes verify Supabase bearer claims through the provider-supported verifier. No custom credential/session store or workspace/role authorization is implied.                                                    |
 | AD-17 | `docs/DESIGN.md`'s dependency-graph row relating F-601 and F-109 is a consequence note, not a build-order constraint.                      | The row records that adding F-601 is what makes F-109 necessary and states no order between them. Build order comes from the two features' own approval blockers, which this decision does not touch, so reading the graph literally no longer implies an order those blockers contradict. |
 | AD-18 | A shared contract change carries the product owner's approval alone, the second party AD-15 asked for having been retired 2026-08-05.      | AD-15's consequence cell states that approval as the whole requirement for all four contract kinds it names, and a feature branch consumes the change on it. A fixture or expected output is still a regulatory publication, so which §6 row its approval comes from is unchanged.         |
+| AD-18 | A `dedupe_key` group's members are alternative published routes to one requirement, and `mergeGroup()` in `packages/engine/src/findings.ts` merges it per field on that reading, standing in for §8.4's unwritten precedence table. | `disposition` is the strongest disposition any route contributes, capped at `may_be_required` for a route whose own trigger is unknown; every scalar an organizer acts on comes from the one binding route that supplies that disposition; retained rule ids, notes, sources, trigger reasons and summary points concatenate; and the three single-valued published texts fall back through the remaining routes in binding order so no published text is dropped. It publishes no ruleset and moves no output on `nyc.v2.11`. Publishing the real table supersedes it (`docs/OPEN-QUESTIONS.md` T-12). |
 
 AD-16 was approved 2026-07-28 by the product owner/user acting as architecture owner through the
 PR #201 follow-up. This records one person's approval in both capacities, not independent reviews.
@@ -70,6 +71,37 @@ other party reviewing, not by whether the artifact it guards is regulatory, and 
 records AD-15's coordinated review as retired for all four contract kinds. A row that still required
 the review would have been a live instruction contradicting the record that retired it, which is the
 failure the retirement names as its own reason.
+
+AD-18 was approved 2026-08-05 by the product owner, recorded here as the approved ADR §6 requires,
+and amends §8.4 of this document. AD-17 established the routing: a decision that only labels which
+of two readings a `DESIGN.md` row carries is still a durable architecture decision recorded as an
+approved ADR, so a decision that amends this document, changes engine precedence and stands in for a
+table §8.4 assigns to the rules schema/engine spec is reached by the same row, and a `BASELINE.md`
+paragraph plus a §8.4 note is not the record that row asks for. §6 carries a second row this change
+matches by name, "Rule trigger, dedupe, branch, deadline, or formula semantics", and it is addressed
+rather than left unmentioned: it requires the same capacity, the product owner, so naming it changes
+who signs nothing. One person signed in that one capacity; no second signatory exists and none is
+claimed or implied.
+
+Whether a second signatory is nonetheless owed is the question those two rows raise, and the answer
+recorded here is no. §6's closing paragraph's first sentence is unconditional, and it reaches a
+regulatory publication. This is not one: no ruleset is published, no rule, trigger, deadline, fee,
+agency, threshold, portal, exception or verification status changes, every value the merged line
+renders is some contributing rule's own published value, and every contributing route stays in
+`ruleIds` and `sources`. `specs/F-103-scope-comparator.md` already drew that line for issue #239 and
+put an engine-only change on the product-owner-alone side of it, keeping the second signatory for the
+ruleset route that would change what the published file means and whether the loader accepts it.
+`OPEN-QUESTIONS.md` T-4 draws it the same way. The evidence is that output does not move: over a
+sweep of 288 structure intakes under both the deployed `holidays: null` configuration and a published
+holiday list, plans on `nyc.v2.11` are byte-identical to the merge this replaces. What changes is
+that they no longer depend on the order two rules sit in the published file.
+
+`AGENTS.md`'s regulatory-safety section says rule-semantics changes are regulatory publication and so
+carry the second signatory. That sentence is read here as reaching a change to what the published
+ruleset says or to what the loader will accept, which is F-103's Route 1, and not this engine-only
+merge. The alternative is stated rather than hidden: read at its widest, that sentence makes this
+decision, and the live defect fix it carries, unapprovable by a team of one. This record takes the
+narrower reading and says so, so a later reader can weigh it rather than discover it.
 
 AD-15's "coordinated review before feature branches consume them" asked for a second party to look
 at a shared contract change. That requirement is RETIRED as of 2026-08-05 (product owner; see
@@ -302,7 +334,7 @@ F-207 is data-only: a new jurisdiction may not add a named calculator, jurisdict
 - Candidate requirements produced by official-conflict or unknown branches remain conditional; they are not promoted by deduplication.
 - Merge order is deterministic and tested. The precedence table is part of the rules schema/engine spec, not incidental array order.
 
-**The precedence table this section calls for does not exist, and a merge rule stands in for it in the meantime (2026-08-05, product owner, PR #244, issue #239).** Grouping findings by `dedupe_key` leaves one line where the contributing rules may publish different values, so a merge has to decide, per field, what that line reads: `disposition`, `deadline`, `deadlineStatus`, `latestApplyDate`, `name` and `agency`, and with them `feeDisplay`, `portalName`, `portalUrl` and `portalInstructions`. Two of those decisions come from this section, and only two: a blocking eligibility or prohibition finding is never erased by a permit finding on the same key, which fixes the top of the disposition order, and merge order is deterministic rather than incidental array order. No approved artifact states the rest. The rule in force today is `mergeGroup()` in `packages/engine/src/findings.ts`: `disposition` is the strongest value any contributing rule publishes, and every other unmerged scalar reads from the group's binding rule, which is a dated rule over an undated one, the earlier published filing window between two dated ones, and the lower rule id when neither separates them. Strongest-disposition and earliest-window are SAFE-DIRECTION choices for a regulatory product, not facts derived from a published artifact; they were approved as product scope on 2026-08-05 by the product owner alone, recorded in `docs/BASELINE.md`, and they are not to be read as derived. This note records direction, not a new contract, and **it does not satisfy this section**: publishing the real precedence table as part of the rules schema/engine spec supersedes it. Until that happens, a reader here should neither re-derive the question from scratch nor assume no decision was made.
+**The precedence table this section calls for does not exist, and a merge rule stands in for it in the meantime (2026-08-05, product owner, AD-18, PR #244, issue #239).** Grouping findings by `dedupe_key` leaves one line where the contributing rules may publish different values, so a merge has to decide, per field, what that line reads. Two of those decisions come from this section, and only two: a blocking eligibility or prohibition finding is never erased by a permit finding on the same key, which fixes the top of the disposition order, and merge order is deterministic rather than incidental array order. A third sentence of this section constrains it: a candidate produced by an official-conflict or unknown branch stays conditional and is not promoted by deduplication. No approved artifact states the rest. The rule in force today is `mergeGroup()` in `packages/engine/src/findings.ts`, and it answers every field from one reading of what a group is, namely that its members are alternative published routes to one requirement. `disposition` is the strongest disposition any route contributes, and a route whose own trigger resolved `unknown` contributes no more than `may_be_required`. Every scalar an organizer acts on, meaning `name`, `agency`, `deadline`, `deadlineDisplay`, `latestApplyDate`, `deadlineStatus`, `slackDays`, `feeDisplay`, `portalName`, `portalUrl`, `portalInstructions`, the summary heading and `verificationStatus`, comes from the single binding route, which is the route supplying that disposition whose published window is most available: a published window over none, one not yet closed over one that has, an undatable published window over a datable one, the earlier date between two datable ones, and the lower rule id when none of those separates them. `ruleIds`, `notes`, `sources`, `triggeredBy`, `deadlineUnknownFields` and the summary points concatenate over every route. `noteText`, `conflictText` and `timelineUnresolvedReason` are single-valued published text, so they read from the binding route and fall back through the remaining routes in the same order rather than being dropped. The losing routes' fee and portal are not rendered on the merged line, which is stated rather than left implicit: two fees or two portals on one line would read as two payments or two filings. Strongest-disposition, the availability order and the fallback are SAFE-DIRECTION choices for a regulatory product, not facts derived from a published artifact; they were approved by the product owner alone as product scope and as AD-18, recorded in `docs/BASELINE.md`, and they are not to be read as derived. This note records direction, not a new contract, and **it does not satisfy this section**: publishing the real precedence table as part of the rules schema/engine spec supersedes it, and `docs/OPEN-QUESTIONS.md` T-12 carries what is still owed. Until then, a reader here should neither re-derive the question from scratch nor assume no decision was made.
 
 ### 8.5 Deadlines and calendars
 
