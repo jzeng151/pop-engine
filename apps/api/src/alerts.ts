@@ -633,8 +633,81 @@ const heldAtTheSendBoundary = (day: string): string =>
  * with it, and the case it protects (a duplicate reminder to a real organizer) cannot come back
  * silently.
  */
-const handoffFitsTheMargin = (boundaryAnsweredAt: number, now: number): boolean =>
-  now - boundaryAnsweredAt <= SEND_BOUNDARY_HANDOFF_BUDGET_MS;
+const handoffFitsTheMargin = (boundaryAskedAt: number, now: number): boolean =>
+  now - boundaryAskedAt <= SEND_BOUNDARY_HANDOFF_BUDGET_MS;
+
+/**
+ * The invariant the FILING WINDOW's edge must satisfy, stated beside the one the dedup margin
+ * states so the fifth defect on a margin is not a sixth: THE DAY THE BOUNDARY'S WINDOW ANSWER IS
+ * ABOUT MUST STILL BE THE JURISDICTION'S DAY WHEN THE REQUEST THAT ANSWER PERMITS CAN LAST UNTIL.
+ *
+ * WHY THE ANSWER ALONE IS NOT ENOUGH. `FILING_WINDOW_HAS_SHUT` is asked about `boundaryDay` and is
+ * true or false of that whole day, so it says nothing about how much of the day is left. A
+ * final-day reminder reaching the boundary in the last second before local midnight passes it,
+ * and `sender(...)` then has DNS, the TCP and TLS handshakes and the body transmission in front of
+ * it, bounded end to end by `PROVIDER_TIMEOUT_MS`. The message can reach Resend on the day after
+ * the one the window was open on, telling an organizer to file by yesterday — the exact copy the
+ * window check exists to prevent, produced by a check that returned the right answer.
+ *
+ * NOT A NEW ALLOWANCE, which is the point of writing it here rather than subtracting a number at
+ * the point of use. What must fit is the bounded handoff, and that is already named:
+ * `SEND_BOUNDARY_MARGIN_MS`, the same reservation the dedup edge keeps back, for the same two
+ * things (the in-process gap and the request). One quantity, two edges; a change to what the
+ * handoff costs moves both.
+ *
+ * ASSERTED AT THE POINT OF USE, like `handoffFitsTheMargin` and for the reason its note gives: the
+ * gap is the part a later edit grows, and a statement inserted in front of the sender must stop
+ * the send rather than quietly spend what was reserved. Measured from `now` rather than from the
+ * boundary answer, so what is reserved is what is still ahead.
+ *
+ * FAILS CLOSED, and nothing is owed afterwards: the window is closing, so there is no later moment
+ * inside it for a retry to use, and the next tick retires the row rather than sending it.
+ */
+const filingDayCoversTheHandoff = (
+  jurisdiction: string,
+  boundaryDay: string,
+  now: number,
+): boolean =>
+  todayInJurisdiction(jurisdiction, new Date(now + SEND_BOUNDARY_MARGIN_MS)) === boundaryDay;
+
+/**
+ * Ask the send boundary, stamping the margin's anchor as the question goes out.
+ *
+ * THE ANCHOR IS THE QUESTION AND NOT THE ARRIVAL OF THE ANSWER. The result of this statement has a
+ * return trip and an event-loop turn in front of it, so a backend that has already computed
+ * `clock_timestamp()` can have its answer read here appreciably later. Stamped when this frame
+ * resumes, a delayed answer looks exactly as fresh as an instant one: `handoffFitsTheMargin` then
+ * measures only what happened after the delay, passes, and the key reaches the provider outside
+ * the window it deduplicates within — the duplicate reminder this boundary exists to prevent,
+ * permitted by the reservation meant to prevent it.
+ *
+ * ONE CLOCK, DELIBERATELY, and this is the part not to re-derive. The other way to close it is to
+ * return the database's own `clock_timestamp()` and measure from that, which is the moment the
+ * answer is really about. It was not taken: it puts a Postgres clock and this process's clock on
+ * either side of a `SEND_BOUNDARY_HANDOFF_BUDGET_MS` budget of one second, so ordinary NTP drift
+ * or a container clock offset lands directly in the measurement and the guard starts refusing or
+ * permitting sends for a reason that has nothing to do with the gap it exists to measure. A local
+ * stamp taken BEFORE the statement is issued is guaranteed to be at or before the backend's
+ * evaluation whatever the two clocks say, so it can only over-count the gap, and over-counting is
+ * the safe direction for a check whose job is to refuse when the time it reserved has gone.
+ *
+ * STAMPED AND ISSUED IN ONE CALL, so that guarantee is a property of the code rather than a note
+ * about it: there is no separate stamp for a later edit to leave behind when it moves the query,
+ * and nothing can be inserted between the two.
+ */
+async function askTheSendBoundary(
+  client: PoolClient,
+  alertId: string,
+  day: string,
+): Promise<{ askedAt: number; shut: boolean; held: boolean }> {
+  const askedAt = Date.now();
+  const { rows } = await client.query<{ shut: boolean; held: boolean }>(
+    `SELECT ${FILING_WINDOW_HAS_SHUT("$2")} AS shut, ${heldAtTheSendBoundary("$2")} AS held
+       FROM alerts WHERE id = $1`,
+    [alertId, day],
+  );
+  return { askedAt, shut: rows[0]?.shut === true, held: rows[0]?.held === true };
+}
 
 /**
  * How long the test endpoint waits for a poller that claimed its row first.
@@ -2250,11 +2323,7 @@ async function deliverClaimed(
   senders: AlertSenders,
   database: Pool,
   jurisdiction: string,
-): Promise<{
-  status: "sent" | "failed";
-  delivery: AlertDelivery | null;
-  error: string | null;
-} | null> {
+): Promise<SendOutcome | null> {
   const sender = senders[row.channel];
   // NOTHING TO RECONCILE WHERE NOTHING IS HANDED OVER. The intent exists to catch one state: a
   // provider holding a message whose outcome this side never learned. The SMS channel is the
@@ -2385,20 +2454,16 @@ async function deliverClaimed(
   // line, so it is exactly the proven non-delivery every other branch settles. Left to unwind,
   // the exception carried a committed intent out of `sendOne` and that attempt paused the alert
   // for the whole hold while no provider could possibly have been holding it.
-  let boundaryAnsweredAt = 0;
   if (attemptId !== null) {
     const boundaryDay = todayInJurisdiction(jurisdiction, new Date());
-    const { rows: boundary } = await client
-      .query<{ shut: boolean; held: boolean }>(
-        `SELECT ${FILING_WINDOW_HAS_SHUT("$2")} AS shut, ${heldAtTheSendBoundary("$2")} AS held
-         FROM alerts WHERE id = $1`,
-        [row.id, boundaryDay],
-      )
-      .catch(async (error: unknown) => {
+    // Stamped by the ask itself, for the reason `askTheSendBoundary` records: an anchor taken when
+    // this frame resumes cannot see the wait it is supposed to be measuring.
+    const boundary = await askTheSendBoundary(client, row.id, boundaryDay).catch(
+      async (error: unknown) => {
         await recordProvenNonDelivery();
         throw error;
-      });
-    boundaryAnsweredAt = Date.now();
+      },
+    );
     // THE DAY THE ANSWER WAS ABOUT, which is not necessarily the day it arrived on. The cutoff
     // half of this statement reads `clock_timestamp()` and is therefore evaluated whenever the
     // backend gets to it, but the window half is asked about `$2`, a calendar day this process
@@ -2420,14 +2485,33 @@ async function deliverClaimed(
           `this send would happen on; nothing was sent`,
       );
       await recordProvenNonDelivery();
-      return null;
+      // SKIPPED, for the reason the margin refusal below is: this exit takes no decision at all —
+      // not even to cancel — so it leaves the row exactly as due as it found it, with its intent
+      // closed and nothing claiming it. What it needs is the same two questions asked again on the
+      // day it is now, which is one claim away, and reporting it as handled makes the tick wait
+      // out an interval first. On a row whose window is still open that is a delivery delayed for
+      // no reason; on one whose window has shut it is a retirement delayed the same way.
+      return { status: "skipped" };
     }
-    if (boundary[0]?.shut === true) {
-      await resolveAttempt(client);
+    if (boundary.shut) {
+      // SETTLED WHERE THE SETTLEMENT CAN SURVIVE, which is not here. This statement is the
+      // strongest proof this file ever has that the provider was never reached — the sender is on
+      // the other side of it — and recorded on the sending connection that proof went back with
+      // the transaction whenever the transaction went back. What was left was the alert still
+      // pending and still carrying an unresolved attempt about a message no provider could be
+      // holding: the one state nothing in this product clears by itself, and one an organizer's
+      // own regeneration then carries onto the refreshed reminder, where it can hold that too.
+      //
+      // The independent writer is what every other pre-handoff exit here uses, and this was the
+      // one that did not.
+      await recordProvenNonDelivery();
+      // The cancellation stays in the sending transaction, which is where it belongs: it is a
+      // decision about the alert row this transaction holds the claim on, and if the transaction
+      // is lost the row is simply still due and the next tick retires it on the same answer.
       await client.query("UPDATE alerts SET status = 'cancelled' WHERE id = $1", [row.id]);
       return null;
     }
-    if (boundary[0]?.held === true) {
+    if (boundary.held) {
       // On the writer's own connection, for the reason `recordProvenNonDelivery` records: this
       // transaction is about to be rolled back to nothing, and the knowledge that no message left
       // has to survive that.
@@ -2439,13 +2523,44 @@ async function deliverClaimed(
     // longer the answer for this send and the key could reach the provider outside the window it
     // deduplicates within. Fails closed, like every other boundary decision here: nothing is handed
     // over, the intent is closed because nothing was, and the next tick reads the row as it stands.
-    if (!handoffFitsTheMargin(boundaryAnsweredAt, Date.now())) {
+    if (!handoffFitsTheMargin(boundary.askedAt, Date.now())) {
       console.warn(
         `alert ${row.id} spent more than ${SEND_BOUNDARY_HANDOFF_BUDGET_MS}ms between the send ` +
           `boundary and the provider handoff, which is the margin the boundary reserved for it; ` +
           `nothing was sent`,
       );
       await recordProvenNonDelivery();
+      // SKIPPED RATHER THAN NULL, because this refusal leaves work nobody is doing. The row is
+      // pending, unmarked and immediately retryable — it was not cancelled, not rescheduled and
+      // not taken by another worker, which is everything `null` is allowed to mean here. Reported
+      // as nothing to do, a non-full scan reads as drained and the poller waits out a whole
+      // interval before asking again; an alert that had already waited nearly one interval before
+      // this tick claimed it then misses AC 2's two-minute bound over an event-loop pause of a
+      // second, with a healthy provider on the other end. Reported as unfinished, the tick's own
+      // skip retry chases it, which is what it does with every other due-but-unclaimed row.
+      //
+      // Round 16 drew this distinction at the alert and round 31 at the tick; this is the same
+      // distinction missing on the one exit that creates the condition itself rather than
+      // discovering it.
+      return { status: "skipped" };
+    }
+    // THE WINDOW EDGE, asserted where the dedup margin is asserted and for the same reason. See
+    // `filingDayCoversTheHandoff`: the answer above is true of the whole of `boundaryDay` and says
+    // nothing about how much of it is left, so a final-day reminder can pass this boundary with
+    // seconds to spare and still reach the provider after the window has shut, naming a filing
+    // date the organizer can no longer meet.
+    if (!filingDayCoversTheHandoff(jurisdiction, boundaryDay, Date.now())) {
+      console.warn(
+        `alert ${row.id} reached the send boundary with less than ${SEND_BOUNDARY_MARGIN_MS}ms of ` +
+          `${boundaryDay} left in ${jurisdiction}, which is what the bounded handoff in front of ` +
+          `the provider can cost, so its filing window could shut before the request lands; ` +
+          `nothing was sent`,
+      );
+      await recordProvenNonDelivery();
+      // Null rather than skipped, unlike the margin refusal above: that one is a gap this process
+      // can be through on the very next attempt, and this one is the day ending. There is no later
+      // moment inside the window for a retry to use, so nothing is owed and the next tick retires
+      // the row rather than chasing it.
       return null;
     }
   }
