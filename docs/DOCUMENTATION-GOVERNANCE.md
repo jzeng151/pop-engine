@@ -102,7 +102,7 @@ PopEngine is a solo project, so approvals name one capacity. The product owner a
 
 This table states what a future approval requires. It does not restate an approval already given: an approval recorded in named capacities under the rules then in force stays on the record in the words it was given.
 
-Two rows carry a requirement that is not a capacity, and naming one approver does not reach either.
+One row carries a requirement that is not a capacity, and naming one approver does not reach it.
 
 A durable architecture decision is still recorded as an approved ADR. The capacity that signs it is the product owner; the record the decision has to leave is unchanged, and an approval that leaves no ADR does not satisfy that row.
 
