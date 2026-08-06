@@ -134,6 +134,9 @@ const DISPOSITION_STRENGTH: readonly Disposition[] = [
 /** The strongest a route whose own trigger did not resolve can contribute (§8.4, and see below). */
 const UNRESOLVED_ROUTE_CEILING: Disposition = "may_be_required";
 
+/** The weakest RESOLVED contribution a group can hold for that ceiling to bite (see below). */
+const UNRESOLVED_ROUTE_CAP_TRIGGER: Disposition = "required";
+
 /**
  * One contributing route to a group's requirement: its finding, and whether its own trigger
  * resolved. The trigger result is not on `Finding` and is not published anywhere; it is carried
@@ -145,18 +148,28 @@ type Contribution = { readonly finding: Finding; readonly triggerResult: Tristat
 /**
  * Whether the ceiling bites on this group. What §8.4 forbids is deduplication PROMOTING an
  * unresolved candidate, so the cap only has something to do where the group already holds a
- * RESOLVED route at least as strong as the ceiling. Applying it unconditionally instead DEMOTED
- * groups §8.4 says nothing about: two conditional blockers on one key, or a conditional blocker
- * beside an advisory, rendered `may_be_required` where a lone conditional blocker renders as the
- * blocking answer it publishes, and `plan-line.tsx` dropped the blocker styling with it
- * (#244 review).
+ * RESOLVED route the unresolved one would be promoted PAST, which means a resolved `required` or
+ * `prohibited_or_ineligible`. Applying it unconditionally instead DEMOTED groups §8.4 says nothing
+ * about: two conditional blockers on one key, or a conditional blocker beside an advisory, rendered
+ * `may_be_required` where a lone conditional blocker renders as the blocking answer it publishes,
+ * and `plan-line.tsx` dropped the blocker styling with it (#244 review).
+ *
+ * Setting that bar at the ceiling itself rather than above it kept one case of the same defect: a
+ * resolved `may_be_required` route beside a conditional blocker capped the blocker to
+ * `may_be_required` too, so an unrelated rule on the same key publishing MAY_BE_REQUIRED rather
+ * than ADVISORY was the whole difference between a line styled as a blocker and one that reads
+ * "may be required". Capping there promotes the blocker past nothing: `may_be_required` is what the
+ * cap produces, so the merged line says exactly what the resolved route already said, while the
+ * blocking route's own published `prohibited_or_ineligible` is lost. Preserving it is not a
+ * promotion by deduplication, because `resolveDisposition()` only demotes a `required` rule, so the
+ * blocking route published that value on its own finding (#244 review).
  */
 function unresolvedRouteCeilingApplies(group: readonly Contribution[]): boolean {
   return group.some(
     ({ finding, triggerResult }) =>
       triggerResult !== "unknown" &&
       DISPOSITION_STRENGTH.indexOf(finding.disposition) >=
-        DISPOSITION_STRENGTH.indexOf(UNRESOLVED_ROUTE_CEILING),
+        DISPOSITION_STRENGTH.indexOf(UNRESOLVED_ROUTE_CAP_TRIGGER),
   );
 }
 
@@ -228,7 +241,9 @@ function windowAvailability(finding: Finding): number {
 /**
  * The contributing rule whose published filing window binds the group, and so the rule the merged
  * line reads as: the most available window (above), the earlier of two equally available ones, and
- * the lower rule id when neither of those separates them.
+ * the lower rule id when neither of those separates them. Ranked over every route in the group,
+ * whatever disposition each contributes, so no filing window can be dropped for sitting in a
+ * weaker disposition tier (`mergeGroup`).
  *
  * Earlier rather than later because a merged line shows one date, and showing the later of two
  * published windows understates urgency — an organizer would still be inside the rendered window
@@ -280,33 +295,53 @@ function mergeUserSummary(
  *    the requirement applies. An unresolved route is capped at `may_be_required` per §8.4, but only
  *    where the group holds a resolved route at or above that ceiling, since promotion past such a
  *    route is what §8.4 forbids (`unresolvedRouteCeilingApplies`).
- * 2. Every scalar the organizer would act on, meaning `name`, `agency`, `deadline`, `deadlineDisplay`,
- *    `latestApplyDate`, `deadlineStatus`, `slackDays`, `feeDisplay`, `portalName`, `portalUrl`,
- *    `portalInstructions` and `verificationStatus`, comes from ONE route, the
- *    binding rule, so the line describes a filing an organizer can actually make. The binding rule
- *    is the route that supplies the merged disposition and binds tightest (`compareBinding`).
- *    Taking the disposition from one route and the filing detail from another is what produced
- *    hybrids: a blocked requirement carrying a permit's apply-by date, fee and portal (#244
- *    review). None of these fields falls back to another route, because a value acted on has to
- *    belong to the route the line describes.
+ * 2. NO SINGLE ROUTE DECIDES EVERY FIELD, and pretending one does is what this round fixed.
+ *    `disposition` is the group's STRONGEST and the filing window is the group's TIGHTEST, and
+ *    those two select different routes whenever the blocking or strongest route is not also the
+ *    one that has to be filed soonest. Ranking only the routes that supplied the merged disposition
+ *    ran the disposition filter BEFORE the window ranking, so `windowAvailability` never saw a
+ *    route in a weaker disposition tier: a group holding a CLOSED window under a weaker disposition
+ *    beside a stronger route publishing no window dropped `published_deadline_missed` and the
+ *    closed route's apply-by date, and adding a `dedupe_key` to two rules moved the plan verdict
+ *    (#244 review). Ranking the WHOLE group for every field instead put the losing route's permit
+ *    name, fee and portal on a barred line, which tells an organizer to file for something they
+ *    are barred from. Both orderings are hybrids; only the split below says which half is which.
+ *
+ *    So each decided field names its route, and there are exactly two:
+ *
+ *    IDENTITY, from `identityBinding`, the tightest window among the routes that CONTRIBUTED the
+ *    merged disposition. These say WHAT the requirement is and WHO an organizer deals with, so they
+ *    have to belong to the route the headline disposition describes: `kind` and `name` (what the
+ *    line is), `agency` (who), `feeDisplay` (what is paid, which must not be quoted off a route
+ *    that is not the one being described), `portalName`, `portalUrl` and `portalInstructions`
+ *    (where it is filed), `verificationStatus` (how well sourced that route is), `noteText` (the
+ *    scope or eligibility caveat, which is what carries a bar), `conflictText` (both readings of
+ *    that route's official conflict) and the `userSummary` heading (the title of the line).
+ *
+ *    TIMELINE, from `windowBinding`, the tightest window over EVERY route in the group whatever
+ *    disposition it contributed. These say WHEN, and a published window may never be dropped for
+ *    sitting under a weaker disposition: `deadline`, `deadlineDisplay`, `latestApplyDate`,
+ *    `deadlineStatus`, `slackDays`, `applyAfterDate` (the dependency gate, which is dated off the
+ *    same route and is filled by the sequencing pass below) and `timelineUnresolvedReason` (why a
+ *    published window could not be dated, which `verdict.ts` reads to keep a plan conditional).
+ *
+ *    The two coincide in every group `nyc.v2.11` publishes, so this splits nothing today; it bounds
+ *    what a future dedupe group can render.
  * 3. `ruleIds`, `notes`, `sources`, `triggeredBy`, `deadlineUnknownFields` and the summary points
  *    concatenate over every route in contributing order, which is the approved contract that a
- *    merged finding retains every contributing rule and source. `lastVerifiedDate` is the earliest
- *    across the group when every route publishes one; it is fact provenance, not a rendered filing
- *    detail.
- * 4. The four single-valued published text fields (`noteText`, `conflictText`,
- *    `timelineUnresolvedReason` and the summary heading) are the binding route's, and where the
- *    binding route publishes none they fall back through the remaining routes in the same binding
- *    order. They are single-valued, so they cannot concatenate like `notes`, and they carry text
- *    that must not be dropped: a scope or eligibility caveat, both readings of an official conflict,
- *    the reason a published window could not be dated, which `verdict.ts` reads to keep a plan
- *    conditional, and the title the merged line renders. The fallback is ordered by the same total
- *    order, so it is not the file order the defect was, and it only ever fills a field the binding
- *    route leaves empty.
+ *    merged finding retains every contributing rule and source. `lastVerifiedDate` is in neither
+ *    family: it is the earliest across the group when every route publishes one, because it is fact
+ *    provenance for the whole line rather than a value read off one route.
+ * 4. The four single-valued published text fields (`noteText`, `conflictText`, the summary heading
+ *    and `timelineUnresolvedReason`) cannot concatenate like `notes` and carry text that must not
+ *    be dropped, so where their own family's binding route publishes none they fall back through
+ *    the remaining routes in that family's order: the first three through identity order, the
+ *    fourth through timeline order. Both orders are total, so neither is the file order the defect
+ *    was, and the fallback only ever fills a field the binding route leaves empty.
  *
- * THE LOSING ROUTES' `feeDisplay` AND PORTAL FIELDS ARE NOT RENDERED ON THE MERGED LINE. That is a
- * consequence of (2) and is stated rather than left implicit: two fees or two portals on one line
- * would read as two payments or two filings, which no artifact supports. Nothing is fabricated and
+ * THE LOSING ROUTES' `feeDisplay` AND PORTAL FIELDS ARE NOT RENDERED ON THE MERGED LINE. Two fees or
+ * two portals on one line would read as two payments or two filings, which no artifact supports.
+ * Nothing is fabricated and
  * the alternate route is not hidden: it keeps its rule id, citation, notes, trigger reasons and
  * its own summary points (including any fee or action point it publishes), so an organizer sees
  * that a second published route exists and what it says.
@@ -335,16 +370,28 @@ function mergeGroup(group: readonly Contribution[]): Finding {
   const contributed = (contribution: Contribution): Disposition =>
     contributedDisposition(contribution, ceilingApplies);
   const disposition = strongestDisposition(group.map(contributed));
-  const binding = group
+  const findings = group.map((contribution) => contribution.finding);
+
+  // Identity reads off the routes that contributed the headline disposition; the timeline reads off
+  // the whole group, so a published window is never dropped for sitting in a weaker tier (above).
+  const byIdentity = group
     .filter((contribution) => contributed(contribution) === disposition)
     .map((contribution) => contribution.finding)
-    .sort(compareBinding)[0] as Finding;
-  const findings = group.map((contribution) => contribution.finding);
-  // The binding route first, then the rest in the same order, for the fields it leaves empty.
-  const byBinding = [binding, ...findings.filter((f) => f !== binding).sort(compareBinding)];
-  const publishedText = (read: (finding: Finding) => string | null): string | null =>
-    byBinding.map(read).find((text) => text !== null) ?? null;
-  const userSummary = mergeUserSummary(findings, byBinding);
+    .sort(compareBinding);
+  const byTimeline = [...findings].sort(compareBinding);
+  const identityBinding = byIdentity[0] as Finding;
+  const windowBinding = byTimeline[0] as Finding;
+  // Each family's binding route first, then the rest, for the fields it leaves empty.
+  const identityOrder = [
+    identityBinding,
+    ...findings.filter((finding) => finding !== identityBinding).sort(compareBinding),
+  ];
+  const publishedText =
+    (order: readonly Finding[]) =>
+    (read: (finding: Finding) => string | null): string | null =>
+      order.map(read).find((text) => text !== null) ?? null;
+  const identityText = publishedText(identityOrder);
+  const userSummary = mergeUserSummary(findings, identityOrder);
   const verificationDates = findings.map((finding) => finding.lastVerifiedDate);
   const published = verificationDates.filter((date): date is string => typeof date === "string");
   const lastVerifiedDate: string | null =
@@ -353,17 +400,27 @@ function mergeGroup(group: readonly Contribution[]): Finding {
       : null;
 
   return {
-    ...binding,
+    // Identity: kind, name, agency, feeDisplay, the three portal fields and verificationStatus.
+    ...identityBinding,
     disposition,
+    // Timeline: every field that says when, off the group's tightest published window.
+    deadline: windowBinding.deadline,
+    deadlineDisplay: windowBinding.deadlineDisplay,
+    latestApplyDate: windowBinding.latestApplyDate,
+    applyAfterDate: windowBinding.applyAfterDate,
+    deadlineStatus: windowBinding.deadlineStatus,
+    slackDays: windowBinding.slackDays,
+    timelineUnresolvedReason: publishedText(byTimeline)(
+      (finding) => finding.timelineUnresolvedReason,
+    ),
     ruleIds: findings.flatMap((finding) => finding.ruleIds),
     notes: findings.flatMap((finding) => finding.notes),
     sources: findings.flatMap((finding) => finding.sources),
     ...(userSummary === null ? {} : { userSummary }),
     triggeredBy: findings.flatMap((finding) => finding.triggeredBy),
     deadlineUnknownFields: findings.flatMap((finding) => finding.deadlineUnknownFields),
-    noteText: publishedText((finding) => finding.noteText),
-    conflictText: publishedText((finding) => finding.conflictText),
-    timelineUnresolvedReason: publishedText((finding) => finding.timelineUnresolvedReason),
+    noteText: identityText((finding) => finding.noteText),
+    conflictText: identityText((finding) => finding.conflictText),
     ...(verificationDates.some((date) => date !== undefined) ? { lastVerifiedDate } : {}),
   };
 }
@@ -400,7 +457,14 @@ function applyDependencySequencing(
   findings: readonly Finding[],
   context: DeadlineContext,
 ): Finding[] {
-  const byRuleId = new Map(findings.map((finding) => [finding.ruleIds[0] ?? "", finding]));
+  // Keyed by every contributing rule id, not by `ruleIds[0]`. After a merge `ruleIds` concatenates
+  // in contributing order, so the first entry is whichever member sits earlier in the published
+  // file; keying on it silently skipped sequencing for a bound rule that merged and was not listed
+  // first, which decided `applyAfterDate` and `slackDays` on file position (#244 review).
+  const byRuleId = new Map<string, Finding>();
+  for (const finding of findings) {
+    for (const ruleId of finding.ruleIds) byRuleId.set(ruleId, finding);
+  }
   const sequenced = new Map<string, Finding>();
 
   for (const binding of DEPENDENCY_SEQUENCING_BINDINGS) {
@@ -475,7 +539,10 @@ function applyDependencySequencing(
     });
   }
 
-  return findings.map((finding) => sequenced.get(finding.ruleIds[0] ?? "") ?? finding);
+  return findings.map((finding) => {
+    const gatedRuleId = finding.ruleIds.find((ruleId) => sequenced.has(ruleId));
+    return gatedRuleId === undefined ? finding : (sequenced.get(gatedRuleId) as Finding);
+  });
 }
 
 export function resolveFindings(
