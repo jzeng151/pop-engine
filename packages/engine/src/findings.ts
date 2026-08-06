@@ -173,13 +173,15 @@ function strongerDisposition(strongest: Disposition, contribution: Contribution)
  * published routes to one requirement, so the route that binds the merged line is the tightest one
  * the organizer can still use:
  *
- * 0. a published window the engine could not date. It constrains filing and its width is unknown,
- *    so it cannot be ranked behind a window that happens to be datable, which would render the
- *    group `on_track` while one of its routes has an uncomputed window. It is also what the
- *    deployed configuration produces: with no published holiday list, DOB-TENT-001's 15-business-day
- *    window is real and `not_calculable`, and ranking it behind a rule that publishes no window at
- *    all lost the window, its status, its fee and its summary in production (#244 review).
- * 1. a published window that is dated and still open.
+ * 0. a published window that is dated and still open. It is the only case where the merged line can
+ *    name the day the requirement has to be filed by, so it binds ahead of a route whose window the
+ *    engine could not date. Ranking the undatable route first instead discarded a computed apply-by
+ *    date, and with it the binding route's permit name, fee and portal, for a route that says
+ *    nothing about when to file (#244 review).
+ * 1. a published window the engine could not date. It constrains filing and its width is unknown,
+ *    so it still binds ahead of a route that publishes no window at all: ranking it last lost the
+ *    window, its status, its fee and its summary under the deployed configuration, which publishes
+ *    no holiday list, so DOB-TENT-001's 15-business-day window is real and `not_calculable`.
  * 2. a published window that has closed. A closed route is no longer a route, so it never binds
  *    while another is open; a group whose routes have all closed still renders as missed.
  * 3. no published window at all. Such a route says nothing about when the requirement must be
@@ -188,7 +190,7 @@ function strongerDisposition(strongest: Disposition, contribution: Contribution)
 function windowAvailability(finding: Finding): number {
   if (finding.deadline === null) return 3;
   if (finding.deadlineStatus === "published_deadline_missed") return 2;
-  return finding.latestApplyDate === null ? 0 : 1;
+  return finding.latestApplyDate === null ? 1 : 0;
 }
 
 /**

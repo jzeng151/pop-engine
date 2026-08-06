@@ -300,6 +300,47 @@ describe("dedupe field merge (#239)", () => {
     expect(mergedGroup(group, options)?.ruleIds).toContain("RULE-B");
   });
 
+  it("keeps everything but the headline disposition when the blocker's trigger is unknown", () => {
+    // Where ARCHITECTURE-FUTURE §8.4's two guarantees collide, the one about not promoting an
+    // unknown branch wins: promoting the blocker would tell an organizer their event is ineligible
+    // on the strength of a question they never answered. This pins what that costs and what it
+    // does not, so the exception is a decision rather than an accident.
+    const rules = [
+      disposedRule("RULE-A", "REQUIRED", calendarWindow(45), { permit_name: "permit route" }),
+      {
+        ...disposedRule("RULE-B", "PROHIBITED_OR_INELIGIBLE", undefined, {
+          permit_name: "barred route",
+          note_text: "not eligible above ten feet",
+        }),
+        trigger: { all: [{ field: "structure_height_ft", op: "gte", value: 10 }] },
+      },
+    ];
+    const plan = evaluate(
+      {
+        event_date: "2026-12-04",
+        headcount: 50,
+        structure_height_ft: null,
+      } as unknown as EventIntake,
+      syntheticRuleset(rules, [{ field: "structure_height_ft", type: "integer" }]),
+      TODAY,
+      { id: "test-calendar@2026", holidays: [] },
+    );
+    const merged = plan.findings[0];
+    // What does not survive: the merged line reads as the permit route it can actually name.
+    expect(merged?.disposition).toBe("required");
+    expect(merged?.name).toBe("permit route");
+    // What survives: the blocking route, its citation, its published note text, and the
+    // unanswered field as a material unknown that keeps the whole plan conditional.
+    expect(merged?.ruleIds).toContain("RULE-B");
+    expect(merged?.sources.map((source) => source.ruleId)).toContain("RULE-B");
+    expect(merged?.triggeredBy.map((reason) => reason.field)).toContain("structure_height_ft");
+    expect(merged?.noteText).toBe("not eligible above ten feet");
+    expect(plan.verdictDetail.missingFacts.map((fact) => fact.field)).toContain(
+      "structure_height_ft",
+    );
+    expect(plan.verdict).toBe("CONDITIONAL");
+  });
+
   it("reads every displayed scalar off the contributor that supplied the disposition", () => {
     // No hybrid line: a blocked requirement must not carry a permit's apply-by date, fee or portal.
     const blocked = mergedGroup([
@@ -386,6 +427,32 @@ describe("dedupe field merge (#239)", () => {
         name: "dated route",
         deadlineStatus: "not_calculable",
         latestApplyDate: null,
+      });
+    }
+  });
+
+  it("keeps a dated window over a route whose window the engine could not date", () => {
+    // The other half of the same ordering, and the one the deployed calendar reaches: with no
+    // published holiday list the 15-business-day route is real but `not_calculable`, and binding
+    // it would throw away a computed apply-by date, a permit name, a fee and a portal for a route
+    // that says nothing about when to file (#244 review).
+    const group = [
+      disposedRule("RULE-A", "REQUIRED", businessWindow(15), {
+        permit_name: "undatable route",
+        fee: { display: "$500" },
+      }),
+      disposedRule("RULE-B", "REQUIRED", calendarWindow(45), {
+        permit_name: "datable route",
+        fee: { display: "$100" },
+      }),
+    ];
+    const options = { holidays: null };
+    for (const listing of [group, [...group].reverse()]) {
+      expect(mergedGroup(listing, options)).toMatchObject({
+        name: "datable route",
+        latestApplyDate: "2026-10-20",
+        deadlineStatus: "on_track",
+        feeDisplay: "$100",
       });
     }
   });
