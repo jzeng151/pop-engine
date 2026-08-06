@@ -33,8 +33,8 @@ export class MissingHolidayCalendarError extends Error {
 /**
  * Published holiday lists, keyed by the calendar id a ruleset pins. Empty on purpose: an entry
  * appears here only when the product owner publishes the dates for that calendar, and publishing
- * one is regulatory publication: `docs/DOCUMENTATION-GOVERNANCE.md` §6's closing paragraph still
- * requires a second signatory when the product owner authored the list. A missing
+ * one is regulatory publication: `docs/DOCUMENTATION-GOVERNANCE.md` §6 routes it to the product
+ * owner, whose approval is the whole requirement even for a list they authored. A missing
  * entry yields `holidays: null`, which the engine reads as "no list published" — distinct from a
  * published list that happens to hold no dates.
  *

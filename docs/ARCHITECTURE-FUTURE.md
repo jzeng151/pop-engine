@@ -52,32 +52,16 @@ is label the row: it decides which of the two readings that row carries, and it 
 order. F-601's and F-109's approval blockers are unchanged, and the sequence they require is
 untouched by it.
 
-AD-15's "coordinated review before feature branches consume them" asks for a second party to look at
-a shared contract change. It is not a capacity the 2026-08-04 approvals collapse could reassign.
-AD-15 names four kinds of contract and they do not all land in the same place, so they are split
-rather than answered together.
-
-**Executable fixtures and expected outputs are not exempted.** An approved fixture is
-`DOCUMENTATION-GOVERNANCE.md` §2 level 3 and §1's authoritative artifact for an executable
-regulatory expectation, and `AGENTS.md`'s authority order places it in the regulatory chain below the
-published rule. Changing one changes what the engine is asserted to produce for a permit, deadline
-or verification status, so it is a regulatory publication: §6's closing paragraph's first sentence
-applies to it unconditionally, and a fixture or answer-key expectation the product owner authored
-still requires the second signatory. Nothing in this record or in the 2026-08-04 collapse relaxes
-that, and no capacity collapse can, the first sentence carrying no team-size clause. This is the same
-treatment `docs/VERIFICATION-SOURCES.md`'s answer-key step and
-`packages/engine/src/fixture-ruleset-agreement.test.ts` already carry for a moved expectation.
-
-**The non-regulatory contracts are where the review is unmet.** OpenAPI, JSON Schema and migrations
-that assert no regulatory fact, publish no ruleset and move no verification status never rested on
-§6's closing paragraph's first sentence; they rested on its second, whose "whenever the team size
-permits" a one-person team cannot satisfy. For those, and only those, the coordinated review is
-**UNMET** rather than satisfied. The row stands as written; §6 records the class and what would
-satisfy it, which here is a second contributor with repository access reviewing the contract change
-before a feature branch consumes it. Being unmet is not an exemption: it does not license shipping a
-shared contract change as reviewed, and it is recorded so a reader cannot mistake silence for review.
-The rest of AD-15, that these artifacts are machine-enforced contracts rather than prose, is
-unaffected.
+AD-15's "coordinated review before feature branches consume them" asked for a second party to look
+at a shared contract change. That requirement is RETIRED as of 2026-08-05 (product owner; see
+`DOCUMENTATION-GOVERNANCE.md` §6 and `BASELINE.md`), for all four kinds of contract AD-15 names and
+without the split the earlier record drew between them. Executable fixtures and expected outputs are
+still regulatory publication, `DOCUMENTATION-GOVERNANCE.md` §2 level 3 and §1's authoritative
+artifact for an executable regulatory expectation, and changing one is still the product owner's
+approval under §6. What is gone is the second party: the product owner may approve a shared contract
+change they authored, for OpenAPI, JSON Schema and migrations as well as for fixtures, and a feature
+branch may consume it on that approval alone. The rest of AD-15, that these artifacts are
+machine-enforced contracts rather than prose, is unaffected.
 
 ## 3. System context
 
@@ -512,7 +496,7 @@ Rules:
 1. Edit a draft rules artifact in git.
 2. Validate JSON Schema and referential integrity.
 3. Run affected and full fixture suites.
-4. Obtain product-owner approval for sources, facets and semantics, plus the second signatory `DOCUMENTATION-GOVERNANCE.md` §6's closing paragraph requires whenever the product owner authored what step 5 publishes.
+4. Obtain product-owner approval for sources, facets and semantics, which is the whole requirement under `DOCUMENTATION-GOVERNANCE.md` §6 even where the product owner authored what step 5 publishes.
 5. Publish an immutable artifact with version, checksum, changelog, and approval metadata.
 6. Update `docs/BASELINE.md` and the deployment's `RULES_FILE` to the new exact version-bearing path; never mutate the prior artifact.
 
