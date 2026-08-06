@@ -143,29 +143,52 @@ const UNRESOLVED_ROUTE_CEILING: Disposition = "may_be_required";
 type Contribution = { readonly finding: Finding; readonly triggerResult: Tristate };
 
 /**
- * What a route contributes to the group's disposition, which is its own published value except
- * that an unresolved route cannot carry the group past `may_be_required`. `resolveDisposition()`
- * already applies that to a `required` rule on its own finding; a `prohibited_or_ineligible` one
- * keeps its published value there, because a single conditional blocker still renders as the
- * blocking answer it publishes. What §8.4 forbids is deduplication promoting it: merging would
- * make an unanswered question the whole line's definite blocker, so a plan could call an event
- * ineligible when the missing answer may remove the blocker. The route stays in `ruleIds`,
- * `sources`, `notes` and `triggeredBy`, and its unanswered field stays a material unknown, so the
- * conditional blocker is asked about rather than dropped.
+ * Whether the ceiling bites on this group. What §8.4 forbids is deduplication PROMOTING an
+ * unresolved candidate, so the cap only has something to do where the group already holds a
+ * RESOLVED route at least as strong as the ceiling. Applying it unconditionally instead DEMOTED
+ * groups §8.4 says nothing about: two conditional blockers on one key, or a conditional blocker
+ * beside an advisory, rendered `may_be_required` where a lone conditional blocker renders as the
+ * blocking answer it publishes, and `plan-line.tsx` dropped the blocker styling with it
+ * (#244 review).
  */
-function contributedDisposition({ finding, triggerResult }: Contribution): Disposition {
-  if (triggerResult !== "unknown") return finding.disposition;
+function unresolvedRouteCeilingApplies(group: readonly Contribution[]): boolean {
+  return group.some(
+    ({ finding, triggerResult }) =>
+      triggerResult !== "unknown" &&
+      DISPOSITION_STRENGTH.indexOf(finding.disposition) >=
+        DISPOSITION_STRENGTH.indexOf(UNRESOLVED_ROUTE_CEILING),
+  );
+}
+
+/**
+ * What a route contributes to the group's disposition, which is its own published value except
+ * that an unresolved route cannot carry the group past `may_be_required` where the ceiling applies
+ * (above). `resolveDisposition()` already applies that to a `required` rule on its own finding; a
+ * `prohibited_or_ineligible` one keeps its published value there, because a single conditional
+ * blocker still renders as the blocking answer it publishes, and it keeps it here too unless the
+ * group holds a resolved route at or above the ceiling. Past such a route is exactly what §8.4
+ * forbids deduplication promoting it: merging would make an unanswered question the whole line's
+ * definite blocker, so a plan could call an event ineligible when the missing answer may remove the
+ * blocker. The route stays in `ruleIds`, `sources`, `notes` and `triggeredBy`, and its unanswered
+ * field stays a material unknown, so the conditional blocker is asked about rather than dropped.
+ */
+function contributedDisposition(
+  { finding, triggerResult }: Contribution,
+  ceilingApplies: boolean,
+): Disposition {
+  if (triggerResult !== "unknown" || !ceilingApplies) return finding.disposition;
   return DISPOSITION_STRENGTH.indexOf(finding.disposition) >
     DISPOSITION_STRENGTH.indexOf(UNRESOLVED_ROUTE_CEILING)
     ? UNRESOLVED_ROUTE_CEILING
     : finding.disposition;
 }
 
-function strongerDisposition(strongest: Disposition, contribution: Contribution): Disposition {
-  const contributed = contributedDisposition(contribution);
-  return DISPOSITION_STRENGTH.indexOf(contributed) > DISPOSITION_STRENGTH.indexOf(strongest)
-    ? contributed
-    : strongest;
+function strongestDisposition(dispositions: readonly Disposition[]): Disposition {
+  return dispositions.reduce((strongest, value) =>
+    DISPOSITION_STRENGTH.indexOf(value) > DISPOSITION_STRENGTH.indexOf(strongest)
+      ? value
+      : strongest,
+  );
 }
 
 /**
@@ -174,23 +197,32 @@ function strongerDisposition(strongest: Disposition, contribution: Contribution)
  * the organizer can still use:
  *
  * 0. a published window that is dated and still open. It is the only case where the merged line can
- *    name the day the requirement has to be filed by, so it binds ahead of a route whose window the
- *    engine could not date. Ranking the undatable route first instead discarded a computed apply-by
- *    date, and with it the binding route's permit name, fee and portal, for a route that says
- *    nothing about when to file (#244 review).
- * 1. a published window the engine could not date. It constrains filing and its width is unknown,
+ *    name a day the requirement can still be filed by, so it binds ahead of everything below.
+ *    Ranking an undatable route first instead discarded a computed apply-by date, and with it the
+ *    binding route's permit name, fee and portal, for a route that says nothing about when to file
+ *    (#244 review).
+ * 1. a published window that has closed. It is dated, and what it says is that the filing is
+ *    already late, which is a fact about the requirement the merged line has to carry: it binds
+ *    ahead of a window the engine could not date, because otherwise the merged line dropped
+ *    `published_deadline_missed`, the closed route's apply-by date and its fee, and an INFEASIBLE
+ *    plan read FEASIBLE (#244 review). A closed route never outranks an open one, so a group with
+ *    one closed and one open route is not missed, and a group whose routes have all closed is.
+ * 2. a published window the engine could not date. It constrains filing and its width is unknown,
  *    so it still binds ahead of a route that publishes no window at all: ranking it last lost the
  *    window, its status, its fee and its summary under the deployed configuration, which publishes
- *    no holiday list, so DOB-TENT-001's 15-business-day window is real and `not_calculable`.
- * 2. a published window that has closed. A closed route is no longer a route, so it never binds
- *    while another is open; a group whose routes have all closed still renders as missed.
+ *    no holiday list, so DOB-TENT-001's 15-business-day window is real and `not_calculable`. It
+ *    ranks below a closed window rather than above it because an undatable route is not KNOWN to be
+ *    open: a `research_required` lead time means no agency published one at all, and `deadlines.ts`
+ *    excludes it from verdict and slack arithmetic, so letting it bind would decide the group's
+ *    timeline on the route that says least about timing. Over-warning is the safe direction;
+ *    understating how soon an organizer must file is the failure this cannot risk.
  * 3. no published window at all. Such a route says nothing about when the requirement must be
  *    filed, so it cannot decide the group's timeline.
  */
 function windowAvailability(finding: Finding): number {
   if (finding.deadline === null) return 3;
-  if (finding.deadlineStatus === "published_deadline_missed") return 2;
-  return finding.latestApplyDate === null ? 1 : 0;
+  if (finding.deadlineStatus === "published_deadline_missed") return 1;
+  return finding.latestApplyDate === null ? 2 : 0;
 }
 
 /**
@@ -221,15 +253,21 @@ function compareBinding(a: Finding, b: Finding): number {
 
 /**
  * The group's plain-language block: the binding rule's heading over every contributing rule's
- * points, or absent when no contributing rule publishes one.
+ * points, or absent when no contributing rule publishes one. The heading is single-valued published
+ * text, so where the binding rule publishes no summary it falls back through the remaining routes
+ * in binding order, like the other three. Falling back through contributing order instead left the
+ * rendered h3 of a three-route group decided by which rule sits earlier in the published file,
+ * which is the #239 defect class surviving in one scalar (#244 review).
  */
-function mergeUserSummary(group: readonly Finding[], binding: Finding): RuleUserSummary | null {
-  const summaries = group.flatMap((finding) =>
-    finding.userSummary === undefined || finding.userSummary === null ? [] : [finding.userSummary],
-  );
-  if (summaries.length === 0) return null;
-  const heading = binding.userSummary?.heading ?? (summaries[0] as RuleUserSummary).heading;
-  return { heading, points: summaries.flatMap((summary) => summary.points) };
+function mergeUserSummary(
+  group: readonly Finding[],
+  byBinding: readonly Finding[],
+): RuleUserSummary | null {
+  const heading = byBinding
+    .map((finding) => finding.userSummary?.heading)
+    .find((value) => value !== undefined);
+  if (heading === undefined) return null;
+  return { heading, points: group.flatMap((finding) => finding.userSummary?.points ?? []) };
 }
 
 /**
@@ -239,10 +277,12 @@ function mergeUserSummary(group: readonly Finding[], binding: Finding): RuleUser
  * alternative published routes to one requirement. That reading gives three classes of field.
  *
  * 1. `disposition` is the strongest any route still offers, because any one route applying means
- *    the requirement applies. An unresolved route is capped at `may_be_required` per §8.4.
+ *    the requirement applies. An unresolved route is capped at `may_be_required` per §8.4, but only
+ *    where the group holds a resolved route at or above that ceiling, since promotion past such a
+ *    route is what §8.4 forbids (`unresolvedRouteCeilingApplies`).
  * 2. Every scalar the organizer would act on, meaning `name`, `agency`, `deadline`, `deadlineDisplay`,
  *    `latestApplyDate`, `deadlineStatus`, `slackDays`, `feeDisplay`, `portalName`, `portalUrl`,
- *    `portalInstructions`, the summary heading and `verificationStatus`, comes from ONE route, the
+ *    `portalInstructions` and `verificationStatus`, comes from ONE route, the
  *    binding rule, so the line describes a filing an organizer can actually make. The binding rule
  *    is the route that supplies the merged disposition and binds tightest (`compareBinding`).
  *    Taking the disposition from one route and the filing detail from another is what produced
@@ -254,12 +294,13 @@ function mergeUserSummary(group: readonly Finding[], binding: Finding): RuleUser
  *    merged finding retains every contributing rule and source. `lastVerifiedDate` is the earliest
  *    across the group when every route publishes one; it is fact provenance, not a rendered filing
  *    detail.
- * 4. The three published text fields (`noteText`, `conflictText` and `timelineUnresolvedReason`)
- *    are the binding route's, and where the binding route publishes none they fall back through the
- *    remaining routes in the same binding order. They are single-valued, so they cannot concatenate
- *    like `notes`, and they carry text that must not be dropped: a scope or eligibility caveat,
- *    both readings of an official conflict, and the reason a published window could not be dated,
- *    which `verdict.ts` reads to keep a plan conditional. The fallback is ordered by the same total
+ * 4. The four single-valued published text fields (`noteText`, `conflictText`,
+ *    `timelineUnresolvedReason` and the summary heading) are the binding route's, and where the
+ *    binding route publishes none they fall back through the remaining routes in the same binding
+ *    order. They are single-valued, so they cannot concatenate like `notes`, and they carry text
+ *    that must not be dropped: a scope or eligibility caveat, both readings of an official conflict,
+ *    the reason a published window could not be dated, which `verdict.ts` reads to keep a plan
+ *    conditional, and the title the merged line renders. The fallback is ordered by the same total
  *    order, so it is not the file order the defect was, and it only ever fills a field the binding
  *    route leaves empty.
  *
@@ -290,17 +331,20 @@ function mergeGroup(group: readonly Contribution[]): Finding {
   const first = group[0] as Contribution;
   if (group.length === 1) return first.finding;
 
-  const disposition = group.reduce(strongerDisposition, contributedDisposition(first));
+  const ceilingApplies = unresolvedRouteCeilingApplies(group);
+  const contributed = (contribution: Contribution): Disposition =>
+    contributedDisposition(contribution, ceilingApplies);
+  const disposition = strongestDisposition(group.map(contributed));
   const binding = group
-    .filter((contribution) => contributedDisposition(contribution) === disposition)
+    .filter((contribution) => contributed(contribution) === disposition)
     .map((contribution) => contribution.finding)
     .sort(compareBinding)[0] as Finding;
   const findings = group.map((contribution) => contribution.finding);
-  // The binding route first, then the rest in the same order, for the text fields it leaves empty.
+  // The binding route first, then the rest in the same order, for the fields it leaves empty.
   const byBinding = [binding, ...findings.filter((f) => f !== binding).sort(compareBinding)];
   const publishedText = (read: (finding: Finding) => string | null): string | null =>
     byBinding.map(read).find((text) => text !== null) ?? null;
-  const userSummary = mergeUserSummary(findings, binding);
+  const userSummary = mergeUserSummary(findings, byBinding);
   const verificationDates = findings.map((finding) => finding.lastVerifiedDate);
   const published = verificationDates.filter((date): date is string => typeof date === "string");
   const lastVerifiedDate: string | null =
