@@ -323,7 +323,7 @@ function mergeUserSummary(
  * shared key, an unknown or official-conflict branch's candidate is not promoted by deduplication,
  * and merge order is deterministic rather than incidental array order. The rest is the safe
  * direction for a regulatory product: understating what an organizer must file, or how soon, is the
- * failure this cannot risk. It is approved as product scope (`docs/BASELINE.md`, AD-18). Nothing
+ * failure this cannot risk. It is approved as product scope (`docs/BASELINE.md`, AD-19). Nothing
  * here asserts a new regulatory fact. Every merged value is some contributing rule's own published
  * value, and every contributing rule stays in `ruleIds` and `sources`.
  */
