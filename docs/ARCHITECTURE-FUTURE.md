@@ -56,8 +56,9 @@ untouched by it.
 AD-18 was approved 2026-08-06 by the product owner, amending AD-15's consequence cell in the table
 above. Line 3 states this document's own rule for that case: an amendment that edits an AD row is a
 durable architecture decision under `DOCUMENTATION-GOVERNANCE.md` §6, so it carries an Architecture
-ADR approval, which §6 requires be recorded as an approved ADR. That is what this row is, and the
-same treatment the 2026-07-26 amendment of AD-07's row carries. One person signed it in the one
+ADR approval, which §6 requires be recorded as an approved ADR. That is what this row is. The
+2026-07-26 amendment of AD-07's row carries the same Architecture ADR approval, recorded in line 3's
+Status header rather than as a register row. One person signed it in the one
 capacity §6 now names; no second signatory exists, and none is claimed. It asserts no regulatory
 fact and publishes no ruleset. The retirement AD-18 applies is not its own: that is the product
 owner's 2026-08-05 decision recorded in `DOCUMENTATION-GOVERNANCE.md` §6 and `BASELINE.md`. What
@@ -603,7 +604,7 @@ Coverage percentage does not replace acceptance behavior. A feature is not done 
 
 The current baseline already records the repository toolchain, migration toolkit, demo providers and access gate, and ruleset publication conventions. Reference those decisions rather than duplicating them.
 
-Before a scheduled feature consumes the remaining target architecture, the product owner must approve the relevant choice under `DOCUMENTATION-GOVERNANCE.md` §6, which is the whole requirement including for a choice they authored; agents may not choose independently:
+Before a scheduled feature consumes the remaining target architecture, the product owner must approve the relevant choice under `DOCUMENTATION-GOVERNANCE.md` §6, and no second signatory is required, including for a choice they authored. Every gate below is a durable architecture decision or a dependency, so §6's row for that class also requires the resolution be recorded as an approved ADR: the approval alone does not satisfy it, and F-701's resolution as AD-16 is the pattern. Agents may not choose independently:
 
 F-701's authentication provider/strategy gate is resolved by AD-16. The remaining gates are:
 

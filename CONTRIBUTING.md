@@ -52,7 +52,7 @@ Conventions: booleans read as questions (`is…`, `has…`, `needs…`); functio
 - Small functions that do one thing. If you need a comment to explain _what_ a block does, extract it into a well-named function instead.
 - Comments only for things code can't say: constraints, gotchas, links to the spec or an OPEN-QUESTIONS item (e.g. `// hard floor is a cliff, not a gradient — see F-102 spec #3`).
 - No dead code, no commented-out blocks, no `console.log` left behind.
-- No new dependencies without the product owner's approval under `docs/DOCUMENTATION-GOVERNANCE.md` §6, which routes a dependency to the product owner and is the whole requirement, including for one you added yourself (second-party review retired 2026-08-05). Beginners + AI assistants tend to accumulate packages; every dependency is a liability we all inherit.
+- No new dependencies without the product owner's approval under `docs/DOCUMENTATION-GOVERNANCE.md` §6, which routes a dependency to the product owner and needs no second signatory, including for one you added yourself (second-party review retired 2026-08-05). That row also requires the choice be recorded as an approved ADR, so the approval on its own does not satisfy it. Beginners + AI assistants tend to accumulate packages; every dependency is a liability we all inherit.
 - The engine stays pure: no database, no HTTP, no `Date.now()` inside `packages/engine`. `today` is always a parameter.
 
 ## Testing — 90% Coverage, Enforced
@@ -84,7 +84,7 @@ Thirty-minute rule: if you're blocked for 30 minutes, post in the team channel w
 - [ ] All acceptance criteria in the spec demonstrably met
 - [ ] Tests written from those criteria; `pnpm test --coverage` ≥ 90%, everything passing
 - [ ] Engine scenario suite still green (all six)
-- [ ] No new dependencies without the product owner's approval (`docs/DOCUMENTATION-GOVERNANCE.md` §6)
+- [ ] No new dependencies without the product owner's approval, recorded as an approved ADR (`docs/DOCUMENTATION-GOVERNANCE.md` §6)
 - [ ] No schema changes (or the product owner's approval under `docs/DOCUMENTATION-GOVERNANCE.md` §6 if unavoidable)
 - [ ] PR linked to its issue
 - [ ] Your lane's verification check from `docs/DESIGN.md` passes
