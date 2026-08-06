@@ -34,9 +34,12 @@ export class MissingHolidayCalendarError extends Error {
  * Published holiday lists, keyed by the calendar id a ruleset pins. Empty on purpose: an entry
  * appears here only when the product owner publishes the dates for that calendar, and publishing
  * one is regulatory publication: `docs/DOCUMENTATION-GOVERNANCE.md` §6 routes it to the product
- * owner, whose approval is the whole requirement even for a list they authored. A missing
- * entry yields `holidays: null`, which the engine reads as "no list published" — distinct from a
- * published list that happens to hold no dates.
+ * owner and needs no second signatory even for a list they authored. Publishing a first list for a
+ * calendar id also settles which holiday-calendar source governs it, which is
+ * `docs/ARCHITECTURE-FUTURE.md` §18's gate 2 and a durable architecture decision, so §6 requires
+ * that choice be recorded as an approved ADR as well: the approval on its own does not satisfy it.
+ * A missing entry yields `holidays: null`, which the engine reads as "no list published" — distinct
+ * from a published list that happens to hold no dates.
  *
  * `us-ny-business-days@2026.1` was researched for publication and then deliberately NOT published.
  * If you are here to add it, read this first: the blocker is not that nobody looked up the dates.

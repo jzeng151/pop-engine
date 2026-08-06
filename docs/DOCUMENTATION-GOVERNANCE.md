@@ -88,7 +88,7 @@ Contributors must not:
 
 ## 6. Change classes and approvals
 
-PopEngine is a solo project, so approvals name one capacity. The product owner approves; no row names a separate architecture, security, database, verification, rules-reviewer or lane-owner capacity (product owner, 2026-08-04; recorded in `docs/BASELINE.md`). This says which capacity a future approval requires. Since the second-party review requirement was retired on 2026-08-05 (recorded below and in `docs/BASELINE.md`), the named capacity is also the whole requirement: one person, the product owner, may approve any change this table covers, including a change they authored.
+PopEngine is a solo project, so approvals name one capacity. The product owner approves; no row names a separate architecture, security, database, verification, rules-reviewer or lane-owner capacity (product owner, 2026-08-04; recorded in `docs/BASELINE.md`). This says which capacity a future approval requires. Since the second-party review requirement was retired on 2026-08-05 (recorded below and in `docs/BASELINE.md`), the named capacity is also the whole requirement for every row but the durable architecture decision row, which the paragraphs below this table qualify: one person, the product owner, may approve any change this table covers, including a change they authored.
 
 | Change                                                       | Required approval                          |
 | ------------------------------------------------------------ | ------------------------------------------ |
