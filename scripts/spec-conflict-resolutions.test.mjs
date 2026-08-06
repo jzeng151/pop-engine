@@ -446,9 +446,17 @@ describe("T-8 F-601/F-109 dependency-graph row, resolved 2026-08-05", () => {
 
 /**
  * Added 2026-08-05 with the DOHMH-trigger removal (issue #235). The claim was that F-101
- * `headcount` drives "the DOHMH thresholds". No published DOHMH rule reads `headcount` — the four
+ * `headcount` drives "the DOHMH thresholds". No published DOHMH rule reads `headcount` — the three
  * of them key on `food_present`, `event_open_to_public` and `food_vendor_count` — so the clause
  * invented a regulatory trigger, which AGENTS.md's first non-negotiable forbids outright.
+ *
+ * THREE, and the miscount is worth writing down because it is the same failure in miniature.
+ * `CONF-NO-FOOD-001` is the fourth rule commonly counted here, and it is not a DOHMH rule: its
+ * `kind` is `classification` and it publishes NO `agency` at all. Calling it one attributes an
+ * agency the ruleset does not publish, which is what the first non-negotiable forbids. Of the three
+ * that do carry DOHMH, `DOHMH-VENDOR-PERMIT-001` and `DOHMH-ORGANIZER-NOTIFY-001` publish
+ * `output.agency` "DOHMH"; `DOHMH-EXEMPTION-001` is an `advisory` and publishes no `agency` either,
+ * so the filter below matches on the rule id OR the agency rather than on the agency alone.
  *
  * It needs a guard because the recurrence is measured, not hypothetical: PR #245 was authored
  * after the audit that removed the clause and put it back in TWO new places the same morning, one
@@ -474,21 +482,50 @@ describe("T-8 F-601/F-109 dependency-graph row, resolved 2026-08-05", () => {
  * quotes SDOH's own attendance threshold, which is a real published fact about SDOH.
  */
 describe("no DOHMH rule is attributed to headcount, removed 2026-08-05 (#235)", () => {
-  const SCANNED_ROOTS = ["docs", "specs", "apps", "packages", "rules"];
+  const SCANNED_ROOTS = ["docs", "specs", "apps", "packages", "rules", "scripts"];
   const SKIPPED_DIRS = new Set(["node_modules", "dist", "coverage", ".next"]);
 
+  /**
+   * This file. It is skipped EXPLICITLY, and it is the only skipped file.
+   *
+   * `scripts/` was outside `SCANNED_ROOTS` until 2026-08-05, and so were the repository-root
+   * markdown files, so `AGENTS.md`, the document carrying the non-negotiable this guard enforces,
+   * could take the banned clause with the whole suite green. Adding them puts this file inside its
+   * own scan, where it necessarily fails: it QUOTES the clause in the comment above and it spells
+   * the three detection families out as regexes, so five of its blocks carry the agency, the count
+   * and the attribution together. That is the guard's definition, not a claim the guard makes.
+   *
+   * Rewording the comment to stop quoting the clause was the alternative and is worse: it would
+   * leave the exclusion implicit, so the file would pass by whatever wording it happened to carry
+   * and silently start failing on the next honest edit to the comment. Worse still, the regex
+   * constants cannot be reworded at all without weakening the detection. Naming the exclusion once,
+   * here, is the version a reader can see and audit. Nothing else is exempt.
+   */
+  const SELF = fileURLToPath(import.meta.url);
+
+  /**
+   * Every scanned file: the roots walked recursively, plus the repository root's OWN files, which
+   * are read non-recursively so the walk never descends into `.git` or `node_modules`. The root is
+   * read as a directory rather than as a list of filenames on purpose. An enumerated list leaves
+   * the next root document added to this repository outside the guard, which is the exact hole
+   * being closed.
+   */
   function filesUnder(roots, extensions) {
     const found = [];
+    const matches = (name) => extensions.some((extension) => name.endsWith(extension));
     const walk = (dir) => {
       for (const entry of readdirSync(dir, { withFileTypes: true })) {
         if (SKIPPED_DIRS.has(entry.name)) continue;
         const path = resolve(dir, entry.name);
         if (entry.isDirectory()) walk(path);
-        else if (extensions.some((extension) => entry.name.endsWith(extension))) found.push(path);
+        else if (matches(entry.name)) found.push(path);
       }
     };
     for (const root of roots) walk(resolve(repoRoot, root));
-    return found;
+    for (const entry of readdirSync(repoRoot, { withFileTypes: true })) {
+      if (!entry.isDirectory() && matches(entry.name)) found.push(resolve(repoRoot, entry.name));
+    }
+    return found.filter((path) => path !== SELF);
   }
 
   /** Every `field` a trigger names, at any nesting depth of `all` / `any` / `not`. */
