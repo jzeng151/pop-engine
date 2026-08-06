@@ -7,12 +7,15 @@ import {
 import { Disclosure } from "../disclosure";
 import { PortalBlock } from "../portal-block";
 import { includesAgencyConfirmation, NOT_COVERED_BY_RULESET } from "../verification-copy";
+import { businessDayNotice } from "./business-day-notice";
 import type { ConsumedFinding } from "./plan-api";
 
 // F-206 AC 2 and AC 3: every plan line carries its citation and its verification status, both
-// visible. Nothing here composes regulatory prose — every string an organizer reads is either
-// published in the rules artifact and carried through the plan, or one of the schema's own
-// status/kind tokens.
+// visible. Every string an organizer reads is either published in the rules artifact and carried
+// through the plan, one of the schema's own status/kind tokens, or approved copy that adds no
+// regulatory value of its own. There is one of the last: `businessDayNotice`, whose copy is approved
+// as regulatory content (product owner, 2026-08-08; recorded in `docs/BASELINE.md`) and which states
+// no deadline, no count and no agency practice, only the agency's published name.
 //
 // PROGRESSIVE DISCLOSURE, and nothing is removed. A line renders twenty-three distinct blocks, and
 // Scenario F renders eight lines, which is a page an organizer scrolls past rather than reads. The
@@ -199,6 +202,7 @@ export function PlanLine({ finding }: { finding: ConsumedFinding }) {
       finding.portalInstructions,
       ...finding.notes,
     ]);
+  const businessDayWindow = businessDayNotice(finding);
   const userSummary = finding.userSummary ?? null;
   const hasUserSummary = userSummary !== null;
   const name = userSummary?.heading ?? finding.name ?? ruleIds;
@@ -254,12 +258,22 @@ export function PlanLine({ finding }: { finding: ConsumedFinding }) {
               <SummarySources sources={deadlineSources} />
             </li>
           )}
-          {finding.latestApplyDate === null && finding.deadlineStatus === "not_calculable" && (
-            <li className="line__point line__point--warning">
-              <strong>Exact apply-by date:</strong> not calculable — {CONFIRM_WITH_AGENCY}
-              <SummarySources sources={deadlineSources} />
-            </li>
-          )}
+          {finding.latestApplyDate === null &&
+            finding.deadlineStatus === "not_calculable" &&
+            (businessDayWindow === null ? (
+              <li className="line__point line__point--warning">
+                <strong>Exact apply-by date:</strong> not calculable — {CONFIRM_WITH_AGENCY}
+                <SummarySources sources={deadlineSources} />
+              </li>
+            ) : (
+              /* A published window with no computable date. The line says what the date turns on
+                 rather than only that we could not compute it, and keeps `--warning` because the
+                 state it reports is unchanged: this is still `not_calculable`. */
+              <li className="line__point line__point--warning">
+                <strong>Apply by:</strong> {businessDayWindow}
+                <SummarySources sources={deadlineSources} />
+              </li>
+            ))}
         </ul>
       ) : (
         <>
