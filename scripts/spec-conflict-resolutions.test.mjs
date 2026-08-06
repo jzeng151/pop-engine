@@ -462,22 +462,47 @@ describe("T-8 F-601/F-109 dependency-graph row, resolved 2026-08-05", () => {
  *
  * It needs a guard because the recurrence is measured, not hypothetical: PR #245 was authored
  * after the audit that removed the clause and put it back in TWO new places the same morning, one
- * of which the rebase carried. Governance §5 step 7 asks for exactly this.
+ * of which the rebase carried. Governance §5 step 7 asks for a regression check and for a
+ * statement of what it covers, and this comment is that statement.
  *
- * It is asserted in two independent ways, neither of them a banned sentence:
+ * WHAT THIS GUARD DOES AND DOES NOT DELIVER. It is asserted in two ways, and they are not equally
+ * strong. Read the second one as a partial check, because that is what it is.
  *
- * 1. STRUCTURALLY, against every published ruleset in the tree. The fact the prose got wrong is a
- *    property of the artifact, which intake fields a DOHMH rule's trigger reads, so it is read off
- *    the parsed trigger rather than restated here. If a future ruleset ever does publish a DOHMH
- *    rule keyed on headcount, this assertion fails first and says so.
- * 2. IN PROSE, as a co-occurrence over parsed blocks, with the SAME parsed trigger deciding whether
- *    the co-occurrence is an offence. A block that names the city health agency and names an
+ * 1. STRUCTURALLY, against every published ruleset in the tree, and this half holds absolutely.
+ *    The fact the prose got wrong is a property of the artifact, which intake fields a DOHMH
+ *    rule's trigger reads, so it is read off the parsed trigger rather than restated here. A
+ *    ruleset has no wording to vary: if a future one ever does publish a DOHMH rule keyed on
+ *    headcount, this assertion fails first and says so.
+ * 2. IN PROSE, as a LEXICAL CO-OCCURRENCE SCAN, with the SAME parsed trigger deciding whether a
+ *    flagged pairing is an offence. A block that names the city health agency and names an
  *    attendee count is putting the two together; whether that is a false claim is not a question
  *    about the sentence's verb, it is a question about the ruleset, so the ruleset answers it.
- *    While no published DOHMH rule's trigger reads the attendee-count intake field, pairing them in
- *    one block is unsupported however the sentence is worded, and if a ruleset ever does publish
- *    that trigger the pairing becomes supported and this guard stops flagging it, in the same
- *    commit and without an edit here.
+ *
+ *    But WHAT GETS FLAGGED is a set of regular expressions over English, and no set of them
+ *    recognises every way of saying this. The claim can be made in words none of them match, and
+ *    a scan of this kind cannot promise otherwise. Do not read a green suite as "the contradiction
+ *    cannot return"; read it as "the contradiction has not returned in a phrasing this scan
+ *    matches". Measured phrasings it does NOT catch, as of this round:
+ *
+ *      - "The F-101 intake field drives the DOHMH thresholds." No count word appears, because the
+ *        repository's own correction records adopt exactly that circumlocution (see the cost note
+ *        below). The house style for writing around this guard is documented inside it, and
+ *        closing this hole would flag the correction records that use it.
+ *      - "DOHMH requires a permit above 75." A bare threshold numeral with no count noun. Matching
+ *        bare numerals near an agency mention was measured against this tree and flagged 52
+ *        blocks, nearly all of them true deadline and rule-id facts ("notify DOHMH 30 days
+ *        before"), so it is deliberately not done.
+ *      - Any paraphrase that names neither the agency forms below nor a count phrase below.
+ *
+ *    Semantic or model-based detection would be a different project and is out of scope here.
+ *
+ *    The ruleset half of the pairing, by contrast, has no such gap: while no published DOHMH
+ *    rule's trigger reads the attendee-count intake field, a pairing this scan does flag is
+ *    unsupported however the sentence is worded, and if a ruleset ever does publish that trigger
+ *    the pairing becomes supported and the offender scan stops flagging it, in the same commit and
+ *    without an edit here. That short-circuit is scoped to the OFFENDER scan alone. The pin
+ *    presence check reads the raw files, so a ruleset change can never report the four protected
+ *    approvals as deleted.
  *
  *    An earlier version of this check required a THIRD match, an attribution verb, against a list
  *    of nine: drives, triggers, keys on, gates, threshold, feeds, turns on, depends on, governs.
@@ -500,7 +525,8 @@ describe("T-8 F-601/F-109 dependency-graph row, resolved 2026-08-05", () => {
  *    dated BASELINE paragraph and a register table row) carried the count and the agency in
  *    different sentences of one block, so a sentence-level check would have watched both go past.
  *    Every list item and table row is its own block, so a long table cannot hide the claim inside a
- *    neighbouring row either.
+ *    neighbouring row either, and adjacent PARAGRAPHS are scanned across their boundary as well so
+ *    the agency and the count cannot be separated by one blank line.
  *
  * The state health department is a different agency and is excluded: `docs/VERIFICATION-SOURCES.md`
  * quotes SDOH's own attendance threshold, which is a real published fact about SDOH.
@@ -609,12 +635,54 @@ describe("no DOHMH rule is attributed to headcount, removed 2026-08-05 (#235)", 
     }
   });
 
-  // The city agency. `(?<!State )` keeps New York STATE's Department of Health out: SDOH
-  // publishes a real attendance threshold and VERIFICATION-SOURCES.md quotes it.
-  const CITY_HEALTH_AGENCY =
-    /\bDOHMH\b|(?<!State )\bDepartment of Health\b|(?<!State )\bHealth Department\b/i;
-  const ATTENDEE_COUNT =
-    /head ?count|guest ?count|attendee ?count|attendance|crowd size|party size|number of (guests|attendees|people)/i;
+  /**
+   * The city agency, by acronym, by its spelled-out name, by the brand the health department
+   * publishes under, and by the two generic forms.
+   *
+   * The generic forms exclude New York STATE's department, which publishes a real attendance
+   * threshold that `docs/VERIFICATION-SOURCES.md` quotes. The exclusion covers the POSSESSIVE
+   * as well as the plain form: an earlier `(?<!State )` saw "ate's " in "New York State's
+   * Department of Health" and flagged that true published fact as a fabricated claim.
+   */
+  const CITY_HEALTH_AGENCY_SOURCE =
+    "\\bDOHMH\\b|\\bDepartment of Health and Mental Hygiene\\b|\\bNYC Health\\b" +
+    "|(?<!State |State's |SDOH )\\b(?:Department of Health|Health Department)\\b";
+  const CITY_HEALTH_AGENCY = new RegExp(CITY_HEALTH_AGENCY_SOURCE, "i");
+
+  /** Phrases that name an attendee count outright, including the published intake field. */
+  const ATTENDEE_COUNT_SOURCE =
+    "head ?count|guest ?count|attendee ?count|attendance|crowd size|party size" +
+    "|number of (?:guests|attendees|people)";
+  const ATTENDEE_COUNT = new RegExp(ATTENDEE_COUNT_SOURCE, "i");
+
+  /**
+   * A counted quantity of people: "75 or more guests", "above 75 attendees", "RSVPs exceed 75".
+   *
+   * These nouns are ordinary English and appear all over a repository about events, so unlike the
+   * phrases above they are not a count on their own. The NUMERAL is what makes one a threshold,
+   * and it is required in either order. "ONE person signed in THREE capacities" and "the guest
+   * list" carry no numeral and are not counts; "500 or more people" is one, which is why the
+   * pairing below is bounded by distance rather than by sharing a block.
+   */
+  const COUNTED_PEOPLE_SOURCE =
+    "\\b\\d{1,6} ?(?:or more |or fewer |\\+ ?)?(?:guests|attendees|people|RSVPs|patrons)\\b" +
+    "|\\b(?:guests|attendees|people|RSVPs|patrons)\\b[^.\\n]{0,40}?(?<![\\w-])\\d{1,6}(?![\\w-])";
+
+  /** The agency and `source` within `PROXIMITY` characters of each other, in either order. */
+  const PROXIMITY = 120;
+  const agencyNear = (source) =>
+    new RegExp(
+      `(?:${CITY_HEALTH_AGENCY_SOURCE})[\\s\\S]{0,${PROXIMITY}}?(?:${source})` +
+        `|(?:${source})[\\s\\S]{0,${PROXIMITY}}?(?:${CITY_HEALTH_AGENCY_SOURCE})`,
+      "i",
+    );
+  const AGENCY_NEAR_COUNTED_PEOPLE = agencyNear(COUNTED_PEOPLE_SOURCE);
+  const AGENCY_NEAR_ANY_COUNT = agencyNear(`${ATTENDEE_COUNT_SOURCE}|${COUNTED_PEOPLE_SOURCE}`);
+
+  /** Whether one block pairs the city health agency with an attendee count. */
+  const pairsAgencyWithCount = (text) =>
+    CITY_HEALTH_AGENCY.test(text) &&
+    (ATTENDEE_COUNT.test(text) || AGENCY_NEAR_COUNTED_PEOPLE.test(text));
 
   /** Paragraphs, list items and table rows. A block ends where the next one begins. */
   const blocksOf = (text) => {
@@ -625,6 +693,10 @@ describe("no DOHMH rule is attributed to headcount, removed 2026-08-05 (#235)", 
     }
     return blocks;
   };
+
+  /** Whether a block is a prose paragraph rather than a list item or a table row. */
+  const isParagraph = (block) =>
+    !/^[\s/*#-]*([-*+]\s|\d+\.\s|\|)/.test(block.trim().split("\n")[0] ?? "");
 
   /**
    * The FOUR recorded approvals that carry the struck clause, pinned by the SHA-256 of the block
@@ -665,15 +737,18 @@ describe("no DOHMH rule is attributed to headcount, removed 2026-08-05 (#235)", 
     {
       file: "docs/OPEN-QUESTIONS.md",
       record: "the register row recording the 2026-08-03 SPEC-CONFLICT #209 resolution",
-      // NOT the row's ID cell. The register renumbered this row twice while the decision was open
-      // (it was T-5, then T-6), and the #209 test above already establishes the issue link as the
-      // identifier that does not move, forbidding a register row number in the implementation for
-      // the same reason. Anchoring or digesting the ID cell here would fail this pin on an ordinary
-      // renumber and report it as tampering with a protected approval, which is the one thing the
-      // failure message must never say falsely.
+      // The register renumbered this row twice while the decision was open (it was T-5, then
+      // T-6), and the #209 test above already establishes the issue link as the identifier that
+      // does not move. So the row number is NORMALIZED before the digest and everything else,
+      // including the rest of the ID cell, stays inside it. An earlier pass excised the whole
+      // first cell instead, which bought renumber tolerance by opening an unguarded write window
+      // in the middle of a block this pin advertises as byte-for-byte protected: the struck
+      // clause could be written into that cell and the digest would not move.
       anchor: "SPEC-CONFLICT #209",
-      stable: (block) => block.replace(/^\|[^|]*\|/, "|"),
-      sha256: "6e4a6fa5ce10101267bf4acb07ae11fb02dd001ca46504f1d73ed0039c2dc30e",
+      // The trailing run of spaces goes with the token: a register table pads its ID cell to a
+      // fixed width, so renumbering T-6 to T-12 re-pads the cell as well as changing the digits.
+      stable: (block) => block.replace(/\bT-\d+ */g, "T-# "),
+      sha256: "e64ae59c06459ff3a086cf2b1c8c039970db276f8f9c2168635fac84d03ec987",
     },
     {
       file: "specs/F-302-rsvp-guest-list.md",
@@ -683,7 +758,21 @@ describe("no DOHMH rule is attributed to headcount, removed 2026-08-05 (#235)", 
     },
   ];
 
-  /** Every block in the tree that pairs the city health agency with an attendee count. */
+  /** Every block of one tracked file, flagged or not. */
+  const blocksOfFile = (file) => blocksOf(read(file)).map((block) => ({ relative: file, block }));
+
+  /**
+   * Every block in the tree that pairs the city health agency with an attendee count, within one
+   * block or ACROSS THE BOUNDARY between two adjacent paragraphs.
+   *
+   * Both sites this defect has actually taken were one block, but the reviewer's split injection
+   * put the agency in one paragraph and the count in the next and walked past a block-only scan.
+   * The cross-boundary case is bounded two ways it is not bounded inside a block: the two blocks
+   * have to be PARAGRAPHS, and the agency and the count have to be within `PROXIMITY` characters
+   * of each other. Both bounds are there because the unbounded version pairs things a reader
+   * never would: adjacent entries of a source register, one recording a Parks attendee threshold
+   * and the next recording a DOHMH obligation, are two separate published facts and not a claim.
+   */
   function flaggedBlocks() {
     // The ruleset decides whether the pairing is an offence at all. If a published DOHMH rule ever
     // does key on the attendee count, the prose claim becomes true and there is nothing to flag.
@@ -692,9 +781,21 @@ describe("no DOHMH rule is attributed to headcount, removed 2026-08-05 (#235)", 
     const flagged = [];
     for (const path of filesUnder(SCANNED_ROOTS, [".md", ".ts", ".tsx", ".mjs", ".js"])) {
       const relative = path.replace(`${repoRoot}/`, "");
-      for (const block of blocksOf(readFileSync(path, "utf8"))) {
-        if (CITY_HEALTH_AGENCY.test(block) && ATTENDEE_COUNT.test(block))
+      const blocks = blocksOf(readFileSync(path, "utf8"));
+      for (let index = 0; index < blocks.length; index += 1) {
+        const block = blocks[index];
+        const next = blocks[index + 1];
+        if (pairsAgencyWithCount(block)) {
           flagged.push({ relative, block });
+        } else if (
+          next !== undefined &&
+          isParagraph(block) &&
+          isParagraph(next) &&
+          AGENCY_NEAR_ANY_COUNT.test(`${block}\n${next}`) &&
+          !pairsAgencyWithCount(next)
+        ) {
+          flagged.push({ relative, block: `${block}\n${next}` });
+        }
       }
     }
     return flagged;
@@ -727,12 +828,12 @@ describe("no DOHMH rule is attributed to headcount, removed 2026-08-05 (#235)", 
   }
 
   it("every pinned historical record is present exactly once and byte-for-byte unchanged", () => {
-    const flagged = flaggedBlocks();
     for (const pin of HISTORICAL_RECORDS) {
-      const inFile = flagged.filter((item) => item.relative === pin.file);
-      // Presence first, so a DELETED record fails loudly instead of passing vacuously: with the
-      // block gone there is nothing left to flag, and a scan-only check would go green on it.
-      const byAnchor = inFile.filter((item) => item.block.includes(pin.anchor));
+      // Read off the RAW file, not off the flagged set. Presence is a fact about the record and
+      // has nothing to do with whether the prose scan ran: `flaggedBlocks()` returns nothing at
+      // all once a published ruleset keys a health rule on the attendee count, and reading
+      // presence from it reported four deleted approvals when a ruleset changed and docs did not.
+      const byAnchor = blocksOfFile(pin.file).filter((item) => item.block.includes(pin.anchor));
       expect(byAnchor.length, pinFailure(pin, "is missing from the file")).toBeGreaterThan(0);
       // EXACTLY once. A pin says one specific historical record is present unchanged; it does not
       // license a second copy of it. The offender scan below cannot catch that on its own, because
