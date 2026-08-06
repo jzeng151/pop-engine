@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { readdirSync, readFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -557,43 +558,142 @@ describe("no DOHMH rule is attributed to headcount, removed 2026-08-05 (#235)", 
     }
   });
 
-  it("no prose block attributes a city health requirement to an attendee count", () => {
-    // The city agency. `(?<!State )` keeps New York STATE's Department of Health out: SDOH
-    // publishes a real attendance threshold and VERIFICATION-SOURCES.md quotes it.
-    const CITY_HEALTH_AGENCY =
-      /\bDOHMH\b|(?<!State )\bDepartment of Health\b|(?<!State )\bHealth Department\b/i;
-    const ATTENDEE_COUNT =
-      /head ?count|guest ?count|attendee ?count|attendance|crowd size|party size|number of (guests|attendees|people)/i;
-    const ATTRIBUTION =
-      /\bdrive[sn]?\b|\btrigger(s|ed|ing)?\b|\bkeys? on\b|\bgate[sd]?\b|threshold|\bfeeds?\b|\bturns? on\b|\bdepends? on\b|\bgoverns?\b/i;
+  // The city agency. `(?<!State )` keeps New York STATE's Department of Health out: SDOH
+  // publishes a real attendance threshold and VERIFICATION-SOURCES.md quotes it.
+  const CITY_HEALTH_AGENCY =
+    /\bDOHMH\b|(?<!State )\bDepartment of Health\b|(?<!State )\bHealth Department\b/i;
+  const ATTENDEE_COUNT =
+    /head ?count|guest ?count|attendee ?count|attendance|crowd size|party size|number of (guests|attendees|people)/i;
+  const ATTRIBUTION =
+    /\bdrive[sn]?\b|\btrigger(s|ed|ing)?\b|\bkeys? on\b|\bgate[sd]?\b|threshold|\bfeeds?\b|\bturns? on\b|\bdepends? on\b|\bgoverns?\b/i;
 
-    /** Paragraphs, list items and table rows. A block ends where the next one begins. */
-    const blocksOf = (text) => {
-      const blocks = [""];
-      for (const line of text.split("\n")) {
-        if (line.trim() === "" || /^[\s/*#-]*([-*+]\s|\d+\.\s|\|)/.test(line)) blocks.push(line);
-        else blocks[blocks.length - 1] += `\n${line}`;
-      }
-      return blocks;
-    };
+  /** Paragraphs, list items and table rows. A block ends where the next one begins. */
+  const blocksOf = (text) => {
+    const blocks = [""];
+    for (const line of text.split("\n")) {
+      if (line.trim() === "" || /^[\s/*#-]*([-*+]\s|\d+\.\s|\|)/.test(line)) blocks.push(line);
+      else blocks[blocks.length - 1] += `\n${line}`;
+    }
+    return blocks;
+  };
 
-    const offenders = [];
+  /**
+   * The FOUR recorded approvals that carry the struck clause, pinned by the SHA-256 of the block
+   * they sit in. `docs/BASELINE.md`'s 2026-08-05 correction record is the live statement about all
+   * four; these blocks are the historical text that record corrects.
+   *
+   * They are here because `docs/DOCUMENTATION-GOVERNANCE.md` §6 line 103 says an approval recorded
+   * in named capacities under the rules then in force stays on the record IN THE WORDS IT WAS
+   * GIVEN. An earlier pass struck the clause out of these four records instead, which left git
+   * history as the only evidence that a fabricated regulatory claim had ever been inside an
+   * approved decision. So the words are restored and the correction is a separate dated record.
+   *
+   * A CONTENT PIN RATHER THAN A SKIP, deliberately. "Do not look at this block" would let the same
+   * pass that struck the clause strike it again silently. A digest asserts the opposite: this exact
+   * text is PRESENT and UNCHANGED. That is §6 line 103 enforced mechanically instead of by
+   * convention, and it is why the pin is worth more than the exemption it costs.
+   *
+   * EXACTLY FOUR, and a fifth is a governance action, not a way to silence this guard. Adding an
+   * entry means asserting that some other block is a recorded approval whose wording §6 protects.
+   * If a NEW block trips the scan, the answer is almost always that the claim is live and must be
+   * removed, not that the pin set should grow. The clause also sat in three code comments, in
+   * `apps/api/src/rsvps.ts` and `apps/api/src/rsvps.test.ts`; those were removed in place and are
+   * deliberately NOT pinned, because §6 protects an approval and not a comment.
+   */
+  const HISTORICAL_RECORDS = [
+    {
+      file: "docs/BASELINE.md",
+      record: "Decision 2026-08-03 (T-6 / SPEC-CONFLICT #209, resolved)",
+      anchor: "**Decision 2026-08-03 (T-6 / SPEC-CONFLICT #209, resolved):**",
+      sha256: "4118a1943655984eceaf6683c7d409d10a795dfa7a6b1a7dbcf9a59678c546e4",
+    },
+    {
+      file: "docs/BASELINE.md",
+      record: "Decision 2026-08-05 (product owner, issue #236, F-302 rollout compatibility window)",
+      anchor: "**Decision 2026-08-05 (product owner, issue #236, F-302 rollout compatibility",
+      sha256: "02c17a95da7c4cb2d9f7db69a1a78b8be9a224af533f4d81ce78800d2ea2d638",
+    },
+    {
+      file: "docs/OPEN-QUESTIONS.md",
+      record: "the T-6 register row recording the 2026-08-03 resolution",
+      anchor: "| T-6 ",
+      sha256: "f21dcab179da3ee9c0e1e34a08f9791942666d5ce523f9087f02861a895081db",
+    },
+    {
+      file: "specs/F-302-rsvp-guest-list.md",
+      record: "Acceptance Criterion 2's rationale paragraph",
+      anchor: "Admission was F-101 `headcount` until this amendment.",
+      sha256: "361115ca04bae942a53671e7fe35f3503987f0cb867c2f8aede9071004300776",
+    },
+  ];
+
+  /** Every block in the tree that carries the co-occurrence, with its path and digest. */
+  function flaggedBlocks() {
+    const flagged = [];
     for (const path of filesUnder(SCANNED_ROOTS, [".md", ".ts", ".tsx", ".mjs", ".js"])) {
+      const relative = path.replace(`${repoRoot}/`, "");
       for (const block of blocksOf(readFileSync(path, "utf8"))) {
-        if (
-          CITY_HEALTH_AGENCY.test(block) &&
-          ATTENDEE_COUNT.test(block) &&
-          ATTRIBUTION.test(block)
-        ) {
-          offenders.push(
-            `${path.replace(`${repoRoot}/`, "")}: ${block.replace(/\s+/g, " ").trim().slice(0, 200)}`,
-          );
-        }
+        if (CITY_HEALTH_AGENCY.test(block) && ATTENDEE_COUNT.test(block) && ATTRIBUTION.test(block))
+          flagged.push({
+            relative,
+            block,
+            digest: createHash("sha256").update(block, "utf8").digest("hex"),
+          });
       }
     }
+    return flagged;
+  }
+
+  /** What to do about a pin that no longer matches. Written for a reader who has no context. */
+  function pinFailure(pin, state) {
+    return [
+      `${pin.file}: the pinned historical record "${pin.record}" ${state}.`,
+      "",
+      "This block is PINNED. It is one of four recorded approvals that carry the struck",
+      '"DOHMH thresholds" clause, an unsupported regulatory claim corrected by the 2026-08-05',
+      "correction record in docs/BASELINE.md. Its wording is protected by",
+      "docs/DOCUMENTATION-GOVERNANCE.md §6 line 103: an approval recorded in named capacities",
+      "under the rules then in force stays on the record in the words it was given. The clause",
+      "is corrected BY A NEW DATED RECORD, never by editing these words.",
+      "",
+      "If you changed this record's wording, revert it and write a new dated correction record",
+      "in docs/BASELINE.md instead. If the change is legitimate and does NOT touch the wording",
+      "(a prettier reflow, for example), recompute the digest in the same commit and say in the",
+      "commit message what moved and why. Do not delete the pin, and do not add a new one to",
+      "make a live claim pass: a fifth pin is a governance action, not a way to silence this.",
+    ].join("\n");
+  }
+
+  it("every pinned historical record is present and byte-for-byte unchanged", () => {
+    const flagged = flaggedBlocks();
+    for (const pin of HISTORICAL_RECORDS) {
+      const inFile = flagged.filter((item) => item.relative === pin.file);
+      // Presence first, so a DELETED record fails loudly instead of passing vacuously: with the
+      // block gone there is nothing left to flag, and a scan-only check would go green on it.
+      const byAnchor = inFile.filter((item) => item.block.includes(pin.anchor));
+      expect(byAnchor.length, pinFailure(pin, "is missing from the file")).toBeGreaterThan(0);
+      expect(
+        byAnchor.map((item) => item.digest),
+        pinFailure(pin, "no longer matches its pinned digest, so its wording has changed"),
+      ).toContain(pin.sha256);
+    }
+  });
+
+  it("no prose block attributes a city health requirement to an attendee count", () => {
+    // Pins are an exception to the scan, not a replacement for it: a flagged block is allowed only
+    // when its digest is pinned FOR THAT FILE, so the same historical text pasted anywhere else is
+    // still an offender. Everything unpinned is reported exactly as before.
+    const pinned = new Set(HISTORICAL_RECORDS.map((pin) => `${pin.file} ${pin.sha256}`));
+    const offenders = flaggedBlocks()
+      .filter((item) => !pinned.has(`${item.relative} ${item.digest}`))
+      .map((item) => `${item.relative}: ${item.block.replace(/\s+/g, " ").trim().slice(0, 200)}`);
+
     expect(
       offenders,
-      "no DOHMH rule reads headcount, so nothing may say one does:\n" + offenders.join("\n"),
+      "no DOHMH rule reads headcount, so nothing may say one does. The four historical records" +
+        " that carry the struck clause are pinned above and corrected by the 2026-08-05 record in" +
+        " docs/BASELINE.md; these are not those:\n" +
+        offenders.join("\n"),
     ).toEqual([]);
   });
 });
