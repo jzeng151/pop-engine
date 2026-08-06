@@ -447,9 +447,10 @@ describe("T-8 F-601/F-109 dependency-graph row, resolved 2026-08-05", () => {
 
 /**
  * Added 2026-08-05 with the DOHMH-trigger removal (issue #235). The claim was that F-101
- * `headcount` drives "the DOHMH thresholds". No published DOHMH rule reads `headcount` — the three
- * of them key on `food_present`, `event_open_to_public` and `food_vendor_count` — so the clause
- * invented a regulatory trigger, which AGENTS.md's first non-negotiable forbids outright.
+ * `headcount` drives "the DOHMH thresholds". No published DOHMH rule reads `headcount`: all three
+ * key on `food_present` and `event_open_to_public`, and `DOHMH-ORGANIZER-NOTIFY-001` alone also
+ * reads `food_vendor_count`. So the clause invented a regulatory trigger, which AGENTS.md's first
+ * non-negotiable forbids outright.
  *
  * THREE, and the miscount is worth writing down because it is the same failure in miniature.
  * `CONF-NO-FOOD-001` is the fourth rule commonly counted here, and it is not a DOHMH rule: its
@@ -466,18 +467,40 @@ describe("T-8 F-601/F-109 dependency-graph row, resolved 2026-08-05", () => {
  * It is asserted in two independent ways, neither of them a banned sentence:
  *
  * 1. STRUCTURALLY, against every published ruleset in the tree. The fact the prose got wrong is a
- *    property of the artifact — which intake fields a DOHMH rule's trigger reads — so it is read
- *    off the parsed trigger rather than restated here. If a future ruleset ever does publish a
- *    DOHMH rule keyed on headcount, this assertion fails first and says so, which is the signal to
- *    revisit the prose rule below rather than to widen it silently.
- * 2. IN PROSE, as a co-occurrence over parsed blocks. A reintroduction has to name the agency, name
- *    the count, and attribute one to the other; all three are matched as concept families rather
- *    than as one phrasing, so "the guest count feeds the Health Department thresholds" trips the
- *    same guard the original clause does. The block, not the sentence, is the unit: both of the
- *    sites this defect has actually taken (a dated BASELINE paragraph and a register table row)
- *    carried the count and the agency in different sentences of one block, so a sentence-level
- *    check would have watched both go past. Every list item and table row is its own block, so a
- *    long table cannot hide the claim inside a neighbouring row either.
+ *    property of the artifact, which intake fields a DOHMH rule's trigger reads, so it is read off
+ *    the parsed trigger rather than restated here. If a future ruleset ever does publish a DOHMH
+ *    rule keyed on headcount, this assertion fails first and says so.
+ * 2. IN PROSE, as a co-occurrence over parsed blocks, with the SAME parsed trigger deciding whether
+ *    the co-occurrence is an offence. A block that names the city health agency and names an
+ *    attendee count is putting the two together; whether that is a false claim is not a question
+ *    about the sentence's verb, it is a question about the ruleset, so the ruleset answers it.
+ *    While no published DOHMH rule's trigger reads the attendee-count intake field, pairing them in
+ *    one block is unsupported however the sentence is worded, and if a ruleset ever does publish
+ *    that trigger the pairing becomes supported and this guard stops flagging it, in the same
+ *    commit and without an edit here.
+ *
+ *    An earlier version of this check required a THIRD match, an attribution verb, against a list
+ *    of nine: drives, triggers, keys on, gates, threshold, feeds, turns on, depends on, governs.
+ *    That was the denylist shape the header of this file says was removed from this repository, and
+ *    it leaked exactly as that comment predicts. Measured against the guard as it stood, "the F-101
+ *    headcount field drives the DOHMH thresholds" was caught, and "determines which DOHMH
+ *    requirements apply", "DOHMH requires a temporary food-service permit once headcount reaches
+ *    75", "the guest count decides the Health Department's permit requirement" and "based on
+ *    headcount, DOHMH requires organizer notification" all passed. Deleting the verb test is what
+ *    closed that, not lengthening it.
+ *
+ *    The cost is stated rather than hidden: a block that DENIES the attribution is flagged too,
+ *    because the guard reads co-occurrence and not stance. The repository's correction records are
+ *    written without the pairing for that reason, naming the intake field as "the F-101 intake
+ *    field" where they discuss DOHMH, and a future correction has to do the same or be pinned.
+ *    Against the tree as it stands the co-occurrence flags exactly the four pinned historical
+ *    records and nothing else.
+ *
+ *    The block, not the sentence, is the unit: both of the sites this defect has actually taken (a
+ *    dated BASELINE paragraph and a register table row) carried the count and the agency in
+ *    different sentences of one block, so a sentence-level check would have watched both go past.
+ *    Every list item and table row is its own block, so a long table cannot hide the claim inside a
+ *    neighbouring row either.
  *
  * The state health department is a different agency and is excluded: `docs/VERIFICATION-SOURCES.md`
  * quotes SDOH's own attendance threshold, which is a real published fact about SDOH.
@@ -492,9 +515,9 @@ describe("no DOHMH rule is attributed to headcount, removed 2026-08-05 (#235)", 
    * `scripts/` was outside `SCANNED_ROOTS` until 2026-08-05, and so were the repository-root
    * markdown files, so `AGENTS.md`, the document carrying the non-negotiable this guard enforces,
    * could take the banned clause with the whole suite green. Adding them puts this file inside its
-   * own scan, where it necessarily fails: it QUOTES the clause in the comment above and it spells
-   * the three detection families out as regexes, so five of its blocks carry the agency, the count
-   * and the attribution together. That is the guard's definition, not a claim the guard makes.
+   * own scan, where it necessarily fails: it QUOTES the clause in the comment above, and it quotes
+   * the paraphrases the verb list used to miss, so several of its blocks pair the agency with the
+   * count. That is the guard's definition, not a claim the guard makes.
    *
    * Rewording the comment to stop quoting the clause was the alternative and is worse: it would
    * leave the exclusion implicit, so the file would pass by whatever wording it happened to carry
@@ -539,21 +562,49 @@ describe("no DOHMH rule is attributed to headcount, removed 2026-08-05 (#235)", 
     return into;
   }
 
-  it("no published ruleset keys a DOHMH rule on an attendee count", () => {
+  /** The city health agency's rules, by id OR published agency: two of the three publish neither. */
+  const CITY_HEALTH_RULE = /DOHMH/i;
+
+  /** The published intake field the prose calls an attendee count. */
+  const ATTENDEE_COUNT_FIELD = "headcount";
+
+  /** Every published ruleset in the tree, parsed. A rules artifact is one that carries `rules`. */
+  function publishedRulesets() {
     const rulesets = filesUnder(SCANNED_ROOTS, [".json"])
-      .map((path) => [path, JSON.parse(readFileSync(path, "utf8"))])
+      .map((path) => [path.replace(`${repoRoot}/`, ""), JSON.parse(readFileSync(path, "utf8"))])
       .filter(([, artifact]) => Array.isArray(artifact.rules));
     expect(rulesets.length, "the tree carries at least one published ruleset").toBeGreaterThan(0);
+    return rulesets;
+  }
 
-    for (const [path, artifact] of rulesets) {
+  /**
+   * Whether any published ruleset keys a city health rule on the attendee-count intake field. This
+   * IS the attribution test the prose scan below uses: the prose claim is true exactly when this is
+   * true, so it is answered from the parsed trigger rather than from how a sentence is phrased.
+   */
+  function aHealthRuleReadsTheAttendeeCount() {
+    return publishedRulesets().some(([, artifact]) =>
+      artifact.rules
+        .filter(
+          (rule) =>
+            CITY_HEALTH_RULE.test(rule.id ?? "") ||
+            CITY_HEALTH_RULE.test(rule.output?.agency ?? ""),
+        )
+        .some((rule) => triggerFields(rule.trigger).has(ATTENDEE_COUNT_FIELD)),
+    );
+  }
+
+  it("no published ruleset keys a DOHMH rule on an attendee count", () => {
+    for (const [path, artifact] of publishedRulesets()) {
       const health = artifact.rules.filter(
-        (rule) => /DOHMH/i.test(rule.id ?? "") || /DOHMH/i.test(rule.output?.agency ?? ""),
+        (rule) =>
+          CITY_HEALTH_RULE.test(rule.id ?? "") || CITY_HEALTH_RULE.test(rule.output?.agency ?? ""),
       );
       for (const rule of health) {
         expect(
           [...triggerFields(rule.trigger)],
-          `${path.replace(`${repoRoot}/`, "")}: ${rule.id} reads no attendee count`,
-        ).not.toContain("headcount");
+          `${path}: ${rule.id} reads no attendee count`,
+        ).not.toContain(ATTENDEE_COUNT_FIELD);
       }
     }
   });
@@ -564,8 +615,6 @@ describe("no DOHMH rule is attributed to headcount, removed 2026-08-05 (#235)", 
     /\bDOHMH\b|(?<!State )\bDepartment of Health\b|(?<!State )\bHealth Department\b/i;
   const ATTENDEE_COUNT =
     /head ?count|guest ?count|attendee ?count|attendance|crowd size|party size|number of (guests|attendees|people)/i;
-  const ATTRIBUTION =
-    /\bdrive[sn]?\b|\btrigger(s|ed|ing)?\b|\bkeys? on\b|\bgate[sd]?\b|threshold|\bfeeds?\b|\bturns? on\b|\bdepends? on\b|\bgoverns?\b/i;
 
   /** Paragraphs, list items and table rows. A block ends where the next one begins. */
   const blocksOf = (text) => {
@@ -615,9 +664,16 @@ describe("no DOHMH rule is attributed to headcount, removed 2026-08-05 (#235)", 
     },
     {
       file: "docs/OPEN-QUESTIONS.md",
-      record: "the T-6 register row recording the 2026-08-03 resolution",
-      anchor: "| T-6 ",
-      sha256: "f21dcab179da3ee9c0e1e34a08f9791942666d5ce523f9087f02861a895081db",
+      record: "the register row recording the 2026-08-03 SPEC-CONFLICT #209 resolution",
+      // NOT the row's ID cell. The register renumbered this row twice while the decision was open
+      // (it was T-5, then T-6), and the #209 test above already establishes the issue link as the
+      // identifier that does not move, forbidding a register row number in the implementation for
+      // the same reason. Anchoring or digesting the ID cell here would fail this pin on an ordinary
+      // renumber and report it as tampering with a protected approval, which is the one thing the
+      // failure message must never say falsely.
+      anchor: "SPEC-CONFLICT #209",
+      stable: (block) => block.replace(/^\|[^|]*\|/, "|"),
+      sha256: "6e4a6fa5ce10101267bf4acb07ae11fb02dd001ca46504f1d73ed0039c2dc30e",
     },
     {
       file: "specs/F-302-rsvp-guest-list.md",
@@ -627,22 +683,28 @@ describe("no DOHMH rule is attributed to headcount, removed 2026-08-05 (#235)", 
     },
   ];
 
-  /** Every block in the tree that carries the co-occurrence, with its path and digest. */
+  /** Every block in the tree that pairs the city health agency with an attendee count. */
   function flaggedBlocks() {
+    // The ruleset decides whether the pairing is an offence at all. If a published DOHMH rule ever
+    // does key on the attendee count, the prose claim becomes true and there is nothing to flag.
+    if (aHealthRuleReadsTheAttendeeCount()) return [];
+
     const flagged = [];
     for (const path of filesUnder(SCANNED_ROOTS, [".md", ".ts", ".tsx", ".mjs", ".js"])) {
       const relative = path.replace(`${repoRoot}/`, "");
       for (const block of blocksOf(readFileSync(path, "utf8"))) {
-        if (CITY_HEALTH_AGENCY.test(block) && ATTENDEE_COUNT.test(block) && ATTRIBUTION.test(block))
-          flagged.push({
-            relative,
-            block,
-            digest: createHash("sha256").update(block, "utf8").digest("hex"),
-          });
+        if (CITY_HEALTH_AGENCY.test(block) && ATTENDEE_COUNT.test(block))
+          flagged.push({ relative, block });
       }
     }
     return flagged;
   }
+
+  /** The text a pin protects: the whole block, minus any part the pin declares unstable. */
+  const pinnedDigest = (pin, block) =>
+    createHash("sha256")
+      .update(pin.stable ? pin.stable(block) : block, "utf8")
+      .digest("hex");
 
   /** What to do about a pin that no longer matches. Written for a reader who has no context. */
   function pinFailure(pin, state) {
@@ -664,7 +726,7 @@ describe("no DOHMH rule is attributed to headcount, removed 2026-08-05 (#235)", 
     ].join("\n");
   }
 
-  it("every pinned historical record is present and byte-for-byte unchanged", () => {
+  it("every pinned historical record is present exactly once and byte-for-byte unchanged", () => {
     const flagged = flaggedBlocks();
     for (const pin of HISTORICAL_RECORDS) {
       const inFile = flagged.filter((item) => item.relative === pin.file);
@@ -672,10 +734,14 @@ describe("no DOHMH rule is attributed to headcount, removed 2026-08-05 (#235)", 
       // block gone there is nothing left to flag, and a scan-only check would go green on it.
       const byAnchor = inFile.filter((item) => item.block.includes(pin.anchor));
       expect(byAnchor.length, pinFailure(pin, "is missing from the file")).toBeGreaterThan(0);
+      // EXACTLY once. A pin says one specific historical record is present unchanged; it does not
+      // license a second copy of it. The offender scan below cannot catch that on its own, because
+      // it matches a pin by file and digest and a byte-identical duplicate matches both.
+      expect(byAnchor.length, pinFailure(pin, "appears more than once in the file")).toBe(1);
       expect(
-        byAnchor.map((item) => item.digest),
+        pinnedDigest(pin, byAnchor[0].block),
         pinFailure(pin, "no longer matches its pinned digest, so its wording has changed"),
-      ).toContain(pin.sha256);
+      ).toBe(pin.sha256);
     }
   });
 
@@ -683,9 +749,13 @@ describe("no DOHMH rule is attributed to headcount, removed 2026-08-05 (#235)", 
     // Pins are an exception to the scan, not a replacement for it: a flagged block is allowed only
     // when its digest is pinned FOR THAT FILE, so the same historical text pasted anywhere else is
     // still an offender. Everything unpinned is reported exactly as before.
-    const pinned = new Set(HISTORICAL_RECORDS.map((pin) => `${pin.file} ${pin.sha256}`));
+    // A duplicate pasted into the SAME file is caught by the exactly-once assertion above.
+    const isPinned = (item) =>
+      HISTORICAL_RECORDS.some(
+        (pin) => pin.file === item.relative && pinnedDigest(pin, item.block) === pin.sha256,
+      );
     const offenders = flaggedBlocks()
-      .filter((item) => !pinned.has(`${item.relative} ${item.digest}`))
+      .filter((item) => !isPinned(item))
       .map((item) => `${item.relative}: ${item.block.replace(/\s+/g, " ").trim().slice(0, 200)}`);
 
     expect(
