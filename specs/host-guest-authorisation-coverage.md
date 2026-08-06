@@ -307,8 +307,8 @@ so they are decided here:
   `nyc.v2.11`'s, quoted as published and not an instruction to a future signatory: under
   `docs/DOCUMENTATION-GOVERNANCE.md` §6 as amended 2026-08-04 the capacity that may publish a date is
   the product owner's, which is the same routing the two `verification` rows above now carry. All
-  three are verification-status publication, so §6's closing paragraph still requires a second
-  signatory when the product owner is also the author; naming one capacity does not supply one. A date
+  three are verification-status publication, and the product owner's approval under §6 is the whole
+  requirement, including where the product owner is also the author. A date
   here would print a verification of a fact nobody verified. If the product owner ever publishes one,
   note that `mergeFindings` takes the earliest of two and null if either is missing, so it also
   changes what a merged line would show.
@@ -909,9 +909,9 @@ whole table is re-derived here against `docs/DOCUMENTATION-GOVERNANCE.md` §6 "C
 approvals". §6's two relevant rows are "Regulatory source/status/content" and "Rule trigger, dedupe,
 branch, deadline, or formula semantics", and since 2026-08-04 both require the product owner. A
 change can still be in both classes; what it can no longer do is need two different capacities.
-It still needs two signatories where §6's closing paragraph says so: every row below marked as a
-regulatory class is a regulatory publication, and the product owner cannot approve one they authored
-alone. The class column below is the part that still carries information.
+It no longer needs two signatories either: every row below marked as a regulatory class is a
+regulatory publication, and the product owner's approval under §6 is the whole requirement on each,
+including where they authored it. The class column below is the part that still carries information.
 
 | Row | Class per §6 | Why, and what changed here |
 | --- | --- | --- |

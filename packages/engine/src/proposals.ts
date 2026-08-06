@@ -3,8 +3,8 @@
 // scope and the capacity); §1, §2, §3 and §6 are NOT, and still need the product
 // owner's sign-off (DOCUMENTATION-GOVERNANCE §6, "rule trigger, dedupe, branch,
 // deadline, or formula semantics", which names one capacity since 2026-08-04; that
-// row is regulatory publication, so §6's closing paragraph still requires a second
-// signatory when the product owner is also the author).
+// row is regulatory publication, and that sign-off is the whole requirement even
+// where the product owner is also the author).
 //
 // The banner is per-section rather than per-file on purpose. It used to read NOT YET
 // APPROVED for everything, and replacing it wholesale when one contract was decided
