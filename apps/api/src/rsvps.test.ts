@@ -1,8 +1,10 @@
 import { randomUUID } from "node:crypto";
+import { readFileSync } from "node:fs";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import request from "supertest";
 import { Pool } from "pg";
-import { parseIntakeContract } from "@pop-engine/engine";
+import { evaluate, parseEngineRuleset, parseIntakeContract } from "@pop-engine/engine";
+import type { EventIntake, HolidayCalendar } from "@pop-engine/engine";
 import {
   FIXTURE_TODAY,
   SCENARIO_INTAKE_FIXTURES,
@@ -10,7 +12,7 @@ import {
 } from "@pop-engine/engine/fixtures";
 import { createApp } from "./app";
 import { cancelRsvp, createRsvp, listRsvps, normalizeEmail, normalizeOptionalPhone } from "./rsvps";
-import { loadRuleset } from "./ruleset";
+import { loadRuleset, publishedRulesFile } from "./ruleset";
 
 const databaseUrl = process.env.DATABASE_URL ?? "";
 
@@ -342,5 +344,43 @@ describe.runIf(databaseUrl.length > 0)("F-302 RSVP endpoints (database)", () => 
       .post(`/api/events/${eventId}/rsvps`)
       .send({ name: "", email: "bad" });
     expect(response.status).toBe(400);
+  });
+});
+
+// The regression test for the fact issue #235 corrected. No published DOHMH rule's trigger reads
+// `headcount` (all three key on `food_present` and `event_open_to_public`, and
+// `DOHMH-ORGANIZER-NOTIFY-001` also reads `food_vendor_count`), so the DOHMH findings a plan
+// carries cannot move when the count does. That was asserted only against the artifact until now,
+// by `scripts/spec-conflict-resolutions.test.mjs`; this asserts it against evaluated output, which
+// is what an organizer actually sees.
+//
+// guard: asserts-independence
+//
+// The marker above is the opt-out `scripts/spec-conflict-scan.mjs` honours in `.ts` and `.tsx`
+// files. This block has to name the agency and vary the count, which is exactly the co-occurrence
+// that scan flags; it reads co-occurrence and not stance, and `headcount` is the literal field name
+// in the intake type, so the "F-101 intake field" circumlocution the correction records use is not
+// available here. The marker carries an obligation rather than a licence: the block it marks must
+// assert the independence, which is what the assertions below do.
+describe("DOHMH findings do not move with headcount (#235)", () => {
+  const ruleset = parseEngineRuleset(JSON.parse(readFileSync(publishedRulesFile(), "utf8")));
+  const calendar: HolidayCalendar = { id: ruleset.calendarId, holidays: [] };
+  const scenario = SCENARIO_INTAKE_FIXTURES.find((candidate) => candidate.scenario === "A");
+  if (scenario === undefined) throw new Error("no fixture A");
+  const declared = new Set(ruleset.intakeFields.map((field) => field.field));
+  const dohmhFindings = (headcount: number) => {
+    const answers = { ...fixtureSubmission(scenario), headcount };
+    const intake = Object.fromEntries(
+      Object.entries(answers).filter(([field]) => declared.has(field)),
+    ) as EventIntake;
+    return evaluate(intake, ruleset, FIXTURE_TODAY, calendar).findings.filter((finding) =>
+      finding.ruleIds.some((ruleId) => ruleId.startsWith("DOHMH-")),
+    );
+  };
+  it("returns the same findings at 20, at the 75 assembly threshold, and at 500", () => {
+    const atTwenty = dohmhFindings(20);
+    expect(atTwenty.length, "scenario A carries DOHMH findings to compare").toBeGreaterThan(0);
+    expect(dohmhFindings(75)).toEqual(atTwenty);
+    expect(dohmhFindings(500)).toEqual(atTwenty);
   });
 });

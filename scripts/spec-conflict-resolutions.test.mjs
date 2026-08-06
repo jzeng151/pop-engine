@@ -1,9 +1,16 @@
-import { createHash } from "node:crypto";
 import { readdirSync, readFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import ts from "typescript";
 import { describe, expect, it } from "vitest";
+import {
+  BOUNDED_EXTENSIONS,
+  HISTORICAL_RECORDS,
+  OPT_OUT_MARKER,
+  blocksOf,
+  pinnedDigest,
+  scanFile,
+} from "./spec-conflict-scan.mjs";
 
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const read = (path) => readFileSync(resolve(repoRoot, path), "utf8");
@@ -478,11 +485,30 @@ describe("T-8 F-601/F-109 dependency-graph row, resolved 2026-08-05", () => {
  *    attendee count is putting the two together; whether that is a false claim is not a question
  *    about the sentence's verb, it is a question about the ruleset, so the ruleset answers it.
  *
- *    But WHAT GETS FLAGGED is a set of regular expressions over English, and no set of them
- *    recognises every way of saying this. The claim can be made in words none of them match, and
- *    a scan of this kind cannot promise otherwise. Do not read a green suite as "the contradiction
- *    cannot return"; read it as "the contradiction has not returned in a phrasing this scan
- *    matches". Measured phrasings it does NOT catch, as of this round:
+ *    But WHAT GETS FLAGGED is decided along TWO dimensions, and a reader who only knows about the
+ *    first will over-read a green suite.
+ *
+ *    LEXICALLY, by a set of regular expressions over English, and no set of them recognises every
+ *    way of saying this. The claim can be made in words none of them match.
+ *
+ *    STRUCTURALLY, by where the words sit. The unit is the BLOCK, a paragraph or a list item or a
+ *    table row, plus one boundary: two ADJACENT blocks are also scanned as a pair. So the claim is
+ *    caught when its two halves share a block or sit in neighbouring ones, and a phrasing this
+ *    scan matches lexically still goes past when its halves are separated by a third block. Two
+ *    further structural limits, both stated with their measured reason in
+ *    `scripts/spec-conflict-scan.mjs`: across a boundary, the ordinary-English half of the count
+ *    vocabulary ("20 attendees") pairs only between two PARAGRAPHS, while the outright count
+ *    phrases ("headcount", "attendance") pair between blocks of any kind; and inside a block, the
+ *    distance bound applies in `.ts` and `.tsx` files but not in `.md`.
+ *
+ *    Both dimensions were widened by the fourth PR #247 review round, which found no fourth
+ *    LEXICAL gap inside the declared vocabulary and three STRUCTURAL ones: a claim split across
+ *    two register rows, across two bullets, and across two sentences of one paragraph. All three
+ *    now fire, and `spec-conflict-resolutions.fixtures.test.mjs` holds each as a fixture.
+ *
+ *    So do not read a green suite as "the contradiction cannot return"; read it as "the
+ *    contradiction has not returned in a phrasing this scan matches, laid out where it looks".
+ *    Measured phrasings it does NOT catch, as of this round:
  *
  *      - "The F-101 intake field drives the DOHMH thresholds." No count word appears, because the
  *        repository's own correction records adopt exactly that circumlocution (see the cost note
@@ -498,11 +524,17 @@ describe("T-8 F-601/F-109 dependency-graph row, resolved 2026-08-05", () => {
  *
  *    The ruleset half of the pairing, by contrast, has no such gap: while no published DOHMH
  *    rule's trigger reads the attendee-count intake field, a pairing this scan does flag is
- *    unsupported however the sentence is worded, and if a ruleset ever does publish that trigger
- *    the pairing becomes supported and the offender scan stops flagging it, in the same commit and
- *    without an edit here. That short-circuit is scoped to the OFFENDER scan alone. The pin
- *    presence check reads the raw files, so a ruleset change can never report the four protected
- *    approvals as deleted.
+ *    unsupported however the sentence is worded. If a ruleset ever does publish that trigger the
+ *    pairing becomes supported and the offender scan stops flagging it. That is NOT a change this
+ *    file sits out: the sibling assertion below, "no published ruleset keys a DOHMH rule on an
+ *    attendee count", hard-fails on exactly that commit, so publishing the trigger means amending
+ *    that assertion in the same commit as a deliberate act. An earlier version of this comment
+ *    promised the opposite, that the scan would stop flagging "in the same commit and without an
+ *    edit here", which described a path the sibling assertion makes unreachable. The
+ *    short-circuit's real job is narrower and still worth having: it keeps the offender scan from
+ *    reporting prose that has become true. That short-circuit is scoped to the OFFENDER scan
+ *    alone. The pin presence check reads the raw files, so a ruleset change can never report the
+ *    four protected approvals as deleted.
  *
  *    An earlier version of this check required a THIRD match, an attribution verb, against a list
  *    of nine: drives, triggers, keys on, gates, threshold, feeds, turns on, depends on, governs.
@@ -524,9 +556,19 @@ describe("T-8 F-601/F-109 dependency-graph row, resolved 2026-08-05", () => {
  *    The block, not the sentence, is the unit: both of the sites this defect has actually taken (a
  *    dated BASELINE paragraph and a register table row) carried the count and the agency in
  *    different sentences of one block, so a sentence-level check would have watched both go past.
- *    Every list item and table row is its own block, so a long table cannot hide the claim inside a
- *    neighbouring row either, and adjacent PARAGRAPHS are scanned across their boundary as well so
- *    the agency and the count cannot be separated by one blank line.
+ *    In `.md` that is now true of the whole vocabulary. It was not until the fourth PR #247 round:
+ *    the `guests / attendees / people / RSVPs / patrons` half was distance-bounded everywhere, so
+ *    for that half the check WAS effectively sentence-level and the two-sentence shape passed.
+ *
+ *    Every list item and table row is its own block, and adjacent blocks are scanned across their
+ *    boundary, so the claim cannot be split between two register rows, two bullets, a paragraph
+ *    and the bullet under it, or two paragraphs separated by one blank line. The boundary pass
+ *    required both blocks to be PARAGRAPHS until the fourth PR #247 round, which made "every list
+ *    item and table row is its own block" a description of where the claim could hide rather than
+ *    of why it could not: rows are separate blocks AND rows were excluded from the pairing, so a
+ *    neighbouring row was exactly the place it went past. That filter is gone for the outright
+ *    count phrases and kept for the ordinary-English ones, for the measured reason
+ *    `scripts/spec-conflict-scan.mjs` gives.
  *
  * The state health department is a different agency and is excluded: `docs/VERIFICATION-SOURCES.md`
  * quotes SDOH's own attendance threshold, which is a real published fact about SDOH.
@@ -536,7 +578,8 @@ describe("no DOHMH rule is attributed to headcount, removed 2026-08-05 (#235)", 
   const SKIPPED_DIRS = new Set(["node_modules", "dist", "coverage", ".next"]);
 
   /**
-   * This file. It is skipped EXPLICITLY, and it is the only skipped file.
+   * The guard's own three source files. They are skipped EXPLICITLY, and they are the only skipped
+   * files.
    *
    * `scripts/` was outside `SCANNED_ROOTS` until 2026-08-05, and so were the repository-root
    * markdown files, so `AGENTS.md`, the document carrying the non-negotiable this guard enforces,
@@ -549,9 +592,24 @@ describe("no DOHMH rule is attributed to headcount, removed 2026-08-05 (#235)", 
    * leave the exclusion implicit, so the file would pass by whatever wording it happened to carry
    * and silently start failing on the next honest edit to the comment. Worse still, the regex
    * constants cannot be reworded at all without weakening the detection. Naming the exclusion once,
-   * here, is the version a reader can see and audit. Nothing else is exempt.
+   * here, is the version a reader can see and audit.
+   *
+   * The list grew from one file to three when the mechanism moved to `spec-conflict-scan.mjs` so
+   * that a fixture suite could drive it (`vitest.config.ts` lines 27-29). Those two files carry the
+   * regex constants and the fixture strings, so they pair the agency with a count for the same
+   * reason this one does. THE COST IS REAL AND IS STATED RATHER THAN HIDDEN: a live claim written
+   * into any of the three would not be flagged by this scan. Nothing else in the tree is exempt,
+   * and a fourth entry here should be read the way a fifth pin is: a governance action, not
+   * a way to quiet the guard.
    */
-  const SELF = fileURLToPath(import.meta.url);
+  const scriptsDir = dirname(fileURLToPath(import.meta.url));
+  const GUARD_SOURCES = new Set(
+    [
+      "spec-conflict-scan.mjs",
+      "spec-conflict-resolutions.test.mjs",
+      "spec-conflict-resolutions.fixtures.test.mjs",
+    ].map((name) => resolve(scriptsDir, name)),
+  );
 
   /**
    * Every scanned file: the roots walked recursively, plus the repository root's OWN files, which
@@ -575,7 +633,7 @@ describe("no DOHMH rule is attributed to headcount, removed 2026-08-05 (#235)", 
     for (const entry of readdirSync(repoRoot, { withFileTypes: true })) {
       if (!entry.isDirectory() && matches(entry.name)) found.push(resolve(repoRoot, entry.name));
     }
-    return found.filter((path) => path !== SELF);
+    return found.filter((path) => !GUARD_SOURCES.has(path));
   }
 
   /** Every `field` a trigger names, at any nesting depth of `all` / `any` / `not`. */
@@ -594,10 +652,30 @@ describe("no DOHMH rule is attributed to headcount, removed 2026-08-05 (#235)", 
   /** The published intake field the prose calls an attendee count. */
   const ATTENDEE_COUNT_FIELD = "headcount";
 
-  /** Every published ruleset in the tree, parsed. A rules artifact is one that carries `rules`. */
+  /**
+   * Every PUBLISHED ruleset in the tree, parsed.
+   *
+   * `rules/*.json` and nothing deeper. "Any `.json` under the scanned roots that carries a `rules`
+   * array" was the earlier definition and it was wrong in both directions in this tree, which
+   * holds three such files: the published `rules/nyc-rules.v2.11.json`, the PROPOSED 59-rule
+   * `rules/proposals/nyc-rules.v2-full-draft.json`, and the superseded
+   * `packages/engine/src/__fixtures__/nyc-rules.v2.3.json`. AGENTS.md's authority order puts a
+   * published rule above an approved fixture and `docs/BASELINE.md` says to stop on PROPOSED
+   * inputs, so neither of the other two answers a question about what is published. Editing the
+   * DRAFT used to fail the assertion below with a message saying "no PUBLISHED ruleset", and in
+   * the same run it short-circuited the offender scan to nothing, so live prose carrying the claim
+   * went unreported.
+   *
+   * The same rule the api and the engine already use: `apps/api/src/ruleset.ts` and
+   * `packages/engine/src/__fixtures__/published-ruleset.ts` both read `rules/` non-recursively,
+   * with the comment "`rules/proposals/` is drafts and excluded".
+   */
+  const PUBLISHED_RULESET_PATH = /^rules\/[^/]+\.json$/;
   function publishedRulesets() {
     const rulesets = filesUnder(SCANNED_ROOTS, [".json"])
-      .map((path) => [path.replace(`${repoRoot}/`, ""), JSON.parse(readFileSync(path, "utf8"))])
+      .map((path) => [path.replace(`${repoRoot}/`, ""), path])
+      .filter(([relative]) => PUBLISHED_RULESET_PATH.test(relative))
+      .map(([relative, path]) => [relative, JSON.parse(readFileSync(path, "utf8"))])
       .filter(([, artifact]) => Array.isArray(artifact.rules));
     expect(rulesets.length, "the tree carries at least one published ruleset").toBeGreaterThan(0);
     return rulesets;
@@ -635,143 +713,16 @@ describe("no DOHMH rule is attributed to headcount, removed 2026-08-05 (#235)", 
     }
   });
 
-  /**
-   * The city agency, by acronym, by its spelled-out name, by the brand the health department
-   * publishes under, and by the two generic forms.
-   *
-   * The generic forms exclude New York STATE's department, which publishes a real attendance
-   * threshold that `docs/VERIFICATION-SOURCES.md` quotes. The exclusion covers the POSSESSIVE
-   * as well as the plain form: an earlier `(?<!State )` saw "ate's " in "New York State's
-   * Department of Health" and flagged that true published fact as a fabricated claim.
-   */
-  const CITY_HEALTH_AGENCY_SOURCE =
-    "\\bDOHMH\\b|\\bDepartment of Health and Mental Hygiene\\b|\\bNYC Health\\b" +
-    "|(?<!State |State's |SDOH )\\b(?:Department of Health|Health Department)\\b";
-  const CITY_HEALTH_AGENCY = new RegExp(CITY_HEALTH_AGENCY_SOURCE, "i");
-
-  /** Phrases that name an attendee count outright, including the published intake field. */
-  const ATTENDEE_COUNT_SOURCE =
-    "head ?count|guest ?count|attendee ?count|attendance|crowd size|party size" +
-    "|number of (?:guests|attendees|people)";
-  const ATTENDEE_COUNT = new RegExp(ATTENDEE_COUNT_SOURCE, "i");
-
-  /**
-   * A counted quantity of people: "75 or more guests", "above 75 attendees", "RSVPs exceed 75".
-   *
-   * These nouns are ordinary English and appear all over a repository about events, so unlike the
-   * phrases above they are not a count on their own. The NUMERAL is what makes one a threshold,
-   * and it is required in either order. "ONE person signed in THREE capacities" and "the guest
-   * list" carry no numeral and are not counts; "500 or more people" is one, which is why the
-   * pairing below is bounded by distance rather than by sharing a block.
-   */
-  const COUNTED_PEOPLE_SOURCE =
-    "\\b\\d{1,6} ?(?:or more |or fewer |\\+ ?)?(?:guests|attendees|people|RSVPs|patrons)\\b" +
-    "|\\b(?:guests|attendees|people|RSVPs|patrons)\\b[^.\\n]{0,40}?(?<![\\w-])\\d{1,6}(?![\\w-])";
-
-  /** The agency and `source` within `PROXIMITY` characters of each other, in either order. */
-  const PROXIMITY = 120;
-  const agencyNear = (source) =>
-    new RegExp(
-      `(?:${CITY_HEALTH_AGENCY_SOURCE})[\\s\\S]{0,${PROXIMITY}}?(?:${source})` +
-        `|(?:${source})[\\s\\S]{0,${PROXIMITY}}?(?:${CITY_HEALTH_AGENCY_SOURCE})`,
-      "i",
-    );
-  const AGENCY_NEAR_COUNTED_PEOPLE = agencyNear(COUNTED_PEOPLE_SOURCE);
-  const AGENCY_NEAR_ANY_COUNT = agencyNear(`${ATTENDEE_COUNT_SOURCE}|${COUNTED_PEOPLE_SOURCE}`);
-
-  /** Whether one block pairs the city health agency with an attendee count. */
-  const pairsAgencyWithCount = (text) =>
-    CITY_HEALTH_AGENCY.test(text) &&
-    (ATTENDEE_COUNT.test(text) || AGENCY_NEAR_COUNTED_PEOPLE.test(text));
-
-  /** Paragraphs, list items and table rows. A block ends where the next one begins. */
-  const blocksOf = (text) => {
-    const blocks = [""];
-    for (const line of text.split("\n")) {
-      if (line.trim() === "" || /^[\s/*#-]*([-*+]\s|\d+\.\s|\|)/.test(line)) blocks.push(line);
-      else blocks[blocks.length - 1] += `\n${line}`;
-    }
-    return blocks;
-  };
-
-  /** Whether a block is a prose paragraph rather than a list item or a table row. */
-  const isParagraph = (block) =>
-    !/^[\s/*#-]*([-*+]\s|\d+\.\s|\|)/.test(block.trim().split("\n")[0] ?? "");
-
-  /**
-   * The FOUR recorded approvals that carry the struck clause, pinned by the SHA-256 of the block
-   * they sit in. `docs/BASELINE.md`'s 2026-08-05 correction record is the live statement about all
-   * four; these blocks are the historical text that record corrects.
-   *
-   * They are here because `docs/DOCUMENTATION-GOVERNANCE.md` §6 line 103 says an approval recorded
-   * in named capacities under the rules then in force stays on the record IN THE WORDS IT WAS
-   * GIVEN. An earlier pass struck the clause out of these four records instead, which left git
-   * history as the only evidence that a fabricated regulatory claim had ever been inside an
-   * approved decision. So the words are restored and the correction is a separate dated record.
-   *
-   * A CONTENT PIN RATHER THAN A SKIP, deliberately. "Do not look at this block" would let the same
-   * pass that struck the clause strike it again silently. A digest asserts the opposite: this exact
-   * text is PRESENT and UNCHANGED. That is §6 line 103 enforced mechanically instead of by
-   * convention, and it is why the pin is worth more than the exemption it costs.
-   *
-   * EXACTLY FOUR, and a fifth is a governance action, not a way to silence this guard. Adding an
-   * entry means asserting that some other block is a recorded approval whose wording §6 protects.
-   * If a NEW block trips the scan, the answer is almost always that the claim is live and must be
-   * removed, not that the pin set should grow. The clause also sat in three code comments, in
-   * `apps/api/src/rsvps.ts` and `apps/api/src/rsvps.test.ts`; those were removed in place and are
-   * deliberately NOT pinned, because §6 protects an approval and not a comment.
-   */
-  const HISTORICAL_RECORDS = [
-    {
-      file: "docs/BASELINE.md",
-      record: "Decision 2026-08-03 (T-6 / SPEC-CONFLICT #209, resolved)",
-      anchor: "**Decision 2026-08-03 (T-6 / SPEC-CONFLICT #209, resolved):**",
-      sha256: "4118a1943655984eceaf6683c7d409d10a795dfa7a6b1a7dbcf9a59678c546e4",
-    },
-    {
-      file: "docs/BASELINE.md",
-      record: "Decision 2026-08-05 (product owner, issue #236, F-302 rollout compatibility window)",
-      anchor: "**Decision 2026-08-05 (product owner, issue #236, F-302 rollout compatibility",
-      sha256: "02c17a95da7c4cb2d9f7db69a1a78b8be9a224af533f4d81ce78800d2ea2d638",
-    },
-    {
-      file: "docs/OPEN-QUESTIONS.md",
-      record: "the register row recording the 2026-08-03 SPEC-CONFLICT #209 resolution",
-      // The register renumbered this row twice while the decision was open (it was T-5, then
-      // T-6), and the #209 test above already establishes the issue link as the identifier that
-      // does not move. So the row number is NORMALIZED before the digest and everything else,
-      // including the rest of the ID cell, stays inside it. An earlier pass excised the whole
-      // first cell instead, which bought renumber tolerance by opening an unguarded write window
-      // in the middle of a block this pin advertises as byte-for-byte protected: the struck
-      // clause could be written into that cell and the digest would not move.
-      anchor: "SPEC-CONFLICT #209",
-      // The trailing run of spaces goes with the token: a register table pads its ID cell to a
-      // fixed width, so renumbering T-6 to T-12 re-pads the cell as well as changing the digits.
-      stable: (block) => block.replace(/\bT-\d+ */g, "T-# "),
-      sha256: "e64ae59c06459ff3a086cf2b1c8c039970db276f8f9c2168635fac84d03ec987",
-    },
-    {
-      file: "specs/F-302-rsvp-guest-list.md",
-      record: "Acceptance Criterion 2's rationale paragraph",
-      anchor: "Admission was F-101 `headcount` until this amendment.",
-      sha256: "361115ca04bae942a53671e7fe35f3503987f0cb867c2f8aede9071004300776",
-    },
-  ];
-
   /** Every block of one tracked file, flagged or not. */
   const blocksOfFile = (file) => blocksOf(read(file)).map((block) => ({ relative: file, block }));
 
   /**
    * Every block in the tree that pairs the city health agency with an attendee count, within one
-   * block or ACROSS THE BOUNDARY between two adjacent paragraphs.
+   * block or ACROSS THE BOUNDARY between two adjacent blocks.
    *
-   * Both sites this defect has actually taken were one block, but the reviewer's split injection
-   * put the agency in one paragraph and the count in the next and walked past a block-only scan.
-   * The cross-boundary case is bounded two ways it is not bounded inside a block: the two blocks
-   * have to be PARAGRAPHS, and the agency and the count have to be within `PROXIMITY` characters
-   * of each other. Both bounds are there because the unbounded version pairs things a reader
-   * never would: adjacent entries of a source register, one recording a Parks attendee threshold
-   * and the next recording a DOHMH obligation, are two separate published facts and not a claim.
+   * The pairing itself lives in `scripts/spec-conflict-scan.mjs`, which states what each bound is
+   * for and which file kinds carry it. What this function adds is the tree: which files are
+   * scanned, and the one condition under which scanning them is pointless.
    */
   function flaggedBlocks() {
     // The ruleset decides whether the pairing is an offence at all. If a published DOHMH rule ever
@@ -781,31 +732,16 @@ describe("no DOHMH rule is attributed to headcount, removed 2026-08-05 (#235)", 
     const flagged = [];
     for (const path of filesUnder(SCANNED_ROOTS, [".md", ".ts", ".tsx", ".mjs", ".js"])) {
       const relative = path.replace(`${repoRoot}/`, "");
-      const blocks = blocksOf(readFileSync(path, "utf8"));
-      for (let index = 0; index < blocks.length; index += 1) {
-        const block = blocks[index];
-        const next = blocks[index + 1];
-        if (pairsAgencyWithCount(block)) {
-          flagged.push({ relative, block });
-        } else if (
-          next !== undefined &&
-          isParagraph(block) &&
-          isParagraph(next) &&
-          AGENCY_NEAR_ANY_COUNT.test(`${block}\n${next}`) &&
-          !pairsAgencyWithCount(next)
-        ) {
-          flagged.push({ relative, block: `${block}\n${next}` });
-        }
+      const code = BOUNDED_EXTENSIONS.some((extension) => relative.endsWith(extension));
+      for (const block of scanFile(readFileSync(path, "utf8"), {
+        bounded: code,
+        allowOptOut: code,
+      })) {
+        flagged.push({ relative, block });
       }
     }
     return flagged;
   }
-
-  /** The text a pin protects: the whole block, minus any part the pin declares unstable. */
-  const pinnedDigest = (pin, block) =>
-    createHash("sha256")
-      .update(pin.stable ? pin.stable(block) : block, "utf8")
-      .digest("hex");
 
   /** What to do about a pin that no longer matches. Written for a reader who has no context. */
   function pinFailure(pin, state) {
@@ -865,6 +801,23 @@ describe("no DOHMH rule is attributed to headcount, removed 2026-08-05 (#235)", 
         " that carry the struck clause are pinned above and corrected by the 2026-08-05 record in" +
         " docs/BASELINE.md; these are not those:\n" +
         offenders.join("\n"),
+    ).toEqual([]);
+  });
+
+  // The opt-out is honoured in `.ts` and `.tsx` only, and that is asserted rather than left to the
+  // scan's own reading of a file extension: a marker written into a document would be inert, so the
+  // author would believe they had opted out and the block would be reported as a live claim.
+  // Reported here instead, naming the file, rather than as a confusing offender entry.
+  it("the scan's opt-out marker appears only where it is honoured", () => {
+    const marked = filesUnder(SCANNED_ROOTS, [".md", ".ts", ".tsx", ".mjs", ".js"])
+      .filter((path) => readFileSync(path, "utf8").includes(OPT_OUT_MARKER))
+      .map((path) => path.replace(`${repoRoot}/`, ""))
+      .filter((relative) => !BOUNDED_EXTENSIONS.some((extension) => relative.endsWith(extension)));
+
+    expect(
+      marked,
+      `${OPT_OUT_MARKER} is honoured in ${BOUNDED_EXTENSIONS.join(" and ")} files only. Prose` +
+        " cannot opt out of this scan: write around the pairing, or record the wording as a pin.",
     ).toEqual([]);
   });
 });
