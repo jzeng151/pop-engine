@@ -3,8 +3,8 @@
 // scope and the capacity); §1, §2, §3 and §6 are NOT, and still need the product
 // owner's sign-off (DOCUMENTATION-GOVERNANCE §6, "rule trigger, dedupe, branch,
 // deadline, or formula semantics", which names one capacity since 2026-08-04; that
-// row is regulatory publication, so §6's closing paragraph still requires a second
-// signatory when the product owner is also the author).
+// row is regulatory publication, and that sign-off is the whole requirement even
+// where the product owner is also the author).
 //
 // The banner is per-section rather than per-file on purpose. It used to read NOT YET
 // APPROVED for everything, and replacing it wholesale when one contract was decided
@@ -42,7 +42,7 @@ import type { Disposition, RuleKind } from "./types";
  * CONDITIONAL rather than INFEASIBLE. That uncertainty is now carried by the rule itself:
  * the product owner authorized adding `disposition: MAY_BE_REQUIRED` to that one rule's
  * output (its own commit on this branch; the sign-off that class needs under governance §6 is
- * the product owner's, plus §6's second signatory when the product owner authored the publication). So `notification` stays `required` here — the per-rule mark is not a
+ * the product owner's, and that is the whole requirement even for a publication they authored). So `notification` stays `required` here — the per-rule mark is not a
  * kind-wide weakening.
  */
 export const DEFAULT_DISPOSITION_BY_RULE_KIND: Readonly<Record<RuleKind, Disposition>> = {

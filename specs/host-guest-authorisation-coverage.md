@@ -307,8 +307,8 @@ so they are decided here:
   `nyc.v2.11`'s, quoted as published and not an instruction to a future signatory: under
   `docs/DOCUMENTATION-GOVERNANCE.md` §6 as amended 2026-08-04 the capacity that may publish a date is
   the product owner's, which is the same routing the two `verification` rows above now carry. All
-  three are verification-status publication, so §6's closing paragraph still requires a second
-  signatory when the product owner is also the author; naming one capacity does not supply one. A date
+  three are verification-status publication, and the product owner's approval under §6 is the whole
+  requirement, including where the product owner is also the author. A date
   here would print a verification of a fact nobody verified. If the product owner ever publishes one,
   note that `mergeFindings` takes the earliest of two and null if either is missing, so it also
   changes what a merged line would show.
@@ -381,7 +381,7 @@ rather than on preference:
 | Status | Legend text | Why it is not this rule |
 | --- | --- | --- |
 | `SOURCE_CONFIRMED` | "fetch-confirmed primary-source quote on file" | there is no quote on file for this proposition; this is the laundering round 5 already refused |
-| `VERIFIED` | "verification owner confirmed ... (none at publication; only the verification owner assigns this)" | nothing is confirmed, and the legend reserves the value. The quoted wording is `nyc.v2.11`'s as published; the capacity that assigns it is the product owner's per §6 (2026-08-04), with §6's second signatory when the product owner authored the publication |
+| `VERIFIED` | "verification owner confirmed ... (none at publication; only the verification owner assigns this)" | nothing is confirmed, and the legend reserves the value. The quoted wording is `nyc.v2.11`'s as published; the capacity that assigns it is the product owner's per §6 (2026-08-04), and that approval is the whole requirement even where the product owner authored the publication |
 | `OFFICIAL_CONFLICT` | "live official pages disagree; both readings encoded" | this is silence in the sources, not disagreement between them |
 | `COVERAGE_GAP` | "combination not modeled by this ruleset version; advisory asserts nothing" | the combination IS modelled once these rules exist, and three further consequences below |
 | `RESEARCH_REQUIRED` | "no primary source located in two research passes" | the only value whose meaning is close, and the loader will not let it stand without a source |
@@ -414,7 +414,7 @@ for "sources located, and expressly silent on this proposition".**
 2. **Amend the published legend** so `RESEARCH_REQUIRED` distinguishes "no source located" from
    "sources located and silent on this fact", and keep the source block. No code change; regulatory
    status content, so the product owner, for the rule and for the
-   rendered copy, plus the second signatory §6's closing paragraph requires when the product owner
+   rendered copy, whose approval is the whole requirement under §6 even where the product owner
    authored the amendment. Constraint to check before drafting: `apps/web/app/verification-copy-prose.test.ts`
    denies the source-absence family across PRD, DESIGN, F-201, F-206 and `apps/web`, so the amendment
    has to be worded to pass that guard rather than around it.
@@ -776,9 +776,8 @@ published findings read off the result:
   `docs/DOCUMENTATION-GOVERNANCE.md` §6 "Change classes and approvals", whose "Regulatory
   source/status/content" row and whose "Rule trigger, dedupe, branch, deadline, or formula
   semantics" row both require the product owner. This feature crosses both classes; it no longer
-  crosses two sets of signatories. One capacity is still not one signatory: the movement is a
-  regulatory publication, so §6's closing paragraph requires a second signatory whenever the product
-  owner authored it.
+  crosses two sets of signatories. The movement is a regulatory publication and the product owner's
+  approval under §6 is the whole requirement, including where the product owner authored it.
 - **Verification research is REQUIRED and is not done.** Whether an existing place-of-assembly
   approval removes the temporary filing for an event held at that venue is **not established in this
   repository**, and the published record is venue-shaped rather than relationship-shaped: the
@@ -810,8 +809,8 @@ Files this feature may touch, and who must be in the room:
 
 The Owner column names the capacity §6 requires, not the number of signatures. The rows the audit
 below classes as regulatory (the new ruleset, the v2.8 deletion, the `UNCONSUMED_INTAKE_FIELDS`
-entry, the answer key and the new scenario intake) are regulatory publication, so §6's closing
-paragraph requires a second signatory on each whenever the product owner authored it.
+entry, the answer key and the new scenario intake) are regulatory publication, and the product
+owner's approval under §6 is the whole requirement on each, including where they authored it.
 
 ### The new fixture needs three artifacts, not one, and the id is pinned
 
@@ -910,9 +909,9 @@ whole table is re-derived here against `docs/DOCUMENTATION-GOVERNANCE.md` §6 "C
 approvals". §6's two relevant rows are "Regulatory source/status/content" and "Rule trigger, dedupe,
 branch, deadline, or formula semantics", and since 2026-08-04 both require the product owner. A
 change can still be in both classes; what it can no longer do is need two different capacities.
-It still needs two signatories where §6's closing paragraph says so: every row below marked as a
-regulatory class is a regulatory publication, and the product owner cannot approve one they authored
-alone. The class column below is the part that still carries information.
+It no longer needs two signatories either: every row below marked as a regulatory class is a
+regulatory publication, and the product owner's approval under §6 is the whole requirement on each,
+including where they authored it. The class column below is the part that still carries information.
 
 | Row | Class per §6 | Why, and what changed here |
 | --- | --- | --- |
@@ -1407,9 +1406,9 @@ of work are already promised the next ruleset version, and a fourth wants a publ
    written. This spec's finding is close in kind to a named confirmation. **The tension is
    recorded, not resolved:** whether it is a named confirmation for that rule's purposes, and
    therefore currently forbidden for exactly this field, is the product owner's call. Publishing a
-   named confirmation for it is regulatory publication, so it carries the second signatory
-   `docs/DOCUMENTATION-GOVERNANCE.md` §6's closing paragraph requires whenever the product owner
-   authored it; naming one capacity does not supply one.
+   named confirmation for it is regulatory publication, so it is the product owner's approval under
+   `docs/DOCUMENTATION-GOVERNANCE.md` §6, and that is the whole requirement even where the product
+   owner authored it.
 4. **DEPENDENCY. DOB-ASSEMBLY-001's coverage confirmation is unimplemented**, and its note records that
    it blocks F-102 Acceptance Criterion 6. That criterion is another feature's and this footprint
    excludes it, per the UI section: this feature produces the data it would render and does not render
@@ -1423,8 +1422,8 @@ of work are already promised the next ruleset version, and a fourth wants a publ
    `COVERAGE_GAP`, while the published legend defines the only status whose meaning fits,
    `RESEARCH_REQUIRED`, as no source having been located. So these rules cannot be published truthfully
    without either a loader change (product owner, under §6's rules-schema
-   row) or a legend amendment (product owner, and being regulatory status content it also carries the
-   second signatory §6's closing paragraph requires when the product owner authored it, as option 2
+   row) or a legend amendment (product owner, and being regulatory status content that approval is the
+   whole requirement under §6 even where the product owner authored it, as option 2
    under Outputs states). The four options and the
    refusal of each other legend value are under Outputs. Nothing in the current ruleset publishes
    `RESEARCH_REQUIRED`, so this feature would be its first use and the conflict is unexercised. Same
@@ -1522,10 +1521,9 @@ of work are already promised the next ruleset version, and a fourth wants a publ
     to have approved it. `docs/DOCUMENTATION-GOVERNANCE.md` §6 assigns approvals by CHANGE CLASS and this
     feature's rollout lands in two of them, and since 2026-08-04 both classes are the product owner's,
     so the approver is already determined by the footprint audit above. **What is missing is the assignment, not the criteria.** The
-    approver named here must also not be the only signatory, per §6's "No person approves their own
-    regulatory publication alone", which is a live constraint rather than a formality: `docs/DESIGN.md`
-    already records one person signing in three capacities because one person holds every lane, and this
-    entry exists so that fact is faced at assignment rather than discovered at publication.
+    approver named here may be the sole signatory: the second-party review requirement was retired on
+    2026-08-05 (product owner; see §6 and `docs/BASELINE.md`), so one person holding every lane is no
+    longer an obstacle to approving this spec, and this entry stands for the assignment it names.
 
 ## Review history, resolved and requiring no action
 
