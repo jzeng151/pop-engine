@@ -31,10 +31,24 @@ export const CITY_HEALTH_AGENCY_SOURCE =
   "|(?<!State |State's |SDOH )\\b(?:Department of Health|Health Department)\\b";
 export const CITY_HEALTH_AGENCY = new RegExp(CITY_HEALTH_AGENCY_SOURCE, "i");
 
-/** Phrases that name an attendee count outright, including the published intake field. */
+/**
+ * Phrases that name an attendee count outright, including the published intake field.
+ *
+ * The noun list is the SAME list `COUNTED_PEOPLE` declares, run through both phrasings this
+ * repository uses ("the guest count", "the number of guests"). It was not, until the fifth PR #247
+ * review round: `RSVPs` and `patrons` were declared count nouns in `COUNTED_PEOPLE` and appeared in
+ * neither phrasing here, `head` appeared in one, and `people` and `person` were partial. So "the
+ * RSVP count is a regulatory input driving the DOHMH thresholds", which is the pinned register
+ * row's own sentence with one noun swapped, was missed by this expression and missed by
+ * `COUNTED_PEOPLE` too, which requires a numeral those phrasings do not carry. That was a gap
+ * INSIDE the declared vocabulary rather than one of the two declared misses. The 7-noun by
+ * 2-phrasing grid is written out in `spec-conflict-resolutions.fixtures.test.mjs` and asserted
+ * cell by cell, so a noun cannot be added to one expression and forgotten in the other again.
+ */
 export const ATTENDEE_COUNT_SOURCE =
-  "head ?count|guest ?count|attendee ?count|attendance|crowd size|party size" +
-  "|number of (?:guests|attendees|people)";
+  "(?:head|guest|attendee|people|person|rsvp|patron) ?count" +
+  "|attendance|crowd size|party size" +
+  "|number of (?:guests|attendees|people|persons|heads|RSVPs|patrons)";
 export const ATTENDEE_COUNT = new RegExp(ATTENDEE_COUNT_SOURCE, "i");
 
 /**
@@ -53,8 +67,18 @@ export const COUNTED_PEOPLE = new RegExp(COUNTED_PEOPLE_SOURCE, "i");
 /**
  * How far apart the agency and the count may sit and still be read as one claim.
  *
- * This bound applies where the two are in DIFFERENT blocks, and inside one block only in the file
- * kinds `BOUNDED_EXTENSIONS` names. See `pairsAgencyWithCount` for why those are not the same.
+ * IT APPLIES IN CODE AND NOWHERE ELSE, as of the fifth PR #247 review round: inside a block in the
+ * file kinds `BOUNDED_EXTENSIONS` names, and across a block boundary in those same file kinds.
+ *
+ * It used to bound the cross-boundary pass in every file kind, and MEASURED OVER THE CONCATENATED
+ * PAIR, which is what made that pass dead code on this tree. The real prettier-aligned register
+ * rows in `docs/OPEN-QUESTIONS.md` are 4940 characters wide; the minimum agency-to-count separation
+ * across each adjacent pair of the 11 real rows runs 1496, 2398, 3500, 3578, 3899, 3954, 4329,
+ * 4336, 4651 and 4662 characters, against a budget of 120. `docs/BASELINE.md`'s dated records have
+ * a median length of 989 characters and 3 of 39 are under 120. Instrumented over every scanned
+ * root, the pass produced 41 single-block flags and ZERO cross-boundary pairs: it had never fired.
+ * The fixture that certified it was the one fixture in the suite not built from the artifact it
+ * stood for, two hand-written register rows about 110 characters long.
  */
 export const PROXIMITY = 120;
 
@@ -91,7 +115,42 @@ export const AGENCY_NEAR_ANY_COUNT = agencyNear(
 export const BOUNDED_EXTENSIONS = [".ts", ".tsx"];
 
 /**
- * The opt-out a source file may take, honoured in `BOUNDED_EXTENSIONS` files and NOWHERE else.
+ * The code files the bound does NOT apply in, in-block or across a boundary, whatever their
+ * extension.
+ *
+ * `docs/BASELINE.md`'s 2026-08-05 correction record says of the three code comments that carried
+ * the struck clause, two in `apps/api/src/rsvps.ts` and one in `apps/api/src/rsvps.test.ts`, that
+ * "it is removed in place and stays removed". The bound let it back into exactly those files: the
+ * fifth PR #247 review round planted the clause into `apps/api/src/rsvps.ts` as an ordinary
+ * three-line `//` comment spread over two sentences and the whole suite stayed green, while the
+ * byte-identical text in a `.md` file failed. A bound that readmits the clause to the files a
+ * correction record says it stays out of is not a bound worth having there.
+ *
+ * The bound is kept everywhere else in code, for the measured reason `BOUNDED_EXTENSIONS` gives.
+ * This list is the narrow exception, and it is a list of files rather than a rule because the
+ * record is about those files. Adding to it means asserting that some other file is one a
+ * correction record removed the clause from in place.
+ */
+export const UNBOUNDED_RECORD_FILES = ["apps/api/src/rsvps.ts", "apps/api/src/rsvps.test.ts"];
+
+/**
+ * The file kinds where the opt-out marker below is honoured: every scanned CODE extension.
+ *
+ * Not the same list as `BOUNDED_EXTENSIONS`, and the fifth PR #247 review round is why. The two
+ * were one list, so a new guard fixture under `scripts/*.mjs` was scanned with the marker inert:
+ * a five-line `scripts/new-guard.test.mjs` carrying the marker and one DOHMH/headcount sentence
+ * failed twice over, once as an unpinned offender and once for carrying a marker "honoured in .ts
+ * and .tsx files only", leaving its author no remedy but a fourth entry in `GUARD_SOURCES`, which
+ * `spec-conflict-resolutions.test.mjs` calls a governance action rather than a fix. Dropping
+ * `.mjs` and `.js` from the scan was the alternative and is worse: it would take `scripts/` back
+ * out of the guard's reach, which is the hole closed on 2026-08-05. So the marker is honoured in
+ * them instead. The bound is a separate question and is answered separately: these files are
+ * scanned unbounded, like prose, because nothing measured says otherwise.
+ */
+export const OPT_OUT_EXTENSIONS = [".ts", ".tsx", ".mjs", ".js"];
+
+/**
+ * The opt-out a source file may take, honoured in `OPT_OUT_EXTENSIONS` files and NOWHERE else.
  *
  * It exists because the corrected fact could not otherwise be given a regression test. The one
  * executable proof that DOHMH findings are invariant under `headcount` has to name the agency and
@@ -155,16 +214,27 @@ export const pairsAgencyWithCount = (text, { bounded = false } = {}) =>
  * row and list item: the claim split across two adjacent register rows, or two adjacent bullets,
  * or a paragraph and the bullet under it, went past. The fourth round's decided remedy was to drop
  * the paragraph filter outright and let `PROXIMITY` bound both tiers, on the reading that rows and
- * bullets are short so the false-positive cost would be small. Measured on this tree rather than
- * predicted, that cost is one false positive and it is on a source of record:
- * `docs/VERIFICATION-SOURCES.md` items 8 and 9 are adjacent numbered entries, the first recording
- * Parks' own published "more than 20 attendees" threshold and the second recording DOHMH's
- * organizer obligations, 121 characters apart. Two separate published facts, no claim between
- * them, and exactly the case the previous round's comment cited as the reason for the filter.
+ * bullets are short so the false-positive cost would be small.
  *
- * So the filter is dropped for the tier that carries the shapes the round found and kept for the
- * tier that produces the false positive. That is strictly wider than the paragraph-only version in
- * both tiers combined: nothing that used to be flagged stops being flagged.
+ * THAT READING WAS WRONG ABOUT THIS TREE AND THE FIFTH ROUND MEASURED IT. Rows and bullets here are
+ * not short: with `PROXIMITY` measured over the concatenated pair, the pass never fired once on any
+ * scanned root. It is therefore dropped outright IN PROSE, and kept in `BOUNDED_EXTENSIONS` files
+ * for the same measured reason it is kept inside a block there. Both halves of that are measured
+ * over the whole tree rather than predicted:
+ *
+ *   - Dropping it in prose costs FOUR false positives, all adjacent pairs of unrelated true
+ *     statements, and they are named and pinned in `BENIGN_ADJACENT_PAIRS` below with the reason
+ *     each is two facts rather than one claim. `docs/VERIFICATION-SOURCES.md` items 8 and 9, the
+ *     candidate the fourth round named at 121 characters apart, is NOT among them: it is two
+ *     numbered list items, so it is the ordinary-English tier, which the paragraph filter still
+ *     excludes. That false positive was avoided by one character under the old bound and is
+ *     avoided structurally now.
+ *   - Dropping it in code as well would cost EIGHT more, seven adjacent pairs of `describe` and
+ *     `it` blocks in `packages/engine/src/acceptance.test.ts` and one in `apps/api/src/plan.test.ts`,
+ *     which is the same shape the in-block bound exists for: a fixture array or a case table puts
+ *     an unrelated agency string and an unrelated headcount far apart with no claim between them,
+ *     and an adjacent pair of them does it twice over. So the bound stays in code, minus the files
+ *     `UNBOUNDED_RECORD_FILES` names.
  */
 export function scanFile(text, { bounded = false, allowOptOut = false } = {}) {
   const optedOut = (block) => allowOptOut && block.includes(OPT_OUT_MARKER);
@@ -183,9 +253,16 @@ export function scanFile(text, { bounded = false, allowOptOut = false } = {}) {
       flagged.push(block);
     } else if (next !== undefined && !optedOut(next) && !pairsAgencyWithCount(next, { bounded })) {
       const pair = `${block}\n${next}`;
-      const acrossAnyBlocks = AGENCY_NEAR_ATTENDEE_COUNT.test(pair);
+      const agency = CITY_HEALTH_AGENCY.test(pair);
+      const acrossAnyBlocks = bounded
+        ? AGENCY_NEAR_ATTENDEE_COUNT.test(pair)
+        : agency && ATTENDEE_COUNT.test(pair);
       const acrossParagraphs =
-        isParagraph(block) && isParagraph(next) && AGENCY_NEAR_ANY_COUNT.test(pair);
+        isParagraph(block) &&
+        isParagraph(next) &&
+        (bounded
+          ? AGENCY_NEAR_ANY_COUNT.test(pair)
+          : agency && (ATTENDEE_COUNT.test(pair) || COUNTED_PEOPLE.test(pair)));
       if (acrossAnyBlocks || acrossParagraphs) flagged.push(pair);
     }
   }
@@ -268,6 +345,74 @@ export const HISTORICAL_RECORDS = [
     record: "Acceptance Criterion 2's rationale paragraph",
     anchor: "Admission was F-101 `headcount` until this amendment.",
     sha256: "361115ca04bae942a53671e7fe35f3503987f0cb867c2f8aede9071004300776",
+  },
+];
+
+/**
+ * THE MEASURED FALSE-POSITIVE COST of running the cross-boundary pass unbounded in prose: four
+ * adjacent pairs, each two unrelated true statements that happen to sit next to each other.
+ *
+ * They are a DIFFERENT KIND OF ENTRY from `HISTORICAL_RECORDS` and the difference matters. A
+ * historical record is text that DOES carry the struck clause and is protected from editing by
+ * governance §6. A benign pair carries no claim at all: neither block says the agency reads the
+ * count, and the scan flags them because it reads co-occurrence and not stance, across a boundary
+ * it now reads unbounded. Nothing here is protected wording; each entry is this round saying "we
+ * looked at these two blocks and they are two facts, not one claim", with the reason written down.
+ *
+ * PINNED BY DIGEST RATHER THAN LISTED BY FILE, for the same reason the historical records are: an
+ * allowlist by file would let the claim be written into one of these blocks later and go
+ * unreported. The digest covers both blocks, so any wording change to either one breaks the pin
+ * and the pair has to be read again. THE COST OF THAT IS REAL AND IS STATED RATHER THAN HIDDEN:
+ * these are live documents, and an ordinary edit to one of these blocks fails the guard until the
+ * digest is recomputed in the same commit. That is the price of running the pass at all, and the
+ * pass was worth nothing at all until this round.
+ *
+ * The suite asserts each entry still matches exactly one flagged pair, so an entry that stops
+ * being needed fails rather than sitting here forever as an unexamined exemption.
+ */
+export const BENIGN_ADJACENT_PAIRS = [
+  {
+    file: "docs/ARCHITECTURE.md",
+    pair: "the intake schema table's Scale + date row and its Audience + food row",
+    anchor: "| Scale + date ",
+    stable: stableRegisterRow,
+    sha256: "0b6b6cd069dd1dec441b60833afc0d28f7e061f04bb9d75d4145a81a66e7f504",
+    why:
+      "Two rows of the intake field inventory. The first names `headcount` as a column and says in" +
+      " terms that it is a regulatory input only; the second says which fields drive the DOHMH" +
+      " vendor and notification rules, and `headcount` is not among them. Read together they" +
+      " CONTRADICT the struck clause rather than state it.",
+  },
+  {
+    file: "docs/BASELINE.md",
+    pair: "the 2026-08-05 correction record's 'What the ruleset publishes instead' and 'Which triggers actually read the field' paragraphs",
+    anchor: "**What the ruleset publishes instead.**",
+    sha256: "58e2516fdc30f6a5008fead79d7af8f875597528fb2ceea3958f8cba294142cb",
+    why:
+      "The two paragraphs of the correction record that state the corrected fact. The first lists" +
+      " what the three DOHMH rules key on; the second lists the four rules that do read" +
+      " `headcount` and names their agencies, none of which is DOHMH. This is the record that" +
+      " struck the clause, and the pairing is the record doing its job.",
+  },
+  {
+    file: "docs/BASELINE.md",
+    pair: "the correction record's 'No regulatory fact moves here' paragraph and the 2026-08-05 PRD Parks threshold decision under it",
+    anchor: "**No regulatory fact moves here.**",
+    sha256: "525b9f006f47d236ab53486a6ca807154e8903e3e10d437bea20b7544da73e29",
+    why:
+      "Two dated records that share a boundary and nothing else. The first names DOHMH while" +
+      " describing what this guard checks; the second is the Parks special event permit threshold," +
+      " a published Parks fact about guests that names no health agency. Two records, two agencies.",
+  },
+  {
+    file: "specs/F-201-permit-plan-generator.md",
+    pair: "acceptance criteria 8 and 9",
+    anchor: "8. All boundary fixtures pass: park headcount 19/20/21;",
+    sha256: "4889e0a488b8223ebab91c42347b2d00ea8fdd86416b72dbe2985aee1ac09756",
+    why:
+      "Criterion 8 lists the boundary fixtures, of which `park headcount 19/20/21` is the Parks" +
+      " threshold; criterion 9 lists Scenario A's rescopes, one of which lands on the DOHMH" +
+      " notification. Adjacent items of one enumeration, each about a different rule.",
   },
 ];
 

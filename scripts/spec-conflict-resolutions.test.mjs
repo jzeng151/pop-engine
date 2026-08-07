@@ -4,9 +4,12 @@ import { fileURLToPath } from "node:url";
 import ts from "typescript";
 import { describe, expect, it } from "vitest";
 import {
+  BENIGN_ADJACENT_PAIRS,
   BOUNDED_EXTENSIONS,
   HISTORICAL_RECORDS,
+  OPT_OUT_EXTENSIONS,
   OPT_OUT_MARKER,
+  UNBOUNDED_RECORD_FILES,
   blocksOf,
   pinnedDigest,
   scanFile,
@@ -498,13 +501,32 @@ describe("T-8 F-601/F-109 dependency-graph row, resolved 2026-08-05", () => {
  *    further structural limits, both stated with their measured reason in
  *    `scripts/spec-conflict-scan.mjs`: across a boundary, the ordinary-English half of the count
  *    vocabulary ("20 attendees") pairs only between two PARAGRAPHS, while the outright count
- *    phrases ("headcount", "attendance") pair between blocks of any kind; and inside a block, the
- *    distance bound applies in `.ts` and `.tsx` files but not in `.md`.
+ *    phrases ("headcount", "attendance") pair between blocks of any kind; and the distance bound
+ *    applies in `.ts` and `.tsx` files, in a block and across a boundary, but not in `.md` and not
+ *    in the files `UNBOUNDED_RECORD_FILES` names.
  *
- *    Both dimensions were widened by the fourth PR #247 review round, which found no fourth
- *    LEXICAL gap inside the declared vocabulary and three STRUCTURAL ones: a claim split across
- *    two register rows, across two bullets, and across two sentences of one paragraph. All three
- *    now fire, and `spec-conflict-resolutions.fixtures.test.mjs` holds each as a fixture.
+ *    Both dimensions were widened by the fourth PR #247 review round, and by the fifth, which
+ *    found the fourth round's claim to have been wrong on both counts.
+ *
+ *    The fourth round reported no fourth LEXICAL gap inside the declared vocabulary. There was
+ *    one. `RSVPs` and `patrons` were declared count nouns in `COUNTED_PEOPLE` and appeared in
+ *    neither phrasing of `ATTENDEE_COUNT`, and `COUNTED_PEOPLE` requires a numeral that "the RSVP
+ *    count" and "the number of RSVPs" do not carry, so all three of these passed: "the RSVP count
+ *    is a regulatory input driving the DOHMH thresholds", which is the pinned register row's own
+ *    sentence with one noun swapped; "DOHMH keys its temporary food-service permit on the number
+ *    of RSVPs recorded at intake"; and "DOHMH requires a permit once the patron count reaches
+ *    seventy-five". The 7-noun by 2-phrasing grid is now asserted cell by cell in
+ *    `spec-conflict-resolutions.fixtures.test.mjs`, so the two expressions cannot drift apart
+ *    again without a test saying so.
+ *
+ *    The fourth round reported three STRUCTURAL gaps closed: a claim split across two register
+ *    rows, across two bullets, and across two sentences of one paragraph. The third was closed.
+ *    The first two were not. The cross-boundary pass was bounded by `PROXIMITY` measured over the
+ *    concatenated pair, and this repository's rows and paragraphs are thousands of characters
+ *    wide, so that pass had never fired on any scanned root. What certified it was a fixture built
+ *    from two hand-written register rows about 110 characters long, in a file whose every other
+ *    fixture was representative. The bound is dropped in prose now and the fixtures are rebuilt
+ *    from the real rows and paragraphs, at their real widths.
  *
  *    So do not read a green suite as "the contradiction cannot return"; read it as "the
  *    contradiction has not returned in a phrasing this scan matches, laid out where it looks".
@@ -550,8 +572,11 @@ describe("T-8 F-601/F-109 dependency-graph row, resolved 2026-08-05", () => {
  *    because the guard reads co-occurrence and not stance. The repository's correction records are
  *    written without the pairing for that reason, naming the intake field as "the F-101 intake
  *    field" where they discuss DOHMH, and a future correction has to do the same or be pinned.
- *    Against the tree as it stands the co-occurrence flags exactly the four pinned historical
- *    records and nothing else.
+ *    Against the tree as it stands the co-occurrence flags EIGHT blocks: the four pinned
+ *    historical records, and the four adjacent pairs `BENIGN_ADJACENT_PAIRS` names, which are the
+ *    measured price of running the cross-boundary pass unbounded in prose. Each of those four is
+ *    two unrelated true statements sharing a boundary, and one of them is the correction record
+ *    itself.
  *
  *    The block, not the sentence, is the unit: both of the sites this defect has actually taken (a
  *    dated BASELINE paragraph and a register table row) carried the count and the agency in
@@ -561,14 +586,25 @@ describe("T-8 F-601/F-109 dependency-graph row, resolved 2026-08-05", () => {
  *    for that half the check WAS effectively sentence-level and the two-sentence shape passed.
  *
  *    Every list item and table row is its own block, and adjacent blocks are scanned across their
- *    boundary, so the claim cannot be split between two register rows, two bullets, a paragraph
- *    and the bullet under it, or two paragraphs separated by one blank line. The boundary pass
- *    required both blocks to be PARAGRAPHS until the fourth PR #247 round, which made "every list
- *    item and table row is its own block" a description of where the claim could hide rather than
- *    of why it could not: rows are separate blocks AND rows were excluded from the pairing, so a
- *    neighbouring row was exactly the place it went past. That filter is gone for the outright
- *    count phrases and kept for the ordinary-English ones, for the measured reason
- *    `scripts/spec-conflict-scan.mjs` gives.
+ *    boundary. What that buys, stated at the width of the real artifacts rather than in general:
+ *
+ *      - IN PROSE, the claim cannot be split between two register rows, two bullets, a paragraph
+ *        and the bullet under it, or two paragraphs separated by one blank line, at any distance,
+ *        as long as one half is an outright count phrase. Split with the ordinary-English half
+ *        ("20 attendees"), it is caught between two PARAGRAPHS and not between two rows or bullets.
+ *      - IN `.ts` AND `.tsx`, all of that is still bounded by `PROXIMITY`, so a claim split across
+ *        a boundary in code is caught only within 120 characters. `UNBOUNDED_RECORD_FILES` is the
+ *        exception, and it is two files.
+ *
+ *    Two earlier versions of this paragraph claimed the first bullet without the qualification and
+ *    without the second, and neither was true when written. The boundary pass required both blocks
+ *    to be PARAGRAPHS until the fourth PR #247 round, which made "every list item and table row is
+ *    its own block" a description of where the claim could hide rather than of why it could not.
+ *    The fourth round dropped that filter for the outright count phrases and bounded the pass by
+ *    `PROXIMITY` instead, which on this tree's real widths meant the pass never fired at all: the
+ *    fifth round measured 41 single-block flags and zero cross-boundary pairs over every scanned
+ *    root. So the sentence "the claim cannot be split between two register rows" was false for
+ *    this repository's own text on the commit that wrote it.
  *
  * The state health department is a different agency and is excluded: `docs/VERIFICATION-SOURCES.md`
  * quotes SDOH's own attendance threshold, which is a real published fact about SDOH.
@@ -732,10 +768,17 @@ describe("no DOHMH rule is attributed to headcount, removed 2026-08-05 (#235)", 
     const flagged = [];
     for (const path of filesUnder(SCANNED_ROOTS, [".md", ".ts", ".tsx", ".mjs", ".js"])) {
       const relative = path.replace(`${repoRoot}/`, "");
-      const code = BOUNDED_EXTENSIONS.some((extension) => relative.endsWith(extension));
+      // Two independent questions, answered by two lists since the fifth PR #247 round. The bound
+      // is for file kinds whose blocks are machine-shaped, minus the files a correction record
+      // says the clause stays out of; the opt-out is for every code file, because a guard fixture
+      // under `scripts/` needs the same remedy a guard fixture under `packages/` has.
+      const bounded =
+        BOUNDED_EXTENSIONS.some((extension) => relative.endsWith(extension)) &&
+        !UNBOUNDED_RECORD_FILES.includes(relative);
+      const allowOptOut = OPT_OUT_EXTENSIONS.some((extension) => relative.endsWith(extension));
       for (const block of scanFile(readFileSync(path, "utf8"), {
-        bounded: code,
-        allowOptOut: code,
+        bounded,
+        allowOptOut,
       })) {
         flagged.push({ relative, block });
       }
@@ -782,17 +825,43 @@ describe("no DOHMH rule is attributed to headcount, removed 2026-08-05 (#235)", 
     }
   });
 
+  /** Whether a flagged item matches one of `pins`, by file and by digest. */
+  const matches = (pins) => (item) =>
+    pins.some((pin) => pin.file === item.relative && pinnedDigest(pin, item.block) === pin.sha256);
+
+  // Each benign pair is asserted to still be flagged. An exemption that has stopped being needed
+  // is an unexamined exemption, and this is what stops the list growing into one: if an edit
+  // separates the two blocks or removes the co-occurrence, this fails and the entry comes out.
+  it("every measured benign adjacent pair is still exactly one flagged pair", () => {
+    const flagged = flaggedBlocks();
+    for (const pin of BENIGN_ADJACENT_PAIRS) {
+      const matched = flagged.filter(
+        (item) => item.relative === pin.file && pinnedDigest(pin, item.block) === pin.sha256,
+      );
+      expect(
+        matched.length,
+        `${pin.file}: the benign pair "${pin.pair}" no longer matches one flagged pair.\n` +
+          `It was exempt because: ${pin.why}\n` +
+          "If an edit separated the two blocks or changed either one's wording, read the pair" +
+          " again. If it is still two facts rather than one claim, recompute the digest in the" +
+          " same commit and say what moved. If it is now a claim, the claim is the thing to" +
+          " remove. Do not add an entry here to quiet a live claim.",
+      ).toBe(1);
+    }
+  });
+
   it("no prose block attributes a city health requirement to an attendee count", () => {
     // Pins are an exception to the scan, not a replacement for it: a flagged block is allowed only
     // when its digest is pinned FOR THAT FILE, so the same historical text pasted anywhere else is
     // still an offender. Everything unpinned is reported exactly as before.
     // A duplicate pasted into the SAME file is caught by the exactly-once assertion above.
-    const isPinned = (item) =>
-      HISTORICAL_RECORDS.some(
-        (pin) => pin.file === item.relative && pinnedDigest(pin, item.block) === pin.sha256,
-      );
+    // `BENIGN_ADJACENT_PAIRS` is the second, weaker exception, and it is weaker in what it claims
+    // rather than in what it costs: a historical record is protected wording, a benign pair is
+    // this round's reading that two adjacent blocks are two facts. Both are pinned by digest.
+    const isPinned = matches(HISTORICAL_RECORDS);
+    const isBenign = matches(BENIGN_ADJACENT_PAIRS);
     const offenders = flaggedBlocks()
-      .filter((item) => !isPinned(item))
+      .filter((item) => !isPinned(item) && !isBenign(item))
       .map((item) => `${item.relative}: ${item.block.replace(/\s+/g, " ").trim().slice(0, 200)}`);
 
     expect(
@@ -804,19 +873,23 @@ describe("no DOHMH rule is attributed to headcount, removed 2026-08-05 (#235)", 
     ).toEqual([]);
   });
 
-  // The opt-out is honoured in `.ts` and `.tsx` only, and that is asserted rather than left to the
+  // The opt-out is honoured in code and nowhere else, and that is asserted rather than left to the
   // scan's own reading of a file extension: a marker written into a document would be inert, so the
   // author would believe they had opted out and the block would be reported as a live claim.
   // Reported here instead, naming the file, rather than as a confusing offender entry.
+  //
+  // "Code" was `BOUNDED_EXTENSIONS` until the fifth PR #247 round, which is why a new guard fixture
+  // under `scripts/*.mjs` had no remedy: the marker was inert there and this assertion told its
+  // author so, while the offender scan reported the fixture as a live claim.
   it("the scan's opt-out marker appears only where it is honoured", () => {
     const marked = filesUnder(SCANNED_ROOTS, [".md", ".ts", ".tsx", ".mjs", ".js"])
       .filter((path) => readFileSync(path, "utf8").includes(OPT_OUT_MARKER))
       .map((path) => path.replace(`${repoRoot}/`, ""))
-      .filter((relative) => !BOUNDED_EXTENSIONS.some((extension) => relative.endsWith(extension)));
+      .filter((relative) => !OPT_OUT_EXTENSIONS.some((extension) => relative.endsWith(extension)));
 
     expect(
       marked,
-      `${OPT_OUT_MARKER} is honoured in ${BOUNDED_EXTENSIONS.join(" and ")} files only. Prose` +
+      `${OPT_OUT_MARKER} is honoured in ${OPT_OUT_EXTENSIONS.join(", ")} files only. Prose` +
         " cannot opt out of this scan: write around the pairing, or record the wording as a pin.",
     ).toEqual([]);
   });
