@@ -88,19 +88,31 @@ Contributors must not:
 
 ## 6. Change classes and approvals
 
-| Change                                                       | Required approval                                 |
-| ------------------------------------------------------------ | ------------------------------------------------- |
-| Regulatory source/status/content                             | Verification owner plus rules reviewer            |
-| Rule trigger, dedupe, branch, deadline, or formula semantics | Verification owner plus engine owner              |
-| Event Input, rules schema, OpenAPI, shared enum              | All affected lane owners and architecture owner   |
-| Database migration touching shared/core tables               | Database owner plus all affected lane owners      |
-| Product scope, feature meaning, phase                        | Product owner/team decision                       |
-| Durable architecture decision or dependency                  | Architecture ADR approval                         |
-| UI copy only                                                 | Feature owner, unless it makes a regulatory claim |
+PopEngine is a solo project, so approvals name one capacity. The product owner approves; no row names a separate architecture, security, database, verification, rules-reviewer or lane-owner capacity (product owner, 2026-08-04; recorded in `docs/BASELINE.md`). This says which capacity a future approval requires. Since the second-party review requirement was retired on 2026-08-05 (recorded below and in `docs/BASELINE.md`), the named capacity is also the whole requirement for every row but the durable architecture decision row, which the paragraphs below this table qualify: one person, the product owner, may approve any change this table covers, including a change they authored.
 
-**Recorded demo overwrite — PR #137 only (2026-07-27).** After the other lane owners were unavailable, `@jzeng151` explicitly invoked a one-time product-owner overwrite of the all-lane and teammate-review requirements for the initial Event and Event Revision ratification. It authorizes access-gated synthetic-data demo implementation against that bounded contract. It attributes no approval to another account, creates no precedent for later contract or migration changes, and does not authorize production activation. Strict ratification by all affected lane owners and the architecture owner remains due before the F-701–F-703 production gate can open.
+| Change                                                       | Required approval                          |
+| ------------------------------------------------------------ | ------------------------------------------ |
+| Regulatory source/status/content                             | Product owner                              |
+| Rule trigger, dedupe, branch, deadline, or formula semantics | Product owner                              |
+| Event Input, rules schema, OpenAPI, shared enum              | Product owner                              |
+| Database migration touching shared/core tables               | Product owner                              |
+| Product scope, feature meaning, phase                        | Product owner                              |
+| Durable architecture decision or dependency                  | Product owner, recorded as an approved ADR |
+| UI copy that makes no regulatory claim                       | Product owner                              |
 
-No person approves their own regulatory publication alone. The author and source reviewer should be distinct whenever the team size permits.
+This table states what a future approval requires. It does not restate an approval already given: an approval recorded in named capacities under the rules then in force stays on the record in the words it was given.
+
+One row carries a requirement that is not a capacity, and naming one approver does not reach it.
+
+A durable architecture decision is still recorded as an approved ADR. The capacity that signs it is the product owner; the record the decision has to leave is unchanged, and an approval that leaves no ADR does not satisfy that row.
+
+Copy-only is a statement about the change, not about the file it lands in. A UI-text change that itself states a permit, agency, trigger, deadline, fee, document, portal, exception, verification status, or plan-completeness fact is regulatory content: it takes the first row rather than the copy-only row, and it is a regulatory publication where a copy-only change is not. Both rows require the product owner, so what the classification decides is which row the change takes, not who may land it. UI copy is the last level of §2's authority hierarchy, not outside it, and an organizer reading an alert or a checklist reads it as the system's regulatory answer. The copy-only row covers copy that asserts no such fact: navigation and field labels, headings, button text, empty states, and messages about the application itself.
+
+**Recorded demo overwrite — PR #137 only (2026-07-27).** After the other lane owners were unavailable, `@jzeng151` explicitly invoked a one-time product-owner overwrite of the all-lane and teammate-review requirements for the initial Event and Event Revision ratification. It authorizes access-gated synthetic-data demo implementation against that bounded contract. It attributes no approval to another account, creates no precedent for later contract or migration changes, and does not authorize production activation. Strict ratification remains due before the F-701–F-703 production gate can open; the sentences above record what happened on 2026-07-27, and who must sign that ratification is now the table above, the product owner.
+
+**Second-party review retired (2026-08-05).** Requirements that some other party review, approve, verify, witness or sign something are one class, and the product owner has retired that class repo-wide. It is retired, not satisfied and not recorded as unmet. PopEngine is a one-person project, so the requirement can never be met, and carrying it as permanently unmet produced contradictory instructions across the artifacts that cited it. Three things were covered and all three go. First, the second signatory this section's closing paragraph required for a regulatory publication or a verification status. Second, the independent spec reviewer in the Approval Blockers of `specs/F-103-scope-comparator.md`, `specs/F-107-save-resume.md`, `specs/F-306-waitlist.md`, `specs/F-405-day-of-runbook.md` and `specs/F-502-historical-event-comparison.md`, and AD-15's coordinated review of shared contract changes in `docs/ARCHITECTURE-FUTURE.md`. Third, the merge gate that is not an approval recorded in a document at all, `CONTRIBUTING.md`'s "one teammate's review. You cannot merge your own PR unreviewed" and its matching PR-checklist line. One person, the product owner, may now approve any change this section covers, including a regulatory publication and a verification status, may approve a change they authored, and may merge their own pull request. This record supersedes the 2026-08-05 second-party record in `docs/BASELINE.md`, which recorded the same class as UNMET.
+
+**Retiring the requirement approves nothing.** No artifact becomes approved because a requirement it carried was retired. The five specs above become approvable by the product owner and are not approved: each stays `PROPOSED` with an approval date of `—` under §3 until the product owner assigns its owner, approves it and lists it in `docs/BASELINE.md`, and none is implementable before that. Every other approval this section routes still has to be given; retirement removes a second signatory, not the first one. Records of second-party review already given, and approvals recorded in the capacities the rules then in force named, stay on the record in the words they were given.
 
 ## 7. Feature specification lifecycle
 

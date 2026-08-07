@@ -487,7 +487,9 @@ const RESCOPE_FIELD_ALIASES: Readonly<Record<string, string>> = {
 
 /**
  * Disagreements that exist today between two approved artifacts. Each is a decision someone owns,
- * not something a test may resolve: changing either side is a rules-owner or team change.
+ * not something a test may resolve: changing either side is the product owner's under governance §6,
+ * whose approval is the whole requirement even for a regulatory publication the product owner
+ * authored.
  */
 const KNOWN_DISAGREEMENTS: readonly {
   scenarios: readonly string[];
@@ -940,7 +942,7 @@ describe("the fixture suite and the published ruleset agree", () => {
     // Non-whitespace is the strongest claim this check can honestly make. F-206 AC 2 wants BOTH
     // readings with BOTH sources, and no length threshold tests for that: a one-character note_text
     // passes any minimum, and a long one can still state a single reading. Whether two readings are
-    // actually present is a reading-comprehension judgement that belongs to the verification owner,
+    // actually present is a reading-comprehension judgement that belongs to the product owner,
     // not to a character count invented here. So this asserts renderability, which is mechanical,
     // and deliberately stops short of adequacy, which is not.
     const conflictRules = ruleset.rules.filter(

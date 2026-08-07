@@ -17,17 +17,17 @@ In order:
 ## Golden Rules (project-specific, non-negotiable)
 
 1. **Never invent a permit fact.** Every lead time, fee, agency, and requirement comes from `rules/nyc-rules.v2.11.json`. If data is missing, the UI says "confirm with agency" (RESEARCH_REQUIRED) and you flag it in `docs/OPEN-QUESTIONS.md`. Making up a plausible number is the one unforgivable failure in this project. This applies doubly to AI assistants: they will happily invent city regulations that sound real. Reject that output. (This has already happened once in this project's history; the recovery took a full day.)
-2. **Never edit verification statuses.** The `verification` blocks in the rules file (SOURCE_CONFIRMED / OFFICIAL_CONFLICT / RESEARCH_REQUIRED / VERIFIED) are changed by exactly one person (the verification owner, Dev 4) after checking a primary source. Not by you, not by your AI.
-3. **The `events` contract is frozen for the access-gated demo.** PR #137 ratified the cumulative Phase 1 schema and `docs/EVENT-REVISION-CONTRACT.md` under its recorded one-time product-owner overwrite. That is not teammate approval: strict all-lane ratification remains required before production activation. Every later shared/core-table change requires `docs/DOCUMENTATION-GOVERNANCE.md` §6; never add a column in a feature branch without it.
+2. **Never edit verification statuses.** The `verification` blocks in the rules file (SOURCE_CONFIRMED / OFFICIAL_CONFLICT / RESEARCH_REQUIRED / VERIFIED) are changed by the product owner after checking a primary source, and that approval is the whole requirement, including for a status the product owner authored (`docs/DOCUMENTATION-GOVERNANCE.md` §6, second-party review retired 2026-08-05). Not by you, not by your AI.
+3. **The `events` contract is frozen for the access-gated demo.** PR #137 ratified the cumulative Phase 1 schema and `docs/EVENT-REVISION-CONTRACT.md` under its recorded one-time product-owner overwrite. That is not teammate approval: strict ratification remains required before production activation, and the product owner signs it under `docs/DOCUMENTATION-GOVERNANCE.md` §6 (2026-08-04). Every later shared/core-table change requires that same section's product-owner approval; never add a column in a feature branch without it.
 4. **No mocks in the core path.** F-101 through F-204 must be real. Permitted demo fallbacks for stretch features are listed in `docs/DESIGN.md`; nothing else gets faked.
 5. **Stay inside your spec.** If you notice something broken elsewhere, open an issue; don't fix it in your feature branch. PRs that touch files outside their feature's footprint get bounced back.
-6. **Authority runs downhill.** Approved primary source → published rule (`rules/nyc-rules.v2.11.json`) → fixture suite (`docs/test-scenario-answer-key.md`) → engine output → UI copy. When two levels disagree, the lower one is wrong: fix the fixture to match the rule, fix the rule to match the source (through Dev 4). Never bend the engine to reproduce a broken expectation, and never resolve a disagreement by picking the version you prefer — file a `SPEC-CONFLICT` issue (see `docs/DOCUMENTATION-GOVERNANCE.md` §5).
+6. **Authority runs downhill.** Approved primary source → published rule (`rules/nyc-rules.v2.11.json`) → fixture suite (`docs/test-scenario-answer-key.md`) → engine output → UI copy. When two levels disagree, the lower one is wrong: fix the fixture to match the rule, fix the rule to match the source. The Dev 4 lane gathers the primary-source evidence (`docs/DESIGN.md`, `docs/VERIFICATION-SOURCES.md`); the change to the published artifact is the product owner's under `docs/DOCUMENTATION-GOVERNANCE.md` §6 (2026-08-04), which is the same routing Golden Rule 2 states. That approval is the whole requirement, including where the product owner authored the change (§6, second-party review retired 2026-08-05). Never bend the engine to reproduce a broken expectation, and never resolve a disagreement by picking the version you prefer — file a `SPEC-CONFLICT` issue (see `docs/DOCUMENTATION-GOVERNANCE.md` §5).
 
 ## Workflow
 
 - **Branch per feature:** `F-101-event-intake`, `F-201-plan-generator`, etc. Branch from `main`, keep branches short-lived.
 - **Small PRs.** One feature, or one coherent slice of a feature. A PR that can't be reviewed in 15 minutes is too big.
-- **Every PR needs:** a link to its issue, all tests passing, coverage at threshold, and one teammate's review. You cannot merge your own PR unreviewed.
+- **Every PR needs:** a link to its issue, all tests passing, and coverage at threshold. You may merge your own PR: the teammate-review requirement was retired on 2026-08-05 (`docs/DOCUMENTATION-GOVERNANCE.md` §6), and a PR that publishes a regulatory fact, a ruleset or a verification status needs the product owner's approval under §6 and nothing beyond it.
 - **`main` stays green.** If you break `main`, fixing it is your top priority.
 - **Commit messages:** one line, present tense, say what changed: `Add slack warning to verdict computation`, not `fixes` or `wip`. No AI attributions or tool signatures in commits or PRs.
 
@@ -52,7 +52,7 @@ Conventions: booleans read as questions (`is…`, `has…`, `needs…`); functio
 - Small functions that do one thing. If you need a comment to explain _what_ a block does, extract it into a well-named function instead.
 - Comments only for things code can't say: constraints, gotchas, links to the spec or an OPEN-QUESTIONS item (e.g. `// hard floor is a cliff, not a gradient — see F-102 spec #3`).
 - No dead code, no commented-out blocks, no `console.log` left behind.
-- No new dependencies without asking the team. Beginners + AI assistants tend to accumulate packages; every dependency is a liability we all inherit.
+- No new dependencies without the product owner's approval under `docs/DOCUMENTATION-GOVERNANCE.md` §6, which routes a dependency to the product owner and needs no second signatory, including for one you added yourself (second-party review retired 2026-08-05). That row also requires the choice be recorded as an approved ADR, so the approval on its own does not satisfy it. Beginners + AI assistants tend to accumulate packages; every dependency is a liability we all inherit.
 - The engine stays pure: no database, no HTTP, no `Date.now()` inside `packages/engine`. `today` is always a parameter.
 
 ## Testing — 90% Coverage, Enforced
@@ -84,7 +84,7 @@ Thirty-minute rule: if you're blocked for 30 minutes, post in the team channel w
 - [ ] All acceptance criteria in the spec demonstrably met
 - [ ] Tests written from those criteria; `pnpm test --coverage` ≥ 90%, everything passing
 - [ ] Engine scenario suite still green (all six)
-- [ ] No new dependencies without team sign-off
-- [ ] No schema changes (or team-approved if unavoidable)
-- [ ] PR reviewed by a teammate and linked to its issue
+- [ ] No new dependencies without the product owner's approval, recorded as an approved ADR (`docs/DOCUMENTATION-GOVERNANCE.md` §6)
+- [ ] No schema changes (or the product owner's approval under `docs/DOCUMENTATION-GOVERNANCE.md` §6 if unavoidable)
+- [ ] PR linked to its issue
 - [ ] Your lane's verification check from `docs/DESIGN.md` passes

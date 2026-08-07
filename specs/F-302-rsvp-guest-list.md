@@ -1,6 +1,6 @@
 # F-302 · RSVP / Guest List (STRETCH)
 
-**Status:** APPROVED (2026-07-25; Acceptance Criterion 2 amended 2026-08-03, product-owner approved, one person currently holding every lane: admission moves from F-101 `headcount` to the confirmed `capacity`, null meaning no limit, resolving T-6 / SPEC-CONFLICT #209) · **Reviewer/approver:** product owner + affected lane owners via the approval PR · **Owner:** see Lane below · see `docs/BASELINE.md`.
+**Status:** APPROVED (2026-07-25; Acceptance Criterion 2 amended 2026-08-03, product-owner approved, one person currently holding every lane: admission moves from F-101 `headcount` to the confirmed `capacity`, null meaning no limit, resolving T-6 / SPEC-CONFLICT #209; the rollout compatibility window within that criterion amended 2026-08-05, product-owner approved, so the pre-rename `headcount` key on the guest list carries the enforced limit rather than the `events.headcount` column, resolving issue #236) · **Reviewer/approver:** product owner + affected lane owners via the approval PR · **Owner:** see Lane below · see `docs/BASELINE.md`.
 **Phase:** 1.5 (fourth in retention order) · **Lane:** Dev 3 (parallel Track B; core blockers outrank it) · **Depends on:** F-301 · **Feeds:** F-401 (guest-list lookup at check-in)
 
 ## User Story
@@ -15,7 +15,7 @@ As an attendee who found the event page, I RSVP with name and email in seconds; 
 ## Acceptance Criteria
 
 1. RSVP from the public page takes under 30 seconds, no account.
-2. **Capacity-aware (amended 2026-08-03, product-owner approved, resolving T-6 / SPEC-CONFLICT #209):** admission is `events.capacity`, the confirmed venue/event capacity. At a confirmed capacity, new RSVPs are refused with a friendly "event is full" (no waitlist in MVP; that's F-306). **A null `capacity` means no confirmed limit and never refuses** — it is not read as zero, and it does not fall back to another field. Responses carry `capacity: number | null`. `GET /api/events/:id/guests` also carries the pre-rename `headcount` for the compatibility window described below; admission never reads it.
+2. **Capacity-aware (amended 2026-08-03, product-owner approved, resolving T-6 / SPEC-CONFLICT #209):** admission is `events.capacity`, the confirmed venue/event capacity. At a confirmed capacity, new RSVPs are refused with a friendly "event is full" (no waitlist in MVP; that's F-306). **A null `capacity` means no confirmed limit and never refuses** — it is not read as zero, and it does not fall back to another field. Responses carry `capacity: number | null`. `GET /api/events/:id/guests` also carries the same enforced limit under the pre-rename key `headcount: number | null` for the compatibility window described below; admission never reads that key, and it never reports the `events.headcount` column.
 
    Admission was F-101 `headcount` until this amendment. `headcount` is a regulatory input: it drives the 75-plus assembly gate, the DOHMH thresholds, and the Parks exactly-20 conflict. Admitting against it meant an organizer raising their guest limit silently moved their permit findings, which is why `ARCHITECTURE.md` already recorded `capacity` as a separate value and "NOT headcount (audit fix)". F-306 promotes into the same field, which is what SPEC-CONFLICT #209 required be settled before it could be approved.
 
@@ -26,30 +26,51 @@ As an attendee who found the event page, I RSVP with name and email in seconds; 
    error and loses the cancel controls until the second deployment finishes. So, until the window
    closes:
 
-   - `GET /api/events/:id/guests` serves `event.capacity` AND `event.headcount`. `headcount` keeps
-     its own meaning, the `events.headcount` column, which is what the pre-rename API returned. It
-     is not capacity under an old name.
+   - `GET /api/events/:id/guests` serves `event.capacity` AND `event.headcount`, and both carry the
+     same value: the limit this API enforces. `headcount` is the pre-rename NAME for the current
+     limit, not the pre-rename VALUE. It does not report the `events.headcount` column, which this
+     response no longer reads at all.
    - The web client reads `event.capacity` when the key is present, including when it is null, and
      falls back to `event.headcount` only when `capacity` is absent. A pre-rename API enforces
      `headcount`, so that fallback shows the limit that API is actually applying.
 
-   **What this window does not do (corrected 2026-08-04; no approval, no scope change).** It keeps
-   the page rendering in either deployment order. It does not make the window order-independent.
-   Deployed api-first, a pre-rename web build reads `event.headcount` as the enforced limit while
-   this API admits against `capacity`: the organizer sees "5 of 40 confirmed" against a limit of 5,
-   or a finite limit at all when `capacity` is null and nothing is ever refused. That defect
-   survives the shape compatibility above, and issue #236 carries it together with the choice
-   between a semantics-preserving compatibility response and a rollout that removes the window.
-   Neither is decided here.
+   **Carrying the enforced limit (amended 2026-08-05, product-owner approved, issue #236).** The
+   window above kept the response SHAPE working; it did not preserve the MEANING of the number
+   shown. Deployed api-first, a pre-rename web build read `event.headcount` as the enforced limit
+   while this API admitted against `capacity`: with capacity 5 and headcount 40 the organizer saw
+   "1 of 40 confirmed" while the sixth RSVP was refused, and a null capacity displayed a finite
+   limit that was enforced nowhere. The fix is this response, not the deployment order: a runbook
+   step is only as good as the deployer following it. So the compatibility key carries the active
+   limit, which makes an old page's denominator the number admission applies. Both client
+   generations stay correct: the current one prefers a present `capacity` including null and never
+   reads this key, and its fallback still covers a genuinely pre-rename API, which does enforce its
+   own `headcount`.
+
+   **The null case, and what it costs.** A null `capacity` is no confirmed limit and never refuses.
+   The pre-rename shape cannot express that: it carries a number, and any number placed there would
+   be an enforced limit that nothing enforces, so there is no truthful finite value to send and
+   none is invented. `headcount` is therefore null too, stating the same fact as `capacity`. A
+   pre-rename page that can only render a number cannot render this, so for a null-capacity event
+   it shows its "cannot read" error and loses the cancel controls until the web deployment lands.
+   That is the option that misleads least, not a costless one: the alternative was a fabricated
+   finite denominator, and a visible failure is preferable to a silent wrong number in a product
+   whose other invariant is that an unknown never renders as a known. No RSVP is refused in this
+   case, so nothing an attendee sees depends on it. Deploying web-first avoids the gap entirely,
+   which is a reason to prefer that order and not a condition of correctness.
+
+   **Still not order-independent.** Api-first with a null capacity degrades as described above, and
+   this window does not claim otherwise.
 
    **Removing `headcount` from this response needs, in this order:** (1) every deployed web build
    reading the guest list is at or past the rename, which for the access-gated demo means the web
    deployment that carries this change has rolled out and no rollback target predating it remains
    selectable; (2) `readLimit` in `apps/web/app/events/[id]/guests/guests-api.ts` and its fallback
-   tests are deleted, so the client requires `capacity`; (3) `headcount` is dropped from
-   `ListRsvpsResult` and its `SELECT` in `apps/api/src/rsvps.ts` and from the compatibility tests in
-   `apps/api/src/rsvps.test.ts`; (4) this window paragraph is removed and AC 2's response sentence
-   returns to `capacity` alone. Deployment order does not constrain the removal itself: a client
+   tests are deleted, so the client requires `capacity`; (3) the `headcount` key is dropped from
+   `ListRsvpsResult` and from the response `listRsvps` builds in `apps/api/src/rsvps.ts`, and the
+   compatibility tests in `apps/api/src/rsvps.test.ts` go with it (the `SELECT` already carries no
+   `headcount` column since the 2026-08-05 amendment); (4) this window paragraph, its 2026-08-05
+   amendment and its null-case paragraph are removed and AC 2's response sentence returns to
+   `capacity` alone. Deployment order does not constrain the removal itself: a client
    that still carries the fallback reads a response carrying only `capacity`, because a present
    `capacity` always wins. Condition (1) is the one that gates it. `events.headcount` itself is
    NOT dropped by any of this: it stays a regulatory intake input read by F-101, F-301 and the

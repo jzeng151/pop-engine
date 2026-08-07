@@ -61,7 +61,7 @@ One **Event** row is the single source of truth. Four stage-scoped module views 
 
 ## PostgreSQL Schema (ratified)
 
-> **RATIFIED FOR THE ACCESS-GATED DEMO 2026-07-27 — the `events` table is the contract between all four lanes.** The cumulative Phase 1 shape and logical Event Revision contract were approved through PR #137's recorded one-time product-owner overwrite; see `docs/EVENT-REVISION-CONTRACT.md`. Strict all-lane ratification remains a production gate. Every later shared/core-table change remains a team decision, not a lane decision.
+> **RATIFIED FOR THE ACCESS-GATED DEMO 2026-07-27 — the `events` table is the contract between all four lanes.** The cumulative Phase 1 shape and logical Event Revision contract were approved through PR #137's recorded one-time product-owner overwrite; see `docs/EVENT-REVISION-CONTRACT.md`. Strict ratification remains a production gate and the product owner signs it under `docs/DOCUMENTATION-GOVERNANCE.md` §6 (2026-08-04). Every later shared/core-table change remains that section's product-owner approval, not a lane decision.
 
 ### events
 
@@ -344,6 +344,6 @@ Error principle: rule-evaluation failures return an explicit error; the API neve
 
 - **CORS:** api allows the web origin only.
 - **Shared types:** `packages/engine` exports the intake/plan/verdict types; both apps import from it.
-- **Migrations:** node-pg-migrate; the cumulative Phase 1 `events` shape is ratified for the access-gated demo through PR #137. Production activation still requires strict all-lane ratification. Future shared/core-table changes require `DOCUMENTATION-GOVERNANCE.md` §6.
+- **Migrations:** node-pg-migrate; the cumulative Phase 1 `events` shape is ratified for the access-gated demo through PR #137. Production activation still requires strict ratification, which the product owner signs under `DOCUMENTATION-GOVERNANCE.md` §6 (2026-08-04). Future shared/core-table changes require that same section's product-owner approval.
 - **Rules loading:** api boots by validating `rules/nyc-rules.v2.11.json` (schema check; 42 rules + 4 advisories present; every trigger field declared in the file's `intake_fields` registry) and syncing `permit_rules`; a validation failure aborts boot loudly.
 - **Observability (MVP-appropriate):** structured request logs + an engine-evaluation trace (rule → tri-state result) attached to each plan row in `verdict_detail`; nothing fancier until Phase 2.

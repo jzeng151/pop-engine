@@ -49,7 +49,7 @@ AI may draft and extract; it may never make the authoritative permit determinati
 - Every plan line shows its verification status. Source-bearing lines cite an official source; a COVERAGE_GAP finding that carries no citation visibly states that the combination is not covered by this ruleset version, and never invents a citation or implies a source is merely missing (that is RESEARCH_REQUIRED's meaning; the published legend calls COVERAGE_GAP "combination not modeled by this ruleset version").
 - The full fixture suite passes (6 scenarios + boundary fixtures, `test-scenario-answer-key.md` v7): 100% of expected findings, zero false omissions, zero false additions, correct verdicts.
 - Zero fabricated permit facts; RESEARCH_REQUIRED renders "confirm with agency"; OFFICIAL_CONFLICT renders both readings.
-- The ruleset's SOURCE_CONFIRMED facts are checked against their primary sources in a browser and promoted per fact to VERIFIED by the verification owner before the demo.
+- The ruleset's SOURCE_CONFIRMED facts are checked against their primary sources in a browser and promoted per fact to VERIFIED by the product owner before the demo, whose approval is the whole requirement under `DOCUMENTATION-GOVERNANCE.md` §6 even where the product owner authored the promotion.
 - Nothing in the core path is mocked, seeded, or hardcoded to look like engine output.
 
 ## Green Gate (target end of day 8) — the demo decision point
@@ -65,12 +65,12 @@ Permitted demo fallbacks for stretch features: seeded RSVP data, simulated email
 
 ## Team Lanes (Phase 0–1.5)
 
-One integration point (the `events` schema — ratified for the access-gated demo 2026-07-27 through PR #137's recorded overwrite; strict production ratification and later shared/core-table changes remain team decisions); four lanes with minimal merge conflicts:
+One integration point (the `events` schema — ratified for the access-gated demo 2026-07-27 through PR #137's recorded overwrite; strict production ratification and later shared/core-table changes remain the product owner's approval under `DOCUMENTATION-GOVERNANCE.md` §6, 2026-08-04); four lanes with minimal merge conflicts:
 
 - **Dev 1 — Rules engine + verdict:** F-201, F-102; owns engine fidelity to `rules/nyc-rules.v2.11.json` and the fixture suite. Verify: full fixture suite (scenarios + boundaries) passes as automated tests.
 - **Dev 2 — Intake + plan UI:** F-101 (incl. contradiction checks, "I don't know"), F-110, F-206, plan rendering. Verify: Scenario A renders end-to-end with citations + snapshot banner; Scenario F records and reloads both assembly-document confirmations.
 - **Dev 3 — Checklist + portals:** F-202, F-204. Verify: plan converts to checklist; every permit links to its portal with its document list.
-- **Dev 4 — Alerts + platform:** F-203, DB migrations, deploy, demo environment; **owns verification sign-off**: confirms the ruleset's SOURCE_CONFIRMED facts in a browser (evidence pre-collected in `VERIFICATION-SOURCES.md`) and works the open research items (OPEN-QUESTIONS §2). Verify: a seeded deadline fires a real email/SMS; browser-confirmed facts are promoted per fact from SOURCE_CONFIRMED to VERIFIED.
+- **Dev 4 — Alerts + platform:** F-203, DB migrations, deploy, demo environment; **works the verification evidence** (the sign-off itself is the product owner's under `DOCUMENTATION-GOVERNANCE.md` §6, 2026-08-04, and that approval is the whole requirement even where the product owner authored it): confirms the ruleset's SOURCE_CONFIRMED facts in a browser (evidence pre-collected in `VERIFICATION-SOURCES.md`) and works the open research items (OPEN-QUESTIONS §2). Verify: a seeded deadline fires a real email/SMS; browser-confirmed facts are promoted per fact from SOURCE_CONFIRMED to VERIFIED.
 
 Track B staffing is the team's kickoff call (default suggestion: Dev 3 → F-301/F-302 and Dev 4 → F-401/F-402 as their core items complete; F-205 stays with Dev 1 but begins only after the F-201/F-202 views merge). F-705 has no default suggestion and no lane: it already shipped, and the work it can still attract is chrome that any lane's route change touches. The invariant from Decision 10: a dev holding an unmerged core blocker works the blocker first, and parallel Track B branches never touch core-path files.
 
@@ -87,7 +87,7 @@ Track B staffing is the team's kickoff call (default suggestion: Dev 3 → F-301
 - F-701 → F-702 → F-703 → F-704/F-213; F-701/F-702/F-703 jointly gate authenticated user-owned product data and external beta
 - Twilio plumbing: built once for F-203, reused by F-305, F-413
 - QR infra: built once for F-401, reused by F-303
-- F-601 (open-ended intake) → F-109 becomes necessary (scope support states: can we handle the scope the organizer described?)
+- **Consequence note, not a build-order constraint** (product owner, 2026-08-05, ADR AD-17, closing T-8): adding F-601 (open-ended intake) is what makes F-109 necessary (scope support states: can we handle the scope the organizer described?). Unlike every other row here, this one asserts no order between the two features; the order between them comes from their own approval blockers, not from this graph.
 
 ## Demo Plan (permit-planning deep dive)
 

@@ -687,8 +687,10 @@ function rejectMixedDedupeVerificationStatuses(published: readonly EngineRule[])
  * scopes another question whose answer is itself consumed.
  *
  * Everything else needs a reason here. Each entry is a field the published ruleset declares and no
- * rule acts on, recorded rather than deleted: removing a published intake field is a rules-owner
- * change, and one of these is an open product question. A NEW unconsumed field fails the load.
+ * rule acts on, recorded rather than deleted: removing a published intake field is the product
+ * owner's change under governance §6, whose approval is the whole requirement even where the
+ * product owner authored it, and one of these is an open product question. A NEW
+ * unconsumed field fails the load.
  */
 export const UNCONSUMED_INTAKE_FIELDS: Readonly<Record<string, string>> = {
   borough: "Display and future jurisdiction routing (F-207). No NYC rule varies by borough today.",

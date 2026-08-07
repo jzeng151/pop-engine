@@ -2,7 +2,7 @@
 
 **Status:** PROPOSED (2026-07-26) — `docs/OPEN-QUESTIONS.md` T-6 / [SPEC-CONFLICT #209](https://github.com/jzeng151/pop-engine/issues/209) was resolved 2026-08-03 and no longer blocks this spec. The approvals listed under Approval Blockers below are still outstanding; not implementable until approved and listed in `docs/BASELINE.md`.
 
-**Phase:** 3 · **Issue:** [#36](https://github.com/jzeng151/pop-engine/issues/36) · **Owner:** TBD · **Reviewer:** product owner plus affected architecture, contract, security, and lane owners (TBD) · **Approval date:** —
+**Phase:** 3 · **Issue:** [#36](https://github.com/jzeng151/pop-engine/issues/36) · **Owner:** TBD · **Reviewer:** product owner · **Approval date:** —
 
 ## Purpose and User Outcome
 
@@ -113,4 +113,4 @@ Exact HTTP, JSON Schema, migration, job, and provider shapes belong in their rev
 - ~~Resolve T-6 / SPEC-CONFLICT #209 and approve the shared F-302/F-306 admission limit~~ **resolved 2026-08-03: the shared limit is `events.capacity`.** Still to approve: ordering, eligibility, promotion-expiry, notification-channel, and capacity-change policy. That approval must also name F306-AC-08's join limit and window, its coalescing window, flush interval, and retention bound, and the approved public submission origin the limit is keyed on, because that criterion cannot be evaluated against a value no approved artifact establishes and may not invent one.
 - Approve F-715, or promote its `F715-AC-09` limiter to an approved shared contract, before F306-AC-08 can be implemented. That criterion applies the rule rather than restating it, so neither this spec's approval nor an implementation of AC-08 can proceed while the rule it names is unapproved.
 - Approve F-701, F-702, and F-703, and name with F-703 the waitlist read and management permissions `F306-AC-09` checks. That criterion checks a permission no approved artifact defines today and may not invent one, so until the matrix names them it is testable only at the membership level stated there.
-- Assign the owner and independent reviewer, approve this spec, and add it to `docs/BASELINE.md`.
+- Assign the owner, approve this spec, and add it to `docs/BASELINE.md`. The reviewer and approver is the product owner (`docs/DOCUMENTATION-GOVERNANCE.md` §6), which is what this spec's header records, and that is the whole requirement: the independent-reviewer element this blocker used to carry was retired on 2026-08-05 (product owner; see §6 and `docs/BASELINE.md`). Until those three things are done this blocker is not satisfied and this spec is not approved: it stays PROPOSED under governance §3, its Approval date stays `—`, and it is not implementable and not listed in `docs/BASELINE.md`. Retiring the reviewer element made this spec approvable; it did not approve it.
