@@ -1,7 +1,7 @@
 // Verdict algorithm, ARCHITECTURE steps 3–6. Branch evaluation for unknowns runs before any
 // window check, so an unknown-conditioned finding can never render INFEASIBLE (Scenario F).
 
-import { resolveFindings } from "./findings";
+import { resolveFindings, routesOf } from "./findings";
 import type { PlanContext } from "./deadlines";
 import {
   MISSED_MAY_BE_REQUIRED_IS_CONDITIONAL,
@@ -13,6 +13,7 @@ import type {
   EngineRuleset,
   EventIntake,
   Finding,
+  FindingRoute,
   IntakeValue,
   MissingFact,
   RescopeSuggestion,
@@ -36,35 +37,82 @@ export type WindowVerdict = {
   readonly minSlackDays: number | null;
 };
 
-const isMissed = (finding: Finding): boolean =>
-  finding.deadlineStatus === "published_deadline_missed";
+const isMissed = (route: FindingRoute): boolean =>
+  route.deadlineStatus === "published_deadline_missed";
+
+/**
+ * Every route of every finding, each paired with the finding that holds it.
+ *
+ * THE WINDOW CHECKS READ ROUTES, NOT MERGED LINES, and that is the whole of what changes here. A
+ * merged line shows one window, so before the route list a group's other routes' windows were not
+ * on the finding at all: adding a `dedupe_key` to two rules could turn INFEASIBLE into FEASIBLE with
+ * no regulatory fact changing, because the closed route's `published_deadline_missed` had nowhere to
+ * live. Reading routes makes merging verdict-neutral by construction, since the check sees the same
+ * set of (disposition, deadlineStatus, slackDays, latestApplyDate) tuples whether two rules share a
+ * key or not. `routesOf` supplies the single-route fallback for an unmerged finding and for a
+ * replayed artifact stored before the field existed.
+ *
+ * WHAT A VERDICT MEANS IS UNCHANGED. The four verdicts, their ranks, the branch expansion and every
+ * threshold below are exactly as they were; only which findings the check reads has moved.
+ */
+function routeEntries(
+  findings: readonly Finding[],
+): { readonly finding: Finding; readonly route: FindingRoute }[] {
+  return findings.flatMap((finding) => routesOf(finding).map((route) => ({ finding, route })));
+}
+
+/**
+ * The merged line narrowed to the route that blocks, so the copy names the route rather than
+ * whichever route the headline happens to read. Everything else on the line is retained, because a
+ * consumer reading `blockingFinding` still wants its notes, sources and trigger reasons.
+ */
+function blockerView(finding: Finding, route: FindingRoute): Finding {
+  return {
+    ...finding,
+    ruleIds: [route.ruleId],
+    name: route.name,
+    disposition: route.disposition,
+    deadline: route.deadline,
+    deadlineDisplay: route.deadlineDisplay,
+    latestApplyDate: route.latestApplyDate,
+    applyAfterDate: route.applyAfterDate,
+    deadlineStatus: route.deadlineStatus,
+    slackDays: route.slackDays,
+  };
+}
 
 /**
  * Steps 4–6: the window checks, with no branch expansion. Also the per-branch and per-rescope
  * verdict, which is why it is separate from `computeVerdict`.
  */
 export function computeWindowVerdict(findings: readonly Finding[]): WindowVerdict {
-  const missed = findings.filter(isMissed);
-  const missedRuleIds = missed.flatMap((finding) => finding.ruleIds);
-  const slacks = findings
-    .filter((finding) => finding.slackDays !== null && !isMissed(finding))
-    .map((finding) => finding.slackDays as number);
+  const entries = routeEntries(findings);
+  const missed = entries.filter(({ route }) => isMissed(route));
+  const missedRuleIds = missed.map(({ route }) => route.ruleId);
+  const slacks = entries
+    .filter(({ route }) => route.slackDays !== null && !isMissed(route))
+    .map(({ route }) => route.slackDays as number);
   const minSlackDays = slacks.length === 0 ? null : Math.min(...slacks);
 
-  // The blocking finding is the missed one with the longest published lead, i.e. the earliest date.
+  // The blocking route is the missed one with the longest published lead, i.e. the earliest date.
   const blocking = missed
-    .filter((finding) => finding.disposition === "required")
+    .filter(({ route }) => route.disposition === "required")
     .sort((left, right) =>
-      (left.latestApplyDate ?? "").localeCompare(right.latestApplyDate ?? ""),
+      (left.route.latestApplyDate ?? "").localeCompare(right.route.latestApplyDate ?? ""),
     )[0];
 
   if (blocking !== undefined) {
-    return { verdict: "INFEASIBLE", blockingFinding: blocking, missedRuleIds, minSlackDays };
+    return {
+      verdict: "INFEASIBLE",
+      blockingFinding: blockerView(blocking.finding, blocking.route),
+      missedRuleIds,
+      minSlackDays,
+    };
   }
   if (MISSED_MAY_BE_REQUIRED_IS_CONDITIONAL && missed.length > 0) {
     return { verdict: "CONDITIONAL", blockingFinding: null, missedRuleIds, minSlackDays };
   }
-  if (findings.some((finding) => finding.deadlineStatus === "deadline_approaching")) {
+  if (entries.some(({ route }) => route.deadlineStatus === "deadline_approaching")) {
     return { verdict: "FEASIBLE_AT_RISK", blockingFinding: null, missedRuleIds, minSlackDays };
   }
   return { verdict: "FEASIBLE", blockingFinding: null, missedRuleIds, minSlackDays };

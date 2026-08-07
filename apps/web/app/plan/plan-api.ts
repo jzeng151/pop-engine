@@ -9,12 +9,15 @@ import type {
   DeadlineStatus,
   Disposition,
   Finding,
+  FindingRoute,
   FindingSource,
+  HeadlineMode,
   MissingFact,
   PermitPlan,
   RuleUserSummary,
   RescopeSuggestion,
   SummarySourceLink,
+  Tristate,
   UnresolvedTimeline,
   UserSummaryPoint,
   UserSummaryPointKind,
@@ -127,7 +130,34 @@ export type ConsumedFinding = Omit<
   readonly lastVerifiedDate: string | null;
   /** Normalized to null for plans stored before organizer summaries existed. */
   readonly userSummary?: RuleUserSummary | null;
+  /**
+   * Every contributing route of a merged line. Null on an unmerged line and on plans stored before
+   * the field existed; never an empty array. `deadline` is not consumed here: the routes block
+   * renders the published display, the date and the status, and the deadline TYPE label is a
+   * fallback for a line that has none of those, which a route entry never is on its own.
+   */
+  readonly routes?: readonly ConsumedRoute[] | null;
+  /** Present exactly when `routes` is non-null. */
+  readonly headlineMode?: HeadlineMode | null;
 };
+
+/** One contributing rule of a merged line, with its own published values. */
+export type ConsumedRoute = Pick<
+  FindingRoute,
+  | "ruleId"
+  | "triggerResult"
+  | "disposition"
+  | "unknownFields"
+  | "name"
+  | "agency"
+  | "deadlineDisplay"
+  | "latestApplyDate"
+  | "deadlineStatus"
+  | "feeDisplay"
+  | "portalName"
+  | "portalUrl"
+  | "portalInstructions"
+>;
 
 /**
  * The only part of a `Deadline` this feature reads: the published type, rendered when a rule states a
@@ -306,6 +336,27 @@ const SOURCE_CHECKS: FieldChecks<FindingSource> = {
   urls: arrayOf(isString),
 };
 
+const HEADLINE_MODES = tokensOf<HeadlineMode>({ applies_together: true, candidate: true });
+
+/** A route is never "false": a trigger that resolves false produces no finding to merge. */
+const TRIGGER_RESULTS = tokensOf<Tristate>({ true: true, false: true, unknown: true });
+
+const ROUTE_CHECKS: FieldChecks<ConsumedRoute> = {
+  ruleId: isString,
+  triggerResult: isToken(TRIGGER_RESULTS),
+  disposition: isToken(DISPOSITIONS),
+  unknownFields: arrayOf(isString),
+  name: nullOr(isString),
+  agency: nullOr(isString),
+  deadlineDisplay: nullOr(isString),
+  latestApplyDate: nullOr(isString),
+  deadlineStatus: isToken(DEADLINE_STATUSES),
+  feeDisplay: nullOr(isString),
+  portalName: nullOr(isString),
+  portalUrl: nullOr(isString),
+  portalInstructions: nullOr(isString),
+};
+
 const FINDING_CHECKS: FieldChecks<ConsumedFinding> = {
   ruleIds: arrayOf(isString),
   disposition: isToken(DISPOSITIONS),
@@ -331,6 +382,10 @@ const FINDING_CHECKS: FieldChecks<ConsumedFinding> = {
     value === undefined || value === null || shapedLike(USER_SUMMARY_CHECKS)(value),
   verificationStatus: isToken(VERIFICATION_STATUSES),
   lastVerifiedDate: nullOr(isString),
+  routes: (value: unknown): value is readonly ConsumedRoute[] | null =>
+    value === undefined || value === null || arrayOf(shapedLike(ROUTE_CHECKS))(value),
+  headlineMode: (value: unknown): value is HeadlineMode | null =>
+    value === undefined || value === null || isToken(HEADLINE_MODES)(value),
 };
 
 const BRANCH_OUTCOME_CHECKS: FieldChecks<ConsumedBranchOutcome> = {
@@ -420,8 +475,14 @@ const PLAN_CHECKS: FieldChecks<PlanResponse> = {
 
 /** The plan fields and finding members this feature reads, exposed so a test can assert coverage. */
 export const CONSUMED_PLAN_FIELDS: readonly string[] = Object.keys(PLAN_CHECKS);
+/**
+ * Members a stored plan may legitimately omit, because it was written before the field existed.
+ * Each is normalized to `null` below, so the page never has to tell "absent" from "no value".
+ */
+const OPTIONAL_FINDING_FIELDS: readonly string[] = ["userSummary", "routes", "headlineMode"];
+
 export const CONSUMED_FINDING_FIELDS: readonly string[] = Object.keys(FINDING_CHECKS).filter(
-  (field) => field !== "userSummary",
+  (field) => !OPTIONAL_FINDING_FIELDS.includes(field),
 );
 
 function normalizePlan(plan: PlanResponse): PlanResponse {
@@ -430,6 +491,8 @@ function normalizePlan(plan: PlanResponse): PlanResponse {
     findings: plan.findings.map((finding) => ({
       ...finding,
       userSummary: finding.userSummary ?? null,
+      routes: finding.routes ?? null,
+      headlineMode: finding.headlineMode ?? null,
     })),
     verdictDetail: {
       ...plan.verdictDetail,

@@ -7,7 +7,8 @@ import {
 import { Disclosure } from "../disclosure";
 import { PortalBlock } from "../portal-block";
 import { includesAgencyConfirmation, NOT_COVERED_BY_RULESET } from "../verification-copy";
-import type { ConsumedFinding } from "./plan-api";
+import type { ConsumedFinding, ConsumedRoute } from "./plan-api";
+import type { HeadlineMode } from "@pop-engine/engine";
 
 // F-206 AC 2 and AC 3: every plan line carries its citation and its verification status, both
 // visible. Nothing here composes regulatory prose — every string an organizer reads is either
@@ -159,6 +160,120 @@ function SummarySources({ sources }: { sources: readonly SummarySourceLink[] }) 
   );
 }
 
+/**
+ * The published values a reader compares two routes on. Two routes "publish the same thing" when
+ * every one of these is equal, which is a comparison of published values rather than a judgement.
+ */
+const routeSignature = (route: ConsumedRoute): string =>
+  JSON.stringify([
+    route.name,
+    route.agency,
+    route.disposition,
+    route.deadlineDisplay,
+    route.latestApplyDate,
+    route.deadlineStatus,
+    route.feeDisplay,
+    route.portalName,
+    route.portalUrl,
+    route.portalInstructions,
+  ]);
+
+/**
+ * One contributing route of a merged line, with its own name, window and fee.
+ *
+ * `applies` prefixes the entry rather than restating the disposition in a second voice: in a
+ * candidate list an organizer has to be able to tell, per entry, which routes are known to apply.
+ */
+function Route({ route, mode }: { route: ConsumedRoute; mode: HeadlineMode }) {
+  const label = mode === "candidate" ? (route.triggerResult === "true" ? "Applies" : "May apply") : null;
+  return (
+    <li className="line__route">
+      <p className="line__route-head">
+        {label !== null && <span className="line__route-label">{label}</span>}
+        <span className="line__route-name">{route.name ?? route.ruleId}</span>
+        <span className="line__route-disposition">{humanize(route.disposition)}</span>
+        {route.agency !== null && <span className="line__route-agency">{route.agency}</span>}
+      </p>
+      {(route.deadlineDisplay !== null ||
+        route.latestApplyDate !== null ||
+        route.deadlineStatus !== "not_applicable") && (
+        <p className="line__route-deadline">
+          {route.deadlineDisplay !== null && route.deadlineDisplay}
+          {route.latestApplyDate !== null && (
+            <span>
+              {route.deadlineDisplay !== null && " · "}apply by {route.latestApplyDate}
+            </span>
+          )}
+          {route.deadlineStatus !== "not_applicable" && (
+            <span>
+              {" · "}
+              {humanize(route.deadlineStatus)}
+            </span>
+          )}
+        </p>
+      )}
+      {route.feeDisplay !== null && <p className="line__route-fee">{route.feeDisplay}</p>}
+      <PortalBlock
+        portalName={route.portalName}
+        portalUrl={route.portalUrl}
+        portalInstructions={route.portalInstructions}
+        className="line__route-portal"
+        instructionsClassName="line__portal-instructions"
+      />
+    </li>
+  );
+}
+
+/**
+ * The contributing routes of a merged dedupe line, and why they arrived on one line.
+ *
+ * NOTHING RENDERS WHEN THE ROUTES PUBLISH THE SAME THING. Three of the nine multi-member groups in
+ * the v2 full draft publish byte-identical outputs and are the ones that merge most often
+ * (`docs/research/draft-dedupe-cofiring.md` §5.2, §5.7, §5.8), and listing one permit twice under a
+ * heading saying two things apply would be a rendering fault presented as regulatory content.
+ *
+ * A CANDIDATE LIST MUST NOT READ AS A LIST OF REQUIREMENTS. Three things keep it from doing so: the
+ * introduction says the answers do not decide it, every unresolved entry is prefixed "May apply",
+ * and no entry is rendered as an action. Nothing here composes a regulatory claim: every value is a
+ * route's own published value, and the only sentences are the fixed ones below.
+ */
+function Routes({ finding }: { finding: ConsumedFinding }) {
+  const routes = finding.routes ?? null;
+  const mode = finding.headlineMode ?? null;
+  if (routes === null || mode === null || routes.length < 2) return null;
+  if (new Set(routes.map(routeSignature)).size === 1) return null;
+
+  const deciding = [...new Set(routes.flatMap((route) => route.unknownFields))];
+  const applying = routes.filter((route) => route.triggerResult === "true").length;
+
+  return (
+    <section className="line__routes">
+      <p className="line__routes-intro">
+        {mode === "applies_together" ? (
+          <>
+            <strong>{routes.length === 2 ? "Both of these apply." : "All of these apply."}</strong>{" "}
+            The published rules give more than one route to this requirement, and on the answers
+            recorded in this plan each of them applies.
+          </>
+        ) : (
+          <>
+            <strong>The answers so far do not say which of these applies.</strong>{" "}
+            {routes.length} published routes are open on the answers recorded in this plan
+            {applying > 0 && `, and ${applying} of them applies on the answers so far`}.
+            {deciding.length > 0 && ` Answering ${deciding.map(humanize).join(", ")} would decide it.`}{" "}
+            Until then, treat none of the routes below as settled.
+          </>
+        )}
+      </p>
+      <ul className="line__route-list">
+        {routes.map((route) => (
+          <Route key={route.ruleId} route={route} mode={mode} />
+        ))}
+      </ul>
+    </section>
+  );
+}
+
 function PublishedDeadline({ finding }: { finding: ConsumedFinding }) {
   if (!hasDeadlineData(finding)) return null;
   return (
@@ -274,6 +389,10 @@ export function PlanLine({ finding }: { finding: ConsumedFinding }) {
           {finding.feeDisplay !== null && <p className="line__fee">{finding.feeDisplay}</p>}
         </>
       )}
+
+      {/* The contributing routes of a merged line, visible before any interaction: in candidate
+          mode this is the whole answer to "which of these do I actually have to file". */}
+      <Routes finding={finding} />
 
       {/* A RESEARCH_REQUIRED line has no located primary source, which the organizer has to see
           on the line itself rather than discover behind an expand: the absence IS the finding. */}

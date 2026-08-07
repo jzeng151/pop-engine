@@ -8,12 +8,21 @@ import type {
   EngineRuleset,
   EventIntake,
   Finding,
+  FindingRoute,
+  HeadlineMode,
   HolidayCalendar,
   IntakeValue,
   PermitPlan,
 } from "@pop-engine/engine";
 
-type StoredFinding = Finding & { readonly lastVerifiedDate: string | null };
+// The optional engine fields are normalized to explicit nulls on the wire, following
+// `userSummary`: a client reading a stored plan gets the same key set whether the plan predates
+// the field or the finding simply has no value for it.
+type StoredFinding = Omit<Finding, "routes" | "headlineMode"> & {
+  readonly lastVerifiedDate: string | null;
+  readonly routes: readonly FindingRoute[] | null;
+  readonly headlineMode: HeadlineMode | null;
+};
 
 /**
  * A stored plan whose items no longer match what was written. F-201 AC 5: a partial plan is never
@@ -147,6 +156,15 @@ export type FindingRendering = {
   portal_instructions: string | null;
   /** Absent on plans stored before organizer summaries were introduced. */
   user_summary?: Finding["userSummary"];
+  /**
+   * Every contributing route of a merged dedupe line, with its own name, window and fee. Absent on
+   * plans stored before the route list was introduced, and null there on read: `null` means "this
+   * plan predates the field", never "this line has no routes". A merged line always has two or
+   * more and an unmerged one carries none, so `[]` is never written.
+   */
+  routes?: readonly FindingRoute[] | null;
+  /** Present exactly when `routes` is, and absent on the same stored plans. */
+  headline_mode?: HeadlineMode | null;
 };
 
 const renderingOf = (finding: Finding): FindingRendering => ({
@@ -160,6 +178,8 @@ const renderingOf = (finding: Finding): FindingRendering => ({
   timeline_unresolved_reason: finding.timelineUnresolvedReason,
   portal_instructions: finding.portalInstructions,
   user_summary: finding.userSummary ?? null,
+  routes: finding.routes ?? null,
+  headline_mode: finding.headlineMode ?? null,
 });
 
 export const renderingKey = (ruleIds: readonly string[]): string => ruleIds.join(",");
@@ -363,6 +383,8 @@ export function createPlanService(
             ...finding,
             userSummary: finding.userSummary ?? null,
             lastVerifiedDate: finding.lastVerifiedDate ?? null,
+            routes: finding.routes ?? null,
+            headlineMode: finding.headlineMode ?? null,
           })),
         };
       } catch (error) {
@@ -509,6 +531,8 @@ function findingFromRow(row: PlanItemRow, rendering: FindingRendering): StoredFi
     conflictText: rendering.conflict_text,
     sources: row.sources,
     userSummary: rendering.user_summary ?? null,
+    routes: rendering.routes ?? null,
+    headlineMode: rendering.headline_mode ?? null,
     verificationStatus: row.verification_status,
     lastVerifiedDate: isoDate(row.last_verified_date),
     triggeredBy: row.triggered_by,
