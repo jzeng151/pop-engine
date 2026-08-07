@@ -5,7 +5,7 @@ import { resolve } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { cleanup, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { CONFIRM_WITH_AGENCY, type Finding } from "@pop-engine/engine";
+import { CONFIRM_WITH_AGENCY, type Finding, type FindingRoute } from "@pop-engine/engine";
 import { publishedRulesFileIn } from "../rules-file";
 import PlanPage from "../events/[id]/plan/page";
 import { PlanView } from "./plan-view";
@@ -721,6 +721,105 @@ describe("per-line citations and status (AC 2, AC 3)", () => {
     expect(line.getByText(/on track/)).toBeDefined();
     expect(line.getByText(/no published holiday list/)).toBeDefined();
     expect(line.getByText(/plaza level/)).toBeDefined();
+  });
+});
+
+describe("the routes of a merged dedupe line", () => {
+  // The engine's own field names, so a shape change moves this test rather than passing quietly.
+  const route = (overrides: Partial<FindingRoute> = {}): FindingRoute => ({
+    ruleId: "DOB-TENT-001",
+    triggerResult: "true",
+    disposition: "required",
+    unknownFields: [],
+    name: "Tent permit",
+    agency: "DOB",
+    deadline: null,
+    deadlineDisplay: null,
+    latestApplyDate: null,
+    applyAfterDate: null,
+    deadlineStatus: "not_applicable",
+    slackDays: null,
+    feeDisplay: null,
+    portalName: null,
+    portalUrl: null,
+    portalInstructions: null,
+    ...overrides,
+  });
+
+  const lineWith = async (overrides: Partial<Finding>) => {
+    stubApi(plan({ findings: [finding(overrides)] }));
+    renderPlan();
+    return within(await screen.findByRole("article"));
+  };
+
+  it("renders nothing extra when the routes publish the same thing", async () => {
+    // Three of the nine multi-member groups in the v2 full draft are byte-identical and are the
+    // ones that merge most often. A "both of these apply" block listing one permit twice would be
+    // a rendering fault presented as regulatory content.
+    const line = await lineWith({
+      ruleIds: ["DOB-STAGE-001", "DOB-STRUCTURE-DURATION-001"],
+      headlineMode: "applies_together",
+      routes: [route({ ruleId: "DOB-STAGE-001" }), route({ ruleId: "DOB-STRUCTURE-DURATION-001" })],
+    });
+    expect(line.queryByText(/Both of these apply/)).toBeNull();
+    expect(line.queryByText(/do not say which of these applies/)).toBeNull();
+  });
+
+  it("says both apply, and names each route's own window and fee, when every trigger resolved", async () => {
+    const line = await lineWith({
+      ruleIds: ["NYPD-SOUND-PUBLIC-001", "NYPD-SOUND-PROHIBITED-001"],
+      headlineMode: "applies_together",
+      routes: [
+        route({
+          ruleId: "NYPD-SOUND-PUBLIC-001",
+          name: "Sound Device Permit",
+          latestApplyDate: "2026-11-29",
+          deadlineStatus: "on_track",
+          feeDisplay: "$45 per sound device for the first day",
+        }),
+        route({
+          ruleId: "NYPD-SOUND-PROHIBITED-001",
+          name: "Commercial advertising by sound device",
+          disposition: "prohibited_or_ineligible",
+        }),
+      ],
+    });
+    expect(line.getByText(/Both of these apply/)).toBeDefined();
+    expect(line.getByText("Sound Device Permit")).toBeDefined();
+    expect(line.getByText("Commercial advertising by sound device")).toBeDefined();
+    // The permit's window and fee are on the permit's entry, not on the barred line's headline.
+    expect(line.getByText(/apply by 2026-11-29/)).toBeDefined();
+    expect(line.getByText(/\$45 per sound device/)).toBeDefined();
+  });
+
+  it("reads as a question, not a list of requirements, when a trigger did not resolve", async () => {
+    const line = await lineWith({
+      ruleIds: ["NYPD-SOUND-PUBLIC-001", "NYPD-SOUND-PROHIBITED-001"],
+      headlineMode: "candidate",
+      routes: [
+        route({ ruleId: "NYPD-SOUND-PUBLIC-001", name: "Sound Device Permit" }),
+        route({
+          ruleId: "NYPD-SOUND-PROHIBITED-001",
+          name: "Commercial advertising by sound device",
+          disposition: "prohibited_or_ineligible",
+          triggerResult: "unknown",
+          unknownFields: ["sound_purpose"],
+        }),
+      ],
+    });
+    expect(line.getByText(/The answers so far do not say which of these applies/)).toBeDefined();
+    expect(line.getByText(/one of them applies on the answers so far/)).toBeDefined();
+    expect(line.getByText(/Answering sound purpose would decide it/)).toBeDefined();
+    expect(line.getByText(/treat none of the routes below as settled/)).toBeDefined();
+    // Per entry, which routes are known to apply and which are not.
+    expect(line.getByText("Applies")).toBeDefined();
+    expect(line.getByText("May apply")).toBeDefined();
+  });
+
+  it("renders a line with no route list exactly as it did before the field existed", async () => {
+    const line = await lineWith({});
+    expect(line.queryByText(/of these applies/)).toBeNull();
+    expect(line.getByText("Special Event Permit")).toBeDefined();
   });
 });
 

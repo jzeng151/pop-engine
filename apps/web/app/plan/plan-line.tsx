@@ -185,7 +185,8 @@ const routeSignature = (route: ConsumedRoute): string =>
  * candidate list an organizer has to be able to tell, per entry, which routes are known to apply.
  */
 function Route({ route, mode }: { route: ConsumedRoute; mode: HeadlineMode }) {
-  const label = mode === "candidate" ? (route.triggerResult === "true" ? "Applies" : "May apply") : null;
+  const label =
+    mode === "candidate" ? (route.triggerResult === "true" ? "Applies" : "May apply") : null;
   return (
     <li className="line__route">
       <p className="line__route-head">
@@ -257,10 +258,13 @@ function Routes({ finding }: { finding: ConsumedFinding }) {
           </>
         ) : (
           <>
-            <strong>The answers so far do not say which of these applies.</strong>{" "}
-            {routes.length} published routes are open on the answers recorded in this plan
-            {applying > 0 && `, and ${applying} of them applies on the answers so far`}.
-            {deciding.length > 0 && ` Answering ${deciding.map(humanize).join(", ")} would decide it.`}{" "}
+            <strong>The answers so far do not say which of these applies.</strong> {routes.length}{" "}
+            published routes are open on the answers recorded in this plan
+            {applying > 0 &&
+              `, and ${applying === 1 ? "one of them applies" : `${applying} of them apply`} on the answers so far`}
+            .
+            {deciding.length > 0 &&
+              ` Answering ${deciding.map(humanize).join(", ")} would decide it.`}{" "}
             Until then, treat none of the routes below as settled.
           </>
         )}

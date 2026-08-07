@@ -89,6 +89,8 @@ export type FindingRoute = {
   /** "true" or "unknown". A route is never "false": a false trigger produces no finding. */
   readonly triggerResult: Tristate;
   readonly disposition: Disposition;
+  /** The intake fields this route's OWN trigger could not resolve; empty when it resolved. */
+  readonly unknownFields: readonly string[];
   readonly name: string | null;
   readonly agency: string | null;
   readonly deadline: Deadline | null;
@@ -120,6 +122,11 @@ any group arithmetic: the rule's published disposition, demoted to `may_be_requi
 publishes `required` and its own trigger resolved `unknown`. It is not the group's disposition and
 is not capped by the unresolved-route ceiling. That is the point: the ceiling is a statement about
 what the merged HEADLINE may claim, and a route entry claims nothing about the group.
+
+`route.unknownFields` is what lets the candidate copy name the question that decides a route. It is
+per route rather than per finding because `deadlineUnknownFields` on the merged line concatenates
+over the group and says which answers stopped a DATE resolving, which is a different question from
+which answers stopped a ROUTE resolving.
 
 `route.applyAfterDate`, `route.deadlineStatus` and `route.slackDays` carry any dependency sequencing
 that applied to that route, so the route list and the headline never disagree about a sequenced
@@ -191,11 +198,11 @@ fee. Nothing on the line asserts that a candidate route applies.
 `nypd_sound` is the group the two modes were not written for. From the measurement §5.5 and §6, the
 sets are:
 
-| set | count of 360 | shape |
-| --- | --- | --- |
-| `NYPD-SOUND-PUBLIC-001` true + `...COMMERCIAL-ADVERTISING-PROHIBITED-001` true | 15 | both resolved, and they disagree |
-| `NYPD-SOUND-PRIVATE-AUDIBLE-001` true + prohibition true | 3 | both resolved, and they disagree |
-| permit true + prohibition unknown | 54 | one resolved, one not, and they disagree |
+| set                                                                            | count of 360 | shape                                    |
+| ------------------------------------------------------------------------------ | ------------ | ---------------------------------------- |
+| `NYPD-SOUND-PUBLIC-001` true + `...COMMERCIAL-ADVERTISING-PROHIBITED-001` true | 15           | both resolved, and they disagree         |
+| `NYPD-SOUND-PRIVATE-AUDIBLE-001` true + prohibition true                       | 3            | both resolved, and they disagree         |
+| permit true + prohibition unknown                                              | 54           | one resolved, one not, and they disagree |
 
 The 54-intake set is the shape neither mode fits: the permit definitely applies, with a
 `published_minimum` of 5 calendar days, a $45-plus-$5 fee and a precinct portal; the section 10-108
@@ -316,8 +323,8 @@ unresolved routes' triggers left open, humanized by the same `humanize()` the li
 
 Then one entry per route, in binding order, each labelled:
 
-> **Applies**: {route.name or route.ruleId} …   (for a resolved route)
-> **May apply**: {route.name or route.ruleId} …  (for an unresolved route)
+> **Applies**: {route.name or route.ruleId} … (for a resolved route)
+> **May apply**: {route.name or route.ruleId} … (for an unresolved route)
 
 with the same body as 5.2.
 
@@ -392,7 +399,7 @@ make that safe:
    9), which is a value change within an existing field and not a shape change.
 2. **Optional-and-normalized, which is the established pattern.** `user_summary` is declared
    `user_summary?: Finding["userSummary"]` on the rendering type, written as `finding.userSummary ??
-   null`, and read back as `rendering.user_summary ?? null` (`plan.ts:149`, `162`, `511`). `routes`
+null`, and read back as `rendering.user_summary ?? null` (`plan.ts:149`, `162`, `511`). `routes`
    and `headline_mode` follow that exactly: optional on the type, normalized on write, normalized to
    `null` on read. A replayed pre-change plan reads `routes: null`.
 3. **`null` has a defined meaning and it is not "no routes".** `routes: null` means the stored plan
@@ -444,18 +451,22 @@ position". This proposal **is** Route 2, in a different place and with one membe
 carrying both rule ids". Under this proposal that line also carries a two-entry route list and a
 `candidate` mode, because both DOB rules evaluate `unknown` at Scenario E's intake
 (`tent_area_sqft: 400` on a `boundary: "conditional"` comparison, `structure_over_10ft_tall:
-"unknown"`). The answer key's prose is still true and its rendering guidance gains a case. Section 9
-states whether the scenario's output moves.
+"unknown"`). The answer key's prose is still true and its rendering guidance gains a case. Scenario
+E's own decided values do NOT move: with both routes unresolved the binding route is unchanged, and
+the deployed configuration still renders the tent permit's name, its `not_calculable`
+15-business-day window, its TUP fee and its heading. Section 9.1 states which `nyc.v2.11` intakes do
+move.
 
 ## 9. Interaction with AD-19, and what is superseded
 
 **AD-19 is amended, not left standing beside a second rule.** `docs/ARCHITECTURE-FUTURE.md` §2 AD-19,
 its §8.4 note, and its `docs/BASELINE.md` record all state the per-field identity/timeline split as
-the rule in force. If this proposal is approved, that split is superseded and those three records are
-amended in the same change, with the superseding recorded on AD-19's own row rather than as a new
-ADR that contradicts it. **The branch carrying this proposal prepares those amendments and does not
-apply them, because amending an approved ADR is the product owner's under governance §6 and this
-document approves nothing.**
+the rule in force. Two rules stated as both in force is the failure this avoids, so the branch
+carrying this proposal writes a SUPERSESSION NOTICE onto AD-19's own row and onto the §8.4 note,
+naming this document, naming the single sentence that would be replaced, and saying that until the
+product owner approves it AD-19's row is the rule in force. **The notice records a challenge, not an
+approval.** The supersession itself is not applied and no approval record is added: amending an
+approved ADR is the product owner's under governance §6, and this document approves nothing.
 
 Precisely what of AD-19 survives and what does not:
 
@@ -485,6 +496,30 @@ disposition, so that case reads INFEASIBLE, the same as unmerged. What is NOT re
 where the closed route's own disposition is `prohibited_or_ineligible`; that is the residual in
 section 6 and it is unmerged behaviour too.
 
+### 9.1 What moves on the published ruleset
+
+Measured over the 3,200-intake control sweep of measurement §4.3, rebuilt here as an exhaustive
+3,200-intake enumeration of the power set of `structure_types` by `tent_area_sqft` by
+`tent_days_in_place` by `structure_over_10ft_tall`, with `routes` and `headlineMode` stripped so the
+comparison is of the values that already existed:
+
+- **64 of 3,200 plans differ from `main`. 0 verdicts differ.** PR #244's head is byte-identical to
+  `main` on the same sweep, so those 64 are this proposal's, not #244's.
+- **Every one of the 64 has `structure_over_10ft_tall: "yes"` with the tent rule unresolved**, which
+  is the measurement's own "`DOB-TENT-001` unknown, `DOB-TALL-STRUCTURE-001` true" set, counted at 64
+  there too. On those intakes the tall-structure rule DEFINITELY applies and the tent rule might.
+- **What changes on them:** the line's name, deadline, apply-by date, status, slack, fee and summary
+  heading move from the tent route to the tall-structure route. `main` names the tent permit and
+  quotes its 15-business-day window and its "$100 initial 30 days" TUP fee off a trigger that did
+  not resolve.
+- **Why that is correct:** the tall-structure rule's trigger resolved and the tent rule's did not, so
+  the line now reads as the route that is known to apply. Nothing published is lost: the tent
+  route's name, window and fee are on its route entry, and its rule id, citation, notes and summary
+  points concatenate onto the line as they already did.
+
+This is a change to an organizer-facing outcome on the published ruleset, and it is why section 10
+routes this through the product owner rather than treating it as an engine refactor.
+
 **`docs/OPEN-QUESTIONS.md` T-12 stays open.** This is still not §8.4's precedence table. It is a
 better stand-in for it, and publishing the real table still supersedes it.
 
@@ -493,12 +528,12 @@ better stand-in for it, and publishing the real table still supersedes it.
 Under `docs/DOCUMENTATION-GOVERNANCE.md` §6, this matches three rows at once and the product owner
 approves each:
 
-| what | row |
-| --- | --- |
-| the merge rule and the verdict read | "Rule trigger, dedupe, branch, deadline, or formula semantics" |
-| `routes`, `headlineMode`, the `HeadlineMode` enum, the API response | "Event Input, rules schema, OpenAPI, shared enum" |
-| a new organizer-facing outcome (the candidate list and its copy) | "Product scope, feature meaning, phase", and the first row, because the copy states permit, deadline and fee facts and so is regulatory publication rather than copy-only |
-| superseding AD-19's identity/timeline split | "Durable architecture decision or dependency", recorded as an approved ADR |
+| what                                                                | row                                                                                                                                                                       |
+| ------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| the merge rule and the verdict read                                 | "Rule trigger, dedupe, branch, deadline, or formula semantics"                                                                                                            |
+| `routes`, `headlineMode`, the `HeadlineMode` enum, the API response | "Event Input, rules schema, OpenAPI, shared enum"                                                                                                                         |
+| a new organizer-facing outcome (the candidate list and its copy)    | "Product scope, feature meaning, phase", and the first row, because the copy states permit, deadline and fee facts and so is regulatory publication rather than copy-only |
+| superseding AD-19's identity/timeline split                         | "Durable architecture decision or dependency", recorded as an approved ADR                                                                                                |
 
 **No approval record is added to `docs/BASELINE.md` by this branch and no spec's status is flipped.**
 
