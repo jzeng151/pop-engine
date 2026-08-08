@@ -11,7 +11,9 @@ import {
   OPT_OUT_MARKER,
   blockDigest,
   blocksOf,
+  cityHealthRule,
   countClaimsInPublishedOutput,
+  countsSupportedBy,
   pinnedDigest,
   scanFile,
   scanOptionsFor,
@@ -764,8 +766,24 @@ describe("no DOHMH rule is attributed to headcount, removed 2026-08-05 (#235)", 
     return into;
   }
 
-  /** The city health agency's rules, by id OR published agency: two of the three publish neither. */
-  const CITY_HEALTH_RULE = /DOHMH/i;
+  /**
+   * Every numeric value a trigger compares `field` against, at any nesting depth. These are the
+   * thresholds the rule really publishes, and the only numbers its own prose may state about the
+   * field. A non-numeric comparison contributes nothing, so a rule that reads the field without a
+   * threshold licenses no number at all.
+   */
+  function triggerValues(node, field, into = new Set()) {
+    if (Array.isArray(node)) for (const child of node) triggerValues(child, field, into);
+    else if (node && typeof node === "object") {
+      if (node.field === field) {
+        for (const value of [node.value].flat()) {
+          if (typeof value === "number") into.add(value);
+        }
+      }
+      for (const value of Object.values(node)) triggerValues(value, field, into);
+    }
+    return into;
+  }
 
   /** The published intake field the prose calls an attendee count. */
   const ATTENDEE_COUNT_FIELD = "headcount";
@@ -799,34 +817,45 @@ describe("no DOHMH rule is attributed to headcount, removed 2026-08-05 (#235)", 
     return rulesets;
   }
 
-  /** Every city health rule of one parsed ruleset, by id OR by published agency. */
-  const cityHealthRules = (artifact) =>
-    artifact.rules.filter(
-      (rule) =>
-        CITY_HEALTH_RULE.test(rule.id ?? "") || CITY_HEALTH_RULE.test(rule.output?.agency ?? ""),
-    );
+  /**
+   * Every city health rule of one parsed ruleset, BY THE SAME AGENCY VOCABULARY THE PROSE SCANNER
+   * USES: `cityHealthRule` in `spec-conflict-scan.mjs`, which reads the rule id or `output.agency`
+   * against `CITY_HEALTH_AGENCY_SOURCE`.
+   *
+   * It was a local `/DOHMH/i` until the eleventh PR #247 round, and that acronym is the one thing a
+   * future publication need not carry. The scanner recognizes `NYC Health`, `Health and Mental
+   * Hygiene`, `Department of Health` and `Health Department` as this agency, and
+   * `specs/F-201-permit-plan-generator.md:22` makes `output.agency` authoritative rather than the
+   * id prefix, so a rule published as `NYC Health` under an id like `HEALTH-ASSEMBLY-001` was
+   * outside BOTH the trigger assertion below and the threshold map under it. It could have read
+   * `headcount` with every guard in this file green. One predicate answers the question now, in one
+   * place, for the trigger assertion, the threshold map and the ruleset's own prose alike.
+   */
+  const cityHealthRules = (artifact) => artifact.rules.filter(cityHealthRule);
 
   /**
-   * The IDS of the city health rules whose published trigger reads the attendee-count intake field.
-   * Empty on this tree, and that is the fact the whole prose scan rests on: a sentence saying a city
-   * health requirement depends on the count is true exactly of a rule in this set.
+   * The city health rules whose published trigger reads the attendee-count intake field, mapped to
+   * THE THRESHOLD VALUES that trigger compares it against. Empty on this tree, and that is the fact
+   * the whole prose scan rests on: a sentence saying a city health requirement depends on the count
+   * is true exactly of a rule in this map.
    *
-   * A SET RATHER THAN A BOOLEAN, which is the tenth PR #247 round. It was a boolean and
-   * `flaggedBlocks()` short-circuited to nothing on it, so ONE health rule starting to read
-   * `headcount` would have suppressed every prose finding in the repository. A sentence about that
-   * new rule would indeed have become true; a sentence inventing a count trigger for an unrelated
-   * vendor permit or notification would have gone past unchecked in the same run, and so would every
-   * pair in every document. The exception is scoped to what changed now: prose that NAMES one of
-   * these rules is attributable to it and exempt, and everything else is scanned exactly as before.
+   * A MAP RATHER THAN A BOOLEAN, which is the tenth PR #247 round and the eleventh. It was a
+   * boolean and `flaggedBlocks()` short-circuited to nothing on it, so ONE health rule starting to
+   * read `headcount` would have suppressed every prose finding in the repository. The tenth round
+   * made it a set of ids, which scoped the exemption to prose about the rule that changed; the
+   * eleventh carries the values too, because "this rule reads the count" licenses the FIELD and not
+   * every number a string can state. A rule triggered at 75 does not make a note about 500 a
+   * published fact.
    */
-  function healthRulesReadingTheAttendeeCount() {
-    const ids = new Set();
+  function attendeeCountThresholdsByRule() {
+    const thresholds = new Map();
     for (const [, artifact] of publishedRulesets()) {
       for (const rule of cityHealthRules(artifact)) {
-        if (triggerFields(rule.trigger).has(ATTENDEE_COUNT_FIELD)) ids.add(rule.id);
+        if (!triggerFields(rule.trigger).has(ATTENDEE_COUNT_FIELD)) continue;
+        thresholds.set(rule.id, triggerValues(rule.trigger, ATTENDEE_COUNT_FIELD));
       }
     }
-    return ids;
+    return thresholds;
   }
 
   it("no published ruleset keys a DOHMH rule on an attendee count", () => {
@@ -851,7 +880,7 @@ describe("no DOHMH rule is attributed to headcount, removed 2026-08-05 (#235)", 
    * artifact nobody scanned.
    */
   it("no published rule's organizer-facing output states a count-based city health requirement", () => {
-    const attributed = healthRulesReadingTheAttendeeCount();
+    const attributed = attendeeCountThresholdsByRule();
     const offenders = [];
     for (const [path, artifact] of publishedRulesets()) {
       for (const found of countClaimsInPublishedOutput(artifact, { attributed })) {
@@ -880,11 +909,13 @@ describe("no DOHMH rule is attributed to headcount, removed 2026-08-05 (#235)", 
    * scanned, and the one condition under which scanning them is pointless.
    */
   function flaggedBlocks() {
-    // The ruleset decides whether a pairing is an offence, RULE BY RULE. A block that names a rule
-    // whose published trigger reads the attendee count is stating that rule's own published fact,
-    // so it is exempt; nothing else is. This used to be a repository-wide short-circuit on the same
-    // question asked as a yes/no, which one rule change would have used to silence the whole scan.
-    const attributed = [...healthRulesReadingTheAttendeeCount()];
+    // The ruleset decides whether a pairing is an offence, RULE BY RULE AND THRESHOLD BY THRESHOLD.
+    // A block that names a rule whose published trigger reads the attendee count is stating that
+    // rule's own published fact, and only while the numbers it states are that rule's own: naming
+    // the rule is not a licence to state a threshold it does not publish. This used to be a
+    // repository-wide short-circuit on the same question asked as a yes/no, which one rule change
+    // would have used to silence the whole scan.
+    const attributed = [...attendeeCountThresholdsByRule()];
 
     const flagged = [];
     for (const path of filesUnder(SCANNED_ROOTS, [".md", ".ts", ".tsx", ".mjs", ".js"])) {
@@ -894,7 +925,13 @@ describe("no DOHMH rule is attributed to headcount, removed 2026-08-05 (#235)", 
       // one clause of this function, and reverting either left the whole suite green.
       const found = scanFile(readFileSync(path, "utf8"), scanOptionsFor(relative));
       for (const item of found) {
-        if (attributed.some((id) => item.text.includes(id))) continue;
+        if (
+          attributed.some(
+            ([id, thresholds]) =>
+              item.text.includes(id) && countsSupportedBy(item.text, thresholds),
+          )
+        )
+          continue;
         flagged.push({ relative, ...item });
       }
     }

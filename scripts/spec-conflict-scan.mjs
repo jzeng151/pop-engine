@@ -26,6 +26,18 @@ import { createHash } from "node:crypto";
  * as well as the plain form: an earlier `(?<!State )` saw "ate's " in "New York State's
  * Department of Health" and flagged that true published fact as a fabricated claim.
  *
+ * THE POSSESSIVE IS SPELLED TWO WAYS AND BOTH ARE EXCLUDED, which is the eleventh PR #247 round.
+ * Only the straight apostrophe was listed, and `normalizeForMatching` strips neither spelling
+ * between two letters, so "New York State’s Department of Health requires this for 75 attendees"
+ * fell through to the generic "Department of Health" alternative and reported the STATE
+ * department's own published threshold as an invented city claim. The curly apostrophe is not an
+ * edge case in pasted or word-processed source text, and the tree already carries four of them, in
+ * `docs/proposals/regulatory-scenarios-v2-draft.md`, all four possessive. The comment above
+ * promised the state department was excluded, so the promise is what is made true rather than
+ * narrowed. `normalizeForMatching` strips the curly QUOTATION marks and deliberately leaves the
+ * curly apostrophe alone, for the same reason it leaves a flanked straight one alone: stripping it
+ * would turn this string into one no lookbehind can see.
+ *
  * The spelled-out name takes an AMPERSAND, added in the sixth PR #247 round, and the agency renders
  * its own name both ways.
  *
@@ -48,7 +60,7 @@ import { createHash } from "node:crypto";
  */
 export const CITY_HEALTH_AGENCY_SOURCE =
   "\\bDOHMH\\b|\\bHealth (?:and|&) Mental Hygiene\\b|\\bNYC Health\\b" +
-  "|(?<!State |State's |SDOH )\\b(?:Department of Health|Health Department)\\b";
+  "|(?<!State |State's |State’s |SDOH )\\b(?:Department of Health|Health Department)\\b";
 export const CITY_HEALTH_AGENCY = new RegExp(CITY_HEALTH_AGENCY_SOURCE, "i");
 
 /**
@@ -136,6 +148,29 @@ export const ATTENDEE_COUNT = new RegExp(ATTENDEE_COUNT_SOURCE, "i");
  * so "75 days before guests arrive" beside an agency mention is a false positive this window
  * created. The flag set on this tree is unchanged at ten with it.
  *
+ * THE NUMERAL-FIRST NOUN MAY BE SINGULAR, which is the eleventh PR #247 round. Every noun in both
+ * alternations was plural, so a threshold of one was missed on its grammar alone: "DOHMH requires a
+ * permit when 1 guest attends", "when 1 attendee registers" and "when 1 person attends" were all
+ * counts nobody could state, in either expression, and the published-output audit rests on the same
+ * predicate. The plural `s` is optional here rather than a second alternation, so the noun list
+ * stays one list and cannot drift from the other three (the set equality next door canonicalizes
+ * the two spellings to one word). Its cost, measured over every scanned root: the flag set is
+ * unchanged at ten, and the widened form matches nothing in this tree the plural form did not.
+ *
+ * THE NUMERAL IS THE SAME NUMERAL IN BOTH ALTERNATIONS, which the singular forced and which was an
+ * inconsistency before it. The noun-first half has always refused a numeral attached to a word or a
+ * hyphen (`(?<![\w-])\d{1,6}(?![\w-])`, so "2026-08-07" is a date and not a threshold) and the
+ * numeral-first half took a bare `\b\d{1,6}`. With plural nouns only, the difference was invisible.
+ * With the singular, "DOHMH-VENDOR-PERMIT-001 covers every guest" reads its own rule id as "1
+ * guest": this repository writes rule ids ending in digits beside the agency name constantly, so
+ * the singular is only affordable with the same guard the other half already carries.
+ *
+ * THE NOUN-FIRST ALTERNATION KEEPS ITS PLURALS, and that is a decision rather than an omission.
+ * That half reaches to the end of the sentence, so a singular there would read "a guest" against
+ * any numeral later in the sentence: "a guest asked about the 75th day" beside an agency mention.
+ * A threshold of one written noun-first ("no guest may attend unless 1 ...") is not English anyone
+ * writes, so the miss it leaves is not a shape a claim can take.
+ *
  * THE NOUN-FIRST ALTERNATION REACHES TO THE END OF THE SENTENCE, and nothing narrower. It carried
  * a `{0,40}` character window until the seventh PR #247 review round, which found that window
  * UNTESTED and UNDECLARED: it could be narrowed to `{0,0}` with all 79 cases green, while the
@@ -147,7 +182,7 @@ export const ATTENDEE_COUNT = new RegExp(ATTENDEE_COUNT_SOURCE, "i");
  * in one sentence and a numeral in the next are still two things.
  */
 export const COUNTED_PEOPLE_SOURCE =
-  "\\b\\d{1,6} ?(?:or more |or fewer |\\+ ?)?(?:[a-z][a-z-]*,? ){0,2}?(?:guests|attendees|people|persons|heads|RSVPs|patrons)\\b" +
+  "(?<![\\w-])\\d{1,6}(?![\\w-]) ?(?:or more |or fewer |\\+ ?)?(?:[a-z][a-z-]*,? ){0,2}?(?:guest|attendee|people|person|head|RSVP|patron)s?\\b" +
   "|\\b(?:guests|attendees|people|persons|heads|RSVPs|patrons)\\b[^.\\n]*?(?<![\\w-])\\d{1,6}(?![\\w-])";
 export const COUNTED_PEOPLE = new RegExp(COUNTED_PEOPLE_SOURCE, "i");
 
@@ -524,6 +559,36 @@ export const pairsAgencyWithCount = (raw, { bounded = false } = {}) => {
 };
 
 /**
+ * Every threshold a text states: the numerals its counted-people phrases carry, read the same way
+ * `pairsAgencyWithCount` reads them, so a claim and its numbers come out of one expression.
+ *
+ * The numerals are taken from the MATCHED PHRASE and not from the whole text. A note carries fees,
+ * dates and section numbers, and none of those is a stated attendee threshold: `$75` in one
+ * sentence would otherwise excuse a claim of 75 guests in the next.
+ *
+ * An `ATTENDEE_COUNT` phrase ("the guest count") states the field and no number, so it contributes
+ * nothing here and is supported by any rule that reads the field at all.
+ */
+export const claimedCounts = (raw) => {
+  const found = new Set();
+  const phrases = normalizeForMatching(raw).match(new RegExp(COUNTED_PEOPLE_SOURCE, "gi")) ?? [];
+  for (const phrase of phrases) {
+    for (const numeral of phrase.match(/\d{1,6}/g) ?? []) found.add(Number(numeral));
+  }
+  return found;
+};
+
+/**
+ * Whether every threshold a text states is one the rule it belongs to really publishes.
+ *
+ * `published` is that rule's own trigger values for the attendee-count field. A text stating no
+ * number is supported by a rule that reads the field; a text stating a number the rule does not
+ * publish is not, whatever field its trigger reads.
+ */
+export const countsSupportedBy = (raw, published) =>
+  [...claimedCounts(raw)].every((value) => published.has(value));
+
+/**
  * Every block of one file that pairs the city health agency with an attendee count, within one
  * block or ACROSS THE BOUNDARY between two adjacent blocks.
  *
@@ -680,20 +745,38 @@ export const outputStrings = (node, into = []) => {
  *     question the prose scan asks of a document block. This is what catches a Parks or DOB rule
  *     whose note says a DOHMH requirement is count-based.
  *
- * `attributed` is the ids whose published trigger really does read the count, so their own prose is
- * a published fact rather than a claim. It is empty on this tree and is passed in rather than
- * decided here, because the trigger is the caller's parse.
+ * `attributed` maps a rule id to THE THRESHOLDS ITS PUBLISHED TRIGGER ACTUALLY READS the count
+ * against. It is empty on this tree and is passed in rather than decided here, because the trigger
+ * is the caller's parse.
+ *
+ * A RULE THAT READS THE COUNT IS NOT EXEMPT FROM THE AUDIT, which is the eleventh PR #247 round.
+ * Membership alone used to skip the rule outright, so the day a city health rule legitimately
+ * gained a count trigger, every organizer-facing string on it stopped being read. A rule triggered
+ * at 75 guests could then publish a note saying its permit starts at 500 guests and this audit
+ * would name no offender, which is an unsupported threshold shipping under the cover of a supported
+ * field. What the trigger licenses is the FIELD, and `countsSupportedBy` below is the narrower
+ * question the strings are held to instead: a claim may state a number the rule really publishes
+ * and no other.
+ *
+ * THE VALUE IS COMPARED AND THE DIRECTION IS NOT, and that is a declared limit rather than an
+ * oversight. A rule triggered at `gte` 75 whose note says the permit applies BELOW 75 guests states
+ * a published number and passes here. Reading the direction out of the prose means matching a verb
+ * against a list, which is the denylist shape `spec-conflict-resolutions.test.mjs` records this
+ * branch removing from this guard once already, and it leaked then. The number is what an organizer
+ * acts on and it is what is checked.
  *
  * Measured on this tree: zero strings, over 42 rules and 4 advisories.
  */
-export const countClaimsInPublishedOutput = (artifact, { attributed = new Set() } = {}) => {
+export const countClaimsInPublishedOutput = (artifact, { attributed = new Map() } = {}) => {
   const found = [];
   for (const rule of [...(artifact.rules ?? []), ...(artifact.advisories ?? [])]) {
-    if (attributed.has(rule.id)) continue;
+    const published = attributed.get(rule.id);
     const ownRequirement = cityHealthRule(rule);
     for (const string of outputStrings(rule.output)) {
       const scanned = ownRequirement ? `${rule.output?.agency ?? "DOHMH"}. ${string}` : string;
-      if (pairsAgencyWithCount(scanned)) found.push({ ruleId: rule.id, string });
+      if (!pairsAgencyWithCount(scanned)) continue;
+      if (published !== undefined && countsSupportedBy(scanned, published)) continue;
+      found.push({ ruleId: rule.id, string });
     }
   }
   return found;

@@ -19,6 +19,7 @@ import {
   blockDigest,
   blocksOf,
   countClaimsInPublishedOutput,
+  countsSupportedBy,
   isParagraph,
   normalizeForMatching,
   pairsAgencyWithCount,
@@ -252,6 +253,27 @@ describe("pairsAgencyWithCount", () => {
     const sdoh = "New York State's Department of Health publishes a 50-attendee threshold.";
     expect(pairsAgencyWithCount(sdoh)).toBe(false);
     expect(pairsAgencyWithCount("SDOH Department of Health: 50 or more attendees.")).toBe(false);
+  });
+
+  /**
+   * THE ELEVENTH PR #247 ROUND: the possessive is spelled two ways and only the straight one was
+   * excluded, so pasted or word-processed source text reported the STATE department's own published
+   * threshold as an invented city claim. That is the one false positive this guard has already had,
+   * arriving through the other apostrophe. Both spellings are the same sentence.
+   */
+  it("does not flag the state department under the typographic possessive either", () => {
+    for (const apostrophe of ["'", "’"]) {
+      const sdoh = `New York State${apostrophe}s Department of Health requires this for 75 attendees.`;
+      expect(pairsAgencyWithCount(sdoh), sdoh).toBe(false);
+    }
+  });
+
+  /** The city department is still the city department, however its possessive is spelled. */
+  it("still flags the city department beside either apostrophe", () => {
+    for (const apostrophe of ["'", "’"]) {
+      const claim = `The Health Department${apostrophe}s permit starts at 75 attendees.`;
+      expect(pairsAgencyWithCount(claim), claim).toBe(true);
+    }
   });
 
   /**
@@ -1121,6 +1143,30 @@ describe("the count vocabulary: 7 nouns by 3 phrasings, every cell asserted", ()
     }
   });
 
+  /**
+   * THE ELEVENTH PR #247 ROUND: a threshold of one was missed on its grammar alone. Every noun in
+   * both expressions was plural, so the three sentences below returned false from `COUNTED_PEOPLE`
+   * and from `pairsAgencyWithCount`, and the published-output audit rests on the same predicate: the
+   * sentence could have been added to a food-triggered DOHMH rule with every guard green.
+   */
+  it("item 5: flags a threshold of one, whose count noun is grammatically singular", () => {
+    for (const clause of ["1 guest attends", "1 attendee registers", "1 person attends"]) {
+      const claim = `DOHMH requires a permit when ${clause}.`;
+      expect(pairsAgencyWithCount(claim), claim).toBe(true);
+    }
+  });
+
+  /** The singular is the same noun list, so the modifier window and the plural still work over it. */
+  it("item 5: the singular takes the same modifier window as the plural", () => {
+    expect(pairsAgencyWithCount("DOHMH requires a permit for 1 confirmed guest.")).toBe(true);
+    expect(pairsAgencyWithCount("DOHMH requires a permit for 75 or more confirmed guests.")).toBe(
+      true,
+    );
+    expect(
+      pairsAgencyWithCount("DOHMH requires a permit for 1 confirmed paying adult guest."),
+    ).toBe(false);
+  });
+
   it("a count noun with no agency is still not a claim", () => {
     expect(pairsAgencyWithCount("The RSVP count is recorded at intake.")).toBe(false);
     expect(pairsAgencyWithCount("Parks publishes a threshold on the patron count.")).toBe(false);
@@ -1981,10 +2027,77 @@ describe("countClaimsInPublishedOutput: the published ruleset is prose too", () 
           : rule,
       ),
     };
-    const attributed = new Set(["DOHMH-VENDOR-PERMIT-001"]);
+    const attributed = new Map([["DOHMH-VENDOR-PERMIT-001", new Set([75])]]);
     expect(
       countClaimsInPublishedOutput(alsoBad, { attributed }).map((item) => item.ruleId),
     ).toEqual(["DOHMH-EXEMPTION-001"]);
+  });
+
+  /**
+   * THE ELEVENTH PR #247 ROUND: a rule that gains a count trigger is not thereby exempt from the
+   * audit. Membership in `attributed` used to skip the rule outright, so the day a city health rule
+   * legitimately began reading `headcount` every organizer-facing string on it stopped being read.
+   *
+   * The rule below is triggered at 75 and its note tells the organizer 500, which is the shape the
+   * thread names: an unsupported threshold shipping under the cover of a supported field. Before
+   * this round the audit returned no offender for it.
+   */
+  it("audits a count-reading rule's own strings against the threshold it publishes", () => {
+    const attributed = new Map([["DOHMH-VENDOR-PERMIT-001", new Set([75])]]);
+    const claiming = (note) => {
+      const bad = ruleWith("DOHMH-VENDOR-PERMIT-001", (rule) => {
+        rule.output.notes.push(note);
+        return rule;
+      });
+      return countClaimsInPublishedOutput(bad, { attributed }).map((item) => item.string);
+    };
+    expect(claiming("The permit starts at 500 or more guests.")).toEqual([
+      "The permit starts at 500 or more guests.",
+    ]);
+    // The rule's own published threshold, stated by the rule that publishes it, is a fact.
+    expect(claiming("The permit starts at 75 or more guests.")).toEqual([]);
+    // So is naming the field with no number at all: that is exactly what the trigger licenses.
+    expect(claiming("The permit depends on the guest count you record at intake.")).toEqual([]);
+  });
+
+  /**
+   * The same correction on the prose side of the exemption, driven through the predicate the
+   * repository scan uses. A document naming the rule may repeat the number the rule publishes and
+   * may not invent another one.
+   */
+  it("a block naming a count-reading rule may state that rule's threshold and no other", () => {
+    const thresholds = new Set([75]);
+    expect(
+      countsSupportedBy("DOHMH-VENDOR-PERMIT-001 applies at 75 or more guests.", thresholds),
+    ).toBe(true);
+    expect(
+      countsSupportedBy("DOHMH-VENDOR-PERMIT-001 applies at 500 or more guests.", thresholds),
+    ).toBe(false);
+    expect(countsSupportedBy("DOHMH-VENDOR-PERMIT-001 reads the guest count.", thresholds)).toBe(
+      true,
+    );
+  });
+
+  /**
+   * A rule published under an agency name that is not the acronym. `cityHealthRule` reads
+   * `output.agency` against the same alias list the prose scanner uses, which is the eleventh
+   * round's other correction: `specs/F-201-permit-plan-generator.md:22` makes the published agency
+   * authoritative, and an id-prefix test would have left this rule's own prose unattributed, so a
+   * string with no agency name of its own would have gone past.
+   */
+  it("attributes a rule published as NYC Health, whose id carries no acronym", () => {
+    const renamed = ruleWith("DOHMH-EXEMPTION-001", (rule) => ({
+      ...rule,
+      id: "HEALTH-ASSEMBLY-001",
+      output: {
+        ...rule.output,
+        agency: "NYC Health",
+        note_text: "The exemption ends at 75 or more attendees.",
+      },
+    }));
+    expect(countClaimsInPublishedOutput(renamed).map((item) => item.ruleId)).toEqual([
+      "HEALTH-ASSEMBLY-001",
+    ]);
   });
 
   /** A source URL is not prose, and a path fragment must not be read as a count. */
