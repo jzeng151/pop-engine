@@ -2372,4 +2372,108 @@ describe.runIf(databaseUrl.length > 0)("F-202 compliance checklist", () => {
       expect(allowed).toContain("x-upload-key");
     });
   });
+
+  /**
+   * #252. A merged dedupe line reads as ONE route, its binding route, and where that route
+   * publishes no window the line's own columns carry none. The checklist reads those columns, so
+   * before this it rendered an undated, feeless task for a requirement whose OTHER route publishes
+   * a 15-business-day window and a TUP fee, and F-203 scheduled nothing at all.
+   *
+   * This is the whole of the published ruleset's dedupe group, driven end to end through the real
+   * API: `structure_over_10ft_tall: "yes"` resolves DOB-TALL-STRUCTURE-001, which publishes no
+   * deadline, while DOB-TENT-001's area/duration question is unanswered so its trigger is unknown.
+   * The resolved route binds and the dated one does not.
+   */
+  describe("a merged dedupe line whose binding route publishes no window (#252)", () => {
+    /** The intake the review measured: the tall-structure route resolved, the tent route not. */
+    const TALL_TENT = {
+      ...scenario("A"),
+      structure_types: ["tent_canopy"],
+      structure_over_10ft_tall: "yes",
+      tent_area_sqft: null,
+      tent_days_in_place: null,
+    };
+
+    const dobItem = async (): Promise<ChecklistItemView & Record<string, unknown>> => {
+      const eventId = await createEvent(TALL_TENT);
+      await generatePlan(eventId);
+      const response = await review(appWith(fakeStorage()), eventId);
+      expect(response.status).toBe(201);
+      const item = (response.body.items as ChecklistItemView[]).find((candidate) =>
+        candidate.ruleIds.includes("DOB-TENT-001"),
+      );
+      expect(item).toBeDefined();
+      return item as ChecklistItemView & Record<string, unknown>;
+    };
+
+    it("keeps the filing date, the fee and the status the other route publishes", async () => {
+      const item = await dobItem();
+      // Both rules merged onto one line, and the line reads as the resolved route.
+      expect(item.ruleIds).toEqual(["DOB-TENT-001", "DOB-TALL-STRUCTURE-001"]);
+      expect(item.permitName).toBe("DOB permit — structure over 10 feet tall");
+      // None of these is on the line's own columns; every one is DOB-TENT-001's, and the row says
+      // so rather than presenting them as the named route's.
+      expect(item.latestApplyDate).toBe("2026-08-05");
+      expect(item.deadlineStatus).toBe("on_track");
+      expect(item.feeDisplay).toBe(
+        "TUP: $100 initial 30 days, $130 per additional period — confirm instrument",
+      );
+      expect(item.filingRouteRuleId).toBe("DOB-TENT-001");
+    });
+
+    it("carries both routes, each with its own name, window and fee", async () => {
+      const item = await dobItem();
+      expect(item.headlineMode).toBe("candidate");
+      const routes = item.routes as Record<string, unknown>[];
+      // IN BINDING ORDER: the route the line reads first, not the order the rules sit in the file.
+      expect(routes.map((route) => route.ruleId)).toEqual([
+        "DOB-TALL-STRUCTURE-001",
+        "DOB-TENT-001",
+      ]);
+      expect(routes[0]).toMatchObject({
+        triggerResult: "true",
+        disposition: "may_be_required",
+        latestApplyDate: null,
+        deadlineStatus: "not_applicable",
+        feeDisplay: null,
+      });
+      expect(routes[1]).toMatchObject({
+        triggerResult: "unknown",
+        latestApplyDate: "2026-08-05",
+        deadlineStatus: "on_track",
+      });
+      expect(routes[1]?.unknownFields).toEqual(
+        expect.arrayContaining(["tent_area_sqft", "tent_days_in_place"]),
+      );
+    });
+
+    it("schedules the reminders that route's window earns, naming that route", async () => {
+      const eventId = await createEvent(TALL_TENT);
+      await generatePlan(eventId);
+      await review(appWith(fakeStorage()), eventId, undefined, {
+        contactEmail: "organizer@example.test",
+      });
+
+      const { rows } = await pool.query<{
+        subject: string;
+        send_at: Date;
+        alert_type: string;
+      }>(
+        `SELECT alert.alert_type, alert.payload->>'subject' AS subject, alert.send_at
+           FROM alerts AS alert
+           JOIN checklist_items AS checklist ON checklist.id = alert.checklist_item_id
+           JOIN permit_plan_items AS item ON item.id = checklist.plan_item_id
+          WHERE alert.event_id = $1 AND 'DOB-TENT-001' = ANY(item.rule_ids)
+          ORDER BY alert.send_at`,
+        [eventId],
+      );
+
+      // One per published offset, exactly as an unmerged dated requirement gets.
+      expect(rows).toHaveLength(reminderOffsets.length);
+      expect(rows.every((row) => row.alert_type === "deadline_reminder")).toBe(true);
+      // The reminder names the route whose window it counts down to, not the route the line reads.
+      expect(rows[0]?.subject).toContain("tent/canopy");
+      expect(rows[0]?.subject).not.toContain("structure over 10 feet tall");
+    });
+  });
 });

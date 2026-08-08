@@ -2469,3 +2469,81 @@ describe("F-202 AC 9 · moved-deadline notice", () => {
     expect(notice.textContent).not.toContain("previous not calculable; current not calculable");
   });
 });
+
+
+/**
+ * #252. A merged dedupe line reads as its binding route, and where that route publishes no window
+ * the api reads the filing date, status, fee and filing details off another route of the same
+ * requirement. The row has to say whose they are: naming one rule and dating another is exactly
+ * the crossover the route list exists to remove, and it would arrive here instead.
+ */
+describe("a checklist row whose window comes from another route (#252)", () => {
+  const TENT_ROUTE = {
+    ruleId: "DOB-TENT-001",
+    triggerResult: "unknown",
+    disposition: "required",
+    unknownFields: ["tent_area_sqft"],
+    name: "DOB permit — tent/canopy over 400 gross sq ft or in place 30+ days",
+    agency: "DOB",
+    deadlineDisplay: null,
+    latestApplyDate: "2026-08-26",
+    deadlineStatus: "on_track",
+    feeDisplay: "TUP: $100 initial 30 days",
+    portalName: null,
+    portalUrl: null,
+    portalInstructions: null,
+  };
+  const TALL_ROUTE = {
+    ...TENT_ROUTE,
+    ruleId: "DOB-TALL-STRUCTURE-001",
+    triggerResult: "true",
+    disposition: "may_be_required",
+    unknownFields: [],
+    name: "DOB permit — structure over 10 feet tall",
+    latestApplyDate: null,
+    deadlineStatus: "not_applicable",
+    feeDisplay: null,
+  };
+
+  it("renders the date and fee, and names the route that publishes them", async () => {
+    stubApi({
+      [GET_CHECKLIST]: checklistOf({
+        created: true,
+        items: [
+          trackedItem(STREET_MEDIUM, {
+            latestApplyDate: "2026-08-26",
+            deadlineStatus: "on_track",
+            feeDisplay: "TUP: $100 initial 30 days",
+            routes: [TALL_ROUTE, TENT_ROUTE],
+            headlineMode: "candidate",
+            filingRouteRuleId: "DOB-TENT-001",
+          }),
+        ],
+      }),
+    });
+    await renderView();
+
+    const row = await expandedRowFor(STREET_MEDIUM);
+    expect(within(row).getByText(/apply by 2026-08-26/)).toBeDefined();
+    expect(within(row).getByText("TUP: $100 initial 30 days")).toBeDefined();
+    expect(
+      within(row).getByText(/The published rules give this requirement 2 routes/),
+    ).toBeDefined();
+    expect(row.textContent).toContain(
+      "DOB permit — tent/canopy over 400 gross sq ft or in place 30+ days's.",
+    );
+  });
+
+  it("says nothing about routes on a row whose window is its own", async () => {
+    stubApi({
+      [GET_CHECKLIST]: checklistOf({
+        created: true,
+        items: [trackedItem(STREET_MEDIUM, { latestApplyDate: "2026-08-26" })],
+      }),
+    });
+    await renderView();
+
+    const row = await expandedRowFor(STREET_MEDIUM);
+    expect(within(row).queryByText(/The published rules give this requirement/)).toBeNull();
+  });
+});

@@ -484,3 +484,151 @@ describe("merging is verdict-neutral over every route-state pair", () => {
     expect(states.length ** 2).toBe(900);
   });
 });
+
+/**
+ * #252. The INFEASIBLE panel names a route, and the engine is what narrows it. Before this, the
+ * blocking finding carried only a rule id and a name, so a consumer had to find the finding again
+ * by rule id and got back the whole merged line: it rendered the HEADLINE route's name, portal and
+ * apply-by date under a heading about the missed one, and where the headline route's window was
+ * still open the date it printed was in the FUTURE of the plan's own clock.
+ */
+describe("the blocking route of a merged line (#252)", () => {
+  const OPEN = {
+    id: "OPEN-001",
+    dedupeKey: "shared",
+    trigger: ALWAYS,
+    output: {
+      permit_name: "OPEN-001 permit",
+      deadline: { type: "published_minimum", calendar_days: 104 },
+      fee: { display: "$40" },
+      portal: { name: "open portal", url: "https://example.test/open" },
+    },
+  } as const;
+  const MISSED = {
+    id: "MISSED-001",
+    dedupeKey: "shared",
+    trigger: ALWAYS,
+    output: {
+      permit_name: "MISSED-001 permit",
+      deadline: { type: "published_minimum", calendar_days: 184 },
+      fee: { display: "$900" },
+      portal: { name: "missed portal", url: "https://example.test/missed" },
+    },
+  } as const;
+
+  it("names the missed route and quotes ITS window, fee and portal", () => {
+    const evaluated = plan([OPEN, MISSED]);
+    // The line reads as the open route: it is the tightest AVAILABLE window, and the closed one
+    // ranks below it.
+    expect(evaluated.findings[0]?.name).toBe("OPEN-001 permit");
+    expect(evaluated.findings[0]?.latestApplyDate).toBe("2026-08-22");
+
+    expect(evaluated.verdict).toBe("INFEASIBLE");
+    const blocker = evaluated.verdictDetail.blockingFinding;
+    expect(blocker?.ruleIds).toEqual(["MISSED-001"]);
+    expect(blocker?.name).toBe("MISSED-001 permit");
+    // Every one of these was the OPEN route's before, including a date three weeks in the future
+    // of the plan's own clock under a heading saying the deadline had been missed.
+    expect(blocker?.latestApplyDate).toBe("2026-06-03");
+    expect(blocker?.deadlineDisplay).toBeNull();
+    expect(blocker?.portalName).toBe("missed portal");
+    expect(blocker?.portalUrl).toBe("https://example.test/missed");
+    expect(blocker?.sources?.map((source) => source.ruleId)).toEqual(["OPEN-001", "MISSED-001"]);
+  });
+
+  /**
+   * THE MERGE IS DISJUNCTIVE AND THE WINDOW CHECK IS CONJUNCTIVE, and this pins that they are.
+   *
+   * `mergeGroup` reads a group as alternative routes to one requirement, so any route applying
+   * means the requirement applies and the merged disposition is the strongest on offer.
+   * `computeWindowVerdict` blocks if ANY route's published window has closed, so this plan is
+   * INFEASIBLE while OPEN-001's own window is open. That difference is deliberate and recorded in
+   * `verdict.ts`: nothing published says filing under one route cures another's missed date, and a
+   * disjunctive check would make the verdict depend on whether two rules share a `dedupe_key`,
+   * which is the whole defect the route-reading window check exists to remove.
+   */
+  it("blocks on a closed route while another route's window is open, and matches unmerged", () => {
+    const merged = plan([OPEN, MISSED]);
+    const unmerged = plan([
+      { ...OPEN, dedupeKey: null },
+      { ...MISSED, dedupeKey: null },
+    ]);
+    expect(merged.verdict).toBe("INFEASIBLE");
+    expect(unmerged.verdict).toBe("INFEASIBLE");
+    expect(merged.findings[0]?.routes?.some((route) => route.deadlineStatus === "on_track")).toBe(
+      true,
+    );
+  });
+});
+
+/**
+ * #252, the case the reviewer could not execute. `applyDependencySequencing` computes the
+ * FINDING-level `slackDays` off the merged line's own `latestApplyDate` while `sequenceRoute`
+ * computes each route's off that route's. NYPD-SOUND-001 carries no `dedupe_key` on the published
+ * ruleset, so the two can only disagree on a synthetic group, which is what this builds.
+ */
+describe("dependency sequencing over a merged gated line (#252)", () => {
+  const PARKS = {
+    id: "PARKS-EVENT-001",
+    dedupeKey: null,
+    trigger: ALWAYS,
+    output: {
+      permit_name: "Parks permit",
+      deadline: {
+        type: "composite",
+        calendar_days: 30,
+        hard_floor_days: 7,
+        processing_range_days: [21, 30],
+      },
+    },
+  } as const;
+  const DEPENDENCY = {
+    id: "NYPD-SOUND-PARKS-DEP-001",
+    kind: "dependency",
+    dedupeKey: null,
+    trigger: ALWAYS,
+    output: { note_text: "sound permit follows the parks approval" },
+  } as const;
+  /** The gated rule, merged with a second route that publishes a DIFFERENT window. */
+  const SOUND = {
+    id: "NYPD-SOUND-001",
+    dedupeKey: "sound",
+    trigger: ALWAYS,
+    output: {
+      permit_name: "Sound Device Permit",
+      deadline: { type: "published_minimum", calendar_days: 5 },
+    },
+  } as const;
+  const SOUND_ALT = {
+    id: "NYPD-SOUND-ALT-001",
+    dedupeKey: "sound",
+    trigger: ALWAYS,
+    output: {
+      permit_name: "Sound Device Permit, alternate basis",
+      deadline: { type: "published_minimum", calendar_days: 60 },
+    },
+  } as const;
+
+  it("sequences the gated ROUTE off its own window, and the line off the line's", () => {
+    const evaluated = plan([PARKS, DEPENDENCY, SOUND, SOUND_ALT]);
+    const sound = evaluated.findings.find((finding) => finding.ruleIds.includes("NYPD-SOUND-001"));
+    const gatedRoute = sound?.routes?.find((route) => route.ruleId === "NYPD-SOUND-001");
+    const otherRoute = sound?.routes?.find((route) => route.ruleId === "NYPD-SOUND-ALT-001");
+
+    // The line binds to the tightest window, which is the ALTERNATE route's, so the line's
+    // `applyAfterDate` and `slackDays` are measured against a window that is not the gated rule's.
+    expect(sound?.latestApplyDate).toBe("2026-10-05");
+    expect(gatedRoute?.latestApplyDate).toBe("2026-11-29");
+    expect(sound?.applyAfterDate).toBe("2026-08-12");
+
+    // Each route carries the sequencing measured against ITS OWN window, which is what `verdict.ts`
+    // reads. The gated route's slack is 109 days from the gate to its own 2026-11-29 window; the
+    // line's is 54, from the same gate to the alternate route's 2026-10-05. The two numbers are
+    // about two different windows and both are correct about the window they name.
+    expect(gatedRoute?.applyAfterDate).toBe("2026-08-12");
+    expect(gatedRoute?.slackDays).toBe(109);
+    expect(sound?.slackDays).toBe(54);
+    // The route that is not gated is untouched by the sequencing.
+    expect(otherRoute?.applyAfterDate).toBeNull();
+  });
+});
