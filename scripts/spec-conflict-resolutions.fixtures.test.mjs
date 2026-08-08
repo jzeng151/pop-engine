@@ -18,6 +18,7 @@ import {
   UNBOUNDED_RECORD_FILES,
   blockDigest,
   blocksOf,
+  claimedCounts,
   countClaimsInPublishedOutput,
   countsAttributed,
   countsSupportedBy,
@@ -2386,5 +2387,234 @@ describe("countsAttributed: the exemption is scoped to the claim", () => {
     expect(countsAttributed("HEALTH-ASSEMBLY-001 applies at 75 or more guests.", new Map())).toBe(
       false,
     );
+  });
+});
+
+/**
+ * THE FOURTEENTH PR #247 ROUND, whose five threads are two things and not five.
+ *
+ * THREE OF THEM ARE ONE CLASS: the LEXICAL layer, where every construct the scan reads had its own
+ * inline boundary rule and no two agreed. A sentence ended at a period and at nothing else; a
+ * counted-people phrase refused any numeral touching a hyphen, including this repository's own
+ * "75-person"; a rule id was matched by `String.includes`, which has no boundary at all. Each was a
+ * separate special case, and each admitted a claim by the shape of its wording rather than by its
+ * content. They are fixed as one class here: a terminator is a terminator, a token boundary is a
+ * token boundary, and the count expressions now refuse the two new terminators for the same reason
+ * they already refused the period.
+ *
+ * TWO OF THEM ARE STRUCTURAL and unrelated to the lexer: `countClaimsInProse` skipped a sentence's
+ * forward boundary whenever the sentence paired by itself, and `countClaimsInPublishedOutput` read
+ * a string's LOCATION as its subject, so a claim about one rule was licensed by the thresholds of
+ * the rule hosting it.
+ *
+ * The honest answer to the round's question is that this is ONE PARSING MODEL that has been
+ * extended by special case for ten rounds. Everything above is a regex over normalized text, and
+ * every round has found a construct the previous round's regex did not name. The three lexical
+ * fixes reduce the number of places a boundary is defined; they do not change the model.
+ */
+describe("round 14: the lexical layer, one class of three", () => {
+  const attributed = new Map([["HEALTH-ASSEMBLY-001", new Set([75])]]);
+
+  /**
+   * THREAD 648. The tokenizer recognized only the period, so an attributed sentence ending in `!`
+   * was joined to the next one and the two were read as a single claim carrying the legitimate id
+   * and only the supported numeral. Both the repository scan and the published-output scan then
+   * reported no offender.
+   */
+  it("ends a sentence at a question mark and at an exclamation mark", () => {
+    for (const terminator of ["!", "?"]) {
+      const block =
+        `HEALTH-ASSEMBLY-001 applies at 75 guests${terminator}` +
+        " DOHMH-VENDOR-PERMIT-001 depends on the guest count.";
+      expect(scanFile(block), terminator).toHaveLength(1);
+      expect(countsAttributed(block, attributed), terminator).toBe(false);
+    }
+    // The period case is unchanged, and the supported single sentence is still exempt.
+    expect(countsAttributed("HEALTH-ASSEMBLY-001 applies at 75 guests!", attributed)).toBe(true);
+  });
+
+  /**
+   * A terminator needs whitespace after it, which the period already required and the two new ones
+   * inherit. A mark inside a token is not a boundary, so a claim written around one stays one
+   * sentence and stays attributed.
+   */
+  it("splits only at a terminator that whitespace follows", () => {
+    expect(countsAttributed("HEALTH-ASSEMBLY-001(!) applies at 75 guests.", attributed)).toBe(true);
+    expect(
+      countsAttributed("HEALTH-ASSEMBLY-001 applies above 74.5 at 75 guests.", attributed),
+    ).toBe(true);
+  });
+
+  /**
+   * The count expressions refuse the two new terminators for the reason they already refused the
+   * period: a count noun in one sentence and a numeral in the next are two things.
+   */
+  it("does not read a count noun against a numeral in the next sentence", () => {
+    expect(COUNTED_PEOPLE.test("Guests may attend! DOHMH published 75 rules.")).toBe(false);
+    expect(COUNTED_PEOPLE.test("How many guests? DOHMH published 75 rules.")).toBe(false);
+  });
+
+  /**
+   * THREAD 186. The `(?![\w-])` guard that keeps "2026-08-07" a date and a rule id a rule id also
+   * rejected the repository's own adjectival phrasing, which the ruleset and the proposal prose
+   * already write.
+   */
+  it("recognizes the hyphenated person-count phrase the repository already writes", () => {
+    expect(pairsAgencyWithCount("DOHMH requires a permit for a 75-person event.")).toBe(true);
+    expect(pairsAgencyWithCount("The Health Department covers a 90-guest reception.")).toBe(true);
+    expect(claimedCounts("DOHMH requires a permit for a 75-person event.")).toEqual(new Set([75]));
+  });
+
+  /**
+   * The phrasing is really in the artifacts, so this is a publication shape and not a novel
+   * synonym. The PUBLISHED RULESET is the file asserted, because it is the artifact at the top of
+   * AGENTS.md's authority order and the one whose prose this audit reads most closely.
+   */
+  it("the hyphenated phrasing is one the published artifacts already use", () => {
+    const hyphenated = /\d{1,6}-(?:guest|attendee|people|person|head|RSVP|patron)s?\b/gi;
+    for (const file of ["rules/nyc-rules.v2.11.json", "docs/test-scenario-answer-key.md"]) {
+      expect(
+        read(file).match(hyphenated) ?? [],
+        `${file} writes the adjectival count form`,
+      ).not.toEqual([]);
+    }
+  });
+
+  /** And the two shapes the guard exists for are still refused. */
+  it("still refuses a date and a rule id", () => {
+    expect(COUNTED_PEOPLE.test("Published 2026-08-07 by the Health Department.")).toBe(false);
+    expect(COUNTED_PEOPLE.test("DOHMH-VENDOR-PERMIT-001 is the permit.")).toBe(false);
+    expect(COUNTED_PEOPLE.test("See DOHMH-EXEMPTION-001-person for the exemption.")).toBe(false);
+  });
+
+  /**
+   * THREAD 682. `claim.includes(id)` grants the attribution exemption to any id that CONTAINS the
+   * attributed one, which a superseded, qualified or companion rule does as a matter of house
+   * style.
+   */
+  it("matches an attributed rule id as a complete token", () => {
+    for (const claim of [
+      "OLD-HEALTH-ASSEMBLY-001 is a DOHMH permit at 75 guests.",
+      "HEALTH-ASSEMBLY-001-NOTE says DOHMH applies at 75 guests.",
+    ]) {
+      expect(countsAttributed(claim, attributed), claim).toBe(false);
+    }
+    // The rule itself, and the rule beside ordinary punctuation, are still attributed.
+    expect(countsAttributed("HEALTH-ASSEMBLY-001 applies at 75 guests.", attributed)).toBe(true);
+    expect(countsAttributed("(HEALTH-ASSEMBLY-001) applies at 75 guests.", attributed)).toBe(true);
+  });
+});
+
+/**
+ * THE FOURTEENTH ROUND'S TWO STRUCTURAL THREADS. Neither is a tokenizing question: one is a
+ * control-flow skip in the claim enumerator, the other is what a claim is ABOUT.
+ */
+describe("round 14: the boundary after a self-pairing sentence", () => {
+  const published = JSON.parse(read("rules/nyc-rules.v2.11.json"));
+  const attributed = new Map([["HEALTH-ASSEMBLY-001", new Set([75])]]);
+  const offendersOf = (artifact, options) =>
+    countClaimsInPublishedOutput(artifact, options).map((item) => item.string);
+
+  /**
+   * THREAD 925. Flagging a self-pairing sentence used to `continue`, so its forward boundary went
+   * unread and a dangling count in the next sentence was carried by nobody. The first sentence is
+   * then exempted by `countsAttributed` on its own account and the artifact reports no offender at
+   * all, which is the unsupported 500 shipping to organizers.
+   */
+  it("reads the forward boundary of a sentence that pairs by itself", () => {
+    const status =
+      "HEALTH-ASSEMBLY-001, published by DOHMH, applies at 75 guests." +
+      " The vendor permit starts at 500 guests.";
+    const offenders = offendersOf({ ...published, status }, { attributed });
+    expect(offenders).toEqual([status]);
+  });
+
+  /** A neighbour that supplies no half is still silent, which is what keeps the pass quiet. */
+  it("does not report a boundary the neighbour does not contribute to", () => {
+    const status =
+      "HEALTH-ASSEMBLY-001, published by DOHMH, applies at 500 guests." +
+      " The permit is filed on the portal.";
+    expect(offendersOf({ ...published, status }, { attributed })).toEqual([
+      "HEALTH-ASSEMBLY-001, published by DOHMH, applies at 500 guests.",
+    ]);
+  });
+
+  /** And a supported claim followed by an unrelated sentence stays exempt. */
+  it("leaves a supported sentence exempt when its neighbour carries no count", () => {
+    const status =
+      "HEALTH-ASSEMBLY-001, published by DOHMH, applies at 75 guests." +
+      " The permit is filed on the portal.";
+    expect(offendersOf({ ...published, status }, { attributed })).toEqual([]);
+  });
+});
+
+describe("round 14: an output claim is audited against the rule it names", () => {
+  const published = JSON.parse(read("rules/nyc-rules.v2.11.json"));
+  const copyOf = (rule) => JSON.parse(JSON.stringify(rule));
+  // The host legitimately reads the count at 75; the rule it talks about reads no count at all.
+  const hosted = (note) => ({
+    ...published,
+    rules: published.rules.map((rule) =>
+      rule.id === "DOHMH-EXEMPTION-001"
+        ? (() => {
+            const copy = copyOf(rule);
+            copy.id = "HEALTH-ASSEMBLY-001";
+            copy.output.agency = "NYC Health";
+            copy.output.note_text = note;
+            return copy;
+          })()
+        : rule,
+    ),
+  });
+  const attributed = new Map([["HEALTH-ASSEMBLY-001", new Set([75])]]);
+  const offendersOf = (note) =>
+    countClaimsInPublishedOutput(hosted(note), { attributed }).map((item) => item.string);
+
+  /**
+   * THREAD 1010. The claim states no numeral, so the host's thresholds licensed it vacuously, and
+   * `DOHMH-VENDOR-PERMIT-001`'s published trigger reads no count.
+   */
+  it("does not license a count claim about another rule that states no numeral", () => {
+    const note = "DOHMH-VENDOR-PERMIT-001 depends on the guest count.";
+    expect(offendersOf(note)).toContain(note);
+  });
+
+  /** Nor does the host's own valid value transfer to a rule that publishes nothing. */
+  it("does not lend the host's threshold to the rule the claim names", () => {
+    const note = "DOHMH-VENDOR-PERMIT-001 applies at 75 or more guests.";
+    expect(offendersOf(note)).toContain(note);
+  });
+
+  /** The host's own published fact, stated about the host, is still a fact. */
+  it("still licenses the host's own published threshold", () => {
+    expect(offendersOf("The permit applies at 75 or more guests.")).toEqual([]);
+    expect(offendersOf("HEALTH-ASSEMBLY-001 applies at 75 or more guests.")).toEqual([]);
+  });
+
+  /** A named rule that really does read the count licenses its own number and no other. */
+  it("audits against the named rule's own trigger when that rule reads the count", () => {
+    const both = new Map([
+      ["HEALTH-ASSEMBLY-001", new Set([75])],
+      ["DOHMH-VENDOR-PERMIT-001", new Set([500])],
+    ]);
+    const supported = "DOHMH-VENDOR-PERMIT-001 applies at 500 or more guests.";
+    const invented = "DOHMH-VENDOR-PERMIT-001 applies at 75 or more guests.";
+    const found = (note) =>
+      countClaimsInPublishedOutput(hosted(note), { attributed: both }).map((item) => item.string);
+    expect(found(supported)).toEqual([]);
+    expect(found(invented)).toContain(invented);
+  });
+
+  /** A companion id is not the rule it extends, which is thread 682 one field over. */
+  it("does not read a companion id as the rule it shares a base with", () => {
+    const both = new Map([
+      ["HEALTH-ASSEMBLY-001", new Set([75])],
+      ["DOHMH-VENDOR-PERMIT-001", new Set([500])],
+    ]);
+    const note = "DOHMH-VENDOR-PERMIT-001-NOTE applies at 500 or more guests.";
+    const found = countClaimsInPublishedOutput(hosted(note), { attributed: both }).map(
+      (item) => item.string,
+    );
+    expect(found).toContain(note);
   });
 });

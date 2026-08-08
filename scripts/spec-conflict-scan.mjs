@@ -179,11 +179,23 @@ export const ATTENDEE_COUNT = new RegExp(ATTENDEE_COUNT_SOURCE, "i");
  * food-service permit exceed 75" went past on the distance alone. The window is removed rather than
  * widened and declared, because removing it was measured over every scanned root and changed no
  * flag on this tree. The sentence remains the bound: the class excludes a period, so a count noun
- * in one sentence and a numeral in the next are still two things.
+ * in one sentence and a numeral in the next are still two things, and it excludes the other two
+ * ordinary sentence terminators for the same reason `sentencesOf` splits at them.
+ *
+ * THE HYPHENATED ADJECTIVAL FORM IS A THIRD ALTERNATION, which is the fourteenth PR #247 round.
+ * Both halves refuse a numeral touching a hyphen, which is what keeps "2026-08-07" a date and
+ * "DOHMH-VENDOR-PERMIT-001" a rule id rather than a threshold. That guard also refused the
+ * repository's own house phrasing: `docs/PRD.md` and the proposal prose already write "75-person"
+ * and "90-person", so "DOHMH requires a permit for a 75-person event" stated a city health
+ * threshold that neither expression matched. The hyphen is admitted only when the very next token
+ * is one of the counted-person nouns, so nothing a date or a rule id can look like is admitted
+ * with it: both put digits or an uncounted word after the hyphen, not "guest" or "person".
  */
+const COUNTED_PERSON_NOUN = "(?:guest|attendee|people|person|head|RSVP|patron)s?";
 export const COUNTED_PEOPLE_SOURCE =
-  "(?<![\\w-])\\d{1,6}(?![\\w-]) ?(?:or more |or fewer |\\+ ?)?(?:[a-z][a-z-]*,? ){0,2}?(?:guest|attendee|people|person|head|RSVP|patron)s?\\b" +
-  "|\\b(?:guests|attendees|people|persons|heads|RSVPs|patrons)\\b[^.\\n]*?(?<![\\w-])\\d{1,6}(?![\\w-])";
+  `(?<![\\w-])\\d{1,6}(?![\\w-]) ?(?:or more |or fewer |\\+ ?)?(?:[a-z][a-z-]*,? ){0,2}?${COUNTED_PERSON_NOUN}\\b` +
+  `|(?<![\\w-])\\d{1,6}-${COUNTED_PERSON_NOUN}\\b` +
+  "|\\b(?:guests|attendees|people|persons|heads|RSVPs|patrons)\\b[^.!?\\n]*?(?<![\\w-])\\d{1,6}(?![\\w-])";
 export const COUNTED_PEOPLE = new RegExp(COUNTED_PEOPLE_SOURCE, "i");
 
 /**
@@ -641,11 +653,50 @@ export const countsSupportedBy = (raw, published) =>
   [...claimedCounts(raw)].every((value) => published.has(value));
 
 /**
- * The sentences of a text already read as one line of prose. A sentence ends at a period followed
- * by whitespace, which is the same boundary `COUNTED_PEOPLE`'s noun-first alternation already
- * refuses to cross, so no phrase either count expression matches can straddle one of these splits.
+ * The sentences of a text already read as one line of prose. A sentence ends at one of the three
+ * ordinary terminators followed by whitespace, which is the same boundary `COUNTED_PEOPLE`'s
+ * noun-first alternation refuses to cross, so no phrase either count expression matches can
+ * straddle one of these splits.
+ *
+ * THE QUESTION AND EXCLAMATION MARKS ARE TERMINATORS TOO, which is the fourteenth PR #247 round.
+ * Only the period was one, so an attributed sentence ending in `!` or `?` was joined to the next
+ * one and the pair was read as a single claim: on a rule publishing 75, "HEALTH-ASSEMBLY-001
+ * applies at 75 guests! DOHMH-VENDOR-PERMIT-001 depends on the guest count." came out of this
+ * split as ONE claim carrying the legitimate rule id and the supported numeral, so
+ * `countsAttributed` exempted it and the second half's unsupported claim was reported by nobody.
+ * The terminator required whitespace after it before and still does, so "75.5" and "$1.2M" are
+ * not two sentences.
  */
-const sentencesOf = (text) => text.split(/(?<=\.)\s+/);
+const sentencesOf = (text) => text.split(/(?<=[.!?])\s+/);
+
+/**
+ * Whether a text NAMES a rule, as a complete token rather than as a substring.
+ *
+ * `String.includes` was the test until the fourteenth PR #247 round, and a rule id is a prefix or a
+ * suffix of the ids around it as a matter of house style: with `HEALTH-ASSEMBLY-001` legitimately
+ * publishing 75, both "OLD-HEALTH-ASSEMBLY-001 is a DOHMH permit at 75 guests." and
+ * "HEALTH-ASSEMBLY-001-NOTE says DOHMH applies at 75 guests." contained the attributed id and so
+ * borrowed its exemption for a rule that publishes nothing. A superseded, qualified or companion
+ * rule reusing the base id is the ordinary way that becomes reachable.
+ *
+ * The boundary is `ID_CHARACTER` on both sides rather than `\b`, because `\b` sits between `Y` and
+ * `-` and would accept both of those. It is a scan over the occurrences rather than a regex,
+ * because the id is DATA from the artifact: building a pattern out of it means escaping it, and an
+ * escape that misses a character turns a published rule id into a pattern that matches something
+ * else. A run off the end of the string reads as a boundary, so an id at either end is named.
+ */
+const ID_CHARACTER = /[\w-]/;
+const namesRule = (text, id) => {
+  const haystack = text.toLowerCase();
+  const needle = id.toLowerCase();
+  if (needle === "") return false;
+  for (let at = haystack.indexOf(needle); at !== -1; at = haystack.indexOf(needle, at + 1)) {
+    const before = haystack[at - 1] ?? " ";
+    const after = haystack[at + needle.length] ?? " ";
+    if (!ID_CHARACTER.test(before) && !ID_CHARACTER.test(after)) return true;
+  }
+  return false;
+};
 
 /** Whether a text states an attendee count at all, in either count vocabulary. */
 const statesACount = (text) => ATTENDEE_COUNT.test(text) || COUNTED_PEOPLE.test(text);
@@ -678,7 +729,9 @@ export const countsAttributed = (raw, attributed) => {
   return (
     claims.length > 0 &&
     claims.every((claim) =>
-      rules.some(([id, thresholds]) => claim.includes(id) && countsSupportedBy(claim, thresholds)),
+      rules.some(
+        ([id, thresholds]) => namesRule(claim, id) && countsSupportedBy(claim, thresholds),
+      ),
     )
   );
 };
@@ -909,7 +962,22 @@ export const rulesetProseStrings = (artifact) => {
  * two strings of one card: "DOHMH publishes this requirement. It applies at 75 or more guests."
  * carries the agency in one sentence and the count in the next and neither sentence carries both.
  * `splitAcrossBoundary` is the same predicate the block scan uses, and it asks that the boundary
- * CONTRIBUTE, so a self-pairing sentence is reported once as itself rather than three times.
+ * CONTRIBUTE, so a self-pairing sentence is not reported three times.
+ *
+ * A SELF-PAIRING SENTENCE NO LONGER SKIPS ITS FORWARD BOUNDARY, which is the fourteenth PR #247
+ * round. Flagging the sentence used to `continue`, so the boundary with the next sentence went
+ * unread whenever the current one paired alone, and the next sentence's half was then read by
+ * nobody. On a rule legitimately publishing 75, "HEALTH-ASSEMBLY-001, published by DOHMH, applies
+ * at 75 guests. The vendor permit starts at 500 guests." emitted only the first sentence, which
+ * `countsAttributed` then exempts because it names the rule and states the rule's own number; the
+ * unsupported 500 was never carried into an offender at all. The boundary is read either way now.
+ *
+ * The cost is stated rather than suppressed: two ADJACENT sentences that each pair alone now
+ * produce three entries, the two sentences and the pair between them. Suppressing the pair when
+ * the neighbour pairs alone would reopen this same hole in the other direction, where the
+ * neighbour carries the whole claim and the sentence before it carries a dangling count, so the
+ * duplicate is preferred to the miss. Every entry names a real offender either way; what a
+ * duplicate costs is a repeated line in a failure message.
  *
  * Sentences are split RAW and matched normalized, which is what `flaggedBlocks` does with blocks:
  * the reported text is the text a reader will search the artifact for.
@@ -919,10 +987,7 @@ const countClaimsInProse = (raw) => {
   const matchable = sentences.map(normalizeForMatching);
   const flagged = [];
   for (let index = 0; index < sentences.length; index += 1) {
-    if (pairsAgencyWithCount(sentences[index])) {
-      flagged.push(sentences[index]);
-      continue;
-    }
+    if (pairsAgencyWithCount(sentences[index])) flagged.push(sentences[index]);
     const next = matchable[index + 1];
     if (next === undefined) continue;
     const acrossBoundary =
@@ -996,17 +1061,38 @@ const countClaimsInProse = (raw) => {
  * `provenance`, so those are strings this branch's own work edits. `rulesetProseStrings` below
  * says which strings and `countClaimsInProse` says at what unit.
  *
+ * A CLAIM THAT NAMES ANOTHER RULE IS AUDITED AGAINST THAT RULE, which is the fourteenth PR #247
+ * round. The hosting rule's own thresholds used to license every string the rule carries, which
+ * reads a string's LOCATION as its subject. They are not the same thing: a city health rule
+ * legitimately triggered at 75 could publish "DOHMH-VENDOR-PERMIT-001 depends on the guest count."
+ * and pass, because the sentence states no numeral and an empty set of claimed counts is supported
+ * by anything, and it could publish "DOHMH-VENDOR-PERMIT-001 applies at 75 guests." and pass on the
+ * host's own number, while the named rule's trigger reads no count at all. Where a string names
+ * rules other than its host, every one of them has to license it, and a named rule whose trigger
+ * reads no count licenses nothing. `namesRule` is the token match, so a companion id sharing the
+ * base does not stand in for the rule it extends.
+ *
  * Measured on this tree: zero strings and zero units, over 42 rules and 4 advisories, with the
- * verification qualifications and the source citations included, and zero top-level sentences.
+ * verification qualifications and the source citations included, and zero top-level sentences. The
+ * named-rule branch changes no verdict here, because no rule on this tree is attributed at all.
  */
 export const countClaimsInPublishedOutput = (artifact, { attributed = new Map() } = {}) => {
   const found = [];
-  for (const rule of [...(artifact.rules ?? []), ...(artifact.advisories ?? [])]) {
+  const publishedRules = [...(artifact.rules ?? []), ...(artifact.advisories ?? [])];
+  const publishedIds = publishedRules.map((rule) => rule.id).filter(Boolean);
+  for (const rule of publishedRules) {
     const published = attributed.get(rule.id);
     const ownRequirement = cityHealthRule(rule);
     const claims = (string) => {
       const scanned = ownRequirement ? `${rule.output?.agency ?? "DOHMH"}. ${string}` : string;
       if (!pairsAgencyWithCount(scanned)) return false;
+      const named = publishedIds.filter((id) => id !== rule.id && namesRule(scanned, id));
+      if (named.length > 0) {
+        return named.some((id) => {
+          const theirs = attributed.get(id);
+          return theirs === undefined || !countsSupportedBy(scanned, theirs);
+        });
+      }
       return published === undefined || !countsSupportedBy(scanned, published);
     };
     const strings = organizerFacingStrings(rule);
