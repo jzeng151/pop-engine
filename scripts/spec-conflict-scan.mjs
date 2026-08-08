@@ -94,6 +94,19 @@ export const CITY_HEALTH_AGENCY = new RegExp(CITY_HEALTH_AGENCY_SOURCE, "i");
  * like "the number of open questions people have raised" beside an agency mention is a false
  * positive this alternation, and not the author, created.
  *
+ * THE MODIFIER IS A WORD, NOT A RUN OF `[a-z]`, which is the ninth round's item 3. `(?:[a-z]+ )`
+ * rejected a hyphen and a comma, so "the number of pre-registered guests", "the number of
+ * food-service attendees" and "the number of confirmed, paying guests" were all missed while "the
+ * number of confirmed guests" was caught. `food-service` is the compound in the permit's own name,
+ * "temporary food-service permit", which is the sentence this whole guard exists about, and
+ * `docs/PRD.md` already writes `capacity-aware RSVPs`. The window is `(?:[a-z][a-z-]*,? )` now: a
+ * word may carry internal hyphens and may end in the comma that separates two coordinate
+ * adjectives. THE SAME WINDOW IS IN `COUNTED_PEOPLE`'s numeral-first alternation below, because "75
+ * or more confirmed guests" was the same miss in the other vocabulary. Nothing drove any of this
+ * before: the corpus generated NO MODIFIERS AT ALL and the feature was held up by three hand-written
+ * cells with plain lowercase adjectives, which is one declaration checked against another. The
+ * modifier is a generated corpus axis now, run through every formatting and every wrap position.
+ *
  * THE HYPHENATED COMPOUND IS A DECLARED MISS: "the guest-count threshold" is not matched, and the
  * one-character fix for it (`[ -]?count`) was measured and rejected. It flags `docs/BASELINE.md`'s
  * "No regulatory fact moves here" paragraph, which says "no DOHMH rule may key on the
@@ -104,7 +117,7 @@ export const CITY_HEALTH_AGENCY = new RegExp(CITY_HEALTH_AGENCY_SOURCE, "i");
 export const ATTENDEE_COUNT_SOURCE =
   "(?:head|guest|attendee|people|person|rsvp|patron) ?count" +
   "|attendance|crowd size|party size" +
-  "|number of (?:[a-z]+ ){0,2}?(?:guests|attendees|people|persons|heads|RSVPs|patrons)";
+  "|number of (?:[a-z][a-z-]*,? ){0,2}?(?:guests|attendees|people|persons|heads|RSVPs|patrons)";
 export const ATTENDEE_COUNT = new RegExp(ATTENDEE_COUNT_SOURCE, "i");
 
 /**
@@ -113,7 +126,15 @@ export const ATTENDEE_COUNT = new RegExp(ATTENDEE_COUNT_SOURCE, "i");
  * These nouns are ordinary English and appear all over a repository about events, so unlike the
  * phrases above they are not a count on their own. The NUMERAL is what makes one a threshold,
  * and it is required in either order. "ONE person signed in THREE capacities" and "the guest
- * list" carry no numeral and are not counts; "500 or more people" is one.
+ * list" carry no numeral and are not counts; "500 or more people" is one. A SPELLED-OUT numeral is
+ * therefore a declared miss: "seventy-five or more guests" carries no digit, the tree contains zero
+ * instances of it, and it is asserted as an expected miss next door rather than left to be found.
+ *
+ * The numeral-first alternation takes the same two words of modifier `ATTENDEE_COUNT` takes, added
+ * in the ninth round for "75 or more confirmed guests". Its cost is the mirror of that one and is
+ * stated the same way: two arbitrary words between the numeral and the noun are read as one phrase,
+ * so "75 days before guests arrive" beside an agency mention is a false positive this window
+ * created. The flag set on this tree is unchanged at ten with it.
  *
  * THE NOUN-FIRST ALTERNATION REACHES TO THE END OF THE SENTENCE, and nothing narrower. It carried
  * a `{0,40}` character window until the seventh PR #247 review round, which found that window
@@ -126,7 +147,7 @@ export const ATTENDEE_COUNT = new RegExp(ATTENDEE_COUNT_SOURCE, "i");
  * in one sentence and a numeral in the next are still two things.
  */
 export const COUNTED_PEOPLE_SOURCE =
-  "\\b\\d{1,6} ?(?:or more |or fewer |\\+ ?)?(?:guests|attendees|people|persons|heads|RSVPs|patrons)\\b" +
+  "\\b\\d{1,6} ?(?:or more |or fewer |\\+ ?)?(?:[a-z][a-z-]*,? ){0,2}?(?:guests|attendees|people|persons|heads|RSVPs|patrons)\\b" +
   "|\\b(?:guests|attendees|people|persons|heads|RSVPs|patrons)\\b[^.\\n]*?(?<![\\w-])\\d{1,6}(?![\\w-])";
 export const COUNTED_PEOPLE = new RegExp(COUNTED_PEOPLE_SOURCE, "i");
 
@@ -295,16 +316,39 @@ export const scanOptionsFor = (relative) => ({
  * reason that the marker sits inside the phrase: "the number of [guests](url)" is not the literal
  * "number of guests" that `ATTENDEE_COUNT` joins with a single space.
  *
- * FIVE THINGS ARE NORMALIZED, each because a phrasing was measured to walk past without it:
+ * THE MARKER SET IS NOT REMEMBERED ANY MORE, which is the NINTH round's item 1 and the reason
+ * quotation marks are in it. Every character stripped here is checked against an enumeration of the
+ * delimiters this tree actually writes against its words, in
+ * `spec-conflict-resolutions.fixtures.test.mjs`: a wrapping construct the repository carries that
+ * is neither stripped here nor declared there fails that suite, and so does deleting a declaration
+ * for one it does carry. The eighth round's list was a hand list checked against itself, and the
+ * construct it did not think of was the commonest one in the tree.
+ *
+ * SEVEN THINGS ARE NORMALIZED, each because a phrasing was measured to walk past without it:
  *
  *   - The inline-code marker, so "the number of `guests`" reads as the words it wraps. This
  *     repository writes `headcount` in backticks throughout, so it is the house style rather than
  *     an edge case.
  *   - BOTH emphasis markers, the strikethrough marker and a link's brackets: `*`, `_`, `~`, `[` and
  *     `]`, so "the number of **guests**", "the number of _guests_", "~~the number of guests~~" and
- *     "the number of [guests](url)" all read as the words they wrap. The link's parentheses and URL
- *     are LEFT ALONE deliberately: the count phrase ends at the closing bracket, so removing the
- *     brackets is enough, and dropping a parenthesis would join two clauses that are not adjacent.
+ *     "the number of [guests](url)" all read as the words they wrap.
+ *   - A LINK'S TARGET, `](url)`, which the eighth round left alone on the reading that "the count
+ *     phrase ends at the closing bracket". That is true only where the linked word ends the phrase.
+ *     The corpus generates the link over the noun of every phrasing, and "the [guest](url) count"
+ *     is the case that reading missed: the target sits INSIDE the phrase, between the two words
+ *     `ATTENDEE_COUNT` joins with a single space. The round-8 cell that stood for this wrapped the
+ *     last word of the phrase, which for "guest count" is "count", so it asserted the case that
+ *     works. The link's own parentheses elsewhere are still left alone: a parenthetical is a second
+ *     clause, and dropping its delimiters would join two clauses that are not adjacent.
+ *   - QUOTATION MARKS: `"`, `“` and `”` always, and the straight apostrophe only where it flanks a
+ *     word. This is the ninth round's item 2 and it is byte-for-byte the eighth round's defect with
+ *     `_guests_` written `"guests"`: quoted spans are the most common inline construct in this
+ *     tree, 1,027 of them in 38 .md files against 85 underscore-emphasis spans in 12, and 364 of
+ *     them wrap a single word. The apostrophe's condition is not decoration: stripping it
+ *     unconditionally turns `DOHMH's` into `DOHMHs`, which `\bDOHMH\b` does not match, and turns
+ *     "New York State's Department of Health" into a string the `(?<!State's )` lookbehind no
+ *     longer sees, which would flag the STATE department's real published threshold. That is the
+ *     one false positive this guard has already had.
  *   - The line break, to a single space, with any surrounding indentation. The TRAILING half is
  *     what closes markdown's hard line break, two spaces before a newline, which four scanned files
  *     carry, `docs/DOCUMENTATION-GOVERNANCE.md` line 3 among them: it used to normalize to a triple
@@ -319,7 +363,10 @@ export const scanOptionsFor = (relative) => ({
  * like `guest_count` normalizes to `guestcount`, which `(?:guest) ?count` matches, so a code block
  * naming the agency and such a field would be flagged with no claim in it. It costs nothing today,
  * measured: the flag set on the clean tree is byte-identical at ten entries with `_` and `~` added.
- * It is a live cost if a field of that name is ever introduced.
+ * It is a live cost if a field of that name is ever introduced. The quotation marks carry the same
+ * kind of cost and the same measurement: a code block naming the agency beside the string literal
+ * `"guest count"` reads as the phrase, and the flag set on the clean tree is the same ten entries
+ * with `"`, `“`, `”`, the conditional `'` and the link target added.
  *
  * IT DOES NOT ASSUME THE FORMATTER HAS RUN, and must not. `prettier` 3.9.6 rewrites `*italic*` into
  * `_italic_`, so underscore is the form italic emphasis survives in once `pnpm format` has run, but
@@ -339,7 +386,11 @@ export const scanOptionsFor = (relative) => ({
  * flag set on the clean tree is unchanged at ten, the four pinned records and the six benign pairs.
  */
 export const normalizeForMatching = (text) =>
-  text.replace(/[`*_~[\]]/g, "").replace(/[ \t]*\r?\n[ \t]*(?:\/\/|>)?[ \t]*/g, " ");
+  text
+    .replace(/\]\([^)\n]*\)/g, "]")
+    .replace(/[`*_~[\]"“”]/g, "")
+    .replace(/(?<![A-Za-z0-9])'|'(?![A-Za-z0-9])/g, "")
+    .replace(/[ \t]*\r?\n[ \t]*(?:\/\/|>)?[ \t]*/g, " ");
 
 /** Paragraphs, list items and table rows. A block ends where the next one begins. */
 export const blocksOf = (text) => {

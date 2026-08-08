@@ -17,6 +17,7 @@ import {
   UNBOUNDED_RECORD_FILES,
   blocksOf,
   isParagraph,
+  normalizeForMatching,
   pairsAgencyWithCount,
   pinnedDigest,
   scanFile,
@@ -227,19 +228,20 @@ describe("pairsAgencyWithCount", () => {
   });
 
   /**
-   * ITEM 2 of the eighth PR #247 round, in the half that is about the "number of" phrasing. One
-   * adjective inserted into the declared phrase walked past, and the phrase now takes up to two
-   * words of modifier. The third case is the bound: three words is not one noun phrase here.
+   * THE BOUND on the modifier window, and only the bound. The eighth round asserted the window with
+   * three hand-written cells carrying plain lowercase adjectives, which is a declaration checked
+   * against a declaration: three adjectives were the shape it happened to think of, and the shapes
+   * it did not think of (a hyphen, a comma) were the ninth round's item 3. The window's POSITIVE
+   * cases are a generated corpus axis now, over every noun, every phrasing, every formatting and
+   * every wrap position. What a corpus over a window cannot state is where the window stops, so
+   * that is what stays here, in both expressions that carry it.
    */
-  it("flags an adjective inserted into the declared 'number of' phrase", () => {
-    expect(
-      pairsAgencyWithCount("DOHMH keys the permit on the number of confirmed guests at intake."),
-    ).toBe(true);
-    expect(
-      pairsAgencyWithCount("DOHMH keys the permit on the number of confirmed adult guests."),
-    ).toBe(true);
+  it("stops the modifier window at two words, in both expressions", () => {
     expect(
       pairsAgencyWithCount("DOHMH keys the permit on the number of confirmed paying adult guests."),
+    ).toBe(false);
+    expect(
+      pairsAgencyWithCount("DOHMH requires a permit for 75 or more confirmed paying adult guests."),
     ).toBe(false);
   });
 
@@ -504,6 +506,33 @@ describe("scanFile: a block is read as one line of prose", () => {
     // The control the eighth round ran beside it: the same record with the emphasis removed. Both
     // are flagged now, and the point of the pair is that the guard no longer tells them apart.
     expect(scanFile(UNDERSCORED_RECORD.replace(/_guests_/, "guests"))).toHaveLength(1);
+  });
+
+  /**
+   * ITEM 2 of the NINTH round, which is the same record with the same word in the tree's commonest
+   * inline construct instead of one of its rarest. Planted into the real `docs/BASELINE.md` between
+   * two clean paragraphs it added no flag, and the same record with the two quotation marks deleted
+   * added one: two characters again, one round later, which is why the enumeration above exists
+   * rather than another remembered marker.
+   */
+  it("item 2: flags the planted record whose count noun is quoted", () => {
+    const quoted = UNDERSCORED_RECORD.replace("_guests_", '"guests"');
+    expect(scanFile(quoted)).toHaveLength(1);
+    expect(scanFile(UNDERSCORED_RECORD.replace("_guests_", "“guests”"))).toHaveLength(1);
+    expect(scanFile(UNDERSCORED_RECORD.replace("_guests_", "'guests'"))).toHaveLength(1);
+  });
+
+  /**
+   * The apostrophe is stripped only where it flanks a word, and this is the case that decides it:
+   * stripping it everywhere turns "New York State's Department of Health" into a string the
+   * `(?<!State's )` lookbehind cannot see, and the state department's published attendance
+   * threshold is the one false positive this guard has already had.
+   */
+  it("item 2: stripping the quote marks does not readmit the state department", () => {
+    const state =
+      'New York State\'s Department of Health publishes a "50 or more attendees" threshold.';
+    expect(pairsAgencyWithCount(state)).toBe(false);
+    expect(pairsAgencyWithCount("DOHMH's permit turns on the “guest count”.")).toBe(true);
   });
 
   /**
@@ -867,6 +896,13 @@ describe("the count vocabulary: 7 nouns by 3 phrasings, every cell asserted", ()
     return new Set(match[1].split("|").map((noun) => noun.toLowerCase().replace(/s$/, "")));
   };
 
+  // The `(?:[a-z][a-z-]*,? ){0,2}?` modifier window sits between a phrase's opening and its noun
+  // list in BOTH expressions, so each pattern below steps over it explicitly rather than taking the
+  // first group it finds. Taking the first group is what a bare `[^)]+` would do, and it would then
+  // compare the modifier window's own text against the noun list.
+  const MODIFIER_WINDOW = String.raw`\(\?:\[a-z\]\[a-z-\]\*,\? \)\{0,2\}\?`;
+  const NOUNS_AFTER = String.raw`\(\?:([^)]+)\)`;
+
   it("item 1: both expressions declare the same count nouns, in every alternation", () => {
     const declared = [
       [
@@ -874,16 +910,15 @@ describe("the count vocabulary: 7 nouns by 3 phrasings, every cell asserted", ()
         nounsIn(ATTENDEE_COUNT_SOURCE, /\(\?:([^)]+)\) \?count/),
       ],
       [
-        // The `(?:[a-z]+ ){0,2}?` modifier window sits between "number of" and the noun list, so
-        // the pattern steps over it explicitly rather than taking the first group it finds. Taking
-        // the first group is what a `[^)]+` after "number of" would do, and it would then compare
-        // the modifier window against the noun list and fail with the window's own text.
         "ATTENDEE_COUNT, the 'number of' phrasing",
-        nounsIn(ATTENDEE_COUNT_SOURCE, /number of \(\?:\[a-z\]\+ \)\{0,2\}\?\(\?:([^)]+)\)/),
+        nounsIn(ATTENDEE_COUNT_SOURCE, new RegExp(`number of ${MODIFIER_WINDOW}${NOUNS_AFTER}`)),
       ],
       [
         "COUNTED_PEOPLE, numeral first",
-        nounsIn(COUNTED_PEOPLE_SOURCE, /\\\+ \?\)\?\(\?:([^)]+)\)/),
+        nounsIn(
+          COUNTED_PEOPLE_SOURCE,
+          new RegExp(String.raw`\\\+ \?\)\?${MODIFIER_WINDOW}${NOUNS_AFTER}`),
+        ),
       ],
       ["COUNTED_PEOPLE, noun first", nounsIn(COUNTED_PEOPLE_SOURCE, /\|\\b\(\?:([^)]+)\)/)],
     ];
@@ -932,7 +967,8 @@ describe("the count vocabulary: 7 nouns by 3 phrasings, every cell asserted", ()
 
 /**
  * ITEM 2 of the seventh PR #247 review round: the disclosure is DERIVED, not declared. ITEM 2 of
- * the EIGHTH: so is the axis it is derived over.
+ * the EIGHTH: so is the axis it is derived over. ITEM 1 of the NINTH: so is the CANDIDATE LIST that
+ * axis is filtered out of, which is where the previous two rounds still had a hand list.
  *
  * Everything above measures one declaration against another. The grid drives cells someone wrote
  * down; the set equality compares two source strings with each other; the expected misses assert
@@ -948,27 +984,63 @@ describe("the count vocabulary: 7 nouns by 3 phrasings, every cell asserted", ()
  * only ever exercise the two markers the normalization already stripped. Underscore emphasis,
  * strikethrough and bracketed links were all in the tree and in none of the 1,371 cases.
  *
- * SO THE FORMATTING AXIS IS COUNTED OUT OF THE TREE, the way the width axis already was. `MARKUP`
- * below is a list of CANDIDATE constructs, each carrying both the wrapper the corpus generates and
- * a detector for the same construct in real text; `measure()` counts the detector's hits over the
- * same roots and extensions the offender scan walks, and only the constructs with a hit become
- * corpus axes. Combinations are the same question asked of nested pairs, and there the filter does
- * real work: 6 of the 42 ordered pairs occur, and 36 do not.
+ * THE EIGHTH ROUND COUNTED THE TREE IN ONE DIRECTION ONLY, and the ninth round's item 1 is that the
+ * direction it counted was the one that cannot discover anything. `MARKUP` was a hand list of
+ * candidate constructs, `measure()` counted how often each REMEMBERED construct occurs, and the
+ * assertion that closed the round compared the surviving list against the list it was filtered out
+ * of. Deleting the entry for underscore emphasis, that round's own headline finding at 88 spans in
+ * 14 files, left the whole suite green and dropped the construct out of every corpus case. A
+ * measurement that can only ever remove a remembered candidate answers "how common is this thing I
+ * thought of", never "what is in the tree that nobody thought of".
  *
- * WHAT WAS MEASURED ON THIS COMMIT, occurrences and then files:
+ * SO THE TREE IS ENUMERATED, AND THE DECLARATION IS CHECKED AGAINST THE ENUMERATION. Two passes over
+ * the same roots and extensions the offender scan walks, neither of which reads `MARKUP`:
  *
- *     inline code           10,532 / 183      bold                          2,574 / 58
- *     emphasis, asterisk        94 / 33       emphasis, underscore             88 / 14
- *     link                      31 / 12       bold, underscores                29 / 12
- *     strikethrough             21 /  6
+ *   - `DELIMITERS`: every character that is neither a letter, a digit nor whitespace and that sits
+ *     directly against a word. This is the alphabet the tree writes into and around its words.
+ *   - `WRAPPERS`: every run of one repeated delimiter that OPENS at a word boundary, closes on the
+ *     same line against the same run, and has a span of words between. This is the shape an inline
+ *     marker has, found without being named.
  *
- *     bold of inline code       52 /  6       inline code of bold               7 /  3
- *     strikethrough of bold      4 /  3       link of inline code               2 /  2
- *     inline code of bold, underscores   1 / 1     inline code of emphasis, asterisk   1 / 1
+ * Every character in the first and every run in the second must then be accounted for: stripped by
+ * `normalizeForMatching`, declared as a construct in `MARKUP`, or listed by hand in
+ * `EXCLUDED_DELIMITERS` / `EXCLUDED_WRAPPERS` with the reason it is neither. The stripped class is
+ * read out of the function by probing it rather than restated, and every character it strips must
+ * belong to a declared construct, so the three declarations cannot drift apart in any direction.
  *
- * Two of those numbers are the round's own finding: underscore emphasis at 88 in 14 files against
- * asterisk emphasis at 94 in 33, and strikethrough at 21 in 6 including the PINNED REGISTER ROW,
- * whose subject cell is struck through. Neither was in the corpus, and both defeated the guard.
+ * That is what makes deletion fail. Removing the `MARKUP` entry for underscore emphasis leaves the
+ * `_` wrapper enumerated out of the tree and claimed by nothing; removing the entry for links leaves
+ * `[` and `]` stripped and claimed by nothing. Both fail here now.
+ *
+ * WHAT THE ENUMERATION FOUND ON THIS COMMIT that the eighth round's hand list did not:
+ *
+ *   - QUOTATION MARKS, and they are the most common inline construct in this tree by an order of
+ *     magnitude: the wrapper pass counts 1,027 double-quoted spans in 38 .md files and 77
+ *     curly-quoted spans in 7, against underscore emphasis at 85 in 12 and strikethrough at 20 in 5.
+ *     364 quoted spans in `docs/` and `specs/` wrap a single word, and `docs/BASELINE.md` line 4
+ *     writes the struck clause's own subject as "DOHMH thresholds". The record the eighth round
+ *     planted, with `_guests_` written `"guests"` instead, walked past the guard for exactly the
+ *     same reason `_guests_` did. They are stripped and declared now.
+ *   - "bold, underscores" WAS NOT A CONSTRUCT THIS TREE CARRIES. Its detector counted 29 hits in 12
+ *     files, and every one of them is `__fixtures__`, the directory: the detector's left edge
+ *     allowed a `/` before the marker. Under a wrapper enumeration that requires a word boundary it
+ *     occurs zero times, so the entry is removed rather than measured.
+ *
+ * WHAT IS MEASURED ON THIS COMMIT, occurrences and then files, over every scanned file and then
+ * over `.md` alone:
+ *
+ *     inline code          10,704 / 184   6,615 / 50      bold          2,585 / 60   2,556 / 50
+ *     double quotes        16,807 / 220   1,263 / 39      emphasis, *     109 / 33      25 /  9
+ *     single quotes           649 /  52      20 /  6      emphasis, _     101 / 17      85 / 12
+ *     curly quotes             81 /   9      77 /  7      link             36 / 13      27 /  9
+ *     strikethrough            26 /   7      20 /  5
+ *
+ * 22 of the 72 ordered nested pairs occur and the other 50 are not generated, which is where the
+ * measurement changes the corpus rather than confirming it.
+ *
+ * The two counts the eighth round called its finding, underscore emphasis and strikethrough, are the
+ * two RAREST constructs in that table. Rarity is not the point and neither is commonness; being
+ * enumerated rather than remembered is.
  *
  * THE WIDTH AXIS IS UNCHANGED and is stated here with its measurement, as before. `.prettierrc`
  * sets `printWidth` 100 and no `proseWrap`, so prose wrapping defaults to `preserve` and is
@@ -1005,84 +1077,291 @@ describe("the declared vocabulary, over the formatting the artifacts really use"
       walk(resolve(repoRoot, root));
     for (const entry of readdirSync(repoRoot, { withFileTypes: true }))
       if (!entry.isDirectory() && matches(entry.name)) found.push(resolve(repoRoot, entry.name));
-    return found.map((path) => readFileSync(path, "utf8"));
+    return found.map((path) => ({ prose: path.endsWith(".md"), text: readFileSync(path, "utf8") }));
   })();
 
   /** A run of one line carrying a letter and none of the delimiters wrapped around it. */
-  const SPAN = (delimiters) => `(?=[^\\n]{0,120}?[A-Za-z])[^\\n${delimiters}]{1,120}?`;
+  const SPAN = (chars) =>
+    `(?=[^\\n]{0,120}?[A-Za-z])[^\\n${chars.replace(/[\]\\^-]/g, "\\$&")}]{1,120}?`;
   const HREF = "https://example.invalid";
 
   /**
-   * The CANDIDATE inline constructs. Each carries the wrapper the corpus generates and a detector
-   * for the same construct in real text, with `@` standing for whatever the construct wraps.
+   * The DECLARED inline constructs. Each carries the wrapper the corpus generates, a detector for
+   * the same construct in real text with `@` standing for whatever it wraps, and the delimiter
+   * characters it is built out of.
    *
-   * The two are written out separately, which is the shape this round is about, so they are tied
-   * together by an assertion rather than by trust: "every candidate's detector matches its own
-   * wrapper" below drives each wrapper through its own detector. The detectors carry the
-   * disambiguation a wrapper does not need: `*` must not match the inside of `**`, and `_` must not
-   * match inside an identifier, or `__fixtures__` and every `a * b` would be counted as emphasis.
+   * The wrapper and the detector are written out separately, which is the shape the eighth round was
+   * about, so they are tied together by an assertion rather than by trust: "every declared
+   * construct's detector matches its own wrapper" below drives each wrapper through its own
+   * detector. The detectors carry the disambiguation a wrapper does not need: `*` must not match the
+   * inside of `**`, `_` must not match inside an identifier, and `'` must not match the gap between
+   * two apostrophes.
+   *
+   * THIS LIST IS NO LONGER WHAT DECIDES THE AXIS. It is checked against the tree in both directions
+   * by the three assertions below: nothing may be here that the tree does not carry, and nothing may
+   * be in the tree that is not here or on an exclusion list.
    */
   const MARKUP = [
-    { name: "inline code", wrap: (t) => `\`${t}\``, detect: "`@`", inside: "`" },
-    { name: "bold", wrap: (t) => `**${t}**`, detect: "\\*\\*@\\*\\*", inside: "*" },
-    {
-      name: "bold, underscores",
-      wrap: (t) => `__${t}__`,
-      detect: "(?<![A-Za-z0-9_])__@__(?![A-Za-z0-9_])",
-      inside: "_",
-    },
+    { name: "inline code", wrap: (t) => `\`${t}\``, detect: "`@`", chars: "`" },
+    { name: "bold", wrap: (t) => `**${t}**`, detect: "\\*\\*@\\*\\*", chars: "*" },
     {
       name: "emphasis, underscore",
       wrap: (t) => `_${t}_`,
       detect: "(?<![A-Za-z0-9_])_@_(?![A-Za-z0-9_])",
-      inside: "_",
+      chars: "_",
     },
     {
       name: "emphasis, asterisk",
       wrap: (t) => `*${t}*`,
       detect: "(?<![*A-Za-z0-9])\\*@\\*(?!\\*)",
-      inside: "*",
+      chars: "*",
     },
-    { name: "strikethrough", wrap: (t) => `~~${t}~~`, detect: "~~@~~", inside: "~" },
+    { name: "strikethrough", wrap: (t) => `~~${t}~~`, detect: "~~@~~", chars: "~" },
     // The detector stops at the opening parenthesis: the corpus generates one href and the tree
     // carries hundreds, and what is being counted is the bracketed span, not the target.
-    { name: "link", wrap: (t) => `[${t}](${HREF})`, detect: "\\[@\\]\\(", inside: "\\[\\]" },
+    { name: "link", wrap: (t) => `[${t}](${HREF})`, detect: "\\[@\\]\\(", chars: "[]" },
+    { name: "double quotes", wrap: (t) => `"${t}"`, detect: '"@"', chars: '"' },
+    { name: "curly quotes", wrap: (t) => `“${t}”`, detect: "“@”", chars: "“”" },
+    {
+      name: "single quotes",
+      wrap: (t) => `'${t}'`,
+      detect: "(?<![A-Za-z0-9])'@'(?![A-Za-z0-9])",
+      chars: "'",
+    },
   ];
 
-  /** How many times a construct occurs in the scanned tree, and in how many files. */
-  const measure = (detect, inside) => {
-    const pattern = new RegExp(detect.replace("@", SPAN(inside)), "g");
-    let occurrences = 0;
-    let files = 0;
-    for (const text of scannedTexts) {
-      const found = text.match(pattern);
-      if (found) {
-        occurrences += found.length;
-        files += 1;
-      }
+  /**
+   * One counting pass over the scanned tree. `each` is handed a file's text and a `count` callback,
+   * and reports one key per occurrence; the tally keeps the occurrences and the files separately for
+   * every file and for the `.md` files alone.
+   */
+  const tally = (each) => {
+    const counts = new Map();
+    for (const { prose, text } of scannedTexts) {
+      const seen = new Set();
+      each(text, (key) => {
+        const entry = counts.get(key) ?? { occurrences: 0, files: 0, prose: 0, proseFiles: 0 };
+        entry.occurrences += 1;
+        if (prose) entry.prose += 1;
+        if (!seen.has(key)) {
+          seen.add(key);
+          entry.files += 1;
+          if (prose) entry.proseFiles += 1;
+        }
+        counts.set(key, entry);
+      });
     }
-    return { occurrences, files };
+    return counts;
   };
 
-  /** The single constructs the tree really uses, in the order `MARKUP` declares them. */
-  const SINGLES = MARKUP.map((markup) => ({
-    ...markup,
-    ...measure(markup.detect, markup.inside),
-  })).filter(({ occurrences }) => occurrences > 0);
+  /** How many times a construct occurs in the scanned tree, and in how many files. */
+  const measure = (detect, chars) => {
+    const pattern = new RegExp(detect.replace("@", SPAN(chars)), "g");
+    const counted = tally((text, count) => {
+      for (let index = 0; index < (text.match(pattern) ?? []).length; index += 1)
+        count("construct");
+    });
+    return counted.get("construct") ?? { occurrences: 0, files: 0, prose: 0, proseFiles: 0 };
+  };
+
+  /**
+   * EVERY DELIMITER CHARACTER THE TREE WRITES AGAINST A WORD, enumerated out of the tree with no
+   * list of any kind in the way: anything that is not a letter, a digit or whitespace, sitting
+   * directly beside a letter or a digit. A construct this repository writes and nobody remembered
+   * has to be made of characters in here, which is the property a hand list cannot have.
+   */
+  const ADJACENT_TO_A_WORD = /(?<=[\p{L}\p{N}])[^\p{L}\p{N}\s]|[^\p{L}\p{N}\s](?=[\p{L}\p{N}])/gu;
+  const DELIMITERS = tally((text, count) => {
+    for (const [character] of text.matchAll(ADJACENT_TO_A_WORD)) count(character);
+  });
+
+  /**
+   * EVERY WRAPPING CONSTRUCT THE TREE CARRIES, on the same terms: a run of one repeated delimiter
+   * that starts at a word boundary, closes against the same run later on the same line, and has a
+   * span of words between the two. That is what an inline marker IS, stated structurally instead of
+   * by name, so `~~`, `_` and `"` are found by the same pass that finds `` ` `` and nothing has to
+   * have been thought of first.
+   *
+   * The flanking rule is markdown's and is what keeps `a-b-c` and `path/to/file` out: a marker opens
+   * at the start of a line or after whitespace or an opening bracket, and closes against the end of
+   * a line, whitespace or closing punctuation. A run is at most three characters, which is every
+   * marker CommonMark defines, and a span at most 120, which is `PROXIMITY`.
+   *
+   * It does not find a construct whose two ends DIFFER, which a link and a curly-quoted span both
+   * are, and neither does it find an HTML tag pair. Those are caught one level down instead, by the
+   * character enumeration above: `[`, `]`, `“`, `”`, `<` and `>` all appear there and all have
+   * to be accounted for.
+   */
+  const escapeRun = (run) => run.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const closers = new Map();
+  const closerFor = (run) => {
+    if (!closers.has(run)) {
+      const marker = escapeRun(run);
+      closers.set(
+        run,
+        new RegExp(
+          `^(?!\\s)((?:(?!${marker})[^\\s])(?:(?!${marker}).){0,118}?)(?<!\\s)${marker}(?![^\\s.,;:!?)\\]}])`,
+        ),
+      );
+    }
+    return closers.get(run);
+  };
+  const OPENS_A_RUN = /(?<=^|[\s([{])([^\p{L}\p{N}\s])\1{0,2}(?=\S)/gu;
+  const WRAPPERS = tally((text, count) => {
+    for (const line of text.split("\n")) {
+      for (const opening of line.matchAll(OPENS_A_RUN)) {
+        const run = opening[0];
+        const closed = line.slice(opening.index + run.length).match(closerFor(run));
+        if (closed && /\p{L}/u.test(closed[1])) count(run);
+      }
+    }
+  });
+
+  /**
+   * THE CHARACTERS `normalizeForMatching` STRIPS, read out of the function by probing it at the two
+   * positions a wrapper occupies rather than restated from its source. A restated class is a second
+   * place to forget a character, which is the mistake this whole section is about.
+   *
+   * The straight apostrophe is stripped only where it flanks a word, so it is in this set and not in
+   * the intra-word one: `DOHMH's` and `New York State's Department of Health` keep theirs, and the
+   * lookbehind that holds the state department out of the agency expression still sees the string it
+   * is written against.
+   */
+  const strippedBetween = (before, after) => (character) =>
+    normalizeForMatching(`${before}${character}${after}`) === `${before}${after}`;
+  const STRIPPED = [...DELIMITERS.keys()].filter(
+    (character) =>
+      strippedBetween("word ", "word")(character) && strippedBetween("word", " word")(character),
+  );
+
+  /**
+   * The delimiter characters that are deliberately NEITHER stripped nor part of a declared
+   * construct, each with the reason and the count that decided it. An exclusion here is a claim that
+   * this repository does not use the character to wrap or interrupt a phrase, and the assertion
+   * below fails if one of these stops occurring at all, so the list cannot outlive its reasons.
+   */
+  const EXCLUDED_DELIMITERS = [
+    {
+      chars: ".,;:!?…–—",
+      why:
+        "Sentence and clause punctuation, 11,666 periods and 9,876 commas in .md alone. Every" +
+        " declared phrase joins its words with single spaces and none of them spans a clause" +
+        " boundary; `COUNTED_PEOPLE`'s noun-first alternation deliberately STOPS at a period, so a" +
+        " count noun in one sentence and a numeral in the next stay two things. Stripping these" +
+        " would join clauses that are not adjacent, which is a claim the scan has no way to check.",
+    },
+    {
+      chars: "-",
+      why:
+        "The hyphen is a DECLARED MISS with a measured cost, not an oversight: `ATTENDEE_COUNT`" +
+        " does not match 'the guest-count threshold', and the one-character fix flags" +
+        " `docs/BASELINE.md`'s 'No regulatory fact moves here' paragraph, which DENIES the" +
+        " attribution in the tree's own house spelling. Turning it into a space would rewrite" +
+        " 'food-service' and '2026-08-07' too. It is generated as a corpus case and asserted to be" +
+        " missed, which is the only form of declaration this file accepts.",
+    },
+    {
+      chars: "(){}",
+      why:
+        "Parentheses and braces bound a clause or a block rather than mark a span of prose: a" +
+        " parenthetical is a second statement, not emphasis on the first, and dropping the" +
+        " delimiter would join two clauses that were never adjacent. The one parenthesis pair that" +
+        " IS removed is a link's `](url)` target, and it is removed as a unit with the bracket it" +
+        " belongs to rather than as a character, because there the parentheses carry a URL and not" +
+        " a clause.",
+    },
+    {
+      chars: "<>",
+      why:
+        "HTML and JSX angle brackets. This is the round's own decision on inline HTML tags, and the" +
+        " enumeration is what decides it: 64 `<` and 62 `>` sit against a word in 12 .md files, and" +
+        " every one of them is a placeholder like `<web-host>` inside a code span or a fat arrow in" +
+        " a code sample. The whole tree carries ONE inline HTML tag pair, `<strong>` in README.md," +
+        " against 20 strikethrough spans in 5 files, which is the rarest construct that IS" +
+        " declared. `<code>guests</code>` would defeat the guard and nothing in this repository" +
+        " writes it. If that changes the enumeration will say so, because these two characters are" +
+        " counted every run.",
+    },
+    {
+      chars: "/\\=+%$@#|^&",
+      why:
+        "Operator, path and URL syntax: 4,054 slashes in .md, nearly all of them inside paths and" +
+        " links. None wraps a span of prose, and `&` is the opposite of a delimiter here, being a" +
+        " literal word in the agency's own spelled-out name, which `CITY_HEALTH_AGENCY` matches as" +
+        " written.",
+    },
+    {
+      chars: "§×≥→±⌊⌋",
+      why:
+        "Typographic and mathematical symbols: the section sign in governance citations (495 in 37" +
+        " .md files), and the multiplication, comparison, arrow and floor signs in retry-backoff" +
+        " arithmetic and coverage thresholds. Each stands for a word rather than marking one, so a" +
+        " phrase never runs through one.",
+    },
+    {
+      chars: "’",
+      why:
+        "The curly apostrophe, 4 occurrences in one file" +
+        " (`docs/proposals/regulatory-scenarios-v2-draft.md`), every one of them a possessive" +
+        " inside a word. The curly OPENING quote does not occur in this tree at all, so there is no" +
+        " curly single-quoted span to strip, and stripping the closing one alone would break" +
+        " possessives the way stripping the straight apostrophe unconditionally would break" +
+        " `State's`.",
+    },
+    {
+      chars: "\u0003",
+      why:
+        'A raw control byte, in `apps/api/src/checklist.test.ts`\'s `Buffer.from("PK\\u0003\\u0004")`:' +
+        " the ZIP magic number an upload fixture asserts on. It is a byte in a binary literal" +
+        " rather than punctuation in a sentence.",
+    },
+  ];
+
+  /**
+   * The wrapping shapes the enumeration finds that are NOT inline formatting. Every one is balanced
+   * ASCII punctuation in a code file that the flanking rule cannot tell apart from a marker.
+   *
+   * THE COST OF THE NO-DEAD-ENTRY RULE IS STATED RATHER THAN DISCOVERED, because some of these runs
+   * occur once: `)))` and `^` are each one expression in one test file. Deleting that expression in
+   * an unrelated commit fails the assertion below, and the remedy is deleting the run from this list
+   * in the same commit. That is the same bargain `BENIGN_ADJACENT_PAIRS` takes, for the same reason:
+   * a list nobody is forced to revisit stops being read.
+   */
+  const EXCLUDED_WRAPPERS = [
+    {
+      runs: ["(", ")", "))", ")))", "[", "]", "{", "}"],
+      why:
+        "An argument list, an array index, a destructuring or an object literal, read as a wrapper" +
+        " because the flanking rule sees a run of punctuation on each side of a word. Together they" +
+        " account for 5 spans in .md and hundreds in .ts and .mjs. The delimiters are part" +
+        " of the code they surround: removing them would rewrite the expression rather than reveal" +
+        " a phrase.",
+    },
+    {
+      runs: ["=", "==", "?", "!", ";", ".", "^", "\\", "/", ">"],
+      why:
+        "Operators, statement terminators and regular-expression syntax in the same position:" +
+        " `a === b`, `x?.y`, a `/pattern/` literal, a JSX closing bracket. All but 5 of these spans" +
+        " are in code files, and none of the 5 is a marker either: they are table cells and a" +
+        " backslash escape.",
+    },
+  ];
+
+  const MEASURED = MARKUP.map((markup) => ({ ...markup, ...measure(markup.detect, markup.chars) }));
 
   /**
    * The nested pairs the tree really uses. This is where the measurement changes the corpus rather
-   * than confirming it: 6 of the 42 ordered pairs occur and the other 36 are not generated.
+   * than confirming it: most of the 72 ordered pairs do not occur and are not generated.
    */
   const COMBINATIONS = MARKUP.flatMap((outer) =>
     MARKUP.filter((inner) => inner !== outer).map((inner) => ({
       name: `${outer.name} of ${inner.name}`,
       wrap: (text) => outer.wrap(inner.wrap(text)),
-      ...measure(outer.detect.replace("@", inner.detect), inner.inside),
+      ...measure(outer.detect.replace("@", inner.detect), inner.chars),
     })),
   ).filter(({ occurrences }) => occurrences > 0);
 
-  const FORMATTINGS = [...SINGLES, ...COMBINATIONS];
+  const FORMATTINGS = [...MEASURED, ...COMBINATIONS];
 
   /** Greedy wrap, never breaking a word: `printWidth` 100 with `proseWrap: preserve`. */
   const wrap = (text, columns = 100) => {
@@ -1101,22 +1380,49 @@ describe("the declared vocabulary, over the formatting the artifacts really use"
     `DOHMH publishes the temporary food-service permit ${lead}for an indoor event keyed on the ` +
     `${phrase} recorded at intake, so raising an RSVP cap moves the permit findings.`;
 
+  /**
+   * THE MODIFIER AXIS, which is item 3 of the ninth PR #247 round. `ATTENDEE_COUNT` has taken up to
+   * two words of modifier since the eighth round, and the whole feature was driven by three
+   * hand-written cells carrying one plain lowercase adjective each: a declaration checked against a
+   * declaration, which is the shape round 7's item 2 retired everywhere else in this file. The
+   * corpus generates it now, so every modifier runs through every formatting and every wrap
+   * position as well.
+   *
+   * The four are the reviewer's, and three of the four were missed when they were executed against
+   * the guard: a hyphenated compound (`(?:[a-z]+ )` rejected the hyphen, so `food-service` and
+   * `pre-registered` walked past, and "temporary food-service permit" is the permit this entire
+   * guard is about), and a comma between two coordinate adjectives. The modifier goes in front of
+   * the count noun itself, which for "75 persons or more" is not the last word of the phrase.
+   */
+  const MODIFIERS = ["", "confirmed ", "pre-registered ", "food-service ", "confirmed, paying "];
+
+  const nounIn = (phrase, singular) => {
+    const word = phrase
+      .split(" ")
+      .find((candidate) => candidate.toLowerCase().startsWith(singular.toLowerCase()));
+    expect(word, `"${phrase}" carries the count noun "${singular}"`).toBeDefined();
+    return word;
+  };
+
   const CORPUS = [];
   const add = (formatting, phrasing, text) => CORPUS.push({ formatting, phrasing, text });
-  for (const [, ...phrasings] of NOUNS) {
-    for (const phrase of phrasings) {
-      const noun = phrase.split(" ").pop();
-      add("plain", phrase, claim(phrase));
-      for (const { name, wrap: mark } of FORMATTINGS) {
-        add(`${name}, whole phrase`, phrase, claim(mark(phrase)));
-        add(`${name}, noun`, phrase, claim(phrase.replace(noun, mark(noun))));
-      }
-      for (let offset = 0; offset < 60; offset += 1) {
-        add(
-          `wrapped at 100, offset ${offset}`,
-          phrase,
-          wrap(claim(phrase, `${"x".repeat(offset)} `)),
-        );
+  for (const [singular, ...phrasings] of NOUNS) {
+    for (const declared of phrasings) {
+      const noun = nounIn(declared, singular);
+      for (const modifier of MODIFIERS) {
+        const phrase = declared.replace(noun, `${modifier}${noun}`);
+        add("plain", phrase, claim(phrase));
+        for (const { name, wrap: mark } of FORMATTINGS) {
+          add(`${name}, whole phrase`, phrase, claim(mark(phrase)));
+          add(`${name}, noun`, phrase, claim(phrase.replace(noun, mark(noun))));
+        }
+        for (let offset = 0; offset < 60; offset += 1) {
+          add(
+            `wrapped at 100, offset ${offset}`,
+            phrase,
+            wrap(claim(phrase, `${"x".repeat(offset)} `)),
+          );
+        }
       }
     }
     // The hyphenated compound exists for the outright phrasing only, and only where that phrasing
@@ -1143,27 +1449,99 @@ describe("the declared vocabulary, over the formatting the artifacts really use"
 
   /**
    * The wrapper and the detector are two statements of one construct, and this is what stops them
-   * drifting apart: each candidate's detector is driven over its own wrapper's output. A detector
-   * that stopped recognising its construct would silently drop that construct out of `SINGLES` and
-   * out of the corpus, which is the eighth round's defect in a new costume.
+   * drifting apart: each declared construct's detector is driven over its own wrapper's output. A
+   * detector that stopped recognising its construct would report the construct as absent from the
+   * tree, which is the eighth round's defect in a new costume.
    */
-  it("item 2: every candidate's detector matches its own wrapper", () => {
-    for (const { name, wrap: mark, detect, inside } of MARKUP) {
-      const pattern = new RegExp(detect.replace("@", SPAN(inside)));
+  it("item 2: every declared construct's detector matches its own wrapper", () => {
+    for (const { name, wrap: mark, detect, chars } of MARKUP) {
+      const pattern = new RegExp(detect.replace("@", SPAN(chars)));
       expect(pattern.test(`a ${mark("number of guests")} b`), name).toBe(true);
     }
   });
 
+  /** A count, for a failure message: this is the number that has to be read to decide the case. */
+  const withCount = (map) => (key) => {
+    const { occurrences, files, prose, proseFiles } = map.get(key);
+    return `${JSON.stringify(key)}: ${occurrences} in ${files} files, ${prose} in ${proseFiles} .md`;
+  };
+
   /**
-   * The candidate list is a hand list; which of it becomes an axis is not. This asserts the filter
-   * is honest in the direction that can silently lose coverage: a construct that vanishes from the
-   * tree drops out of the corpus, so its disappearance has to be seen rather than inferred. All
-   * seven singles are present today, so the filter is a no-op on them and does real work only on
-   * the 42 combinations, of which 6 survive.
+   * ITEM 1 OF THE NINTH ROUND, and the assertion the previous round's could not be. It runs in the
+   * direction that can DISCOVER: the tree is enumerated first, and the declaration has to cover what
+   * the enumeration found. A wrapping construct this repository writes that is on neither list fails
+   * here, and so does deleting the `MARKUP` entry for one it does write.
+   *
+   * The symmetric run a construct writes is read off its own wrapper rather than declared a third
+   * time. A construct whose two ends differ writes no run and claims none: links and curly quotes
+   * are covered by the character enumeration below instead.
    */
-  it("item 2: the formatting axis is the constructs the tree really carries", () => {
-    expect(SINGLES.map(({ name }) => name)).toEqual(MARKUP.map(({ name }) => name));
-    for (const { name, occurrences, files } of SINGLES) {
+  const runOf = ({ wrap: mark }) => {
+    const [open, close] = mark("@").split("@");
+    return open === close ? open : null;
+  };
+
+  it("item 1: every wrapping construct the tree carries is a declared one", () => {
+    const declared = new Set([
+      ...MARKUP.map(runOf).filter((run) => run !== null),
+      ...EXCLUDED_WRAPPERS.flatMap(({ runs }) => runs),
+    ]);
+    expect(
+      [...WRAPPERS.keys()]
+        .filter((run) => !declared.has(run))
+        .map(withCount(WRAPPERS))
+        .sort(),
+      "a wrapping construct in the tree is declared in MARKUP or excluded with a reason",
+    ).toEqual([]);
+    for (const run of declared) {
+      expect(
+        WRAPPERS.get(run)?.occurrences ?? 0,
+        `${run} still occurs in the tree`,
+      ).toBeGreaterThan(0);
+    }
+  });
+
+  it("item 1: every delimiter the tree writes against a word is stripped or excluded", () => {
+    const declared = new Set([
+      ...STRIPPED,
+      ...EXCLUDED_DELIMITERS.flatMap(({ chars }) => [...chars]),
+    ]);
+    expect(
+      [...DELIMITERS.keys()]
+        .filter((char) => !declared.has(char))
+        .map(withCount(DELIMITERS))
+        .sort(),
+      "a delimiter in the tree is stripped for matching or excluded with a reason",
+    ).toEqual([]);
+    for (const { chars } of EXCLUDED_DELIMITERS) {
+      for (const char of chars) {
+        expect(
+          DELIMITERS.get(char)?.occurrences ?? 0,
+          `${JSON.stringify(char)} still occurs in the tree`,
+        ).toBeGreaterThan(0);
+      }
+    }
+  });
+
+  /**
+   * The third direction: the stripped class and the declared constructs have to be the same
+   * statement. A character the normalizer strips for a construct nobody declares is a construct
+   * outside the corpus, and a construct declared for a character the normalizer does not strip is a
+   * corpus axis with no normalization behind it.
+   */
+  it("item 1: the stripped class and the declared constructs are one statement", () => {
+    const declared = new Set(MARKUP.flatMap(({ chars }) => [...chars]));
+    expect(
+      [...STRIPPED].sort(),
+      "every stripped character belongs to a declared construct",
+    ).toEqual([...STRIPPED].filter((char) => declared.has(char)).sort());
+    expect([...declared].sort(), "every declared construct's characters are stripped").toEqual(
+      [...declared].filter((char) => STRIPPED.includes(char)).sort(),
+    );
+  });
+
+  it("item 1: every declared construct is one the tree really carries", () => {
+    for (const { name, occurrences, files } of MEASURED) {
       expect(occurrences, `${name} occurs in the scanned tree`).toBeGreaterThan(0);
       expect(files, `${name} occurs in more than one file`).toBeGreaterThan(1);
     }
@@ -1172,7 +1550,9 @@ describe("the declared vocabulary, over the formatting the artifacts really use"
   });
 
   it("item 2: the corpus is the whole cross-product, unsampled", () => {
-    expect(CORPUS).toHaveLength(NOUNS.length * 3 * (1 + 2 * FORMATTINGS.length + 60) + 6);
+    expect(CORPUS).toHaveLength(
+      NOUNS.length * 3 * MODIFIERS.length * (1 + 2 * FORMATTINGS.length + 60) + 6,
+    );
     expect(
       new Set(CORPUS.map(({ formatting, phrasing }) => `${formatting}|${phrasing}`)).size,
     ).toBe(CORPUS.length);
@@ -1294,5 +1674,18 @@ describe("the declared misses, asserted as expected misses", () => {
    */
   it("misses the bare DOH acronym, which names the state department just as readily", () => {
     expect(pairsAgencyWithCount("DOH requires a permit at 75 or more guests.")).toBe(false);
+  });
+
+  /**
+   * A FOURTH declared miss, decided in the ninth PR #247 round rather than left unstated. The
+   * numeral is what makes a count noun a threshold in `COUNTED_PEOPLE`, and a spelled-out numeral
+   * carries no digit. It is declared rather than closed on the enumeration's own terms: the scanned
+   * tree contains zero instances of a spelled-out count, and a word list of number names would be
+   * the denylist shape this guard has already had removed from it once.
+   */
+  it("misses a spelled-out numeral, which carries no digit", () => {
+    expect(pairsAgencyWithCount("DOHMH requires a permit at seventy-five or more guests.")).toBe(
+      false,
+    );
   });
 });

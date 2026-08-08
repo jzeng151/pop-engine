@@ -563,6 +563,10 @@ describe("T-8 F-601/F-109 dependency-graph row, resolved 2026-08-05", () => {
  *        costs a false positive on the correction record itself, which writes "the attendee-count
  *        intake field" while DENYING the attribution, so it is declared rather than closed. The
  *        reason and the measurement are at `ATTENDEE_COUNT_SOURCE`.
+ *      - "DOHMH requires a permit at seventy-five or more guests." A spelled-out numeral. The
+ *        digit is what makes a count noun a threshold rather than ordinary English, the scanned
+ *        tree carries zero spelled-out counts, and a list of number words would be the denylist
+ *        shape removed from this guard once already.
  *      - A count phrase split by a line break inside a `*`-leader DOC COMMENT. That one is
  *        structural rather than lexical: `blocksOf` reads a ` * ` leader as a list bullet, so each
  *        line is its own block and there is no wrapped line to rejoin. The `//` form is caught, and
@@ -591,6 +595,28 @@ describe("T-8 F-601/F-109 dependency-graph row, resolved 2026-08-05", () => {
  *    12) were in none of its 1,371 cases and defeated the guard. The axis is counted out of the
  *    scanned roots now, singles and nested pairs alike, and the completeness claim runs over what
  *    was counted rather than over what was remembered.
+ *
+ *    THAT COUNT RAN IN THE DIRECTION THAT CANNOT DISCOVER, which is the NINTH round's item 1 and
+ *    the reason this note is one paragraph longer rather than one round shorter. What the eighth
+ *    round measured was how often each REMEMBERED marker occurs; what it never asked was whether
+ *    the tree carries a marker nobody remembered. Its closing assertion compared the surviving
+ *    list against the hand list it was filtered out of, so deleting that round's own headline
+ *    finding, underscore emphasis, left the suite green and dropped the construct out of every
+ *    corpus case. The missing construct was quotation marks, and it was the most common inline
+ *    construct in this tree by an order of magnitude: 1,027 double-quoted spans in 38 .md files
+ *    against 85 underscore-emphasis spans in 12, with 364 single-word quoted spans in `docs/` and
+ *    `specs/` and `docs/BASELINE.md` line 4 writing the struck clause's own subject as "DOHMH
+ *    thresholds". The eighth round's planted record with `_guests_` written `"guests"` instead
+ *    walked past for the identical reason.
+ *
+ *    So the tree is ENUMERATED now and the declaration is checked against the enumeration: every
+ *    delimiter character the tree writes against a word, and every run of one repeated delimiter it
+ *    wraps around a span of words, has to be stripped for matching, declared as a construct, or
+ *    listed with the reason it is neither and the count that decided it. A construct in the tree
+ *    that nobody declared fails, and so does deleting the declaration for one. The quotation marks,
+ *    both straight and curly, are stripped and declared; the straight apostrophe is stripped only
+ *    where it flanks a word, so `DOHMH's` and `New York State's Department of Health` are still the
+ *    strings the agency expression is written against.
  *
  *    Semantic or model-based detection would be a different project and is out of scope here.
  *
