@@ -181,12 +181,16 @@ const routeSignature = (route: ConsumedRoute): string =>
 /**
  * One contributing route of a merged line, with its own name, window and fee.
  *
- * `applies` prefixes the entry rather than restating the disposition in a second voice: in a
- * candidate list an organizer has to be able to tell, per entry, which routes are known to apply.
+ * `Triggered` prefixes the entry rather than restating the disposition in a second voice: in a
+ * candidate list an organizer has to be able to tell, per entry, which routes' conditions the
+ * recorded answers meet. It says "triggered", not "applies", because those are different claims
+ * and only the first is one this label can make: a route whose trigger resolved can still publish
+ * `MAY_BE_REQUIRED`, and DOB-TALL-STRUCTURE-001 does. What the route then requires is the
+ * disposition beside it, in the rule's own words (#252 review).
  */
 function Route({ route, mode }: { route: ConsumedRoute; mode: HeadlineMode }) {
   const label =
-    mode === "candidate" ? (route.triggerResult === "true" ? "Applies" : "May apply") : null;
+    mode === "candidate" ? (route.triggerResult === "true" ? "Triggered" : "May apply") : null;
   return (
     <li className="line__route">
       <p className="line__route-head">
@@ -231,7 +235,8 @@ function Route({ route, mode }: { route: ConsumedRoute; mode: HeadlineMode }) {
  * NOTHING RENDERS WHEN THE ROUTES PUBLISH THE SAME THING. Three of the nine multi-member groups in
  * the v2 full draft publish byte-identical outputs and are the ones that merge most often
  * (`docs/research/draft-dedupe-cofiring.md` §5.2, §5.7, §5.8), and listing one permit twice under a
- * heading saying two things apply would be a rendering fault presented as regulatory content.
+ * heading saying two routes were triggered would be a rendering fault presented as regulatory
+ * content.
  *
  * A CANDIDATE LIST MUST NOT READ AS A LIST OF REQUIREMENTS. Three things keep it from doing so: the
  * introduction says the answers do not decide it, every unresolved entry is prefixed "May apply",
@@ -252,20 +257,25 @@ function Routes({ finding }: { finding: ConsumedFinding }) {
       <p className="line__routes-intro">
         {mode === "applies_together" ? (
           <>
-            <strong>{routes.length === 2 ? "Both of these apply." : "All of these apply."}</strong>{" "}
-            The published rules give more than one route to this requirement, and on the answers
-            recorded in this plan each of them applies.
+            <strong>
+              {routes.length === 2 ? "Both of these are triggered." : "All of these are triggered."}
+            </strong>{" "}
+            The published rules give more than one route to this requirement, and the answers
+            recorded in this plan meet each route&apos;s own conditions. What each one then requires
+            is on its own entry below.
           </>
         ) : (
           <>
             <strong>The answers so far do not say which of these applies.</strong> {routes.length}{" "}
             published routes are open on the answers recorded in this plan
             {applying > 0 &&
-              `, and ${applying === 1 ? "one of them applies" : `${applying} of them apply`} on the answers so far`}
+              `, and ${applying === 1 ? "one of them is triggered" : `${applying} of them are triggered`} on the answers so far`}
             .
             {deciding.length > 0 &&
               ` Answering ${deciding.map(humanize).join(", ")} would decide it.`}{" "}
-            Until then, treat none of the routes below as settled.
+            {applying > 0
+              ? "Until then, treat the routes marked “May apply” as unsettled."
+              : "Until then, treat none of the routes below as settled."}
           </>
         )}
       </p>

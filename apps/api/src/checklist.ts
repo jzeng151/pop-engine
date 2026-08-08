@@ -38,7 +38,14 @@ import {
   type AlertScheduler,
 } from "./alerts";
 import { movedDeadlineNotice, type NoticePlanItem } from "./moved-deadline-notice";
-import { calendarDateFrom, renderingKey, PlanIntegrityError, type FindingRendering } from "./plan";
+import {
+  calendarDateFrom,
+  filingRouteOf,
+  renderingKey,
+  storedRoutes,
+  PlanIntegrityError,
+  type FindingRendering,
+} from "./plan";
 import { DocumentStorageError, type DocumentStorage } from "./storage";
 
 const isChecklistStatus = (value: unknown): value is ChecklistStatus =>
@@ -265,53 +272,77 @@ const isoDate = (value: Date | string | null): string | null =>
  * the item table has no columns for them (see `plan.ts`); they are carried through here rather
  * than restated, so there is one copy of each string.
  */
-const planContext = (item: PlanItemRow, rendering: FindingRendering) => ({
-  ruleIds: item.rule_ids,
-  permitName: item.permit_name,
-  userSummary: rendering.user_summary ?? null,
-  agency: item.agency,
-  kind: item.kind,
-  disposition: item.disposition,
-  deadline: item.deadline,
-  deadlineDisplay: rendering.deadline_display,
-  latestApplyDate: isoDate(item.latest_apply_date),
-  applyAfterDate: isoDate(item.apply_after_date),
-  deadlineStatus: item.deadline_status,
-  slackDays: rendering.slack_days,
-  deadlineUnknownFields: rendering.deadline_unknown_fields,
-  timelineUnresolvedReason: rendering.timeline_unresolved_reason,
-  verificationStatus: item.verification_status,
-  lastVerifiedDate: isoDate(item.last_verified_date),
-  // `publishedNotes`, not `notes`: a checklist item already has `notes`, and those are the
-  // organizer's. Published regulatory text and a user's scratchpad must never share a field.
-  publishedNotes: rendering.notes,
-  noteText: rendering.note_text,
-  // Both readings of an OFFICIAL_CONFLICT rule; never resolved to one silently.
-  conflictText: rendering.conflict_text,
-  feeDisplay: item.fee_display,
-  portalName: item.portal_name,
-  portalUrl: item.portal_url,
-  portalInstructions: rendering.portal_instructions,
-  sources: item.sources,
-  sourceUrl: item.source_url,
-  sourcePlan: {
-    rulesetVersion: item.source_ruleset_version,
-    snapshotDate: isoDate(item.source_snapshot_date),
-  },
-});
+const planContext = (item: PlanItemRow, rendering: FindingRendering) => {
+  const routes = storedRoutes(item, rendering);
+  const filing = filingRouteOf(item, rendering);
+  return {
+    ruleIds: item.rule_ids,
+    permitName: item.permit_name,
+    userSummary: rendering.user_summary ?? null,
+    agency: item.agency,
+    kind: item.kind,
+    disposition: item.disposition,
+    deadline: filing?.deadline ?? item.deadline,
+    deadlineDisplay: filing?.deadlineDisplay ?? rendering.deadline_display,
+    latestApplyDate: filing?.latestApplyDate ?? isoDate(item.latest_apply_date),
+    applyAfterDate: filing?.applyAfterDate ?? isoDate(item.apply_after_date),
+    deadlineStatus: filing?.deadlineStatus ?? item.deadline_status,
+    slackDays: filing?.slackDays ?? rendering.slack_days,
+    /**
+     * Every contributing route of a merged dedupe line, and which one the window, status and fee
+     * above were read off when the line publishes none of its own. `filingRouteRuleId` is null on
+     * an unmerged line and on a merged line that carries its own window: there the values above are
+     * the line's own and nothing is being attributed elsewhere.
+     */
+    routes,
+    headlineMode: rendering.headline_mode ?? null,
+    filingRouteRuleId: filing?.ruleId ?? null,
+    deadlineUnknownFields: rendering.deadline_unknown_fields,
+    timelineUnresolvedReason: rendering.timeline_unresolved_reason,
+    verificationStatus: item.verification_status,
+    lastVerifiedDate: isoDate(item.last_verified_date),
+    // `publishedNotes`, not `notes`: a checklist item already has `notes`, and those are the
+    // organizer's. Published regulatory text and a user's scratchpad must never share a field.
+    publishedNotes: rendering.notes,
+    noteText: rendering.note_text,
+    // Both readings of an OFFICIAL_CONFLICT rule; never resolved to one silently.
+    conflictText: rendering.conflict_text,
+    // The filing route's fee, not another route's: it travels with the window above so an organizer
+    // reads one rule's date and that same rule's price, never one of each.
+    feeDisplay: filing?.feeDisplay ?? item.fee_display,
+    portalName: filing?.portalName ?? item.portal_name,
+    portalUrl: filing?.portalUrl ?? item.portal_url,
+    portalInstructions: filing?.portalInstructions ?? rendering.portal_instructions,
+    sources: item.sources,
+    sourceUrl: item.source_url,
+    sourcePlan: {
+      rulesetVersion: item.source_ruleset_version,
+      snapshotDate: isoDate(item.source_snapshot_date),
+    },
+  };
+};
 
-const noticeItemFrom = (item: PlanItemRow): NoticePlanItem => ({
-  deadline: item.deadline,
-  latest_apply_date: isoDate(item.latest_apply_date),
-  apply_after_date: isoDate(item.apply_after_date),
-  deadline_status: item.deadline_status,
-  verification_status: item.verification_status,
-  last_verified_date: isoDate(item.last_verified_date),
-  sources: item.sources,
-  source_url: item.source_url,
-  source_ruleset_version: item.source_ruleset_version,
-  source_snapshot_date: isoDate(item.source_snapshot_date),
-});
+/**
+ * The window a moved-deadline notice compares against, which is the same window the checklist row
+ * renders. Reading the columns alone made a regeneration onto a merged line whose binding route
+ * publishes no window report `became_not_applicable` and say "The requirement no longer carries a
+ * filing date of its own" — false, because the route that publishes it still does (#252 review).
+ */
+const noticeItemFrom = (item: PlanItemRow, rendering: FindingRendering): NoticePlanItem => {
+  const filing = filingRouteOf(item, rendering);
+  return {
+    deadline: filing?.deadline ?? item.deadline,
+    latest_apply_date: filing?.latestApplyDate ?? isoDate(item.latest_apply_date),
+    apply_after_date: filing?.applyAfterDate ?? isoDate(item.apply_after_date),
+    deadline_status: filing?.deadlineStatus ?? item.deadline_status,
+    verification_status: item.verification_status,
+    last_verified_date: isoDate(item.last_verified_date),
+    sources: item.sources,
+    source_url: item.source_url,
+    source_ruleset_version: item.source_ruleset_version,
+    source_snapshot_date: isoDate(item.source_snapshot_date),
+  };
+};
 
 type LatestPlan = {
   id: string;
@@ -601,9 +632,9 @@ async function checklistView(
       deadlineNotice:
         !struckThrough && current !== undefined && current.id !== item.id
           ? movedDeadlineNotice(
-              noticeItemFrom(item),
+              noticeItemFrom(item, renderingOrFail(renderings, item)),
               renderingOrFail(renderings, item),
-              noticeItemFrom(current),
+              noticeItemFrom(current, renderingOrFail(renderings, current)),
               renderingOrFail(renderings, current),
             )
           : null,

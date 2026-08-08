@@ -429,9 +429,17 @@ function mergeGroup(group: readonly Contribution[]): Finding {
     published.length === group.length
       ? published.reduce((earliest, date) => (date < earliest ? date : earliest))
       : null;
-  const routes = group.map(({ finding, triggerResult, unknownFields }) =>
-    routeFrom(finding, triggerResult, unknownFields),
-  );
+  // IN BINDING ORDER, NOT CONTRIBUTING ORDER. `ruleIds`, `notes` and `sources` concatenate in
+  // contributing order because they are provenance a reader scans; this list is the first place
+  // the order becomes a ranked visual list an organizer chooses a permit from, and contributing
+  // order is where the rules sit in the published file. That is the #239 defect class, arriving in
+  // the new list (#252 review). `bindingOrder` is total and leads with the route the headline
+  // reads, so the entry the line is about is the entry read first.
+  const contributionOf = new Map(group.map((contribution) => [contribution.finding, contribution]));
+  const routes = bindingOrder.map((finding) => {
+    const { triggerResult, unknownFields } = contributionOf.get(finding) as Contribution;
+    return routeFrom(finding, triggerResult, unknownFields);
+  });
   const headlineMode: HeadlineMode = routes.every((route) => route.triggerResult !== "unknown")
     ? "applies_together"
     : "candidate";

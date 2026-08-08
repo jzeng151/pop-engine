@@ -54,6 +54,27 @@ const isMissed = (route: FindingRoute): boolean =>
  *
  * WHAT A VERDICT MEANS IS UNCHANGED. The four verdicts, their ranks, the branch expansion and every
  * threshold below are exactly as they were; only which findings the check reads has moved.
+ *
+ * THE MERGE IS DISJUNCTIVE AND THIS CHECK IS CONJUNCTIVE, DELIBERATELY (#252 review). `findings.ts`
+ * merges a group's disposition as the STRONGEST any route offers, on the reading that any one route
+ * applying means the requirement applies. The window check below blocks if ANY route's published
+ * window is missed, so a group can read INFEASIBLE while one of its routes is still open. The two
+ * are not reconciled, and this records why rather than leaving the difference to be inferred:
+ *
+ * 1. NOTHING PUBLISHED SAYS FILING UNDER ONE ROUTE CURES ANOTHER'S MISSED DATE. A `dedupe_key` says
+ *    two rules describe one requirement. It does not say the agency accepts either filing
+ *    interchangeably, and no source in this ruleset says so. Reading the check disjunctively would
+ *    assert that equivalence, which is inventing an exception (AGENTS.md, regulatory safety).
+ * 2. BOTH DIRECTIONS ARE THE SAME CHOICE, NOT OPPOSITE ONES. The disposition merge takes the
+ *    strongest and the window check takes the worst because both refuse to understate what an
+ *    organizer must do. A disjunctive window check is the only one of the four combinations that
+ *    understates.
+ * 3. A DISJUNCTIVE CHECK WOULD PUT #252 BACK. Two unmerged rules, one missed, is INFEASIBLE; adding
+ *    a `dedupe_key` would make it FEASIBLE with no regulatory fact changing. Making the verdict
+ *    independent of whether two rules share a key is the whole reason this function reads routes.
+ *
+ * What the panel must not do is name the wrong route, and `blockerView` is what stops it: the
+ * INFEASIBLE copy names the route whose window closed, not the route the merged line reads.
  */
 function routeEntries(
   findings: readonly Finding[],
@@ -65,12 +86,22 @@ function routeEntries(
  * The merged line narrowed to the route that blocks, so the copy names the route rather than
  * whichever route the headline happens to read. Everything else on the line is retained, because a
  * consumer reading `blockingFinding` still wants its notes, sources and trigger reasons.
+ *
+ * EVERY FIELD A ROUTE PUBLISHES IS NARROWED, INCLUDING THE ONES A READER SEES FIRST. The fee, the
+ * portal and the organizer summary were left on the merged line, so a blocker panel naming the
+ * missed route rendered the binding route's heading, portal and fee beside it (#252 review). The
+ * summary has no per-route form to narrow to — `FindingRoute` carries no `userSummary`, because a
+ * summary is written about a rule and the merged heading belongs to whichever rule the line reads
+ * — so where the blocking route is not the route the line reads, it is dropped rather than
+ * reattributed, and the route's own published `name` stands in.
  */
 function blockerView(finding: Finding, route: FindingRoute): Finding {
+  const headlineRuleId = finding.routes?.[0]?.ruleId;
   return {
     ...finding,
     ruleIds: [route.ruleId],
     name: route.name,
+    agency: route.agency,
     disposition: route.disposition,
     deadline: route.deadline,
     deadlineDisplay: route.deadlineDisplay,
@@ -78,6 +109,15 @@ function blockerView(finding: Finding, route: FindingRoute): Finding {
     applyAfterDate: route.applyAfterDate,
     deadlineStatus: route.deadlineStatus,
     slackDays: route.slackDays,
+    feeDisplay: route.feeDisplay,
+    portalName: route.portalName,
+    portalUrl: route.portalUrl,
+    portalInstructions: route.portalInstructions,
+    ...(finding.userSummary === undefined ||
+    headlineRuleId === undefined ||
+    headlineRuleId === route.ruleId
+      ? {}
+      : { userSummary: null }),
   };
 }
 
@@ -590,7 +630,16 @@ export function computeVerdict(
       blockingFinding:
         blockingFinding === null
           ? null
-          : { ruleIds: blockingFinding.ruleIds, name: blockingFinding.name },
+          : {
+              ruleIds: blockingFinding.ruleIds,
+              name: blockingFinding.name,
+              deadlineDisplay: blockingFinding.deadlineDisplay,
+              latestApplyDate: blockingFinding.latestApplyDate,
+              portalName: blockingFinding.portalName,
+              portalUrl: blockingFinding.portalUrl,
+              sources: blockingFinding.sources,
+              userSummary: blockingFinding.userSummary ?? null,
+            },
       // A blocker promoted out of the branches misses in every branch but not in the unresolved
       // base, so it belongs in the missed list the copy reads from.
       missedRuleIds: [

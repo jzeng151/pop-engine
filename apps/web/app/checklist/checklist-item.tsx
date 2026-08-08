@@ -109,6 +109,11 @@ export function PlanContextBody({
 }) {
   const [primarySource, ...furtherSources] = context.sources;
   const [detailsOpen, setDetailsOpen] = useState(false);
+  const filingRoute =
+    context.filingRouteRuleId == null
+      ? null
+      : ((context.routes ?? []).find((route) => route.ruleId === context.filingRouteRuleId) ??
+        null);
   const summaryShowsResearchTreatment =
     context.verificationStatus === "RESEARCH_REQUIRED" &&
     includesAgencyConfirmation([context.deadlineDisplay, context.feeDisplay]);
@@ -197,6 +202,20 @@ export function PlanContextBody({
           an absent fee and an explicit null are one value by the time a finding carries it, so no
           sentence here can say which this row is. */}
       {context.feeDisplay !== null && <p className="check-item__text">{context.feeDisplay}</p>}
+
+      {/* WHOSE WINDOW THIS IS, when it is not this line's own. A merged dedupe line takes its name
+          from the binding route, and where that route publishes no window the filing date, fee and
+          portal above come from another route of the same requirement. Saying so is what keeps a
+          checklist row from naming one rule and dating another: the values are all one route's,
+          and this names it. Rendered only when the line publishes no window of its own, which is
+          the only case anything above was read off a different rule. */}
+      {filingRoute !== null && (
+        <p className="check-item__text">
+          The published rules give this requirement {(context.routes ?? []).length} routes. The
+          filing date, fee and filing details above are {filingRoute.name ?? filingRoute.ruleId}
+          &apos;s.
+        </p>
+      )}
 
       {/* Same copy as the plan line, for the same reason: COVERAGE_GAP is an unmodelled
           combination, not a missing source. A summary field, because it explains why no citation

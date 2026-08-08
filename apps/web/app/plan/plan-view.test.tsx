@@ -784,7 +784,9 @@ describe("the routes of a merged dedupe line", () => {
         }),
       ],
     });
-    expect(line.getByText(/Both of these apply/)).toBeDefined();
+    // "triggered", not "applies": NYPD-SOUND-PROHIBITED-001's trigger resolving does not mean the
+    // requirement applies, and the heading may not say more than the mode knows (#252 review).
+    expect(line.getByText(/Both of these are triggered/)).toBeDefined();
     expect(line.getByText("Sound Device Permit")).toBeDefined();
     expect(line.getByText("Commercial advertising by sound device")).toBeDefined();
     // The permit's window and fee are on the permit's entry, not on the barred line's headline.
@@ -808,11 +810,14 @@ describe("the routes of a merged dedupe line", () => {
       ],
     });
     expect(line.getByText(/The answers so far do not say which of these applies/)).toBeDefined();
-    expect(line.getByText(/one of them applies on the answers so far/)).toBeDefined();
+    expect(line.getByText(/one of them is triggered on the answers so far/)).toBeDefined();
     expect(line.getByText(/Answering sound purpose would decide it/)).toBeDefined();
-    expect(line.getByText(/treat none of the routes below as settled/)).toBeDefined();
-    // Per entry, which routes are known to apply and which are not.
-    expect(line.getByText("Applies")).toBeDefined();
+    // NOT "treat none of the routes below as settled", which contradicted the sentence before it
+    // and the entry labelled below (#252 review): one route IS triggered, so the unsettled ones
+    // are named instead of all of them.
+    expect(line.getByText(/treat the routes marked .May apply. as unsettled/)).toBeDefined();
+    // Per entry, which routes the recorded answers trigger and which they do not.
+    expect(line.getByText("Triggered")).toBeDefined();
     expect(line.getByText("May apply")).toBeDefined();
   });
 
@@ -1278,9 +1283,18 @@ describe("F-102 · CONDITIONAL branch table and INFEASIBLE rescope ladder", () =
         ],
         verdictDetail: {
           ...emptyVerdictDetail,
+          // The blocker carries the blocking ROUTE's own published values. The panel reads them off
+          // here rather than re-finding the finding by rule id, which on a merged line returned the
+          // whole line and printed the headline route's name and date (#252 review).
           blockingFinding: {
             ruleIds: ["SAPO-STREET-LARGE-001"],
             name: "Street Activity Permit — Large",
+            deadlineDisplay: "submit by December 31 of the prior year",
+            latestApplyDate: "2025-12-31",
+            portalName: null,
+            portalUrl: null,
+            sources: [],
+            userSummary: null,
           },
           missedRuleIds: ["SAPO-STREET-LARGE-001"],
           rescopeSuggestions: [

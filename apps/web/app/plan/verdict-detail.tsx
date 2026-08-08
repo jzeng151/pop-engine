@@ -16,9 +16,17 @@ export type FindingReference = {
   readonly portalUrl: string | null;
 };
 
-const referenceFromFinding = (finding: ConsumedFinding): FindingReference => {
+/**
+ * Structurally what a reference is built from, so a blocking finding — which carries the blocking
+ * ROUTE's published values rather than the merged line's, and is absent those fields entirely on a
+ * plan stored before it carried them — is rendered by the same function as a plan line.
+ */
+type ReferenceSource = Pick<ConsumedFinding, "ruleIds" | "name"> &
+  Partial<Pick<ConsumedFinding, "userSummary" | "sources" | "portalName" | "portalUrl">>;
+
+const referenceFromFinding = (finding: ReferenceSource): FindingReference => {
   const summarySource = finding.userSummary?.points.flatMap((point) => point.sources)[0];
-  const fallbackSource = finding.sources.find((source) => source.urls.length > 0);
+  const fallbackSource = (finding.sources ?? []).find((source) => source.urls.length > 0);
   return {
     ruleIds: finding.ruleIds,
     label: finding.userSummary?.heading ?? finding.name ?? finding.ruleIds.join(", "),
@@ -27,8 +35,8 @@ const referenceFromFinding = (finding: ConsumedFinding): FindingReference => {
       (fallbackSource === undefined
         ? null
         : { label: fallbackSource.citation, url: fallbackSource.urls[0] as string }),
-    portalName: finding.portalName,
-    portalUrl: finding.portalUrl,
+    portalName: finding.portalName ?? null,
+    portalUrl: finding.portalUrl ?? null,
   };
 };
 
@@ -526,31 +534,16 @@ export function VerdictDetailPanel({
   }
 
   if (verdict === "INFEASIBLE") {
+    // THE BLOCKER IS READ OFF `blockingFinding`, NOT RE-FOUND AMONG THE PLAN'S LINES. The engine
+    // already narrowed it to the route whose window closed (`verdict.ts` `blockerView`), and a
+    // merged line holds more than one route: re-finding it by rule-id intersection returned the
+    // MERGED line, so the panel rendered the headline route's name, portal and apply-by date under
+    // a heading about the missed one. On a two-route group with one open and one closed window,
+    // every fact in this section was the open route's and its date was in the future of the plan's
+    // own clock (#252 review). Nothing needs to be re-found: `blockingFinding` is a whole finding
+    // and carries its own notes, sources and trigger reasons.
     const blocker = detail.blockingFinding;
-    const blockerFinding =
-      blocker === null
-        ? undefined
-        : findings.find((finding) =>
-            finding.ruleIds.some((ruleId) => blocker.ruleIds.includes(ruleId)),
-          );
-    const rulesetBlockerReference =
-      blocker === null
-        ? undefined
-        : references.find((reference) =>
-            reference.ruleIds.some((ruleId) => blocker.ruleIds.includes(ruleId)),
-          );
-    const blockerReference =
-      blocker === null
-        ? null
-        : blockerFinding === undefined
-          ? (rulesetBlockerReference ?? {
-              ruleIds: blocker.ruleIds,
-              label: blocker.name ?? blocker.ruleIds.join(", "),
-              source: null,
-              portalName: null,
-              portalUrl: null,
-            })
-          : referenceFromFinding(blockerFinding);
+    const blockerReference = blocker === null ? null : referenceFromFinding(blocker);
     // One finding can carry multiple rule ids; count findings, not provenance ids (F-102 edge case).
     const missedFindings = findings.filter((finding) =>
       finding.ruleIds.some((ruleId) => detail.missedRuleIds.includes(ruleId)),
@@ -567,12 +560,9 @@ export function VerdictDetailPanel({
             </p>
             <p className="verdict-detail__blocker-reason">
               This blocks the date because the published deadline was missed as scoped.
-              {blockerFinding?.deadlineDisplay !== null &&
-                blockerFinding?.deadlineDisplay !== undefined &&
-                ` Published timing: ${blockerFinding.deadlineDisplay}.`}
-              {blockerFinding?.latestApplyDate !== null &&
-                blockerFinding?.latestApplyDate !== undefined &&
-                ` The latest published apply-by date was ${blockerFinding.latestApplyDate}.`}
+              {blocker.deadlineDisplay != null && ` Published timing: ${blocker.deadlineDisplay}.`}
+              {blocker.latestApplyDate != null &&
+                ` The latest published apply-by date was ${blocker.latestApplyDate}.`}
             </p>
             {missedFindings.length > 1 && (
               <p className="verdict-detail__missed">

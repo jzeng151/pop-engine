@@ -5,6 +5,9 @@ import { randomUUID } from "node:crypto";
 import type { Pool, PoolClient } from "pg";
 import { compareToPinned, evaluate } from "@pop-engine/engine";
 import type {
+  Deadline,
+  DeadlineStatus,
+  Disposition,
   EngineRuleset,
   EventIntake,
   Finding,
@@ -183,6 +186,91 @@ const renderingOf = (finding: Finding): FindingRendering => ({
 });
 
 export const renderingKey = (ruleIds: readonly string[]): string => ruleIds.join(",");
+
+/**
+ * The columns of a stored plan item that a route is read from or synthesized out of. Structural
+ * rather than a named row type because `checklist.ts` and `alerts.ts` select different column sets
+ * and both need this, and duplicating the fallback in each is exactly how a consumer stops seeing a
+ * route's window.
+ */
+export type StoredPlanItem = {
+  readonly rule_ids: readonly string[];
+  readonly permit_name: string | null;
+  readonly agency: string | null;
+  readonly disposition: Disposition;
+  readonly deadline: Deadline | null;
+  readonly latest_apply_date: Date | string | null;
+  readonly apply_after_date: Date | string | null;
+  readonly deadline_status: DeadlineStatus;
+  readonly fee_display: string | null;
+  readonly portal_name: string | null;
+  readonly portal_url: string | null;
+};
+
+const storedDate = (value: Date | string | null): string | null =>
+  value === null ? null : calendarDateFrom(value);
+
+/**
+ * Every route of a stored plan item: the persisted counterpart of the engine's `routesOf`, and the
+ * ONE correct fallback for a row that carries none. An unmerged item is its own single route, and
+ * so is a row from a plan stored before the field existed.
+ *
+ * This exists because the plan-item table has one window, one fee and one name per row while a
+ * merged dedupe line has one per ROUTE, and `checklist.ts` and `alerts.ts` read the table. Reading
+ * only the columns is what deleted an organizer's filing date, fee and both reminders on every
+ * merged line whose binding route publishes no window (#252 review).
+ */
+export function storedRoutes(
+  item: StoredPlanItem,
+  rendering: FindingRendering | undefined,
+): readonly FindingRoute[] {
+  const routes = rendering?.routes;
+  if (routes != null && routes.length > 0) return routes;
+  return [
+    {
+      ruleId: item.rule_ids[0] ?? "",
+      triggerResult: "true",
+      disposition: item.disposition,
+      unknownFields: [],
+      name: item.permit_name,
+      agency: item.agency,
+      deadline: item.deadline,
+      deadlineDisplay: rendering?.deadline_display ?? null,
+      latestApplyDate: storedDate(item.latest_apply_date),
+      applyAfterDate: storedDate(item.apply_after_date),
+      deadlineStatus: item.deadline_status,
+      slackDays: rendering?.slack_days ?? null,
+      feeDisplay: item.fee_display,
+      portalName: item.portal_name,
+      portalUrl: item.portal_url,
+      portalInstructions: rendering?.portal_instructions ?? null,
+    },
+  ];
+}
+
+/**
+ * The route a consumer with exactly one window to show must read, or null when the row's own
+ * columns already carry one.
+ *
+ * A merged line takes its identity and timeline from ONE route, the binding route, so that a line
+ * can never name one route and date another. Where that route publishes no window the line has
+ * none, and the columns say so: no `latest_apply_date`, `deadline_status = 'not_applicable'`, no
+ * `fee_display`. The requirement's published window did not stop existing; it is on another route.
+ *
+ * `routes` arrives in binding order, so the first entry publishing a window is the tightest one the
+ * merged disposition still rests on. It supplies the window, the status AND the fee together, from
+ * one route, which is what keeps this from re-creating the crossover the route list exists to
+ * remove: the values a reader sees are all one rule's, and `routes` says which rule.
+ */
+export function filingRouteOf(
+  item: StoredPlanItem,
+  rendering: FindingRendering | undefined,
+): FindingRoute | null {
+  if (storedDate(item.latest_apply_date) !== null) return null;
+  const routes = storedRoutes(item, rendering);
+  if (routes.length < 2) return null;
+  return routes.find((route) => route.latestApplyDate !== null) ?? null;
+}
 
 async function insertPlan(
   client: PoolClient,

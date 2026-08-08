@@ -27,6 +27,7 @@ import type {
 } from "@pop-engine/engine";
 import { CREDENTIALED } from "../intake/events-api";
 import {
+  absentOr,
   arrayOf,
   asRecord,
   type FieldChecks,
@@ -336,12 +337,12 @@ const SOURCE_CHECKS: FieldChecks<FindingSource> = {
   urls: arrayOf(isString),
 };
 
-const HEADLINE_MODES = tokensOf<HeadlineMode>({ applies_together: true, candidate: true });
+export const HEADLINE_MODES = tokensOf<HeadlineMode>({ applies_together: true, candidate: true });
 
 /** A route is never "false": a trigger that resolves false produces no finding to merge. */
 const TRIGGER_RESULTS = tokensOf<Tristate>({ true: true, false: true, unknown: true });
 
-const ROUTE_CHECKS: FieldChecks<ConsumedRoute> = {
+export const ROUTE_CHECKS: FieldChecks<ConsumedRoute> = {
   ruleId: isString,
   triggerResult: isToken(TRIGGER_RESULTS),
   disposition: isToken(DISPOSITIONS),
@@ -439,9 +440,19 @@ const RESCOPE_CHECKS: FieldChecks<ConsumedRescopeSuggestion> = {
   atRiskFindingName: optionalNullString,
 };
 
+// The last five are absent on plans stored before the blocker carried its own published values,
+// so each accepts `undefined`. A consumer renders what is there and nothing where it is not.
 const BLOCKING_FINDING_CHECKS: FieldChecks<ConsumedBlockingFinding> = {
   ruleIds: arrayOf(isString),
   name: nullOr(isString),
+  deadlineDisplay: absentOr(nullOr(isString)),
+  latestApplyDate: absentOr(nullOr(isString)),
+  portalName: absentOr(nullOr(isString)),
+  portalUrl: absentOr(nullOr(isString)),
+  sources: (value: unknown): value is readonly FindingSource[] | undefined =>
+    value === undefined || arrayOf(shapedLike(SOURCE_CHECKS))(value),
+  userSummary: (value: unknown): value is RuleUserSummary | null | undefined =>
+    value === undefined || value === null || shapedLike(USER_SUMMARY_CHECKS)(value),
 };
 
 const UNRESOLVED_TIMELINE_CHECKS: FieldChecks<ConsumedUnresolvedTimeline> = {

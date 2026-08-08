@@ -300,9 +300,15 @@ export type FindingRoute = {
 /**
  * Why a group's routes arrived on one line, which is what decides how the line reads.
  *
- * `applies_together`: every contributing trigger resolved, so each route's own conditions are met
- * and the routes genuinely apply together. `candidate`: at least one did not, so the group holds
- * routes that are not known to apply and the line names the question rather than asserting one.
+ * `applies_together`: every contributing trigger resolved, so the recorded answers meet each
+ * route's own conditions. `candidate`: at least one did not, so the group holds routes whose
+ * conditions are not known to be met and the line names the question rather than asserting one.
+ *
+ * THIS IS A STATEMENT ABOUT TRIGGERS, NOT ABOUT DISPOSITIONS, and copy reading it must say so. A
+ * route whose trigger resolved can still publish `MAY_BE_REQUIRED` or `NO_NEW_REQUIREMENT`;
+ * DOB-TALL-STRUCTURE-001 publishes the first and SAPO-INSURANCE-BLOCK-EXEMPT-001 the second. The
+ * name is retained because it is the stored value on plans already written, but "together" here
+ * means the triggers fired together, and what each route then requires is its own `disposition`.
  *
  * Derived from the routes' own `triggerResult`s and stored only so a client need not recompute it.
  * There is no third value for the mixed case: the resolved subset is recoverable from the routes,
@@ -420,9 +426,32 @@ export type EvaluationTraceEntry = { readonly ruleId: string; readonly result: T
 export type UnresolvedTimeline = { readonly ruleIds: readonly string[]; readonly reason: string };
 
 export type VerdictDetail = {
+  /**
+   * The route whose published window closed, never the merged line that holds it.
+   *
+   * THE PUBLISHED VALUES TRAVEL WITH IT, and that is what this carries beyond a rule id and a name.
+   * A consumer given only those two had to find the finding again by rule id, which on a merged
+   * dedupe line returns the whole line: the panel then rendered the HEADLINE route's name, portal
+   * and apply-by date under a heading about the missed one, and on a two-route group with one open
+   * window the date it printed was in the future of the plan's own clock (#252 review). Every field
+   * here is the blocking route's own, as `blockerView` narrowed it.
+   *
+   * Optional because plans stored before this widening carry only `ruleIds` and `name`; a replayed
+   * detail is read as it was written, and a consumer treats absence as "not recorded".
+   */
   readonly blockingFinding: {
     readonly ruleIds: readonly string[];
     readonly name: string | null;
+    readonly deadlineDisplay?: string | null;
+    readonly latestApplyDate?: string | null;
+    readonly portalName?: string | null;
+    readonly portalUrl?: string | null;
+    readonly sources?: readonly FindingSource[];
+    /**
+     * Null where the blocking route is not the route the merged line reads: the heading is written
+     * about a rule and belongs to that one, so it is dropped rather than reattributed.
+     */
+    readonly userSummary?: RuleUserSummary | null;
   } | null;
   readonly missedRuleIds: readonly string[];
   readonly minSlackDays: number | null;

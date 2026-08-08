@@ -443,7 +443,19 @@ describe("dedupe field merge (#239)", () => {
     });
     expect(blocked?.deadline).toBeNull();
     // The permit route's window, fee and portal are not lost: they are its own, on its own entry.
+    // IN BINDING ORDER, so the route the line reads is the entry read first and the list is not
+    // ordered by where the rules sit in the published file (#252 review). RULE-B is declared
+    // second above and is listed first here because it is the binding route.
     expect(blocked?.routes).toMatchObject([
+      {
+        ruleId: "RULE-B",
+        triggerResult: "true",
+        disposition: "prohibited_or_ineligible",
+        name: "barred route",
+        latestApplyDate: null,
+        deadlineStatus: "not_applicable",
+        feeDisplay: null,
+      },
       {
         ruleId: "RULE-A",
         triggerResult: "true",
@@ -453,15 +465,6 @@ describe("dedupe field merge (#239)", () => {
         deadlineStatus: "on_track",
         feeDisplay: "$100",
         portalName: "permit portal",
-      },
-      {
-        ruleId: "RULE-B",
-        triggerResult: "true",
-        disposition: "prohibited_or_ineligible",
-        name: "barred route",
-        latestApplyDate: null,
-        deadlineStatus: "not_applicable",
-        feeDisplay: null,
       },
     ]);
   });

@@ -16,10 +16,12 @@ import type {
   DeadlineStatus,
   Disposition,
   FindingSource,
+  HeadlineMode,
   RuleUserSummary,
   VerificationStatus,
 } from "@pop-engine/engine";
 import { CREDENTIALED } from "../intake/events-api";
+import { HEADLINE_MODES, ROUTE_CHECKS, type ConsumedRoute } from "../plan/plan-api";
 import {
   absentOr,
   arrayOf,
@@ -92,6 +94,16 @@ export type PlanContext = {
   readonly portalInstructions: string | null;
   readonly sources: readonly FindingSource[];
   readonly sourcePlan: SourcePlan;
+  /**
+   * Every contributing route of a merged dedupe line, each with its own name, window and fee, or a
+   * one-entry list restating this row for an unmerged line. `filingRouteRuleId` names the route the
+   * window, status, fee and filing details above were read off, and is null wherever they are the
+   * line's own — which is every unmerged row and every merged row whose binding route publishes a
+   * window. It is what keeps a row from naming one rule and dating another (#252 review).
+   */
+  readonly routes?: readonly ConsumedRoute[];
+  readonly headlineMode?: HeadlineMode | null;
+  readonly filingRouteRuleId?: string | null;
 };
 
 export type ChecklistDocument = {
@@ -412,6 +424,11 @@ const PLAN_CONTEXT_CHECKS: FieldChecks<PlanContext> = {
   portalInstructions: nullOr(isString),
   sources: arrayOf(shapedLike(SOURCE_CHECKS)),
   sourcePlan: shapedLike(SOURCE_PLAN_CHECKS),
+  // Absent from an api deployed before the checklist read routes, which is the deploy window this
+  // change opens. Absence is "not served", never "this line has no routes".
+  routes: absentOr(arrayOf(shapedLike(ROUTE_CHECKS))),
+  headlineMode: absentOr(nullOr(isToken(HEADLINE_MODES))),
+  filingRouteRuleId: absentOr(nullOr(isString)),
 };
 
 const DOCUMENT_CHECKS: FieldChecks<ChecklistDocument> = { id: isString, filename: isString };
@@ -537,8 +554,18 @@ const ITEM_UPDATE_CHECKS: FieldChecks<ChecklistItemUpdate> = {
   notes: nullOr(isString),
 };
 
+/**
+ * Members a row may legitimately omit, because an api deployed before the checklist read routes
+ * does not serve them. Web and api deploy separately, so requiring them would replace an
+ * organizer's whole checklist with "this page cannot read it" for the length of a web-first
+ * rollout. Absence is read as "not served", and each is still type-checked when present.
+ */
+const OPTIONAL_ITEM_FIELDS: readonly string[] = ["routes", "headlineMode", "filingRouteRuleId"];
+
 /** The fields this feature reads off a checklist row, exposed so a test can assert coverage. */
-export const CONSUMED_ITEM_FIELDS: readonly string[] = Object.keys(ITEM_CHECKS);
+export const CONSUMED_ITEM_FIELDS: readonly string[] = Object.keys(ITEM_CHECKS).filter(
+  (field) => !OPTIONAL_ITEM_FIELDS.includes(field),
+);
 
 /**
  * The one field this page will accept a body without, because the two services deploy separately.
