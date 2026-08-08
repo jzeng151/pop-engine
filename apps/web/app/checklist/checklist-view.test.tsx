@@ -783,6 +783,59 @@ describe("AC 5 · deadline context lives where the work happens", () => {
     expect(within(row).getByText(/deadline approaching/)).toBeDefined();
   });
 
+  /**
+   * #252: the gate belongs to a NON-BINDING route of a merged item whose binding route publishes
+   * its own window. The engine sequences the gated route and leaves the headline scalars to the
+   * binding route deliberately, so `applyAfterDate` on the row is null and `filingRouteOf` declines
+   * the row because it already has a window. The start date AC 5 requires was on the response the
+   * whole time, on the route that carries it, and nothing read it.
+   */
+  it("shows a gate carried by a route the row's own dates are not read off", async () => {
+    const route = (ruleId: string, name: string, applyAfterDate: string | null) => ({
+      ruleId,
+      triggerResult: "true",
+      disposition: "required",
+      unknownFields: [],
+      name,
+      agency: "NYC",
+      deadlineDisplay: null,
+      latestApplyDate: "2026-08-01",
+      applyAfterDate,
+      deadlineStatus: "on_track",
+      feeDisplay: null,
+      portalName: null,
+      portalUrl: null,
+      portalInstructions: null,
+    });
+    stubApi({
+      [GET_CHECKLIST]: checklistOf({
+        created: true,
+        items: [
+          trackedItem(STREET_MEDIUM, {
+            latestApplyDate: "2026-08-01",
+            // The binding route is not gated, and the row says so.
+            applyAfterDate: null,
+            deadlineStatus: "on_track",
+            headlineMode: "applies_together",
+            routes: [
+              route("STREET-MEDIUM-001", "Street Activity Permit", null),
+              route("NYPD-SOUND-001", "Sound device permit", "2026-07-20"),
+            ],
+            filingRouteRuleId: null,
+          }),
+        ],
+      }),
+    });
+    await renderView();
+
+    const row = rowFor(STREET_MEDIUM);
+    // Named for the route that carries it, never attributed to the binding filing.
+    expect(
+      within(row).getByText(/earliest realistic filing for Sound device permit 2026-07-20/),
+    ).toBeDefined();
+    expect(within(row).queryByText(/earliest realistic filing 2026-07-20/)).toBeNull();
+  });
+
   it("renders the deadline prose a rule publishes", async () => {
     stubApi({
       [GET_CHECKLIST]: checklistOf({ created: true, items: [trackedItem(PARKS_TUA)] }),
@@ -2486,6 +2539,7 @@ describe("a checklist row whose window comes from another route (#252)", () => {
     agency: "DOB",
     deadlineDisplay: null,
     latestApplyDate: "2026-08-26",
+    applyAfterDate: null,
     deadlineStatus: "on_track",
     feeDisplay: "TUP: $100 initial 30 days",
     portalName: null,

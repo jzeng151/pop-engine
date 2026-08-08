@@ -6,6 +6,7 @@ import { Disclosure } from "../disclosure";
 import { PortalBlock } from "../portal-block";
 import { formatSnapshotDate } from "../plan/snapshot-banner";
 import { includesAgencyConfirmation, NOT_COVERED_BY_RULESET } from "../verification-copy";
+import type { ConsumedRoute } from "../plan/plan-api";
 import { MovedDeadlineNoticeBlock } from "./moved-deadline-notice";
 import {
   ACCEPTED_DOCUMENT_TYPES,
@@ -39,7 +40,26 @@ const hasDeadlineData = (context: PlanContext): boolean =>
   context.latestApplyDate !== null ||
   context.applyAfterDate !== null ||
   context.deadlineStatus !== "not_applicable" ||
-  context.deadline !== null;
+  context.deadline !== null ||
+  gatedRoutesOf(context).length > 0;
+
+/**
+ * The routes carrying a dependency gate that the row's own scalars do not.
+ *
+ * A merged line's scalars are the BINDING route's, entirely, so a gated rule that is a non-binding
+ * member of the group sequences its OWN route and leaves the headline alone — the engine's
+ * deliberate choice, so that a line can never date one route off another. The consequence here is
+ * that `applyAfterDate` on the row is the binding route's, which for such a group is null, and F-202
+ * AC 5 requires a gated item to show its start date. `filingRouteOf` does not reach the case either:
+ * it declines the moment the row publishes its own window, which is exactly this shape (#252 review).
+ *
+ * So the gate is read off the route that carries it, and rendered NAMING that route. Attributing it
+ * to the row would tell an organizer the binding filing cannot realistically begin until a date that
+ * belongs to a different rule. `routes[0]` is the binding route, whose gate the scalar already
+ * carries, so it is skipped rather than shown twice.
+ */
+const gatedRoutesOf = (context: PlanContext): readonly ConsumedRoute[] =>
+  (context.routes ?? []).filter((route, index) => index > 0 && route.applyAfterDate !== null);
 
 /**
  * The published deadline's own type, for a rule that states a kind of deadline but no prose and
@@ -207,6 +227,12 @@ export function PlanContextBody({
               {" · "}earliest realistic filing {context.applyAfterDate}
             </span>
           )}
+          {gatedRoutesOf(context).map((route) => (
+            <span key={route.ruleId} data-testid="route-apply-after">
+              {" · "}earliest realistic filing for {route.name ?? route.ruleId}{" "}
+              {route.applyAfterDate}
+            </span>
+          ))}
           {context.deadlineStatus !== "not_applicable" && (
             <span>
               {" · "}

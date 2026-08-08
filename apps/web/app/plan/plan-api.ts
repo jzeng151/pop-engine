@@ -154,6 +154,7 @@ export type ConsumedRoute = Pick<
   | "agency"
   | "deadlineDisplay"
   | "latestApplyDate"
+  | "applyAfterDate"
   | "deadlineStatus"
   | "feeDisplay"
   | "portalName"
@@ -363,6 +364,7 @@ export const ROUTE_CHECKS: FieldChecks<ConsumedRoute> = {
   agency: nullOr(isString),
   deadlineDisplay: nullOr(isString),
   latestApplyDate: nullOr(isString),
+  applyAfterDate: nullOr(isString),
   deadlineStatus: isToken(DEADLINE_STATUSES),
   feeDisplay: nullOr(isString),
   portalName: nullOr(isString),
