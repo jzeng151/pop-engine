@@ -39,4 +39,5 @@ jobs:
       - run: pnpm typecheck
       - run: pnpm lint
       - run: pnpm test:coverage
+      - run: pnpm test:cofiring # runs uninstrumented; see the exclusion in package.json
       - run: pnpm build # Next build catches route/render/config failures tsc --noEmit misses (matches the Railway web build)
