@@ -339,20 +339,35 @@ function RescopeLadder({
   );
 }
 
-function MissedMayBeRequiredSection({
-  missedRuleIds,
-  findings,
-  rulesetReferences,
-}: {
-  missedRuleIds: readonly string[];
-  findings: readonly ConsumedFinding[];
-  rulesetReferences: readonly FindingReference[];
-}) {
-  // One finding can carry multiple contributing rule ids; list each finding once.
-  const missed: {
-    readonly reference: FindingReference;
-    readonly disposition: ConsumedFinding["disposition"] | null;
-  }[] = [];
+type MissedRoute = {
+  readonly reference: FindingReference;
+  readonly disposition: ConsumedFinding["disposition"] | null;
+};
+
+/**
+ * One entry per MISSED ROUTE, narrowed to that route's own published values.
+ *
+ * BOTH PANELS THAT READ `missedRuleIds` READ THEM THE SAME WAY, which is why this is a function
+ * rather than a loop inside the conditional panel. The ids are ROUTE ids
+ * (`verdict.ts` `computeWindowVerdict`), and a merged line can hold two of them: resolving each back
+ * to its containing FINDING both renamed it — the merged line's heading, citation, portal and
+ * disposition under a heading about the missed route — and COLLAPSED two missed routes into one
+ * entry. The conditional panel was narrowed for the first defect; the infeasible panel then counted
+ * parent findings, saw one, and suppressed the "All published deadlines missed" list on exactly the
+ * multiple-missed-routes case the F-102 amendment requires it for (#252 review). `blockerView`
+ * narrows the engine side for the same reason, and the narrowing here is the same one: the route's
+ * own name, portal and disposition, and the citations `FindingSource.ruleId` attributes to it.
+ *
+ * A LINE WITH NO ROUTE LIST is unmerged or was stored before the field existed. Its own rule ids are
+ * its routes and the line's values are the route's, so it contributes one entry however many of its
+ * ids the list names.
+ */
+function missedRouteEntries(
+  missedRuleIds: readonly string[],
+  findings: readonly ConsumedFinding[],
+  rulesetReferences: readonly FindingReference[],
+): MissedRoute[] {
+  const missed: MissedRoute[] = [];
   const seenFindingKeys = new Set<string>();
   for (const ruleId of missedRuleIds) {
     const finding = findings.find((entry) => entry.ruleIds.includes(ruleId));
@@ -369,13 +384,6 @@ function MissedMayBeRequiredSection({
       });
       continue;
     }
-    // THE ROUTE THAT MISSED, NOT THE LINE IT SITS ON. `computeWindowVerdict` emits `missedRuleIds`
-    // as ROUTE ids, and resolving each one back to its containing finding rendered the merged
-    // line's name, citation, portal and disposition instead: a `required` route appeared under a
-    // heading saying these findings carry a may-be-required disposition, named after a different
-    // permit. `blockerView` narrows the INFEASIBLE panel for the same reason; this is the other
-    // panel that reads the same ids, and it is narrowed the same way — the route's own published
-    // name, portal and disposition, and the citations `FindingSource.ruleId` attributes to it.
     const route = finding.routes?.find((entry) => entry.ruleId === ruleId);
     if (route !== undefined) {
       if (seenFindingKeys.has(ruleId)) continue;
@@ -409,7 +417,19 @@ function MissedMayBeRequiredSection({
       disposition: finding.disposition,
     });
   }
+  return missed;
+}
 
+function MissedMayBeRequiredSection({
+  missedRuleIds,
+  findings,
+  rulesetReferences,
+}: {
+  missedRuleIds: readonly string[];
+  findings: readonly ConsumedFinding[];
+  rulesetReferences: readonly FindingReference[];
+}) {
+  const missed = missedRouteEntries(missedRuleIds, findings, rulesetReferences);
   return (
     <section className="verdict-detail__missed-conditional" data-testid="missed-may-be-required">
       <h2 className="verdict-detail__section-title">
@@ -618,10 +638,11 @@ export function VerdictDetailPanel({
             (references.find((reference) =>
               reference.ruleIds.some((ruleId) => blocker.ruleIds.includes(ruleId)),
             ) ?? referenceFromFinding(blocker));
-    // One finding can carry multiple rule ids; count findings, not provenance ids (F-102 edge case).
-    const missedFindings = findings.filter((finding) =>
-      finding.ruleIds.some((ruleId) => detail.missedRuleIds.includes(ruleId)),
-    );
+    // ONE ENTRY PER MISSED ROUTE. Counting the parent lines answered one for two missed routes of a
+    // merged line and hid the second; counting the ids answers three for one legacy line carrying
+    // three provenance ids, which is the F-102 edge case the finding count existed for. The shared
+    // resolution above is neither: it is the routes, and a line with no route list is one of them.
+    const missedRoutes = missedRouteEntries(detail.missedRuleIds, findings, references);
     return (
       <div className="verdict-detail" data-testid="verdict-detail">
         {blocker !== null && (
@@ -639,12 +660,10 @@ export function VerdictDetailPanel({
               {blockerFacts?.latestApplyDate != null &&
                 ` The latest published apply-by date was ${blockerFacts.latestApplyDate}.`}
             </p>
-            {missedFindings.length > 1 && (
+            {missedRoutes.length > 1 && (
               <p className="verdict-detail__missed">
                 All published deadlines missed as scoped:{" "}
-                <FindingReferences
-                  references={referencesForRuleIds(detail.missedRuleIds, findings, references)}
-                />
+                <FindingReferences references={missedRoutes.map((entry) => entry.reference)} />
               </p>
             )}
           </section>

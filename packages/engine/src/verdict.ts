@@ -218,10 +218,24 @@ function describeDifference(base: readonly Finding[], candidate: readonly Findin
   // permanent anchor back to the published rule that produced the sentence; a heading is not unique
   // and any later ruleset publish may reword it. The organizer never reads the id: the plan view's
   // `humanizeRuleCodes` swaps each id for the same heading at render time.
+  // THE ROUTE NAMED BY THE ID, NOT THE LINE IT SITS ON, for the reason the window check reads
+  // routes. `computeWindowVerdict` blocks on ANY route's missed window, so an unknown can make a
+  // branch divergent by missing a NON-BINDING route while the merged scalar `deadlineStatus` stays
+  // open. Reading the scalar wrote the branch's persisted reason as a bare `adds <id>` or
+  // `same findings, re-dated` on exactly the branch F-102 AC 6 requires to state the filing-window
+  // miss (#252 review). An unmerged finding has one route and `routesOf` supplies it, so this is
+  // the same answer the scalar gave wherever the scalar was right.
+  //
+  // NO ROUTE CARRIES THE ID means the line is unmerged or was stored before route lists existed, and
+  // there the scalar is the route's own value: `routesOf` names such a line by its FIRST rule id, so
+  // a legacy multi-id line asked about its second id finds nothing and must read the scalar rather
+  // than answer "not missed".
+  const missedAsScoped = (finding: Finding, id: string): boolean => {
+    const route = routesOf(finding).find((entry) => entry.ruleId === id);
+    return (route?.deadlineStatus ?? finding.deadlineStatus) === "published_deadline_missed";
+  };
   const describeMissed = (finding: Finding, id: string): string =>
-    finding.deadlineStatus === "published_deadline_missed"
-      ? `${id} (published deadline missed as scoped)`
-      : id;
+    missedAsScoped(finding, id) ? `${id} (published deadline missed as scoped)` : id;
   const describeAdded = (id: string): string => {
     const finding = candidate.find((entry) => entry.ruleIds.includes(id));
     // F-102 AC 6: the no-license branch must surface the missed-window reason, not only the rule id.
@@ -231,19 +245,27 @@ function describeDifference(base: readonly Finding[], candidate: readonly Findin
   // Same rule ids can still tighten: Scenario F's unresolved base already carries SLA-ONEDAY /
   // SLA-CATERING as may_be_required, and the no-license branch makes them required with a missed
   // window. Report that even when another finding is merely dropped (AC 6).
+  // WHICH ROUTES OF THE LINE ARE MISSED, standing in for the merged `deadlineStatus` for the reason
+  // `describeMissed` gives. Substituting it changes no outcome the scalar already got right: a
+  // status change that is not a miss produced no sentence before and produces none now.
+  const missedRoutes = (finding: Finding): string =>
+    routesOf(finding)
+      .filter((route) => route.deadlineStatus === "published_deadline_missed")
+      .map((route) => route.ruleId)
+      .sort()
+      .join(",");
+
   const tightened: string[] = [];
   for (const finding of candidate) {
     const prior = base.find((entry) =>
       entry.ruleIds.some((ruleId) => finding.ruleIds.includes(ruleId)),
     );
     if (prior === undefined) continue;
-    if (
-      prior.disposition === finding.disposition &&
-      prior.deadlineStatus === finding.deadlineStatus
-    ) {
+    const nowMissed = missedRoutes(finding);
+    if (prior.disposition === finding.disposition && missedRoutes(prior) === nowMissed) {
       continue;
     }
-    if (finding.deadlineStatus === "published_deadline_missed") {
+    if (nowMissed !== "") {
       tightened.push(`${finding.ruleIds.join(", ")} (published deadline missed as scoped)`);
       continue;
     }
@@ -593,9 +615,18 @@ function buildRescopeSuggestions(
       );
       if (candidate.verdict === "FEASIBLE_AT_RISK") {
         const minSlackDays = candidate.window.minSlackDays;
-        const atRiskFinding =
+        // THE ROUTE THAT HOLDS THE MINIMUM, NOT THE LINE THAT CONTAINS IT. `computeWindowVerdict`
+        // takes `minSlackDays` over every route, so on a merged line the slack can belong to a
+        // non-binding route while the merged scalar is null or a different number. Searching the
+        // findings for `slackDays === minSlackDays` then matched nothing and the ladder said which
+        // change reaches FEASIBLE_AT_RISK without naming what is at risk, on a route that publishes
+        // a name (#252 review). An unmerged finding is its own route, so this is the same answer
+        // wherever the scalar was right.
+        const atRiskRoute =
           minSlackDays !== null
-            ? (candidate.findings.find((finding) => finding.slackDays === minSlackDays) ?? null)
+            ? (candidate.findings
+                .flatMap((finding) => routesOf(finding))
+                .find((route) => route.slackDays === minSlackDays) ?? null)
             : null;
         suggestions.push({
           ...suggestion,
@@ -604,7 +635,7 @@ function buildRescopeSuggestions(
           remainingMissingFields,
           remainingTimelineReasons,
           minSlackDays,
-          atRiskFindingName: atRiskFinding?.name ?? null,
+          atRiskFindingName: atRiskRoute?.name ?? null,
         });
       } else {
         suggestions.push({

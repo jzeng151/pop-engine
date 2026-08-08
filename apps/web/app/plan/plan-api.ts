@@ -30,11 +30,11 @@ import {
   absentOr,
   arrayOf,
   asRecord,
+  atLeast,
   type FieldChecks,
   isNumber,
   isString,
   isToken,
-  nonEmpty,
   nullOr,
   readChecked,
   shapedLike,
@@ -396,10 +396,44 @@ const FINDING_CHECKS: FieldChecks<ConsumedFinding> = {
   verificationStatus: isToken(VERIFICATION_STATUSES),
   lastVerifiedDate: nullOr(isString),
   routes: (value: unknown): value is readonly ConsumedRoute[] | null =>
-    value === undefined || value === null || nonEmpty(arrayOf(shapedLike(ROUTE_CHECKS)))(value),
+    value === undefined || value === null || atLeast(2, arrayOf(shapedLike(ROUTE_CHECKS)))(value),
   headlineMode: (value: unknown): value is HeadlineMode | null =>
     value === undefined || value === null || isToken(HEADLINE_MODES)(value),
 };
+
+/**
+ * What the route list and its headline mode SAY TOGETHER, which no per-field check can see.
+ *
+ * The two findings this closes are one shape: a body whose every field is a permitted token, in a
+ * combination the contract has no meaning for, read downstream as a settled statement. `readChecked`
+ * runs one predicate per field, so a cross-field rule has nowhere to live but here.
+ *
+ * `applies_together` IS A CLAIM ABOUT EVERY ROUTE. The routes block renders it as "the answers
+ * recorded in this plan meet each route's own conditions", so a route whose own `triggerResult` is
+ * `unknown` under that mode has the page telling the organizer their answers settled a question
+ * they have not answered. Narrowing `TRIGGER_RESULTS` to exclude `"false"` refused one token; it did
+ * not refuse this pairing, which is built entirely out of tokens the contract permits (#252 review).
+ * `candidate` is the mode for the routes we cannot yet tell apart, so at least one must be `unknown`.
+ *
+ * A ROUTE LIST IS A MERGE, so it has at least two entries. `candidateRoutesOf` and `Routes` both
+ * test `length > 1` before treating a line as merged, so a one-entry list passed the shape check and
+ * was then read as unmerged: a `candidate` line fell back to the permit heading and the deciding
+ * question it exists to ask was not shown, an incomplete route set presented as a complete line.
+ */
+const routeContractHolds = (finding: ConsumedFinding): boolean => {
+  const routes = finding.routes;
+  if (routes === undefined || routes === null) return true;
+  if (finding.headlineMode === "applies_together") {
+    return routes.every((route) => route.triggerResult === "true");
+  }
+  if (finding.headlineMode === "candidate") {
+    return routes.some((route) => route.triggerResult === "unknown");
+  }
+  return true;
+};
+
+const isConsumedFinding = (value: unknown): value is ConsumedFinding =>
+  shapedLike(FINDING_CHECKS)(value) && routeContractHolds(value);
 
 const BRANCH_OUTCOME_CHECKS: FieldChecks<ConsumedBranchOutcome> = {
   value: isString,
@@ -493,7 +527,7 @@ const PLAN_CHECKS: FieldChecks<PlanResponse> = {
   verdict: isToken(VERDICTS),
   verdictDetail: shapedLike(VERDICT_DETAIL_CHECKS),
   generatedAt: isString,
-  findings: arrayOf(shapedLike(FINDING_CHECKS)),
+  findings: arrayOf(isConsumedFinding),
 };
 
 /** The plan fields and finding members this feature reads, exposed so a test can assert coverage. */

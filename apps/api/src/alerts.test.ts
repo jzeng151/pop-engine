@@ -6951,6 +6951,12 @@ describe.skipIf(databaseUrl === "")("F-203 deadline alerts", () => {
           /** Both routes publishing exactly the same thing, which three v2 draft groups do. */
           secondRouteIdentical?: boolean;
           /**
+           * Same name and same window as the first route, so the SUBJECTS match, and a different
+           * agency, so the bodies do not. The subject is the name and the date; the agency, the
+           * portal, the notes and the published deadline text render into the body alone.
+           */
+          secondRouteSameSubject?: boolean;
+          /**
            * The stored list is in BINDING order, and binding order is not stable across
            * generations: the binding route is drawn from the resolved routes wherever any of them
            * is resolved, so a route whose trigger goes from `unknown` to `true` can take the lead
@@ -7008,20 +7014,29 @@ describe.skipIf(databaseUrl === "")("F-203 deadline alerts", () => {
                               deadlineStatus: "deadline_approaching",
                               deadlineDisplay: "file at least 5 days before use",
                             }
-                          : {
-                              disposition: "may_be_required",
-                              name: "Special Event Permit",
-                              // The second route gains a published window between the two
-                              // generations: a ruleset publishing the missing deadline, or a holiday
-                              // list arriving so a business-day count becomes calculable.
-                              ...(options.secondRouteDated
-                                ? {
-                                    latestApplyDate: dayFromToday(1),
-                                    deadlineStatus: "deadline_approaching",
-                                    deadlineDisplay: "apply at least 21 days ahead",
-                                  }
-                                : {}),
-                            }),
+                          : options.secondRouteSameSubject === true
+                            ? {
+                                disposition: "required",
+                                name: "Sound Device Permit",
+                                agency: "DOT",
+                                latestApplyDate: applyBy,
+                                deadlineStatus: "deadline_approaching",
+                                deadlineDisplay: "file at least 5 days before use",
+                              }
+                            : {
+                                disposition: "may_be_required",
+                                name: "Special Event Permit",
+                                // The second route gains a published window between the two
+                                // generations: a ruleset publishing the missing deadline, or a holiday
+                                // list arriving so a business-day count becomes calculable.
+                                ...(options.secondRouteDated
+                                  ? {
+                                      latestApplyDate: dayFromToday(1),
+                                      deadlineStatus: "deadline_approaching",
+                                      deadlineDisplay: "apply at least 21 days ahead",
+                                    }
+                                  : {}),
+                              }),
                       }),
                     ],
                     options,
@@ -7185,6 +7200,57 @@ describe.skipIf(databaseUrl === "")("F-203 deadline alerts", () => {
         );
         expect(new Set(words).size).toBe(words.length);
         expect(words).toHaveLength(reminderOffsets.length);
+      });
+
+      /**
+       * #252 P1: ONE ROUTE'S REMINDER WAS NEVER DELIVERED WHEN ANOTHER SHARED ITS SUBJECT.
+       *
+       * `assignIdentities` groups schedulings by their whole rendered message, subject AND body, so
+       * two routes whose bodies differ are two reminders and are keyed apart. The adoption that
+       * hands an existing row the current key tested the stored SUBJECT alone, and a subject is the
+       * requirement name and the filing date: two routes of one line that publish the same name and
+       * the same window under different agencies, portals, fees or published deadline text have one
+       * subject and two bodies. So the second route's adoption re-keyed the FIRST route's row onto
+       * its own key, and its upsert then overwrote that row's copy — one row where there should be
+       * two, and one of the two reminders was never sent at all.
+       *
+       * Reproduced inside a single scheduling loop, because the collision is between two routes of
+       * the same generation rather than across a regeneration.
+       */
+      it("delivers both reminders where two routes share a subject and differ in body (#252)", async () => {
+        const eventId = await createEvent(scenario("C"));
+        const checklistItemId = randomUUID();
+        await schedule(
+          eventId,
+          await insertMergedPlan(eventId, {
+            secondRouteDated: true,
+            secondRouteSameSubject: true,
+            checklistItemId,
+          }),
+        );
+
+        const reminders = (await alertsOf(eventId)).filter(
+          (row) => row.alert_type === "deadline_reminder",
+        );
+        // One row per offset PER ROUTE: these are two reminders, not one said twice.
+        expect(reminders).toHaveLength(reminderOffsets.length * 2);
+
+        const provider = fakeProvider();
+        await createAlertPoller({
+          database: pool,
+          senders: provider.senders,
+          jurisdiction: ruleset.jurisdiction,
+        }).tick();
+
+        // WHAT THE ORGANIZER RECEIVED. Not vacuous: every message carries the SAME subject, which
+        // is the collision, so the reminders are told apart by their bodies alone.
+        const subjects = new Set(provider.attempts.map((message) => message.subject));
+        expect(subjects.size).toBe(1);
+        const bodies = provider.attempts.map((message) => message.body);
+        expect(bodies).toHaveLength(reminderOffsets.length * 2);
+        expect(new Set(bodies).size).toBe(bodies.length);
+        expect(bodies.some((body) => body.includes("Sound Device Permit (NYPD)"))).toBe(true);
+        expect(bodies.some((body) => body.includes("Sound Device Permit (DOT)"))).toBe(true);
       });
 
       /**

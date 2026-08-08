@@ -26,11 +26,11 @@ import {
   absentOr,
   arrayOf,
   asRecord,
+  atLeast,
   type FieldChecks,
   isNumber,
   isString,
   isToken,
-  nonEmpty,
   nullOr,
   readChecked,
   shapedLike,
@@ -430,7 +430,7 @@ const PLAN_CONTEXT_CHECKS: FieldChecks<PlanContext> = {
   sourcePlan: shapedLike(SOURCE_PLAN_CHECKS),
   // Absent from an api deployed before the checklist read routes, which is the deploy window this
   // change opens. Absence is "not served", never "this line has no routes".
-  routes: absentOr(nullOr(nonEmpty(arrayOf(shapedLike(ROUTE_CHECKS))))),
+  routes: absentOr(nullOr(atLeast(2, arrayOf(shapedLike(ROUTE_CHECKS))))),
   headlineMode: absentOr(nullOr(isToken(HEADLINE_MODES))),
   filingRouteRuleId: absentOr(nullOr(isString)),
 };

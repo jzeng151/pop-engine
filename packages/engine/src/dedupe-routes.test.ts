@@ -806,3 +806,133 @@ describe("an unknown that moves only a non-binding route's window (#252)", () =>
     );
   });
 });
+
+/**
+ * #252: the branch is retained; its ORGANIZER-FACING REASON reads the wrong route.
+ *
+ * `computeWindowVerdict` blocks on any route's missed window, so an unknown can close a NON-BINDING
+ * route's window while the binding route stays open and the merged scalar `deadlineStatus` still
+ * says `on_track`. `describeDifference` tested that scalar, so the reason persisted on the plan row
+ * said "same findings, re-dated" on exactly the branch F-102 AC 6 requires to state the miss.
+ *
+ * The non-binding route here is non-binding because its own trigger is unresolved: the binding route
+ * is the tightest window among the routes contributing the merged disposition, intersected with the
+ * RESOLVED routes, so an `unknown` route is excluded however early its date. That is the only shape
+ * in which a missed route is not the headline, since a past date is otherwise the tightest there is.
+ */
+describe("the reason for a branch that misses only a non-binding route (#252)", () => {
+  const FIELDS = [
+    { field: "plaza_level", type: "enum", values: ["unknown", "a", "b"] },
+    { field: "plaza_multiple_blocks", type: "boolean" },
+    { field: "plaza_gated", type: "boolean" },
+  ];
+  /** The binding route: resolved, required, and open on every branch. */
+  const BINDING = {
+    id: "SAPO-EVENT-001",
+    dedupeKey: "plaza",
+    trigger: ALWAYS,
+    output: {
+      permit_name: "Plaza event permit",
+      deadline: { type: "published_minimum", calendar_days: 60 },
+    },
+  } as const;
+  /** Unresolved, so it never binds, and dated by the level: `b`'s window closed before today. */
+  const BY_LEVEL = {
+    id: "SAPO-PLAZA-001",
+    dedupeKey: "plaza",
+    trigger: { all: [{ field: "plaza_gated", op: "eq", value: true }] },
+    output: {
+      permit_name: "Plaza permit by level",
+      deadline: {
+        type: "published_minimum_by_level",
+        level_field: "plaza_level",
+        multi_block_field: "plaza_multiple_blocks",
+        levels: { a: { calendar_days: 30 }, b: { calendar_days: 200 } },
+      },
+    },
+  } as const;
+
+  const evaluated = (level: string) =>
+    plan([BINDING, BY_LEVEL], { plaza_level: level, plaza_multiple_blocks: false }, FIELDS);
+
+  it("states the filing-window miss the merged scalar cannot see", () => {
+    // NOT VACUOUS: on branch `b` the merged line still reads open, which is why the scalar said
+    // nothing had tightened. The miss is one route down.
+    const missing = evaluated("b").findings[0];
+    expect(missing?.deadlineStatus).not.toBe("published_deadline_missed");
+    expect(missing?.routes?.[1]?.deadlineStatus).toBe("published_deadline_missed");
+
+    const level = evaluated("unknown").verdictDetail.missingFacts.find(
+      (fact) => fact.field === "plaza_level",
+    );
+    const branchB = level?.branches.find((branch) => branch.value === "b");
+    expect(branchB?.reason).toContain("published deadline missed as scoped");
+    // And the branch that does not miss still says so, so the sentence distinguishes them.
+    const branchA = level?.branches.find((branch) => branch.value === "a");
+    expect(branchA?.reason).not.toContain("published deadline missed as scoped");
+  });
+});
+
+/**
+ * #252: the rescope ladder reaches FEASIBLE_AT_RISK and does not say what is at risk.
+ *
+ * `computeWindowVerdict` takes `minSlackDays` over every ROUTE, so on a merged line the minimum can
+ * belong to a route that is not the headline: the binding route is the tightest window among the
+ * routes contributing the merged DISPOSITION, so a route published at a weaker disposition never
+ * binds however tight its window. `buildRescopeSuggestions` searched the findings for
+ * `slackDays === minSlackDays`, the merged scalar belongs to the binding route, and the search
+ * matched nothing — so the ladder named a change that reaches FEASIBLE_AT_RISK with no label for the
+ * requirement at risk, on a route that publishes a name.
+ */
+describe("naming the at-risk route of a rescoped merged line (#252)", () => {
+  const VENUE_FIELD = [
+    { field: "venue_type", type: "enum", values: ["unknown", "park", "private"] },
+  ];
+  /** Missed, required and unmerged: the current scope is INFEASIBLE, so a ladder is built. */
+  const BLOCKER = {
+    id: "PARKS-MISSED-001",
+    dedupeKey: null,
+    trigger: { all: [{ field: "venue_type", op: "eq", value: "park" }] },
+    output: {
+      permit_name: "Parks special event permit",
+      deadline: { type: "published_minimum", calendar_days: 200 },
+    },
+  } as const;
+  /** The binding route: strongest disposition, so it takes the headline and its slack is 75 days. */
+  const BINDING = {
+    id: "PLAZA-BIND-001",
+    dedupeKey: "plaza",
+    trigger: ALWAYS,
+    output: {
+      permit_name: "Plaza event permit",
+      deadline: { type: "published_minimum", calendar_days: 60 },
+    },
+  } as const;
+  /** Resolved, tighter, and weaker: it holds the minimum slack and can never be the headline. */
+  const AT_RISK = {
+    id: "PLAZA-SOFT-001",
+    dedupeKey: "plaza",
+    trigger: ALWAYS,
+    output: {
+      permit_name: "Plaza block closure approval",
+      disposition: "MAY_BE_REQUIRED",
+      deadline: { type: "published_minimum", calendar_days: 130 },
+    },
+  } as const;
+
+  it("labels the suggestion with the route that holds the minimum slack", () => {
+    const scoped = plan([BLOCKER, BINDING, AT_RISK], { venue_type: "park" }, VENUE_FIELD);
+    expect(scoped.verdict).toBe("INFEASIBLE");
+
+    const rescope = scoped.verdictDetail.rescopeSuggestions.find(
+      (suggestion) => suggestion.change.field === "venue_type",
+    );
+    expect(rescope?.reevaluatedVerdict).toBe("FEASIBLE_AT_RISK");
+    // NOT VACUOUS: the merged line's own slack is the binding route's 75 days, which is not the
+    // minimum the suggestion reports, so no finding on the plan carries the number searched for.
+    const merged = plan([BINDING, AT_RISK]).findings[0];
+    expect(merged?.name).toBe("Plaza event permit");
+    expect(merged?.slackDays).not.toBe(rescope?.minSlackDays);
+    expect(rescope?.atRiskFindingName).toBe("Plaza block closure approval");
+  });
+});

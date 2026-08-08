@@ -1760,6 +1760,65 @@ describe("F-102 · CONDITIONAL branch table and INFEASIBLE rescope ladder", () =
     );
   });
 
+  /**
+   * #252: TWO MISSED ROUTES OF ONE MERGED LINE ARE TWO MISSED DEADLINES.
+   *
+   * `missedRuleIds` carries ROUTE ids, and the guard above counted the parent findings they sit on:
+   * on a merged line it answered one, suppressed the list, and the second missed route was never
+   * shown — the case the F-102 amendment added the list for. The multi-rule finding above is the
+   * opposite shape and still counts as one, which is why the count is over resolved routes rather
+   * than over either set of ids.
+   */
+  it("lists every missed route of one merged line", async () => {
+    const missedRoute = (ruleId: string, name: string, latestApplyDate: string) => ({
+      ruleId,
+      triggerResult: "true" as const,
+      disposition: "required" as const,
+      unknownFields: [],
+      name,
+      agency: "DOB",
+      deadline: null,
+      deadlineDisplay: null,
+      latestApplyDate,
+      applyAfterDate: null,
+      deadlineStatus: "published_deadline_missed" as const,
+      slackDays: null,
+      feeDisplay: null,
+      portalName: null,
+      portalUrl: null,
+      portalInstructions: null,
+    });
+    stubApi(
+      plan({
+        verdict: "INFEASIBLE",
+        findings: [
+          finding({
+            ruleIds: ["DOB-TENT-001", "DOB-TALL-STRUCTURE-001"],
+            name: "Tent permit",
+            deadlineStatus: "published_deadline_missed",
+            latestApplyDate: "2026-07-01",
+            headlineMode: "applies_together",
+            routes: [
+              missedRoute("DOB-TENT-001", "Tent permit", "2026-07-01"),
+              missedRoute("DOB-TALL-STRUCTURE-001", "Tall structure permit", "2026-07-08"),
+            ],
+          }),
+        ],
+        verdictDetail: {
+          ...emptyVerdictDetail,
+          blockingFinding: { ruleIds: ["DOB-TENT-001"], name: "Tent permit" },
+          missedRuleIds: ["DOB-TENT-001", "DOB-TALL-STRUCTURE-001"],
+        },
+      }),
+    );
+    renderPlan();
+    await screen.findByTestId("verdict-detail");
+
+    const blocker = screen.getByTestId("blocking-finding");
+    expect(blocker.textContent).toContain("All published deadlines missed as scoped");
+    expect(blocker.textContent).toContain("Tall structure permit");
+  });
+
   it("explains a conditional miss on may-be-required published windows", async () => {
     stubApi(
       plan({

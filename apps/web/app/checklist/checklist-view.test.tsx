@@ -2653,4 +2653,25 @@ describe("a checklist row whose window comes from another route (#252)", () => {
 
     expect(screen.queryByText(STREET_MEDIUM)).toBeNull();
   });
+
+  /**
+   * #252: a one-entry list is the same defect one entry later. `routes` is published only for a line
+   * that MERGED, and this row's own guards read `length >= 2` before treating it as merged, so a
+   * one-entry list was accepted and then read as unmerged — an incomplete route set rendered as a
+   * complete line, and "The published rules give this requirement 1 routes" if it reached that
+   * sentence.
+   */
+  it("refuses a checklist response whose route list is shorter than a merge", async () => {
+    stubApi({
+      [GET_CHECKLIST]: checklistOf({
+        created: true,
+        items: [
+          trackedItem(STREET_MEDIUM, { latestApplyDate: "2026-08-26", routes: [TALL_ROUTE] }),
+        ],
+      }),
+    });
+    await renderView();
+
+    expect(screen.queryByText(STREET_MEDIUM)).toBeNull();
+  });
 });

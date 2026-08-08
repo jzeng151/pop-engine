@@ -2044,7 +2044,7 @@ async function plannedAlerts(
  *
  * WHERE IT CANNOT BE HELD, NAMED RATHER THAN LEFT TO BE DISCOVERED. The identity rests on rule ids
  * being stable across ruleset publications. If a published rule is reissued under a NEW id, every
- * reminder that route names re-keys: the adoption below matches on the stored subject, so it is
+ * reminder that route names re-keys: the adoption below matches on the stored copy, so it is
  * carried across only while some other route of the same line still publishes those exact words,
  * and otherwise the organizer receives one duplicate of each already-sent reminder on that line.
  * The alternative — keying on the words themselves — breaks sentence 2 on every moved date, which
@@ -2095,7 +2095,8 @@ function assignIdentities(planned: readonly PlannedAlert[]): ScheduledAlert[] {
     // Every other key these same words could already be stored under: the pre-route-list key, and
     // every OTHER route of the line, whether or not it schedules anything on this generation. A
     // route publishing different copy is named here too and cannot be adopted by mistake, because
-    // the adoption matches on the stored subject and its subject is not this one.
+    // the adoption matches on the stored subject AND body — the same pair grouped on above — and a
+    // route differing in either is not this reminder.
     const superseded =
       canonical === null
         ? []
@@ -2342,9 +2343,20 @@ export function createAlertScheduler(settings: AlertSchedulerSettings): AlertSch
         keys.push(key);
         // THE ROW THAT ALREADY SAID THESE WORDS TAKES THIS KEY, before the upsert can mint a second
         // one beside it. `supersededIdentities` explains which keys those are; what it needs here
-        // is one statement. The subject match is the whole test: this row is about to be delivered
+        // is one statement. The copy match is the whole test: this row is about to be delivered
         // saying exactly what that row was delivered saying, so they are one alert and one of them
         // may already have gone out.
+        //
+        // THE WHOLE MESSAGE, SUBJECT AND BODY, because that is what `assignIdentities` groups on
+        // and the two tests have to be the same test. Two routes of one line can publish the same
+        // subject and different bodies — a different published deadline sentence, note, fee or
+        // portal all render into the body alone — and `assignIdentities` correctly makes them two
+        // reminders. Matching on the subject alone let the second one's adoption re-key the FIRST
+        // route's row: the second upsert then overwrote that row's pending copy, or found it
+        // already sent and skipped, and one route's distinct reminder was never delivered
+        // (#252 review). The statement above `assignIdentities` asserts this match is safe because
+        // "a route publishing different copy ... its subject is not this one", which is true only
+        // where the copy differs in the subject; the code now tests what the statement means.
         //
         // AT MOST ONE ROW, AND THE SENT ONE FIRST. `idempotency_key` is UNIQUE, so re-keying two
         // rows to one key would abort the review; and where a sent row and an unsent row both hold
@@ -2358,6 +2370,7 @@ export function createAlertScheduler(settings: AlertSchedulerSettings): AlertSch
               WHERE id = (SELECT prior.id FROM alerts prior
                            WHERE prior.idempotency_key = ANY($1::text[])
                              AND prior.payload->>'subject' = $3
+                             AND prior.payload->>'body' = $4
                            ORDER BY (prior.status = 'sent') DESC, prior.idempotency_key
                            LIMIT 1)
                 AND NOT EXISTS (SELECT 1 FROM alerts held WHERE held.idempotency_key = $2)`,
@@ -2367,6 +2380,7 @@ export function createAlertScheduler(settings: AlertSchedulerSettings): AlertSch
               ),
               key,
               alert.subject,
+              alert.body,
             ],
           );
         }

@@ -169,10 +169,10 @@ describe("loadPlan", () => {
    * "applies_together"` renders "the answers recorded in this plan meet each route's own
    * conditions" over a route that explicitly does not.
    */
-  const mergedFinding = (triggerResult: string) => ({
+  const mergedFinding = (triggerResult: string, headlineMode = "applies_together") => ({
     ...storedFinding,
     ruleIds: ["PARKS-EVENT-001", "SAPO-PERMIT-001"],
-    headlineMode: "applies_together",
+    headlineMode,
     routes: [
       {
         ruleId: "PARKS-EVENT-001",
@@ -208,13 +208,58 @@ describe("loadPlan", () => {
   });
 
   it("reads a merged finding whose routes carry the two published trigger results", async () => {
-    for (const triggerResult of ["true", "unknown"]) {
+    for (const [triggerResult, headlineMode] of [
+      ["true", "applies_together"],
+      ["unknown", "candidate"],
+    ]) {
       stubFetch(async () =>
-        jsonResponse(200, { ...storedPlan, findings: [mergedFinding(triggerResult)] }),
+        jsonResponse(200, {
+          ...storedPlan,
+          findings: [mergedFinding(triggerResult as string, headlineMode)],
+        }),
       );
       const result = await loadPlan("https://api.example.com", "event-1");
       expect(result.ok).toBe(true);
     }
+  });
+
+  /**
+   * #252: every field of this body is a token the contract permits, and the combination is one it
+   * has no reading for. `applies_together` renders "the answers recorded in this plan meet each
+   * route's own conditions" over a route whose own trigger says nothing has been settled, and
+   * `candidate` is the mode for the routes that cannot yet be told apart, so it needs one.
+   */
+  it("refuses a headline mode its own routes' trigger results contradict", async () => {
+    for (const [triggerResult, headlineMode] of [
+      ["unknown", "applies_together"],
+      ["true", "candidate"],
+    ]) {
+      stubFetch(async () =>
+        jsonResponse(200, {
+          ...storedPlan,
+          findings: [mergedFinding(triggerResult as string, headlineMode)],
+        }),
+      );
+      const result = await loadPlan("https://api.example.com", "event-1");
+      expect(result.ok).toBe(false);
+    }
+  });
+
+  /**
+   * #252: `routes` is published only for a line that MERGED, so a one-entry list is a shape the
+   * contract has no reading for. Every consumer tests `length > 1` before treating a line as
+   * merged, so accepting one here presented an incomplete route set as a complete line.
+   */
+  it("refuses a route list shorter than the merge that produces one", async () => {
+    const single = mergedFinding("true");
+    stubFetch(async () =>
+      jsonResponse(200, {
+        ...storedPlan,
+        findings: [{ ...single, routes: [single.routes[0]] }],
+      }),
+    );
+    const result = await loadPlan("https://api.example.com", "event-1");
+    expect(result.ok).toBe(false);
   });
 
   it("refuses a route whose trigger result is false, which the route contract has no reading for", async () => {
