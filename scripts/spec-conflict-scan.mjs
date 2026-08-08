@@ -66,6 +66,18 @@ export const CITY_HEALTH_AGENCY = new RegExp(CITY_HEALTH_AGENCY_SOURCE, "i");
  * phrasings now, the third carrying the numeral, and the two noun lists are additionally asserted
  * EQUAL AS SETS, derived from these two source strings rather than restated. Adding a noun to one
  * expression and forgetting it in the other fails that assertion whether or not the grid grew.
+ *
+ * `attendance`, `crowd size` and `party size` are outside that equality, being phrasings rather
+ * than nouns, and the seventh round found that two of the three were driven by nothing: deleting
+ * `crowd size` and `party size` left all 79 cases green, as did deleting `NYC Health` from the
+ * agency expression. All three are driven now.
+ *
+ * THE HYPHENATED COMPOUND IS A DECLARED MISS: "the guest-count threshold" is not matched, and the
+ * one-character fix for it (`[ -]?count`) was measured and rejected. It flags `docs/BASELINE.md`'s
+ * "No regulatory fact moves here" paragraph, which says "no DOHMH rule may key on the
+ * attendee-count intake field". That block DENIES the attribution, and the hyphenated compound is
+ * this repository's house spelling inside the very circumlocution its correction records are
+ * written in. The scan reads co-occurrence and not stance, so the cost is not avoidable by wording.
  */
 export const ATTENDEE_COUNT_SOURCE =
   "(?:head|guest|attendee|people|person|rsvp|patron) ?count" +
@@ -80,10 +92,20 @@ export const ATTENDEE_COUNT = new RegExp(ATTENDEE_COUNT_SOURCE, "i");
  * phrases above they are not a count on their own. The NUMERAL is what makes one a threshold,
  * and it is required in either order. "ONE person signed in THREE capacities" and "the guest
  * list" carry no numeral and are not counts; "500 or more people" is one.
+ *
+ * THE NOUN-FIRST ALTERNATION REACHES TO THE END OF THE SENTENCE, and nothing narrower. It carried
+ * a `{0,40}` character window until the seventh PR #247 review round, which found that window
+ * UNTESTED and UNDECLARED: it could be narrowed to `{0,0}` with all 79 cases green, while the
+ * comment above advertised "RSVPs exceed 75" without mentioning any distance limit at all. So
+ * "Guests attending an indoor assembly occupancy for which DOHMH publishes the temporary
+ * food-service permit exceed 75" went past on the distance alone. The window is removed rather than
+ * widened and declared, because removing it was measured over every scanned root and changed no
+ * flag on this tree. The sentence remains the bound: the class excludes a period, so a count noun
+ * in one sentence and a numeral in the next are still two things.
  */
 export const COUNTED_PEOPLE_SOURCE =
   "\\b\\d{1,6} ?(?:or more |or fewer |\\+ ?)?(?:guests|attendees|people|persons|heads|RSVPs|patrons)\\b" +
-  "|\\b(?:guests|attendees|people|persons|heads|RSVPs|patrons)\\b[^.\\n]{0,40}?(?<![\\w-])\\d{1,6}(?![\\w-])";
+  "|\\b(?:guests|attendees|people|persons|heads|RSVPs|patrons)\\b[^.\\n]*?(?<![\\w-])\\d{1,6}(?![\\w-])";
 export const COUNTED_PEOPLE = new RegExp(COUNTED_PEOPLE_SOURCE, "i");
 
 /**
@@ -205,6 +227,55 @@ export const scanOptionsFor = (relative) => ({
   allowOptOut: OPT_OUT_EXTENSIONS.some((extension) => relative.endsWith(extension)),
 });
 
+/**
+ * One block's text as one line of prose, for MATCHING ONLY. Never for a digest: every pin reads
+ * the raw block, so nothing here can widen or narrow what a pin protects.
+ *
+ * THE SEVENTH PR #247 REVIEW ROUND'S ITEM 1. Every expression above joins its words with a literal
+ * single space, `blocksOf` below reassembles a hard-wrapped paragraph into one block ON PURPOSE,
+ * and nothing between the two put the wrapped line back together. So this dated record, planted in
+ * the real `docs/BASELINE.md` and wrapped the way this tree's markdown is wrapped, added no flag:
+ *
+ *     **Decision 2026-08-07 (product owner, issue #248, DOHMH indoor assembly threshold):** the
+ *     temporary food-service permit and the organizer notification DOHMH publishes for an indoor
+ *     event keyed on 75 or more guests recorded at intake, so raising an RSVP cap moves the permit
+ *     findings.
+ *
+ * The reachability is ordinary rather than adversarial. `.prettierrc` sets no `proseWrap`, so it
+ * takes prettier's default of `preserve` and every wrap in this tree is where its author left it,
+ * unreflowed; 4,658 of this tree's 11,762 non-blank markdown lines are 90 to 105 characters wide,
+ * against a `printWidth` of 100. Sweeping the declared count phrases across 60 column positions of
+ * a sentence wrapped at 100 defeated the guard in 365 of 1440 positions, and defeats it in 0 of
+ * 1440 now. The two sites this defect has actually taken both stated the count as `headcount`, a
+ * single word no wrap can split, which is why it was never seen here.
+ *
+ * `spec-conflict-resolutions.test.mjs` lines 126-128 record the same repair, in the same file, on
+ * the #207 guard: it "read physical lines instead, so a bullet wrapped onto a continuation naming
+ * F-213 sat outside the filter."
+ *
+ * THREE THINGS ARE NORMALIZED, each because a phrasing was measured to walk past without it:
+ *
+ *   - The emphasis and inline-code markers, so "the number of `guests`" and "the number of
+ *     **guests**" read as the words they wrap. This repository writes `headcount` in backticks
+ *     throughout, so inline code is the house style rather than an edge case.
+ *   - The line break, to a single space.
+ *   - The comment leader that follows a line break, so a `//` comment wrapped over two lines is one
+ *     line of prose too. The scan reads `.ts`, `.tsx`, `.mjs` and `.js`.
+ *
+ * TWO FACES OF THE SAME DEFECT ARE NOT CLOSED HERE, and each says why at its own site: the
+ * hyphenated compound ("the guest-count threshold") is a declared miss with a measured cost, at
+ * `ATTENDEE_COUNT_SOURCE` above; and a count phrase wrapped inside a `*`-leader DOC COMMENT is a
+ * structural miss rather than a lexical one, because `blocksOf` reads a ` * ` leader as a list
+ * bullet and each line is then its own block. Turning every hyphen into a space would rewrite
+ * "food-service" and "2026-08-07" too, and the numeral half deliberately refuses a hyphenated
+ * number, so neither face has a normalization that closes it for free.
+ *
+ * MEASURED, not predicted: with this in place the scan flags the planted record above, and the flag
+ * set on the clean tree is unchanged at ten, the four pinned records and the six benign pairs.
+ */
+export const normalizeForMatching = (text) =>
+  text.replace(/[`*]/g, "").replace(/\n[ \t]*(?:\/\/|>)?[ \t]*/g, " ");
+
 /** Paragraphs, list items and table rows. A block ends where the next one begins. */
 export const blocksOf = (text) => {
   const blocks = [""];
@@ -237,15 +308,21 @@ const splitAcrossBoundary = (first, second, count) =>
   (count.test(first) && CITY_HEALTH_AGENCY.test(second));
 
 /**
- * Whether one block pairs the city health agency with an attendee count.
+ * Whether one block pairs the city health agency with an attendee count, the block read as one
+ * line of prose (`normalizeForMatching`).
  *
  * `bounded` is what `BOUNDED_EXTENSIONS` decides. The `ATTENDEE_COUNT` half is unbounded either
  * way: those phrases name a count outright, so a block carrying one and the agency is putting the
  * two in the same authored unit wherever they sit in it.
  */
-export const pairsAgencyWithCount = (text, { bounded = false } = {}) =>
-  CITY_HEALTH_AGENCY.test(text) &&
-  (ATTENDEE_COUNT.test(text) || (bounded ? AGENCY_NEAR_COUNTED_PEOPLE : COUNTED_PEOPLE).test(text));
+export const pairsAgencyWithCount = (raw, { bounded = false } = {}) => {
+  const text = normalizeForMatching(raw);
+  return (
+    CITY_HEALTH_AGENCY.test(text) &&
+    (ATTENDEE_COUNT.test(text) ||
+      (bounded ? AGENCY_NEAR_COUNTED_PEOPLE : COUNTED_PEOPLE).test(text))
+  );
+};
 
 /**
  * Every block of one file that pairs the city health agency with an attendee count, within one
@@ -322,12 +399,15 @@ export function scanFile(text, { bounded = false, allowOptOut = false } = {}) {
   // block counted, the paragraph's neighbour was the blank line and the bullet was never paired
   // with it. A block that separates two others still separates them; a blank line never did.
   const blocks = blocksOf(text).filter((block) => block.trim() !== "");
+  // Matching reads each block as one line of prose; the flagged text stays RAW, because that is
+  // what a pin digests. See `normalizeForMatching`.
+  const matchable = blocks.map(normalizeForMatching);
   const flagged = [];
   for (let index = 0; index < blocks.length; index += 1) {
-    const block = blocks[index];
-    const next = blocks[index + 1];
-    if (!optedOut(block) && pairsAgencyWithCount(block, { bounded })) {
-      flagged.push({ kind: "block", text: block });
+    const block = matchable[index];
+    const next = matchable[index + 1];
+    if (!optedOut(blocks[index]) && pairsAgencyWithCount(block, { bounded })) {
+      flagged.push({ kind: "block", text: blocks[index] });
     }
     if (next === undefined) continue;
     const pair = `${block}\n${next}`;
@@ -339,11 +419,15 @@ export function scanFile(text, { bounded = false, allowOptOut = false } = {}) {
     const acrossAnyBlocks =
       splitAcrossBoundary(block, next, ATTENDEE_COUNT) && withinBound(AGENCY_NEAR_ATTENDEE_COUNT);
     const acrossParagraphs =
-      isParagraph(block) &&
-      isParagraph(next) &&
+      // Read off the RAW blocks: normalizing strips the emphasis markers, and a `* bullet` would
+      // read as a paragraph without them.
+      isParagraph(blocks[index]) &&
+      isParagraph(blocks[index + 1]) &&
       splitAcrossBoundary(block, next, COUNTED_PEOPLE) &&
       withinBound(AGENCY_NEAR_ANY_COUNT);
-    if (acrossAnyBlocks || acrossParagraphs) flagged.push({ kind: "pair", text: pair });
+    if (acrossAnyBlocks || acrossParagraphs) {
+      flagged.push({ kind: "pair", text: `${blocks[index]}\n${blocks[index + 1]}` });
+    }
   }
   return flagged;
 }

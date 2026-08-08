@@ -494,7 +494,10 @@ describe("T-8 F-601/F-109 dependency-graph row, resolved 2026-08-05", () => {
  *    way of saying this. The claim can be made in words none of them match.
  *
  *    STRUCTURALLY, by where the words sit. The unit is the BLOCK, a paragraph or a list item or a
- *    table row, plus one boundary: two ADJACENT blocks are also scanned as a pair. So the claim is
+ *    table row READ AS ONE LINE OF PROSE (`normalizeForMatching`: the line breaks, the comment
+ *    leaders that follow them and the emphasis and inline-code markers are normalized away before
+ *    matching, and never for a digest), plus one boundary: two ADJACENT blocks are also scanned as
+ *    a pair. So the claim is
  *    caught when its two halves share a block or sit in neighbouring ones, and a phrasing this
  *    scan matches lexically still goes past when its halves are separated by a third block. Two
  *    further structural limits, both stated with their measured reason in
@@ -554,7 +557,28 @@ describe("T-8 F-601/F-109 dependency-graph row, resolved 2026-08-05", () => {
  *        the acronym is declared a miss rather than matched. The spelled-out name IS matched with
  *        an ampersand and without the "Department of" prefix, added in the sixth round at a
  *        measured cost of zero blocks on this tree.
+ *      - "DOHMH keys the permit on the guest-count threshold." The hyphenated compound. Matching it
+ *        costs a false positive on the correction record itself, which writes "the attendee-count
+ *        intake field" while DENYING the attribution, so it is declared rather than closed. The
+ *        reason and the measurement are at `ATTENDEE_COUNT_SOURCE`.
+ *      - A count phrase split by a line break inside a `*`-leader DOC COMMENT. That one is
+ *        structural rather than lexical: `blocksOf` reads a ` * ` leader as a list bullet, so each
+ *        line is its own block and there is no wrapped line to rejoin. The `//` form is caught, and
+ *        that is the form the correction record names in `apps/api/src/rsvps.ts`.
  *      - Any paraphrase that names neither the agency forms below nor a count phrase below.
+ *
+ *    THIS LIST IS NO LONGER THE MECHANISM, which is the seventh PR #247 round's item 2. It reads
+ *    to a human; what a change has to survive is a corpus. Every anti-drift device in this guard
+ *    used to measure one DECLARATION against another (a source string against a source string, a
+ *    grid cell against a grid cell), so a phrasing the guard CLAIMS TO COVER could stop being
+ *    caught without failing anything, and one had: the count vocabulary is joined by literal single
+ *    spaces and this tree's prose is hard-wrapped, so a line break inside a count phrase walked
+ *    past everything. `spec-conflict-resolutions.fixtures.test.mjs` generates the declared
+ *    vocabulary over the artifacts' real formatting now, the seven nouns by the three phrasings by
+ *    wrapped-at-this-tree's-`printWidth`, inline code, bold and hyphenated, and asserts that the
+ *    cases which miss are EXACTLY the hyphenated compound named above. A fourth phrasing inside the
+ *    vocabulary quietly stopping being caught fails there, and this list only has to be kept honest
+ *    about what sits outside the vocabulary.
  *
  *    Semantic or model-based detection would be a different project and is out of scope here.
  *
@@ -892,9 +916,9 @@ describe("no DOHMH rule is attributed to headcount, removed 2026-08-05 (#235)", 
     // round's item 4 is why: a legitimate new Parks record inserted next to a block that names the
     // health agency fails this assertion, neither block carries a claim, and the message a
     // contributor got sent them to the pinned historical records, which have nothing to do with
-    // their edit. `BENIGN_ADJACENT_PAIRS`'s four entries are the adjacencies THIS TREE has, not a
+    // their edit. `BENIGN_ADJACENT_PAIRS`'s six entries are the adjacencies THIS TREE has, not a
     // bound on what it can have: any new block carrying a count word that lands beside one of the
-    // 81 count-free blocks naming the agency is a fifth.
+    // 81 count-free blocks naming the agency is a seventh.
     const newPair = unexplained.some((item) => item.kind === "pair");
 
     expect(

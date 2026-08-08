@@ -188,6 +188,19 @@ describe("pairsAgencyWithCount", () => {
     expect(pairsAgencyWithCount(`${CLAIM} at 75 or more guests.`)).toBe(true);
   });
 
+  /**
+   * ITEM 3 of the seventh PR #247 review round. `crowd size` and `party size` survived deletion
+   * with the whole suite green, and so did the health department's own brand name, which is the
+   * form `docs/VERIFICATION-SOURCES.md` cites the portal under. Nothing drove any of the three.
+   */
+  it("item 3: flags the two size phrases and the brand the department publishes under", () => {
+    expect(pairsAgencyWithCount("DOHMH keys the permit on the crowd size at intake.")).toBe(true);
+    expect(pairsAgencyWithCount("The party size decides the Health Department's permit.")).toBe(
+      true,
+    );
+    expect(pairsAgencyWithCount("NYC Health requires the permit at 75 or more guests.")).toBe(true);
+  });
+
   it("does not flag the agency alone, a count alone, or a countless noun", () => {
     expect(pairsAgencyWithCount("DOHMH requires a temporary food-service permit.")).toBe(false);
     expect(pairsAgencyWithCount("The event expects 75 or more guests.")).toBe(false);
@@ -344,6 +357,139 @@ describe("scanFile: the cross-boundary pass, at the artifacts' real width", () =
     expect(items).toContain("attendance over 500 people");
     expect(items).toContain("DOHMH application path");
     expect(scanFile(items)).toEqual([]);
+  });
+});
+
+/**
+ * ITEM 1 of the seventh PR #247 review round. Every count expression joins its words with a literal
+ * single space and `blocksOf` reassembles a hard-wrapped paragraph into one block on purpose, so
+ * the claim went past whenever a line break fell inside the count phrase.
+ *
+ * The first case is the record the seventh round planted as the newest dated record in the real
+ * `docs/BASELINE.md`, verbatim. It added ZERO flags and left all 79 cases green.
+ */
+describe("scanFile: a block is read as one line of prose", () => {
+  const PLANTED_RECORD = [
+    "**Decision 2026-08-07 (product owner, issue #248, DOHMH indoor assembly threshold):** the temporary",
+    "food-service permit and the organizer notification DOHMH publishes for an indoor event keyed on 75",
+    "or more guests recorded at intake, so raising an RSVP cap moves the permit findings.",
+  ].join("\n");
+
+  it("item 1: flags the planted dated record, whose count phrase a wrap splits", () => {
+    expect(PLANTED_RECORD).not.toContain("75 or more guests");
+    expect(PLANTED_RECORD.replace(/\n/g, " ")).toContain("75 or more guests");
+    expect(scanFile(PLANTED_RECORD)).toHaveLength(1);
+  });
+
+  /**
+   * THE FLAGGED TEXT IS THE RAW BLOCK, which is what every pin digests. Normalizing the text a pin
+   * covers would move all four digests at once and report the protected approvals as reworded.
+   */
+  it("item 1: the flag carries the raw block, so no pin's digest moves", () => {
+    expect(scanFile(PLANTED_RECORD)[0].text).toBe(`\n${PLANTED_RECORD}`);
+    for (const pin of HISTORICAL_RECORDS) {
+      const block = blocksOf(read(pin.file)).find((item) => item.includes(pin.anchor));
+      expect(pinnedDigest(pin, block), `${pin.file}: ${pin.record}`).toBe(pin.sha256);
+    }
+  });
+
+  /**
+   * The same defect in a REAL dated record rather than an imitation of one, per this file's header:
+   * the record is read out of `docs/BASELINE.md` and wrapped at the width `.prettierrc` sets, and
+   * the fixture asserts the dimension that hid the defect, that the wrap really does fall inside
+   * the planted count phrase.
+   */
+  it("item 1: flags a real dated record, wrapped at this tree's own printWidth", () => {
+    const [record] = realAdjacentBlocks("docs/BASELINE.md", { shape: PARAGRAPH, minLength: 700 });
+    const wrap = (text) => {
+      const lines = [""];
+      for (const word of text.split(/\s+/)) {
+        const line = lines[lines.length - 1];
+        if (line === "") lines[lines.length - 1] = word;
+        else if (`${line} ${word}`.length <= 100) lines[lines.length - 1] = `${line} ${word}`;
+        else lines.push(word);
+      }
+      return lines.join("\n");
+    };
+    // Slide the claim along until the wrap falls INSIDE the count phrase, which is the dimension
+    // that hid this defect. A wrap that leaves the phrase whole tests nothing.
+    let wrapped;
+    for (let offset = 0; offset < 20 && wrapped === undefined; offset += 1) {
+      const candidate = wrap(
+        plantAtStart(
+          record,
+          `${AGENCY_HALF} ${"x".repeat(offset)} for events of 75 or more guests`,
+        ),
+      );
+      if (!candidate.includes("75 or more guests")) wrapped = candidate;
+    }
+    expect(wrapped, "some lead-in puts the wrap inside the planted count phrase").toBeDefined();
+    expect(scanFile(wrapped)).toHaveLength(1);
+  });
+
+  it("item 1: flags a wrapped `//` comment, whose leader is normalized away", () => {
+    const lineComment = [
+      "// DOHMH publishes the temporary food-service permit for an indoor event keyed on the guest",
+      "// count recorded at intake.",
+    ].join("\n");
+    expect(scanFile(lineComment, { bounded: true, allowOptOut: true })).toHaveLength(1);
+  });
+
+  /**
+   * AN EXPECTED MISS, and a structural one rather than a lexical one: `blocksOf` reads a ` * `
+   * leader as a list bullet, so every line of a `*`-leader doc comment is its OWN block and there
+   * is no wrapped line to rejoin. Each half then fails to be a count on its own ("keyed on 75 or",
+   * "more guests recorded at intake"), so the boundary pass has nothing to pair either.
+   *
+   * Not closed, because the fix is in `blocksOf` rather than in the normalization: a markdown `* `
+   * bullet is indistinguishable from a doc-comment line, and every list item being its own block
+   * is what the ordinary-English tier of the cross-boundary pass is built on. The same claim on ONE
+   * line of a doc comment is flagged, and so is the `//` form above, which is the form
+   * `docs/BASELINE.md`'s correction record names in `apps/api/src/rsvps.ts`.
+   */
+  it("item 1: EXPECTED MISS — a doc comment's `*` leader makes every line its own block", () => {
+    const docComment = [
+      " * DOHMH publishes the temporary food-service permit for an indoor event keyed on 75 or",
+      " * more guests recorded at intake.",
+    ].join("\n");
+    expect(blocksOf(docComment).filter((block) => block.trim() !== "")).toHaveLength(2);
+    expect(scanFile(docComment, { bounded: true, allowOptOut: true })).toEqual([]);
+    const oneLine = " * DOHMH publishes the permit for an indoor event of 75 or more guests.";
+    expect(scanFile(oneLine, { bounded: true, allowOptOut: true })).toHaveLength(1);
+  });
+
+  /**
+   * The block KIND is read off the raw block, not off the normalized one. Normalizing strips the
+   * emphasis markers, and a ` * ` doc-comment line or a `*` markdown bullet would read as a
+   * paragraph without them, which would put the ordinary-English count tier across boundaries the
+   * tier deliberately excludes.
+   */
+  it("item 1: normalizing does not turn a `*` bullet into a paragraph", () => {
+    const bullets = [
+      " * DOHMH publishes the temporary food-service permit for an indoor event.",
+      " * The event expects 75 attendees.",
+    ].join("\n");
+    expect(scanFile(bullets, { bounded: false, allowOptOut: true })).toEqual([]);
+  });
+
+  /**
+   * ITEM 3's fourth mutation, closed rather than declared. The noun-first alternation carried an
+   * undeclared `{0,40}` window: it could be narrowed to `{0,0}` without failing a single case, and
+   * the doc comment advertising "RSVPs exceed 75" never mentioned a distance limit. The window is
+   * gone, so the alternation is what its comment says it is, bounded by the sentence.
+   */
+  it("item 3: the noun-first alternation reaches across a whole sentence", () => {
+    const claim =
+      "Guests attending an indoor assembly occupancy for which DOHMH publishes the temporary" +
+      " food-service permit exceed 75.";
+    expect(claim.indexOf("75") - claim.indexOf("Guests")).toBeGreaterThan(40);
+    expect(pairsAgencyWithCount(claim)).toBe(true);
+  });
+
+  it("item 3: and stops at the sentence, so two sentences are not one count", () => {
+    expect(pairsAgencyWithCount("DOHMH counts the guests. Notify the agency 30 days before.")).toBe(
+      false,
+    );
   });
 });
 
@@ -533,17 +679,17 @@ describe("scanFile: the code opt-out", () => {
  * is DERIVED FROM THE TWO SOURCES rather than restated here, so a noun added to one expression and
  * forgotten in the other fails whether or not the grid grew with it.
  */
-describe("the count vocabulary: 7 nouns by 3 phrasings, every cell asserted", () => {
-  const NOUNS = [
-    ["guest", "guest count", "number of guests", "75 or more guests"],
-    ["attendee", "attendee count", "number of attendees", "75 or more attendees"],
-    ["head", "headcount", "number of heads", "75 or more heads"],
-    ["people", "people count", "number of people", "75 or more people"],
-    ["person", "person count", "number of persons", "75 persons or more"],
-    ["RSVP", "RSVP count", "number of RSVPs", "75 or more RSVPs"],
-    ["patron", "patron count", "number of patrons", "75 or more patrons"],
-  ];
+const NOUNS = [
+  ["guest", "guest count", "number of guests", "75 or more guests"],
+  ["attendee", "attendee count", "number of attendees", "75 or more attendees"],
+  ["head", "headcount", "number of heads", "75 or more heads"],
+  ["people", "people count", "number of people", "75 or more people"],
+  ["person", "person count", "number of persons", "75 persons or more"],
+  ["RSVP", "RSVP count", "number of RSVPs", "75 or more RSVPs"],
+  ["patron", "patron count", "number of patrons", "75 or more patrons"],
+];
 
+describe("the count vocabulary: 7 nouns by 3 phrasings, every cell asserted", () => {
   for (const [noun, outright, ofPhrase, counted] of NOUNS) {
     for (const phrasing of [outright, ofPhrase]) {
       it(`flags "the ${phrasing}" under an agency mention`, () => {
@@ -628,6 +774,105 @@ describe("the count vocabulary: 7 nouns by 3 phrasings, every cell asserted", ()
   });
 });
 
+/**
+ * ITEM 2 of the seventh PR #247 review round: the disclosure is DERIVED now, not declared.
+ *
+ * Everything above measures one declaration against another. The grid drives cells someone wrote
+ * down; the set equality compares two source strings with each other; the expected misses assert
+ * that three named strings are missed. NOTHING measured the declared vocabulary against the shape
+ * the artifacts are actually written in, which is how the seventh round's item 1 survived six
+ * rounds: "75 or more guests" is a cell of the grid above, and the same words with one newline in
+ * them, in a real dated record in `docs/BASELINE.md`, added no flag.
+ *
+ * So the corpus is GENERATED: the seven declared nouns, by the three declared phrasings, by the
+ * formattings this tree's own text uses, and the miss set is READ OFF the result rather than
+ * written down. A fourth phrasing inside the declared vocabulary that stops being caught fails
+ * `DECLARED_CORPUS_MISSES` below, which is the failure the "EXACTLY THREE" mechanism cannot have.
+ *
+ * THE FORMATTINGS ARE THE TREE'S, MEASURED:
+ *
+ *   - Wrapped. `.prettierrc` sets `printWidth` 100 and no `proseWrap`, so prose wrapping defaults
+ *     to `preserve` and is author-controlled. Of this tree's 11,762 non-blank markdown lines, 4,658
+ *     (39.6%) are 90 to 105 characters wide and the median is 95, so the corpus greedy-wraps at 100
+ *     and slides the phrase across 60 column positions to put the break in every place it can fall.
+ *   - Inline code and bold, around the count phrase and around its final noun. This repository
+ *     writes `headcount` in backticks throughout.
+ *   - The hyphenated compound, for the phrasing that has one.
+ *
+ * IT IS NOT SAMPLED. The whole cross-product is 1,371 cases of a few regular expressions over short
+ * strings, which runs in milliseconds; there is nothing to trade off, so nothing is dropped.
+ */
+describe("the declared vocabulary, over the formatting the artifacts really use", () => {
+  /** Greedy wrap, never breaking a word: `printWidth` 100 with `proseWrap: preserve`. */
+  const wrap = (text, columns = 100) => {
+    const lines = [""];
+    for (const word of text.split(" ")) {
+      const line = lines[lines.length - 1];
+      if (line === "") lines[lines.length - 1] = word;
+      else if (`${line} ${word}`.length <= columns) lines[lines.length - 1] = `${line} ${word}`;
+      else lines.push(word);
+    }
+    return lines.join("\n");
+  };
+
+  /** The claim, with `phrase` as its count half and `lead` sliding it across the column positions. */
+  const claim = (phrase, lead = "") =>
+    `DOHMH publishes the temporary food-service permit ${lead}for an indoor event keyed on the ` +
+    `${phrase} recorded at intake, so raising an RSVP cap moves the permit findings.`;
+
+  const CORPUS = [];
+  const add = (formatting, phrasing, text) => CORPUS.push({ formatting, phrasing, text });
+  for (const [, ...phrasings] of NOUNS) {
+    for (const phrase of phrasings) {
+      const noun = phrase.split(" ").pop();
+      add("plain", phrase, claim(phrase));
+      add("inline code, whole phrase", phrase, claim(`\`${phrase}\``));
+      add("inline code, noun", phrase, claim(phrase.replace(noun, `\`${noun}\``)));
+      add("bold, whole phrase", phrase, claim(`**${phrase}**`));
+      add("bold, noun", phrase, claim(phrase.replace(noun, `**${noun}**`)));
+      for (let offset = 0; offset < 60; offset += 1) {
+        add(
+          `wrapped at 100, offset ${offset}`,
+          phrase,
+          wrap(claim(phrase, `${"x".repeat(offset)} `)),
+        );
+      }
+    }
+    // The hyphenated compound exists for the outright phrasing only, and only where that phrasing
+    // is two words: nothing writes "number-of-guests", and `headcount` is already one word.
+    if (phrasings[0].includes(" ")) {
+      add("hyphenated compound", phrasings[0], claim(phrasings[0].replace(" ", "-")));
+    }
+  }
+
+  /**
+   * The generated cases that are NOT caught, which is the disclosure this file used to assert by
+   * hand. Every one of them is the hyphenated compound, and it is declared rather than closed
+   * because closing it was measured and it costs a false positive on a live correction record:
+   * `[ -]?count` in `ATTENDEE_COUNT_SOURCE` flags `docs/BASELINE.md`'s "No regulatory fact moves
+   * here" paragraph, which says "no DOHMH rule may key on the attendee-count intake field". That
+   * block DENIES the attribution, and the hyphenated compound is this repository's own house
+   * spelling for the circumlocution its correction records are written in. The scan reads
+   * co-occurrence and not stance, so there is no wording that separates the two.
+   */
+  const DECLARED_CORPUS_MISSES = NOUNS.map(([, outright]) => outright)
+    .filter((outright) => outright.includes(" "))
+    .map((outright) => `hyphenated compound: ${outright.replace(" ", "-")}`)
+    .sort();
+
+  it("item 2: the corpus is the whole cross-product, unsampled", () => {
+    expect(CORPUS).toHaveLength(7 * 3 * 65 + 6);
+  });
+
+  it("item 2: exactly the declared misses miss, and everything else is caught", () => {
+    const missed = CORPUS.filter(({ text }) => !pairsAgencyWithCount(text)).map(
+      ({ formatting, text }) =>
+        `${formatting}: ${text.match(/keyed on the ([^,]+) recorded/)?.[1] ?? text}`,
+    );
+    expect(missed.sort()).toEqual(DECLARED_CORPUS_MISSES);
+  });
+});
+
 describe("the pin machinery", () => {
   const registerPin = HISTORICAL_RECORDS.find((pin) => pin.file === "docs/OPEN-QUESTIONS.md");
 
@@ -679,7 +924,7 @@ describe("the pin machinery", () => {
   });
 
   /**
-   * The four benign adjacent pairs are the measured price of running the cross-boundary pass
+   * The six benign adjacent pairs are the measured price of running the cross-boundary pass
    * unbounded in prose. They are pinned by digest rather than allowlisted by file, and this is the
    * fixture for that difference: an allowlist would let a live claim be written into one of these
    * blocks later, and a digest cannot.
@@ -705,10 +950,17 @@ describe("the pin machinery", () => {
 });
 
 /**
- * The phrasings `spec-conflict-resolutions.test.mjs` declares as knowingly uncaught. They are
- * EXACTLY THREE, and each is asserted to be missed. If a later change starts catching one, this
- * suite fails and the disclosure has to be rewritten in the same commit rather than left standing
- * as an overstatement of what the scan cannot do.
+ * The phrasings `spec-conflict-resolutions.test.mjs` declares as knowingly uncaught, each asserted
+ * to be missed. If a later change starts catching one, this suite fails and the disclosure has to
+ * be rewritten in the same commit rather than left standing as an overstatement.
+ *
+ * THREE HERE IS NOT THE WHOLE DISCLOSURE, and the seventh PR #247 round's item 2 is why it used to
+ * read as though it were. These three are outside the declared count vocabulary, so no corpus over
+ * that vocabulary can generate them and they have to be named. The misses INSIDE the vocabulary are
+ * not named: they are derived, in "the declared vocabulary, over the formatting the artifacts
+ * really use" above, and the structural one is asserted where it arises. A fourth phrasing inside
+ * the vocabulary quietly stopping being caught fails there, which is the failure this list could
+ * never have.
  */
 describe("the declared misses, asserted as expected misses", () => {
   it("misses the circumlocution the repository's own correction records use", () => {
