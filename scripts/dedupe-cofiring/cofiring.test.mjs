@@ -32,7 +32,7 @@ import {
   setsWith,
   unsettledAcrossCoFiring,
 } from "./report.mjs";
-import { probeDeadline } from "./staging.mjs";
+import { engineDeclaresKind, engineDeclaresStatus, probeDeadline } from "./staging.mjs";
 
 let m;
 
@@ -118,6 +118,26 @@ describe("section 3.1, the load-staging errors", () => {
     const missingDays = probeDeadline({ type: "published_minimum" });
     expect(missingDays.unsupportedType).toBe(false);
     expect(missingDays.message).toContain("calendar_days");
+  });
+
+  test("the mapped kinds and statuses are the parser's verdict too", () => {
+    // Same class as the deadline types, and the same failure: the table's first error is raised by
+    // a deadline, so the engine declaring `certificate` or `CONDITIONAL` would leave every message
+    // in section 3.1 unchanged while this file went on rewriting a value the engine could read.
+    // `stagingSequence` already checks both mappings on every run; these are the two directions it
+    // checks, put to the parser here so the check itself is not the only thing asserting them.
+    for (const kind of ["conditional_requirement", "approval", "certificate"]) {
+      expect(engineDeclaresKind(kind)).toBe(false);
+    }
+    for (const kind of ["permit", "insurance", "prohibition", "advisory"]) {
+      expect(engineDeclaresKind(kind)).toBe(true);
+    }
+    for (const status of ["VERIFIED_WITH_QUALIFICATION", "CONDITIONAL"]) {
+      expect(engineDeclaresStatus(status)).toBe(false);
+    }
+    for (const status of ["VERIFIED", "RESEARCH_REQUIRED"]) {
+      expect(engineDeclaresStatus(status)).toBe(true);
+    }
   });
 
   test("six of the nine multi-member groups mix verification statuses", () => {

@@ -12,38 +12,89 @@ const clone = (value) => JSON.parse(JSON.stringify(value));
 const allRules = (ruleset) => [...ruleset.rules, ...ruleset.advisories];
 
 /**
- * What the engine's parser makes of one deadline, asked of the parser rather than of a list.
+ * Ask the engine's parser one question, by putting it to the parser.
  *
- * `parseDeadline` is not exported, so the question is put the only way the engine answers it: the
- * deadline is placed on a rule of the published control, which parses, and `parseEngineRuleset` is
- * run. The classification is then read off the parser's own message. A list would go stale in the
- * direction that matters here: the engine gaining a case for a later draft deadline type leaves the
- * initial parser error unchanged, because that error is raised by an earlier `conditional` deadline,
- * so a stale list would keep deleting the newly supported deadline while section 3.1 claimed a
+ * Three of this file's adaptations turn on what vocabulary the engine declares: deadline types, rule
+ * kinds and verification statuses. None of those tables is exported, and `parseDeadline`, `RULE_KINDS`
+ * and `VERIFICATION_STATUSES` are all module-private, so the only way to ask is to publish the value
+ * on a rule of the control, which parses cleanly, and run `parseEngineRuleset` over the result. The
+ * answer is the parser's own message, or `null` where it accepted the value.
+ *
+ * Restating any of the three as a literal set here would go stale in the one direction that matters:
+ * the first error in section 3.1's table is raised by an earlier `conditional` deadline, so the
+ * engine gaining a case for a later type, kind or status leaves every error in that table unchanged
+ * while a stale set kept adapting a value the engine could now read, and the document claimed a
  * parser gap that had closed.
  */
 const probeCache = new Map();
 
-export function probeDeadline(deadline) {
-  const key = JSON.stringify(deadline);
+function probeControl(key, publish) {
   const cached = probeCache.get(key);
   if (cached !== undefined) return cached;
 
   const probe = clone(loadControl());
-  probe.rules[0].output.deadline = clone(deadline);
-  let verdict = { supported: true, unsupportedType: false, message: null };
+  publish(probe.rules[0]);
+  let message = null;
   try {
     parseEngineRuleset(probe);
   } catch (thrown) {
-    const message = thrown instanceof Error ? thrown.message : String(thrown);
-    verdict = {
-      supported: false,
-      unsupportedType: message.includes("deadline.type has unsupported value"),
-      message,
-    };
+    message = thrown instanceof Error ? thrown.message : String(thrown);
   }
-  probeCache.set(key, verdict);
-  return verdict;
+  probeCache.set(key, message);
+  return message;
+}
+
+/** What the parser makes of one deadline: whether it parses, and if not, whether on its type. */
+export function probeDeadline(deadline) {
+  const message = probeControl(`deadline:${JSON.stringify(deadline)}`, (rule) => {
+    rule.output.deadline = clone(deadline);
+  });
+  return {
+    supported: message === null,
+    unsupportedType: message !== null && message.includes("deadline.type has unsupported value"),
+    message,
+  };
+}
+
+/**
+ * Whether the engine declares a rule kind or a verification status.
+ *
+ * The probe rule sits in a dedupe group, so publishing a status on it can fail the load on
+ * `rejectMixedDedupeVerificationStatuses` rather than on the vocabulary. The question asked is
+ * therefore the specific one: did the parser reject this value as undeclared? Any other complaint
+ * means the value itself was accepted.
+ */
+const declares = (label, key, value, publish) =>
+  !(probeControl(`${key}:${value}`, publish) ?? "").includes(
+    `${label} has unsupported value "${value}"`,
+  );
+
+export const engineDeclaresKind = (kind) =>
+  declares(".kind", "kind", kind, (rule) => {
+    rule.kind = kind;
+  });
+
+export const engineDeclaresStatus = (status) =>
+  declares("verification.status", "status", status, (rule) => {
+    rule.verification.status = status;
+  });
+
+/**
+ * Fail when a mapping this file applies has parted company with the engine's vocabulary, in either
+ * direction: a key the engine has since declared would still be rewritten, and a target the engine
+ * has since dropped would rewrite one undeclared value into another.
+ */
+function assertMapsUndeclaredOntoDeclared(mapping, declaresValue, what) {
+  for (const [from, to] of Object.entries(mapping)) {
+    if (declaresValue(from)) {
+      throw new Error(`the engine now declares the ${what} "${from}", so nothing needs mapping it`);
+    }
+    if (!declaresValue(to)) {
+      throw new Error(
+        `this file maps the ${what} "${from}" onto "${to}", which the engine rejects`,
+      );
+    }
+  }
 }
 
 /** Rewrite every trigger leaf that uses an operator the engine has no case for. */
@@ -93,6 +144,7 @@ export const ADAPTATIONS = [
     label: "map the verification statuses the engine does not declare onto statuses it does",
     apply: (ruleset) => {
       const mapping = { VERIFIED_WITH_QUALIFICATION: "VERIFIED", CONDITIONAL: "RESEARCH_REQUIRED" };
+      assertMapsUndeclaredOntoDeclared(mapping, engineDeclaresStatus, "verification status");
       const statusesMapped = {};
       for (const rule of allRules(ruleset)) {
         const status = rule.verification?.status;
@@ -113,6 +165,7 @@ export const ADAPTATIONS = [
         approval: "permit",
         certificate: "insurance",
       };
+      assertMapsUndeclaredOntoDeclared(mapping, engineDeclaresKind, "rule kind");
       const kindsMapped = {};
       for (const rule of allRules(ruleset)) {
         const mapped = mapping[rule.kind];

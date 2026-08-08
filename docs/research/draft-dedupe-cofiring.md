@@ -130,7 +130,9 @@ Each of the six dropped deadlines is put to `parseEngineRuleset` on its own, pla
 published control, and classified by the parser's own message; the four `published_minimum`
 deadlines land in the second class because the parser names `calendar_days` rather than the type,
 and a deadline the parser rejects for any third reason fails the run instead of being counted under
-a label that does not describe it. A literal set of supported types would have gone stale in the one
+a label that does not describe it. The same check now covers the two mappings below it: the three rule kinds and the two verification
+statuses this file rewrites are each confirmed undeclared by the parser, and each target confirmed
+declared, on every run. A literal set would have gone stale in the one
 direction that matters: the first row's error is raised by an earlier `conditional` deadline, so the
 engine gaining a case for `fixed_annual_date` would leave every error in this table unchanged while
 the set kept deleting a deadline the engine could now read, and section 3.1 would claim a parser gap
@@ -989,7 +991,7 @@ It is four modules and one suite, 2,245 lines together, of which `harness.mjs` i
 | `staging.mjs`       | the adaptations of section 3.1, applied to in-memory clones, each reporting what it touched                                                   |
 | `inventory.mjs`     | what the draft publishes, re-derived by parsing it: deadlines, permit names, output identity, blockers, mixed statuses, parser-visible output |
 | `report.mjs`        | one `measure()` call that produces every table, plus the printer                                                                              |
-| `cofiring.test.mjs` | 78 test cases, one or more per published figure                                                                                               |
+| `cofiring.test.mjs` | 79 test cases, one or more per published figure                                                                                               |
 
 Every table maps to a `describe` block with the same number:
 
