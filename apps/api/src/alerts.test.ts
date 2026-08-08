@@ -6757,6 +6757,138 @@ describe.skipIf(databaseUrl === "")("F-203 deadline alerts", () => {
     });
 
     /**
+     * #252 P1: A ROUTE'S REMINDER TOOK THE MERGED LINE'S GRAMMAR.
+     *
+     * `subjectFromRoute` copied the route's name, agency, deadline, dates, fee and portal onto the
+     * scheduling subject and left `disposition` as the merged line's. `isSettledRequirement` reads
+     * that column, so the reminder's sentence came from the GROUP while every noun in it came from
+     * ONE route. Both directions are wrong and both are reachable: a `may_be_required` route
+     * reminded imperatively invents a requirement the ruleset hedges, and a `required` route
+     * reminded as "may be required" softens one it states.
+     *
+     * `verification_status` is deliberately still the group's: `rejectMixedDedupeVerificationStatuses`
+     * refuses at load any dedupe key that mixes them, so it is a constant within a group and there
+     * is no per-route value to take.
+     */
+    it("gives each route's reminder that route's own disposition, not the line's (#252)", async () => {
+      const eventId = await createEvent(scenario("C"));
+      const planId = randomUUID();
+      const itemId = randomUUID();
+      const applyBy = dayFromToday(9);
+      const hedgedApplyBy = dayFromToday(12);
+      const route = (overrides: Record<string, unknown>) => ({
+        triggerResult: "true",
+        unknownFields: [],
+        agency: "NYPD",
+        deadline: null,
+        deadlineDisplay: null,
+        latestApplyDate: null,
+        applyAfterDate: null,
+        deadlineStatus: "not_applicable",
+        slackDays: null,
+        feeDisplay: null,
+        portalName: null,
+        portalUrl: null,
+        portalInstructions: null,
+        ...overrides,
+      });
+      await pool.query(
+        `INSERT INTO permit_plans (id, event_id, event_revision, ruleset_version, snapshot_date,
+                                   verdict, verdict_detail, intake_snapshot, generated_at)
+         VALUES ($1, $2, 1, $3, $4, 'conditional', $5::jsonb, '{}'::jsonb, current_timestamp)`,
+        [
+          planId,
+          eventId,
+          ruleset.rulesetVersion,
+          ruleset.snapshotDate,
+          JSON.stringify({
+            today: todayInJurisdiction("US-NY-NYC"),
+            minSlackDays: null,
+            finding_renderings: [
+              {
+                rule_ids: ["NYPD-SOUND-001", "PARKS-EVENT-001"],
+                notes: [],
+                note_text: null,
+                conflict_text: null,
+                deadline_display: null,
+                slack_days: null,
+                deadline_unknown_fields: [],
+                timeline_unresolved_reason: null,
+                portal_instructions: null,
+                headline_mode: "applies_together",
+                routes: [
+                  route({
+                    ruleId: "NYPD-SOUND-001",
+                    disposition: "required",
+                    name: "Sound Device Permit",
+                    latestApplyDate: applyBy,
+                    deadlineStatus: "deadline_approaching",
+                  }),
+                  route({
+                    ruleId: "PARKS-EVENT-001",
+                    disposition: "may_be_required",
+                    name: "Special Event Permit",
+                    latestApplyDate: hedgedApplyBy,
+                    deadlineStatus: "deadline_approaching",
+                  }),
+                ],
+              },
+            ],
+          }),
+        ],
+      );
+      // The merged line's own disposition is the strongest any route offers: `required`.
+      await pool.query(
+        `INSERT INTO permit_plan_items (id, plan_id, rule_ids, triggered_by, permit_name, agency,
+                                        latest_apply_date, sources, kind, disposition,
+                                        deadline_status, verification_status)
+         VALUES ($1, $2, ARRAY['NYPD-SOUND-001','PARKS-EVENT-001'], '[]'::jsonb,
+                 'Sound Device Permit', 'NYPD', $3, '[]'::jsonb, 'permit', 'required',
+                 'deadline_approaching', 'SOURCE_CONFIRMED')`,
+        [itemId, planId, applyBy],
+      );
+      await pool.query(
+        "INSERT INTO checklist_items (id, plan_item_id, cohort_position) VALUES ($1, $2, 0)",
+        [randomUUID(), itemId],
+      );
+
+      const client = await pool.connect();
+      try {
+        await schedulerWith()(client, eventId, planId, {
+          email: "organizer@example.test",
+          phone: null,
+        });
+      } finally {
+        client.release();
+      }
+
+      const reminders = (await alertsOf(eventId)).filter(
+        (row) => row.alert_type === "deadline_reminder",
+      );
+      const hedged = reminders.filter((row) =>
+        String(row.payload.body).includes("Special Event Permit"),
+      );
+      const settled = reminders.filter((row) =>
+        String(row.payload.body).includes("Sound Device Permit"),
+      );
+      expect(hedged.length).toBeGreaterThan(0);
+      expect(settled.length).toBeGreaterThan(0);
+      // The hedged route keeps the ruleset's hedge, and quotes its OWN date inside it.
+      for (const row of hedged) {
+        expect(row.payload.body).toContain(
+          `Special Event Permit (NYPD) may be required for your event. If it applies, file by ${hedgedApplyBy}.`,
+        );
+      }
+      // The settled route keeps the imperative, and quotes its own date.
+      for (const row of settled) {
+        expect(row.payload.body).toContain(
+          `Sound Device Permit (NYPD): file by ${applyBy}.`,
+        );
+        expect(row.payload.body).not.toContain("may be required");
+      }
+    });
+
+    /**
      * #252 P1: A REMINDER IS DELIVERED TWICE WHEN A MERGED LINE GAINS A SECOND DATED ROUTE.
      *
      * The route entered a reminder's identity only while the row scheduled from more than ONE
@@ -7028,11 +7160,21 @@ describe.skipIf(databaseUrl === "")("F-203 deadline alerts", () => {
                 routes: [
                   // The gated route: an open-on date and NO published filing deadline, so it has
                   // no window of its own to record and none that can shut.
+                  //
+                  // YESTERDAY, NOT TODAY, AND THE DIFFERENCE IS THE WALL CLOCK. An unlock is due at
+                  // `SEND_HOUR_LOCAL` on its open-on day and `dueAt` only clamps to now once that
+                  // slot has gone, so an open-on date of TODAY schedules `send_at` at 09:00
+                  // America/New_York today. The poller claims on `send_at <= statement_timestamp()`,
+                  // so a suite starting before 09:00 there left the row 'pending' and the last
+                  // assertion failed — deterministically, on the clock rather than on the code under
+                  // test. Yesterday's gate is clamped to now, is due the moment it is written, and
+                  // asserts the same thing: this unlock is route-scheduled and is not retired by the
+                  // other route's shut window.
                   route({
                     ruleId: "NYPD-SOUND-001",
                     disposition: "required",
                     name: "Sound Device Permit",
-                    applyAfterDate: dayFromToday(0),
+                    applyAfterDate: dayFromToday(-1),
                   }),
                   route({
                     ruleId: "PARKS-EVENT-001",
@@ -7075,8 +7217,10 @@ describe.skipIf(databaseUrl === "")("F-203 deadline alerts", () => {
         (row) => row.alert_type === "dependency_unlocked",
       );
       expect(unlock).toBeDefined();
-      // It has no window of its own, so it records none, and it says it is route-scheduled.
-      expect(unlock?.payload.controlling_apply_by).toBeUndefined();
+      // It has no window of its own, so it records none, and it says it is route-scheduled. The
+      // key is WRITTEN as null rather than left off: the upsert MERGES payloads, so an absent key
+      // cannot clear a date an earlier generation wrote.
+      expect(unlock?.payload.controlling_apply_by).toBeNull();
       expect(unlock?.payload.route_scheduled).toBe(true);
 
       // The predicate, asked directly, about a day after the OTHER route's window shut. Before the
@@ -7098,6 +7242,293 @@ describe.skipIf(databaseUrl === "")("F-203 deadline alerts", () => {
         (row) => row.alert_type === "dependency_unlocked",
       );
       expect(afterTick?.status).toBe("sent");
+    });
+
+    /**
+     * #252 P1: A ROUTE THAT LOSES ITS WINDOW KEPT THE WINDOW IT NO LONGER PUBLISHES.
+     *
+     * `controlling_apply_by` was written only where the route HAD a `latestApplyDate`, and the
+     * upsert MERGES payloads rather than replacing them. So a route that published a window on one
+     * generation and none on the next left the old date in place: `FILING_WINDOW_HAS_SHUT` then
+     * answered off a window the plan no longer publishes, and the poller cancelled a live alert.
+     *
+     * F-203 Outputs suppresses on a date that has GONE, never on the ABSENCE of one — the same
+     * distinction the unlock guard above already draws. Writing the key as null says "this route
+     * publishes no window" in a way an absent key cannot, because an absent key is what the merge
+     * reads as "unchanged".
+     *
+     * Driven end to end through the real poller, with the first generation's clock set back so its
+     * window is genuinely behind by the time the second generation runs.
+     */
+    it("clears a route's controlling window when the route stops publishing one (#252)", async () => {
+      const eventId = await createEvent(scenario("C"));
+      const checklistItemId = randomUUID();
+      const openedOn = dayFromToday(-4);
+      // Open when the first generation ran, gone by the time the second one does.
+      const shutSince = dayFromToday(-3);
+      const stillOpen = dayFromToday(20);
+      const route = (overrides: Record<string, unknown>) => ({
+        triggerResult: "true",
+        unknownFields: [],
+        agency: "NYPD",
+        deadline: null,
+        deadlineDisplay: null,
+        latestApplyDate: null,
+        applyAfterDate: null,
+        deadlineStatus: "not_applicable",
+        slackDays: null,
+        feeDisplay: null,
+        portalName: null,
+        portalUrl: null,
+        portalInstructions: null,
+        ...overrides,
+      });
+      const generate = async (gatedApplyBy: string | null, at: () => Date): Promise<void> => {
+        const planId = randomUUID();
+        const itemId = randomUUID();
+        await pool.query(
+          `INSERT INTO permit_plans (id, event_id, event_revision, ruleset_version, snapshot_date,
+                                     verdict, verdict_detail, intake_snapshot, generated_at)
+           VALUES ($1, $2, 1, $3, $4, 'conditional', $5::jsonb, '{}'::jsonb, current_timestamp)`,
+          [
+            planId,
+            eventId,
+            ruleset.rulesetVersion,
+            ruleset.snapshotDate,
+            JSON.stringify({
+              today: todayInJurisdiction("US-NY-NYC"),
+              minSlackDays: null,
+              finding_renderings: [
+                {
+                  rule_ids: ["NYPD-SOUND-001", "PARKS-EVENT-001"],
+                  notes: [],
+                  note_text: null,
+                  conflict_text: null,
+                  deadline_display: null,
+                  slack_days: null,
+                  deadline_unknown_fields: [],
+                  timeline_unresolved_reason: null,
+                  portal_instructions: null,
+                  headline_mode: "applies_together",
+                  routes: [
+                    route({
+                      ruleId: "NYPD-SOUND-001",
+                      disposition: "required",
+                      name: "Sound Device Permit",
+                      applyAfterDate: openedOn,
+                      latestApplyDate: gatedApplyBy,
+                    }),
+                    route({
+                      ruleId: "PARKS-EVENT-001",
+                      disposition: "required",
+                      name: "Special Event Permit",
+                      latestApplyDate: stillOpen,
+                    }),
+                  ],
+                },
+              ],
+            }),
+          ],
+        );
+        // The merged line reads the OTHER route's window, which is still open throughout. So
+        // nothing but the payload can retire the gated route's unlock.
+        await pool.query(
+          `INSERT INTO permit_plan_items (id, plan_id, rule_ids, triggered_by, permit_name, agency,
+                                          latest_apply_date, sources, kind, disposition,
+                                          deadline_status, verification_status)
+           VALUES ($1, $2, ARRAY['NYPD-SOUND-001','PARKS-EVENT-001'], '[]'::jsonb,
+                   'Special Event Permit', 'NYPD', $3, '[]'::jsonb, 'permit', 'required',
+                   'on_track', 'SOURCE_CONFIRMED')`,
+          [itemId, planId, stillOpen],
+        );
+        await pool.query(
+          `INSERT INTO checklist_items (id, plan_item_id, cohort_position) VALUES ($1, $2, 0)
+             ON CONFLICT (id) DO UPDATE SET plan_item_id = EXCLUDED.plan_item_id`,
+          [checklistItemId, itemId],
+        );
+        const client = await pool.connect();
+        try {
+          await schedulerWith(at)(client, eventId, planId, {
+            email: "organizer@example.test",
+            phone: null,
+          });
+        } finally {
+          client.release();
+        }
+      };
+
+      // Generation one, five days ago: the gated route published a window that was open then.
+      await generate(shutSince, () => new Date(`${dayFromToday(-5)}T13:00:00Z`));
+      const first = (await alertsOf(eventId)).find(
+        (row) => row.alert_type === "dependency_unlocked",
+      );
+      expect(first?.payload.controlling_apply_by).toBe(shutSince);
+
+      // Generation two, today: the route publishes no window at all any more.
+      await generate(null, () => new Date());
+      const second = (await alertsOf(eventId)).find(
+        (row) => row.alert_type === "dependency_unlocked",
+      );
+      expect(second?.id).toBe(first?.id);
+      expect(second?.status).toBe("pending");
+      // The window the plan no longer publishes is no longer on the row.
+      expect(second?.payload.controlling_apply_by).toBeNull();
+      const { rows } = await pool.query<{ shut: boolean }>(
+        `SELECT ${FILING_WINDOW_HAS_SHUT("$2")} AS shut FROM alerts WHERE id = $1`,
+        [second?.id, dayFromToday(0)],
+      );
+      expect(rows[0]?.shut).toBe(false);
+
+      // And the poller delivers it rather than cancelling it on a window that has gone away.
+      const provider = fakeProvider();
+      await createAlertPoller({
+        database: pool,
+        senders: provider.senders,
+        jurisdiction: ruleset.jurisdiction,
+      }).tick();
+      const delivered = (await alertsOf(eventId)).find(
+        (row) => row.alert_type === "dependency_unlocked",
+      );
+      expect(delivered?.status).toBe("sent");
+      expect(provider.attempts.map((message) => message.subject)).toContain(
+        second?.payload.subject,
+      );
+    });
+
+    /**
+     * #252 P1: THE DEPLOY BOUNDARY DELIVERED EVERY MERGED LINE'S REMINDER TWICE.
+     *
+     * A plan generated BEFORE this branch stores no route list, so `alertSubjects` returns the
+     * merged line itself and its reminders are keyed without a route. The first regeneration after
+     * the deploy stores routes, expands the same line into them, and re-keys every reminder the
+     * line already owned. The reconciler will not touch a `sent` row, so the route-keyed row is
+     * INSERTED and delivered — byte-identical subject and body, to the same recipient, twice.
+     *
+     * Same duplicate the 1-to-2 test above pins, arriving through the deploy boundary instead of
+     * through a regeneration. Latent on `nyc.v2.11` only because `holidays: null` leaves
+     * DOB-TENT-001 undatable; publishing the holiday list arms it.
+     *
+     * Seeded the old way, regenerated, and asserted on what the PROVIDER received.
+     */
+    it("does not re-deliver a merged line's reminder across the route-list deploy (#252)", async () => {
+      const eventId = await createEvent(scenario("C"));
+      const checklistItemId = randomUUID();
+      const bindingApplyBy = dayFromToday(3);
+      const otherApplyBy = dayFromToday(5);
+      const route = (overrides: Record<string, unknown>) => ({
+        triggerResult: "true",
+        unknownFields: [],
+        agency: "NYPD",
+        deadline: null,
+        deadlineDisplay: null,
+        latestApplyDate: null,
+        applyAfterDate: null,
+        deadlineStatus: "on_track",
+        slackDays: null,
+        feeDisplay: null,
+        portalName: null,
+        portalUrl: null,
+        portalInstructions: null,
+        ...overrides,
+      });
+      /** `routes: undefined` is a plan written before this branch existed. */
+      const generate = async (routes: unknown[] | undefined): Promise<void> => {
+        const planId = randomUUID();
+        const itemId = randomUUID();
+        await pool.query(
+          `INSERT INTO permit_plans (id, event_id, event_revision, ruleset_version, snapshot_date,
+                                     verdict, verdict_detail, intake_snapshot, generated_at)
+           VALUES ($1, $2, 1, $3, $4, 'feasible', $5::jsonb, '{}'::jsonb, current_timestamp)`,
+          [
+            planId,
+            eventId,
+            ruleset.rulesetVersion,
+            ruleset.snapshotDate,
+            JSON.stringify({
+              today: todayInJurisdiction("US-NY-NYC"),
+              minSlackDays: null,
+              finding_renderings: [
+                {
+                  rule_ids: ["NYPD-SOUND-001", "PARKS-EVENT-001"],
+                  notes: [],
+                  note_text: null,
+                  conflict_text: null,
+                  deadline_display: null,
+                  slack_days: null,
+                  deadline_unknown_fields: [],
+                  timeline_unresolved_reason: null,
+                  portal_instructions: null,
+                  ...(routes === undefined ? {} : { headline_mode: "applies_together", routes }),
+                },
+              ],
+            }),
+          ],
+        );
+        // The line's own columns are the binding route's, before and after, which is what makes
+        // the pre-deploy reminder and the post-deploy binding route's reminder the same words.
+        await pool.query(
+          `INSERT INTO permit_plan_items (id, plan_id, rule_ids, triggered_by, permit_name, agency,
+                                          latest_apply_date, sources, kind, disposition,
+                                          deadline_status, verification_status)
+           VALUES ($1, $2, ARRAY['NYPD-SOUND-001','PARKS-EVENT-001'], '[]'::jsonb,
+                   'Sound Device Permit', 'NYPD', $3, '[]'::jsonb, 'permit', 'required',
+                   'on_track', 'SOURCE_CONFIRMED')`,
+          [itemId, planId, bindingApplyBy],
+        );
+        await pool.query(
+          `INSERT INTO checklist_items (id, plan_item_id, cohort_position) VALUES ($1, $2, 0)
+             ON CONFLICT (id) DO UPDATE SET plan_item_id = EXCLUDED.plan_item_id`,
+          [checklistItemId, itemId],
+        );
+        const client = await pool.connect();
+        try {
+          await schedulerWith()(client, eventId, planId, {
+            email: "organizer@example.test",
+            phone: null,
+          });
+        } finally {
+          client.release();
+        }
+      };
+
+      const provider = fakeProvider();
+      const tick = async (): Promise<void> => {
+        await createAlertPoller({
+          database: pool,
+          senders: provider.senders,
+          jurisdiction: ruleset.jurisdiction,
+        }).tick();
+      };
+
+      // Before the deploy: no route list, reminders keyed without a route, and delivered.
+      await generate(undefined);
+      await tick();
+      const deliveredBefore = provider.attempts.length;
+      expect(deliveredBefore).toBeGreaterThan(0);
+
+      // After the deploy: the same line, now carrying its routes.
+      await generate([
+        route({
+          ruleId: "NYPD-SOUND-001",
+          disposition: "required",
+          name: "Sound Device Permit",
+          latestApplyDate: bindingApplyBy,
+        }),
+        route({
+          ruleId: "PARKS-EVENT-001",
+          disposition: "required",
+          name: "Special Event Permit",
+          latestApplyDate: otherApplyBy,
+        }),
+      ]);
+      await tick();
+
+      const sent = provider.attempts.map((message) => `${message.subject} ${message.body}`);
+      expect(new Set(sent).size).toBe(sent.length);
+      // Not vacuous: the second route is genuinely new work and really was delivered.
+      expect(provider.attempts.some((message) => message.subject.includes("Special Event"))).toBe(
+        true,
+      );
     });
 
     it("still warns about slack while a filing date is ahead", async () => {

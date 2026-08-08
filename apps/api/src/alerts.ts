@@ -903,8 +903,14 @@ type PlannedAlert = {
    *
    * Everything else still hangs off an item whose own `latest_apply_date` IS its window, which is
    * live rather than a snapshot, so it stays unset there.
+   *
+   * `null` is a VALUE here and `undefined` is the absence of one, and the two mean different things
+   * to the upsert: it merges payloads, so only an explicit null can clear a date an earlier
+   * generation wrote. A producer that controls this field writes null where its subject publishes
+   * no window; a producer that does not control it leaves the field undefined and the key is never
+   * written at all.
    */
-  readonly controllingApplyBy?: string;
+  readonly controllingApplyBy?: string | null;
   /**
    * That this alert was scheduled off ONE route of a merged dedupe line, whether or not that route
    * published a window to record above.
@@ -931,6 +937,29 @@ type PlannedAlert = {
    * intent for it to differ from.
    */
   readonly intendedAt?: string;
+  /**
+   * The identity this same alert had BEFORE plans stored route lists, for a route-keyed alert only.
+   *
+   * THE DEPLOY BOUNDARY IS A RE-KEYING, and a re-keying is how this file delivers something twice.
+   * A plan generated before the route list existed carries none, so `alertSubjects` returns the
+   * merged line itself and its reminders are keyed without a route. The first regeneration after
+   * the deploy expands that same line into its routes and keys each one, the reconciler will not
+   * touch a `sent` row, and the route-keyed row is INSERTED and delivered — the same subject and
+   * the same body to the same recipient, twice. That is the identical duplicate a merged line's
+   * dated-route count crossing 1 to 2 produced, arriving through the deploy instead of through a
+   * regeneration, and F-203 AC 7 forbids it just the same.
+   *
+   * So the row that already said those words is given the key of the alert that would say them
+   * again, once, before the upsert runs. Matched on the STORED SUBJECT rather than on which route
+   * is binding, because binding is not stable across generations and the subject is the thing the
+   * organizer would receive a second time: whichever route reproduces the words, that is the alert
+   * the old row is. Where no route reproduces them, nothing is adopted and nothing is duplicated,
+   * because nothing is about to be sent in those words at all.
+   *
+   * Self-limiting. After one regeneration every row on the line is route-keyed, no legacy key
+   * remains to match, and the adoption is a no-op for the rest of the deployment's life.
+   */
+  readonly legacyIdentity?: string;
 };
 
 const isoDate = (value: Date | string | null): string | null =>
@@ -1042,6 +1071,18 @@ const subjectFromRoute = (
     fee_display: route.feeDisplay,
     portal_name: route.portalName,
     portal_url: route.portalUrl,
+    // THE GRAMMAR COMES FROM THE SAME ROUTE AS THE NOUNS. `isSettledRequirement` reads this column
+    // to choose between "file by <date>" and "may be required ... if it applies", and leaving the
+    // merged line's value here paired ONE route's name and date with the GROUP's certainty. The
+    // group's disposition is the strongest any route offers, so a `may_be_required` route was
+    // reminded imperatively wherever any sibling was `required` — PopEngine asserting a requirement
+    // the ruleset hedges — and a `required` route was softened to "may be required" wherever the
+    // group's headline was capped by an unresolved sibling.
+    //
+    // `verification_status` is NOT taken per route, and that is not an omission:
+    // `rejectMixedDedupeVerificationStatuses` refuses at load any dedupe key whose members mix
+    // statuses, so the group's value is the route's value and `FindingRoute` carries none.
+    disposition: route.disposition,
   },
   rendering:
     rendering === undefined
@@ -1563,13 +1604,16 @@ async function plannedAlerts(
       // route-scheduled at all. The second half carries the cases the first cannot: a route with a
       // gate and no filing deadline has no date to record and still must not be answered for by
       // another route's. See `PlannedAlert.controllingApplyBy` and `routeScheduled`.
+      //
+      // WRITTEN AS null WHERE THERE IS NO WINDOW, NOT OMITTED, because the upsert MERGES payloads
+      // and an absent key is what a merge reads as "unchanged". A route that published a window on
+      // one generation and none on the next kept the old date, `FILING_WINDOW_HAS_SHUT` answered
+      // off a window the plan no longer publishes, and a live alert was cancelled. F-203's Outputs
+      // suppress on a date that has GONE, never on the ABSENCE of one.
       const routeApplyBy =
         routeRuleId === null
           ? {}
-          : {
-              routeScheduled: true as const,
-              ...(applyBy !== null ? { controllingApplyBy: applyBy } : {}),
-            };
+          : { routeScheduled: true as const, controllingApplyBy: applyBy };
 
       const openOn = isoDate(row.apply_after_date);
       const binding = DEPENDENCY_SEQUENCING_BINDINGS.find(
@@ -1635,6 +1679,13 @@ async function plannedAlerts(
             // WHICH ROUTE joins it on every merged row, whatever the row's dated-route count is on
             // the day it is generated. An unmerged row adds nothing and keeps the key it had.
             identity: `${row.checklist_item_id}:deadline_reminder:${daysBefore}${routeKey}`,
+            // The key this same reminder had on a plan written before route lists existed. See
+            // `PlannedAlert.legacyIdentity`.
+            ...(routeKey === ""
+              ? {}
+              : {
+                  legacyIdentity: `${row.checklist_item_id}:deadline_reminder:${daysBefore}`,
+                }),
           });
         }
       }
@@ -1686,6 +1737,9 @@ async function plannedAlerts(
           // organizer was told a second time that they may now pursue something they had already
           // been told was open.
           identity: `${row.checklist_item_id}:dependency_unlocked${routeKey}`,
+          ...(routeKey === ""
+            ? {}
+            : { legacyIdentity: `${row.checklist_item_id}:dependency_unlocked` }),
         });
       }
     }
@@ -2096,6 +2150,21 @@ export function createAlertScheduler(settings: AlertSchedulerSettings): AlertSch
         const recipient = recipientFor(contacts, channel) ?? "";
         const key = idempotencyKey(eventId, alert.identity, channel, recipient);
         keys.push(key);
+        // THE ROW THAT ALREADY SAID THESE WORDS TAKES THIS KEY, before the upsert can mint a second
+        // one beside it. `legacyIdentity` explains why the boundary exists; what it needs here is
+        // one statement. The subject match is the whole test: this row is about to be delivered
+        // saying exactly what that row was delivered saying, so they are one alert and one of them
+        // has already gone out. `NOT EXISTS` because two routes of one line can publish the same
+        // name and the same window, and only the first of them may adopt.
+        if (alert.legacyIdentity !== undefined) {
+          await client.query(
+            `UPDATE alerts SET idempotency_key = $2
+              WHERE idempotency_key = $1
+                AND payload->>'subject' = $3
+                AND NOT EXISTS (SELECT 1 FROM alerts held WHERE held.idempotency_key = $2)`,
+            [idempotencyKey(eventId, alert.legacyIdentity, channel, recipient), key, alert.subject],
+          );
+        }
         const { rows } = await client.query<{ id: string; inserted: boolean; revived: boolean }>(
           // The status BEFORE this statement, which `RETURNING` cannot see: it returns the row as
           // written, and a revival is only recognisable by what the row was. Read in a CTE, so it
