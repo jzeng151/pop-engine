@@ -32,6 +32,7 @@ import {
   setsWith,
   unsettledAcrossCoFiring,
 } from "./report.mjs";
+import { probeDeadline } from "./staging.mjs";
 
 let m;
 
@@ -89,6 +90,34 @@ describe("section 3.1, the load-staging errors", () => {
     expect(m.staging[3].changed).toEqual({
       kindsMapped: { conditional_requirement: 4, approval: 1, certificate: 1 },
     });
+  });
+
+  test("the unsupported deadline types are the parser's verdict, not a list", () => {
+    // The classification is only as good as its tie to the parser. Every type the table reports as
+    // unsupported is rejected by `parseEngineRuleset` on that exact ground, and a type the engine
+    // does have a case for is not reported, so an engine that gains a case for a later draft
+    // deadline type stops it being classified and deleted here on the same commit.
+    const reported = Object.keys(m.staging[1].changed.deadlinesDropped.byUnsupportedType);
+    expect(reported.sort()).toEqual([
+      "conditional",
+      "dependency",
+      "fixed_annual_date",
+      "official_conflict",
+    ]);
+    for (const type of reported) expect(probeDeadline({ type }).unsupportedType).toBe(true);
+
+    expect(probeDeadline({ type: "published_minimum", calendar_days: 30 }).supported).toBe(true);
+    expect(probeDeadline({ type: "before_issuance" }).supported).toBe(true);
+    expect(probeDeadline({ type: "research_required" }).supported).toBe(true);
+    expect(probeDeadline({ type: "business_days_minimum", business_days: 10 }).supported).toBe(
+      true,
+    );
+
+    // The second class is the parser's too: a `published_minimum` with no `calendar_days` fails on
+    // the field, not on the type.
+    const missingDays = probeDeadline({ type: "published_minimum" });
+    expect(missingDays.unsupportedType).toBe(false);
+    expect(missingDays.message).toContain("calendar_days");
   });
 
   test("six of the nine multi-member groups mix verification statuses", () => {
@@ -232,6 +261,27 @@ describe("section 3.2, what the harness supplies", () => {
 });
 
 describe("section 3.3, the sweep", () => {
+  test("the draft's declared intake surface, and the factorial it makes unenumerable", () => {
+    // The section opens on these figures, and nothing else in the suite reads an intake field the
+    // draft declares but no rule uses, so without this an added or removed unused field left every
+    // published number green while the inventory went stale.
+    const draft = m.inventory.intakeFieldInventory(m.draft);
+    expect(draft.fields).toBe(63);
+    expect(draft.byType).toEqual({
+      enum: 29,
+      boolean: 12,
+      multi_enum: 2,
+      integer: 10,
+      number: 7,
+      date: 2,
+      string: 1,
+    });
+    expect(draft.factorialFields).toBe(43);
+    expect(draft.combinations).toBe(17_656_085_622_407_823_360_000_000_000n);
+    expect(Number(draft.combinations) / 1e28).toBeCloseTo(1.77, 2);
+    expect(m.inventory.intakeFieldInventory(loadControl()).fields).toBe(33);
+  });
+
   test("a multi_enum domain is its valid selections, not its power set", () => {
     // `validateIntake` rejects the empty selection and any selection combining `none` with another
     // value (`packages/engine/src/intake/validate.ts:88-101`).
@@ -272,6 +322,44 @@ describe("section 3.3, the sweep", () => {
     ]);
     expect(domain).toEqual([19, 20, 21]);
     expect(domain.every((value) => admits(value))).toBe(true);
+  });
+
+  test("the hand-set area domain is checked against the thresholds it is there to bracket", () => {
+    // `structure_length_ft` and `structure_width_ft` are swept over hand-set factors because the
+    // thresholds are on their product. The factors are a choice, so what makes the choice sound is
+    // that the products still straddle every published area threshold. A threshold that moved
+    // without crossing a product would otherwise leave the distributions identical while the
+    // at-threshold case stopped being swept, so the domain fails rather than going quietly stale.
+    const factors = { type: "number", nullable: true };
+    const readingArea = (op, value) => [{ trigger: { field: "structure_area_sqft", op, value } }];
+
+    expect(domainFor("structure_length_ft", factors, readingArea("gt", 400))).toEqual([
+      10,
+      12,
+      20,
+      21,
+      null,
+    ]);
+    expect(domainFor("structure_width_ft", factors, readingArea("gte", 120))).toEqual([
+      10,
+      12,
+      20,
+      21,
+      null,
+    ]);
+
+    // 401 is between the products 400 and 420, so nothing in the sweep sits on it.
+    expect(() => domainFor("structure_length_ft", factors, readingArea("gt", 401))).toThrow(
+      /is at the "structure_area_sqft" threshold 401/,
+    );
+    // 441 is the largest product, so no swept structure is above it.
+    expect(() => domainFor("structure_length_ft", factors, readingArea("gt", 441))).toThrow(
+      /is above the "structure_area_sqft" threshold 441/,
+    );
+    // 100 is the smallest product, so no swept structure is below it.
+    expect(() => domainFor("structure_length_ft", factors, readingArea("gte", 100))).toThrow(
+      /is below the "structure_area_sqft" threshold 100/,
+    );
   });
 });
 
@@ -459,6 +547,44 @@ describe("section 5, the co-firing sets", () => {
     });
   });
 
+  test("5.1 which dimension each `sapo_permit` member is keyed on", () => {
+    // The section's opening sentence. Every member reads `sapo_event_type`; the three size-specific
+    // street rules also read `street_event_size`; all six plaza rules also read `plaza_level` and
+    // `plaza_size`, and only four of the six read `plaza_block_count`.
+    expect(
+      Object.fromEntries(
+        m.inventory
+          .triggerFieldsByMember(m.draft, "sapo_permit")
+          .map((member) => [member.id, member.fields]),
+      ),
+    ).toEqual({
+      "SAPO-STREET-SMALL-001": ["sapo_event_type", "street_event_size"],
+      "SAPO-STREET-MEDIUM-001": ["sapo_event_type", "street_event_size"],
+      "SAPO-STREET-LARGE-001": ["sapo_event_type", "street_event_size"],
+      "SAPO-STREET-EXTRA-LARGE-001": ["sapo_event_type"],
+      "SAPO-PRODUCTION-001": ["sapo_event_type"],
+      "SAPO-BLOCK-PARTY-001": ["sapo_event_type"],
+      "SAPO-SINGLE-BLOCK-FESTIVAL-001": ["sapo_event_type"],
+      "SAPO-STREET-FESTIVAL-001": ["sapo_event_type"],
+      "SAPO-PLAZA-A-ONE-001": ["sapo_event_type", "plaza_level", "plaza_block_count", "plaza_size"],
+      "SAPO-PLAZA-B-ONE-001": ["sapo_event_type", "plaza_level", "plaza_block_count", "plaza_size"],
+      "SAPO-PLAZA-B-MULTI-001": [
+        "sapo_event_type",
+        "plaza_level",
+        "plaza_block_count",
+        "plaza_size",
+      ],
+      "SAPO-PLAZA-C-001": ["sapo_event_type", "plaza_level", "plaza_size"],
+      "SAPO-PLAZA-D-001": ["sapo_event_type", "plaza_level", "plaza_size"],
+      "SAPO-PLAZA-A-MULTI-001": [
+        "sapo_event_type",
+        "plaza_level",
+        "plaza_block_count",
+        "plaza_size",
+      ],
+    });
+  });
+
   test("5.1 the SAPO inventory, re-derived by parsing the draft", () => {
     const sapo = m.inventory.sapoPermitInventory(m.draft);
     expect(sapo.calendarDayValues.map((entry) => entry.calendarDays)).toEqual([
@@ -589,33 +715,60 @@ describe("section 5, the co-firing sets", () => {
 });
 
 describe("section 6, the blocker-plus-window shape", () => {
-  test("the draft publishes four blockers, all `kind: eligibility`", () => {
+  test("the draft publishes four blockers, all `kind: prohibition`", () => {
     expect(m.inventory.blockingRules(m.draft)).toEqual([
       {
         id: "SAPO-BLOCK-PARTY-INELIGIBLE-001",
-        kind: "eligibility",
+        kind: "prohibition",
         dedupeKey: "block_party_eligibility",
         members: 2,
       },
       {
         id: "SAPO-ALCOHOL-PROHIBITION-001",
-        kind: "eligibility",
+        kind: "prohibition",
         dedupeKey: "sapo_alcohol",
         members: 1,
       },
       {
         id: "NYPD-SOUND-COMMERCIAL-ADVERTISING-PROHIBITED-001",
-        kind: "eligibility",
+        kind: "prohibition",
         dedupeKey: "nypd_sound",
         members: 4,
       },
       {
         id: "PARKS-PROPANE-PROHIBITION-001",
-        kind: "eligibility",
+        kind: "prohibition",
         dedupeKey: "parks_propane",
         members: 1,
       },
     ]);
+  });
+
+  test("each blocker's disposition is the engine's own default for `prohibition`", () => {
+    // Section 6 turns on which route binds a merged line's identity, and that is decided by the
+    // dispositions, not by the kinds. Both are read from the engine here rather than restated, so
+    // the draft moving a rule's kind or the engine moving its default table moves this instead of
+    // leaving the section describing a mapping that no longer exists. It is what PR #254's
+    // reclassification did: under `kind: eligibility` all four defaulted to `may_be_required`.
+    for (const blocker of m.inventory.blockingRules(m.draft)) {
+      const parsed = m.inventory.parserVisibleOutput(m.draft, blocker.id);
+      expect(parsed.publishedDisposition).toBeNull();
+      expect(parsed.effectiveDisposition).toBe("prohibited_or_ineligible");
+    }
+  });
+
+  test("the prohibition now outranks the sound permits it co-fires with", () => {
+    const prohibition = m.inventory.parserVisibleOutput(
+      m.draft,
+      "NYPD-SOUND-COMMERCIAL-ADVERTISING-PROHIBITED-001",
+    ).effectiveDisposition;
+    for (const permitId of ["NYPD-SOUND-PUBLIC-001", "NYPD-SOUND-PRIVATE-AUDIBLE-001"]) {
+      const permit = m.inventory.parserVisibleOutput(m.draft, permitId);
+      expect(permit.effectiveDisposition).toBe("required");
+      expect(m.inventory.strongerDisposition(prohibition, permit.effectiveDisposition)).toBe(
+        prohibition,
+      );
+    }
   });
 
   test("the prohibition co-fires `unknown`-side on a further 28 intakes", () => {

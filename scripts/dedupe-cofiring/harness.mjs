@@ -276,11 +276,62 @@ export function assertDerivedValuesMatchDraft(artifact) {
   }
 }
 
-/** Dimensions whose thresholds are on their product, so the domain is set on the product's behalf. */
+/**
+ * Dimensions whose thresholds are on their product, so the domain is set on the product's behalf.
+ *
+ * `brackets` names the derived value the factors were chosen for, and the factors themselves are a
+ * choice about how to sweep rather than a reading of the artifact. What is read off the artifact is
+ * whether they still do the job: `assertHandSetDomainBrackets` recomputes the products and fails
+ * when one of that value's published thresholds no longer has a product below it, on it and above
+ * it. Without that check an area threshold that moved without crossing a product, `gt 400` becoming
+ * `gt 401`, would leave every distribution unchanged while the at-threshold case section 3.3
+ * promises had silently stopped being swept.
+ */
 const HAND_SET_NUMERIC_DOMAINS = {
-  structure_length_ft: [10, 12, 20, 21, null],
-  structure_width_ft: [10, 12, 20, 21, null],
+  structure_length_ft: { values: [10, 12, 20, 21, null], brackets: "structure_area_sqft" },
+  structure_width_ft: { values: [10, 12, 20, 21, null], brackets: "structure_area_sqft" },
 };
+
+/** Every value the hand-set factors of a derived value can compute, through its own formula. */
+function handSetProducts(derivedName) {
+  const { inputs, compute } = DERIVED_VALUES[derivedName];
+  const products = new Set();
+  const build = (index, intake) => {
+    if (index === inputs.length) {
+      const value = compute(intake);
+      if (typeof value === "number") products.add(value);
+      return;
+    }
+    const factor = HAND_SET_NUMERIC_DOMAINS[inputs[index]];
+    if (factor === undefined) {
+      throw new Error(`"${inputs[index]}" feeds "${derivedName}" but has no hand-set domain`);
+    }
+    for (const value of factor.values) build(index + 1, { ...intake, [inputs[index]]: value });
+  };
+  build(0, {});
+  return [...products];
+}
+
+/** Fail when a hand-set factor domain no longer brackets a threshold its product is compared to. */
+function assertHandSetDomainBrackets(field, members) {
+  const derivedName = HAND_SET_NUMERIC_DOMAINS[field].brackets;
+  const products = handSetProducts(derivedName);
+  for (const threshold of thresholdsFor(derivedName, members)) {
+    const sides = {
+      below: products.some((product) => product < threshold),
+      at: products.includes(threshold),
+      above: products.some((product) => product > threshold),
+    };
+    for (const [side, covered] of Object.entries(sides)) {
+      if (!covered) {
+        throw new Error(
+          `no product of the hand-set "${DERIVED_VALUES[derivedName].inputs.join('" and "')}" ` +
+            `domains is ${side} the "${derivedName}" threshold ${threshold}`,
+        );
+      }
+    }
+  }
+}
 
 /**
  * The smallest value the intake contract admits for a numeric field, where it names one.
@@ -467,7 +518,11 @@ function thresholdsFor(field, members) {
  *     on and above.
  */
 export function domainFor(field, definition, members) {
-  if (HAND_SET_NUMERIC_DOMAINS[field] !== undefined) return HAND_SET_NUMERIC_DOMAINS[field];
+  const handSet = HAND_SET_NUMERIC_DOMAINS[field];
+  if (handSet !== undefined) {
+    assertHandSetDomainBrackets(field, members);
+    return handSet.values;
+  }
 
   switch (definition.type) {
     case "enum":

@@ -5,20 +5,46 @@
 // in `rules/` is never written.
 
 import { parseEngineRuleset } from "../../packages/engine/src/ruleset.ts";
+import { loadControl } from "./harness.mjs";
 
 const clone = (value) => JSON.parse(JSON.stringify(value));
 
 const allRules = (ruleset) => [...ruleset.rules, ...ruleset.advisories];
 
-/** Deadline types the engine has a case for; anything else fails `parseDeadline`. */
-const ENGINE_DEADLINE_TYPES = new Set([
-  "published_minimum",
-  "published_minimum_by_level",
-  "composite",
-  "business_days_minimum",
-  "before_issuance",
-  "research_required",
-]);
+/**
+ * What the engine's parser makes of one deadline, asked of the parser rather than of a list.
+ *
+ * `parseDeadline` is not exported, so the question is put the only way the engine answers it: the
+ * deadline is placed on a rule of the published control, which parses, and `parseEngineRuleset` is
+ * run. The classification is then read off the parser's own message. A list would go stale in the
+ * direction that matters here: the engine gaining a case for a later draft deadline type leaves the
+ * initial parser error unchanged, because that error is raised by an earlier `conditional` deadline,
+ * so a stale list would keep deleting the newly supported deadline while section 3.1 claimed a
+ * parser gap that had closed.
+ */
+const probeCache = new Map();
+
+export function probeDeadline(deadline) {
+  const key = JSON.stringify(deadline);
+  const cached = probeCache.get(key);
+  if (cached !== undefined) return cached;
+
+  const probe = clone(loadControl());
+  probe.rules[0].output.deadline = clone(deadline);
+  let verdict = { supported: true, unsupportedType: false, message: null };
+  try {
+    parseEngineRuleset(probe);
+  } catch (thrown) {
+    const message = thrown instanceof Error ? thrown.message : String(thrown);
+    verdict = {
+      supported: false,
+      unsupportedType: message.includes("deadline.type has unsupported value"),
+      message,
+    };
+  }
+  probeCache.set(key, verdict);
+  return verdict;
+}
 
 /** Rewrite every trigger leaf that uses an operator the engine has no case for. */
 function rewriteLeaves(node, rewrite) {
@@ -45,13 +71,20 @@ export const ADAPTATIONS = [
       for (const rule of allRules(ruleset)) {
         const deadline = rule.output?.deadline;
         if (deadline === undefined || deadline === null) continue;
-        const unsupportedType = !ENGINE_DEADLINE_TYPES.has(deadline.type);
-        const missingDays =
-          deadline.type === "published_minimum" && typeof deadline.calendar_days !== "number";
-        if (unsupportedType)
+        const probe = probeDeadline(deadline);
+        if (probe.supported) continue;
+        if (probe.unsupportedType) {
           byUnsupportedType[deadline.type] = (byUnsupportedType[deadline.type] ?? 0) + 1;
-        else if (missingDays) byMissingCalendarDays += 1;
-        if (unsupportedType || missingDays) delete rule.output.deadline;
+        } else if (probe.message.includes("calendar_days")) {
+          byMissingCalendarDays += 1;
+        } else {
+          // The document's left column publishes exactly these two classes. A third one arriving
+          // silently would be counted under a label that does not describe it.
+          throw new Error(
+            `${rule.id} publishes a deadline the parser rejects for a third reason: ${probe.message}`,
+          );
+        }
+        delete rule.output.deadline;
       }
       return { deadlinesDropped: { byUnsupportedType, byMissingCalendarDays } };
     },

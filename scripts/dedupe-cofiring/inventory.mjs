@@ -4,7 +4,10 @@
 // windows, permit names, which outputs are byte-identical, which rules read a fuel field, which
 // rules are blockers, which dedupe groups mix verification statuses.
 
-import { multiMemberGroups, triggerOperators } from "./harness.mjs";
+import { DISPOSITION_STRENGTH } from "../../packages/engine/src/findings.ts";
+import { DEFAULT_DISPOSITION_BY_RULE_KIND } from "../../packages/engine/src/proposals.ts";
+
+import { multiMemberGroups, triggerOperators, validMultiEnumSelections } from "./harness.mjs";
 
 const published = (draft) => [...draft.rules, ...draft.advisories];
 
@@ -31,6 +34,40 @@ export function sharedOutputFields(draft, dedupeKey) {
         (rule) => JSON.stringify(rule.output[key]) === JSON.stringify(first.output[key]),
       ),
     );
+}
+
+/**
+ * The declared intake surface of an artifact, for section 3.3's opening figures: how many fields it
+ * declares, how many of each type, and how many combinations its enum, boolean and multi_enum
+ * fields multiply out to.
+ *
+ * The product is taken over the same domains `domainFor` sweeps, so it is the size of the factorial
+ * the section says it could not enumerate rather than a differently-built number: an enum or boolean
+ * contributes its declared values plus `null` where the field is nullable, and a multi_enum
+ * contributes its valid selections rather than its power set, which is the rule the section states
+ * for every other sweep. It is a `BigInt` because the value exceeds an exact double.
+ *
+ * An unused intake field the draft adds or drops moves `fields`, `byType` and `combinations`, so the
+ * section's inventory cannot go stale while the suite stays green.
+ */
+export function intakeFieldInventory(artifact) {
+  const byType = {};
+  let combinations = 1n;
+  let factorialFields = 0;
+  for (const field of artifact.intake_fields) {
+    byType[field.type] = (byType[field.type] ?? 0) + 1;
+    const nullable = field.nullable === true ? 1 : 0;
+    let values = null;
+    if (field.type === "enum") values = field.values.length + nullable;
+    else if (field.type === "boolean") values = 2 + nullable;
+    else if (field.type === "multi_enum") {
+      values = validMultiEnumSelections(field.values).length + nullable;
+    }
+    if (values === null) continue;
+    factorialFields += 1;
+    combinations *= BigInt(values);
+  }
+  return { fields: artifact.intake_fields.length, byType, factorialFields, combinations };
 }
 
 export function sapoPermitInventory(draft) {
@@ -151,8 +188,26 @@ export function parserVisibleOutput(draft, ruleId) {
       output.note_text ??
       null,
     publishedDisposition: output.disposition ?? null,
+    // What the finding actually carries: the published disposition where there is one, and
+    // otherwise the engine's own default for the rule's kind. Read from the engine's table rather
+    // than restated, so a rule kind the draft moves, or a default the engine changes, moves the
+    // document's account of which route binds a merged line instead of leaving it stale.
+    effectiveDisposition: output.disposition ?? DEFAULT_DISPOSITION_BY_RULE_KIND[rule.kind],
     unreadFields: Object.keys(output).filter((key) => !PARSER_READ_OUTPUT_FIELDS.has(key)),
   };
+}
+
+/** Which of two rules' dispositions binds a merged line's identity, per `DISPOSITION_STRENGTH`. */
+export function strongerDisposition(left, right) {
+  return DISPOSITION_STRENGTH.indexOf(left) >= DISPOSITION_STRENGTH.indexOf(right) ? left : right;
+}
+
+/** The fields each member of a dedupe group reads, in walk order, without expanding derived values. */
+export function triggerFieldsByMember(draft, dedupeKey) {
+  return membersOf(draft, dedupeKey).map((rule) => ({
+    id: rule.id,
+    fields: [...new Set(triggerOperators(rule.trigger).map((leaf) => leaf.field))],
+  }));
 }
 
 /**
