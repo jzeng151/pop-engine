@@ -27,7 +27,7 @@ import {
   SCENARIO_INTAKE_FIXTURES,
   fixtureSubmission,
 } from "@pop-engine/engine/fixtures";
-import { createAlertScheduler, type AlertScheduler } from "./alerts";
+import { createAlertScheduler, FILING_WINDOW_HAS_SHUT, type AlertScheduler } from "./alerts";
 import { createApp } from "./app";
 import { createPlanService } from "./plan";
 import { deadlineReminderOffsets, loadRuleset, rulesFilePath } from "./ruleset";
@@ -2474,6 +2474,101 @@ describe.runIf(databaseUrl.length > 0)("F-202 compliance checklist", () => {
       // The reminder names the route whose window it counts down to, not the route the line reads.
       expect(rows[0]?.subject).toContain("tent/canopy");
       expect(rows[0]?.subject).not.toContain("structure over 10 feet tall");
+    });
+
+    /**
+     * The window a route-scheduled reminder retires on, recorded on the alert itself.
+     *
+     * The plan item's `latest_apply_date` is the merged line's, and here the line's binding route
+     * publishes none, so it is NULL. `FILING_WINDOW_HAS_SHUT` read only that column, so the window
+     * never shut for these reminders on any day: one held in retry backoff would be delivered
+     * saying "file by 2026-08-05" after that date had passed, which is the one thing the predicate
+     * exists to prevent. Two further readers inherit it, the reconciliation hold and the earlier-of
+     * bound on an unresolved attempt (#252 review).
+     */
+    it("records the window its reminders retire on, which its item column does not carry", async () => {
+      const eventId = await createEvent(TALL_TENT);
+      await generatePlan(eventId);
+      await review(appWith(fakeStorage()), eventId, undefined, {
+        contactEmail: "organizer@example.test",
+      });
+
+      const { rows } = await pool.query<{
+        controlling_apply_by: string | null;
+        item_apply_by: string | null;
+        shut_the_day_after: boolean;
+        shut_on_the_day: boolean;
+      }>(
+        // THE PREDICATE ITSELF, imported rather than restated, so this asserts what the sweep and
+        // the claim actually evaluate.
+        `SELECT alerts.payload->>'controlling_apply_by' AS controlling_apply_by,
+                item.latest_apply_date::text AS item_apply_by,
+                ${FILING_WINDOW_HAS_SHUT("'2026-08-06'")} AS shut_the_day_after,
+                ${FILING_WINDOW_HAS_SHUT("'2026-08-05'")} AS shut_on_the_day
+           FROM alerts
+           JOIN checklist_items AS checklist ON checklist.id = alerts.checklist_item_id
+           JOIN permit_plan_items AS item ON item.id = checklist.plan_item_id
+          WHERE alerts.event_id = $1 AND 'DOB-TENT-001' = ANY(item.rule_ids)`,
+        [eventId],
+      );
+
+      expect(rows).toHaveLength(reminderOffsets.length);
+      for (const row of rows) {
+        // Nothing on the item says when this reminder stops being true. The alert does.
+        expect(row.item_apply_by).toBeNull();
+        expect(row.controlling_apply_by).toBe("2026-08-05");
+        expect(row.shut_the_day_after).toBe(true);
+        // Still open on its own last day, which is the day the reminder is about.
+        expect(row.shut_on_the_day).toBe(false);
+      }
+    });
+
+    /**
+     * The row renders "apply by 2026-08-05" and sorts where that date puts it. `PLAN_ITEM_ORDER`
+     * read the column, which is NULL here, so the only DATED requirement on this plan sorted behind
+     * an undated `research_required` one — and `materialize` freezes that into `cohort_position`,
+     * which migration 007 exists to make permanent (#252 review).
+     */
+    it("sorts on the date the row shows, not on the column the row leaves empty", async () => {
+      const eventId = await createEvent({
+        ...TALL_TENT,
+        structure_types: ["tent_canopy", "stage_platform_scaffold"],
+        stage_height_ft: 4,
+        stage_area_sqft: 200,
+      });
+      await generatePlan(eventId);
+      const response = await review(appWith(fakeStorage()), eventId);
+      expect(response.status).toBe(201);
+      const order = (response.body.items as ChecklistItemView[]).map((item) =>
+        item.ruleIds.join("+"),
+      );
+      const dobStructure = order.indexOf("DOB-TENT-001+DOB-TALL-STRUCTURE-001");
+      const dobStage = order.indexOf("DOB-STAGE-001");
+      expect(dobStructure).toBeGreaterThanOrEqual(0);
+      expect(dobStage).toBeGreaterThanOrEqual(0);
+      expect(dobStructure).toBeLessThan(dobStage);
+    });
+
+    /**
+     * `null` on `routes` means "this plan predates the field", never "this line has no routes"
+     * (`FindingRendering.routes`). Synthesized from the row's columns instead, a two-rule line
+     * stored before the field was served a one-entry list naming `rule_ids[0]` alone, which is a
+     * claim that a merged requirement has one route. The plan endpoint has always served the
+     * stored list or null; this is the checklist agreeing with it (#252 review).
+     */
+    it("serves the stored route list or nothing, never one synthesized from the row", async () => {
+      const eventId = await createEvent(TALL_TENT);
+      await generatePlan(eventId);
+      const response = await review(appWith(fakeStorage()), eventId);
+      const items = response.body.items as (ChecklistItemView & Record<string, unknown>)[];
+      for (const item of items) {
+        const routes = item.routes as unknown[] | null;
+        if (routes === null) continue;
+        expect(routes.length).toBeGreaterThan(1);
+      }
+      // Every unmerged line on this plan carries none rather than a restatement of itself.
+      const sound = items.find((item) => item.ruleIds.includes("NYPD-SOUND-001"));
+      expect(sound?.routes).toBeNull();
     });
   });
 });

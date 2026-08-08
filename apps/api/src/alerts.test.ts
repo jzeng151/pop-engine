@@ -6633,6 +6633,121 @@ describe.skipIf(databaseUrl === "")("F-203 deadline alerts", () => {
       );
     });
 
+    /**
+     * #252, the second of the two cases the reviewer could not reach on the published ruleset.
+     *
+     * `computeWindowVerdict` takes `minSlackDays` from every ROUTE of every finding, and a merged
+     * dedupe line's own `slack_days` is its binding route's alone. Where that route publishes no
+     * window the line's slack is null, no row matched the number at all, and the warning was
+     * suppressed on a plan the verdict had already called FEASIBLE_AT_RISK — the at-risk alert
+     * simply did not exist. Not reachable on `nyc.v2.11`, where the only dedupe group's undated
+     * route binds solely when the dated route's trigger is unknown, which is itself a material
+     * unknown and makes the plan CONDITIONAL. It arms on any ruleset with a resolved undated
+     * binding route, which is what this fixture is.
+     */
+    it("warns off a route's slack when the merged line it sits on carries none", async () => {
+      const eventId = await createEvent(scenario("C"));
+      const planId = randomUUID();
+      const itemId = randomUUID();
+      const applyBy = dayFromToday(9);
+      const route = (overrides: Record<string, unknown>) => ({
+        triggerResult: "true",
+        unknownFields: [],
+        agency: "NYPD",
+        deadline: null,
+        deadlineDisplay: null,
+        latestApplyDate: null,
+        applyAfterDate: null,
+        deadlineStatus: "not_applicable",
+        slackDays: null,
+        feeDisplay: null,
+        portalName: null,
+        portalUrl: null,
+        portalInstructions: null,
+        ...overrides,
+      });
+      await pool.query(
+        `INSERT INTO permit_plans (id, event_id, event_revision, ruleset_version, snapshot_date,
+                                   verdict, verdict_detail, intake_snapshot, generated_at)
+         VALUES ($1, $2, 1, $3, $4, 'feasible_at_risk', $5::jsonb, '{}'::jsonb, current_timestamp)`,
+        [
+          planId,
+          eventId,
+          ruleset.rulesetVersion,
+          ruleset.snapshotDate,
+          JSON.stringify({
+            today: todayInJurisdiction("US-NY-NYC"),
+            minSlackDays: 9,
+            finding_renderings: [
+              {
+                rule_ids: ["NYPD-SOUND-001", "PARKS-EVENT-001"],
+                notes: [],
+                note_text: null,
+                conflict_text: null,
+                deadline_display: null,
+                // The merged line's own slack, which is the binding route's: none.
+                slack_days: null,
+                deadline_unknown_fields: [],
+                timeline_unresolved_reason: null,
+                portal_instructions: null,
+                headline_mode: "applies_together",
+                routes: [
+                  route({
+                    ruleId: "NYPD-SOUND-001",
+                    disposition: "required",
+                    name: "Sound Device Permit",
+                  }),
+                  route({
+                    ruleId: "PARKS-EVENT-001",
+                    disposition: "may_be_required",
+                    name: "Special Event Permit",
+                    latestApplyDate: applyBy,
+                    deadlineStatus: "deadline_approaching",
+                    slackDays: 9,
+                  }),
+                ],
+              },
+            ],
+          }),
+        ],
+      );
+      // The line's own columns are the binding route's: no window, so nothing here dates it.
+      await pool.query(
+        `INSERT INTO permit_plan_items (id, plan_id, rule_ids, triggered_by, permit_name, agency,
+                                        sources, kind, disposition, deadline_status,
+                                        verification_status)
+         VALUES ($1, $2, ARRAY['NYPD-SOUND-001','PARKS-EVENT-001'], '[]'::jsonb,
+                 'Sound Device Permit', 'NYPD', '[]'::jsonb, 'permit', 'required',
+                 'not_applicable', 'SOURCE_CONFIRMED')`,
+        [itemId, planId],
+      );
+      await pool.query(
+        "INSERT INTO checklist_items (id, plan_item_id, cohort_position) VALUES ($1, $2, 0)",
+        [randomUUID(), itemId],
+      );
+
+      const client = await pool.connect();
+      try {
+        await schedulerWith()(client, eventId, planId, {
+          email: "organizer@example.test",
+          phone: null,
+        });
+      } finally {
+        client.release();
+      }
+
+      const rows = await alertsOf(eventId);
+      const warning = rows.find((row) => row.alert_type === "slack_warning");
+      expect(warning).toBeDefined();
+      expect(warning?.payload.subject).toContain("9 days");
+      // The warning retires with the route's window, not with the line's empty column.
+      expect(warning?.payload.controlling_apply_by).toBe(applyBy);
+      // Not vacuous: the route's own reminders are scheduled too, naming that route.
+      expect(rows.filter((row) => row.alert_type === "deadline_reminder").length).toBeGreaterThan(
+        0,
+      );
+    });
+
     it("still warns about slack while a filing date is ahead", async () => {
       // The other half, so the guard cannot be written as "never warn on an old plan".
       const eventId = await createEvent(scenario("C"));

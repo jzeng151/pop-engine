@@ -1090,6 +1090,71 @@ describe("F-102 · undated deadlines note", () => {
     );
   });
 
+  /**
+   * #252, the first of the two cases the reviewer could not reach on the published ruleset. A
+   * merged dedupe line takes its status from its binding route, so a line whose binding route
+   * publishes no window reads `not_applicable` while another route on it publishes a dated one.
+   * Asked of the line alone, the note claimed a plan had no dated deadlines while a route on it
+   * dated 2026-11-10. Reachable only where the undated route BINDS on a resolved trigger, which
+   * `nyc.v2.11` never produces without also making the plan CONDITIONAL.
+   */
+  it("does not claim undated deadlines when a non-binding route publishes a window", async () => {
+    stubApi(
+      plan({
+        verdict: "FEASIBLE",
+        findings: [
+          finding({
+            ruleIds: ["SYN-UNDATED-001", "SYN-DATED-001"],
+            deadlineStatus: "not_applicable",
+            routes: [
+              {
+                ruleId: "SYN-UNDATED-001",
+                triggerResult: "true",
+                disposition: "required",
+                unknownFields: [],
+                name: "Undated route permit",
+                agency: "SYN",
+                deadline: null,
+                deadlineDisplay: null,
+                latestApplyDate: null,
+                applyAfterDate: null,
+                deadlineStatus: "not_applicable",
+                slackDays: null,
+                feeDisplay: null,
+                portalName: null,
+                portalUrl: null,
+                portalInstructions: null,
+              },
+              {
+                ruleId: "SYN-DATED-001",
+                triggerResult: "true",
+                disposition: "may_be_required",
+                unknownFields: [],
+                name: "Dated route permit",
+                agency: "SYN",
+                deadline: null,
+                deadlineDisplay: null,
+                latestApplyDate: "2026-11-10",
+                applyAfterDate: null,
+                deadlineStatus: "on_track",
+                slackDays: 111,
+                feeDisplay: null,
+                portalName: null,
+                portalUrl: null,
+                portalInstructions: null,
+              },
+            ],
+            headlineMode: "applies_together",
+          }),
+        ],
+      }),
+    );
+    renderPlan();
+    await screen.findByRole("complementary", { name: "Rules snapshot" });
+
+    expect(screen.queryByTestId("no-dated-deadlines")).toBeNull();
+  });
+
   it("does not claim undated deadlines when any dated status appears", async () => {
     stubApi(
       plan({
@@ -1384,6 +1449,59 @@ describe("F-102 · CONDITIONAL branch table and INFEASIBLE rescope ladder", () =
     expect(screen.getByTestId("rescope-at-risk-buffer").textContent).toContain(
       "PopEngine's internal planning buffer",
     );
+  });
+
+  /**
+   * #252. Every `permit_plans` row written before the blocker carried its own published values
+   * stores `{ruleIds, name}` alone. Read as though it carried them, this section lost the organizer
+   * heading, the citation link, the portal link and the published apply-by date — on the one
+   * section that tells an organizer why their event is infeasible. Absence of every widened key is
+   * what says "not recorded", so the panel falls back to the reading that wrote it.
+   */
+  it("renders a stored blocker that predates the widened keys from the plan's own line", async () => {
+    stubApi(
+      plan({
+        verdict: "INFEASIBLE",
+        findings: [
+          finding({
+            ruleIds: ["SAPO-STREET-LARGE-001"],
+            name: "Street Event Permit (Large)",
+            deadlineDisplay: "submit by December 31 of the prior year",
+            deadlineStatus: "published_deadline_missed",
+            latestApplyDate: "2026-07-12",
+            portalName: publishedRule("SAPO-STREET-LARGE-001").output.portal?.name ?? null,
+            portalUrl: publishedRule("SAPO-STREET-LARGE-001").output.portal?.url ?? null,
+            // The published summary itself; this file's local JSON type does not carry its shape.
+            userSummary: publishedRule("SAPO-STREET-LARGE-001").output
+              .user_summary as unknown as Finding["userSummary"],
+          }),
+        ],
+        verdictDetail: {
+          ...emptyVerdictDetail,
+          // Exactly what a stored plan holds: two keys, and none of the widened ones.
+          blockingFinding: {
+            ruleIds: ["SAPO-STREET-LARGE-001"],
+            name: "Street Event Permit (Large)",
+          },
+          missedRuleIds: ["SAPO-STREET-LARGE-001"],
+        },
+      }),
+    );
+    renderPlan();
+    await screen.findByTestId("verdict-detail");
+
+    const blocker = screen.getByTestId("blocking-finding");
+    expect(blocker.textContent).toContain(publishedHeading("SAPO-STREET-LARGE-001"));
+    expect(
+      blocker.querySelector(`a[href="${publishedSource("SAPO-STREET-LARGE-001").url}"]`)
+        ?.textContent,
+    ).toContain("More information");
+    expect(
+      blocker.querySelector(
+        `a[href="${publishedRule("SAPO-STREET-LARGE-001").output.portal?.url}"]`,
+      )?.textContent,
+    ).toContain("Apply through");
+    expect(blocker.textContent).toContain("latest published apply-by date was 2026-07-12");
   });
 
   it("humanizes a code-only rescope from a matching stored rules snapshot", async () => {

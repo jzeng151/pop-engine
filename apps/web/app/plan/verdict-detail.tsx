@@ -24,6 +24,20 @@ export type FindingReference = {
 type ReferenceSource = Pick<ConsumedFinding, "ruleIds" | "name"> &
   Partial<Pick<ConsumedFinding, "userSummary" | "sources" | "portalName" | "portalUrl">>;
 
+/**
+ * The keys `verdict.ts` added to `blockingFinding` when it started narrowing the blocker to its own
+ * route. A stored plan carrying none of them was written before that, and is read the way it was
+ * written. Listed here rather than checked one at a time so a later key is added in one place.
+ */
+const WIDENED_BLOCKER_KEYS: readonly string[] = [
+  "deadlineDisplay",
+  "latestApplyDate",
+  "portalName",
+  "portalUrl",
+  "sources",
+  "userSummary",
+];
+
 const referenceFromFinding = (finding: ReferenceSource): FindingReference => {
   const summarySource = finding.userSummary?.points.flatMap((point) => point.sources)[0];
   const fallbackSource = (finding.sources ?? []).find((source) => source.urls.length > 0);
@@ -543,7 +557,38 @@ export function VerdictDetailPanel({
     // own clock (#252 review). Nothing needs to be re-found: `blockingFinding` is a whole finding
     // and carries its own notes, sources and trigger reasons.
     const blocker = detail.blockingFinding;
-    const blockerReference = blocker === null ? null : referenceFromFinding(blocker);
+    // A PLAN STORED BEFORE THE BLOCKER CARRIED ITS OWN VALUES CARRIES NONE OF THEM, and reading one
+    // as though it did is how this section went blank. Every `permit_plans` row written before this
+    // widening stores `{ruleIds, name}` alone, so the panel printed the rule's bare name and one
+    // sentence, losing the organizer heading, the citation link, the portal link and the published
+    // apply-by date — on the one section that tells an organizer why their event is infeasible
+    // (#252 review). The instance above is real and the removal of the fallback was the wrong cure
+    // for it: what closes both is NARROWING the fallback to the plans that need it.
+    //
+    // NO KEY PRESENT MEANS NOT RECORDED, which is why presence rather than value decides. A blocker
+    // that genuinely publishes no portal stores `portalName: null`, and that is a value the panel
+    // must honour rather than re-find. Absence is the api not having written the field at all.
+    const blockerWasWidened =
+      blocker !== null && WIDENED_BLOCKER_KEYS.some((key) => key in blocker);
+    const storedBlockerFinding =
+      blocker === null || blockerWasWidened
+        ? undefined
+        : findings.find((finding) =>
+            finding.ruleIds.some((ruleId) => blocker.ruleIds.includes(ruleId)),
+          );
+    /** Where this section's published values come from: the blocking route, or the stored line. */
+    const blockerFacts = storedBlockerFinding ?? blocker;
+    const blockerReference =
+      blocker === null
+        ? null
+        : blockerWasWidened || storedBlockerFinding !== undefined
+          ? referenceFromFinding(storedBlockerFinding ?? blocker)
+          : // Neither: the plan predates the widening AND its blocking line is no longer among the
+            // findings — a rescoped or replayed plan. The deployed ruleset's own reference is the
+            // last thing that can still supply a citation and a portal link for it.
+            (references.find((reference) =>
+              reference.ruleIds.some((ruleId) => blocker.ruleIds.includes(ruleId)),
+            ) ?? referenceFromFinding(blocker));
     // One finding can carry multiple rule ids; count findings, not provenance ids (F-102 edge case).
     const missedFindings = findings.filter((finding) =>
       finding.ruleIds.some((ruleId) => detail.missedRuleIds.includes(ruleId)),
@@ -560,9 +605,10 @@ export function VerdictDetailPanel({
             </p>
             <p className="verdict-detail__blocker-reason">
               This blocks the date because the published deadline was missed as scoped.
-              {blocker.deadlineDisplay != null && ` Published timing: ${blocker.deadlineDisplay}.`}
-              {blocker.latestApplyDate != null &&
-                ` The latest published apply-by date was ${blocker.latestApplyDate}.`}
+              {blockerFacts?.deadlineDisplay != null &&
+                ` Published timing: ${blockerFacts.deadlineDisplay}.`}
+              {blockerFacts?.latestApplyDate != null &&
+                ` The latest published apply-by date was ${blockerFacts.latestApplyDate}.`}
             </p>
             {missedFindings.length > 1 && (
               <p className="verdict-detail__missed">

@@ -211,20 +211,31 @@ const RETRY_BACKOFF = `CASE
  * The claim is the point of action, and it is also the only safe point: it runs under the event
  * lock, so what it reads is a state no review is midway through changing.
  */
-const FILING_WINDOW_HAS_SHUT = (day: string): string => `(
-       EXISTS (
-         SELECT 1
-           FROM checklist_items AS closed_checklist
-           JOIN permit_plan_items AS closed_item
-             ON closed_item.id = closed_checklist.plan_item_id
-          WHERE closed_checklist.id = alerts.checklist_item_id
-            AND closed_item.latest_apply_date IS NOT NULL
-            AND closed_item.latest_apply_date < ${day}::date
+export const FILING_WINDOW_HAS_SHUT = (day: string): string => `(
+       (
+         alerts.payload->>'controlling_apply_by' IS NULL
+         AND EXISTS (
+           SELECT 1
+             FROM checklist_items AS closed_checklist
+             JOIN permit_plan_items AS closed_item
+               ON closed_item.id = closed_checklist.plan_item_id
+            WHERE closed_checklist.id = alerts.checklist_item_id
+              AND closed_item.latest_apply_date IS NOT NULL
+              AND closed_item.latest_apply_date < ${day}::date
+         )
        )
        -- coalesce, because this expression is now NEGATED at the claim as well as asserted at the
        -- sweep. Without it a row carrying no controlling date yields NULL rather than false, the
        -- sweep harmlessly does not match it, and NOT NULL makes it permanently unclaimable. A
        -- predicate that is only ever asserted can be three-valued; one that is also negated cannot.
+       --
+       -- THE PAYLOAD DATE WINS OVER THE ITEM COLUMN WHERE BOTH EXIST, which is why the first branch
+       -- is guarded rather than left as a plain OR. An alert scheduled off one route of a merged
+       -- dedupe line counts down to THAT route's published window, and the item column carries the
+       -- window of whichever route the merged line reads. Read as a disjunction, a reminder for a
+       -- route whose window is still open would be retired the day after a DIFFERENT route's window
+       -- shut. The row that names its own controlling date is the row that knows which window this
+       -- alert is about, so nothing else gets to answer for it.
        OR coalesce((alerts.payload->>'controlling_apply_by')::date < ${day}::date, false)
      )`;
 
@@ -864,10 +875,21 @@ type PlannedAlert = {
    */
   readonly planEventRevision?: number;
   /**
-   * The day this alert's number counts down to, for rows the sweep cannot reach through an item.
+   * The published window this alert is about, for rows the sweep cannot reach through an item.
    *
-   * Only the plan-level slack warning sets it. Everything else hangs off a checklist item and the
-   * sweep reads that item's own `latest_apply_date`, which is live rather than a snapshot.
+   * The plan-level slack warning sets it because it hangs off no checklist item at all. A
+   * ROUTE-SCHEDULED alert sets it for the other half of the same reason: it does hang off an item,
+   * but the item's `latest_apply_date` is the window of whichever route the merged line reads, and
+   * this alert counts down to its OWN route's window. Where the merged line's binding route
+   * publishes none the column is NULL, and `FILING_WINDOW_HAS_SHUT` reads only that column, so the
+   * window never shut: a reminder held in retry backoff would still be delivered saying "file by
+   * 2026-08-31" after that date had passed, which is the outcome that predicate exists to prevent
+   * (#252 review). Two further readers inherit it — `HELD_FOR_RECONCILIATION` tells the organizer a
+   * live filing reminder is paused about a deadline already gone, and
+   * `unresolvedAttemptPastTheCutoff`'s earlier-of bound stops being reachable.
+   *
+   * Everything else still hangs off an item whose own `latest_apply_date` IS its window, which is
+   * live rather than a snapshot, so it stays unset there.
    */
   readonly controllingApplyBy?: string;
   /**
@@ -1486,6 +1508,10 @@ async function plannedAlerts(
     for (const { row, rendering, routeRuleId } of subjects) {
       const routeKey = routeInIdentity && routeRuleId !== null ? `:${routeRuleId}` : "";
       const applyBy = isoDate(row.latest_apply_date);
+      // The window this alert counts down to, recorded on the row wherever it is NOT the window the
+      // sweep would find through the checklist item. See `PlannedAlert.controllingApplyBy`.
+      const routeApplyBy =
+        routeRuleId !== null && applyBy !== null ? { controllingApplyBy: applyBy } : {};
 
       const openOn = isoDate(row.apply_after_date);
       const binding = DEPENDENCY_SEQUENCING_BINDINGS.find(
@@ -1515,6 +1541,7 @@ async function plannedAlerts(
           planned.push({
             alertType: "deadline_reminder",
             checklistItemId: row.checklist_item_id,
+            ...routeApplyBy,
             // Already past at scheduling time — a checklist created inside the reminder window —
             // is due NOW rather than at a moment that has gone (spec edge case, and AC 2's bound is
             // measured from this field).
@@ -1581,6 +1608,7 @@ async function plannedAlerts(
         planned.push({
           alertType: "dependency_unlocked",
           checklistItemId: row.checklist_item_id,
+          ...routeApplyBy,
           // Same treatment as a reminder, and for the same reason: an unlock whose gate opened
           // before the plan was materialized is due now, not at a past instant that would score it
           // late against AC 2 the moment it was written.
@@ -1662,14 +1690,23 @@ async function plannedAlerts(
   // width into a countdown and states a filing date the sources do not publish. So every tied
   // controller is retained for the copy and the status, and openness decides only whether the
   // warning may go out at all.
+  // READ PER ROUTE, BECAUSE THE NUMBER IS COMPUTED PER ROUTE. `computeWindowVerdict` takes
+  // `minSlackDays` from every route of every finding, and a merged dedupe line's own `slack_days`
+  // is the binding route's alone. Where that route publishes no window the line's slack is null and
+  // no row here matched it at all, so `controllingFilingStillOpen` was false and the warning was
+  // suppressed on a plan the verdict had already called FEASIBLE_AT_RISK — the at-risk alert simply
+  // did not exist. Confirmed on a synthetic ruleset whose binding route is undated: verdict
+  // FEASIBLE_AT_RISK, `minSlackDays` 9 off the dated route, merged `slack_days` null (#252 review).
+  // The same expansion the reminders take, so the two cannot disagree about which windows a plan has.
   const dated = rows
-    .map((row) => ({ row, slack: renderings.get(renderingKey(row.rule_ids))?.slack_days }))
+    .flatMap((row) => alertSubjects(row, renderings.get(renderingKey(row.rule_ids))))
+    .map((subject) => ({ subject, slack: subject.rendering?.slack_days }))
     .filter(
-      (entry): entry is { row: PlanAlertRow; slack: number } => typeof entry.slack === "number",
+      (entry): entry is { subject: AlertSubject; slack: number } => typeof entry.slack === "number",
     );
   /** Openness, and nothing else: whether the requirement the number describes can still be filed. */
   const openDated = dated.filter((entry) => {
-    const applyBy = isoDate(entry.row.latest_apply_date);
+    const applyBy = isoDate(entry.subject.row.latest_apply_date);
     return applyBy !== null && applyBy >= schedulingToday;
   });
   const controllingFilingStillOpen =
@@ -1701,7 +1738,9 @@ async function plannedAlerts(
   //
   // Same rule, and the reason it produces opposite answers is that one side risks saying too much
   // and the other risks saying nothing at all.
-  const controllingIsGated = controlling.some((dated) => dated.row.apply_after_date !== null);
+  const controllingIsGated = controlling.some(
+    (dated) => dated.subject.row.apply_after_date !== null,
+  );
   /**
    * The day the LAST of the controlling requirements closes, for the poller to compare.
    *
@@ -1710,7 +1749,7 @@ async function plannedAlerts(
    * requirement has expired, and this is the day that happens.
    */
   const controllingApplyBy = controlling
-    .map((dated) => isoDate(dated.row.latest_apply_date))
+    .map((dated) => isoDate(dated.subject.row.latest_apply_date))
     .filter((day): day is string => day !== null)
     .sort()
     .at(-1);
@@ -1724,15 +1763,13 @@ async function plannedAlerts(
       settings.slackWarningDays,
       plan.today,
       controllingIsGated,
-      controlling.map((dated) => {
-        const rendering = renderings.get(renderingKey(dated.row.rule_ids));
-        return {
-          subject: withAgency(dated.row),
-          verificationStatus: dated.row.verification_status,
-          notes: rendering?.notes ?? [],
-          conflictText: rendering?.conflict_text ?? null,
-        };
-      }),
+      controlling.map((dated) => ({
+        // The route's own name, so the copy names the rule whose window produced the number.
+        subject: withAgency(dated.subject.row),
+        verificationStatus: dated.subject.row.verification_status,
+        notes: dated.subject.rendering?.notes ?? [],
+        conflictText: dated.subject.rendering?.conflict_text ?? null,
+      })),
     );
     planned.push({
       alertType: "slack_warning",

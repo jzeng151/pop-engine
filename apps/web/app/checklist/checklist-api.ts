@@ -95,13 +95,16 @@ export type PlanContext = {
   readonly sources: readonly FindingSource[];
   readonly sourcePlan: SourcePlan;
   /**
-   * Every contributing route of a merged dedupe line, each with its own name, window and fee, or a
-   * one-entry list restating this row for an unmerged line. `filingRouteRuleId` names the route the
-   * window, status, fee and filing details above were read off, and is null wherever they are the
-   * line's own — which is every unmerged row and every merged row whose binding route publishes a
-   * window. It is what keeps a row from naming one rule and dating another (#252 review).
+   * Every contributing route of a merged dedupe line, each with its own name, window and fee. Null
+   * on an unmerged line and on a plan stored before the field existed; never a one-entry list, and
+   * never `[]`. Absent from an api deployed before the checklist served it.
+   *
+   * `filingRouteRuleId` names the route the window, status, fee and filing details above were read
+   * off, and is null wherever they are the line's own — which is every unmerged row and every
+   * merged row whose binding route publishes a window. It is what keeps a row from naming one rule
+   * and dating another (#252 review).
    */
-  readonly routes?: readonly ConsumedRoute[];
+  readonly routes?: readonly ConsumedRoute[] | null;
   readonly headlineMode?: HeadlineMode | null;
   readonly filingRouteRuleId?: string | null;
 };
@@ -426,7 +429,7 @@ const PLAN_CONTEXT_CHECKS: FieldChecks<PlanContext> = {
   sourcePlan: shapedLike(SOURCE_PLAN_CHECKS),
   // Absent from an api deployed before the checklist read routes, which is the deploy window this
   // change opens. Absence is "not served", never "this line has no routes".
-  routes: absentOr(arrayOf(shapedLike(ROUTE_CHECKS))),
+  routes: absentOr(nullOr(arrayOf(shapedLike(ROUTE_CHECKS)))),
   headlineMode: absentOr(nullOr(isToken(HEADLINE_MODES))),
   filingRouteRuleId: absentOr(nullOr(isString)),
 };

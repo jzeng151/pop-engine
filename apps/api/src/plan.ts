@@ -280,6 +280,51 @@ export function filingRouteOf(
   return routes.find((route) => route.deadline !== null || route.latestApplyDate !== null) ?? null;
 }
 
+/**
+ * `filingRouteOf` in SQL, so a plan item can be ORDERED by the window it actually renders.
+ *
+ * THE ORDER THE WORK HAPPENS IN IS THE ORDER OF THE DATE THE ROW SHOWS. `latest_apply_date NULLS
+ * LAST` reads a column that a merged dedupe line leaves NULL whenever its binding route publishes
+ * no window, and that line still renders "apply by <a date>" off its filing route. Sorted on the
+ * column alone, measured over 1,600 intakes with a published holiday list, 42 checklists reordered
+ * and the only DATED requirement sorted BEHIND a research-required one (#252 review). `materialize`
+ * then freezes that into `cohort_position`, which migration 007 exists to make permanent, so a
+ * later regeneration does not correct it.
+ *
+ * IN SQL RATHER THAN IN TYPESCRIPT, deliberately. The order's other two keys are `permit_name` and
+ * `rule_ids`, and a text comparison moved out of the database is a text comparison under a
+ * different collation. Sorting the date here and the ties there would decide a tie by one rule in
+ * one place and another rule in the next.
+ *
+ * The join condition is `filingRouteOf`'s own first test: a row publishing its own window is never
+ * looked up. The route list is written only for a merged line, so no unmerged row matches and no
+ * plan stored before the field existed does either — both fall through to the column, which is
+ * theirs. Joined on the plan through `item.plan_id` so this needs no table the caller does not
+ * already have.
+ */
+export const FILING_ORDER_JOIN = `LEFT JOIN LATERAL (
+         SELECT (route->>'latestApplyDate')::date AS latest_apply_date
+           FROM permit_plans AS ordering_plan
+           CROSS JOIN jsonb_array_elements(
+                  coalesce(nullif(ordering_plan.verdict_detail->'finding_renderings', 'null'::jsonb),
+                           '[]'::jsonb)) AS rendering
+           CROSS JOIN jsonb_array_elements(
+                  coalesce(nullif(rendering->'routes', 'null'::jsonb), '[]'::jsonb))
+                  WITH ORDINALITY AS listed(route, route_position)
+          WHERE ordering_plan.id = item.plan_id
+            AND rendering->'rule_ids' = to_jsonb(item.rule_ids)
+            -- A PUBLISHED WINDOW, NOT A COMPUTED DATE, which is the same test filingRouteOf makes
+            -- and for the same reason: a business-day count with no published holiday list is a
+            -- window the engine cannot date, and it is still the route this line files under.
+            AND (route->'deadline' <> 'null'::jsonb OR route->'latestApplyDate' <> 'null'::jsonb)
+          -- Binding order, so this is the same route the row reads its date and fee off.
+          ORDER BY route_position
+          LIMIT 1
+       ) AS filing_route ON item.deadline IS NULL AND item.latest_apply_date IS NULL`;
+
+/** The window a plan item is ordered by. Requires `FILING_ORDER_JOIN` in the same statement. */
+export const FILING_ORDER_DATE = `coalesce(item.latest_apply_date, filing_route.latest_apply_date)`;
+
 async function insertPlan(
   client: PoolClient,
   eventId: string,

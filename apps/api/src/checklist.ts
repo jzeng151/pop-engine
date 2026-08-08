@@ -42,7 +42,8 @@ import {
   calendarDateFrom,
   filingRouteOf,
   renderingKey,
-  storedRoutes,
+  FILING_ORDER_DATE,
+  FILING_ORDER_JOIN,
   PlanIntegrityError,
   type FindingRendering,
 } from "./plan";
@@ -219,8 +220,11 @@ const PLAN_ITEM_COLUMNS = `id, plan_id, rule_ids, permit_name, agency, kind, dis
  * Plan items carry uuid primary keys, so the table has no stable order of its own (F-201 hit
  * the same wall reading plans back). The soonest published filing date first is both stable and
  * the order the work actually happens in; the trailing keys break ties for undated lines.
+ *
+ * The date is the one the ROW RENDERS, which on a merged dedupe line is its filing route's rather
+ * than the column's. See `FILING_ORDER_JOIN`.
  */
-const PLAN_ITEM_ORDER = `latest_apply_date NULLS LAST, permit_name, rule_ids`;
+const PLAN_ITEM_ORDER = `${FILING_ORDER_DATE} NULLS LAST, item.permit_name, item.rule_ids`;
 
 /**
  * The order of checklist rows created together, which is a different question.
@@ -273,7 +277,6 @@ const isoDate = (value: Date | string | null): string | null =>
  * than restated, so there is one copy of each string.
  */
 const planContext = (item: PlanItemRow, rendering: FindingRendering) => {
-  const routes = storedRoutes(item, rendering);
   const filing = filingRouteOf(item, rendering);
   return {
     ruleIds: item.rule_ids,
@@ -293,8 +296,16 @@ const planContext = (item: PlanItemRow, rendering: FindingRendering) => {
      * above were read off when the line publishes none of its own. `filingRouteRuleId` is null on
      * an unmerged line and on a merged line that carries its own window: there the values above are
      * the line's own and nothing is being attributed elsewhere.
+     *
+     * SERVED EXACTLY AS THE PLAN ENDPOINT SERVES IT, which is the stored list or null. Null means
+     * this plan predates the field, never "this line has no routes" — the contract
+     * `FindingRendering.routes` states. Synthesized instead from the row's columns, a two-rule line
+     * stored before the field was served `routes: ["DOB-TENT-001"]`: a one-entry list is a claim
+     * that this requirement has one route, and for a merged row it is a false one. Nothing renders
+     * it today, because both web components require two or more, and one endpoint contradicting
+     * another's stated contract is how the next reader gets it wrong (#252 review).
      */
-    routes,
+    routes: rendering.routes ?? null,
     headlineMode: rendering.headline_mode ?? null,
     filingRouteRuleId: filing?.ruleId ?? null,
     deadlineUnknownFields: rendering.deadline_unknown_fields,
@@ -435,6 +446,7 @@ async function planItems(database: Queryable, planId: string): Promise<PlanItemR
             plan.snapshot_date AS source_snapshot_date
        FROM permit_plan_items AS item
        JOIN permit_plans AS plan ON plan.id = item.plan_id
+       ${FILING_ORDER_JOIN}
       WHERE item.plan_id = $1
       ORDER BY ${PLAN_ITEM_ORDER}`,
     [planId],
