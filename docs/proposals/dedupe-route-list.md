@@ -505,24 +505,31 @@ section 6 and it is unmerged behaviour too.
 
 ### 9.1 What moves on the published ruleset
 
-Measured over the 3,200-intake control sweep of measurement §4.3, rebuilt here as an exhaustive
-3,200-intake enumeration of the power set of `structure_types` by `tent_area_sqft` by
-`tent_days_in_place` by `structure_over_10ft_tall`, with `routes` and `headlineMode` stripped so the
-comparison is of the values that already existed:
+**THE 64 THIS SECTION USED TO STATE IS WITHDRAWN, and the field set it claimed was wrong as well as
+the count.** It was measured over an unrecorded base intake by a harness that was never committed,
+and neither committed harness reproduces it. The standard is this branch's own, stated in AD-19
+where it withdrew the 224 of 1,600: a number in a governing record nobody can reproduce is the
+shape of claim this PR series exists to remove. It applies to the figure this section inherited as
+much as to the one it corrected, so the 64 is withdrawn rather than reported beside a reproducible
+figure as though the two were alternatives. What replaces it is what
+`scripts/dedupe-route-sweep.mts` produces from this tree, on the same four dimensions with every
+other collected intake field answered, run against this branch's engine and against `main`'s:
 
-- **64 of 3,200 plans differ from `main`. 0 verdicts differ.** PR #244's head is byte-identical to
-  `main` on the same sweep, so those 64 are this proposal's, not #244's.
-- **Every one of the 64 has `structure_over_10ft_tall: "yes"` with the tent rule unresolved**, which
-  is the measurement's own "`DOB-TENT-001` unknown, `DOB-TALL-STRUCTURE-001` true" set, counted at 64
-  there too. On those intakes the tall-structure rule DEFINITELY applies and the tent rule might.
-- **What changes on them:** the line's name, deadline, apply-by date, status, slack, fee and summary
-  heading move from the tent route to the tall-structure route. `main` names the tent permit and
-  quotes its 15-business-day window and its "$100 initial 30 days" TUP fee off a trigger that did
-  not resolve.
-- **Why that is correct:** the tall-structure rule's trigger resolved and the tent rule's did not, so
-  the line now reads as the route that is known to apply. Nothing published is lost: the tent
-  route's name, window and fee are on its route entry, and its rule id, citation, notes and summary
-  points concatenate onto the line as they already did.
+- **56 of 3,200 plans differ from `main`, on both a published and an unpublished holiday list. 0
+  verdicts differ on either.** PR #244's head is byte-identical to `main` on the same sweep, so
+  those 56 are this proposal's, not #244's.
+- **Every one of the 56 has `structure_over_10ft_tall: "yes"` with the tent rule unresolved.** On
+  those intakes the tall-structure rule DEFINITELY applies and the tent rule might.
+- **What changes on them is the NAME, and only the name.** It moves from the tent route to the
+  tall-structure route. The filing date, the deadline status, the fee and the number of
+  `deadline_reminder` alerts the F-203 scheduler writes are identical to `main` on all 56, read off
+  the tent route and attributed to it. The withdrawn figure claimed the deadline, apply-by date,
+  status, slack, fee and summary heading moved too; they do not, and `docs/BASELINE.md` and
+  `docs/ARCHITECTURE-FUTURE.md` §2 AD-19 state the same field set as this bullet.
+- **Why the move is correct:** the tall-structure rule's trigger resolved and the tent rule's did
+  not, so the line now reads as the route that is known to apply. Nothing published is lost: the
+  tent route's name, window and fee are on its route entry, and its rule id, citation, notes and
+  summary points concatenate onto the line as they already did.
 
 This is a change to an organizer-facing outcome on the published ruleset, and it is why section 10
 routes this through the product owner rather than treating it as an engine refactor.

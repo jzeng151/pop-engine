@@ -44,9 +44,14 @@ const calendar = {
 const TODAY = "2026-07-22";
 const EVENT_DATE = "2026-09-19";
 
-// The proposal's own section 4.3 / 9.1 sweep, rebuilt exactly: the power set of `structure_types`
-// by `tent_area_sqft` by `tent_days_in_place` by `structure_over_10ft_tall`. 32 x 5 x 5 x 4 = 3,200.
-// Same shape, so the counts here are comparable with the 64 that section 9.1 records.
+// The proposal's own section 4.3 / 9.1 dimensions: the power set of `structure_types` by
+// `tent_area_sqft` by `tent_days_in_place` by `structure_over_10ft_tall`. 32 x 5 x 5 x 4 = 3,200.
+//
+// THE SAME DIMENSIONS, NOT THE SAME SWEEP, and the counts are NOT comparable with the 64 that
+// section 9.1 used to record. That sweep left the other collected fields open and its base intake
+// was never recorded; this one answers them (see the comment at the loop below), which is a
+// different population. The 64 is withdrawn for exactly that reason and section 9.1 now records
+// what this file produces: 56 of 3,200, `permitName` and nothing else.
 const STRUCTURE_VALUES = [
   "tent_canopy",
   "stage_platform_scaffold",
