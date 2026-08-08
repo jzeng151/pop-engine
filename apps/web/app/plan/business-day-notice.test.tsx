@@ -4,6 +4,7 @@ import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { cleanup, render } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import {
   CONFIRM_WITH_AGENCY,
   evaluate,
@@ -442,5 +443,30 @@ describe("a plan stored by an older build", () => {
     const { container } = render(<PlanLine finding={served} />);
     expect(container.querySelector(".line__deadline")).not.toBeNull();
     expect(container.querySelector(".line__deadline-notice")).toBeNull();
+  });
+
+  it("keeps the fallback's agency-confirmation obligation on the legacy branch too", async () => {
+    // THE OTHER HALF OF THE TEST ABOVE, which on its own asserts only an absence. What the fallback
+    // finding must not lose is the CONFIRM_WITH_AGENCY treatment, and on this branch that is not
+    // the summary's "not calculable — confirm with agency" point: this branch has never rendered
+    // that point, before this change or after it. The obligation arrives from the engine instead.
+    // `findings.ts:56-58` appends CONFIRM_WITH_AGENCY to `notes` for every `not_calculable`
+    // finding that is not RESEARCH_REQUIRED, which is exactly this one, and `plan-line.tsx` renders
+    // `notes` inside the disclosure on BOTH branches. So the legacy line states the status in the
+    // published deadline paragraph and carries the confirmation one interaction away, which is
+    // where this branch has always carried it.
+    const served = await asServed({ ...findingFor("DOB-ASSEMBLY-001"), userSummary: null });
+    expect(served.notes).toContain(CONFIRM_WITH_AGENCY);
+
+    const line = render(<PlanLine finding={served} />);
+    expect(line.container.querySelector(".line__deadline")?.textContent).toContain(
+      "not calculable",
+    );
+
+    await userEvent.click(line.getByRole("button", { name: /^Details for/ }));
+    const notes = [...line.container.querySelectorAll(".line__note")].map(
+      (note) => note.textContent,
+    );
+    expect(notes).toContain(CONFIRM_WITH_AGENCY);
   });
 });
