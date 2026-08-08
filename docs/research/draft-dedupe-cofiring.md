@@ -18,8 +18,13 @@ was supplied and on what basis, and section 3.5 re-checks each one against the d
   `AGENTS.md`, and it never becomes one. No permit name, deadline, fee, agency, portal or
   disposition quoted below is confirmed by this document; each is quoted as _published draft data_,
   to answer the question "would co-firing members disagree", and for no other purpose.
-- This document **approves nothing** and changes nothing. It is not a proposal, not a decision, not
-  a fix. No engine, ruleset, app or test file is touched by the PR that carries it.
+- This document **approves nothing** and decides nothing. It is not a proposal, not a decision, not
+  a fix. No engine source, no ruleset and no app file is touched by the PR that carries it, and no
+  existing test's expectations move. What the PR does add is the measurement itself:
+  `scripts/dedupe-cofiring/` (four modules and one suite), a `test:cofiring` script, and the
+  `vitest.config.ts` and CI wiring that runs them. That is tooling for this document, not a change
+  to the system it measures. An earlier revision of this paragraph said no test file was touched at
+  all, which stopped being true when the harness was committed.
 - The draft's status is unchanged by this measurement. `AGENTS.md` says to stop when a feature's
   inputs are PROPOSED, and that instruction stands: **nothing in this document licenses
   implementing the draft, and no figure here should be cited as evidence that the draft is safe to
@@ -332,10 +337,14 @@ and are stated as the enumeration found them.
    The list is read off the artifact's `derived: true` flags rather than written down here, so a
    draft that lands a real derivation and drops a flag moves the qualification with it. The other
    six groups sweep no derived field and carry no such qualification, and neither does the control:
-   `rules/nyc-rules.v2.11.json` derives no intake field. What this limitation does **not** touch is
-   which members share a `dedupe_key`, which is published data, or the sets in section 5, which
-   name the combinations rather than counting them; it bears on the sweep sizes, the distributions,
-   the completeness counts and every percentage over them for those three groups.
+   `rules/nyc-rules.v2.11.json` derives no intake field.
+
+   It reaches the sweep sizes, the distributions, the completeness counts, every percentage over
+   them, **and the co-firing sets and maxima in 5.1, 5.4 and 5.9**. A set is produced by some
+   combination of the swept fields, so where those fields are derived the set inherits the same
+   unknown reachability; naming a set rather than counting it does not settle it. The one thing
+   this limitation does not touch is which members share a `dedupe_key`, which is published data
+   and true whatever the classifier turns out to do.
 
 ### 3.5 The supplied semantics, re-checked against the draft
 
@@ -378,7 +387,8 @@ under both readings, which is why section 4.3 finds the group never co-fires on 
 Those three sweep fields the draft derives with `classify_sapo_event`, which it publishes as prose
 rather than as an algorithm, so their rows are unconstrained products over the declared enums and
 are upper bounds rather than counts of reachable events. The other six groups and the control sweep
-only fields an organizer answers, and carry no such qualification.
+only fields an organizer answers, and carry no such qualification. The same applies to those three
+groups' sets and maxima in section 5, not only to the counts here.
 
 ### 4.1 Property A, findings per event (trigger `true` or `unknown`), draft
 
@@ -522,8 +532,17 @@ and the surviving scalars are the stricter of the two.
 Every set below was produced by an evaluation; each "one concrete intake" is the first intake in
 the sweep's enumeration order that produced that exact set. Fields not listed were held unanswered.
 `complete` is the group-level count from 4.3; where the set-level count differs, both are given.
-The sets themselves name combinations rather than counting events, so limitation 9 bears on the
-counts beside each set in 5.1, 5.4 and 5.9, not on which members appear together.
+
+**Limitation 9 applies to the sets in 5.1, 5.4 and 5.9 as fully as to the counts beside them**, and
+an earlier revision of this line wrongly exempted them. Naming a set rather than counting it does
+not make it reachable: a set is produced by some combination of the swept fields, and where those
+fields are derived classifications the combination's reachability is exactly what is unknown. The
+`sapo_permit` 14-member maximum is the clearest case, since the intake that produces it is
+`sapo_event_type=unknown, street_event_size=unknown, plaza_level=unknown, plaza_block_count=null,
+plaza_size=small`, and whether `classify_sapo_event` can emit that tuple is not answerable from the
+artifact. Read every set and every maximum in 5.1, 5.4 and 5.9 as a product-only possibility until
+an approved classifier exists. 5.2, 5.3, 5.5, 5.6, 5.7 and 5.8 sweep no derived field and are not
+qualified.
 
 ### 5.1 `sapo_permit`, 14 members, max 14, never 2 on a complete intake
 
@@ -870,7 +889,8 @@ pnpm test:cofiring                  # every figure in this document, asserted
 PRINT_TABLES=1 pnpm test:cofiring   # the same run, printing the tables to diff against this file
 ```
 
-It is four modules and one suite, all under 700 lines together:
+It is four modules and one suite, 1,906 lines together, of which `harness.mjs` is 853 and
+`cofiring.test.mjs` is 639:
 
 | file                | what it is                                                                                                                                    |
 | ------------------- | --------------------------------------------------------------------------------------------------------------------------------------------- |
