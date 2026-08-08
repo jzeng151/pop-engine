@@ -21,7 +21,12 @@ import type {
   VerificationStatus,
 } from "@pop-engine/engine";
 import { CREDENTIALED } from "../intake/events-api";
-import { HEADLINE_MODES, ROUTE_CHECKS, type ConsumedRoute } from "../plan/plan-api";
+import {
+  HEADLINE_MODES,
+  ROUTE_CHECKS,
+  routeContractHolds,
+  type ConsumedRoute,
+} from "../plan/plan-api";
 import {
   absentOr,
   arrayOf,
@@ -435,6 +440,18 @@ const PLAN_CONTEXT_CHECKS: FieldChecks<PlanContext> = {
   filingRouteRuleId: absentOr(nullOr(isString)),
 };
 
+/**
+ * The same cross-field rule the plan boundary applies, at the door the organizer works the item
+ * through. `routeContractHolds` is shared rather than restated: this boundary serves the same two
+ * fields and had no cross-field check at all, so a row carrying `triggerResult: "unknown"` under
+ * `headlineMode: "applies_together"` was accepted here and `PlanContextBody`, which reads routes
+ * only in `candidate` mode, suppressed the deciding question the unknown exists to ask (#252
+ * review). Every read of a `PlanContext` body goes through this, including `ITEM_CHECKS`, which
+ * spreads the same field checks.
+ */
+const isPlanContext = (value: unknown): value is PlanContext =>
+  shapedLike(PLAN_CONTEXT_CHECKS)(value) && routeContractHolds(value);
+
 const DOCUMENT_CHECKS: FieldChecks<ChecklistDocument> = { id: isString, filename: isString };
 
 const isDateChange = (value: unknown): value is DateChange => {
@@ -506,6 +523,10 @@ const ITEM_CHECKS: FieldChecks<ChecklistItem> = {
   documents: arrayOf(shapedLike(DOCUMENT_CHECKS)),
 };
 
+/** An item is a `PlanContext` with the row's own fields, so it carries the same route contract. */
+const isChecklistItem = (value: unknown): value is ChecklistItem =>
+  shapedLike(ITEM_CHECKS)(value) && routeContractHolds(value);
+
 /**
  * One count per status, keyed off the engine's own list, so a status added upstream stops this
  * compiling rather than going uncounted on screen.
@@ -544,8 +565,8 @@ const CHECKLIST_CHECKS: FieldChecks<ChecklistResponse> = {
   planChanged: isBoolean,
   planStale: isBoolean,
   statusRollup: shapedLike(ROLLUP_CHECKS),
-  items: arrayOf(shapedLike(ITEM_CHECKS)),
-  contextItems: arrayOf(shapedLike(PLAN_CONTEXT_CHECKS)),
+  items: arrayOf(isChecklistItem),
+  contextItems: arrayOf(isPlanContext),
   simulatedAlertDeliveries: arrayOf(shapedLike(SIMULATED_DELIVERY_CHECKS)),
   failedAlertDeliveries: arrayOf(shapedLike(FAILED_DELIVERY_CHECKS)),
   alertsHeldForReconciliation: arrayOf(shapedLike(RECONCILIATION_HOLD_CHECKS)),

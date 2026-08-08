@@ -419,17 +419,33 @@ const FINDING_CHECKS: FieldChecks<ConsumedFinding> = {
  * test `length > 1` before treating a line as merged, so a one-entry list passed the shape check and
  * was then read as unmerged: a `candidate` line fell back to the permit heading and the deciding
  * question it exists to ask was not shown, an incomplete route set presented as a complete line.
+ *
+ * THE TWO FIELDS ARE PRESENT TOGETHER OR ABSENT TOGETHER, which is what the engine's own type says
+ * (`Finding.headlineMode`: "Present exactly when `routes` is") and what nothing enforced. The mode
+ * was previously read only to select which rule to apply, so a list carrying a valid multi-route
+ * `routes` and no mode at all fell through every branch and was accepted. `Routes` then returns null
+ * because the mode is missing, and the page renders the binding scalar alone: the other route's
+ * name, window, fee and portal are gone from a line that has them, and a partial merged plan reads
+ * as a complete one. The reverse pairing is refused for the same reason: a mode with no list is a
+ * claim about routes the body did not send. Neither is a shape the engine emits, so both are
+ * rejected here rather than given a meaning downstream (#252 review).
+ *
+ * SHARED WITH THE CHECKLIST BOUNDARY, which serves the same two fields on `PlanContext` and applied
+ * none of this. `PlanContextBody` reads routes only in `candidate` mode, so a checklist row could
+ * carry `triggerResult: "unknown"` under `applies_together` and have the deciding question
+ * suppressed on the surface where the organizer works the item. One rule, both doors.
  */
-const routeContractHolds = (finding: ConsumedFinding): boolean => {
-  const routes = finding.routes;
-  if (routes === undefined || routes === null) return true;
-  if (finding.headlineMode === "applies_together") {
+export const routeContractHolds = (carrier: {
+  readonly routes?: readonly ConsumedRoute[] | null;
+  readonly headlineMode?: HeadlineMode | null;
+}): boolean => {
+  const routes = carrier.routes ?? null;
+  const mode = carrier.headlineMode ?? null;
+  if (routes === null || mode === null) return routes === null && mode === null;
+  if (mode === "applies_together") {
     return routes.every((route) => route.triggerResult === "true");
   }
-  if (finding.headlineMode === "candidate") {
-    return routes.some((route) => route.triggerResult === "unknown");
-  }
-  return true;
+  return routes.some((route) => route.triggerResult === "unknown");
 };
 
 const isConsumedFinding = (value: unknown): value is ConsumedFinding =>

@@ -233,6 +233,125 @@ describe("loadChecklist", () => {
     });
   });
 
+  /**
+   * #252: the checklist serves `routes` and `headlineMode` exactly as the plan endpoint does, and
+   * until now applied none of the plan boundary's cross-field rules to them. `PlanContextBody`
+   * reads routes only in `candidate` mode, so a row claiming `applies_together` over a route whose
+   * own trigger is `unknown` had the deciding question suppressed on the surface the organizer
+   * works the item through: a material unknown disappearing, which is what the engine invariants
+   * forbid. The row and the context line are both checked, and both halves of the presence rule.
+   */
+  const mergedRoutes = (triggerResult: string) => [
+    {
+      ruleId: "PARKS-EVENT-001",
+      triggerResult: "true",
+      disposition: "required",
+      unknownFields: [],
+      name: "Special Event Permit",
+      agency: "NYC Parks",
+      deadline: null,
+      deadlineDisplay: null,
+      latestApplyDate: null,
+      applyAfterDate: null,
+      deadlineStatus: "not_applicable",
+      slackDays: null,
+      feeDisplay: null,
+      portalName: null,
+      portalUrl: null,
+      portalInstructions: null,
+    },
+    {
+      ruleId: "SAPO-PERMIT-001",
+      triggerResult,
+      disposition: "required",
+      unknownFields: [],
+      name: "SAPO permit",
+      agency: "SAPO (CECM)",
+      deadline: null,
+      deadlineDisplay: null,
+      latestApplyDate: null,
+      applyAfterDate: null,
+      deadlineStatus: "not_applicable",
+      slackDays: null,
+      feeDisplay: null,
+      portalName: null,
+      portalUrl: null,
+      portalInstructions: null,
+    },
+  ];
+
+  it("reads a checklist whose routes and headline mode agree", async () => {
+    for (const [triggerResult, headlineMode] of [
+      ["true", "applies_together"],
+      ["unknown", "candidate"],
+    ]) {
+      stubFetch(async () =>
+        jsonResponse(
+          200,
+          checklistBody({
+            items: [
+              trackedItem(STREET_MEDIUM, {
+                routes: mergedRoutes(triggerResult as string),
+                headlineMode,
+                filingRouteRuleId: null,
+              }),
+            ],
+          }),
+        ),
+      );
+
+      await expect(loadChecklist("https://api.example.com", "event-1")).resolves.toMatchObject({
+        ok: true,
+      });
+    }
+  });
+
+  it("refuses a checklist row whose headline mode its own routes contradict", async () => {
+    for (const [triggerResult, headlineMode] of [
+      ["unknown", "applies_together"],
+      ["true", "candidate"],
+    ]) {
+      stubFetch(async () =>
+        jsonResponse(
+          200,
+          checklistBody({
+            items: [
+              trackedItem(STREET_MEDIUM, {
+                routes: mergedRoutes(triggerResult as string),
+                headlineMode,
+                filingRouteRuleId: null,
+              }),
+            ],
+          }),
+        ),
+      );
+
+      await expect(loadChecklist("https://api.example.com", "event-1")).resolves.toMatchObject({
+        ok: false,
+      });
+    }
+  });
+
+  it("refuses a context line carrying only one of the two route fields", async () => {
+    for (const half of [
+      { routes: mergedRoutes("true") },
+      { headlineMode: "applies_together", routes: null },
+    ]) {
+      stubFetch(async () =>
+        jsonResponse(
+          200,
+          checklistBody({
+            contextItems: [planContext(STREET_MEDIUM, { ...half, filingRouteRuleId: null })],
+          }),
+        ),
+      );
+
+      await expect(loadChecklist("https://api.example.com", "event-1")).resolves.toMatchObject({
+        ok: false,
+      });
+    }
+  });
+
   it("refuses a status the engine does not publish", async () => {
     stubFetch(async () =>
       jsonResponse(200, checklistBody({ items: [{ ...trackedItem(), status: "filed" }] })),

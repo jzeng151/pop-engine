@@ -262,6 +262,28 @@ describe("loadPlan", () => {
     expect(result.ok).toBe(false);
   });
 
+  /**
+   * #252: the engine publishes `headlineMode` exactly when it publishes `routes`, so either without
+   * the other is a shape no plan has. A list with no mode is the damaging half: it clears every
+   * per-field check, and `Routes` then returns null for want of a mode, so the page renders the
+   * binding scalar alone and the other route's name, window, fee and portal are silently absent
+   * from a line that has them.
+   */
+  it("refuses a route list and a headline mode that do not arrive together", async () => {
+    const merged = mergedFinding("true");
+    const halves = [
+      { ...merged, headlineMode: null },
+      (({ headlineMode: _dropped, ...rest }) => rest)(merged),
+      { ...merged, routes: null },
+      (({ routes: _dropped, ...rest }) => rest)(merged),
+    ];
+    for (const finding of halves) {
+      stubFetch(async () => jsonResponse(200, { ...storedPlan, findings: [finding] }));
+      const result = await loadPlan("https://api.example.com", "event-1");
+      expect(result.ok).toBe(false);
+    }
+  });
+
   it("refuses a route whose trigger result is false, which the route contract has no reading for", async () => {
     stubFetch(async () => jsonResponse(200, { ...storedPlan, findings: [mergedFinding("false")] }));
     await expect(loadPlan("https://api.example.com", "event-1")).resolves.toEqual({
