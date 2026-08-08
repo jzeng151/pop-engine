@@ -830,8 +830,15 @@ describe("no DOHMH rule is attributed to headcount, removed 2026-08-05 (#235)", 
    * outside BOTH the trigger assertion below and the threshold map under it. It could have read
    * `headcount` with every guard in this file green. One predicate answers the question now, in one
    * place, for the trigger assertion, the threshold map and the ruleset's own prose alike.
+   *
+   * BOTH PUBLISHED ARRAYS, for the same reason. `packages/engine/src/ruleset.ts` lines 639-661
+   * parse `rules` and `advisories` and evaluate their concatenation, so an advisory is published
+   * regulatory output; this walked `rules` alone, so a city health advisory keyed on `headcount`
+   * was outside the assertion below. `countClaimsInPublishedOutput` already read both arrays, which
+   * is what made the omission visible here.
    */
-  const cityHealthRules = (artifact) => artifact.rules.filter(cityHealthRule);
+  const cityHealthRules = (artifact) =>
+    [...(artifact.rules ?? []), ...(artifact.advisories ?? [])].filter(cityHealthRule);
 
   /**
    * The city health rules whose published trigger reads the attendee-count intake field, mapped to
