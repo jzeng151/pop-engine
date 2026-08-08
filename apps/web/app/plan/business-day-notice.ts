@@ -73,10 +73,42 @@ const AGENCY_IN_SENTENCE: Readonly<Record<string, string>> = {
  * days an agency counts, so neither gets this sentence. A `business_days_minimum` deadline has
  * exactly one undatable path in `packages/engine/src/deadlines.ts` (`holidays === null`), so type
  * plus `not_calculable` plus no computed date identifies this case with nothing left to parse.
+ *
+ * A MERGED FINDING GETS THE OLD LINE, because on one this sentence cannot be shown to be about the
+ * right agency. `packages/engine/src/findings.ts:407-411` sources the two fields this sentence
+ * combines from two DIFFERENT routes by design (AD-19): `agency` arrives with `identityBinding`,
+ * the tightest window among only the routes that contributed the headline disposition, while
+ * `deadline` and `deadlineStatus` arrive from `windowBinding`, the tightest window across the whole
+ * group. `findings.ts:328-330` states the consequence: "The two coincide in every group nyc.v2.11
+ * publishes, so this splits nothing today; it bounds what a future dedupe group can render." A group
+ * whose window comes from a DOB rule and whose disposition comes from an SLA one would render "which
+ * days the NY State Liquor Authority counts" beside DOB's window and send the organizer to the wrong
+ * agency to confirm it, and NOTHING WOULD FAIL: not the typecheck, not a test, and a `dedupe_key`
+ * edit alone reaches it (v2.6 added one; #239 and #244 both record a dedupe-key edit moving rendered
+ * output with no code change).
+ *
+ * The right fix is to read the agency off the timeline-binding route, and `ConsumedFinding` cannot
+ * express it: it carries one merged `agency` and a flat `ruleIds`, no per-route agency exists on the
+ * shape, and `timelineUnresolvedReason` does not name its route either (`deadlines.ts:294-295`
+ * builds it without a rule id; the id an organizer sees in the verdict panel is added there from
+ * `entry.ruleIds`). Widening the shape is a contract change this branch does not carry, and keying a
+ * rule id to an agency in this file would publish a regulatory fact outside
+ * `rules/nyc-rules.v2.11.json` and go stale the moment the ruleset corrected it. So a finding with
+ * more than one contributing rule falls back to the previous line, which asserts nothing and is
+ * therefore right whichever route bound which field.
+ *
+ * WHAT THAT COSTS, stated rather than buried: DOB-TENT-001 shares `dedupe_key` "dob-structure" with
+ * DOB-TALL-STRUCTURE-001, whose trigger is tri-state on `structure_over_10ft_tall`, so the two merge
+ * on any tented event that does not answer the height "no". Those events render "not calculable,
+ * confirm with agency" and lose nothing they had before this change; a tented event that answers
+ * "no", and both SLA rules, get the new sentence. When PR #252's route list lands on the merged
+ * finding, this guard is replaced by reading the timeline route's own agency and the merged case
+ * gets the sentence back.
  */
 export function businessDayNotice(finding: ConsumedFinding): string | null {
   if (finding.deadlineStatus !== "not_calculable" || finding.latestApplyDate !== null) return null;
   if (finding.deadline === null || finding.deadline.type !== "business_days_minimum") return null;
+  if (finding.ruleIds.length > 1) return null;
 
   const agency = finding.agency === null ? undefined : AGENCY_IN_SENTENCE[finding.agency];
   if (agency === undefined) return null;

@@ -268,10 +268,20 @@ export function PlanLine({ finding }: { finding: ConsumedFinding }) {
             ) : (
               /* A published window with no computable date. The line says what the date turns on
                  rather than only that we could not compute it, and keeps `--warning` because the
-                 state it reports is unchanged: this is still `not_calculable`. */
+                 state it reports is unchanged: this is still `not_calculable`.
+
+                 NO CITATION FOLLOWS THIS SENTENCE, and the omission is the point. `deadlineSources`
+                 are the deadline summary point's sources, and this sentence is about which days an
+                 agency counts as business days, which `docs/VERIFICATION-SOURCES.md` records that
+                 none of them answers: the TUP page is listed as not defining "business day" (:251,
+                 :276), the SLA permit page the same (:283), and ":294" lists a definition of the
+                 unit for any of the three examined rules under Not established. An official link
+                 beside a claim its page does not make is a citation an organizer can follow and
+                 find nothing. The branch above keeps the same sources because it asserts nothing
+                 that a source has to carry. If a source that does address business-day counting is
+                 ever located and published, it belongs here; none is. */
               <li className="line__point line__point--warning">
                 <strong>Apply by:</strong> {businessDayWindow}
-                <SummarySources sources={deadlineSources} />
               </li>
             ))}
         </ul>

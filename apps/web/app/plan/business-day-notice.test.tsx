@@ -60,13 +60,31 @@ const intake: EventIntake = {
   venue_license_covers_event_area: "no",
 };
 
-const evaluated = evaluate(intake, ruleset, TODAY, productionCalendar);
+/**
+ * The same event with the structure height answered "no", which is the ONLY difference.
+ *
+ * DOB-TENT-001 shares `dedupe_key` "dob-structure" with DOB-TALL-STRUCTURE-001, whose trigger reads
+ * `structure_over_10ft_tall`. That field is unanswered above, so the trigger is tri-state unknown,
+ * the rule fires MAY_BE_REQUIRED and the two merge. Answering "no" resolves it to false, the rule
+ * does not fire, and DOB-TENT-001 is a single-route finding. Both states are real production states
+ * and both are asserted below: the merged one gets the previous line, this one gets the new
+ * sentence.
+ */
+const heightAnswered: EventIntake = { ...intake, structure_over_10ft_tall: "no" };
 
-const findingFor = (ruleId: string): Finding => {
-  const finding = evaluated.findings.find((candidate) => candidate.ruleIds.includes(ruleId));
+const evaluated = evaluate(intake, ruleset, TODAY, productionCalendar);
+const evaluatedAlone = evaluate(heightAnswered, ruleset, TODAY, productionCalendar);
+
+const findIn = (plan: typeof evaluated, ruleId: string): Finding => {
+  const finding = plan.findings.find((candidate) => candidate.ruleIds.includes(ruleId));
   if (finding === undefined) throw new Error(`this intake produced no finding for ${ruleId}`);
   return finding;
 };
+
+const findingFor = (ruleId: string): Finding => findIn(evaluated, ruleId);
+
+/** DOB-TENT-001 with no route merged into it, off the height-answered evaluation. */
+const tentAlone = (): Finding => findIn(evaluatedAlone, "DOB-TENT-001");
 
 const storedPlanWith = (findings: readonly unknown[]) => ({
   eventRevision: 1,
@@ -116,15 +134,31 @@ const asServed = async (finding: unknown) => {
   return served;
 };
 
-/** The summary's apply-by point, whichever of the two lines rendered. */
-const applyByLine = async (finding: unknown): Promise<string> => {
+/**
+ * The summary's apply-by point, whichever of the two lines rendered, SPLIT FROM ITS CITATION.
+ *
+ * The citation renders inside the same `<li>`, so a helper that returned `textContent` would fold
+ * the source label into the sentence and every `toContain` assertion would pass whether a citation
+ * was attached or not. The two are separated here so the citation is something a test can assert
+ * ON rather than something it swallows: `sentence` is the point with the citation span removed, and
+ * `citation` is that span's text, or null when the line carries none.
+ */
+const applyBy = async (
+  finding: unknown,
+): Promise<{ readonly sentence: string; readonly citation: string | null }> => {
   const { container } = render(<PlanLine finding={await asServed(finding)} />);
   const line = [...container.querySelectorAll("li.line__point")].find((item) =>
     /^(Apply by|Exact apply-by date):/.test(item.textContent ?? ""),
   );
   if (line === undefined) throw new Error("the plan line rendered no apply-by point");
-  return line.textContent ?? "";
+  const citation = line.querySelector(".line__point-sources")?.textContent ?? null;
+  const withoutCitation = line.cloneNode(true) as Element;
+  withoutCitation.querySelector(".line__point-sources")?.remove();
+  return { sentence: withoutCitation.textContent ?? "", citation };
 };
+
+/** The apply-by sentence alone, for the assertions that are about the wording. */
+const applyByLine = async (finding: unknown): Promise<string> => (await applyBy(finding)).sentence;
 
 afterEach(() => {
   cleanup();
@@ -133,10 +167,12 @@ afterEach(() => {
 
 describe("a published business-day window with no computable date", () => {
   it("states what DOB-TENT-001's exact date depends on, and who to ask", async () => {
-    const tent = findingFor("DOB-TENT-001");
+    const tent = tentAlone();
     // The production configuration, restated at the assertion: no date, and a window that exists.
     expect(tent.deadlineStatus).toBe("not_calculable");
     expect(tent.latestApplyDate).toBeNull();
+    // One route, so the agency beside the window is the agency of the rule that published it.
+    expect(tent.ruleIds).toEqual(["DOB-TENT-001"]);
 
     expect(await applyByLine(tent)).toContain(
       "Apply by: the exact date depends on which days DOB counts as business days. " +
@@ -160,8 +196,12 @@ describe("a published business-day window with no computable date", () => {
     // with it. Both SLA rules record the unit as in conflict across three official sources, so an
     // unqualified "at least 15 business days" here would read as settled. This line carries no
     // digit at all, which is the property that makes that impossible rather than merely unlikely.
-    for (const ruleId of ["DOB-TENT-001", "SLA-ONEDAY-001", "SLA-CATERING-001"]) {
-      const line = await applyByLine(findingFor(ruleId));
+    for (const finding of [
+      tentAlone(),
+      findingFor("SLA-ONEDAY-001"),
+      findingFor("SLA-CATERING-001"),
+    ]) {
+      const line = await applyByLine(finding);
       const applyBy = line.slice(line.indexOf("Apply by:"));
       expect(applyBy).not.toMatch(/\d/);
       expect(applyBy).not.toContain("business days before your event");
@@ -173,8 +213,12 @@ describe("a published business-day window with no computable date", () => {
     // `docs/VERIFICATION-SOURCES.md` scopes the DOB result to NOT PUBLISHED from the Pass B source
     // set and leaves the SLA closure question NOT ASSESSED. "No source we consulted defines it" is
     // not "the agency does not publish it", and this sentence says neither.
-    for (const ruleId of ["DOB-TENT-001", "SLA-ONEDAY-001", "SLA-CATERING-001"]) {
-      expect(await applyByLine(findingFor(ruleId))).not.toContain("does not publish");
+    for (const finding of [
+      tentAlone(),
+      findingFor("SLA-ONEDAY-001"),
+      findingFor("SLA-CATERING-001"),
+    ]) {
+      expect(await applyByLine(finding)).not.toContain("does not publish");
       cleanup();
     }
   });
@@ -204,12 +248,86 @@ describe("a published business-day window with no computable date", () => {
     );
   });
 
-  it("never repeats the unresolved reason's prose or the internal calendar id", async () => {
+  it("cites no source under a sentence about business-day counting", async () => {
+    // The sources on this point are the deadline summary point's: `tup.page` for DOB-TENT-001 and
+    // `sla.ny.gov/permits-available-online` for both SLA rules. This sentence is about which days an
+    // agency counts, and `docs/VERIFICATION-SOURCES.md` records that none of those pages defines
+    // "business day" (:251, :276, :283) and lists a definition of the unit for any of the three
+    // examined rules under Not established (:294). So an organizer following the link would find a
+    // page that says nothing of the kind, and the line carries no link at all.
+    for (const finding of [
+      tentAlone(),
+      findingFor("SLA-ONEDAY-001"),
+      findingFor("SLA-CATERING-001"),
+    ]) {
+      const { sentence, citation } = await applyBy(finding);
+      expect(sentence).toContain("counts as business days");
+      expect(citation).toBeNull();
+      cleanup();
+    }
+  });
+
+  it("keeps the citation on the fallback line, which asserts nothing a source must carry", async () => {
+    // The omission above is specific to the new sentence, not a decision to stop citing the
+    // deadline point. "not calculable, confirm with agency" makes no claim about the unit, so its
+    // attribution stays where it has always been.
+    const { citation } = await applyBy(findingFor("DOB-ASSEMBLY-001"));
+    expect(citation).toContain("Sources:");
+    expect(citation).toContain("DOB TPA filing page");
+  });
+
+  it("never repeats the unresolved reason's prose or the internal calendar id on the apply-by line", async () => {
     // `timelineUnresolvedReason` was written for the verdict's unresolved-timeline record and names
-    // the internal calendar id. It is not parsed, not changed, and never reaches the organizer.
-    const tent = findingFor("DOB-TENT-001");
+    // the internal calendar id. This module does not parse it and does not change it, and the
+    // summary apply-by line does not restate it. THAT IS THE WHOLE CLAIM. The string does reach the
+    // organizer elsewhere on the same page, verbatim: `plan-line.tsx` renders it inside the
+    // disclosure, and `verdict-detail.tsx` renders it in the "What still depends on dating" panel
+    // above the plan lines. Both predate this line and neither is in this change's scope.
+    const tent = tentAlone();
     expect(tent.timelineUnresolvedReason).toContain(ruleset.calendarId);
     expect(await applyByLine(tent)).not.toContain(ruleset.calendarId);
+  });
+});
+
+describe("a merged dedupe line, whose agency and window need not come from one route", () => {
+  // `findings.ts:407-411` takes `agency` from `identityBinding` and `deadline`/`deadlineStatus`
+  // from `windowBinding`, and `findings.ts:328-330` records that the two coincide in every group
+  // nyc.v2.11 publishes without bounding what a future group can do. This sentence combines exactly
+  // those two fields, so on a merged finding it cannot be shown to name the agency that published
+  // the window. It falls back to the line that asserts nothing.
+
+  it("gets the previous line when more than one rule contributed to it", async () => {
+    // The same DOB-TENT-001, on the intake that leaves the structure height unanswered:
+    // DOB-TALL-STRUCTURE-001's trigger goes tri-state unknown, the rule fires, and the two merge on
+    // `dedupe_key` "dob-structure". Today both publish "DOB" and the suppressed sentence would have
+    // been correct; the guard does not depend on knowing that, which is the point of it.
+    const merged = findingFor("DOB-TENT-001");
+    expect(merged.ruleIds).toEqual(["DOB-TENT-001", "DOB-TALL-STRUCTURE-001"]);
+    expect(merged.deadline?.type).toBe("business_days_minimum");
+    expect(merged.deadlineStatus).toBe("not_calculable");
+
+    expect(await applyByLine(merged)).toContain(
+      `Exact apply-by date: not calculable — ${CONFIRM_WITH_AGENCY}`,
+    );
+  });
+
+  it("never names an agency that did not publish the window it is standing next to", async () => {
+    // The state the split allows and no published ruleset reaches yet: a group whose window comes
+    // from DOB-TENT-001 and whose headline disposition, and therefore `agency`, comes from a route
+    // of another agency. A `dedupe_key` edit alone reaches it, and #239 and #244 both record a
+    // dedupe-key edit moving rendered output with no code change. Built by overwriting the merged
+    // agency, because the merge is what would supply it.
+    const crossAgency = {
+      ...findingFor("DOB-TENT-001"),
+      agency: "NY State Liquor Authority",
+    };
+
+    const { sentence, citation } = await applyBy(crossAgency);
+    expect(sentence).toContain(`Exact apply-by date: not calculable — ${CONFIRM_WITH_AGENCY}`);
+    expect(sentence).not.toContain("the NY State Liquor Authority counts as business days");
+    expect(sentence).not.toContain("Confirm with the NY State Liquor Authority.");
+    // The fallback line keeps its attribution: it claims nothing the sources must carry.
+    expect(citation).toContain("DOB Temporary Use Permit page");
   });
 });
 
@@ -248,7 +366,7 @@ describe("a plan stored by an older build", () => {
     // stored before this change gets the same sentence a fresh one gets rather than a fallback, a
     // blank, or a sentence with a hole in it. The deadline here is stripped to that one member to
     // prove the page needs nothing else.
-    const stored = findingFor("DOB-TENT-001");
+    const stored = tentAlone();
     const bareDeadline = { ...stored, deadline: { type: "business_days_minimum" } };
 
     const served = await asServed(bareDeadline);
