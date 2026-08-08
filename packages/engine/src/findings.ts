@@ -30,6 +30,12 @@ export type ResolvedFindings = {
   readonly trace: readonly EvaluationTraceEntry[];
   /** Intake fields whose unanswered state left at least one finding conditional. */
   readonly unknownFields: readonly string[];
+  /**
+   * Rules that published a disposition at or above `required` AND whose own trigger resolved, so
+   * the requirement or bar they assert does not hang off an unanswered question. `verdict.ts` reads
+   * this to decide which missed findings may close a plan; see `blocksWhenMissed` there.
+   */
+  readonly definiteBlockingRuleIds: ReadonlySet<string>;
 };
 
 function findingKind(rule: EngineRule): FindingKind {
@@ -133,6 +139,9 @@ export const DISPOSITION_STRENGTH: readonly Disposition[] = [
 
 /** The strongest a route whose own trigger did not resolve can contribute (§8.4, and see below). */
 const UNRESOLVED_ROUTE_CEILING: Disposition = "may_be_required";
+
+/** The weakest disposition a missed finding can close a plan on (`verdict.ts`, F-102 AC 10). */
+export const BLOCKING_DISPOSITION_FLOOR: Disposition = "required";
 
 /** The weakest RESOLVED contribution a group can hold for that ceiling to bite (see below). */
 const UNRESOLVED_ROUTE_CAP_TRIGGER: Disposition = "required";
@@ -555,6 +564,7 @@ export function resolveFindings(
   const trace: EvaluationTraceEntry[] = [];
   const triggered: (Contribution & { dedupeKey: string | null })[] = [];
   const unknownFields = new Set<string>();
+  const definiteBlockingRuleIds = new Set<string>();
 
   for (const rule of ruleset.rules) {
     const evaluation = evaluateTrigger(rule.trigger, intake, scope);
@@ -564,6 +574,13 @@ export function resolveFindings(
     const finding = buildFinding(rule, evaluation.result, evaluation.triggeredBy, deadlineContext);
     // An unknown that surfaces while dating a finding is as material as one from its trigger.
     for (const field of finding.deadlineUnknownFields) unknownFields.add(field);
+    if (
+      evaluation.result === "true" &&
+      DISPOSITION_STRENGTH.indexOf(finding.disposition) >=
+        DISPOSITION_STRENGTH.indexOf(BLOCKING_DISPOSITION_FLOOR)
+    ) {
+      definiteBlockingRuleIds.add(rule.id);
+    }
     triggered.push({ finding, triggerResult: evaluation.result, dedupeKey: rule.dedupeKey });
   }
 
@@ -571,5 +588,6 @@ export function resolveFindings(
     findings: applyDependencySequencing(dedupe(triggered), deadlineContext),
     trace,
     unknownFields: [...unknownFields],
+    definiteBlockingRuleIds,
   };
 }

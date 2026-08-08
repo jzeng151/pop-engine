@@ -1028,6 +1028,113 @@ describe("a missed window blocks at or above `required` (F-102, amended 2026-08-
   });
 });
 
+/**
+ * The other half of the bar, and the reason it is the disposition AND the trigger.
+ *
+ * `resolveDisposition()` demotes an unknown-triggered `required` to `may_be_required`, and
+ * deliberately does not demote `prohibited_or_ineligible` (`proposals.ts` §2), so a lone barred
+ * finding whose trigger came back `unknown` still RENDERS as the blocking answer it publishes. Under
+ * the old `=== "required"` filter that could never reach the window check. Widening the bar upward
+ * brought it into reach, and a plan then asserted a blocker and, in the same payload, that it did not
+ * know the fact the blocker hangs off. `verdict.ts`'s own header states the invariant that breaks:
+ * an unknown-conditioned finding can never render INFEASIBLE (F-102 AC 2, Scenario F).
+ *
+ * `headcount` is an integer, so `alternativeValues()` returns `[]` for it and there are no branches
+ * to diverge; `crowd_size` below is an enum, so there are. Both must stay CONDITIONAL, and the
+ * finding must keep its published disposition in both.
+ */
+describe("an unknown trigger never blocks, however barred the finding (F-102 AC 2)", () => {
+  const barredRule = (trigger: Record<string, unknown>) => ({
+    id: "BAR-001",
+    kind: "prohibition",
+    trigger,
+    output: { permit_name: "barred route", agency: "DOB", deadline: calendarWindow(45) },
+    verification: { status: "SOURCE_CONFIRMED" },
+    source: { citation: "citation BAR-001", urls: ["https://example.test/BAR-001"] },
+  });
+
+  it("leaves a barred, missed finding conditional when the field cannot be enumerated", () => {
+    const plan = evaluate(
+      { event_date: "2026-08-02", headcount: "unknown" } as unknown as EventIntake,
+      syntheticRuleset([barredRule({ all: [{ field: "headcount", op: "gte", value: 10 }] })]),
+      TODAY,
+      { id: "test-calendar@2026", holidays: [] },
+    );
+    // The line still reads as barred and still says its window has closed; only the verdict waits.
+    expect(plan.findings[0]?.disposition).toBe("prohibited_or_ineligible");
+    expect(plan.findings[0]?.deadlineStatus).toBe("published_deadline_missed");
+    expect(plan.verdict).toBe("CONDITIONAL");
+    expect(plan.verdictDetail.blockingFinding).toBeNull();
+    // The plan asks for the fact instead of blocking on it, and does not list it as missed either.
+    expect(plan.verdictDetail.missingFacts.map((fact) => fact.field)).toEqual(["headcount"]);
+    expect(plan.verdictDetail.missedRuleIds).toEqual(["BAR-001"]);
+  });
+
+  it("leaves it conditional when the field can be enumerated and the branches disagree", () => {
+    const plan = evaluate(
+      { event_date: "2026-08-02", headcount: 50, crowd_size: "unknown" } as unknown as EventIntake,
+      syntheticRuleset(
+        [
+          barredRule({
+            all: [
+              { field: "headcount", op: "gte", value: 10 },
+              { field: "crowd_size", op: "eq", value: "large" },
+            ],
+          }),
+        ],
+        [{ field: "crowd_size", type: "enum", values: ["small", "large"] }],
+      ),
+      TODAY,
+      { id: "test-calendar@2026", holidays: [] },
+    );
+    expect(plan.findings[0]?.disposition).toBe("prohibited_or_ineligible");
+    expect(plan.verdict).toBe("CONDITIONAL");
+    expect(plan.verdictDetail.blockingFinding).toBeNull();
+    // Answering `large` does bar the event: the branch table says so, and that is where it belongs.
+    expect(
+      plan.verdictDetail.missingFacts[0]?.branches.map((branch) => [branch.value, branch.verdict]),
+    ).toEqual([
+      ["small", "FEASIBLE"],
+      ["large", "INFEASIBLE"],
+    ]);
+  });
+
+  it("does not block a merged line whose only barred route is the unresolved one", () => {
+    // The merged disposition is the strongest ANY route contributes, so an advisory route that DID
+    // resolve cannot lend its resolution to the prohibition that did not.
+    const plan = evaluate(
+      { event_date: "2026-08-02", headcount: 50, crowd_size: "unknown" } as unknown as EventIntake,
+      syntheticRuleset(
+        [
+          {
+            ...barredRule({
+              all: [
+                { field: "headcount", op: "gte", value: 10 },
+                { field: "crowd_size", op: "eq", value: "large" },
+              ],
+            }),
+            output: {
+              permit_name: "barred route",
+              agency: "DOB",
+              deadline: calendarWindow(45),
+              dedupe_key: "dob-structure",
+            },
+          },
+          disposedRule("RULE-B", "ADVISORY", calendarWindow(45)),
+        ],
+        [{ field: "crowd_size", type: "enum", values: ["small", "large"] }],
+      ),
+      TODAY,
+      { id: "test-calendar@2026", holidays: [] },
+    );
+    expect(plan.findings).toHaveLength(1);
+    expect(plan.findings[0]?.disposition).toBe("prohibited_or_ineligible");
+    expect(plan.findings[0]?.deadlineStatus).toBe("published_deadline_missed");
+    expect(plan.verdict).toBe("CONDITIONAL");
+    expect(plan.verdictDetail.blockingFinding).toBeNull();
+  });
+});
+
 describe("verification treatments", () => {
   it("leaves RESEARCH_REQUIRED confirmation to the renderer instead of duplicating it in notes", () => {
     const plan = evaluate(

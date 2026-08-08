@@ -1,7 +1,7 @@
 // Verdict algorithm, ARCHITECTURE steps 3–6. Branch evaluation for unknowns runs before any
 // window check, so an unknown-conditioned finding can never render INFEASIBLE (Scenario F).
 
-import { DISPOSITION_STRENGTH, resolveFindings } from "./findings";
+import { BLOCKING_DISPOSITION_FLOOR, DISPOSITION_STRENGTH, resolveFindings } from "./findings";
 import type { PlanContext } from "./deadlines";
 import {
   MISSED_MAY_BE_REQUIRED_IS_CONDITIONAL,
@@ -40,19 +40,47 @@ const isMissed = (finding: Finding): boolean =>
   finding.deadlineStatus === "published_deadline_missed";
 
 /**
- * Whether a missed finding blocks. `required` is the bar, not the whole set: `prohibited_or_ineligible`
- * sits ABOVE `required` in `DISPOSITION_STRENGTH`, so testing for equality let a finding that is both
- * barred and past its published window fall through to the missed-but-not-blocking branch and read
- * CONDITIONAL. Product owner, 2026-08-08.
+ * Whether a missed finding blocks. Two conditions, and both are load-bearing.
+ *
+ * `required` is the BAR rather than the whole set: `prohibited_or_ineligible` sits ABOVE `required`
+ * in `DISPOSITION_STRENGTH`, so testing for equality let a finding that is both barred and past its
+ * published window fall through to the missed-but-not-blocking branch and read CONDITIONAL. Product
+ * owner, 2026-08-08.
+ *
+ * The finding also has to assert that bar off a trigger that RESOLVED, which is the same gate
+ * `resolveDisposition()` applies one tier down. It does not apply there to `prohibited_or_ineligible`
+ * on purpose (`proposals.ts` §2): a lone barred finding whose trigger came back `unknown` keeps its
+ * published disposition so it still RENDERS as the blocking answer it publishes. Under the old
+ * `=== "required"` filter that could never reach the window check, because a `required` rule with an
+ * unknown trigger has already been demoted to `may_be_required`. Widening the bar upward brought it
+ * into reach, and the file's own header states the invariant it would have broken: an
+ * unknown-conditioned finding can never render INFEASIBLE (F-102 AC 2, Scenario F). Telling an
+ * organizer their event is barred AND past its filing deadline, in the same payload that says the
+ * engine does not know the fact the bar hangs off, is the failure this repository forbids everywhere
+ * else. So the disposition still renders; only the verdict waits for the answer.
+ *
+ * `definiteBlockingRuleIds` carries which routes resolved, because a merged line's disposition is
+ * the strongest ANY route contributes (`mergeGroup`) and the trigger result is not on `Finding`. A
+ * group holding an unknown-triggered prohibition beside a resolved advisory reads
+ * `prohibited_or_ineligible` and blocks on nothing; one holding a resolved `required` route blocks
+ * on that route, exactly as before.
  */
-const blocksWhenMissed = (finding: Finding): boolean =>
-  DISPOSITION_STRENGTH.indexOf(finding.disposition) >= DISPOSITION_STRENGTH.indexOf("required");
+const blocksWhenMissed = (
+  finding: Finding,
+  definiteBlockingRuleIds: ReadonlySet<string>,
+): boolean =>
+  DISPOSITION_STRENGTH.indexOf(finding.disposition) >=
+    DISPOSITION_STRENGTH.indexOf(BLOCKING_DISPOSITION_FLOOR) &&
+  finding.ruleIds.some((ruleId) => definiteBlockingRuleIds.has(ruleId));
 
 /**
  * Steps 4–6: the window checks, with no branch expansion. Also the per-branch and per-rescope
  * verdict, which is why it is separate from `computeVerdict`.
  */
-export function computeWindowVerdict(findings: readonly Finding[]): WindowVerdict {
+export function computeWindowVerdict(
+  findings: readonly Finding[],
+  definiteBlockingRuleIds: ReadonlySet<string>,
+): WindowVerdict {
   const missed = findings.filter(isMissed);
   const missedRuleIds = missed.flatMap((finding) => finding.ruleIds);
   const slacks = findings
@@ -62,7 +90,7 @@ export function computeWindowVerdict(findings: readonly Finding[]): WindowVerdic
 
   // The blocking finding is the missed one with the longest published lead, i.e. the earliest date.
   const blocking = missed
-    .filter(blocksWhenMissed)
+    .filter((finding) => blocksWhenMissed(finding, definiteBlockingRuleIds))
     .sort((left, right) =>
       (left.latestApplyDate ?? "").localeCompare(right.latestApplyDate ?? ""),
     )[0];
@@ -260,7 +288,7 @@ function evaluateConditional(
   context: PlanContext,
 ): ConditionalEvaluation {
   const resolved = resolveFindings(intake, ruleset, context);
-  const window = computeWindowVerdict(resolved.findings);
+  const window = computeWindowVerdict(resolved.findings, resolved.definiteBlockingRuleIds);
   const unresolvedTimelines = resolved.findings
     .filter((finding) => finding.timelineUnresolvedReason !== null)
     .map((finding) => ({
