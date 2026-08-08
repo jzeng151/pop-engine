@@ -39,6 +39,23 @@ const repoRoot = process.env.BASELINE_CHECK_ROOT
 const baselinePath = join(repoRoot, "docs/BASELINE.md");
 
 /**
+ * What a manifest row may name as an artifact: a local `.md` or `.json` path.
+ *
+ * ONE rule, applied to plain tokens and to glob expansions alike. It used to be applied only to
+ * plain tokens, so `docs/proposals/*` expanded to everything in the directory including
+ * `docs/proposals/advisory-144-refetch-2026-07-28`, which is a DIRECTORY of eight tracked files.
+ * `declaredStatus` then read it and the whole check died on a bare `EISDIR` stack trace. The row
+ * that triggered it was ordinary: an approval recorded as an exception clause inside the archived
+ * material row put the word APPROVED in a status cell whose path column is a glob, and a row that
+ * had never been expanded suddenly was.
+ *
+ * A directory can never carry a self-declared status, so including one is never right whatever the
+ * row says. Entry type is checked as well as name because the extension test alone would still
+ * admit a directory called `legacy.md`.
+ */
+const ARTIFACT_PATH = /^[\w./-]+\.(md|json)$/;
+
+/**
  * Expand a manifest glob (`specs/F-*.md`) to the files it actually covers.
  *
  * Globs used to be skipped, which is exactly how "APPROVED except F-101/F-102/F-201" sat stale in
@@ -55,9 +72,12 @@ function expandGlob(token) {
   const [prefix, suffix] = pattern.split("*");
   const absoluteDirectory = join(repoRoot, directory);
   if (!existsSync(absoluteDirectory)) return [];
-  return readdirSync(absoluteDirectory)
+  return readdirSync(absoluteDirectory, { withFileTypes: true })
+    .filter((entry) => !entry.isDirectory())
+    .map((entry) => entry.name)
     .filter((name) => name.startsWith(prefix) && name.endsWith(suffix))
     .map((name) => (directory === "" ? name : `${directory}/${name}`))
+    .filter((path) => ARTIFACT_PATH.test(path))
     .sort();
 }
 
@@ -82,7 +102,7 @@ function filePathsInRow(row) {
       paths.push(...expanded);
       continue;
     }
-    if (/^[\w./-]+\.(md|json)$/.test(token)) paths.push(token);
+    if (ARTIFACT_PATH.test(token)) paths.push(token);
   }
   return paths;
 }
@@ -116,7 +136,8 @@ if (conflictMarkers.length > 0) {
   process.exit(1);
 }
 
-const approvedFiles = new Set();
+/** Approved artifact path -> the manifest row that named it, so a failure can say which row. */
+const approvedFiles = new Map();
 const unsupportedGlobs = [];
 const emptyGlobs = [];
 /** Rows publishing a digest: `{ file, expected, row, malformed? }`. */
@@ -128,7 +149,9 @@ for (const row of baseline.split(/\r?\n/)) {
   const statusCell = cells[3] ?? "";
   if (!/APPROVED/i.test(statusCell)) continue;
   const paths = filePathsInRow(row);
-  for (const p of paths) approvedFiles.add(p);
+  for (const p of paths) {
+    if (!approvedFiles.has(p)) approvedFiles.set(p, cells[1] || row.slice(0, 60));
+  }
 
   // A digest belongs to the artifact named in the same row, so the pairing is positional
   // rather than guessed: one path and one digest, or the row is ambiguous and says so.
@@ -162,11 +185,25 @@ const bannedLeadWords = /^(PROPOSED|DRAFT|Canonical|Current|Single)\b/i;
 const failures = [];
 const checked = [];
 const headerless = [];
+const unreadable = [];
 
-for (const rel of [...approvedFiles].sort()) {
+for (const rel of [...approvedFiles.keys()].sort()) {
   const abs = join(repoRoot, rel);
   if (!existsSync(abs)) continue; // manifest may reference not-yet-created files
-  const status = declaredStatus(abs);
+  // A path that exists and cannot be read as a status-carrying artifact is drift, and it has to
+  // READ as drift. This used to escape as an unhandled `EISDIR` from `readFileSync`, which names
+  // the syscall and neither the path nor the row that claimed it. A stack trace out of the script
+  // whose whole purpose is to make drift legible is the wrong way to report drift.
+  let status;
+  try {
+    status = declaredStatus(abs);
+  } catch (error) {
+    unreadable.push(
+      `${rel}: named by manifest row "${approvedFiles.get(rel)}", and cannot be read as an ` +
+        `artifact (${error.message})`,
+    );
+    continue;
+  }
   if (status === null) {
     // Warn, do not fail. A file that declares nothing cannot contradict the manifest, and failing
     // here would break the build until someone writes approval dates for nine spec files that
@@ -1726,6 +1763,17 @@ if (posFailures.length > 0) {
       "is the WIDENING branch: it changes an assigned ID's meaning and needs an amendment to " +
       "docs/DESIGN.md:25. A new capability needs a new ID and a new product decision. Either way " +
       "this rule moves with the decision that changed it, not around it.",
+  );
+  process.exit(1);
+}
+
+if (unreadable.length > 0) {
+  console.error("Baseline manifest marks APPROVED something that cannot be read as an artifact:\n");
+  for (const f of unreadable) console.error("  ✗ " + f);
+  console.error(
+    "\nOnly a file carries a self-declared status. A row that reaches a directory, or a document " +
+      "this cannot parse, states an approval nothing can be checked against. Fix the row or the " +
+      "artifact.",
   );
   process.exit(1);
 }

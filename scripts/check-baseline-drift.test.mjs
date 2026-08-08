@@ -1733,6 +1733,46 @@ describe.concurrent("round 15: ignored files, substitution, and values that span
   });
 });
 
+// A glob row expands to ARTIFACTS. It expanded to directory entries too, and PR #252 is what found
+// it: an approval recorded as an exception clause inside the archived-material row put the word
+// APPROVED in a status cell whose path column is `docs/proposals/*`, the row flipped from unchecked
+// to checked, and the expansion handed `declaredStatus` a directory that has been on main all along.
+// The check died on an unhandled EISDIR naming the syscall and neither the path nor the row.
+//
+// Both halves are proved here, because the row was also fixed and either fix alone would make
+// `pnpm check:baseline` green on this repo while leaving the other defect in place.
+describe.concurrent("round 16: a glob row expands to artifacts, never to directories", () => {
+  const approvedRow = (artifact) =>
+    `# Fixture manifest\n\n| Concern | Artifact | Status | Notes |\n| --- | --- | --- | --- |\n` +
+    `| Drafts | \`${artifact}\` | APPROVED 2026-08-08 by the product owner | none |\n`;
+
+  it("skips a directory inside an APPROVED glob and still checks the files beside it", async () => {
+    const { status, output } = await runOn({
+      "docs/BASELINE.md": approvedRow("docs/proposals/*"),
+      "docs/proposals/one.md": "# One\n\n**Status:** APPROVED 2026-08-08\n",
+      // The shape that broke it: a directory sitting in the globbed directory, with files under it.
+      "docs/proposals/advisory-refetch-2026-07-28/notes.md": "# Notes\n\n**Status:** PROPOSED\n",
+    });
+
+    expect(status).toBe(0);
+    expect(output).toContain("✓ docs/proposals/one.md");
+    expect(output).not.toContain("advisory-refetch-2026-07-28");
+  });
+
+  it("reports the path and the row that named it rather than throwing EISDIR", async () => {
+    const { status, output } = await runOn({
+      "docs/BASELINE.md": approvedRow("docs/proposals/legacy.md"),
+      // A directory named like an artifact, which the extension test alone would still admit.
+      "docs/proposals/legacy.md/inner.md": "# Inner\n\n**Status:** PROPOSED\n",
+    });
+
+    expect(status).toBe(1);
+    expect(output).toContain("docs/proposals/legacy.md");
+    expect(output).toContain('named by manifest row "Drafts"');
+    expect(output).not.toContain("at readFileSync");
+  });
+});
+
 // The SPEC-CONFLICT #127 item 2 rule (governance §5 step 7). The reconciliation dropped a
 // standalone `Square/POS integrations` bullet from the Roadmap because it contradicted the PRD and
 // ARCHITECTURE-FUTURE, which assign the Square capability to F-408. A one-time edit closes that
