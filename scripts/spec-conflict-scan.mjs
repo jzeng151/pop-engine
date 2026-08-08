@@ -820,7 +820,8 @@ export const outputStrings = (node, into = []) => {
 
 /**
  * Every organizer-facing string one published rule or advisory carries: its whole `output`, plus
- * the VERIFICATION QUALIFICATION, which sits outside `output` and reaches organizers all the same.
+ * the two strings that sit OUTSIDE `output` and reach organizers all the same, the VERIFICATION
+ * QUALIFICATION and the SOURCE CITATION.
  *
  * The qualification was outside this audit until the twelfth PR #247 round, and it is not an
  * internal note: `packages/engine/src/findings.ts:55-64` appends it to every finding's `notes`
@@ -829,15 +830,26 @@ export const outputStrings = (node, into = []) => {
  * written there is published to an organizer exactly as a `note_text` is, and this audit named no
  * offender for it. Nine of this ruleset's rules publish one today.
  *
- * `verification.status` and `verification.evidence` are not here. The status is an enumerated
- * value that renderers own, and the evidence is a research reference ("VS Round2 #2") the engine
- * never puts in a finding.
+ * The citation is the thirteenth round, and it is the same shape one field over.
+ * `packages/engine/src/findings.ts:68-71` copies `source.citation` verbatim into every finding's
+ * `sources`, and `apps/web/app/plan/plan-line.tsx:117-123` renders it verbatim as the plan line's
+ * citation text. A citation reading "DOHMH permit for 75 or more guests" is therefore an
+ * unsupported trigger printed on the plan line itself, and this audit named no offender for it.
+ * Forty-four of this ruleset's rules and advisories publish a citation.
+ *
+ * `source.urls` is not here, for the reason `outputStrings` gives about `url`: a path fragment
+ * like `.../guests-75` is not prose and would read as a count.
+ *
+ * `verification.status` and `verification.evidence` are not here either. The status is an
+ * enumerated value that renderers own, and the evidence is a research reference ("VS Round2 #2")
+ * the engine never puts in a finding.
  */
 export const organizerFacingStrings = (rule) => [
   ...outputStrings(rule.output),
   ...(typeof rule.verification?.qualification === "string"
     ? [rule.verification.qualification]
     : []),
+  ...(typeof rule.source?.citation === "string" ? [rule.source.citation] : []),
 ];
 
 /**
@@ -850,6 +862,76 @@ export const organizerFacingStrings = (rule) => [
  * relationship a per-string scan cannot see.
  */
 const RENDERED_SEPARATOR = ". ";
+
+/**
+ * The two arrays whose strings `countClaimsInPublishedOutput` reads RULE BY RULE, and which
+ * `rulesetProseStrings` therefore skips rather than reading a second time.
+ */
+const PUBLISHED_RULE_ARRAYS = ["rules", "advisories"];
+
+/**
+ * THE ARTIFACT'S OWN TOP-LEVEL PROSE: every string the published ruleset carries outside its
+ * `rules` and `advisories`, labelled by the top-level key it hangs under.
+ *
+ * EVERY OTHER KEY, not a list of the regulatory-looking ones, for the reason `outputStrings` gives
+ * about `output`: a key a future publication adds is scanned the day it lands rather than the day
+ * somebody remembers to extend a list. `status`, `provenance` and `status_legend` are the three the
+ * thread names and the three the F-302 rollout spec requires rewriting, but `config`,
+ * `intake_fields`, `engine_conventions` and `reference_tables` all carry regulatory sentences too,
+ * and `config.slack_warning_days.note` already exists to say a threshold is NOT an official one.
+ *
+ * `outputStrings` supplies the walk, so `url` is excluded here for the same reason it is there.
+ */
+export const rulesetProseStrings = (artifact) => {
+  const found = [];
+  for (const [key, value] of Object.entries(artifact ?? {})) {
+    if (PUBLISHED_RULE_ARRAYS.includes(key)) continue;
+    for (const string of outputStrings(value)) found.push({ where: `ruleset.${key}`, string });
+  }
+  return found;
+};
+
+/**
+ * Every part of one top-level string that pairs the city health agency with an attendee count,
+ * READ SENTENCE BY SENTENCE and across the boundary between two adjacent sentences.
+ *
+ * THE UNIT IS THE SENTENCE, not the whole string, and the artifact forces that choice rather than
+ * taste deciding it. A rule's `note_text` is one authored claim, so pairing across it is the claim;
+ * `provenance` is a version-by-version changelog held in a single JSON string with no blank line in
+ * it, so `blocksOf` returns it whole and pairing across it is co-occurrence. On the published
+ * artifact today that difference is the difference between zero offenders and one: the sentence
+ * quoting the answer key's "venue-occupancy advisory + DOHMH findings remain" and a sentence about
+ * a guest count sit some two thousand characters apart in `provenance`, and a whole-string scan
+ * reports the pair as a fabricated regulatory claim. This is the same reasoning `countsAttributed`
+ * states for its own unit, applied to the other side of the question.
+ *
+ * AND THE ADJACENT PAIR, because the sentence alone has the hole the twelfth round found between
+ * two strings of one card: "DOHMH publishes this requirement. It applies at 75 or more guests."
+ * carries the agency in one sentence and the count in the next and neither sentence carries both.
+ * `splitAcrossBoundary` is the same predicate the block scan uses, and it asks that the boundary
+ * CONTRIBUTE, so a self-pairing sentence is reported once as itself rather than three times.
+ *
+ * Sentences are split RAW and matched normalized, which is what `flaggedBlocks` does with blocks:
+ * the reported text is the text a reader will search the artifact for.
+ */
+const countClaimsInProse = (raw) => {
+  const sentences = sentencesOf(raw);
+  const matchable = sentences.map(normalizeForMatching);
+  const flagged = [];
+  for (let index = 0; index < sentences.length; index += 1) {
+    if (pairsAgencyWithCount(sentences[index])) {
+      flagged.push(sentences[index]);
+      continue;
+    }
+    const next = matchable[index + 1];
+    if (next === undefined) continue;
+    const acrossBoundary =
+      splitAcrossBoundary(matchable[index], next, ATTENDEE_COUNT) ||
+      splitAcrossBoundary(matchable[index], next, COUNTED_PEOPLE);
+    if (acrossBoundary) flagged.push(`${sentences[index]} ${sentences[index + 1]}`);
+  }
+  return flagged;
+};
 
 /**
  * THE PUBLISHED RULESET'S OWN PROSE, scanned: every string of every rule's and advisory's `output`
@@ -906,8 +988,16 @@ const RENDERED_SEPARATOR = ". ";
  * offending sentence wherever one string carries the whole claim, which is every case this audit
  * has had, and widens it to the card only where the claim is the relationship between two strings.
  *
+ * THE ARTIFACT'S OWN TOP-LEVEL PROSE IS READ TOO, which is the thirteenth PR #247 round. This
+ * walked `rules` and `advisories` and nothing else, and the generic prose walk excludes `.json`
+ * entirely, so `status`, `provenance`, `status_legend` and every other top-level string were the
+ * one part of the highest-authority artifact that no guard in this repository read. That is not a
+ * hypothetical corner: the changed F-302 rollout spec requires rewriting `status` and
+ * `provenance`, so those are strings this branch's own work edits. `rulesetProseStrings` below
+ * says which strings and `countClaimsInProse` says at what unit.
+ *
  * Measured on this tree: zero strings and zero units, over 42 rules and 4 advisories, with the
- * verification qualifications included.
+ * verification qualifications and the source citations included, and zero top-level sentences.
  */
 export const countClaimsInPublishedOutput = (artifact, { attributed = new Map() } = {}) => {
   const found = [];
@@ -926,6 +1016,12 @@ export const countClaimsInPublishedOutput = (artifact, { attributed = new Map() 
       for (const string of offending) found.push({ ruleId: rule.id, string });
     } else if (claims(unit)) {
       found.push({ ruleId: rule.id, string: unit });
+    }
+  }
+  for (const { where, string } of rulesetProseStrings(artifact)) {
+    for (const claim of countClaimsInProse(string)) {
+      if (countsAttributed(claim, attributed)) continue;
+      found.push({ ruleId: where, string: claim });
     }
   }
   return found;

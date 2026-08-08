@@ -26,6 +26,7 @@ import {
   organizerFacingStrings,
   pairsAgencyWithCount,
   pinnedDigest,
+  rulesetProseStrings,
   scanFile,
   scanOptionsFor,
   stableRegisterRow,
@@ -2179,6 +2180,155 @@ describe("countClaimsInPublishedOutput: the published ruleset is prose too", () 
     for (const rule of withQualification) {
       expect(organizerFacingStrings(rule)).toContain(rule.verification.qualification);
     }
+  });
+
+  /**
+   * THE SOURCE CITATION IS PUBLISHED PROSE, which is the thirteenth round and the same shape one
+   * field over from the qualification. `packages/engine/src/findings.ts:68-71` copies
+   * `source.citation` verbatim into every finding's `sources`, and
+   * `apps/web/app/plan/plan-line.tsx:117-123` renders it verbatim as the plan line's citation
+   * text, so an unsupported trigger written there ships on the line itself.
+   */
+  it("finds a claim published in a source citation", () => {
+    const claim = "DOHMH permit for 75 or more guests";
+    const bad = ruleWith("DOB-TENT-001", (rule) => {
+      rule.source.citation = claim;
+      return rule;
+    });
+    const edited = bad.rules.find((rule) => rule.id === "DOB-TENT-001");
+    // The claim is nowhere the audit already read: not under `output`, not in the qualification.
+    expect(JSON.stringify(edited.output)).not.toContain("75 or more guests");
+    expect(edited.verification.qualification).not.toContain("75 or more guests");
+    expect(countClaimsInPublishedOutput(bad).map((item) => item.string)).toEqual([claim]);
+  });
+
+  /** A citation's URLs are not prose, for the same reason a `user_summary` point's are not. */
+  it("does not read a source url as prose", () => {
+    const bad = ruleWith("DOHMH-VENDOR-PERMIT-001", (rule) => {
+      rule.source.urls = ["https://example.test/dohmh/75-guests"];
+      return rule;
+    });
+    expect(countClaimsInPublishedOutput(bad)).toEqual([]);
+  });
+
+  /** The published rules that carry one, so the case above stands for a field this ruleset uses. */
+  it("forty-four published rules and advisories carry a source citation", () => {
+    const withCitation = [...published.rules, ...published.advisories].filter(
+      (rule) => typeof rule.source?.citation === "string",
+    );
+    expect(withCitation.length).toBe(44);
+    for (const rule of withCitation) {
+      expect(organizerFacingStrings(rule)).toContain(rule.source.citation);
+    }
+  });
+});
+
+/**
+ * THE ARTIFACT'S OWN TOP-LEVEL PROSE, driven over a bad publication. The thirteenth PR #247 round:
+ * `countClaimsInPublishedOutput` walked `rules` and `advisories`, and the generic prose walk
+ * excludes `.json`, so `status`, `provenance`, `status_legend` and every other top-level string
+ * were the part of the highest-authority artifact that no guard in this repository read. The
+ * changed F-302 rollout spec requires rewriting `status` and `provenance`, so these are strings
+ * this branch's own work edits.
+ */
+describe("countClaimsInPublishedOutput: the artifact's top-level prose is prose too", () => {
+  const published = JSON.parse(read("rules/nyc-rules.v2.11.json"));
+  const claim = "DOHMH requires a permit for 75 or more guests.";
+  const offendersOf = (artifact, options) =>
+    countClaimsInPublishedOutput(artifact, options).map((item) => [item.ruleId, item.string]);
+
+  it("finds nothing in the ruleset as published", () => {
+    expect(countClaimsInPublishedOutput(published)).toEqual([]);
+  });
+
+  /** The three keys the thread names, each reached by the same walk rather than by a key list. */
+  it("finds a claim written into status, provenance or the status legend", () => {
+    expect(offendersOf({ ...published, status: `${published.status} ${claim}` })).toEqual([
+      ["ruleset.status", claim],
+    ]);
+    expect(offendersOf({ ...published, provenance: `${published.provenance} ${claim}` })).toEqual([
+      ["ruleset.provenance", claim],
+    ]);
+    expect(
+      offendersOf({
+        ...published,
+        status_legend: { ...published.status_legend, VERIFIED: claim },
+      }),
+    ).toEqual([["ruleset.status_legend", claim]]);
+  });
+
+  /**
+   * A key no list would have named, which is why the walk takes every top-level key. This one is
+   * nested two levels down and already exists to say a threshold is NOT an official one.
+   */
+  it("finds a claim in a nested config note", () => {
+    const bad = {
+      ...published,
+      config: {
+        ...published.config,
+        slack_warning_days: { ...published.config.slack_warning_days, note: claim },
+      },
+    };
+    expect(offendersOf(bad)).toEqual([["ruleset.config", claim]]);
+  });
+
+  /**
+   * THE UNIT IS THE SENTENCE, and the published `provenance` is why. It is a version-by-version
+   * changelog in one JSON string with no blank line in it, so `blocksOf` returns it whole: the
+   * sentence quoting "venue-occupancy advisory + DOHMH findings remain" and a sentence naming a
+   * guest count sit some two thousand characters apart in it, and a whole-string scan calls that
+   * pair a fabricated regulatory claim.
+   */
+  it("does not pair an agency and a count that sit in unrelated sentences of one string", () => {
+    expect(published.provenance).toMatch(CITY_HEALTH_AGENCY);
+    // The whole string pairs; no sentence of it does, and no adjacent pair of sentences does.
+    expect(pairsAgencyWithCount(published.provenance)).toBe(true);
+    expect(countClaimsInPublishedOutput(published)).toEqual([]);
+  });
+
+  /** The hole the sentence unit would otherwise have, closed the way the block scan closes it. */
+  it("finds a claim split across two adjacent sentences", () => {
+    const split = "DOHMH publishes this requirement. It applies at 75 or more guests.";
+    expect(pairsAgencyWithCount("DOHMH publishes this requirement.")).toBe(false);
+    expect(pairsAgencyWithCount("It applies at 75 or more guests.")).toBe(false);
+    expect(offendersOf({ ...published, status: split })).toEqual([["ruleset.status", split]]);
+  });
+
+  /**
+   * The exemption reaches top-level prose on the same terms as any other document: the sentence
+   * has to name the rule that really reads the count and state no number that rule does not
+   * publish. `countsAttributed` is the predicate, so this is one behaviour and not two.
+   */
+  it("exempts a top-level sentence that names a count-reading rule and its own threshold", () => {
+    const attributed = new Map([["HEALTH-ASSEMBLY-001", new Set([75])]]);
+    const supported = "HEALTH-ASSEMBLY-001 requires a DOHMH permit at 75 or more guests.";
+    const invented = "HEALTH-ASSEMBLY-001 requires a DOHMH permit at 500 or more guests.";
+    expect(offendersOf({ ...published, status: supported }, { attributed })).toEqual([]);
+    expect(offendersOf({ ...published, status: invented }, { attributed })).toEqual([
+      ["ruleset.status", invented],
+    ]);
+  });
+
+  /** The rule arrays are read rule by rule above, so the top-level walk must not read them twice. */
+  it("does not report a rule's own string a second time as top-level prose", () => {
+    const bad = {
+      ...published,
+      rules: published.rules.map((rule) =>
+        rule.id === "DOB-TENT-001"
+          ? { ...rule, output: { ...rule.output, note_text: claim } }
+          : rule,
+      ),
+    };
+    expect(offendersOf(bad)).toEqual([["DOB-TENT-001", claim]]);
+  });
+
+  /** The walk covers every top-level key of the artifact as published, less the two rule arrays. */
+  it("labels every scanned string by the top-level key it hangs under", () => {
+    const scanned = new Set(rulesetProseStrings(published).map((item) => item.where));
+    const expected = Object.keys(published)
+      .filter((key) => key !== "rules" && key !== "advisories")
+      .map((key) => `ruleset.${key}`);
+    expect([...scanned].sort()).toEqual([...expected].sort());
   });
 });
 

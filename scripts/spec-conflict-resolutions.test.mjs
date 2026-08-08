@@ -885,8 +885,15 @@ describe("no DOHMH rule is attributed to headcount, removed 2026-08-05 (#235)", 
    * The `.json` artifacts were outside the prose walk while the only JSON anything read was each
    * rule's trigger, so the artifact at the top of AGENTS.md's authority order was the one prose
    * artifact nobody scanned.
+   *
+   * THE WHOLE ARTIFACT AND NOT ONLY ITS RULES, which is the thirteenth PR #247 round. The audit
+   * walked `rules` and `advisories`, so a claim written into `status`, `provenance`,
+   * `status_legend` or any other top-level string was inside the published artifact and outside
+   * every guard in this repository. The F-302 rollout spec this branch changed requires rewriting
+   * `status` and `provenance`, which is what makes that reachable rather than theoretical. The
+   * offender's `ruleId` is the rule id for a rule's string and `ruleset.<key>` for a top-level one.
    */
-  it("no published rule's organizer-facing output states a count-based city health requirement", () => {
+  it("no published ruleset states a count-based city health requirement to an organizer", () => {
     const attributed = attendeeCountThresholdsByRule();
     const offenders = [];
     for (const [path, artifact] of publishedRulesets()) {
@@ -896,7 +903,8 @@ describe("no DOHMH rule is attributed to headcount, removed 2026-08-05 (#235)", 
     }
     expect(
       offenders,
-      "no DOHMH rule reads headcount, so no published rule may TELL an organizer that one does." +
+      "no DOHMH rule reads headcount, so nothing the ruleset publishes may TELL an organizer" +
+        " that one does." +
         " The ruleset is the highest authority in AGENTS.md's order, so a claim here is not a" +
         " document to correct: it is a regulatory publication, and only the product owner changes" +
         " one (docs/DOCUMENTATION-GOVERNANCE.md §6):\n" +
