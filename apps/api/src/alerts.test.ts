@@ -6927,7 +6927,12 @@ describe.skipIf(databaseUrl === "")("F-203 deadline alerts", () => {
        */
       const insertMergedPlan = async (
         eventId: string,
-        options: { secondRouteDated: boolean; checklistItemId: string },
+        options: {
+          secondRouteDated: boolean;
+          checklistItemId: string;
+          /** Both routes publishing exactly the same thing, which three v2 draft groups do. */
+          secondRouteIdentical?: boolean;
+        },
       ): Promise<string> => {
         const planId = randomUUID();
         const itemId = randomUUID();
@@ -6967,18 +6972,28 @@ describe.skipIf(databaseUrl === "")("F-203 deadline alerts", () => {
                     }),
                     mergedRoute({
                       ruleId: "PARKS-EVENT-001",
-                      disposition: "may_be_required",
-                      name: "Special Event Permit",
-                      // The second route gains a published window between the two generations:
-                      // a ruleset publishing the missing deadline, or a holiday list arriving so
-                      // a business-day count becomes calculable.
-                      ...(options.secondRouteDated
+                      ...(options.secondRouteIdentical === true
                         ? {
-                            latestApplyDate: dayFromToday(1),
+                            disposition: "required",
+                            name: "Sound Device Permit",
+                            latestApplyDate: applyBy,
                             deadlineStatus: "deadline_approaching",
-                            deadlineDisplay: "apply at least 21 days ahead",
+                            deadlineDisplay: "file at least 5 days before use",
                           }
-                        : {}),
+                        : {
+                            disposition: "may_be_required",
+                            name: "Special Event Permit",
+                            // The second route gains a published window between the two
+                            // generations: a ruleset publishing the missing deadline, or a holiday
+                            // list arriving so a business-day count becomes calculable.
+                            ...(options.secondRouteDated
+                              ? {
+                                  latestApplyDate: dayFromToday(1),
+                                  deadlineStatus: "deadline_approaching",
+                                  deadlineDisplay: "apply at least 21 days ahead",
+                                }
+                              : {}),
+                          }),
                     }),
                   ],
                 },
@@ -7096,6 +7111,196 @@ describe.skipIf(databaseUrl === "")("F-203 deadline alerts", () => {
         expect(after.map((row) => row.idempotency_key).sort()).toEqual(
           before.map((row) => row.idempotency_key).sort(),
         );
+      });
+
+      /**
+       * #252 P1: TWO ROUTES PUBLISHING THE SAME WORDS SENT THE SAME REMINDER TWICE.
+       *
+       * A merged line expands into one scheduling subject per route, and routes of one group can
+       * publish the same name, disposition, window, deadline text and portal data — three of the
+       * nine multi-member groups in the v2 full draft do, and they are the ones that merge most
+       * often. Their route ids differ, so the keys differ, so both rows were inserted and both were
+       * delivered: identical subject and body, same recipient, twice. Exactly what AC 7 forbids,
+       * arriving through the groups this branch exists to support.
+       */
+      it("delivers one reminder where two routes publish byte-identical copy (#252)", async () => {
+        const eventId = await createEvent(scenario("C"));
+        const checklistItemId = randomUUID();
+        await schedule(
+          eventId,
+          await insertMergedPlan(eventId, {
+            secondRouteDated: true,
+            secondRouteIdentical: true,
+            checklistItemId,
+          }),
+        );
+
+        // One row per published offset, not one per offset per route.
+        const reminders = (await alertsOf(eventId)).filter(
+          (row) => row.alert_type === "deadline_reminder",
+        );
+        expect(reminders).toHaveLength(reminderOffsets.length);
+
+        const provider = fakeProvider();
+        await createAlertPoller({
+          database: pool,
+          senders: provider.senders,
+          jurisdiction: ruleset.jurisdiction,
+        }).tick();
+
+        // WHAT THE ORGANIZER RECEIVED. Every attempt is a distinct message, and the count is the
+        // offset count rather than twice it.
+        const words = provider.attempts.map(
+          (message) => `${message.recipient}|${message.subject}|${message.body}`,
+        );
+        expect(new Set(words).size).toBe(words.length);
+        expect(words).toHaveLength(reminderOffsets.length);
+      });
+
+      /**
+       * #252 P1: THE DEPLOY-BOUNDARY ADOPTION RE-KEYED A ROW THE PROVIDER ALREADY HELD.
+       *
+       * A pre-route-list reminder reaches the provider and this side times out: the row is `failed`
+       * with an unresolved attempt carrying the legacy key, and the provider may be holding the
+       * message. The first regeneration after the deploy adopts the route identity by rewriting
+       * `idempotency_key` on that row, and the backoff retry then lands inside the provider's dedup
+       * window presenting the NEW key. Nothing to match, so the reminder is delivered a second time
+       * — the duplicate the adoption was written to close, one layer down.
+       *
+       * The row key is what PopEngine calls this reminder; the attempt's key is what the provider
+       * may already know it as, and that is what has to go back.
+       */
+      it("presents the key already in flight after adoption re-keys an attempted row (#252)", async () => {
+        const eventId = await createEvent(scenario("C"));
+        const checklistItemId = randomUUID();
+        // Only the 7-day reminder is due, so exactly one row is in flight across the boundary.
+        const applyBy = dayFromToday(3);
+        /** `routes: undefined` is a plan written before route lists existed. */
+        const generate = async (routes: unknown[] | undefined): Promise<void> => {
+          const planId = randomUUID();
+          const itemId = randomUUID();
+          await pool.query(
+            `INSERT INTO permit_plans (id, event_id, event_revision, ruleset_version, snapshot_date,
+                                       verdict, verdict_detail, intake_snapshot, generated_at)
+             VALUES ($1, $2, 1, $3, $4, 'feasible', $5::jsonb, '{}'::jsonb, clock_timestamp())`,
+            [
+              planId,
+              eventId,
+              ruleset.rulesetVersion,
+              ruleset.snapshotDate,
+              JSON.stringify({
+                today: todayInJurisdiction("US-NY-NYC"),
+                minSlackDays: null,
+                finding_renderings: [
+                  {
+                    rule_ids: ["NYPD-SOUND-001", "PARKS-EVENT-001"],
+                    notes: [],
+                    note_text: null,
+                    conflict_text: null,
+                    deadline_display: "file at least 5 days before use",
+                    slack_days: null,
+                    deadline_unknown_fields: [],
+                    timeline_unresolved_reason: null,
+                    portal_instructions: null,
+                    ...(routes === undefined ? {} : { headline_mode: "applies_together", routes }),
+                  },
+                ],
+              }),
+            ],
+          );
+          // The line's own columns are the binding route's, before and after, which is what makes
+          // the pre-deploy reminder and the binding route's reminder the same words.
+          await pool.query(
+            `INSERT INTO permit_plan_items (id, plan_id, rule_ids, triggered_by, permit_name,
+                                            agency, latest_apply_date, sources, kind, disposition,
+                                            deadline_status, verification_status)
+             VALUES ($1, $2, ARRAY['NYPD-SOUND-001','PARKS-EVENT-001'], '[]'::jsonb,
+                     'Sound Device Permit', 'NYPD', $3, '[]'::jsonb, 'permit', 'required',
+                     'deadline_approaching', 'SOURCE_CONFIRMED')`,
+            [itemId, planId, applyBy],
+          );
+          await pool.query(
+            `INSERT INTO checklist_items (id, plan_item_id, cohort_position) VALUES ($1, $2, 0)
+               ON CONFLICT (id) DO UPDATE SET plan_item_id = EXCLUDED.plan_item_id`,
+            [checklistItemId, itemId],
+          );
+          await schedule(eventId, planId);
+        };
+
+        const provider = fakeProvider();
+        // The provider was reached and never answered, which is the state the hold exists for.
+        const presented: AlertMessage[] = [];
+        const timingOut: AlertSenders = {
+          sms: provider.senders.sms,
+          email: async (message) => {
+            presented.push(message);
+            throw new AlertDeliveryError("email provider did not respond within 10000ms", {
+              outcomeObserved: false,
+            });
+          },
+        };
+
+        await generate(undefined);
+        await createAlertPoller({
+          database: pool,
+          senders: timingOut,
+          jurisdiction: ruleset.jurisdiction,
+        }).tick();
+
+        const failed = (await alertsOf(eventId)).filter(
+          (row) => row.alert_type === "deadline_reminder" && row.status === "failed",
+        );
+        expect(failed).toHaveLength(1);
+        const alertId = failed[0]?.id ?? "";
+        const firstAttempt = await attemptsOf(alertId);
+        expect(firstAttempt).toHaveLength(1);
+        expect(firstAttempt[0]?.outcome_recorded_at).toBeNull();
+        expect(presented).toHaveLength(1);
+        const inFlightKey = presented[0]?.idempotencyKey;
+        expect(firstAttempt[0]?.idempotency_key).toBe(inFlightKey);
+        // The backoff is not what is under test; the retry lands inside the dedup window either way.
+        await pool.query("UPDATE alerts SET next_attempt_at = NULL WHERE id = $1", [alertId]);
+
+        // After the deploy: the same line, now carrying its routes, so the row is re-keyed.
+        await generate([
+          mergedRoute({
+            ruleId: "NYPD-SOUND-001",
+            disposition: "required",
+            name: "Sound Device Permit",
+            latestApplyDate: applyBy,
+            deadlineStatus: "deadline_approaching",
+            deadlineDisplay: "file at least 5 days before use",
+          }),
+          mergedRoute({
+            ruleId: "PARKS-EVENT-001",
+            disposition: "required",
+            name: "Special Event Permit",
+            latestApplyDate: dayFromToday(5),
+            deadlineStatus: "deadline_approaching",
+          }),
+        ]);
+        const adopted = (await alertsOf(eventId)).find((row) => row.id === alertId);
+        // Not vacuous: the adoption really did move this row onto the route key.
+        expect(adopted?.idempotency_key).toContain("NYPD-SOUND-001");
+        expect(adopted?.idempotency_key).not.toBe(inFlightKey);
+
+        await createAlertPoller({
+          database: pool,
+          senders: provider.senders,
+          jurisdiction: ruleset.jurisdiction,
+        }).tick();
+
+        // The retry presents the key the provider may already hold, so it can deduplicate.
+        const retry = provider.attempts.find(
+          (message) => message.subject === presented[0]?.subject,
+        );
+        expect(retry?.idempotencyKey).toBe(inFlightKey);
+        // And the record of the attempt says what was actually presented, so a reconciliation can
+        // still look the message up.
+        expect((await attemptsOf(alertId)).map((row) => row.idempotency_key)).toEqual([
+          inFlightKey,
+          inFlightKey,
+        ]);
       });
     });
 

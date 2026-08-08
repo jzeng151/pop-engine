@@ -171,6 +171,9 @@ function SummarySources({ sources }: { sources: readonly SummarySourceLink[] }) 
  * built out of exactly that difference. Collapsed to one signature, `Routes` returned null and the
  * plan page said nothing while `checklist-item.tsx` rendered its deciding question off the same
  * payload — two surfaces disagreeing on one plan (#252 review).
+ *
+ * READ ONLY IN `applies_together` MODE, which is the other half of that same defect and is enforced
+ * at the call rather than by a further field here. See `Routes`.
  */
 const routeSignature = (route: ConsumedRoute): string =>
   JSON.stringify([
@@ -241,11 +244,25 @@ function Route({ route, mode }: { route: ConsumedRoute; mode: HeadlineMode }) {
 /**
  * The contributing routes of a merged dedupe line, and why they arrived on one line.
  *
- * NOTHING RENDERS WHEN THE ROUTES PUBLISH THE SAME THING. Three of the nine multi-member groups in
- * the v2 full draft publish byte-identical outputs and are the ones that merge most often
- * (`docs/research/draft-dedupe-cofiring.md` §5.2, §5.7, §5.8), and listing one permit twice under a
- * heading saying two routes were triggered would be a rendering fault presented as regulatory
- * content.
+ * NOTHING RENDERS WHEN THE ROUTES PUBLISH THE SAME THING, AND ONLY WHEN THEY ALSO APPLY TOGETHER.
+ * Three of the nine multi-member groups in the v2 full draft publish byte-identical outputs and are
+ * the ones that merge most often (`docs/research/draft-dedupe-cofiring.md` §5.2, §5.7, §5.8), and
+ * listing one permit twice under a heading saying two routes were triggered would be a rendering
+ * fault presented as regulatory content. That argument is entirely about the `applies_together`
+ * heading, and applying it to a candidate list deleted the only surface that carries the question.
+ *
+ * A CANDIDATE INTRODUCTION IS NOT A SECOND COPY OF THE ENTRIES. It says how many published routes
+ * are open, how many are triggered so far, and WHICH ANSWERS WOULD DECIDE IT — none of which is on
+ * an entry, and the last of which is the organizer's way out of the unresolved state. Where every
+ * route is unresolved and the outputs match, every signature is equal (`unknownFields` is not one of
+ * them and every `triggerResult` is "unknown"), so the collapse threw all of that away and the plan
+ * page said nothing while `checklist-item.tsx` rendered the deciding question off the same payload:
+ * the same two-surface disagreement, one case further on (#252 review).
+ *
+ * NOT REPAIRED BY WIDENING THE SIGNATURE, which is the tempting version. Adding `unknownFields`
+ * leaves the case reported intact whenever the routes are open on the SAME answers, which is the
+ * commonest candidate group there is. The mode is what decides whether the collapse is sound at all,
+ * so the mode is where the test belongs.
  *
  * A CANDIDATE LIST MUST NOT READ AS A LIST OF REQUIREMENTS. Three things keep it from doing so: the
  * introduction says the answers do not decide it, every unresolved entry is prefixed "May apply",
@@ -256,7 +273,7 @@ function Routes({ finding }: { finding: ConsumedFinding }) {
   const routes = finding.routes ?? null;
   const mode = finding.headlineMode ?? null;
   if (routes === null || mode === null || routes.length < 2) return null;
-  if (new Set(routes.map(routeSignature)).size === 1) return null;
+  if (mode === "applies_together" && new Set(routes.map(routeSignature)).size === 1) return null;
 
   const deciding = [...new Set(routes.flatMap((route) => route.unknownFields))];
   const applying = routes.filter((route) => route.triggerResult === "true").length;

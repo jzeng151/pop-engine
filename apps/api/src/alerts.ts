@@ -1942,7 +1942,49 @@ async function plannedAlerts(
     });
   }
 
-  return planned;
+  return coalesceIdenticalReminders(planned);
+}
+
+/**
+ * Rule 1 of the identity block above, applied where the identities are minted: two schedulings that
+ * would deliver the same words about the same task are ONE reminder.
+ *
+ * WHAT PRODUCES TWO OF THEM. A merged dedupe line expands into one scheduling subject per route,
+ * and routes of one group can publish the same name, disposition, deadline text, filing date and
+ * portal data — three of the nine multi-member groups in the v2 full draft publish byte-identical
+ * outputs, and those are the groups that merge most often
+ * (`docs/research/draft-dedupe-cofiring.md` §5.2, §5.7, §5.8). Their route ids differ, so the keys
+ * differ, so both rows were inserted and the organizer received the same reminder twice — which is
+ * the duplicate F-203 AC 7 forbids, arriving through the very groups this branch was written to
+ * support (#252 review).
+ *
+ * THE TEST IS THE WORDS, NOT THE FIELDS THEY CAME FROM. Every difference between two routes that an
+ * organizer could act on is in the copy by construction: the name, the agency, the date, the fee,
+ * the portal and the published deadline text are all rendered into the subject or the body. Two
+ * routes whose copy is identical are therefore indistinguishable to the person receiving it, and
+ * comparing the rendered strings needs no list of fields to be kept in step with `reminderCopy`.
+ *
+ * SCOPED TO ONE CHECKLIST TASK, so this can never merge two requirements. Two tasks with identical
+ * copy are still two things to file, and nothing here may decide otherwise; the type is in the key
+ * for the same reason.
+ *
+ * FIRST WINS, and that is stable rather than incidental: routes arrive in binding order, the engine
+ * is byte-stable for the same inputs, and the surviving alert therefore keeps the same route key
+ * across regenerations. Rule 2 then applies to it like any other reminder.
+ */
+function coalesceIdenticalReminders(planned: readonly PlannedAlert[]): PlannedAlert[] {
+  const delivered = new Set<string>();
+  return planned.filter((alert) => {
+    const words = JSON.stringify([
+      alert.alertType,
+      alert.checklistItemId,
+      alert.subject,
+      alert.body,
+    ]);
+    if (delivered.has(words)) return false;
+    delivered.add(words);
+    return true;
+  });
 }
 
 /** A calendar day shifted by whole days, in UTC so no timezone can move the day itself. */
@@ -1951,6 +1993,45 @@ function shiftDays(day: string, days: number): string {
   shifted.setUTCDate(shifted.getUTCDate() + days);
   return shifted.toISOString().slice(0, 10);
 }
+
+/**
+ * WHAT A REMINDER IS, ACROSS EVERY TRANSITION IT CAN MAKE. Written once, because four rounds have
+ * patched this key one case at a time and a duplicate delivery came back after each of them.
+ *
+ * A REMINDER IS A MESSAGE AN ORGANIZER RECEIVES: one requirement's words, on one channel, at one
+ * destination. Everything else a row carries — which route produced it, which rule ids, which plan
+ * generation, which offset, which day it is due — is PROVENANCE. Provenance is how PopEngine finds
+ * the message again; it is not what makes two messages the same message. Two sentences follow, and
+ * every defect this file has had is a violation of one of them:
+ *
+ *   1. Two schedulings that would deliver the same words to the same destination are ONE reminder,
+ *      whatever produced them.
+ *   2. A reminder keeps its identity while its provenance changes, because the organizer receives
+ *      the same message either way.
+ *
+ * The transitions, and what holds the rule at each:
+ *
+ *   A merged line's dated-route count crossing 1 to 2 re-keyed reminders the line already owned
+ *   (rule 2). Held by keying the route in UNCONDITIONALLY on every merged row, so the key cannot
+ *   depend on how many routes happened to publish a date that day.
+ *
+ *   The deploy boundary: a plan written before route lists existed keys without a route, and the
+ *   first regeneration keys the same words with one (rule 2). Held by `legacyIdentity`, which gives
+ *   the row that already said those words the key the new one would say them under.
+ *
+ *   Two routes of one merged line publishing byte-identical copy (rule 1). Held by
+ *   `coalesceIdenticalReminders`, which collapses them before any identity is assigned, rather than
+ *   by letting two identities exist and hoping something downstream matches them.
+ *
+ *   A moved filing date, a corrected destination, a cancellation and revival: rounds 9, 11, 20, 27
+ *   and 33, each decided on the upsert clause that carries it and not reopened here.
+ *
+ * AND THERE ARE TWO IDENTITIES, WHICH IS THE PART EVERY ROUND MISSED. The row key below says which
+ * reminder this is TO POPENGINE, and it is recomputed from the current plan. The provider key says
+ * which message is already IN FLIGHT AT THE PROVIDER, and it is fixed by the first handoff. They
+ * coincide until something re-keys a row that has already been attempted, which is exactly what the
+ * adoption above does — so `providerKey` reads the attempt rather than the row.
+ */
 
 /**
  * The row's identity, per ARCHITECTURE's `{event_id}:{checklist_item_id}:{alert_type}:{send_at}`
@@ -1995,6 +2076,33 @@ const idempotencyKey = (
   createHash("sha256").update(recipient).digest("hex").slice(0, 12);
 
 /**
+ * THE KEY ALREADY IN FLIGHT, and the row's own only where there is none.
+ *
+ * WHY THE ROW'S KEY IS NOT ENOUGH BY ITSELF. `idempotency_key` is recomputed from the current plan,
+ * and one path deliberately REWRITES it on a row that already exists: the legacy adoption above,
+ * which hands a pre-route-list row the key its route-keyed successor would use. A row can be sitting
+ * in that state with an unresolved attempt against it — the provider accepted, this side timed out
+ * and marked the row failed — and the retry then falls inside the provider's dedup window. Handed
+ * the NEW key, the provider has nothing to match it against and delivers the reminder a second time:
+ * the adoption written to close a duplicate opening one, one layer down (#252 review).
+ *
+ * SO THE TWO IDENTITIES ARE READ FROM THE TWO PLACES THAT HOLD THEM. The row says which reminder
+ * PopEngine means; the oldest unresolved, unsuperseded attempt says which message the provider may
+ * be holding, and that is the key that has to go back. `alert_send_attempts.idempotency_key` has
+ * recorded it since migration 014 precisely so a reconciliation could look the message up by it.
+ *
+ * NO TIME BOUND ON THE ATTEMPT, deliberately. Inside the provider's window the repeated key is what
+ * deduplicates; outside it the provider treats it as a fresh message, which is the same outcome as
+ * sending the row's own key, so bounding this would add a branch that changes nothing. Superseded
+ * attempts are excluded for the reason `unresolvedAttemptPastTheCutoff` excludes them: they speak
+ * for a schedule that has ended. A RESOLVED attempt is excluded because this side learned what
+ * happened to it — either it was delivered, and the row is sent and never retried, or the provider
+ * was proven never to have been reached, and there is nothing to deduplicate against.
+ *
+ * WHAT THIS DOES NOT CHANGE is the trade recorded below: a corrected wording may still be
+ * deduplicated away inside the window. That was already true of every row whose key did not move,
+ * and it is the trade this file has taken since round 19.
+ *
  * WHY THE PROVIDER IS SIMPLY HANDED THE ROW'S KEY, with no digest of the copy on the end.
  *
  * Round 10 added that digest so a CHANGED request would get a fresh provider identity: a corrected
@@ -2034,7 +2142,7 @@ const idempotencyKey = (
  * person is the harm the spec names; delivering the earlier wording of a message they already have
  * is not.
  */
-const providerKey = (row: DueAlertRow): string => row.idempotency_key;
+const providerKey = (row: DueAlertRow): string => row.in_flight_key ?? row.idempotency_key;
 
 /**
  * The addresses to schedule to: what the organizer just entered, falling back to what this event's
@@ -2409,8 +2517,29 @@ type DueAlertRow = {
   channel: AlertChannel;
   recipient: string;
   idempotency_key: string;
+  /**
+   * The key an earlier handoff already presented for this row, or null where none has been. See
+   * `providerKey`: the row's key is what PopEngine currently calls this reminder, and this is what
+   * the provider may already know it as.
+   */
+  in_flight_key: string | null;
   payload: { subject?: string; body?: string };
 };
+
+/**
+ * The key of the attempt still speaking for this row, read as a column so `providerKey` needs no
+ * second round trip inside the send. Ordered so a row holding several unresolved attempts presents
+ * the FIRST key it ever presented, which is the one the provider's window is measured from.
+ */
+const IN_FLIGHT_KEY = `(
+       SELECT attempt.idempotency_key
+         FROM alert_send_attempts AS attempt
+        WHERE attempt.alert_id = alerts.id
+          AND attempt.outcome_recorded_at IS NULL
+          AND attempt.superseded_at IS NULL
+        ORDER BY attempt.attempted_at, attempt.id
+        LIMIT 1
+     )`;
 
 /**
  * Where the attempt-intent write gets its connection, which must not be the pool the send already
@@ -2546,7 +2675,11 @@ async function recordAttemptIntent(
             AND EXISTS (SELECT 1 FROM recorded)
        )
        SELECT id FROM recorded`,
-      [row.id, row.idempotency_key, attemptId, timeZone],
+      // THE KEY THIS SEND WILL PRESENT, not the row's, so the record says what the provider was
+      // actually handed. They differ on exactly one row — one whose key was rewritten after an
+      // earlier handoff — and recording the row's there would lose the only copy of the key a
+      // reconciliation could look the message up by.
+      [row.id, providerKey(row), attemptId, timeZone],
     );
     recorded = rows[0]?.id ?? null;
   } catch (error) {
@@ -2603,7 +2736,7 @@ async function settleUnacknowledgedIntent(
       `INSERT INTO alert_send_attempts (id, alert_id, idempotency_key, outcome_recorded_at)
             VALUES ($1, $2, $3, clock_timestamp())
        ON CONFLICT (id) DO UPDATE SET outcome_recorded_at = clock_timestamp()`,
-      [attemptId, row.id, row.idempotency_key],
+      [attemptId, row.id, providerKey(row)],
     );
   } finally {
     client.release();
@@ -3018,7 +3151,8 @@ async function sendOne(
       // predicate is re-asked here: the event edit this guards against can commit in the window
       // between the two. The event row is held by then, so what this reads is a revision no writer
       // is midway through changing.
-      `SELECT id, channel, recipient, idempotency_key, payload
+      `SELECT id, channel, recipient, idempotency_key, payload,
+              ${IN_FLIGHT_KEY} AS in_flight_key
          FROM alerts
         WHERE id = $1 AND status IN ('pending', 'failed') AND send_at <= statement_timestamp()
           AND (next_attempt_at IS NULL OR next_attempt_at <= statement_timestamp())

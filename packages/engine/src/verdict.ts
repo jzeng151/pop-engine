@@ -100,11 +100,21 @@ function routeEntries(
  * missed route rendered the binding route's heading, portal and fee beside it (#252 review). The
  * summary has no per-route form to narrow to — `FindingRoute` carries no `userSummary`, because a
  * summary is written about a rule and the merged heading belongs to whichever rule the line reads
- * — so where the blocking route is not the route the line reads, it is dropped rather than
- * reattributed, and the route's own published `name` stands in.
+ * — so on a merged finding it is dropped rather than reattributed, and the route's own published
+ * `name` stands in.
+ *
+ * DROPPED ON EVERY MERGED FINDING, NOT ONLY WHERE THE BLOCKING ROUTE IS NOT THE HEADLINE. Keeping
+ * it for the headline route read `userSummary` as the headline rule's own, and a merged one is not:
+ * `mergeUserSummary` takes the heading from the first route in BINDING order that publishes one, so
+ * a binding route publishing none inherits a sibling's heading, and the points CONCATENATE over
+ * every contributing route unconditionally. The infeasible panel leads with that heading and links
+ * from its first source (`verdict-detail.tsx`), so the narrowed name and citations sat under another
+ * route's summary — the same crossover this function exists to remove, surviving in the one field
+ * that had an exception (#252 review). An UNMERGED finding keeps its summary, because there the
+ * merge never ran and the summary is the rule's own.
  */
 function blockerView(finding: Finding, route: FindingRoute): Finding {
-  const headlineRuleId = finding.routes?.[0]?.ruleId;
+  const merged = (finding.routes?.length ?? 0) > 1;
   return {
     ...finding,
     ruleIds: [route.ruleId],
@@ -122,11 +132,7 @@ function blockerView(finding: Finding, route: FindingRoute): Finding {
     portalName: route.portalName,
     portalUrl: route.portalUrl,
     portalInstructions: route.portalInstructions,
-    ...(finding.userSummary === undefined ||
-    headlineRuleId === undefined ||
-    headlineRuleId === route.ruleId
-      ? {}
-      : { userSummary: null }),
+    ...(finding.userSummary === undefined || !merged ? {} : { userSummary: null }),
   };
 }
 

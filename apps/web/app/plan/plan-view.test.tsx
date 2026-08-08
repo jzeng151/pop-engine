@@ -791,6 +791,39 @@ describe("the routes of a merged dedupe line", () => {
     expect(line.getByText("May apply")).toBeDefined();
   });
 
+  /**
+   * #252 review: THE SAME DEFECT, ONE CASE FURTHER ON. Where every route is unresolved and the
+   * outputs match, every signature is equal — `unknownFields` is not one of them and every
+   * `triggerResult` is "unknown" — so the collapse still fired and the candidate block still
+   * vanished. Widening the signature does not reach it either: routes open on the SAME answers are
+   * the commonest candidate group there is.
+   *
+   * The introduction is not a second copy of the entries. It carries the count, how many are
+   * triggered so far, and WHICH ANSWERS WOULD DECIDE IT, which is the organizer's way out of the
+   * unresolved state and is on no entry.
+   */
+  it("still asks the question when every unresolved route publishes the same thing", async () => {
+    const line = await lineWith({
+      ruleIds: ["DOB-STAGE-001", "DOB-STRUCTURE-DURATION-001"],
+      headlineMode: "candidate",
+      routes: [
+        route({
+          ruleId: "DOB-STAGE-001",
+          triggerResult: "unknown",
+          unknownFields: ["structure_duration_days"],
+        }),
+        route({
+          ruleId: "DOB-STRUCTURE-DURATION-001",
+          triggerResult: "unknown",
+          unknownFields: ["structure_duration_days"],
+        }),
+      ],
+    });
+    expect(line.getByText(/do not say which of these applies/)).toBeDefined();
+    expect(line.getByText(/structure duration days/)).toBeDefined();
+    expect(line.getByText(/treat none of the routes below as settled/)).toBeDefined();
+  });
+
   it("says both apply, and names each route's own window and fee, when every trigger resolved", async () => {
     const line = await lineWith({
       ruleIds: ["NYPD-SOUND-PUBLIC-001", "NYPD-SOUND-PROHIBITED-001"],

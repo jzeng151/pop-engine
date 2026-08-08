@@ -355,6 +355,31 @@ const noticeItemFrom = (item: PlanItemRow, rendering: FindingRendering): NoticeP
   };
 };
 
+/**
+ * The rendering that goes with `noticeItemFrom`'s item, read off the same route.
+ *
+ * ONE ROUTE END TO END, WHICH IS WHAT WAS MISSING. `noticeItemFrom` replaces the deadline, the date
+ * and the status with the filing route's, and the merged rendering was passed beside it unchanged —
+ * so `movedDeadlineNotice` compared the filing route's typed fields against the BINDING route's
+ * `deadline_display`. A regeneration that changes which route binds while the filing route, its date
+ * and its published text all stay put then reported a deadline-state change with no filing data
+ * changed, and the checklist showed the unchanged date under a notice saying it had moved
+ * (#252 review).
+ *
+ * ONLY `deadline_display` IS ADJUSTED, and the other two fields `stateSide` reads are deliberately
+ * left merged. `FindingRoute` publishes no `timelineUnresolvedReason` and no
+ * `deadlineUnknownFields`: the first is single-valued text the merge falls back through binding
+ * order for, and the second concatenates over the whole group. Neither has a per-route form to
+ * narrow to, and more to the point the checklist row RENDERS the merged values of both
+ * (`planContext`), so comparing them is comparing what the organizer actually sees. Narrowing them
+ * here would report "nothing moved" on a row whose own text had changed, which is the mirror of the
+ * defect being fixed.
+ */
+const noticeRenderingFrom = (item: PlanItemRow, rendering: FindingRendering): FindingRendering => {
+  const filing = filingRouteOf(item, rendering);
+  return filing === null ? rendering : { ...rendering, deadline_display: filing.deadlineDisplay };
+};
+
 type LatestPlan = {
   id: string;
   rulesetVersion: string;
@@ -645,9 +670,9 @@ async function checklistView(
         !struckThrough && current !== undefined && current.id !== item.id
           ? movedDeadlineNotice(
               noticeItemFrom(item, renderingOrFail(renderings, item)),
-              renderingOrFail(renderings, item),
+              noticeRenderingFrom(item, renderingOrFail(renderings, item)),
               noticeItemFrom(current, renderingOrFail(renderings, current)),
-              renderingOrFail(renderings, current),
+              noticeRenderingFrom(current, renderingOrFail(renderings, current)),
             )
           : null,
       documents: (documents.get(item.checklist_item_id) ?? []).map(documentView),

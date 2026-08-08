@@ -2617,5 +2617,51 @@ describe.runIf(databaseUrl.length > 0)("F-202 compliance checklist", () => {
       expect(rows).toHaveLength(1);
       expect(rows[0]?.ordering_date).toBeNull();
     });
+
+    /**
+     * #252 review: THE NOTICE COMPARED ONE ROUTE'S TYPED FIELDS AGAINST ANOTHER'S TEXT.
+     *
+     * `noticeItemFrom` replaces the deadline, the date and the status with the filing route's, and
+     * the merged rendering was passed beside it unchanged — so `movedDeadlineNotice` compared the
+     * filing route's fields against the BINDING route's `deadline_display`. A regeneration that
+     * moves which route binds, while the filing route and its window stay exactly where they are,
+     * then reported a deadline-state change over unchanged filing data.
+     *
+     * The regeneration is real and only the binding route's published text is edited onto it,
+     * because that string is the whole of what a changed binding puts on this line: the item's own
+     * columns are NULL either way, and every other field the notice reads is the filing route's.
+     */
+    it("reports no deadline change when only the headline binding moved", async () => {
+      const eventId = await createEvent(TALL_TENT);
+      await generatePlan(eventId);
+      const api = appWith(fakeStorage());
+      expect((await review(api, eventId)).status).toBe(201);
+
+      await generatePlan(eventId);
+      const { rows: latest } = await pool.query<{ id: string }>(
+        "SELECT id FROM permit_plans WHERE event_id = $1 ORDER BY generated_at DESC LIMIT 1",
+        [eventId],
+      );
+      await pool.query(
+        `UPDATE permit_plans
+            SET verdict_detail = jsonb_set(verdict_detail, '{finding_renderings}', (
+                  SELECT jsonb_agg(
+                           CASE WHEN rendering->'rule_ids' ? 'DOB-TENT-001'
+                                THEN jsonb_set(rendering, '{deadline_display}', $2::jsonb)
+                                ELSE rendering END)
+                    FROM jsonb_array_elements(verdict_detail->'finding_renderings') AS rendering))
+          WHERE id = $1`,
+        [latest[0]?.id, JSON.stringify("the newly binding route's published lead time")],
+      );
+
+      const read = await request(api).get(`/api/events/${eventId}/checklist`);
+      const item = (read.body.items as ChecklistItemView[]).find((candidate) =>
+        candidate.ruleIds.includes("DOB-TENT-001"),
+      );
+      // The filing data the row shows is untouched, which is what makes a notice about it false.
+      expect(item?.latestApplyDate).toBe("2026-08-05");
+      expect(item?.deadlineStatus).toBe("on_track");
+      expect(item?.deadlineNotice).toBeNull();
+    });
   });
 });

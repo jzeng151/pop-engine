@@ -564,6 +564,93 @@ describe("the blocking route of a merged line (#252)", () => {
       true,
     );
   });
+
+  /**
+   * #252 review: THE ORGANIZER SUMMARY IS NOT THE HEADLINE ROUTE'S EITHER.
+   *
+   * The narrowing kept `userSummary` whenever the blocking route was also the headline route, on
+   * the reading that the merged summary is then that rule's own. It is not: `mergeUserSummary`
+   * takes its heading from the first route in binding order that publishes one, so a binding route
+   * publishing none inherits a sibling's, and the points concatenate over every contributing route
+   * unconditionally. The infeasible panel leads with that heading and links from its first source,
+   * so the narrowed name and citations sat under another route's summary.
+   *
+   * Built so the BLOCKING route is the headline route — the same route on both sides, which is
+   * exactly the case the old condition let through.
+   */
+  it("drops the merged summary even where the blocking route is the headline route", () => {
+    const summary = (heading: string, id: string) => ({
+      heading,
+      points: [
+        {
+          kind: "overview",
+          text: `${id} point`,
+          sources: [{ label: "citation", url: `https://example.test/${id}` }],
+        },
+      ],
+    });
+    // The tightest window and the missed one, so this route is both the binding route and the
+    // blocker. It publishes no summary of its own, so the merged heading is the SIBLING's.
+    const blocking = {
+      id: "BLOCKING-001",
+      dedupeKey: "shared",
+      trigger: ALWAYS,
+      output: {
+        permit_name: "BLOCKING-001 permit",
+        deadline: { type: "published_minimum", calendar_days: 200 },
+      },
+    } as const;
+    const sibling = {
+      id: "SIBLING-001",
+      dedupeKey: "shared",
+      trigger: ALWAYS,
+      output: {
+        permit_name: "SIBLING-001 permit",
+        deadline: { type: "published_minimum", calendar_days: 184 },
+        user_summary: summary("SIBLING-001 heading", "SIBLING-001"),
+      },
+    } as const;
+
+    const evaluated = plan([blocking, sibling]);
+    // The merged line really does carry the sibling's heading, so the case is the one described.
+    expect(evaluated.findings[0]?.routes?.[0]?.ruleId).toBe("BLOCKING-001");
+    expect(evaluated.findings[0]?.userSummary?.heading).toBe("SIBLING-001 heading");
+
+    expect(evaluated.verdict).toBe("INFEASIBLE");
+    const blocker = evaluated.verdictDetail.blockingFinding;
+    expect(blocker?.ruleIds).toEqual(["BLOCKING-001"]);
+    expect(blocker?.userSummary).toBeNull();
+  });
+
+  /**
+   * The other half, so the fix cannot be written as "a blocker never carries a summary". An
+   * unmerged finding never went through `mergeUserSummary`, so its summary IS the rule's own.
+   */
+  it("keeps an unmerged blocker's own summary", () => {
+    const alone = {
+      id: "ALONE-001",
+      dedupeKey: null,
+      trigger: ALWAYS,
+      output: {
+        permit_name: "ALONE-001 permit",
+        deadline: { type: "published_minimum", calendar_days: 184 },
+        user_summary: {
+          heading: "ALONE-001 heading",
+          points: [
+            {
+              kind: "overview",
+              text: "ALONE-001 point",
+              sources: [{ label: "citation", url: "https://example.test/ALONE-001" }],
+            },
+          ],
+        },
+      },
+    } as const;
+
+    const evaluated = plan([alone]);
+    expect(evaluated.verdict).toBe("INFEASIBLE");
+    expect(evaluated.verdictDetail.blockingFinding?.userSummary?.heading).toBe("ALONE-001 heading");
+  });
 });
 
 /**
