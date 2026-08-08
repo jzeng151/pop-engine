@@ -15,6 +15,17 @@
 //     publishes no semantics for either; section 3.2 of the document says so, and says on what
 //     basis the readings below were chosen.
 //
+// What the draft declares is read from the draft, not restated here: the `asked_when` scoping is
+// translated from the published condition object, and the derived-value formulas are pinned to the
+// published declaration text so a change to either fails the load. What stays hard-coded, and why:
+//
+//   - the `is_null` and `lte` readings, because the draft publishes no semantics to derive them
+//     from. `operatorSemantics` asserts that is still true.
+//   - the derived-value *computations*, because the published formulas are prose over functions the
+//     draft never defines. `assertDerivedValuesMatchDraft` fails when the declarations move.
+//   - `HAND_SET_NUMERIC_DOMAINS` and the `event_end_date` domain, which are choices about how to
+//     sweep, not readings of the artifact.
+//
 // The draft artifact is never modified. Nothing here writes to `rules/`.
 
 import { readdirSync, readFileSync } from "node:fs";
@@ -30,12 +41,15 @@ import {
 const repoRoot = fileURLToPath(new URL("../../", import.meta.url));
 
 /**
- * Both artifacts are found by reading their directory rather than by naming a version.
+ * The published control is found by reading `rules/` rather than by naming a version.
  *
  * Naming one would pin this harness to a filename a publication deletes, which is the failure
  * `scripts/check-baseline-drift.mjs` exists to catch. Reading the directory also gives the signal
  * this measurement wants: publish a new ruleset and `cofiring.test.mjs` fails with the control
  * figure that moved, rather than passing against a file that is no longer the published one.
+ *
+ * `rules/` holds exactly one published ruleset, which is the same contract `RULES_FILE` discovery
+ * relies on, so the sole-artifact check is the identity there.
  */
 function soleArtifact(directory, describe) {
   const names = readdirSync(join(repoRoot, directory)).filter((name) => name.endsWith(".json"));
@@ -45,10 +59,46 @@ function soleArtifact(directory, describe) {
   return join(repoRoot, directory, names[0]);
 }
 
-export const DRAFT_PATH = () => soleArtifact("rules/proposals", "the draft");
+/**
+ * The draft is found by the identity it declares, not by being alone in its directory.
+ *
+ * `docs/BASELINE.md` lists `rules/proposals/*` as proposed and superseded material, so the
+ * directory is a collection and an unrelated proposal landing in it must not decide which artifact
+ * this measurement reads, nor break the suite. The document measures one named draft, so the
+ * identity is stated here and matched against what each candidate publishes about itself; a rename
+ * still resolves, and a second artifact claiming the same identity fails rather than being picked.
+ */
+const MEASURED_DRAFT = { schema: "popengine-rules/v2", rulesetVersion: "nyc.v2" };
+
+export function measuredDraftPath(directory = join(repoRoot, "rules/proposals")) {
+  const matches = readdirSync(directory)
+    .filter((name) => name.endsWith(".json"))
+    .filter((name) => {
+      const candidate = JSON.parse(readFileSync(join(directory, name), "utf8"));
+      return (
+        candidate.schema === MEASURED_DRAFT.schema &&
+        candidate.ruleset_version === MEASURED_DRAFT.rulesetVersion
+      );
+    });
+  if (matches.length !== 1) {
+    throw new Error(
+      `rules/proposals holds ${matches.length} artifacts declaring schema ` +
+        `"${MEASURED_DRAFT.schema}" version "${MEASURED_DRAFT.rulesetVersion}"; ` +
+        "the measured draft is ambiguous",
+    );
+  }
+  return join(directory, matches[0]);
+}
+
+export const DRAFT_PATH = () => measuredDraftPath();
 export const CONTROL_PATH = () => soleArtifact("rules", "the published control");
 
-export const loadDraft = () => JSON.parse(readFileSync(DRAFT_PATH(), "utf8"));
+export function loadDraft() {
+  const draft = JSON.parse(readFileSync(DRAFT_PATH(), "utf8"));
+  assertDerivedValuesMatchDraft(draft);
+  return draft;
+}
+
 export const loadControl = () => JSON.parse(readFileSync(CONTROL_PATH(), "utf8"));
 
 /** The engine's explicit-unknown answer (`conditions.ts:242`). */
@@ -66,22 +116,68 @@ export const EVENT_DATE = "2026-09-01";
  * `null` and the field would be unconditionally in scope. Both draft expressions are exactly
  * expressible in the engine's grammar, so both are translated and then parsed by the engine's own
  * `parseAskedWhen` rather than dropped.
+ *
+ * The translation reads the published object. Nothing about either expression is written down
+ * here, so a draft that changes an `asked_when` changes the scope this measurement applies, and a
+ * draft that moves outside the engine's grammar fails loudly instead of being scoped by a stale
+ * literal. The grammar's ceiling is a conjunction of clauses, so `any`, a false `bool`, and any
+ * other operator have no translation and throw.
  */
-const ASKED_WHEN_TRANSLATIONS = {
-  public_space_interference: "location_type in street/sidewalk/curb_lane/plaza",
-  sound_audible_in_public_space:
-    "amplified_sound AND location_type in private_indoor/private_rooftop/private_outdoor",
-};
+export function askedWhenExpression(condition, field) {
+  const reject = (reason) => {
+    throw new Error(
+      `asked_when for "${field}" ${reason}, which the engine's grammar cannot express`,
+    );
+  };
+
+  const token = (value) => {
+    const text = String(value);
+    if (/[\s/]/.test(text)) reject(`names the value "${text}"`);
+    return text;
+  };
+
+  const clause = (node) => {
+    if ("all" in node) return node.all.map(clause).join(" AND ");
+    if (!("field" in node)) reject("uses `any`");
+    switch (node.op) {
+      case "in":
+        if (!Array.isArray(node.value) || node.value.length === 0) {
+          reject(`applies "in" to ${JSON.stringify(node.value)}`);
+        }
+        return `${node.field} in ${node.value.map(token).join("/")}`;
+      case "eq":
+        return `${node.field} = ${token(node.value)}`;
+      case "bool":
+        if (node.value !== true) reject(`asserts \`${node.field}\` is false`);
+        return node.field;
+      default:
+        return reject(`uses the operator "${String(node.op)}"`);
+    }
+  };
+
+  return clause(condition);
+}
 
 /**
  * The draft's derived values that a trigger reads, added to the intake as declared pseudo-fields so
- * the comparisons *on* them run through the engine's operator table rather than a second one. The
- * formulas and null behaviours are the draft's, quoted in section 3.5 of the document.
+ * the comparisons *on* them run through the engine's operator table rather than a second one.
+ *
+ * The draft publishes each formula as prose over functions it never defines (`inclusive_days`,
+ * `union`, `?? `), so the computation cannot be read off the artifact and is implemented here. What
+ * is read off the artifact is whether the implementation is still the one the draft describes:
+ * `declaration` quotes the draft's `formula` and `null_behavior` verbatim, and
+ * `assertDerivedValuesMatchDraft` fails the load when either has moved. A draft that changes a
+ * formula or a null behaviour without renaming the value therefore stops the measurement rather
+ * than being measured with obsolete semantics.
  */
 const DERIVED_VALUES = {
   structure_area_sqft: {
     type: "number",
     inputs: ["structure_length_ft", "structure_width_ft"],
+    declaration: {
+      formula: "structure_length_ft * structure_width_ft",
+      null_behavior: "unknown if either dimension is missing",
+    },
     // "unknown if either dimension is missing"
     compute: (intake) => {
       const length = intake.structure_length_ft;
@@ -93,6 +189,10 @@ const DERIVED_VALUES = {
   event_days: {
     type: "integer",
     inputs: ["event_date", "event_end_date"],
+    declaration: {
+      formula: "inclusive_days(event_date, event_end_date ?? event_date)",
+      null_behavior: "1 when event_end_date is null",
+    },
     // "1 when event_end_date is null"
     compute: (intake) => {
       const start = intake.event_date;
@@ -107,6 +207,11 @@ const DERIVED_VALUES = {
   effective_fuel_types: {
     type: "multi_enum",
     inputs: ["fuel_types", "generator_fuel_type"],
+    declaration: {
+      formula:
+        "union(fuel_types, generator_fuel_type when generator_fuel_type not in ['none','unknown'])",
+      null_behavior: "fuel_types only",
+    },
     // "fuel_types only"
     compute: (intake) => {
       const base = Array.isArray(intake.fuel_types) ? [...intake.fuel_types] : [];
@@ -127,8 +232,49 @@ const DERIVED_VALUES = {
  * definite result, so completeness counts it as settled. No other published null behaviour names a
  * definite value: `structure_area_sqft` is `"unknown if either dimension is missing"`, and the
  * `is_null` leaves exist precisely to flag a fact nobody supplied.
+ *
+ * That reading is a reading of `event_days`' published null behaviour, so it is pinned by the same
+ * `assertDerivedValuesMatchDraft` check: change the behaviour and the load fails.
  */
 const NULL_IS_A_DECLARED_ANSWER = new Set(["event_end_date"]);
+
+/**
+ * Fail when the draft's `derived_values` declarations and this file's implementations have parted
+ * company, in either direction.
+ *
+ * Two ways they can: a value this harness implements is renamed, dropped, or given a different
+ * formula or null behaviour; or a trigger starts reading a declared derived value this harness has
+ * no implementation for. Both would otherwise leave `cofiring.test.mjs` green while the published
+ * co-firing counts were computed under semantics the draft no longer states.
+ */
+export function assertDerivedValuesMatchDraft(artifact) {
+  const declared = new Map(artifact.derived_values.map((value) => [value.name, value]));
+
+  for (const [name, implementation] of Object.entries(DERIVED_VALUES)) {
+    const declaration = declared.get(name);
+    if (declaration === undefined) {
+      throw new Error(`the draft no longer declares the derived value "${name}"`);
+    }
+    for (const key of ["formula", "null_behavior"]) {
+      if (declaration[key] !== implementation.declaration[key]) {
+        throw new Error(
+          `derived value "${name}" declares ${key} "${declaration[key]}", but this harness ` +
+            `implements "${implementation.declaration[key]}"`,
+        );
+      }
+    }
+  }
+
+  for (const rule of [...artifact.rules, ...artifact.advisories]) {
+    for (const leaf of triggerOperators(rule.trigger)) {
+      if (declared.has(leaf.field) && DERIVED_VALUES[leaf.field] === undefined) {
+        throw new Error(
+          `rule ${rule.id} reads the derived value "${leaf.field}", which this harness does not compute`,
+        );
+      }
+    }
+  }
+}
 
 /** Dimensions whose thresholds are on their product, so the domain is set on the product's behalf. */
 const HAND_SET_NUMERIC_DOMAINS = {
@@ -153,8 +299,8 @@ export function buildFieldDefinitions(artifact, { translateAskedWhen = false } =
     askedWhen:
       typeof field.asked_when === "string"
         ? field.asked_when
-        : translateAskedWhen
-          ? (ASKED_WHEN_TRANSLATIONS[field.field] ?? null)
+        : translateAskedWhen && field.asked_when != null
+          ? askedWhenExpression(field.asked_when, field.field)
           : null,
     askedWhenClauses: null,
     nullable: field.nullable === true,

@@ -6,9 +6,18 @@
 // document's numbers are cited elsewhere, and a number nobody can re-run is a number nobody can
 // correct.
 
+import { mkdtempSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+
 import { beforeAll, describe, expect, test } from "vitest";
 
-import { validMultiEnumSelections } from "./harness.mjs";
+import {
+  askedWhenExpression,
+  assertDerivedValuesMatchDraft,
+  measuredDraftPath,
+  validMultiEnumSelections,
+} from "./harness.mjs";
 import {
   coFiringEvents,
   measure,
@@ -69,6 +78,37 @@ describe("section 3.1, the load-staging errors", () => {
   });
 });
 
+describe("choosing the measured draft", () => {
+  const directoryHolding = (files) => {
+    const directory = mkdtempSync(join(tmpdir(), "cofiring-proposals-"));
+    for (const [name, artifact] of Object.entries(files)) {
+      writeFileSync(join(directory, name), JSON.stringify(artifact));
+    }
+    return directory;
+  };
+
+  const measured = { schema: "popengine-rules/v2", ruleset_version: "nyc.v2" };
+
+  test("an unrelated proposal alongside it does not make the draft ambiguous", () => {
+    const directory = directoryHolding({
+      "renamed-draft.json": measured,
+      "some-other-proposal.json": { schema: "popengine-rules/v2", ruleset_version: "nyc.v3" },
+      "not-a-ruleset.json": { notes: [] },
+    });
+    expect(measuredDraftPath(directory)).toBe(join(directory, "renamed-draft.json"));
+  });
+
+  test("two artifacts claiming the same identity fail rather than one being picked", () => {
+    const directory = directoryHolding({ "a.json": measured, "b.json": measured });
+    expect(() => measuredDraftPath(directory)).toThrow(/ambiguous/);
+  });
+
+  test("the committed draft is the one the identity names", () => {
+    expect(m.draft.schema).toBe(measured.schema);
+    expect(m.draft.ruleset_version).toBe(measured.ruleset_version);
+  });
+});
+
 describe("section 3.2, what the harness supplies", () => {
   test("the draft publishes no semantics for `is_null` or `lte`", () => {
     const described = m.inventory.operatorSemantics(m.draft);
@@ -82,6 +122,82 @@ describe("section 3.2, what the harness supplies", () => {
 
   test("the harness agrees with the engine on every published rule and every control intake", () => {
     expect(m.control.agreement).toEqual({ comparisons: 28_612, mismatches: 0, rules: 46 });
+  });
+
+  test("the derived-value implementations are the ones the draft declares", () => {
+    // The formulas are prose over functions the draft never defines, so they are implemented
+    // rather than read. What is read is whether the declaration still says what was implemented.
+    expect(() => assertDerivedValuesMatchDraft(m.draft)).not.toThrow();
+  });
+
+  test("a moved formula or null behaviour fails the load instead of being measured", () => {
+    const moved = (name, key, value) => ({
+      ...m.draft,
+      derived_values: m.draft.derived_values.map((declaration) =>
+        declaration.name === name ? { ...declaration, [key]: value } : declaration,
+      ),
+    });
+    expect(() =>
+      assertDerivedValuesMatchDraft(moved("structure_area_sqft", "formula", "length * width * 2")),
+    ).toThrow(/structure_area_sqft/);
+    expect(() =>
+      assertDerivedValuesMatchDraft(moved("event_days", "null_behavior", "unknown")),
+    ).toThrow(/event_days/);
+    expect(() =>
+      assertDerivedValuesMatchDraft({
+        ...m.draft,
+        derived_values: m.draft.derived_values.filter((value) => value.name !== "event_days"),
+      }),
+    ).toThrow(/no longer declares/);
+  });
+
+  test("a trigger reading a derived value the harness cannot compute fails the load", () => {
+    const draft = {
+      ...m.draft,
+      rules: [
+        ...m.draft.rules,
+        {
+          id: "SYNTHETIC-001",
+          trigger: { field: "business_days_until_event", op: "gt", value: 30 },
+        },
+      ],
+    };
+    expect(() => assertDerivedValuesMatchDraft(draft)).toThrow(/business_days_until_event/);
+  });
+
+  test("the `asked_when` scoping is translated from the published object", () => {
+    const askedWhen = (field) =>
+      m.draft.intake_fields.find((entry) => entry.field === field).asked_when;
+    expect(
+      askedWhenExpression(askedWhen("public_space_interference"), "public_space_interference"),
+    ).toBe("location_type in street/sidewalk/curb_lane/plaza");
+    expect(
+      askedWhenExpression(
+        askedWhen("sound_audible_in_public_space"),
+        "sound_audible_in_public_space",
+      ),
+    ).toBe("amplified_sound AND location_type in private_indoor/private_rooftop/private_outdoor");
+  });
+
+  test("a changed `asked_when` object changes the scope, and an inexpressible one throws", () => {
+    expect(
+      askedWhenExpression(
+        { all: [{ field: "amplified_sound", op: "bool", value: true }] },
+        "sound_audible_in_public_space",
+      ),
+    ).toBe("amplified_sound");
+    expect(
+      askedWhenExpression({ field: "location_type", op: "in", value: ["plaza"] }, "any_field"),
+    ).toBe("location_type in plaza");
+    expect(() =>
+      askedWhenExpression({ any: [{ field: "amplified_sound", op: "bool", value: true }] }, "f"),
+    ).toThrow(/any/);
+    expect(() => askedWhenExpression({ field: "headcount", op: "gt", value: 20 }, "f")).toThrow(
+      /"gt"/,
+    );
+    expect(() =>
+      askedWhenExpression({ field: "amplified_sound", op: "bool", value: false }, "f"),
+    ).toThrow(/false/);
   });
 });
 
@@ -441,6 +557,18 @@ describe("section 6, the blocker-plus-window shape", () => {
     expect(parsed.name).toBeNull();
     expect(parsed.publishedDisposition).toBeNull();
     expect(parsed.unreadFields).toContain("status");
+  });
+
+  test("`agency` is a field the parser reads, on every draft rule that publishes one", () => {
+    const publishing = [...m.draft.rules, ...m.draft.advisories].filter(
+      (rule) => rule.output?.agency !== undefined,
+    );
+    expect(publishing).toHaveLength(42);
+    for (const rule of publishing) {
+      expect(m.inventory.parserVisibleOutput(m.draft, rule.id).unreadFields).not.toContain(
+        "agency",
+      );
+    }
   });
 
   test("the advisory it merges with does publish a name", () => {

@@ -155,8 +155,16 @@ export function parserVisibleOutput(draft, ruleId) {
   };
 }
 
-/** The `output` keys `parseRule` (`packages/engine/src/ruleset.ts:484-520`) reads. */
+/**
+ * The `output` keys `parseRule` (`packages/engine/src/ruleset.ts:484-545`) reads.
+ *
+ * Every entry is one `optionalString(output, ...)`, `output.<key>` or `optionalStringArray` call in
+ * that range, checked against the parser rather than recalled. `conflict_text` is not among them:
+ * a finding's `conflictText` is derived from `noteText` at an `OFFICIAL_CONFLICT` status
+ * (`apps/web/app/checklist/checklist-fixtures.ts:121`), and no ruleset field feeds it.
+ */
 const PARSER_READ_OUTPUT_FIELDS = new Set([
+  "agency",
   "disposition",
   "deadline",
   "portal",
@@ -168,5 +176,4 @@ const PARSER_READ_OUTPUT_FIELDS = new Set([
   "notes",
   "dedupe_key",
   "user_summary",
-  "conflict_text",
 ]);
