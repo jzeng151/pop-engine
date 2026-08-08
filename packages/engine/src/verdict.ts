@@ -1,7 +1,13 @@
 // Verdict algorithm, ARCHITECTURE steps 3–6. Branch evaluation for unknowns runs before any
 // window check, so an unknown-conditioned finding can never render INFEASIBLE (Scenario F).
 
-import { resolveFindings, routesOf } from "./findings";
+import {
+  BLOCKING_DISPOSITION_FLOOR,
+  DISPOSITION_STRENGTH,
+  resolveFindings,
+  routesOf,
+} from "./findings";
+import type { DefiniteRoutes } from "./findings";
 import type { PlanContext } from "./deadlines";
 import {
   MISSED_MAY_BE_REQUIRED_IS_CONDITIONAL,
@@ -137,10 +143,53 @@ function blockerView(finding: Finding, route: FindingRoute): Finding {
 }
 
 /**
+ * Whether a missed finding blocks. Three conditions, and each is load-bearing.
+ *
+ * `required` is the BAR rather than the whole set: `prohibited_or_ineligible` sits ABOVE `required`
+ * in `DISPOSITION_STRENGTH`, so testing for equality let a finding that is both barred and past its
+ * published window fall through to the missed-but-not-blocking branch and read CONDITIONAL. Product
+ * owner, 2026-08-08.
+ *
+ * The finding also has to assert that bar off a trigger that RESOLVED, which is the same gate
+ * `resolveDisposition()` applies one tier down. It does not apply there to `prohibited_or_ineligible`
+ * on purpose (`proposals.ts` §2): a lone barred finding whose trigger came back `unknown` keeps its
+ * published disposition so it still RENDERS as the blocking answer it publishes. Under the old
+ * `=== "required"` filter that could never reach the window check, because a `required` rule with an
+ * unknown trigger has already been demoted to `may_be_required`. Widening the bar upward brought it
+ * into reach, and the file's own header states the invariant it would have broken: an
+ * unknown-conditioned finding can never render INFEASIBLE (F-102 AC 2, Scenario F). Telling an
+ * organizer their event is barred AND past its filing deadline, in the same payload that says the
+ * engine does not know the fact the bar hangs off, is the failure this repository forbids everywhere
+ * else. So the disposition still renders; only the verdict waits for the answer.
+ *
+ * `DefiniteRoutes` carries which routes resolved, because the trigger result is not on `Finding` and
+ * `routesOf` cannot invent one for an unmerged line: its synthesized entry reads `"true"`, which is
+ * right for the readers that ask whether a route applies and wrong for this one. A route whose own
+ * trigger came back `unknown` must not close a plan even where it publishes a bar, since
+ * `resolveDisposition` deliberately leaves `prohibited_or_ineligible` undemoted so it still RENDERS
+ * (`proposals.ts` §2), and telling an organizer their event is barred AND past its deadline, in the
+ * same payload that says the engine does not know the fact the bar hangs off, is the failure this
+ * repository forbids everywhere else (#254 review). The set also excludes OFFICIAL_CONFLICT, per
+ * `findings.ts`.
+ *
+ * IT IS READ PER ROUTE, WHICH IS WHY ONE SET ANSWERS WHAT #254 NEEDED TWO FOR. That change had to
+ * ask separately whether the disposition's route and the window's route resolved, because a merged
+ * line took them from different rules. An entry here is one rule's own disposition beside one rule's
+ * own window, so a single membership test covers both.
+ */
+const blocksWhenMissed = (route: FindingRoute, definite: DefiniteRoutes): boolean =>
+  DISPOSITION_STRENGTH.indexOf(route.disposition) >=
+    DISPOSITION_STRENGTH.indexOf(BLOCKING_DISPOSITION_FLOOR) &&
+  definite.blockingRuleIds.has(route.ruleId);
+
+/**
  * Steps 4–6: the window checks, with no branch expansion. Also the per-branch and per-rescope
  * verdict, which is why it is separate from `computeVerdict`.
  */
-export function computeWindowVerdict(findings: readonly Finding[]): WindowVerdict {
+export function computeWindowVerdict(
+  findings: readonly Finding[],
+  definite: DefiniteRoutes,
+): WindowVerdict {
   const entries = routeEntries(findings);
   const missed = entries.filter(({ route }) => isMissed(route));
   const missedRuleIds = missed.map(({ route }) => route.ruleId);
@@ -151,7 +200,7 @@ export function computeWindowVerdict(findings: readonly Finding[]): WindowVerdic
 
   // The blocking route is the missed one with the longest published lead, i.e. the earliest date.
   const blocking = missed
-    .filter(({ route }) => route.disposition === "required")
+    .filter(({ route }) => blocksWhenMissed(route, definite))
     .sort((left, right) =>
       (left.route.latestApplyDate ?? "").localeCompare(right.route.latestApplyDate ?? ""),
     )[0];
@@ -396,7 +445,7 @@ function evaluateConditional(
   context: PlanContext,
 ): ConditionalEvaluation {
   const resolved = resolveFindings(intake, ruleset, context);
-  const window = computeWindowVerdict(resolved.findings);
+  const window = computeWindowVerdict(resolved.findings, resolved.definiteRoutes);
   const unresolvedTimelines = resolved.findings
     .filter((finding) => finding.timelineUnresolvedReason !== null)
     .map((finding) => ({

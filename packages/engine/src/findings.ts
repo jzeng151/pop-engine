@@ -27,11 +27,33 @@ import type {
   Tristate,
 } from "./types";
 
+/**
+ * Which routes resolved on their own triggers, which is what decides whether a missed window may
+ * close a plan (#254). The trigger result is not on `Finding`, so `verdict.ts` cannot recover it.
+ *
+ * ONE SET, NOT THE TWO #254 INTRODUCED. That change carried a second set naming the route each
+ * merged line's TIMELINE was read off, because under AD-19 a line's disposition and its window came
+ * from different routes and neither was recoverable from the line. `verdict.ts` no longer reads
+ * merged lines at all: it reads route entries, and each entry pairs a disposition with the window
+ * published by the SAME rule, so one id answers both halves of the question and the second set has
+ * nothing left to distinguish. What #254 fixed is unchanged, because it is this set that does the
+ * work: a route whose trigger came back `unknown` is absent here whatever it publishes.
+ */
+export type DefiniteRoutes = {
+  /**
+   * Rules that published a disposition at or above `required` AND whose own trigger resolved, so
+   * the requirement or bar they assert does not hang off an unanswered question. `verdict.ts` reads
+   * this to decide which missed routes may close a plan; see `blocksWhenMissed` there.
+   */
+  readonly blockingRuleIds: ReadonlySet<string>;
+};
+
 export type ResolvedFindings = {
   readonly findings: readonly Finding[];
   readonly trace: readonly EvaluationTraceEntry[];
   /** Intake fields whose unanswered state left at least one finding conditional. */
   readonly unknownFields: readonly string[];
+  readonly definiteRoutes: DefiniteRoutes;
 };
 
 function findingKind(rule: EngineRule): FindingKind {
@@ -125,7 +147,7 @@ function buildFinding(
  * that end: a blocking eligibility or prohibition finding is never erased by a permit finding with
  * the same key.
  */
-const DISPOSITION_STRENGTH: readonly Disposition[] = [
+export const DISPOSITION_STRENGTH: readonly Disposition[] = [
   "no_new_requirement",
   "advisory",
   "may_be_required",
@@ -135,6 +157,9 @@ const DISPOSITION_STRENGTH: readonly Disposition[] = [
 
 /** The strongest a route whose own trigger did not resolve can contribute (§8.4, and see below). */
 const UNRESOLVED_ROUTE_CEILING: Disposition = "may_be_required";
+
+/** The weakest disposition a missed finding can close a plan on (`verdict.ts`, F-102 AC 10). */
+export const BLOCKING_DISPOSITION_FLOOR: Disposition = "required";
 
 /** The weakest RESOLVED contribution a group can hold for that ceiling to bite (see below). */
 const UNRESOLVED_ROUTE_CAP_TRIGGER: Disposition = "required";
@@ -653,6 +678,7 @@ export function resolveFindings(
   const trace: EvaluationTraceEntry[] = [];
   const triggered: (Contribution & { dedupeKey: string | null })[] = [];
   const unknownFields = new Set<string>();
+  const blockingRuleIds = new Set<string>();
 
   for (const rule of ruleset.rules) {
     const evaluation = evaluateTrigger(rule.trigger, intake, scope);
@@ -662,6 +688,27 @@ export function resolveFindings(
     const finding = buildFinding(rule, evaluation.result, evaluation.triggeredBy, deadlineContext);
     // An unknown that surfaces while dating a finding is as material as one from its trigger.
     for (const field of finding.deadlineUnknownFields) unknownFields.add(field);
+    // OFFICIAL_CONFLICT is excluded because F-102 states it plainly: an official-conflict finding
+    // never flips the verdict by itself. The rule's own reading of its window may be one of the two
+    // that disagree, so closing a plan on it would resolve the conflict in the engine, in the
+    // direction of the harsher reading, and `ARCHITECTURE-FUTURE.md` §8.4 says the same of
+    // deduplication ("candidate requirements produced by official-conflict [...] branches remain
+    // conditional"). The line still renders as published, with both readings and every source, and
+    // it still contributes its window and its disposition to a merged line; it just cannot be the
+    // route that closes the plan. Excluding it here rather than rejecting the disposition at parse
+    // time is deliberate: what a rule publishes is regulatory content and the published ruleset is
+    // authoritative over the engine (AGENTS.md), so the engine may decline to block on it but may
+    // not overwrite it. A group cannot smuggle one in either, since `parseEngineRuleset` refuses a
+    // dedupe key that mixes verification statuses, so an official-conflict route only ever merges
+    // with other official-conflict routes (#254 review).
+    if (
+      evaluation.result === "true" &&
+      rule.verificationStatus !== "OFFICIAL_CONFLICT" &&
+      DISPOSITION_STRENGTH.indexOf(finding.disposition) >=
+        DISPOSITION_STRENGTH.indexOf(BLOCKING_DISPOSITION_FLOOR)
+    ) {
+      blockingRuleIds.add(rule.id);
+    }
     triggered.push({
       finding,
       triggerResult: evaluation.result,
@@ -674,5 +721,6 @@ export function resolveFindings(
     findings: applyDependencySequencing(dedupe(triggered), deadlineContext),
     trace,
     unknownFields: [...unknownFields],
+    definiteRoutes: { blockingRuleIds },
   };
 }
