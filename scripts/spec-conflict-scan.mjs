@@ -190,12 +190,30 @@ export const ATTENDEE_COUNT = new RegExp(ATTENDEE_COUNT_SOURCE, "i");
  * threshold that neither expression matched. The hyphen is admitted only when the very next token
  * is one of the counted-person nouns, so nothing a date or a rule id can look like is admitted
  * with it: both put digits or an uncounted word after the hyphen, not "guest" or "person".
+ *
+ * A THOUSANDS SEPARATOR IS PART OF THE NUMERAL, which is the fifteenth PR #247 round. The numeral
+ * was `\d{1,6}` with a `(?<![\w-])` guard, and a comma is neither a word character nor a hyphen, so
+ * "1,075 guests" matched on its SUFFIX: the phrase came out as "075 guests" and `claimedCounts`
+ * read it as 75. On a rule legitimately published at 75, an output claim of 1,075 was therefore
+ * licensed by the rule's own threshold, which is a materially different organizer-facing number
+ * borrowed from a real one. The numeral is `NUMERAL_BODY` now, one token that either carries its
+ * groups or carries none, and the guard refuses a digit run that FOLLOWS a `digit,` seam so no
+ * suffix of a grouped number can be read as a number of its own.
+ *
+ * Its cost is stated the way the other widenings here are: a comma-separated list written with no
+ * space after the comma ("20,50,75 guests") has a last member preceded by `digit,`, so it is no
+ * longer read as a count. That shape appears nowhere in this tree, the spaced form ("20, 50, 75
+ * guests") is unaffected, and the flag set over every scanned root is unchanged.
  */
 const COUNTED_PERSON_NOUN = "(?:guest|attendee|people|person|head|RSVP|patron)s?";
+/** One count numeral, with or without its thousands separators. */
+export const NUMERAL_BODY = "(?:\\d{1,3}(?:,\\d{3})+|\\d{1,6})";
+/** The same numeral, refusing a word, a hyphen or the tail of a grouped number on either side. */
+const COUNT_NUMERAL = `(?<![\\w-])(?<!\\d,)${NUMERAL_BODY}(?![\\w-])`;
 export const COUNTED_PEOPLE_SOURCE =
-  `(?<![\\w-])\\d{1,6}(?![\\w-]) ?(?:or more |or fewer |\\+ ?)?(?:[a-z][a-z-]*,? ){0,2}?${COUNTED_PERSON_NOUN}\\b` +
-  `|(?<![\\w-])\\d{1,6}-${COUNTED_PERSON_NOUN}\\b` +
-  "|\\b(?:guests|attendees|people|persons|heads|RSVPs|patrons)\\b[^.!?\\n]*?(?<![\\w-])\\d{1,6}(?![\\w-])";
+  `${COUNT_NUMERAL} ?(?:or more |or fewer |\\+ ?)?(?:[a-z][a-z-]*,? ){0,2}?${COUNTED_PERSON_NOUN}\\b` +
+  `|(?<![\\w-])(?<!\\d,)${NUMERAL_BODY}-${COUNTED_PERSON_NOUN}\\b` +
+  `|\\b(?:guests|attendees|people|persons|heads|RSVPs|patrons)\\b[^.!?\\n]*?${COUNT_NUMERAL}`;
 export const COUNTED_PEOPLE = new RegExp(COUNTED_PEOPLE_SOURCE, "i");
 
 /**
@@ -632,12 +650,19 @@ export const pairsAgencyWithCount = (raw, { bounded = false } = {}) => {
  *
  * An `ATTENDEE_COUNT` phrase ("the guest count") states the field and no number, so it contributes
  * nothing here and is supported by any rule that reads the field at all.
+ *
+ * The numeral is read out of the phrase with `NUMERAL_BODY`, the same token the phrase was matched
+ * with, so a formatted count is parsed as the whole number an organizer reads: "1,075 guests" is
+ * 1075 and not 75.
  */
+const CLAIMED_NUMERAL = new RegExp(NUMERAL_BODY, "g");
 export const claimedCounts = (raw) => {
   const found = new Set();
   const phrases = normalizeForMatching(raw).match(new RegExp(COUNTED_PEOPLE_SOURCE, "gi")) ?? [];
   for (const phrase of phrases) {
-    for (const numeral of phrase.match(/\d{1,6}/g) ?? []) found.add(Number(numeral));
+    for (const numeral of phrase.match(CLAIMED_NUMERAL) ?? []) {
+      found.add(Number(numeral.replaceAll(",", "")));
+    }
   }
   return found;
 };
@@ -722,17 +747,39 @@ const statesACount = (text) => ATTENDEE_COUNT.test(text) || COUNTED_PEOPLE.test(
  * the strict reading is stated: a future publication that legitimately reads the count has to write
  * the rule id in the same sentence as the number, which is the wording an organizer can check
  * anyway.
+ *
+ * EVERY RULE THE CLAIM NAMES HAS TO LICENSE IT, which is the fifteenth PR #247 round. This asked
+ * whether SOME attributed rule was named and supported the numbers, so the first legitimate rule in
+ * a sentence licensed the whole sentence: with `HEALTH-ASSEMBLY-001` published at 75,
+ * "HEALTH-ASSEMBLY-001 and DOHMH-VENDOR-PERMIT-001 are required at 75 guests." was exempt, and the
+ * vendor rule's trigger reads no count at all. A sentence naming two rules asserts the count of
+ * BOTH of them, so the quantifier is `every` over the subjects and a subject that publishes nothing
+ * licenses nothing.
+ *
+ * THE SUBJECTS ARE FOUND IN THE WHOLE PUBLISHED ID SPACE and not in `attributed` alone, which is
+ * what makes that quantifier bite: a rule whose trigger reads no count is absent from `attributed`,
+ * so searching only its keys would never see the second name and `every` would range over one
+ * subject again. `publishedIds` is the caller's list of every id the artifact publishes.
+ *
+ * `host` is the rule whose own output the text is, where there is one. A string that names no rule
+ * is about the rule it sits in, which is the only place LOCATION is read as the subject; a string
+ * that names rules is about the rules it names, the host included when the host is one of them.
+ * Repository prose has no host, so a count sentence naming no rule stays unattributed there.
  */
-export const countsAttributed = (raw, attributed) => {
-  const rules = [...attributed];
+export const countsAttributed = (raw, attributed, { publishedIds = [], host } = {}) => {
+  const universe = [...new Set([...publishedIds, ...attributed.keys()])];
+  const licenses = (claim, id) => {
+    const thresholds = attributed.get(id);
+    return thresholds !== undefined && countsSupportedBy(claim, thresholds);
+  };
   const claims = sentencesOf(normalizeForMatching(raw)).filter(statesACount);
   return (
     claims.length > 0 &&
-    claims.every((claim) =>
-      rules.some(
-        ([id, thresholds]) => namesRule(claim, id) && countsSupportedBy(claim, thresholds),
-      ),
-    )
+    claims.every((claim) => {
+      const named = universe.filter((id) => namesRule(claim, id));
+      const subjects = named.length > 0 ? named : host === undefined ? [] : [host];
+      return subjects.length > 0 && subjects.every((id) => licenses(claim, id));
+    })
   );
 };
 
@@ -923,8 +970,31 @@ const RENDERED_SEPARATOR = ". ";
 const PUBLISHED_RULE_ARRAYS = ["rules", "advisories"];
 
 /**
+ * The strings one object of the artifact carries DIRECTLY, its arrays of strings included: the
+ * siblings a reader sees as one labelled thing. A child object is a unit of its own, so nesting
+ * groups rather than flattens, and `url` is excluded for the reason `outputStrings` gives.
+ */
+const siblingUnits = (node, into = []) => {
+  if (typeof node === "string") into.push([node]);
+  else if (node && typeof node === "object") {
+    const siblings = [];
+    const collect = (value) => {
+      if (typeof value === "string") siblings.push(value);
+      else if (Array.isArray(value)) for (const child of value) collect(child);
+      else if (value && typeof value === "object") siblingUnits(value, into);
+    };
+    for (const [key, value] of Object.entries(node)) {
+      if (key !== "url") collect(value);
+    }
+    if (siblings.length > 0) into.push(siblings);
+  }
+  return into;
+};
+
+/**
  * THE ARTIFACT'S OWN TOP-LEVEL PROSE: every string the published ruleset carries outside its
- * `rules` and `advisories`, labelled by the top-level key it hangs under.
+ * `rules` and `advisories`, grouped into the UNITS a reader reads them in and labelled by the
+ * top-level key each unit hangs under.
  *
  * EVERY OTHER KEY, not a list of the regulatory-looking ones, for the reason `outputStrings` gives
  * about `output`: a key a future publication adds is scanned the day it lands rather than the day
@@ -933,13 +1003,26 @@ const PUBLISHED_RULE_ARRAYS = ["rules", "advisories"];
  * `intake_fields`, `engine_conventions` and `reference_tables` all carry regulatory sentences too,
  * and `config.slack_warning_days.note` already exists to say a threshold is NOT an official one.
  *
- * `outputStrings` supplies the walk, so `url` is excluded here for the same reason it is there.
+ * A UNIT AND NOT A FLAT LIST OF STRINGS, which is the fifteenth PR #247 round. This flattened the
+ * whole subtree and handed each string to the scan alone, so structured published prose reassembled
+ * the twelfth round's defect one level up: `status_legend: { heading: "DOHMH requirements",
+ * description: "Required at 75 or more guests" }` puts the agency in one value and the trigger in
+ * its sibling, neither value carries both, and the audit named no offender for a legend an
+ * organizer reads as one line. A rule's strings were already joined into a semantic unit for
+ * exactly this reason; nothing did it here.
+ *
+ * THE UNIT IS THE ENCLOSING OBJECT rather than the whole top-level key, and the artifact decides
+ * that the way `provenance` decided `countClaimsInProse`'s unit. `config`, `intake_fields` and
+ * `reference_tables` are trees of unrelated sub-objects, so joining a whole key would read a
+ * sentence of one table against a sentence of the next, which is co-occurrence and not a claim.
+ * Sibling values under one object are the smallest group a reader sees as one thing, and it is the
+ * group the thread's example is.
  */
 export const rulesetProseStrings = (artifact) => {
   const found = [];
   for (const [key, value] of Object.entries(artifact ?? {})) {
     if (PUBLISHED_RULE_ARRAYS.includes(key)) continue;
-    for (const string of outputStrings(value)) found.push({ where: `ruleset.${key}`, string });
+    for (const strings of siblingUnits(value)) found.push({ where: `ruleset.${key}`, strings });
   }
   return found;
 };
@@ -1072,8 +1155,18 @@ const countClaimsInProse = (raw) => {
  * reads no count licenses nothing. `namesRule` is the token match, so a companion id sharing the
  * base does not stand in for the rule it extends.
  *
+ * THE HOST IS ONE OF THE SUBJECTS RATHER THAN THE BRANCH NOT TAKEN, which is the fifteenth PR #247
+ * round. The named-rule branch filtered the host id OUT and then never validated the claim against
+ * the host's own thresholds, so naming a second rule bought an exemption from the first: a host
+ * legitimately published at 75 could say "HEALTH-A applies at 500 guests, like HEALTH-B" and pass
+ * on HEALTH-B's 500, which is an invented threshold printed under the name of the rule that does
+ * not publish it. The host is dropped from the subjects only where the string names no rule at all,
+ * which is the one case where location is all the audit has. `countsAttributed` is the single
+ * predicate for both questions now, so the repository scan and this audit cannot disagree about
+ * what licenses a count.
+ *
  * Measured on this tree: zero strings and zero units, over 42 rules and 4 advisories, with the
- * verification qualifications and the source citations included, and zero top-level sentences. The
+ * verification qualifications and the source citations included, and zero top-level units. The
  * named-rule branch changes no verdict here, because no rule on this tree is attributed at all.
  */
 export const countClaimsInPublishedOutput = (artifact, { attributed = new Map() } = {}) => {
@@ -1081,19 +1174,11 @@ export const countClaimsInPublishedOutput = (artifact, { attributed = new Map() 
   const publishedRules = [...(artifact.rules ?? []), ...(artifact.advisories ?? [])];
   const publishedIds = publishedRules.map((rule) => rule.id).filter(Boolean);
   for (const rule of publishedRules) {
-    const published = attributed.get(rule.id);
     const ownRequirement = cityHealthRule(rule);
     const claims = (string) => {
       const scanned = ownRequirement ? `${rule.output?.agency ?? "DOHMH"}. ${string}` : string;
       if (!pairsAgencyWithCount(scanned)) return false;
-      const named = publishedIds.filter((id) => id !== rule.id && namesRule(scanned, id));
-      if (named.length > 0) {
-        return named.some((id) => {
-          const theirs = attributed.get(id);
-          return theirs === undefined || !countsSupportedBy(scanned, theirs);
-        });
-      }
-      return published === undefined || !countsSupportedBy(scanned, published);
+      return !countsAttributed(scanned, attributed, { publishedIds, host: rule.id });
     };
     const strings = organizerFacingStrings(rule);
     const offending = strings.filter(claims);
@@ -1104,11 +1189,17 @@ export const countClaimsInPublishedOutput = (artifact, { attributed = new Map() 
       found.push({ ruleId: rule.id, string: unit });
     }
   }
-  for (const { where, string } of rulesetProseStrings(artifact)) {
-    for (const claim of countClaimsInProse(string)) {
-      if (countsAttributed(claim, attributed)) continue;
-      found.push({ ruleId: where, string: claim });
-    }
+  // Top-level prose is read string by string and then as the unit its siblings make, in that
+  // order and on the same terms as a rule's card: the unit is reported only where no single string
+  // of it is, so the report stays at the offending sentence wherever one string carries the claim.
+  for (const { where, strings } of rulesetProseStrings(artifact)) {
+    const unreported = (text) =>
+      countClaimsInProse(text).filter(
+        (claim) => !countsAttributed(claim, attributed, { publishedIds }),
+      );
+    const offending = strings.flatMap(unreported);
+    const reported = offending.length > 0 ? offending : unreported(strings.join(RENDERED_SEPARATOR));
+    for (const claim of reported) found.push({ ruleId: where, string: claim });
   }
   return found;
 };
