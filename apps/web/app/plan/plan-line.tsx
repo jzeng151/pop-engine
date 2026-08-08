@@ -294,6 +294,19 @@ export function PlanLine({ finding }: { finding: ConsumedFinding }) {
             <span className="line__disposition">{humanize(finding.disposition)}</span>
           </p>
           <PublishedDeadline finding={finding} />
+          {/* The same approved sentence, on the branch a plan stored before organizer summaries
+              existed renders. `loadPlan` normalizes a missing `userSummary` to null, so those plans
+              take this branch for good and are immutable, while carrying the same published deadline
+              and the same agency as a plan generated today. The line above them states the window
+              and the status token; without this they would keep "not calculable" as their whole
+              answer, which is the line the decision in `docs/BASELINE.md` replaces, for every plan
+              rather than for a rendering variant. No citation here either, for the reason given on
+              the summary branch. */}
+          {businessDayWindow !== null && (
+            <p className="line__deadline-notice">
+              <strong>Apply by:</strong> {businessDayWindow}
+            </p>
+          )}
           {/* An absent fee and an explicit null are indistinguishable, so null renders nothing. */}
           {finding.feeDisplay !== null && <p className="line__fee">{finding.feeDisplay}</p>}
         </>

@@ -27,9 +27,23 @@ import { PlanLine } from "./plan-line";
 // Each finding then travels the wire the way a stored plan does: serialized, read back through
 // `loadPlan`'s validator and normalizer, and rendered. What is asserted is the text on screen.
 
-const ruleset = parseEngineRuleset(
-  JSON.parse(readFileSync(resolve(publishedRulesFileIn("rules")), "utf8")),
+const rawRuleset: unknown = JSON.parse(
+  readFileSync(resolve(publishedRulesFileIn("rules")), "utf8"),
 );
+const ruleset = parseEngineRuleset(rawRuleset);
+
+/**
+ * The three published members the dedupe-group invariant reads, off the RAW file rather than the
+ * parsed ruleset: `dedupe_key` is what groups the routes and the parsed shape does not surface it.
+ */
+type RawRule = {
+  readonly id: string;
+  readonly output?: {
+    readonly agency?: string;
+    readonly dedupe_key?: string;
+    readonly deadline?: { readonly type?: string };
+  };
+};
 
 /** Production: no holiday list is published for the pinned calendar. */
 const productionCalendar = { id: ruleset.calendarId, holidays: null };
@@ -66,9 +80,9 @@ const intake: EventIntake = {
  * DOB-TENT-001 shares `dedupe_key` "dob-structure" with DOB-TALL-STRUCTURE-001, whose trigger reads
  * `structure_over_10ft_tall`. That field is unanswered above, so the trigger is tri-state unknown,
  * the rule fires MAY_BE_REQUIRED and the two merge. Answering "no" resolves it to false, the rule
- * does not fire, and DOB-TENT-001 is a single-route finding. Both states are real production states
- * and both are asserted below: the merged one gets the previous line, this one gets the new
- * sentence.
+ * does not fire, and DOB-TENT-001 is a single-route finding. Both states are real production states,
+ * both are asserted below, and both get the sentence: the two routes publish one agency, which the
+ * published-ruleset invariant further down is what keeps true.
  */
 const heightAnswered: EventIntake = { ...intake, structure_over_10ft_tall: "no" };
 
@@ -293,41 +307,64 @@ describe("a merged dedupe line, whose agency and window need not come from one r
   // `findings.ts:407-411` takes `agency` from `identityBinding` and `deadline`/`deadlineStatus`
   // from `windowBinding`, and `findings.ts:328-330` records that the two coincide in every group
   // nyc.v2.11 publishes without bounding what a future group can do. This sentence combines exactly
-  // those two fields, so on a merged finding it cannot be shown to name the agency that published
-  // the window. It falls back to the line that asserts nothing.
+  // those two fields, so what has to hold is that no published group's routes disagree about the
+  // agency. That is a fact about the artifact, and it is asserted here as one.
 
-  it("gets the previous line when more than one rule contributed to it", async () => {
+  it("gets the same sentence when a second route merged into it", async () => {
     // The same DOB-TENT-001, on the intake that leaves the structure height unanswered:
     // DOB-TALL-STRUCTURE-001's trigger goes tri-state unknown, the rule fires, and the two merge on
-    // `dedupe_key` "dob-structure". Today both publish "DOB" and the suppressed sentence would have
-    // been correct; the guard does not depend on knowing that, which is the point of it.
+    // `dedupe_key` "dob-structure". Both routes publish "DOB", so the merged agency is DOB whichever
+    // route bound it, and the organizer of a tented event with an unanswered height gets the
+    // approved line rather than the one it replaces. Scenario E is that event.
     const merged = findingFor("DOB-TENT-001");
     expect(merged.ruleIds).toEqual(["DOB-TENT-001", "DOB-TALL-STRUCTURE-001"]);
     expect(merged.deadline?.type).toBe("business_days_minimum");
     expect(merged.deadlineStatus).toBe("not_calculable");
 
     expect(await applyByLine(merged)).toContain(
-      `Exact apply-by date: not calculable — ${CONFIRM_WITH_AGENCY}`,
+      "Apply by: the exact date depends on which days DOB counts as business days. " +
+        "Allow more if it closes for holidays. Confirm with DOB.",
     );
   });
 
-  it("never names an agency that did not publish the window it is standing next to", async () => {
-    // The state the split allows and no published ruleset reaches yet: a group whose window comes
-    // from DOB-TENT-001 and whose headline disposition, and therefore `agency`, comes from a route
-    // of another agency. A `dedupe_key` edit alone reaches it, and #239 and #244 both record a
-    // dedupe-key edit moving rendered output with no code change. Built by overwriting the merged
-    // agency, because the merge is what would supply it.
-    const crossAgency = {
-      ...findingFor("DOB-TENT-001"),
-      agency: "NY State Liquor Authority",
-    };
+  it("holds the published ruleset to one agency per business-day dedupe group", () => {
+    // THE GUARANTEE THIS SENTENCE RESTS ON, checked against the published file rather than argued
+    // in a comment. A `dedupe_key` edit alone reaches a group whose window comes from one agency's
+    // rule and whose headline disposition, and therefore `agency`, comes from another's; #239 and
+    // #244 both record a dedupe-key edit moving rendered output with no code change, so an artifact
+    // edit is exactly the event this has to fail on. Stated over every group rather than over
+    // `dob-structure`, so a NEW group carrying a business-day deadline is covered the day it is
+    // published.
+    const rules = (rawRuleset as { rules: readonly RawRule[] }).rules;
+    const groups = new Map<string, RawRule[]>();
+    for (const rule of rules) {
+      const key = rule.output?.dedupe_key;
+      if (typeof key !== "string") continue;
+      groups.set(key, [...(groups.get(key) ?? []), rule]);
+    }
 
-    const { sentence, citation } = await applyBy(crossAgency);
-    expect(sentence).toContain(`Exact apply-by date: not calculable — ${CONFIRM_WITH_AGENCY}`);
-    expect(sentence).not.toContain("the NY State Liquor Authority counts as business days");
-    expect(sentence).not.toContain("Confirm with the NY State Liquor Authority.");
-    // The fallback line keeps its attribution: it claims nothing the sources must carry.
-    expect(citation).toContain("DOB Temporary Use Permit page");
+    const crossAgency = [...groups]
+      .filter(([, group]) =>
+        group.some((rule) => rule.output?.deadline?.type === "business_days_minimum"),
+      )
+      .filter(
+        ([, group]) =>
+          new Set(
+            group
+              .map((rule) => rule.output?.agency)
+              .filter((agency): agency is string => typeof agency === "string"),
+          ).size > 1,
+      )
+      .map(([key, group]) => `${key}: ${group.map((rule) => rule.id).join(", ")}`);
+
+    expect(crossAgency).toEqual([]);
+    // Not vacuous: the group the rendered line above actually travels through is this one, and both
+    // of its routes publish the agency the sentence names.
+    expect(groups.get("dob-structure")?.map((rule) => rule.id)).toEqual([
+      "DOB-TENT-001",
+      "DOB-TALL-STRUCTURE-001",
+    ]);
+    expect(groups.get("dob-structure")?.map((rule) => rule.output?.agency)).toEqual(["DOB", "DOB"]);
   });
 });
 
@@ -376,5 +413,34 @@ describe("a plan stored by an older build", () => {
       "Apply by: the exact date depends on which days DOB counts as business days. " +
         "Allow more if it closes for holidays. Confirm with DOB.",
     );
+  });
+
+  it("states the same thing on a plan stored before organizer summaries existed", async () => {
+    // A DIFFERENT BRANCH OF THE LINE, not a different sentence. `loadPlan` normalizes an absent
+    // `userSummary` to null, and `plan-line.tsx` renders a null summary through the legacy branch:
+    // no summary list, the published deadline as a paragraph. Such a plan is immutable and nothing
+    // regenerates it into the summary shape, while it carries the same published deadline and the
+    // same agency as one generated today. Without this it would keep "not calculable" as its whole
+    // answer, which is what the decision in `docs/BASELINE.md` replaces.
+    const served = await asServed({ ...tentAlone(), userSummary: null });
+    expect(served.userSummary).toBeNull();
+
+    const { container } = render(<PlanLine finding={served} />);
+    expect(container.querySelector(".line__summary")).toBeNull();
+    expect(container.querySelector(".line__deadline-notice")?.textContent).toBe(
+      "Apply by: the exact date depends on which days DOB counts as business days. " +
+        "Allow more if it closes for holidays. Confirm with DOB.",
+    );
+  });
+
+  it("leaves a legacy line with no business-day window carrying no notice at all", async () => {
+    // The same branch, on the finding that must not get the sentence: DOB-ASSEMBLY-001's published
+    // agency names two agencies, so it falls back here exactly as it does in the summary branch,
+    // and the fallback in this branch is the published deadline paragraph on its own.
+    const served = await asServed({ ...findingFor("DOB-ASSEMBLY-001"), userSummary: null });
+
+    const { container } = render(<PlanLine finding={served} />);
+    expect(container.querySelector(".line__deadline")).not.toBeNull();
+    expect(container.querySelector(".line__deadline-notice")).toBeNull();
   });
 });

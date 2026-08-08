@@ -74,41 +74,45 @@ const AGENCY_IN_SENTENCE: Readonly<Record<string, string>> = {
  * exactly one undatable path in `packages/engine/src/deadlines.ts` (`holidays === null`), so type
  * plus `not_calculable` plus no computed date identifies this case with nothing left to parse.
  *
- * A MERGED FINDING GETS THE OLD LINE, because on one this sentence cannot be shown to be about the
- * right agency. `packages/engine/src/findings.ts:407-411` sources the two fields this sentence
- * combines from two DIFFERENT routes by design (AD-19): `agency` arrives with `identityBinding`,
- * the tightest window among only the routes that contributed the headline disposition, while
- * `deadline` and `deadlineStatus` arrive from `windowBinding`, the tightest window across the whole
- * group. `findings.ts:328-330` states the consequence: "The two coincide in every group nyc.v2.11
- * publishes, so this splits nothing today; it bounds what a future dedupe group can render." A group
- * whose window comes from a DOB rule and whose disposition comes from an SLA one would render "which
- * days the NY State Liquor Authority counts" beside DOB's window and send the organizer to the wrong
- * agency to confirm it, and NOTHING WOULD FAIL: not the typecheck, not a test, and a `dedupe_key`
- * edit alone reaches it (v2.6 added one; #239 and #244 both record a dedupe-key edit moving rendered
- * output with no code change).
+ * A MERGED FINDING GETS THE SENTENCE, and what keeps it about the right agency is the published
+ * ruleset rather than a count of contributing rules. `packages/engine/src/findings.ts:407-411`
+ * sources the two fields this sentence combines from two DIFFERENT routes by design (AD-19):
+ * `agency` arrives with `identityBinding`, the tightest window among only the routes that
+ * contributed the headline disposition, while `deadline` and `deadlineStatus` arrive from
+ * `windowBinding`, the tightest window across the whole group. `findings.ts:328-330` states the
+ * consequence: "The two coincide in every group nyc.v2.11 publishes, so this splits nothing today;
+ * it bounds what a future dedupe group can render." A group whose window came from a DOB rule and
+ * whose disposition came from an SLA one would render "which days the NY State Liquor Authority
+ * counts" beside DOB's window and send the organizer to the wrong agency to confirm it.
  *
- * The right fix is to read the agency off the timeline-binding route, and `ConsumedFinding` cannot
- * express it: it carries one merged `agency` and a flat `ruleIds`, no per-route agency exists on the
- * shape, and `timelineUnresolvedReason` does not name its route either (`deadlines.ts:294-295`
- * builds it without a rule id; the id an organizer sees in the verdict panel is added there from
- * `entry.ruleIds`). Widening the shape is a contract change this branch does not carry, and keying a
- * rule id to an agency in this file would publish a regulatory fact outside
- * `rules/nyc-rules.v2.11.json` and go stale the moment the ruleset corrected it. So a finding with
- * more than one contributing rule falls back to the previous line, which asserts nothing and is
- * therefore right whichever route bound which field.
+ * NO PUBLISHED GROUP CROSSES AGENCIES, and that is checked rather than assumed. `dob-structure` is
+ * the only `dedupe_key` group in nyc.v2.11 holding a rule with a `business_days_minimum` deadline,
+ * and both its routes, DOB-TENT-001 and DOB-TALL-STRUCTURE-001, publish `agency` "DOB", so the
+ * merged agency is DOB whichever route bound it. `business-day-notice.test.tsx` asserts that over
+ * the published file as an invariant, not over this one group: every dedupe group holding a
+ * business-day deadline publishes at most one distinct agency across its routes. A `dedupe_key`
+ * edit that crossed agencies fails that test, which is the guarantee this sentence actually needs
+ * and the reason it is at the artifact level. #239 and #244 both record a dedupe-key edit moving
+ * rendered output with no code change, so an artifact edit is exactly the event to fail on.
  *
- * WHAT THAT COSTS, stated rather than buried: DOB-TENT-001 shares `dedupe_key` "dob-structure" with
- * DOB-TALL-STRUCTURE-001, whose trigger is tri-state on `structure_over_10ft_tall`, so the two merge
- * on any tented event that does not answer the height "no". Those events render "not calculable,
- * confirm with agency" and lose nothing they had before this change; a tented event that answers
- * "no", and both SLA rules, get the new sentence. When PR #252's route list lands on the merged
- * finding, this guard is replaced by reading the timeline route's own agency and the merged case
- * gets the sentence back.
+ * SUPPRESSING THE SENTENCE ON EVERY MERGED FINDING was the earlier guard and was wrong twice over.
+ * It withheld the approved line from every tented event that does not answer `structure_over_10ft_tall`
+ * "no", Scenario E among them, in the one case where the suppressed sentence is provably correct;
+ * and the decision recorded in `docs/BASELINE.md` names DOB-ASSEMBLY-001 as the one finding that
+ * falls back, so narrowing further is not this file's to decide.
+ *
+ * The narrower fix, reading the agency off the timeline-binding route, still needs a contract that
+ * does not exist: `ConsumedFinding` carries one merged `agency` and a flat `ruleIds`, no per-route
+ * agency exists on the shape, and `timelineUnresolvedReason` does not name its route either
+ * (`deadlines.ts:294-295` builds it without a rule id; the id an organizer sees in the verdict panel
+ * is added there from `entry.ruleIds`). Keying a rule id to an agency in this file would publish a
+ * regulatory fact outside `rules/nyc-rules.v2.11.json` and go stale the moment the ruleset corrected
+ * it. When PR #252's route list lands on the merged finding, the agency is read off the timeline
+ * route and the artifact invariant stops being load bearing.
  */
 export function businessDayNotice(finding: ConsumedFinding): string | null {
   if (finding.deadlineStatus !== "not_calculable" || finding.latestApplyDate !== null) return null;
   if (finding.deadline === null || finding.deadline.type !== "business_days_minimum") return null;
-  if (finding.ruleIds.length > 1) return null;
 
   const agency = finding.agency === null ? undefined : AGENCY_IN_SENTENCE[finding.agency];
   if (agency === undefined) return null;
