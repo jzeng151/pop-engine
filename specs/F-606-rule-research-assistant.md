@@ -2,7 +2,7 @@
 
 **Status:** PROPOSED (2026-07-26) — ready for review; not implementable until approved and listed in `docs/BASELINE.md`.
 
-**Phase:** 4 · **Issue:** [#62](https://github.com/jzeng151/pop-engine/issues/62) · **Owner:** TBD · **Reviewer:** product owner plus affected architecture, contract, security, and lane owners (TBD) · **Approval date:** —
+**Phase:** 4 · **Issue:** [#62](https://github.com/jzeng151/pop-engine/issues/62) · **Owner:** TBD · **Reviewer:** product owner · **Approval date:** —
 
 ## Purpose and User Outcome
 
@@ -104,4 +104,4 @@ Exact HTTP, JSON Schema, migration, job, and provider shapes belong in their rev
 - Approve source/cadence/terms, SSRF/archive controls, AI/tool policy, evaluation corpus, and verification-owner workflow.
 - Approve F-710 and F-714, whose draft-editing and publication-approval workflow `F606-AC-05` requires an accepted candidate to pass before publication. Until both are approved that workflow is not an approved input and this spec may not restate or replace it locally.
 - Approve F-703, whose role/action matrix and platform-role administration path are what make `F606-AC-10` testable against a named role rather than against the shape of a check.
-- Assign the owner and independent reviewer, approve this spec, and add it to `docs/BASELINE.md`.
+- Assign the owner, approve this spec, and add it to `docs/BASELINE.md`. The reviewer and approver is the product owner (`docs/DOCUMENTATION-GOVERNANCE.md` §6), which is what this spec's header records, and that is the whole requirement: the independent-reviewer element this blocker used to carry was retired on 2026-08-05 (product owner; see §6 and `docs/BASELINE.md`). Until those three things are done this blocker is not satisfied and this spec is not approved: it stays PROPOSED under governance §3, its Approval date stays `—`, and it is not implementable and not listed in `docs/BASELINE.md`. Retiring the reviewer element made this spec approvable; it did not approve it.

@@ -2,7 +2,7 @@
 
 **Status:** PROPOSED (2026-07-26) — ready for review; not implementable until approved and listed in `docs/BASELINE.md`.
 
-**Phase:** 2 · **Issue:** [#22](https://github.com/jzeng151/pop-engine/issues/22) · **Owner:** TBD · **Reviewer:** product owner plus affected architecture, contract, security, and lane owners (TBD) · **Approval date:** —
+**Phase:** 2 · **Issue:** [#22](https://github.com/jzeng151/pop-engine/issues/22) · **Owner:** TBD · **Reviewer:** product owner · **Approval date:** —
 
 ## Purpose and User Outcome
 
@@ -116,4 +116,4 @@ One input this criterion needs is not established by any approved artifact today
 - Approve job/outbox ADR, consent/retention policy, provider readiness, template copy, and timezone behavior.
 - Approve F-701, F-702, and F-703, and name with F-703 the campaign creation, read, scheduling, and cancellation permissions `F305-AC-10` checks. That criterion checks a permission no approved artifact defines today and may not invent one, so until the matrix names them it is testable only at the membership level stated there.
 - Approve F-702 so that the workspace a campaign, an RSVP contact, and a channel endpoint each resolve to is an approved input `F305-AC-11` can compare. That criterion compares a boundary no approved artifact defines today and may not invent one; its event half rests on F-302's existing event association.
-- Assign the owner and independent reviewer, approve this spec, and add it to `docs/BASELINE.md`.
+- Assign the owner, approve this spec, and add it to `docs/BASELINE.md`. The reviewer and approver is the product owner (`docs/DOCUMENTATION-GOVERNANCE.md` §6), which is what this spec's header records, and that is the whole requirement: the independent-reviewer element this blocker used to carry was retired on 2026-08-05 (product owner; see §6 and `docs/BASELINE.md`). Until those three things are done this blocker is not satisfied and this spec is not approved: it stays PROPOSED under governance §3, its Approval date stays `—`, and it is not implementable and not listed in `docs/BASELINE.md`. Retiring the reviewer element made this spec approvable; it did not approve it.

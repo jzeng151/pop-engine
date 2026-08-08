@@ -2,7 +2,7 @@
 
 **Status:** PROPOSED (2026-07-26) — ready for review; not implementable until approved and listed in `docs/BASELINE.md`.
 
-**Phase:** 3 · **Issue:** [#31](https://github.com/jzeng151/pop-engine/issues/31) · **Owner:** TBD · **Reviewer:** product owner plus affected architecture, contract, security, and lane owners (TBD) · **Approval date:** —
+**Phase:** 3 · **Issue:** [#31](https://github.com/jzeng151/pop-engine/issues/31) · **Owner:** TBD · **Reviewer:** product owner · **Approval date:** —
 
 ## Purpose and User Outcome
 
@@ -98,4 +98,4 @@ Exact HTTP, JSON Schema, migration, job, and provider shapes belong in their rev
 - Resolve SPEC-CONFLICT #130. `F106-AC-03` requires business-day behavior matching F-102, and F-102 inherits F-201 AC 10's requirement that business days be counted against the pinned calendar. That calendar is deliberately unpublished: no located source defines "business day" for a filing lead, so publishing one would invent the semantics rather than record them (`apps/api/src/calendar.ts`). This is not an approval step. Until it resolves, every business-day deadline renders NOT_CALCULABLE, and a date advisor cannot rank candidate dates on windows the engine declines to compute.
 - Approve evaluation request limits and result wording.
 - Approve F-701, F-702, and F-703, and name with F-703 the advisor read and apply permissions `F106-AC-06` checks. That criterion checks a permission no approved artifact defines today and may not invent one, so until the matrix names them it is testable only at the membership level stated there.
-- Assign the owner and independent reviewer, approve this spec, and add it to `docs/BASELINE.md`.
+- Assign the owner, approve this spec, and add it to `docs/BASELINE.md`. The reviewer and approver is the product owner (`docs/DOCUMENTATION-GOVERNANCE.md` §6), which is what this spec's header records, and that is the whole requirement: the independent-reviewer element this blocker used to carry was retired on 2026-08-05 (product owner; see §6 and `docs/BASELINE.md`). Until those three things are done this blocker is not satisfied and this spec is not approved: it stays PROPOSED under governance §3, its Approval date stays `—`, and it is not implementable and not listed in `docs/BASELINE.md`. Retiring the reviewer element made this spec approvable; it did not approve it.

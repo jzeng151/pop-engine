@@ -2,7 +2,7 @@
 
 **Status:** PROPOSED (2026-07-26) — ready for review; not implementable until approved and listed in `docs/BASELINE.md`.
 
-**Phase:** 4 · **Issue:** [#54](https://github.com/jzeng151/pop-engine/issues/54) · **Owner:** TBD · **Reviewer:** product owner plus affected architecture, contract, security, and lane owners (TBD) · **Approval date:** —
+**Phase:** 4 · **Issue:** [#54](https://github.com/jzeng151/pop-engine/issues/54) · **Owner:** TBD · **Reviewer:** product owner · **Approval date:** —
 
 ## Purpose and User Outcome
 
@@ -46,13 +46,13 @@ PopEngine can tell users whether their described scope is fully supported, parti
 
 ## System Impact
 
-| Concern              | Proposed impact                                                                                                                       |
-| -------------------- | ------------------------------------------------------------------------------------------------------------------------------------- |
-| API                  | Add the five scope-support states/reasons to approved OpenAPI/JSON Schema and generated shared types atomically.                      |
-| Schema               | Shared enum/schema change requires all affected lane owners; persistence stores state, reasons, input revision, and artifact version. |
-| Jobs                 | None.                                                                                                                                 |
-| Providers            | None; provider confidence from F-108 is an input, not scope-support authority.                                                        |
-| Privacy and security | No sensitive intake values in reason telemetry; rate limits apply to classification/evaluation.                                       |
+| Concern              | Proposed impact                                                                                                                                                                       |
+| -------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| API                  | Add the five scope-support states/reasons to approved OpenAPI/JSON Schema and generated shared types atomically.                                                                      |
+| Schema               | Shared enum/schema change requires the product owner's approval under `docs/DOCUMENTATION-GOVERNANCE.md` §6; persistence stores state, reasons, input revision, and artifact version. |
+| Jobs                 | None.                                                                                                                                                                                 |
+| Providers            | None; provider confidence from F-108 is an input, not scope-support authority.                                                                                                        |
+| Privacy and security | No sensitive intake values in reason telemetry; rate limits apply to classification/evaluation.                                                                                       |
 
 Exact HTTP, JSON Schema, migration, job, and provider shapes belong in their reviewed machine contracts; this proposal does not authorize parallel local types or edits to merged migrations.
 
@@ -99,6 +99,6 @@ Exact HTTP, JSON Schema, migration, job, and provider shapes belong in their rev
 
 - Resolve `docs/OPEN-QUESTIONS.md` T-4 before approval, including its durable-architecture and shared-enum approvals and verification/rules review if the decision retires or redefines `COVERAGE_GAP`.
 - Approve the scope-support decision table/reason taxonomy and atomic OpenAPI/JSON Schema/type handoff.
-- Obtain all affected lane-owner approval for the shared enum.
+- Obtain the product owner's approval for the shared enum under `docs/DOCUMENTATION-GOVERNANCE.md` §6. That approval is the whole requirement: the affected-lane-owner capacities this blocker used to name were collapsed into it on 2026-08-04 and the second-party element was retired on 2026-08-05 (product owner; see §6 and `docs/BASELINE.md`).
 - Approve F-701, F-702, and F-703, and name with F-703 the classification and scope-support read permissions `F109-AC-06` checks. That criterion checks a permission no approved artifact defines today and may not invent one, so until the matrix names them it is testable only at the membership level stated there.
-- Assign the owner and independent reviewer, approve this spec, and add it to `docs/BASELINE.md`.
+- Assign the owner, approve this spec, and add it to `docs/BASELINE.md`. The reviewer and approver is the product owner (`docs/DOCUMENTATION-GOVERNANCE.md` §6), which is what this spec's header records, and that is the whole requirement: the independent-reviewer element this blocker used to carry was retired on 2026-08-05 (product owner; see §6 and `docs/BASELINE.md`). Until those three things are done this blocker is not satisfied and this spec is not approved: it stays PROPOSED under governance §3, its Approval date stays `—`, and it is not implementable and not listed in `docs/BASELINE.md`. Retiring the reviewer element made this spec approvable; it did not approve it.

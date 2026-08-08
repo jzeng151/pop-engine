@@ -2,7 +2,7 @@
 
 **Status:** PROPOSED (2026-07-26) — ready for review; not implementable until approved and listed in `docs/BASELINE.md`.
 
-**Phase:** 4 · **Issue:** [#52](https://github.com/jzeng151/pop-engine/issues/52) · **Owner:** TBD · **Reviewer:** product owner plus affected architecture, contract, security, and lane owners (TBD) · **Approval date:** —
+**Phase:** 4 · **Issue:** [#52](https://github.com/jzeng151/pop-engine/issues/52) · **Owner:** TBD · **Reviewer:** product owner · **Approval date:** —
 
 ## Purpose and User Outcome
 
@@ -82,7 +82,7 @@ Exact HTTP, JSON Schema, migration, job, and provider shapes belong in their rev
 - Planned automated fixture IDs are the acceptance IDs above; each must map one-to-one to a runnable test before approval can claim implementation readiness.
 - F207-AC-06 includes a negative fixture per publication operation in which an authenticated actor holding no platform rules-admin role, including a workspace owner, is refused each publication state transition and the F207-AC-04 stop action with no transition committed; a fixture in which an actor holding no membership of the owning workspace names a valid jurisdiction, artifact, or plan and is refused selection, evaluation, and replay reads, each response indistinguishable from the one for a record that does not exist; and a fixture in which authority is removed while a publication transition is in flight and that request fails rather than commits.
 - F207-AC-06 includes a fixture in which a publication state transition commits, its response is lost, and the retry presenting the same identity returns the original recorded outcome rather than advancing the progression a second time, and a mismatched-reuse fixture in which that committed identity is re-presented naming a different artifact set and is refused as a conflict, advancing nothing.
-- Regulatory fixtures: A complete new jurisdiction suite with named scenario and below/at/above boundary IDs must be independently approved; NYC scenario fixtures v7 against the checksummed v2.11 artifact (`rules/nyc-rules.v2.11.json`, sha256 `0f048ecc9a36794871ee8a81eb0d4d3b1519087dcf2d161a6c418de5ca555851`) remain the current regression suite, with older versions labeled historical replay only.
+- Regulatory fixtures: A complete new jurisdiction suite with named scenario and below/at/above boundary IDs must be approved by the product owner under `docs/DOCUMENTATION-GOVERNANCE.md` §6, which is the whole requirement since second-party review was retired on 2026-08-05; NYC scenario fixtures v7 against the checksummed v2.11 artifact (`rules/nyc-rules.v2.11.json`, sha256 `0f048ecc9a36794871ee8a81eb0d4d3b1519087dcf2d161a6c418de5ca555851`) remain the current regression suite, with older versions labeled historical replay only.
 - F207-AC-07 includes a fixture in which two platform rules-admins holding distinct request identities advance the same jurisdiction and artifact set from the same observed state and exactly one commits, a fixture in which a stop under F207-AC-04 commits first and a concurrent advance composed against the pre-stop state is then rejected without publishing, a fixture in which an advance commits first and a concurrent stop is rejected without opening a second architecture/schema decision, and a fixture proving the losing transition's rejection is distinct from the F207-AC-06 replay path, which still returns the original outcome for a repeat of the winner's own identity.
 - Security-sensitive and cross-workspace paths require negative authorization tests; provider paths require success, duplicate-delivery, retry, invalid-signature, and permanent-failure tests where applicable.
 
@@ -95,7 +95,7 @@ Exact HTTP, JSON Schema, migration, job, and provider shapes belong in their rev
 
 ## Rollout and Fallback
 
-- Keep the second jurisdiction unavailable until independent verification, full fixtures, replay, and production artifact selection checks pass.
+- Keep the second jurisdiction unavailable until the product owner's source verification, full fixtures, replay, and production artifact selection checks pass.
 - Rollback disables the new surface and workers/provider calls without deleting confirmed user data or rewriting immutable plans, rulesets, revisions, or history.
 
 ## Approval Blockers
@@ -106,4 +106,4 @@ Exact HTTP, JSON Schema, migration, job, and provider shapes belong in their rev
 - Resolve SPEC-CONFLICT #130 first. This spec treats publishing a jurisdiction's holiday calendar as a repeatable activation step, but it is unsolved for the FIRST jurisdiction: no located source establishes that an agency's published closure stops its filing counter, and NYC's own rules span a city agency and a state agency whose staff calendars differ (`apps/api/src/calendar.ts`). A second jurisdiction cannot be activated by a procedure that has never been executed once. Whatever resolves #130 defines the procedure this spec would repeat.
 - Approve F-701, F-702, and F-703, and name with F-703 the publication permissions `F207-AC-06` checks. That criterion checks a permission no approved artifact defines today and may not invent one, so until F-703's matrix names them the publication leg is testable only at the check-shape level stated there, and until F-702 is approved the organizer leg is testable only at the membership level stated there.
 - Approve, with the jurisdiction registry and artifact layout above, a durable record of a jurisdiction's publication state carrying a monotonic value each transition can name and compare-and-swap, which `F207-AC-07` requires and which F207-AC-01's artifact list does not establish. That criterion compares a state no approved artifact defines today and may not invent one.
-- Assign the owner and independent reviewer, approve this spec, and add it to `docs/BASELINE.md`.
+- Assign the owner, approve this spec, and add it to `docs/BASELINE.md`. The reviewer and approver is the product owner (`docs/DOCUMENTATION-GOVERNANCE.md` §6), which is what this spec's header records, and that is the whole requirement: the independent-reviewer element this blocker used to carry was retired on 2026-08-05 (product owner; see §6 and `docs/BASELINE.md`). Until those three things are done this blocker is not satisfied and this spec is not approved: it stays PROPOSED under governance §3, its Approval date stays `—`, and it is not implementable and not listed in `docs/BASELINE.md`. Retiring the reviewer element made this spec approvable; it did not approve it.

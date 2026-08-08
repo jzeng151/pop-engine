@@ -2,7 +2,7 @@
 
 **Status:** PROPOSED (2026-07-26; `docs/OPEN-QUESTIONS.md` T-7 / [SPEC-CONFLICT #210](https://github.com/jzeng151/pop-engine/issues/210) RESOLVED 2026-08-04 by the product owner, which restricted this feature to rehearsal use and approved no production route) — the remaining Approval Blockers below still stand; not implementable until approved and listed in `docs/BASELINE.md`.
 
-**Phase:** 2 · **Issue:** [#20](https://github.com/jzeng151/pop-engine/issues/20) · **Owner:** TBD · **Reviewer:** product owner plus affected architecture, contract, security, and lane owners (TBD) · **Approval date:** —
+**Phase:** 2 · **Issue:** [#20](https://github.com/jzeng151/pop-engine/issues/20) · **Owner:** TBD · **Reviewer:** product owner · **Approval date:** —
 
 ## Purpose and User Outcome
 
@@ -93,4 +93,4 @@ Exact HTTP, JSON Schema, migration, job, and provider shapes belong in their rev
 
 - Approve paper size, scan-distance rehearsal, public-slug lifecycle, and final public copy. T-7 / SPEC-CONFLICT #210 is resolved (2026-08-04, product owner): the scope is rehearsal-only, so production exposure is not an option this spec may approve, and proposing it again is a product-scope decision for `docs/PRD.md` rather than an approval blocker to clear here.
 - Approve F-701, F-702, and F-703, and name with F-703 the asset generation and download permissions `F303-AC-06` checks. That criterion checks a permission no approved artifact defines today and may not invent one, so until the matrix names them it is testable only at the membership level stated there.
-- Assign the owner and independent reviewer, approve this spec, and add it to `docs/BASELINE.md`.
+- Assign the owner, approve this spec, and add it to `docs/BASELINE.md`. The reviewer and approver is the product owner (`docs/DOCUMENTATION-GOVERNANCE.md` §6), which is what this spec's header records, and that is the whole requirement: the independent-reviewer element this blocker used to carry was retired on 2026-08-05 (product owner; see §6 and `docs/BASELINE.md`). Until those three things are done this blocker is not satisfied and this spec is not approved: it stays PROPOSED under governance §3, its Approval date stays `—`, and it is not implementable and not listed in `docs/BASELINE.md`. Retiring the reviewer element made this spec approvable; it did not approve it.
