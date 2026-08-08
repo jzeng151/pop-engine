@@ -41,7 +41,10 @@ const parkIntake: EventIntake = {
 };
 
 /** A two-rule ruleset in the published shape, for behaviors the current publication does not exercise. */
-function syntheticRuleset(rules: unknown[]): ReturnType<typeof parseEngineRuleset> {
+function syntheticRuleset(
+  rules: unknown[],
+  extraFields: unknown[] = [],
+): ReturnType<typeof parseEngineRuleset> {
   return parseEngineRuleset({
     ruleset_version: "test.v1",
     jurisdiction: "US-NY-NYC",
@@ -54,6 +57,7 @@ function syntheticRuleset(rules: unknown[]): ReturnType<typeof parseEngineRulese
     intake_fields: [
       { field: "event_date", type: "date" },
       { field: "headcount", type: "integer" },
+      ...extraFields,
     ],
     rules,
     advisories: [],
@@ -169,6 +173,691 @@ describe("provenance (AC 1)", () => {
     ).toThrow(
       /dedupe key "dob-structure" mixes verification statuses "SOURCE_CONFIRMED" and "RESEARCH_REQUIRED"/,
     );
+  });
+});
+
+/**
+ * #239. `dedupeRule` above publishes one disposition and no deadline, so the suite never asked what
+ * a merged finding says when two contributing rules disagree. It said whatever the ruleset listed
+ * first: nyc.v2.11's `dob-structure` group mixes disposition (DOB-TENT-001 takes the permit-kind
+ * default `required`, DOB-TALL-STRUCTURE-001 publishes MAY_BE_REQUIRED) and deadline (15 business
+ * days vs none), so reversing the two rules in the published file, with no regulatory fact
+ * changing, turned a dated `required` line into an undated `may_be_required` one.
+ *
+ * These build the group both ways round and assert the merged finding, not the merge helper.
+ */
+const disposedRule = (
+  id: string,
+  disposition: string | undefined,
+  deadline?: Record<string, unknown>,
+  extraOutput: Record<string, unknown> = {},
+): Record<string, unknown> => {
+  const base = dedupeRule(id, `citation ${id}`);
+  return {
+    ...base,
+    output: {
+      ...base.output,
+      ...(disposition === undefined ? {} : { disposition }),
+      ...(deadline === undefined ? {} : { deadline }),
+      ...extraOutput,
+    },
+  };
+};
+
+/** A published filing window that many calendar days before the event. */
+const calendarWindow = (days: number) => ({ type: "published_minimum", calendar_days: days });
+
+/** A published filing window that needs the holiday list the deployment has not published. */
+const businessWindow = (days: number) => ({ type: "business_days_minimum", business_days: days });
+
+/** The merged `dob-structure` finding for a group listed in the given order. */
+const mergedGroup = (
+  rules: Record<string, unknown>[],
+  options: {
+    intake?: Record<string, unknown>;
+    holidays?: readonly string[] | null;
+    extraFields?: unknown[];
+  } = {},
+) => {
+  const plan = evaluate(
+    { event_date: "2026-12-04", headcount: 50, ...options.intake } as unknown as EventIntake,
+    syntheticRuleset(rules, options.extraFields),
+    TODAY,
+    { id: "test-calendar@2026", holidays: options.holidays === undefined ? [] : options.holidays },
+  );
+  expect(plan.findings).toHaveLength(1);
+  return plan.findings[0];
+};
+
+/** Every scalar the merge decides, as opposed to the lists it concatenates. */
+const decidedFields = (finding: ReturnType<typeof mergedGroup>) => ({
+  disposition: finding?.disposition,
+  kind: finding?.kind,
+  name: finding?.name,
+  agency: finding?.agency,
+  deadline: finding?.deadline,
+  deadlineDisplay: finding?.deadlineDisplay,
+  latestApplyDate: finding?.latestApplyDate,
+  deadlineStatus: finding?.deadlineStatus,
+  slackDays: finding?.slackDays,
+  feeDisplay: finding?.feeDisplay,
+  portalName: finding?.portalName,
+  portalUrl: finding?.portalUrl,
+  portalInstructions: finding?.portalInstructions,
+  noteText: finding?.noteText,
+  conflictText: finding?.conflictText,
+  timelineUnresolvedReason: finding?.timelineUnresolvedReason,
+  verificationStatus: finding?.verificationStatus,
+  summaryHeading: finding?.userSummary?.heading ?? null,
+});
+
+describe("dedupe field merge (#239)", () => {
+  it("takes the strongest contributing disposition, whichever rule is listed first", () => {
+    const forward = mergedGroup([
+      disposedRule("RULE-A", "MAY_BE_REQUIRED"),
+      disposedRule("RULE-B", "REQUIRED"),
+    ]);
+    const reverse = mergedGroup([
+      disposedRule("RULE-B", "REQUIRED"),
+      disposedRule("RULE-A", "MAY_BE_REQUIRED"),
+    ]);
+    expect(forward?.disposition).toBe("required");
+    expect(reverse?.disposition).toBe("required");
+  });
+
+  it("never lets a permit finding erase a blocking one on the same key", () => {
+    // ARCHITECTURE-FUTURE §8.4. The blocking value outranks `required` in both listings.
+    expect(
+      mergedGroup([
+        disposedRule("RULE-A", "REQUIRED"),
+        disposedRule("RULE-B", "PROHIBITED_OR_INELIGIBLE"),
+      ])?.disposition,
+    ).toBe("prohibited_or_ineligible");
+    expect(
+      mergedGroup([
+        disposedRule("RULE-B", "PROHIBITED_OR_INELIGIBLE"),
+        disposedRule("RULE-A", "REQUIRED"),
+      ])?.disposition,
+    ).toBe("prohibited_or_ineligible");
+  });
+
+  it("does not let a blocker whose own trigger is unknown make the merged line a blocker", () => {
+    // ARCHITECTURE-FUTURE §8.4: a candidate requirement produced by an unknown branch stays
+    // conditional and is not promoted by deduplication. The blocking route is still named in
+    // `ruleIds`, its note is still carried, and the unanswered field is still asked.
+    const unknownBlocker = {
+      ...disposedRule("RULE-B", "PROHIBITED_OR_INELIGIBLE"),
+      trigger: { all: [{ field: "structure_height_ft", op: "gte", value: 10 }] },
+    };
+    const group = [disposedRule("RULE-A", "REQUIRED"), unknownBlocker];
+    const options = {
+      intake: { structure_height_ft: null },
+      extraFields: [{ field: "structure_height_ft", type: "integer" }],
+    };
+    // The definite permit route still decides the line; the conditional blocker does not.
+    expect(mergedGroup(group, options)?.disposition).toBe("required");
+    expect(mergedGroup([...group].reverse(), options)?.disposition).toBe("required");
+    expect(mergedGroup(group, options)?.ruleIds).toContain("RULE-B");
+  });
+
+  /**
+   * The other side of the same ceiling. §8.4 forbids deduplication PROMOTING an unresolved
+   * candidate, and the test above is the case it was written for. Applying the cap where there is
+   * nothing to promote over DEMOTED the group instead: a conditional blocker rendered
+   * `may_be_required`, which drops `plan-line.tsx`'s blocker styling and its prohibited-finding
+   * test id and prints "may be required" (#244 review). These three pin the cases §8.4 does not
+   * reach, and none of them changes the resolved-permit case above.
+   */
+  const conditionalBlocker = (id: string) => ({
+    ...disposedRule(id, "PROHIBITED_OR_INELIGIBLE"),
+    // Both conditions, so the group's only rules still consume every declared intake field: the
+    // answered `headcount` holds and the unanswered height leaves the trigger `unknown`.
+    trigger: {
+      all: [
+        { field: "headcount", op: "gte", value: 10 },
+        { field: "structure_height_ft", op: "gte", value: 10 },
+      ],
+    },
+  });
+  const unknownHeight = {
+    intake: { structure_height_ft: null },
+    extraFields: [{ field: "structure_height_ft", type: "integer" }],
+  };
+
+  it("keeps two conditional blockers on one key reading as the blocking answer they publish", () => {
+    // Nothing in the group resolved, so there is no route the blockers could be promoted past.
+    const group = [conditionalBlocker("RULE-A"), conditionalBlocker("RULE-B")];
+    for (const listing of [group, [...group].reverse()]) {
+      expect(mergedGroup(listing, unknownHeight)?.disposition).toBe("prohibited_or_ineligible");
+    }
+  });
+
+  it("does not let an advisory on the same key demote a conditional blocker", () => {
+    // The strongest resolved route is weaker than the ceiling, so capping the blocker to
+    // `may_be_required` would report the advisory's own strength as the whole line's answer.
+    const group = [conditionalBlocker("RULE-A"), disposedRule("RULE-B", "ADVISORY")];
+    for (const listing of [group, [...group].reverse()]) {
+      expect(mergedGroup(listing, unknownHeight)?.disposition).toBe("prohibited_or_ineligible");
+    }
+  });
+
+  it("does not let a resolved may_be_required on the same key demote a conditional blocker", () => {
+    // The bar was set at the ceiling itself, so a resolved MAY_BE_REQUIRED route triggered the cap
+    // and the merged line read `may_be_required` — the same value the resolved route already
+    // published, so nothing was promoted past anything, while the blocker's own published
+    // disposition was lost and `plan-line.tsx` dropped its blocker styling. Whether the unrelated
+    // rule on this key publishes ADVISORY or MAY_BE_REQUIRED is not a fact about the blocker.
+    const group = [conditionalBlocker("RULE-A"), disposedRule("RULE-B", "MAY_BE_REQUIRED")];
+    for (const listing of [group, [...group].reverse()]) {
+      expect(mergedGroup(listing, unknownHeight)?.disposition).toBe("prohibited_or_ineligible");
+    }
+  });
+
+  it("still caps a conditional blocker under a resolved required route", () => {
+    // The case §8.4 was written for, and the one the two tests above must not disturb: here the
+    // blocker WOULD be promoted past a route that resolved, so the cap applies and the merged line
+    // reads as the permit an organizer can actually file.
+    const group = [conditionalBlocker("RULE-A"), disposedRule("RULE-B", "REQUIRED")];
+    for (const listing of [group, [...group].reverse()]) {
+      expect(mergedGroup(listing, unknownHeight)?.disposition).toBe("required");
+    }
+  });
+
+  it("leaves a lone conditional blocker alone, because one route is not a merge", () => {
+    expect(mergedGroup([conditionalBlocker("RULE-A")], unknownHeight)?.disposition).toBe(
+      "prohibited_or_ineligible",
+    );
+  });
+
+  it("keeps everything but the headline disposition when the blocker's trigger is unknown", () => {
+    // Where ARCHITECTURE-FUTURE §8.4's two guarantees collide, the one about not promoting an
+    // unknown branch wins: promoting the blocker would tell an organizer their event is ineligible
+    // on the strength of a question they never answered. This pins what that costs and what it
+    // does not, so the exception is a decision rather than an accident.
+    const rules = [
+      disposedRule("RULE-A", "REQUIRED", calendarWindow(45), { permit_name: "permit route" }),
+      {
+        ...disposedRule("RULE-B", "PROHIBITED_OR_INELIGIBLE", undefined, {
+          permit_name: "barred route",
+          note_text: "not eligible above ten feet",
+        }),
+        trigger: { all: [{ field: "structure_height_ft", op: "gte", value: 10 }] },
+      },
+    ];
+    const plan = evaluate(
+      {
+        event_date: "2026-12-04",
+        headcount: 50,
+        structure_height_ft: null,
+      } as unknown as EventIntake,
+      syntheticRuleset(rules, [{ field: "structure_height_ft", type: "integer" }]),
+      TODAY,
+      { id: "test-calendar@2026", holidays: [] },
+    );
+    const merged = plan.findings[0];
+    // What does not survive: the merged line reads as the permit route it can actually name.
+    expect(merged?.disposition).toBe("required");
+    expect(merged?.name).toBe("permit route");
+    // What survives: the blocking route, its citation, its published note text, and the
+    // unanswered field as a material unknown that keeps the whole plan conditional.
+    expect(merged?.ruleIds).toContain("RULE-B");
+    expect(merged?.sources.map((source) => source.ruleId)).toContain("RULE-B");
+    expect(merged?.triggeredBy.map((reason) => reason.field)).toContain("structure_height_ft");
+    expect(merged?.noteText).toBe("not eligible above ten feet");
+    expect(plan.verdictDetail.missingFacts.map((fact) => fact.field)).toContain(
+      "structure_height_ft",
+    );
+    expect(plan.verdict).toBe("CONDITIONAL");
+  });
+
+  it("reads identity off the disposition's route and the timeline off the window's", () => {
+    // AMENDED from round 2, which asserted every scalar off the disposition's route. That claim
+    // was never a property of the merge: it held only because the disposition filter ran first,
+    // and running it first is what let a closed window be dropped (the two tests below). The two
+    // cannot both bind, so each field family names its route. Identity, meaning what the line is
+    // and who is dealt with, stays with the disposition: a barred line must not quote another
+    // route's permit name, fee or portal, which would invite filing for something barred. The
+    // timeline comes from the group's tightest window, so no published window is lost.
+    const blocked = mergedGroup([
+      disposedRule("RULE-A", "REQUIRED", calendarWindow(45), {
+        permit_name: "permit route",
+        fee: { display: "$100" },
+        portal: { name: "permit portal", url: "https://example.test/permit" },
+      }),
+      disposedRule("RULE-B", "PROHIBITED_OR_INELIGIBLE", undefined, {
+        permit_name: "barred route",
+        note_text: "not eligible at this location",
+      }),
+    ]);
+    expect(blocked).toMatchObject({
+      // Identity: the blocking route's, exactly as round 2 pinned it.
+      disposition: "prohibited_or_ineligible",
+      name: "barred route",
+      feeDisplay: null,
+      portalName: null,
+      portalUrl: null,
+      noteText: "not eligible at this location",
+      // Timeline: the only published window in the group, which used to be dropped entirely.
+      latestApplyDate: "2026-10-20",
+      deadlineStatus: "on_track",
+    });
+    expect(blocked?.deadline).not.toBeNull();
+  });
+
+  /**
+   * The disposition filter used to run before the window ranking, so a route in a weaker
+   * disposition tier could never bind. A group holding a CLOSED window under a stronger
+   * disposition with no window at all therefore dropped `published_deadline_missed`, the closed
+   * route's apply-by date and its fee, and `computeWindowVerdict` found no missed finding: adding
+   * a `dedupe_key` to two rules turned INFEASIBLE into FEASIBLE and erased a filing whose window
+   * shut 34 days ago (#244 review). An exhaustive sweep of all ordered pairs of route states found
+   * the same one tier down, which is the second test.
+   */
+  const closedWindow = { intake: { event_date: "2026-08-02" } };
+
+  it("keeps a closed window that a stronger disposition on the same key publishes none for", () => {
+    const group = [
+      disposedRule("RULE-A", "REQUIRED", calendarWindow(45), {
+        permit_name: "closed route",
+        fee: { display: "$500" },
+      }),
+      disposedRule("RULE-B", "PROHIBITED_OR_INELIGIBLE", undefined, {
+        permit_name: "barred route",
+      }),
+    ];
+    for (const listing of [group, [...group].reverse()]) {
+      expect(mergedGroup(listing, closedWindow)).toMatchObject({
+        disposition: "prohibited_or_ineligible",
+        latestApplyDate: "2026-06-18",
+        deadlineStatus: "published_deadline_missed",
+        slackDays: -34,
+        // Identity stays with the blocking route, so its $500 is not quoted on a barred line. The
+        // closed route keeps that fee in its own rule id, sources and summary points.
+        name: "barred route",
+        feeDisplay: null,
+      });
+    }
+  });
+
+  it("carries the closed window into the verdict at every tier the sweep found", () => {
+    // The verdict is what the dropped window cost: `computeWindowVerdict` reads
+    // `published_deadline_missed`, and a merged line that no longer carries it read FEASIBLE while
+    // a published filing was already late. The two weaker tiers now reach INFEASIBLE, which is
+    // what the group's rules published before a `dedupe_key` was added to them.
+    //
+    // The blocker tier reaches CONDITIONAL rather than INFEASIBLE, and that is `computeWindowVerdict`
+    // rather than the merge: it blocks only on a missed finding whose disposition is `required`
+    // (`verdict.ts:55`), and the merged disposition here is `prohibited_or_ineligible`. Two
+    // unmerged lines read INFEASIBLE because the closed route kept its own `required`. So the
+    // merge still moves that verdict, from INFEASIBLE to CONDITIONAL; what this fix recovers is
+    // the missed status, the apply-by date and the fee, which had all been dropped.
+    const missedThenStronger = (missed: string, stronger: string) =>
+      evaluate(
+        { event_date: "2026-08-02", headcount: 50 } as unknown as EventIntake,
+        syntheticRuleset([
+          disposedRule("RULE-A", missed, calendarWindow(45), { permit_name: "closed route" }),
+          disposedRule("RULE-B", stronger, undefined, { permit_name: "later route" }),
+        ]),
+        TODAY,
+        { id: "test-calendar@2026", holidays: [] },
+      );
+    const cases = [
+      ["REQUIRED", "PROHIBITED_OR_INELIGIBLE", "CONDITIONAL"],
+      ["MAY_BE_REQUIRED", "REQUIRED", "INFEASIBLE"],
+      ["ADVISORY", "REQUIRED", "INFEASIBLE"],
+    ] as const;
+    for (const [missed, stronger, verdict] of cases) {
+      const plan = missedThenStronger(missed, stronger);
+      expect(plan.findings[0]?.deadlineStatus).toBe("published_deadline_missed");
+      expect(plan.findings[0]?.latestApplyDate).toBe("2026-06-18");
+      expect(plan.verdictDetail.missedRuleIds).toContain("RULE-A");
+      expect(plan.verdict).toBe(verdict);
+    }
+  });
+
+  it("takes the earlier published filing window, whichever rule is listed first", () => {
+    // 45 days back from 2026-12-04 is the earlier window; taking the later one would tell an
+    // organizer they have three more weeks than the group's own rules publish.
+    const forward = mergedGroup([
+      disposedRule("RULE-A", "REQUIRED", calendarWindow(21)),
+      disposedRule("RULE-B", "REQUIRED", calendarWindow(45)),
+    ]);
+    const reverse = mergedGroup([
+      disposedRule("RULE-B", "REQUIRED", calendarWindow(45)),
+      disposedRule("RULE-A", "REQUIRED", calendarWindow(21)),
+    ]);
+    expect(forward?.latestApplyDate).toBe("2026-10-20");
+    expect(reverse?.latestApplyDate).toBe("2026-10-20");
+  });
+
+  it("binds to the earliest window that is still open, not to one that has closed", () => {
+    // Two published routes to one requirement: the 45-day window closed on 2026-07-06, the
+    // 21-day one is open until 2026-07-30. Binding the closed one renders the requirement missed
+    // while a published route is still available.
+    const group = [
+      disposedRule("RULE-A", "REQUIRED", calendarWindow(45)),
+      disposedRule("RULE-B", "REQUIRED", calendarWindow(21)),
+    ];
+    const options = { intake: { event_date: "2026-08-20" } };
+    for (const listing of [group, [...group].reverse()]) {
+      expect(mergedGroup(listing, options)).toMatchObject({
+        latestApplyDate: "2026-07-30",
+        deadlineStatus: "deadline_approaching",
+      });
+    }
+  });
+
+  it("binds to the earliest window when every published route has closed", () => {
+    const group = [
+      disposedRule("RULE-A", "REQUIRED", calendarWindow(45)),
+      disposedRule("RULE-B", "REQUIRED", calendarWindow(21)),
+    ];
+    const options = { intake: { event_date: "2026-08-01" } };
+    for (const listing of [group, [...group].reverse()]) {
+      expect(mergedGroup(listing, options)).toMatchObject({
+        latestApplyDate: "2026-06-17",
+        deadlineStatus: "published_deadline_missed",
+      });
+    }
+  });
+
+  it("keeps a published window that cannot be dated over a route that publishes none", () => {
+    // The deployed shape of the defect: an uncalculable window and no window at all both leave
+    // `latestApplyDate` null, and the group must still read as the rule that publishes a window.
+    const group = [
+      disposedRule("RULE-A", "MAY_BE_REQUIRED", undefined, { permit_name: "undated route" }),
+      disposedRule("RULE-B", "MAY_BE_REQUIRED", businessWindow(15), {
+        permit_name: "dated route",
+      }),
+    ];
+    const options = { holidays: null };
+    for (const listing of [group, [...group].reverse()]) {
+      expect(mergedGroup(listing, options)).toMatchObject({
+        name: "dated route",
+        deadlineStatus: "not_calculable",
+        latestApplyDate: null,
+      });
+    }
+  });
+
+  it("keeps a dated window over a route whose window the engine could not date", () => {
+    // The other half of the same ordering, and the one the deployed calendar reaches: with no
+    // published holiday list the 15-business-day route is real but `not_calculable`, and binding
+    // it would throw away a computed apply-by date, a permit name, a fee and a portal for a route
+    // that says nothing about when to file (#244 review).
+    const group = [
+      disposedRule("RULE-A", "REQUIRED", businessWindow(15), {
+        permit_name: "undatable route",
+        fee: { display: "$500" },
+      }),
+      disposedRule("RULE-B", "REQUIRED", calendarWindow(45), {
+        permit_name: "datable route",
+        fee: { display: "$100" },
+      }),
+    ];
+    const options = { holidays: null };
+    for (const listing of [group, [...group].reverse()]) {
+      expect(mergedGroup(listing, options)).toMatchObject({
+        name: "datable route",
+        latestApplyDate: "2026-10-20",
+        deadlineStatus: "on_track",
+        feeDisplay: "$100",
+      });
+    }
+  });
+
+  it("keeps a closed window over a route whose window the engine could not date", () => {
+    // The fourth pairing of the availability order, and the one that had no test: every other
+    // window-binding case pairs a closed route with a DATED OPEN one. A `research_required` lead
+    // time means no agency published one at all and is excluded from verdict and slack arithmetic,
+    // so it is not KNOWN to be open; binding it over a route the engine dated as already missed
+    // dropped `published_deadline_missed`, the closed route's apply-by date and its fee, and turned
+    // an INFEASIBLE plan FEASIBLE (#244 review). Over-warning is the safe direction here.
+    const group = [
+      disposedRule("RULE-A", "REQUIRED", calendarWindow(60), {
+        permit_name: "permit with a closed window",
+        fee: { display: "$500" },
+      }),
+      disposedRule(
+        "RULE-B",
+        "REQUIRED",
+        { type: "research_required" },
+        {
+          permit_name: "permit whose lead time is unresearched",
+        },
+      ),
+    ];
+    const options = { intake: { event_date: "2026-08-20" } };
+    for (const listing of [group, [...group].reverse()]) {
+      expect(mergedGroup(listing, options)).toMatchObject({
+        name: "permit with a closed window",
+        deadlineStatus: "published_deadline_missed",
+        latestApplyDate: "2026-06-21",
+        feeDisplay: "$500",
+      });
+    }
+  });
+
+  it("keeps a closed window over an undatable one under the deployed calendar", () => {
+    // The same pairing in the shape the deployment reaches: no published holiday list, so the
+    // 15-business-day sibling is real but `not_calculable` rather than research-gated.
+    const group = [
+      disposedRule("RULE-A", "REQUIRED", calendarWindow(60), {
+        permit_name: "permit with a closed window",
+      }),
+      disposedRule("RULE-B", "REQUIRED", businessWindow(15), {
+        permit_name: "permit the engine could not date",
+      }),
+    ];
+    const options = { intake: { event_date: "2026-08-20" }, holidays: null };
+    for (const listing of [group, [...group].reverse()]) {
+      expect(mergedGroup(listing, options)).toMatchObject({
+        name: "permit with a closed window",
+        deadlineStatus: "published_deadline_missed",
+        latestApplyDate: "2026-06-21",
+      });
+    }
+  });
+
+  it("keeps a dated rule's window when the other member of the group publishes none", () => {
+    const forward = mergedGroup([
+      disposedRule("RULE-A", "REQUIRED", calendarWindow(45)),
+      disposedRule("RULE-B", "MAY_BE_REQUIRED"),
+    ]);
+    const reverse = mergedGroup([
+      disposedRule("RULE-B", "MAY_BE_REQUIRED"),
+      disposedRule("RULE-A", "REQUIRED", calendarWindow(45)),
+    ]);
+    expect(forward).toMatchObject({ latestApplyDate: "2026-10-20", deadlineStatus: "on_track" });
+    expect(reverse).toMatchObject({ latestApplyDate: "2026-10-20", deadlineStatus: "on_track" });
+  });
+
+  it("reads note, conflict and timeline text off the binding rule rather than the file order", () => {
+    // These three were resolved by position in the ruleset, which is the defect itself.
+    const group = [
+      disposedRule("RULE-A", "MAY_BE_REQUIRED", undefined, { note_text: "undated reading" }),
+      disposedRule("RULE-B", "MAY_BE_REQUIRED", businessWindow(15), {
+        note_text: "dated reading",
+      }),
+    ].map((rule) => ({ ...rule, verification: { status: "OFFICIAL_CONFLICT" } }));
+    const options = { holidays: null };
+    for (const listing of [group, [...group].reverse()]) {
+      expect(mergedGroup(listing, options)).toMatchObject({
+        noteText: "dated reading",
+        conflictText: "dated reading",
+        timelineUnresolvedReason: expect.stringContaining("15 business days"),
+      });
+    }
+  });
+
+  it("reads the merged heading off the binding order when the binding route publishes none", () => {
+    // `plan-line.tsx` renders `userSummary.heading` as the line's h3, and the fallback used
+    // contributing order, so a three-route group's TITLE flipped when two summary-publishing rules
+    // swapped positions in the published file with no other decided scalar moving (#244 review).
+    // RULE-B binds and publishes no summary; RULE-M precedes RULE-Z in binding order, both being
+    // undated, so the heading is RULE-M's whichever way the file lists them.
+    const summary = (heading: string, id: string) => ({
+      user_summary: {
+        heading,
+        points: [
+          {
+            kind: "overview",
+            text: heading,
+            sources: [{ label: "citation", url: `https://example.test/${id}` }],
+          },
+        ],
+      },
+    });
+    const group = [
+      disposedRule("RULE-Z", "REQUIRED", undefined, summary("Z heading", "RULE-Z")),
+      disposedRule("RULE-M", "REQUIRED", undefined, summary("M heading", "RULE-M")),
+      disposedRule("RULE-B", "REQUIRED", calendarWindow(45), { permit_name: "binding route" }),
+    ];
+    const swapped = [group[1], group[0], group[2]] as Record<string, unknown>[];
+    for (const listing of [group, swapped]) {
+      expect(mergedGroup(listing)).toMatchObject({
+        name: "binding route",
+        latestApplyDate: "2026-10-20",
+      });
+      expect(mergedGroup(listing)?.userSummary?.heading).toBe("M heading");
+    }
+  });
+
+  it("renders the same merged finding whichever order the ruleset lists the group in", () => {
+    // The property the defect is. Rule ids, notes and sources stay in contributing order — the
+    // approved contract is that a merged finding retains every contributing rule — so this pins
+    // everything the merge decides rather than concatenates.
+    const rules = [
+      disposedRule("RULE-A", "MAY_BE_REQUIRED", undefined, {
+        permit_name: "undated route",
+        note_text: "undated reading",
+        fee: { display: "$25" },
+        portal: { name: "undated portal", instructions: "walk in" },
+        user_summary: {
+          heading: "undated heading",
+          points: [
+            {
+              kind: "overview",
+              text: "undated route",
+              sources: [{ label: "citation", url: "https://example.test/RULE-A" }],
+            },
+          ],
+        },
+      }),
+      disposedRule("RULE-B", "REQUIRED", calendarWindow(45), {
+        permit_name: "dated route",
+        note_text: "dated reading",
+        fee: { display: "$100" },
+        portal: { name: "dated portal", url: "https://example.test/dated" },
+        user_summary: {
+          heading: "dated heading",
+          points: [
+            {
+              kind: "overview",
+              text: "dated route",
+              sources: [{ label: "citation", url: "https://example.test/RULE-B" }],
+            },
+          ],
+        },
+      }),
+    ];
+    expect(decidedFields(mergedGroup(rules))).toEqual(
+      decidedFields(mergedGroup([...rules].reverse())),
+    );
+  });
+
+  it("merges the published dob-structure group against the deployed holiday configuration", () => {
+    // `apps/api/src/calendar.ts` publishes no holiday list, so production evaluates with
+    // `holidays: null` and DOB-TENT-001's 15-business-day window is real but not calculable,
+    // while DOB-TALL-STRUCTURE-001 publishes no window at all. Both leave `latestApplyDate`
+    // null, so the group's binding rule cannot be chosen on that field alone. Every other engine
+    // test injects `holidays: []`, which dates DOB-TENT-001 and hides this entirely.
+    const tentIntake: EventIntake = {
+      ...parkIntake,
+      event_date: "2026-12-04",
+      structure_types: ["tent_canopy"],
+      tent_area_sqft: 500,
+      tent_days_in_place: 2,
+      structure_over_10ft_tall: "yes",
+    };
+    const merged = (holidays: readonly string[] | null) =>
+      evaluate(tentIntake, ruleset, TODAY, { id: ruleset.calendarId, holidays }).findings.find(
+        (finding) => finding.ruleIds.includes("DOB-TENT-001"),
+      );
+
+    const deployed = merged(null);
+    expect(deployed?.ruleIds).toEqual(["DOB-TENT-001", "DOB-TALL-STRUCTURE-001"]);
+    expect(deployed).toMatchObject({
+      disposition: "required",
+      name: "DOB permit — tent/canopy over 400 gross sq ft or in place 30+ days",
+      deadlineStatus: "not_calculable",
+      latestApplyDate: null,
+      feeDisplay: "TUP: $100 initial 30 days, $130 per additional period — confirm instrument",
+    });
+    expect(deployed?.userSummary?.heading).toBe(
+      "Buildings Department approval for a tent or canopy",
+    );
+    expect(deployed?.timelineUnresolvedReason).toContain("15 business days");
+    // DOB-TENT-001 publishes no `note_text`, so the other route's published note is not dropped.
+    expect(deployed?.noteText).toContain("over 10 feet tall require a permit");
+
+    // The same group, same rules, with the holiday list a published calendar would carry.
+    expect(merged([])).toMatchObject({
+      disposition: "required",
+      name: "DOB permit — tent/canopy over 400 gross sq ft or in place 30+ days",
+      deadlineStatus: "on_track",
+      latestApplyDate: "2026-11-13",
+    });
+  });
+
+  it("sequences a gated rule that merged, wherever its group sits in the published file", () => {
+    // `applyDependencySequencing` looked its bindings up by `ruleIds[0]`, which after a merge is
+    // whichever member the published file lists first, so a bound rule that shared a dedupe key
+    // was silently left unsequenced when the other route was listed ahead of it. `applyAfterDate`
+    // and `slackDays` are decided values — F-202 renders the first as the start date and F-203
+    // schedules `dependency_unlocked` at it — so file order decided whether an organizer saw a
+    // gate at all (#244 review).
+    const publishedSound = (rawRuleset.rules as Record<string, unknown>[]).find(
+      (rule) => rule.id === "NYPD-SOUND-001",
+    ) as Record<string, unknown>;
+    const alternativeRoute = publishedSound.trigger;
+    const sequencedSound = (gatedFirst: boolean) => {
+      const rules = (rawRuleset.rules as Record<string, unknown>[]).flatMap((rule) => {
+        if (rule.id !== "NYPD-SOUND-001") return [rule];
+        const gated = {
+          ...rule,
+          output: { ...(rule.output as Record<string, unknown>), dedupe_key: "nypd-sound" },
+        };
+        const alternative = {
+          id: "NYPD-SOUND-ALT-001",
+          kind: "permit",
+          trigger: alternativeRoute,
+          output: {
+            permit_name: "Sound Device Permit (alternative route)",
+            agency: "NYPD",
+            dedupe_key: "nypd-sound",
+          },
+          verification: rule.verification,
+          source: rule.source,
+        };
+        return gatedFirst ? [gated, alternative] : [alternative, gated];
+      });
+      return evaluate(
+        { ...parkIntake, event_date: "2026-09-16" },
+        parseEngineRuleset({ ...rawRuleset, rules }),
+        TODAY,
+        calendar,
+      ).findings.find((finding) => finding.ruleIds.includes("NYPD-SOUND-001"));
+    };
+
+    const gatedFirst = sequencedSound(true);
+    const alternativeFirst = sequencedSound(false);
+    // The gate itself, not merely a stable pair of answers: both listings carry it.
+    expect(gatedFirst?.applyAfterDate).not.toBeNull();
+    expect(alternativeFirst?.applyAfterDate).toBe(gatedFirst?.applyAfterDate);
+    expect(alternativeFirst?.slackDays).toBe(gatedFirst?.slackDays);
+    expect(alternativeFirst?.notes.join(" ")).toContain("sequenced after PARKS-EVENT-001");
+    expect(gatedFirst?.notes.join(" ")).toContain("sequenced after PARKS-EVENT-001");
   });
 });
 
