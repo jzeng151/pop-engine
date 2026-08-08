@@ -1198,7 +1198,8 @@ export const countClaimsInPublishedOutput = (artifact, { attributed = new Map() 
         (claim) => !countsAttributed(claim, attributed, { publishedIds }),
       );
     const offending = strings.flatMap(unreported);
-    const reported = offending.length > 0 ? offending : unreported(strings.join(RENDERED_SEPARATOR));
+    const reported =
+      offending.length > 0 ? offending : unreported(strings.join(RENDERED_SEPARATOR));
     for (const claim of reported) found.push({ ruleId: where, string: claim });
   }
   return found;

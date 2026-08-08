@@ -865,6 +865,23 @@ describe("no DOHMH rule is attributed to headcount, removed 2026-08-05 (#235)", 
     return thresholds;
   }
 
+  /**
+   * EVERY id the tree publishes, city health or not. It is what turns `countsAttributed`'s "every
+   * rule the claim names licenses it" from a quantifier over one subject into a real one: a rule
+   * whose trigger reads no count is absent from the threshold map above, so a sentence naming it
+   * beside a legitimately count-reading rule would have found only the legitimate one and been
+   * exempted on its account. That is the fifteenth PR #247 round's thread 734.
+   */
+  function publishedRuleIds() {
+    const ids = [];
+    for (const [, artifact] of publishedRulesets()) {
+      for (const rule of [...(artifact.rules ?? []), ...(artifact.advisories ?? [])]) {
+        if (rule.id) ids.push(rule.id);
+      }
+    }
+    return ids;
+  }
+
   it("no published ruleset keys a DOHMH rule on an attendee count", () => {
     for (const [path, artifact] of publishedRulesets()) {
       for (const rule of cityHealthRules(artifact)) {
@@ -932,6 +949,7 @@ describe("no DOHMH rule is attributed to headcount, removed 2026-08-05 (#235)", 
     // three questions are asked; this used to be a repository-wide short-circuit on the same
     // question asked as a yes/no, which one rule change would have used to silence the whole scan.
     const attributed = attendeeCountThresholdsByRule();
+    const publishedIds = publishedRuleIds();
 
     const flagged = [];
     for (const path of filesUnder(SCANNED_ROOTS, [".md", ".ts", ".tsx", ".mjs", ".js"])) {
@@ -941,7 +959,7 @@ describe("no DOHMH rule is attributed to headcount, removed 2026-08-05 (#235)", 
       // one clause of this function, and reverting either left the whole suite green.
       const found = scanFile(readFileSync(path, "utf8"), scanOptionsFor(relative));
       for (const item of found) {
-        if (countsAttributed(item.text, attributed)) continue;
+        if (countsAttributed(item.text, attributed, { publishedIds })) continue;
         flagged.push({ relative, ...item });
       }
     }

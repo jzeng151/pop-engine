@@ -2324,7 +2324,7 @@ describe("countClaimsInPublishedOutput: the artifact's top-level prose is prose 
   });
 
   /** The walk covers every top-level key of the artifact as published, less the two rule arrays. */
-  it("labels every scanned string by the top-level key it hangs under", () => {
+  it("labels every scanned unit by the top-level key it hangs under", () => {
     const scanned = new Set(rulesetProseStrings(published).map((item) => item.where));
     const expected = Object.keys(published)
       .filter((key) => key !== "rules" && key !== "advisories")
@@ -2616,5 +2616,261 @@ describe("round 14: an output claim is audited against the rule it names", () =>
       (item) => item.string,
     );
     expect(found).toContain(note);
+  });
+});
+
+/**
+ * THE FIFTEENTH PR #247 ROUND, whose four threads are THREE gaps in one model.
+ *
+ * TWO OF THEM ARE ONE CLASS, the SUBJECT of a claim: `countsAttributed` asked whether SOME rule the
+ * sentence names licenses it, so the first legitimate name covered every other name beside it; and
+ * `countClaimsInPublishedOutput` filtered the HOST id out of the names it validated, so naming a
+ * second rule bought the host an exemption from its own thresholds. Both are the same question
+ * asked wrongly in two places, and both are answered once here: the subjects of a count sentence
+ * are every published rule it names, the host included, and every subject has to publish every
+ * number the sentence states. The host stands in only where the sentence names no rule at all.
+ *
+ * THE THIRD IS LEXICAL: the numeral was `\d{1,6}` behind a `(?<![\w-])` guard, and a comma is
+ * neither, so "1,075 guests" matched on its suffix and was read as 75.
+ *
+ * THE FOURTH IS STRUCTURAL: a rule's strings were joined into the card an organizer reads and the
+ * artifact's top-level strings were not, so structured published prose reassembled the twelfth
+ * round's split-claim defect one level up.
+ *
+ * THE HONEST ANSWER TO THE ROUND'S QUESTION is the same one the fourteenth round gave and it has
+ * not improved: this is ONE PARSING MODEL extended by special case, now for eleven rounds. The
+ * model is a chain of regexes over normalized text, and every round has found either a construct
+ * its tokenizer does not name (the curly apostrophe, underscore emphasis, quotation marks, the
+ * hyphenated compound, now the thousands separator) or an authored unit its segmenter does not
+ * reconstruct (the wrapped line, the doc comment, a rule's sibling strings, now the artifact's).
+ * Each fix is correct and each is a special case, so the next construct is found by the next
+ * reviewer rather than by this suite.
+ *
+ * WHAT A GENERAL FIX WOULD LOOK LIKE, stated rather than built, because building it is a rewrite of
+ * the guard and not a thread reply. Two stages, each with ONE definition instead of one per call
+ * site:
+ *
+ *   - A TOKENIZER that emits typed tokens rather than a normalized string that regexes then
+ *     re-parse: NUMBER carrying its parsed value (so "1,075", "75" and a future "1 075" are one
+ *     token kind and the value is read once), RULE_ID, AGENCY, COUNT_NOUN, TERMINATOR. Every
+ *     lexical round above is a token the current model has no name for, and a token boundary
+ *     defined once cannot disagree with itself the way `\b`, `(?<![\w-])` and `String.includes`
+ *     did in the fourteenth round.
+ *   - A UNIT model every source maps INTO, so segmentation exists once: a markdown block, a code
+ *     block, a rule's rendered card and an object of the artifact all become the same
+ *     `{ text, subjects, neighbours }` before anything is audited. Each of the twelfth, thirteenth
+ *     and fifteenth rounds is a source that had no mapping and got a bespoke one.
+ *
+ * The claim check then reduces to one sentence with no special cases left in it: for each unit, for
+ * each sentence, the subjects are the RULE_ID tokens in it plus the unit's host, and a count claim
+ * is licensed exactly when the subjects are non-empty and every one of them publishes every NUMBER
+ * token the sentence carries. That is what the four fixes below implement piecemeal.
+ */
+describe("round 15: a claim is licensed by every rule it names", () => {
+  const attributed = new Map([["HEALTH-ASSEMBLY-001", new Set([75])]]);
+  const publishedIds = ["HEALTH-ASSEMBLY-001", "DOHMH-VENDOR-PERMIT-001"];
+
+  /**
+   * THREAD 734, and the thread's own example. The vendor rule's published trigger reads no count,
+   * so it is absent from `attributed`; the existential quantifier found the assembly rule, which
+   * really does publish 75, and exempted a sentence that asserts the same 75 of both.
+   */
+  it("does not let one named rule license a count asserted of another", () => {
+    const claim = "HEALTH-ASSEMBLY-001 and DOHMH-VENDOR-PERMIT-001 are required at 75 guests.";
+    expect(countsAttributed(claim, attributed, { publishedIds })).toBe(false);
+  });
+
+  /** The rule stated on its own is still its own published fact. */
+  it("still exempts a sentence naming only the rule that publishes the number", () => {
+    expect(
+      countsAttributed("HEALTH-ASSEMBLY-001 is required at 75 guests.", attributed, {
+        publishedIds,
+      }),
+    ).toBe(true);
+  });
+
+  /** Two rules that both publish the number are both subjects and both license it. */
+  it("exempts a sentence every rule it names really publishes", () => {
+    const both = new Map([
+      ["HEALTH-ASSEMBLY-001", new Set([75])],
+      ["DOHMH-VENDOR-PERMIT-001", new Set([75])],
+    ]);
+    const claim = "HEALTH-ASSEMBLY-001 and DOHMH-VENDOR-PERMIT-001 are required at 75 guests.";
+    expect(countsAttributed(claim, both, { publishedIds })).toBe(true);
+  });
+
+  /**
+   * The subjects come out of the whole published id space and not out of `attributed`, which is
+   * what makes the quantifier bite: searching the threshold map alone would never see the second
+   * name, so `every` would range over one subject again and the sentence would pass.
+   */
+  it("finds a subject whose trigger reads no count at all", () => {
+    const claim = "HEALTH-ASSEMBLY-001 and DOHMH-VENDOR-PERMIT-001 are required at 75 guests.";
+    expect(countsAttributed(claim, attributed)).toBe(true);
+    expect(countsAttributed(claim, attributed, { publishedIds })).toBe(false);
+  });
+});
+
+describe("round 15: the host is one of the subjects", () => {
+  const published = JSON.parse(read("rules/nyc-rules.v2.11.json"));
+  const copyOf = (rule) => JSON.parse(JSON.stringify(rule));
+  // The host legitimately reads the count at 75; the rule it mentions publishes 500.
+  const hosted = (note) => ({
+    ...published,
+    rules: published.rules.map((rule) =>
+      rule.id === "DOHMH-EXEMPTION-001"
+        ? (() => {
+            const copy = copyOf(rule);
+            copy.id = "HEALTH-ASSEMBLY-001";
+            copy.output.agency = "NYC Health";
+            copy.output.note_text = note;
+            return copy;
+          })()
+        : rule,
+    ),
+  });
+  const both = new Map([
+    ["HEALTH-ASSEMBLY-001", new Set([75])],
+    ["DOHMH-VENDOR-PERMIT-001", new Set([500])],
+  ]);
+  const offendersOf = (note, attributed) =>
+    countClaimsInPublishedOutput(hosted(note), { attributed }).map((item) => item.string);
+
+  /**
+   * THREAD 1089, and the thread's own example. The host id was filtered out of the names the audit
+   * validated, so the other rule's valid 500 licensed an explicitly named claim about a host that
+   * publishes 75.
+   */
+  it("does not let another rule's threshold license a claim about the host", () => {
+    const note = "HEALTH-ASSEMBLY-001 applies at 500 guests, like DOHMH-VENDOR-PERMIT-001.";
+    expect(offendersOf(note, both)).toEqual([note]);
+  });
+
+  /** Both subjects stated at the numbers they each publish is two published facts. */
+  it("exempts a claim every named rule, host included, really publishes", () => {
+    const note = "HEALTH-ASSEMBLY-001 applies at 75 guests and so does HEALTH-ASSEMBLY-001.";
+    expect(offendersOf(note, both)).toEqual([]);
+  });
+
+  /** A claim about the other rule alone is still audited against that rule and not the host. */
+  it("audits a claim naming only another rule against that rule", () => {
+    expect(offendersOf("DOHMH-VENDOR-PERMIT-001 applies at 500 or more guests.", both)).toEqual([]);
+    const invented = "DOHMH-VENDOR-PERMIT-001 applies at 75 or more guests.";
+    expect(offendersOf(invented, both)).toEqual([invented]);
+  });
+
+  /** Naming no rule leaves the host as the subject, which is the one reading of location. */
+  it("reads an unnamed claim against the rule that publishes it", () => {
+    expect(offendersOf("The permit applies at 75 or more guests.", both)).toEqual([]);
+    const invented = "The permit applies at 500 or more guests.";
+    expect(offendersOf(invented, both)).toEqual([invented]);
+  });
+});
+
+describe("round 15: a formatted count is one numeral", () => {
+  const attributed = new Map([["HEALTH-ASSEMBLY-001", new Set([75])]]);
+
+  /**
+   * THREAD 196. A comma is neither a word character nor a hyphen, so the `(?<![\w-])` guard let the
+   * SUFFIX of a grouped number be a numeral of its own: "1,075 guests" matched as "075 guests" and
+   * was read as 75, which a rule published at 75 then licensed.
+   */
+  it("reads a thousands-separated count as the whole number", () => {
+    expect(claimedCounts("HEALTH-ASSEMBLY-001 applies at 1,075 guests.")).toEqual(new Set([1075]));
+    expect(claimedCounts("DOHMH requires a permit at 10,000 or more guests.")).toEqual(
+      new Set([10000]),
+    );
+    expect(claimedCounts("Guests attending exceed 1,075.")).toEqual(new Set([1075]));
+    expect(claimedCounts("DOHMH covers a 1,075-person event.")).toEqual(new Set([1075]));
+  });
+
+  /** So a rule published at 75 no longer licenses a materially different published threshold. */
+  it("does not let 75 license 1,075", () => {
+    expect(countsAttributed("HEALTH-ASSEMBLY-001 applies at 1,075 guests.", attributed)).toBe(
+      false,
+    );
+    expect(countsAttributed("HEALTH-ASSEMBLY-001 applies at 75 guests.", attributed)).toBe(true);
+  });
+
+  /** The grouped form is still a count, so the pairing that reports it is unchanged. */
+  it("still reads the grouped form as a count beside the agency", () => {
+    expect(pairsAgencyWithCount("DOHMH requires a permit at 1,075 guests.")).toBe(true);
+  });
+
+  /** And the shapes the numeral guard exists for are still refused. */
+  it("still refuses a date and a rule id", () => {
+    expect(COUNTED_PEOPLE.test("Published 2026-08-07 by the Health Department.")).toBe(false);
+    expect(COUNTED_PEOPLE.test("DOHMH-VENDOR-PERMIT-001 is the permit.")).toBe(false);
+  });
+
+  /**
+   * The declared cost, asserted rather than left to be discovered: a comma-separated list written
+   * with no space after the comma has a last member sitting behind a `digit,` seam, so it reads as
+   * the tail of a grouped number and is not a count. The spaced form, which is what this tree
+   * writes, is unaffected.
+   */
+  it("declares the unspaced numeral list as a miss and the spaced one as a count", () => {
+    expect(COUNTED_PEOPLE.test("DOHMH publishes 20,50,75 guests.")).toBe(false);
+    expect(claimedCounts("DOHMH publishes 20, 50, 75 guests.")).toEqual(new Set([75]));
+  });
+});
+
+describe("round 15: the artifact's top-level prose is a unit too", () => {
+  const published = JSON.parse(read("rules/nyc-rules.v2.11.json"));
+  const offendersOf = (artifact) =>
+    countClaimsInPublishedOutput(artifact).map((item) => [item.ruleId, item.string]);
+
+  /**
+   * THREAD 942, and the thread's own example. The top-level walk flattened the subtree and handed
+   * each string to the scan alone, so a legend whose heading names the agency and whose description
+   * states the trigger produced no offender: neither value carries both halves. A rule's strings
+   * were already joined into the card an organizer reads; nothing did it here.
+   */
+  it("finds a claim split across two related top-level strings", () => {
+    const heading = "DOHMH requirements";
+    const description = "Required at 75 or more guests";
+    expect(pairsAgencyWithCount(heading)).toBe(false);
+    expect(pairsAgencyWithCount(description)).toBe(false);
+    const bad = { ...published, status_legend: { heading, description } };
+    expect(offendersOf(bad)).toEqual([["ruleset.status_legend", `${heading}. ${description}`]]);
+  });
+
+  /** A claim split across siblings nested deeper is the same shape and is found the same way. */
+  it("finds a claim split across siblings of a nested object", () => {
+    const bad = {
+      ...published,
+      config: {
+        ...published.config,
+        slack_warning_days: {
+          ...published.config.slack_warning_days,
+          label: "DOHMH requirements",
+          note: "Required at 75 or more guests",
+        },
+      },
+    };
+    expect(offendersOf(bad).map(([where]) => where)).toEqual(["ruleset.config"]);
+  });
+
+  /** One string carrying the whole claim is still reported as that string, not as the unit. */
+  it("reports the string and not the unit when one string carries the claim", () => {
+    const claim = "DOHMH requires a permit for 75 or more guests.";
+    const bad = { ...published, status_legend: { ...published.status_legend, VERIFIED: claim } };
+    expect(offendersOf(bad)).toEqual([["ruleset.status_legend", claim]]);
+  });
+
+  /**
+   * THE UNIT IS THE ENCLOSING OBJECT and not the whole top-level key, which is what keeps the pass
+   * quiet: `config`, `intake_fields` and `reference_tables` are trees of unrelated sub-objects, so
+   * a whole-key join would read a sentence of one table against a sentence of the next. The
+   * artifact as published carries the agency and a count in different sub-objects of one key and
+   * reports nothing.
+   */
+  it("does not join two unrelated sub-objects of one top-level key", () => {
+    expect(countClaimsInPublishedOutput(published)).toEqual([]);
+    const units = rulesetProseStrings(published);
+    expect(units.length).toBeGreaterThan(
+      new Set(units.map((unit) => unit.where)).size,
+      "a top-level key holding several objects yields several units",
+    );
   });
 });
