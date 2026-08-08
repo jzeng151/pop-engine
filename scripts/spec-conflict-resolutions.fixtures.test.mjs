@@ -4,10 +4,12 @@ import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import {
   ATTENDEE_COUNT,
+  ATTENDEE_COUNT_SOURCE,
   BENIGN_ADJACENT_PAIRS,
   BOUNDED_EXTENSIONS,
   CITY_HEALTH_AGENCY,
   COUNTED_PEOPLE,
+  COUNTED_PEOPLE_SOURCE,
   HISTORICAL_RECORDS,
   OPT_OUT_EXTENSIONS,
   OPT_OUT_MARKER,
@@ -18,6 +20,7 @@ import {
   pairsAgencyWithCount,
   pinnedDigest,
   scanFile,
+  scanOptionsFor,
   stableRegisterRow,
 } from "./spec-conflict-scan.mjs";
 
@@ -52,11 +55,19 @@ import {
  * Where a fixture stands for the GUARD's own behaviour rather than for an artifact, it is still a
  * literal string, so it says what the guard does rather than what this tree happens to contain.
  *
- * Each of the defects the fourth and fifth rounds found has a case here that FAILED before its fix
- * and passes after, and each names the defect it stands for. The two knowingly-uncaught phrasings
- * are here too, as EXPECTED MISSES, asserted to be missed, so a later change that starts catching
- * one fails this suite and forces the disclosure in `spec-conflict-resolutions.test.mjs` to be
- * brought back into line. A disclosure that is only prose drifts; this is the part a test can hold.
+ * Each of the defects the fourth, fifth and sixth rounds found has a case here that FAILED before
+ * its fix and passes after, and each names the defect it stands for. The three knowingly-uncaught
+ * phrasings are here too, as EXPECTED MISSES, asserted to be missed, so a later change that starts
+ * catching one fails this suite and forces the disclosure in `spec-conflict-resolutions.test.mjs`
+ * to be brought back into line. A disclosure that is only prose drifts; this is the part a test can
+ * hold.
+ *
+ * A SECOND WAY A FIXTURE CAN FAIL TO BE A TEST, which the sixth round found twice here: it can
+ * assert something other than what its name says. The 7-by-2 grid was named for two expressions and
+ * drove one, because no cell carried a numeral. "The marker does not exempt the neighbour it is not
+ * in" was named for a boundary and tested a block, because its neighbour paired on its own and was
+ * flagged whether or not the boundary was ever read. Both passed for as long as they existed. When
+ * adding a case, check that the thing it names is the thing that decides its result.
  */
 
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
@@ -183,6 +194,18 @@ describe("pairsAgencyWithCount", () => {
     expect(pairsAgencyWithCount("DOHMH publishes the guest list requirements.")).toBe(false);
   });
 
+  it("flags the agency's spelled-out name with an ampersand and without the prefix", () => {
+    expect(
+      pairsAgencyWithCount("The Health & Mental Hygiene permit turns on the guest count."),
+    ).toBe(true);
+    expect(
+      pairsAgencyWithCount("Department of Health & Mental Hygiene: 75 or more attendees."),
+    ).toBe(true);
+    expect(pairsAgencyWithCount("Health and Mental Hygiene reads the attendance figure.")).toBe(
+      true,
+    );
+  });
+
   it("does not flag New York STATE's department, whose threshold is published", () => {
     const sdoh = "New York State's Department of Health publishes a 50-attendee threshold.";
     expect(pairsAgencyWithCount(sdoh)).toBe(false);
@@ -261,6 +284,36 @@ describe("scanFile: the cross-boundary pass, at the artifacts' real width", () =
     expect(scanFile(document)).toHaveLength(1);
   });
 
+  /**
+   * ITEM 3 of the sixth PR #247 round, in the half that is about the pins.
+   *
+   * A block that pairs on its own used to remove BOTH of its own boundaries from this pass: the
+   * pair `(i, i+1)` was formed only when `i` did not pair alone and `i+1` neither paired alone nor
+   * was opted out. On a block whose own pairing is then EXEMPTED at the reporting site, that is a
+   * blind spot rather than a de-duplication: on this tree it shadowed 8 boundaries (4 pinned
+   * records, 2 sides each) plus 2 at the live opt-out block in `apps/api/src/rsvps.test.ts`.
+   *
+   * This is the fifth round's own experiment, built from the REAL pinned record: the count half
+   * planted into the paragraph immediately after `docs/BASELINE.md`'s 2026-08-03 T-6 decision. It
+   * PASSED before this round. The pin is a content assertion over specific bytes and it stays
+   * exactly that; it no longer exempts the two boundaries around those bytes.
+   */
+  it("item 3: a block that pairs alone does not blank the boundaries around it", () => {
+    const pin = HISTORICAL_RECORDS.find((entry) => entry.anchor.includes("T-6 / SPEC-CONFLICT"));
+    const blocks = blocksOf(read(pin.file)).filter((block) => block.trim() !== "");
+    const record = blocks.find((block) => block.includes(pin.anchor));
+    expect(record, "docs/BASELINE.md carries the pinned 2026-08-03 record").toBeDefined();
+
+    const planted = `${COUNTED_HALF[0].toUpperCase()}${COUNTED_HALF.slice(1)}.`;
+    const flagged = scanFile(`${record}\n\n${planted}`);
+    // The record itself, once, as its own block: that is what the pin covers, and its digest is
+    // unchanged. The pair is the new finding, and the pin's digest does not match it.
+    expect(flagged.map((item) => item.kind)).toEqual(["block", "pair"]);
+    expect(pinnedDigest(pin, flagged[0].text)).toBe(pin.sha256);
+    expect(pinnedDigest(pin, flagged[1].text)).not.toBe(pin.sha256);
+    expect(flagged[1].text).toContain(planted);
+  });
+
   it("does not pair blocks that a third block separates", () => {
     const separated = [
       "F-101 `headcount` is a regulatory input.",
@@ -322,7 +375,44 @@ describe("scanFile: the bound does not readmit the clause to the files it was st
     "// moves with it, so raising an RSVP cap silently moved the event's permit findings.",
   ].join("\n");
 
-  it("item 2: the two files the correction record names are scanned unbounded", () => {
+  /**
+   * ITEM 2 of the sixth PR #247 round. Both of the fifth round's fixes were single clauses inside
+   * `spec-conflict-resolutions.test.mjs`'s own `flaggedBlocks()`, and NOTHING DROVE THE SELECTION:
+   * reverting either one left all 67 of this file's cases green. The fixture that read as their
+   * test asserted that an array equals two paths and that both files cite `SPEC-CONFLICT #209`,
+   * which says nothing about scanning; its sibling drove `scanFile` with `bounded` set by hand.
+   * Neither connected a file to an option.
+   *
+   * So the selection is a function of a path now (`scanOptionsFor`), and this is a table of paths
+   * with the options each must get. Dropping the `UNBOUNDED_RECORD_FILES` clause fails the two
+   * record-file rows; restoring the pre-fix `allowOptOut = BOUNDED_EXTENSIONS.some(...)` fails the
+   * `.mjs` and `.js` rows.
+   */
+  it("item 2: every file kind gets the options its rules give it", () => {
+    const FILES = [
+      { relative: "docs/BASELINE.md", bounded: false, allowOptOut: false },
+      { relative: "specs/F-302-rsvp-guest-list.md", bounded: false, allowOptOut: false },
+      { relative: "packages/engine/src/acceptance.test.ts", bounded: true, allowOptOut: true },
+      {
+        relative: "apps/web/app/events/[id]/guests/guest-list.tsx",
+        bounded: true,
+        allowOptOut: true,
+      },
+      // The two files `docs/BASELINE.md`'s correction record says the clause "is removed in place
+      // and stays removed". Code, so the marker is honoured; unbounded, so the bound cannot
+      // readmit the clause to them.
+      { relative: "apps/api/src/rsvps.ts", bounded: false, allowOptOut: true },
+      { relative: "apps/api/src/rsvps.test.ts", bounded: false, allowOptOut: true },
+      // A guard fixture under `scripts/`: unbounded like prose, and the marker is its remedy.
+      { relative: "scripts/new-guard.test.mjs", bounded: false, allowOptOut: true },
+      { relative: "apps/web/next.config.js", bounded: false, allowOptOut: true },
+    ];
+
+    for (const { relative, bounded, allowOptOut } of FILES) {
+      expect(scanOptionsFor(relative), relative).toEqual({ bounded, allowOptOut });
+    }
+    // The two record files are named by the correction record, so they have to be real files that
+    // carry the citation, not just rows in the table above.
     expect(UNBOUNDED_RECORD_FILES).toEqual(["apps/api/src/rsvps.ts", "apps/api/src/rsvps.test.ts"]);
     for (const file of UNBOUNDED_RECORD_FILES) {
       expect(read(file), `${file} exists to be scanned`).toContain("SPEC-CONFLICT #209");
@@ -370,14 +460,28 @@ describe("scanFile: the code opt-out", () => {
     expect(scanFile(prose, { allowOptOut: false })).toHaveLength(1);
   });
 
-  it("item 7: the marker does not exempt the neighbour it is not in", () => {
-    const pair = [
-      `  // ${OPT_OUT_MARKER}`,
-      "  const a = 1;",
-      "",
-      "  // F-101 headcount is what DOHMH reads.",
-    ].join("\n");
-    expect(scanFile(pair, { bounded: true, allowOptOut: true })).toHaveLength(1);
+  /**
+   * ITEM 3 of the sixth PR #247 round, in the half that is about the opt-out. This test's NAME
+   * promised boundary behaviour and its assertion tested block behaviour: the neighbour it used
+   * ("F-101 headcount is what DOHMH reads") paired on its own, so it was flagged by the
+   * single-block pass whether or not the boundary was ever read, and the case passed while the
+   * opt-out was in fact removing both of its own boundaries from the cross-boundary pass.
+   *
+   * The neighbour carries ONLY the count half now, so the flag it produces can come from nowhere
+   * but the boundary it shares with the marked block. The marker still exempts what it marks: the
+   * marked block names the agency and is not flagged on its own.
+   */
+  it("item 7: the marker does not exempt the boundary with the neighbour it is not in", () => {
+    const marked = [`  // ${OPT_OUT_MARKER}. DOHMH findings do not move.`, "  const a = 1;"].join(
+      "\n",
+    );
+    const neighbour = "  // The assembly gate opens at 75 or more guests recorded at intake.";
+    expect(scanFile(marked, { bounded: true, allowOptOut: true })).toEqual([]);
+    expect(scanFile(neighbour, { bounded: true, allowOptOut: true })).toEqual([]);
+    const flagged = scanFile(`${marked}\n\n${neighbour}`, { bounded: true, allowOptOut: true });
+    expect(flagged.map((item) => item.kind)).toEqual(["pair"]);
+    expect(flagged[0].text).toContain(OPT_OUT_MARKER);
+    expect(flagged[0].text).toContain("75 or more guests");
   });
 
   /**
@@ -409,34 +513,103 @@ describe("scanFile: the code opt-out", () => {
 });
 
 /**
- * ITEM 3 of the fifth PR #247 round. `ATTENDEE_COUNT` and `COUNTED_PEOPLE` declare the same count
- * nouns and did not carry the same ones: `RSVPs` and `patrons` were declared in `COUNTED_PEOPLE`
- * and appeared in neither phrasing of `ATTENDEE_COUNT`, and `COUNTED_PEOPLE` needs a numeral these
- * phrasings do not carry, so both expressions missed them. The grid is asserted cell by cell so
- * the two lists cannot drift apart again.
+ * ITEM 3 of the fifth PR #247 round, and ITEM 1 of the sixth.
  *
- * Six of these fourteen cells FAILED before the fix: `head`/"number of heads", both `person`
- * cells, both `RSVP` cells and both `patron` cells, minus the four that already passed.
+ * `ATTENDEE_COUNT` and `COUNTED_PEOPLE` declare the same count nouns and did not carry the same
+ * ones. The fifth round found the miss in one direction: `RSVPs` and `patrons` were declared in
+ * `COUNTED_PEOPLE` and appeared in neither phrasing of `ATTENDEE_COUNT`. It fixed that direction
+ * and did not check the other, so `persons` and `heads` stayed declared in `ATTENDEE_COUNT` and
+ * missing from both alternatives of `COUNTED_PEOPLE`, and "DOHMH requires a temporary food-service
+ * permit for indoor assembly occupancies used by 75 PERSONS OR MORE" passed while the same sentence
+ * ending "75 or more GUESTS" failed. That phrasing is not contrived: "75 persons or more" is the
+ * Building Code's own text, quoted in the published ruleset at `rules/nyc-rules.v2.11.json`.
+ *
+ * THE GRID WAS ONE-SIDED, and that is why nothing caught it. Its claim strings carried no numeral,
+ * so `COUNTED_PEOPLE` could never fire in any of its fourteen cells: fourteen assertions about
+ * `ATTENDEE_COUNT` wearing the name of a grid over both. It is 7 nouns by THREE phrasings now, and
+ * the third carries the numeral.
+ *
+ * The set equality below is the part that does not depend on anyone remembering to add a row. It
+ * is DERIVED FROM THE TWO SOURCES rather than restated here, so a noun added to one expression and
+ * forgotten in the other fails whether or not the grid grew with it.
  */
-describe("the count vocabulary: 7 nouns by 2 phrasings, every cell asserted", () => {
+describe("the count vocabulary: 7 nouns by 3 phrasings, every cell asserted", () => {
   const NOUNS = [
-    ["guest", "guest count", "number of guests"],
-    ["attendee", "attendee count", "number of attendees"],
-    ["head", "headcount", "number of heads"],
-    ["people", "people count", "number of people"],
-    ["person", "person count", "number of persons"],
-    ["RSVP", "RSVP count", "number of RSVPs"],
-    ["patron", "patron count", "number of patrons"],
+    ["guest", "guest count", "number of guests", "75 or more guests"],
+    ["attendee", "attendee count", "number of attendees", "75 or more attendees"],
+    ["head", "headcount", "number of heads", "75 or more heads"],
+    ["people", "people count", "number of people", "75 or more people"],
+    ["person", "person count", "number of persons", "75 persons or more"],
+    ["RSVP", "RSVP count", "number of RSVPs", "75 or more RSVPs"],
+    ["patron", "patron count", "number of patrons", "75 or more patrons"],
   ];
 
-  for (const [noun, outright, ofPhrase] of NOUNS) {
+  for (const [noun, outright, ofPhrase, counted] of NOUNS) {
     for (const phrasing of [outright, ofPhrase]) {
       it(`flags "the ${phrasing}" under an agency mention`, () => {
         const claim = `DOHMH keys its temporary food-service permit on the ${phrasing} recorded at intake.`;
         expect(pairsAgencyWithCount(claim), `${noun}: "${phrasing}"`).toBe(true);
       });
     }
+
+    it(`flags "${counted}" under an agency mention`, () => {
+      const claim = `DOHMH requires a temporary food-service permit for events of ${counted}.`;
+      expect(pairsAgencyWithCount(claim), `${noun}: "${counted}"`).toBe(true);
+    });
   }
+
+  /**
+   * The count nouns one alternation of one source declares, canonicalized so the two expressions'
+   * singular and plural spellings compare as the same word. Read out of the source string rather
+   * than written down again: a list restated here is a third place to forget a noun.
+   */
+  const nounsIn = (source, pattern) => {
+    const match = source.match(pattern);
+    expect(match, `${pattern} matches its source`).not.toBeNull();
+    return new Set(match[1].split("|").map((noun) => noun.toLowerCase().replace(/s$/, "")));
+  };
+
+  it("item 1: both expressions declare the same count nouns, in every alternation", () => {
+    const declared = [
+      [
+        "ATTENDEE_COUNT, the outright phrasing",
+        nounsIn(ATTENDEE_COUNT_SOURCE, /\(\?:([^)]+)\) \?count/),
+      ],
+      [
+        "ATTENDEE_COUNT, the 'number of' phrasing",
+        nounsIn(ATTENDEE_COUNT_SOURCE, /number of \(\?:([^)]+)\)/),
+      ],
+      [
+        "COUNTED_PEOPLE, numeral first",
+        nounsIn(COUNTED_PEOPLE_SOURCE, /\\\+ \?\)\?\(\?:([^)]+)\)/),
+      ],
+      ["COUNTED_PEOPLE, noun first", nounsIn(COUNTED_PEOPLE_SOURCE, /\|\\b\(\?:([^)]+)\)/)],
+    ];
+    const [, first] = declared[0];
+    expect(first.size, "the vocabulary is the seven nouns the grid above drives").toBe(7);
+    for (const [name, nouns] of declared) {
+      expect([...nouns].sort(), `${name} declares the same nouns as the outright phrasing`).toEqual(
+        [...first].sort(),
+      );
+    }
+  });
+
+  /**
+   * The two sentences the sixth round executed against `docs/BASELINE.md`, verbatim. The first
+   * PASSED before this round and is the Building Code's own wording: `rules/nyc-rules.v2.11.json`
+   * quotes "75 persons or more" in the published rule this sentence is about. The second is the
+   * same sentence with one noun swapped for another the guard itself declares as the same
+   * vocabulary, and it failed. One noun flipped the result.
+   */
+  it("item 1: the Building Code's own 'persons' wording is flagged, like 'guests'", () => {
+    const inTheCodesWords =
+      "DOHMH requires a temporary food-service permit for indoor assembly occupancies used by 75" +
+      " persons or more, so the F-101 intake count is a regulatory trigger.";
+    const inGuests =
+      "DOHMH requires a temporary food-service permit for events of 75 or more guests.";
+    expect(pairsAgencyWithCount(inTheCodesWords)).toBe(true);
+    expect(pairsAgencyWithCount(inGuests)).toBe(true);
+  });
 
   /** The three sentences the fifth round executed against `docs/BASELINE.md`, verbatim. */
   it("item 3: the three planted RSVP and patron sentences are flagged", () => {
@@ -524,7 +697,7 @@ describe("the pin machinery", () => {
   });
 
   it("every benign pair states why it is two facts rather than one claim", () => {
-    expect(BENIGN_ADJACENT_PAIRS).toHaveLength(4);
+    expect(BENIGN_ADJACENT_PAIRS).toHaveLength(6);
     for (const pin of BENIGN_ADJACENT_PAIRS) {
       expect(pin.why.length, `${pin.file}: ${pin.pair}`).toBeGreaterThan(80);
     }
@@ -532,8 +705,8 @@ describe("the pin machinery", () => {
 });
 
 /**
- * The two phrasings `spec-conflict-resolutions.test.mjs` declares as knowingly uncaught. They are
- * EXACTLY TWO, and each is asserted to be missed. If a later change starts catching one, this
+ * The phrasings `spec-conflict-resolutions.test.mjs` declares as knowingly uncaught. They are
+ * EXACTLY THREE, and each is asserted to be missed. If a later change starts catching one, this
  * suite fails and the disclosure has to be rewritten in the same commit rather than left standing
  * as an overstatement of what the scan cannot do.
  */
@@ -544,5 +717,16 @@ describe("the declared misses, asserted as expected misses", () => {
 
   it("misses a bare threshold numeral with no count noun", () => {
     expect(pairsAgencyWithCount("DOHMH requires a permit above 75.")).toBe(false);
+  });
+
+  /**
+   * A THIRD declared miss, added in the sixth PR #247 round with the reason it is declared rather
+   * than closed: `DOH` names the STATE department at least as readily as the city one in this
+   * domain, it appears nowhere in this tree, and `CITY_HEALTH_AGENCY` exists in the shape it has
+   * because flagging the state agency's real published attendance threshold is the false positive
+   * this guard has already had once.
+   */
+  it("misses the bare DOH acronym, which names the state department just as readily", () => {
+    expect(pairsAgencyWithCount("DOH requires a permit at 75 or more guests.")).toBe(false);
   });
 });

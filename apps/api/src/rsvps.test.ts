@@ -356,8 +356,9 @@ describe.runIf(databaseUrl.length > 0)("F-302 RSVP endpoints (database)", () => 
 //
 // guard: asserts-independence
 //
-// The marker above is the opt-out `scripts/spec-conflict-scan.mjs` honours in `.ts` and `.tsx`
-// files. This block has to name the agency and vary the count, which is exactly the co-occurrence
+// The marker above is the opt-out `scripts/spec-conflict-scan.mjs` honours in every scanned code
+// extension (`.ts`, `.tsx`, `.mjs` and `.js`; it said `.ts` and `.tsx` until the fifth PR #247
+// review round widened it, and this sentence was left behind). This block has to name the agency and vary the count, which is exactly the co-occurrence
 // that scan flags; it reads co-occurrence and not stance, and `headcount` is the literal field name
 // in the intake type, so the "F-101 intake field" circumlocution the correction records use is not
 // available here. The marker carries an obligation rather than a licence: the block it marks must

@@ -25,9 +25,17 @@ import { createHash } from "node:crypto";
  * threshold that `docs/VERIFICATION-SOURCES.md` quotes. The exclusion covers the POSSESSIVE
  * as well as the plain form: an earlier `(?<!State )` saw "ate's " in "New York State's
  * Department of Health" and flagged that true published fact as a fabricated claim.
+ *
+ * The spelled-out name takes an AMPERSAND and takes "Department of" as optional, added in the
+ * sixth PR #247 round. The agency renders its own name both ways, and the alternation is free:
+ * measured over every scanned root, it flags nothing this tree did not already flag. A bare `DOH`
+ * was the other candidate and is deliberately NOT here. It appears nowhere in this tree, so there
+ * is no house style to match, and in a regulatory sentence it reads as the STATE department at
+ * least as often as the city one, which is the agency the lookbehind above exists to keep out.
+ * Matching it would mean flagging the true SDOH attendance threshold on nothing but an acronym.
  */
 export const CITY_HEALTH_AGENCY_SOURCE =
-  "\\bDOHMH\\b|\\bDepartment of Health and Mental Hygiene\\b|\\bNYC Health\\b" +
+  "\\bDOHMH\\b|\\b(?:Department of )?Health (?:and|&) Mental Hygiene\\b|\\bNYC Health\\b" +
   "|(?<!State |State's |SDOH )\\b(?:Department of Health|Health Department)\\b";
 export const CITY_HEALTH_AGENCY = new RegExp(CITY_HEALTH_AGENCY_SOURCE, "i");
 
@@ -35,15 +43,29 @@ export const CITY_HEALTH_AGENCY = new RegExp(CITY_HEALTH_AGENCY_SOURCE, "i");
  * Phrases that name an attendee count outright, including the published intake field.
  *
  * The noun list is the SAME list `COUNTED_PEOPLE` declares, run through both phrasings this
- * repository uses ("the guest count", "the number of guests"). It was not, until the fifth PR #247
- * review round: `RSVPs` and `patrons` were declared count nouns in `COUNTED_PEOPLE` and appeared in
- * neither phrasing here, `head` appeared in one, and `people` and `person` were partial. So "the
- * RSVP count is a regulatory input driving the DOHMH thresholds", which is the pinned register
- * row's own sentence with one noun swapped, was missed by this expression and missed by
- * `COUNTED_PEOPLE` too, which requires a numeral those phrasings do not carry. That was a gap
- * INSIDE the declared vocabulary rather than one of the two declared misses. The 7-noun by
- * 2-phrasing grid is written out in `spec-conflict-resolutions.fixtures.test.mjs` and asserted
- * cell by cell, so a noun cannot be added to one expression and forgotten in the other again.
+ * repository uses ("the guest count", "the number of guests"). It was not, in either direction,
+ * and both directions were found by hand rather than by a test.
+ *
+ * The fifth PR #247 review round found it one way round: `RSVPs` and `patrons` were declared count
+ * nouns in `COUNTED_PEOPLE` and appeared in neither phrasing here, `head` appeared in one, and
+ * `people` and `person` were partial. So "the RSVP count is a regulatory input driving the DOHMH
+ * thresholds", the pinned register row's own sentence with one noun swapped, was missed here and
+ * missed by `COUNTED_PEOPLE` too, which requires a numeral those phrasings do not carry.
+ *
+ * The sixth round found the other way round, because fixing one direction is not checking the
+ * other: `persons` and `heads` were declared here and missing from BOTH alternatives of
+ * `COUNTED_PEOPLE`. So "DOHMH requires a temporary food-service permit for indoor assembly
+ * occupancies used by 75 persons or more" passed while the same sentence ending "75 or more guests"
+ * failed, on one noun swapped between two spellings this file declares as the same vocabulary. That
+ * phrasing is the BUILDING CODE'S OWN: `rules/nyc-rules.v2.11.json` quotes BC 303.7's "used or
+ * intended for use by 75 persons or more" in the published rule the sentence is about.
+ *
+ * Both were gaps INSIDE the declared vocabulary rather than either of the declared misses, and the
+ * anti-drift test did not hold because it was one-sided: the grid's claim strings carried no
+ * numeral, so `COUNTED_PEOPLE` could never fire in any of its cells. It is 7 nouns by THREE
+ * phrasings now, the third carrying the numeral, and the two noun lists are additionally asserted
+ * EQUAL AS SETS, derived from these two source strings rather than restated. Adding a noun to one
+ * expression and forgetting it in the other fails that assertion whether or not the grid grew.
  */
 export const ATTENDEE_COUNT_SOURCE =
   "(?:head|guest|attendee|people|person|rsvp|patron) ?count" +
@@ -60,8 +82,8 @@ export const ATTENDEE_COUNT = new RegExp(ATTENDEE_COUNT_SOURCE, "i");
  * list" carry no numeral and are not counts; "500 or more people" is one.
  */
 export const COUNTED_PEOPLE_SOURCE =
-  "\\b\\d{1,6} ?(?:or more |or fewer |\\+ ?)?(?:guests|attendees|people|RSVPs|patrons)\\b" +
-  "|\\b(?:guests|attendees|people|RSVPs|patrons)\\b[^.\\n]{0,40}?(?<![\\w-])\\d{1,6}(?![\\w-])";
+  "\\b\\d{1,6} ?(?:or more |or fewer |\\+ ?)?(?:guests|attendees|people|persons|heads|RSVPs|patrons)\\b" +
+  "|\\b(?:guests|attendees|people|persons|heads|RSVPs|patrons)\\b[^.\\n]{0,40}?(?<![\\w-])\\d{1,6}(?![\\w-])";
 export const COUNTED_PEOPLE = new RegExp(COUNTED_PEOPLE_SOURCE, "i");
 
 /**
@@ -166,6 +188,23 @@ export const OPT_OUT_EXTENSIONS = [".ts", ".tsx", ".mjs", ".js"];
  */
 export const OPT_OUT_MARKER = "guard: asserts-independence";
 
+/**
+ * The two options `scanFile` takes, for one repository-relative path.
+ *
+ * They answer two independent questions and are therefore derived from two lists. It lives here,
+ * rather than inline in the caller that walks the tree, because of the sixth PR #247 review round's
+ * item 2: both of the fifth round's fixes were single clauses inside a function local to
+ * `spec-conflict-resolutions.test.mjs`, nothing drove the selection, and reverting either one left
+ * the whole suite green. A selection that is a function of a path can be driven over a table of
+ * paths, which is what `spec-conflict-resolutions.fixtures.test.mjs` now does.
+ */
+export const scanOptionsFor = (relative) => ({
+  bounded:
+    BOUNDED_EXTENSIONS.some((extension) => relative.endsWith(extension)) &&
+    !UNBOUNDED_RECORD_FILES.includes(relative),
+  allowOptOut: OPT_OUT_EXTENSIONS.some((extension) => relative.endsWith(extension)),
+});
+
 /** Paragraphs, list items and table rows. A block ends where the next one begins. */
 export const blocksOf = (text) => {
   const blocks = [""];
@@ -179,6 +218,23 @@ export const blocksOf = (text) => {
 /** Whether a block is a prose paragraph rather than a list item or a table row. */
 export const isParagraph = (block) =>
   !/^[\s/*#-]*([-*+]\s|\d+\.\s|\|)/.test(block.trim().split("\n")[0] ?? "");
+
+/**
+ * Whether one block supplies the agency and the other supplies a `count` match, in either
+ * direction. THIS IS WHAT MAKES A PAIR A CROSS-BOUNDARY FINDING, and it is a stricter question
+ * than "does the concatenation pair", which was the sixth PR #247 review round's item 3.
+ *
+ * The concatenation pairs whenever EITHER block pairs on its own, so a pass built on it has to
+ * suppress the pairs around any block that already pairs alone or the same claim is reported three
+ * times. That suppression is what blanked the boundaries on both sides of every pinned record and
+ * of the opt-out block: a block whose own pairing is exempt still swallowed its two boundaries, so
+ * a count half planted in the paragraph after a pinned decision record was never read against the
+ * agency the pin names. Asking instead for one half on each side needs no suppression: a pair
+ * beside a self-pairing block is silent unless the neighbour really contributes the other half.
+ */
+const splitAcrossBoundary = (first, second, count) =>
+  (CITY_HEALTH_AGENCY.test(first) && count.test(second)) ||
+  (count.test(first) && CITY_HEALTH_AGENCY.test(second));
 
 /**
  * Whether one block pairs the city health agency with an attendee count.
@@ -197,6 +253,21 @@ export const pairsAgencyWithCount = (text, { bounded = false } = {}) =>
  *
  * Both sites this defect has actually taken were one block, but the reviewer's split injection put
  * the agency in one block and the count in the next and walked past a block-only scan.
+ *
+ * A PAIR IS A FINDING ONLY WHEN THE BOUNDARY CONTRIBUTES: one block supplies the agency and the
+ * other supplies the count (`splitAcrossBoundary` above). It used to be "the concatenation pairs",
+ * which is true whenever EITHER block pairs on its own, so the pass had to be suppressed around any
+ * self-pairing block to avoid reporting one claim three times. The sixth PR #247 round's item 3 is
+ * what that suppression cost: it blanked BOTH boundaries of every block whose own pairing is then
+ * exempted at the reporting site, which on this tree is 8 boundaries at the four pinned records and
+ * 2 at the live opt-out block in `apps/api/src/rsvps.test.ts`. A count half planted in the
+ * paragraph directly after the pinned 2026-08-03 decision record went unreported for that reason.
+ * A pin says "this exact text is present and unchanged"; it never said "and the two boundaries
+ * around it are not scanned".
+ *
+ * The opt-out is the same shape and gets the same treatment: it exempts the block it marks, which
+ * is the block whose author took on the obligation to assert the independence, and it does not
+ * exempt that block's boundaries with its neighbours.
  *
  * THE CROSS-BOUNDARY PASS HAS TWO TIERS, and which one applies is decided by the count vocabulary
  * rather than by the block kind:
@@ -222,19 +293,26 @@ export const pairsAgencyWithCount = (text, { bounded = false } = {}) =>
  * for the same measured reason it is kept inside a block there. Both halves of that are measured
  * over the whole tree rather than predicted:
  *
- *   - Dropping it in prose costs FOUR false positives, all adjacent pairs of unrelated true
- *     statements, and they are named and pinned in `BENIGN_ADJACENT_PAIRS` below with the reason
- *     each is two facts rather than one claim. `docs/VERIFICATION-SOURCES.md` items 8 and 9, the
+ *   - Dropping it in prose costs SIX false positives on this tree as of this commit, all adjacent
+ *     pairs of unrelated true statements, and they are named and pinned in `BENIGN_ADJACENT_PAIRS`
+ *     below with the reason each is two facts rather than one claim. Four were the fifth round's
+ *     measurement; the other two are the two boundaries of the pinned `specs/F-302` rationale
+ *     paragraph, which became visible when the sixth round stopped letting a pinned block swallow
+ *     them. Six is this tree, not a bound: see that list's header for the standing cost.
+ *     `docs/VERIFICATION-SOURCES.md` items 8 and 9, the
  *     candidate the fourth round named at 121 characters apart, is NOT among them: it is two
  *     numbered list items, so it is the ordinary-English tier, which the paragraph filter still
  *     excludes. That false positive was avoided by one character under the old bound and is
  *     avoided structurally now.
- *   - Dropping it in code as well would cost EIGHT more, seven adjacent pairs of `describe` and
- *     `it` blocks in `packages/engine/src/acceptance.test.ts` and one in `apps/api/src/plan.test.ts`,
- *     which is the same shape the in-block bound exists for: a fixture array or a case table puts
- *     an unrelated agency string and an unrelated headcount far apart with no claim between them,
- *     and an adjacent pair of them does it twice over. So the bound stays in code, minus the files
- *     `UNBOUNDED_RECORD_FILES` names.
+ *   - Dropping it in code as well would cost EIGHT more, re-measured this round and READ this
+ *     round rather than taken on the previous round's word: six adjacent `describe`/`it` pairs in
+ *     `packages/engine/src/acceptance.test.ts`, one adjacent pair in `apps/api/src/plan.test.ts`,
+ *     and the `CONF-NO-FOOD-001` case block that `BOUNDED_EXTENSIONS` above already names. Every
+ *     one of the eight is the shape the in-block bound exists for and carries no claim: the agency
+ *     appears as a rule ID being asserted on (`DOHMH-ORGANIZER-NOTIFY-001`) or as a citation
+ *     label, and the number is an `EventIntake` fixture's `headcount` field, in a neighbouring
+ *     literal with nothing but test scaffolding between them. So the bound stays in code, minus
+ *     the files `UNBOUNDED_RECORD_FILES` names.
  */
 export function scanFile(text, { bounded = false, allowOptOut = false } = {}) {
   const optedOut = (block) => allowOptOut && block.includes(OPT_OUT_MARKER);
@@ -248,23 +326,24 @@ export function scanFile(text, { bounded = false, allowOptOut = false } = {}) {
   for (let index = 0; index < blocks.length; index += 1) {
     const block = blocks[index];
     const next = blocks[index + 1];
-    if (optedOut(block)) continue;
-    if (pairsAgencyWithCount(block, { bounded })) {
-      flagged.push(block);
-    } else if (next !== undefined && !optedOut(next) && !pairsAgencyWithCount(next, { bounded })) {
-      const pair = `${block}\n${next}`;
-      const agency = CITY_HEALTH_AGENCY.test(pair);
-      const acrossAnyBlocks = bounded
-        ? AGENCY_NEAR_ATTENDEE_COUNT.test(pair)
-        : agency && ATTENDEE_COUNT.test(pair);
-      const acrossParagraphs =
-        isParagraph(block) &&
-        isParagraph(next) &&
-        (bounded
-          ? AGENCY_NEAR_ANY_COUNT.test(pair)
-          : agency && (ATTENDEE_COUNT.test(pair) || COUNTED_PEOPLE.test(pair)));
-      if (acrossAnyBlocks || acrossParagraphs) flagged.push(pair);
+    if (!optedOut(block) && pairsAgencyWithCount(block, { bounded })) {
+      flagged.push({ kind: "block", text: block });
     }
+    if (next === undefined) continue;
+    const pair = `${block}\n${next}`;
+    // The distance bound, where the file kind asks for it, is still measured over the pair. It is
+    // a NECESSARY condition here rather than the whole test: what makes a pair a cross-boundary
+    // finding is `splitAcrossBoundary`, and the bound only asks that the two halves also sit close
+    // enough together to be read as one claim.
+    const withinBound = (near) => !bounded || near.test(pair);
+    const acrossAnyBlocks =
+      splitAcrossBoundary(block, next, ATTENDEE_COUNT) && withinBound(AGENCY_NEAR_ATTENDEE_COUNT);
+    const acrossParagraphs =
+      isParagraph(block) &&
+      isParagraph(next) &&
+      splitAcrossBoundary(block, next, COUNTED_PEOPLE) &&
+      withinBound(AGENCY_NEAR_ANY_COUNT);
+    if (acrossAnyBlocks || acrossParagraphs) flagged.push({ kind: "pair", text: pair });
   }
   return flagged;
 }
@@ -349,8 +428,19 @@ export const HISTORICAL_RECORDS = [
 ];
 
 /**
- * THE MEASURED FALSE-POSITIVE COST of running the cross-boundary pass unbounded in prose: four
- * adjacent pairs, each two unrelated true statements that happen to sit next to each other.
+ * THE FALSE-POSITIVE COST of running the cross-boundary pass unbounded in prose, measured on this
+ * tree: SIX adjacent pairs as of this commit, each two unrelated true statements that happen to sit
+ * next to each other. AND ONE NEW ENTRY PER FUTURE ADJACENCY, which is the part the fourth and
+ * fifth rounds' "the measured cost is four" did not say and the sixth round's item 4 corrected.
+ *
+ * The six are a snapshot of this tree, not a bound on the design. Over the 50 scanned `.md` files
+ * (6,793 blocks) there are 85 blocks naming the city health agency, 81 of which carry no count, and
+ * 146 blocks carrying a count word. Any true, agency-free new block carrying a count word that
+ * lands beside one of those 81 is a seventh entry, and its author had nothing to do with either
+ * fact. That is the standing price of the pass, and the offender message in
+ * `spec-conflict-resolutions.test.mjs` has a branch that says so to whoever trips it: an entry here
+ * is an ordinary cost of the pass, unlike a fifth `HISTORICAL_RECORDS` pin, which is a governance
+ * action.
  *
  * They are a DIFFERENT KIND OF ENTRY from `HISTORICAL_RECORDS` and the difference matters. A
  * historical record is text that DOES carry the struck clause and is protected from editing by
@@ -403,6 +493,29 @@ export const BENIGN_ADJACENT_PAIRS = [
       "Two dated records that share a boundary and nothing else. The first names DOHMH while" +
       " describing what this guard checks; the second is the Parks special event permit threshold," +
       " a published Parks fact about guests that names no health agency. Two records, two agencies.",
+  },
+  {
+    file: "specs/F-302-rsvp-guest-list.md",
+    pair: "Acceptance Criterion 2 and the rationale paragraph under it",
+    anchor: "2. **Capacity-aware (amended 2026-08-03, product-owner approved,",
+    sha256: "4e569c5a64221d00f048a91f35f7608c39eeb63d47ab91e2829bc98ba5dd4dab",
+    why:
+      "The criterion names the pre-rename response key `headcount` and says in terms that admission" +
+      " never reads it; the block under it is the pinned historical rationale, which is where the" +
+      " agency name comes from. Both boundaries of that pin became visible in the sixth PR #247" +
+      " round, and this is one of them: the criterion carries no claim, and the pin's own words are" +
+      " protected and corrected elsewhere.",
+  },
+  {
+    file: "specs/F-302-rsvp-guest-list.md",
+    pair: "the pinned rationale paragraph and the rollout compatibility window under it",
+    anchor: "Admission was F-101 `headcount` until this amendment.",
+    sha256: "8c6745330d2a20ebcaf95045f0ac4a79bf3399c8323bdeb346ced3ecf13b59c1",
+    why:
+      "The pin's other boundary. The block under it is the 2026-08-05 rollout window, which names" +
+      " `event.headcount` as the pre-rename NAME a stale web build reads and states that it carries" +
+      " the enforced limit rather than the column. A deployment-order fact and a superseded" +
+      " rationale, sharing a boundary and no claim.",
   },
   {
     file: "specs/F-201-permit-plan-generator.md",

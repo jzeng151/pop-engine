@@ -5,14 +5,13 @@ import ts from "typescript";
 import { describe, expect, it } from "vitest";
 import {
   BENIGN_ADJACENT_PAIRS,
-  BOUNDED_EXTENSIONS,
   HISTORICAL_RECORDS,
   OPT_OUT_EXTENSIONS,
   OPT_OUT_MARKER,
-  UNBOUNDED_RECORD_FILES,
   blocksOf,
   pinnedDigest,
   scanFile,
+  scanOptionsFor,
 } from "./spec-conflict-scan.mjs";
 
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
@@ -505,8 +504,10 @@ describe("T-8 F-601/F-109 dependency-graph row, resolved 2026-08-05", () => {
  *    applies in `.ts` and `.tsx` files, in a block and across a boundary, but not in `.md` and not
  *    in the files `UNBOUNDED_RECORD_FILES` names.
  *
- *    Both dimensions were widened by the fourth PR #247 review round, and by the fifth, which
- *    found the fourth round's claim to have been wrong on both counts.
+ *    Both dimensions were widened by the fourth PR #247 review round, by the fifth, which found
+ *    the fourth round's claim to have been wrong on both counts, and by the sixth, which found the
+ *    fifth's lexical fix to have been one-sided and its structural one to have left every pinned
+ *    block's two boundaries unscanned.
  *
  *    The fourth round reported no fourth LEXICAL gap inside the declared vocabulary. There was
  *    one. `RSVPs` and `patrons` were declared count nouns in `COUNTED_PEOPLE` and appeared in
@@ -515,9 +516,16 @@ describe("T-8 F-601/F-109 dependency-graph row, resolved 2026-08-05", () => {
  *    is a regulatory input driving the DOHMH thresholds", which is the pinned register row's own
  *    sentence with one noun swapped; "DOHMH keys its temporary food-service permit on the number
  *    of RSVPs recorded at intake"; and "DOHMH requires a permit once the patron count reaches
- *    seventy-five". The 7-noun by 2-phrasing grid is now asserted cell by cell in
- *    `spec-conflict-resolutions.fixtures.test.mjs`, so the two expressions cannot drift apart
- *    again without a test saying so.
+ *    seventy-five". The FIFTH ROUND'S OWN FIX WAS ONE-SIDED, which the sixth round found: it added
+ *    the two nouns to `ATTENDEE_COUNT` and did not check the other direction, so `persons` and
+ *    `heads` stayed declared here and missing from `COUNTED_PEOPLE`, and "DOHMH requires a
+ *    temporary food-service permit for indoor assembly occupancies used by 75 persons or more"
+ *    passed while the same sentence ending "75 or more guests" failed. That is the Building Code's
+ *    own wording, quoted in the published ruleset. Nor could the anti-drift grid have caught it:
+ *    its fourteen cells carried no numeral, so `COUNTED_PEOPLE` never fired in any of them. The
+ *    grid is 7 nouns by THREE phrasings now, and the two noun lists are asserted EQUAL AS SETS,
+ *    derived from the two source strings rather than restated, in
+ *    `spec-conflict-resolutions.fixtures.test.mjs`.
  *
  *    The fourth round reported three STRUCTURAL gaps closed: a claim split across two register
  *    rows, across two bullets, and across two sentences of one paragraph. The third was closed.
@@ -540,6 +548,12 @@ describe("T-8 F-601/F-109 dependency-graph row, resolved 2026-08-05", () => {
  *        bare numerals near an agency mention was measured against this tree and flagged 52
  *        blocks, nearly all of them true deadline and rule-id facts ("notify DOHMH 30 days
  *        before"), so it is deliberately not done.
+ *      - "DOH requires a permit at 75 or more guests." The bare acronym. It names New York STATE's
+ *        department at least as readily as the city's in this domain, and the state department
+ *        publishes a real attendance threshold that this guard has already false-flagged once, so
+ *        the acronym is declared a miss rather than matched. The spelled-out name IS matched with
+ *        an ampersand and without the "Department of" prefix, added in the sixth round at a
+ *        measured cost of zero blocks on this tree.
  *      - Any paraphrase that names neither the agency forms below nor a count phrase below.
  *
  *    Semantic or model-based detection would be a different project and is out of scope here.
@@ -572,11 +586,14 @@ describe("T-8 F-601/F-109 dependency-graph row, resolved 2026-08-05", () => {
  *    because the guard reads co-occurrence and not stance. The repository's correction records are
  *    written without the pairing for that reason, naming the intake field as "the F-101 intake
  *    field" where they discuss DOHMH, and a future correction has to do the same or be pinned.
- *    Against the tree as it stands the co-occurrence flags EIGHT blocks: the four pinned
- *    historical records, and the four adjacent pairs `BENIGN_ADJACENT_PAIRS` names, which are the
- *    measured price of running the cross-boundary pass unbounded in prose. Each of those four is
- *    two unrelated true statements sharing a boundary, and one of them is the correction record
- *    itself.
+ *    Against the tree as it stands the co-occurrence flags TEN blocks: the four pinned historical
+ *    records, and the six adjacent pairs `BENIGN_ADJACENT_PAIRS` names, which are the price of
+ *    running the cross-boundary pass unbounded in prose. Each of those six is two unrelated true
+ *    statements sharing a boundary, and one of them is the correction record itself. Six is what
+ *    THIS TREE has as of this commit and not what the design costs: any true, agency-free new block
+ *    carrying a count word that lands beside one of the 81 count-free blocks that name the agency
+ *    is a seventh, and its author had nothing to do with either fact. That is stated at that list
+ *    and in the offender failure message rather than left for a contributor to discover.
  *
  *    The block, not the sentence, is the unit: both of the sites this defect has actually taken (a
  *    dated BASELINE paragraph and a register table row) carried the count and the agency in
@@ -750,7 +767,7 @@ describe("no DOHMH rule is attributed to headcount, removed 2026-08-05 (#235)", 
   });
 
   /** Every block of one tracked file, flagged or not. */
-  const blocksOfFile = (file) => blocksOf(read(file)).map((block) => ({ relative: file, block }));
+  const blocksOfFile = (file) => blocksOf(read(file)).map((text) => ({ relative: file, text }));
 
   /**
    * Every block in the tree that pairs the city health agency with an attendee count, within one
@@ -768,20 +785,11 @@ describe("no DOHMH rule is attributed to headcount, removed 2026-08-05 (#235)", 
     const flagged = [];
     for (const path of filesUnder(SCANNED_ROOTS, [".md", ".ts", ".tsx", ".mjs", ".js"])) {
       const relative = path.replace(`${repoRoot}/`, "");
-      // Two independent questions, answered by two lists since the fifth PR #247 round. The bound
-      // is for file kinds whose blocks are machine-shaped, minus the files a correction record
-      // says the clause stays out of; the opt-out is for every code file, because a guard fixture
-      // under `scripts/` needs the same remedy a guard fixture under `packages/` has.
-      const bounded =
-        BOUNDED_EXTENSIONS.some((extension) => relative.endsWith(extension)) &&
-        !UNBOUNDED_RECORD_FILES.includes(relative);
-      const allowOptOut = OPT_OUT_EXTENSIONS.some((extension) => relative.endsWith(extension));
-      for (const block of scanFile(readFileSync(path, "utf8"), {
-        bounded,
-        allowOptOut,
-      })) {
-        flagged.push({ relative, block });
-      }
+      // Two independent questions, answered by two lists since the fifth PR #247 round, and
+      // answered in `scanOptionsFor` rather than here since the sixth: both of those answers were
+      // one clause of this function, and reverting either left the whole suite green.
+      const found = scanFile(readFileSync(path, "utf8"), scanOptionsFor(relative));
+      for (const item of found) flagged.push({ relative, ...item });
     }
     return flagged;
   }
@@ -812,14 +820,14 @@ describe("no DOHMH rule is attributed to headcount, removed 2026-08-05 (#235)", 
       // has nothing to do with whether the prose scan ran: `flaggedBlocks()` returns nothing at
       // all once a published ruleset keys a health rule on the attendee count, and reading
       // presence from it reported four deleted approvals when a ruleset changed and docs did not.
-      const byAnchor = blocksOfFile(pin.file).filter((item) => item.block.includes(pin.anchor));
+      const byAnchor = blocksOfFile(pin.file).filter((item) => item.text.includes(pin.anchor));
       expect(byAnchor.length, pinFailure(pin, "is missing from the file")).toBeGreaterThan(0);
       // EXACTLY once. A pin says one specific historical record is present unchanged; it does not
       // license a second copy of it. The offender scan below cannot catch that on its own, because
       // it matches a pin by file and digest and a byte-identical duplicate matches both.
       expect(byAnchor.length, pinFailure(pin, "appears more than once in the file")).toBe(1);
       expect(
-        pinnedDigest(pin, byAnchor[0].block),
+        pinnedDigest(pin, byAnchor[0].text),
         pinFailure(pin, "no longer matches its pinned digest, so its wording has changed"),
       ).toBe(pin.sha256);
     }
@@ -827,16 +835,29 @@ describe("no DOHMH rule is attributed to headcount, removed 2026-08-05 (#235)", 
 
   /** Whether a flagged item matches one of `pins`, by file and by digest. */
   const matches = (pins) => (item) =>
-    pins.some((pin) => pin.file === item.relative && pinnedDigest(pin, item.block) === pin.sha256);
+    pins.some((pin) => pin.file === item.relative && pinnedDigest(pin, item.text) === pin.sha256);
 
   // Each benign pair is asserted to still be flagged. An exemption that has stopped being needed
   // is an unexamined exemption, and this is what stops the list growing into one: if an edit
   // separates the two blocks or removes the co-occurrence, this fails and the entry comes out.
   it("every measured benign adjacent pair is still exactly one flagged pair", () => {
     const flagged = flaggedBlocks();
+    // `flaggedBlocks()` returns nothing at all once a published ruleset keys a DOHMH rule on the
+    // attendee count, so on that commit all six entries below fail at once, with a message about
+    // edits separating blocks that no edit made. `HISTORICAL_RECORDS` reads the raw files to avoid
+    // exactly this; the benign list cannot, because what it pins is a SCAN RESULT rather than a
+    // record. The failure is still the right one to have (it lands beside the ruleset hard-fail
+    // above, which is the real news), so the fix is to say which failure this is rather than to
+    // suppress it.
+    const scanIsOff = aHealthRuleReadsTheAttendeeCount()
+      ? "\nNOTE: a published ruleset now keys a DOHMH rule on the attendee count, so the prose scan" +
+        " short-circuits to nothing and EVERY entry in this list fails together. Nothing separated" +
+        " these blocks. Read the sibling assertion 'no published ruleset keys a DOHMH rule on an" +
+        " attendee count' first; that is the change, and this list follows from it."
+      : "";
     for (const pin of BENIGN_ADJACENT_PAIRS) {
       const matched = flagged.filter(
-        (item) => item.relative === pin.file && pinnedDigest(pin, item.block) === pin.sha256,
+        (item) => item.relative === pin.file && pinnedDigest(pin, item.text) === pin.sha256,
       );
       expect(
         matched.length,
@@ -845,7 +866,8 @@ describe("no DOHMH rule is attributed to headcount, removed 2026-08-05 (#235)", 
           "If an edit separated the two blocks or changed either one's wording, read the pair" +
           " again. If it is still two facts rather than one claim, recompute the digest in the" +
           " same commit and say what moved. If it is now a claim, the claim is the thing to" +
-          " remove. Do not add an entry here to quiet a live claim.",
+          " remove. Do not add an entry here to quiet a live claim." +
+          scanIsOff,
       ).toBe(1);
     }
   });
@@ -860,16 +882,37 @@ describe("no DOHMH rule is attributed to headcount, removed 2026-08-05 (#235)", 
     // this round's reading that two adjacent blocks are two facts. Both are pinned by digest.
     const isPinned = matches(HISTORICAL_RECORDS);
     const isBenign = matches(BENIGN_ADJACENT_PAIRS);
-    const offenders = flaggedBlocks()
-      .filter((item) => !isPinned(item) && !isBenign(item))
-      .map((item) => `${item.relative}: ${item.block.replace(/\s+/g, " ").trim().slice(0, 200)}`);
+    const unexplained = flaggedBlocks().filter((item) => !isPinned(item) && !isBenign(item));
+    const offenders = unexplained.map(
+      (item) =>
+        `${item.relative} (${item.kind}): ${item.text.replace(/\s+/g, " ").trim().slice(0, 200)}`,
+    );
+
+    // A NEW ADJACENT PAIR is its own failure, and it gets its own paragraph. The sixth PR #247
+    // round's item 4 is why: a legitimate new Parks record inserted next to a block that names the
+    // health agency fails this assertion, neither block carries a claim, and the message a
+    // contributor got sent them to the pinned historical records, which have nothing to do with
+    // their edit. `BENIGN_ADJACENT_PAIRS`'s four entries are the adjacencies THIS TREE has, not a
+    // bound on what it can have: any new block carrying a count word that lands beside one of the
+    // 81 count-free blocks naming the agency is a fifth.
+    const newPair = unexplained.some((item) => item.kind === "pair");
 
     expect(
       offenders,
       "no DOHMH rule reads headcount, so nothing may say one does. The four historical records" +
         " that carry the struck clause are pinned above and corrected by the 2026-08-05 record in" +
         " docs/BASELINE.md; these are not those:\n" +
-        offenders.join("\n"),
+        offenders.join("\n") +
+        (newPair
+          ? "\n\nAn entry marked (pair) is TWO ADJACENT BLOCKS, and neither one need carry a" +
+            " claim: this scan reads co-occurrence across a boundary, so one block naming the" +
+            " agency beside another carrying a count word is enough. If you added or moved a" +
+            " block, the first thing to check is whether your block and its NEIGHBOUR are two" +
+            " unrelated facts. If they are, the remedy is to separate them, or to add an entry to" +
+            " BENIGN_ADJACENT_PAIRS in scripts/spec-conflict-scan.mjs saying why, with the pair's" +
+            " digest. That entry is an ordinary cost of this pass, not a governance action; a" +
+            " fifth HISTORICAL_RECORDS pin is the one that is."
+          : ""),
     ).toEqual([]);
   });
 
