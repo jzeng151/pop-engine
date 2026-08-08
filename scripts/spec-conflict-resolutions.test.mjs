@@ -494,9 +494,10 @@ describe("T-8 F-601/F-109 dependency-graph row, resolved 2026-08-05", () => {
  *    way of saying this. The claim can be made in words none of them match.
  *
  *    STRUCTURALLY, by where the words sit. The unit is the BLOCK, a paragraph or a list item or a
- *    table row READ AS ONE LINE OF PROSE (`normalizeForMatching`: the line breaks, the comment
- *    leaders that follow them and the emphasis and inline-code markers are normalized away before
- *    matching, and never for a digest), plus one boundary: two ADJACENT blocks are also scanned as
+ *    table row READ AS ONE LINE OF PROSE (`normalizeForMatching`: the line breaks, the comment and
+ *    blockquote leaders that follow them, and the inline-code, BOTH emphasis, strikethrough and
+ *    link-bracket markers are normalized away before matching, and never for a digest), plus one
+ *    boundary: two ADJACENT blocks are also scanned as
  *    a pair. So the claim is
  *    caught when its two halves share a block or sit in neighbouring ones, and a phrasing this
  *    scan matches lexically still goes past when its halves are separated by a third block. Two
@@ -555,8 +556,9 @@ describe("T-8 F-601/F-109 dependency-graph row, resolved 2026-08-05", () => {
  *        department at least as readily as the city's in this domain, and the state department
  *        publishes a real attendance threshold that this guard has already false-flagged once, so
  *        the acronym is declared a miss rather than matched. The spelled-out name IS matched with
- *        an ampersand and without the "Department of" prefix, added in the sixth round at a
- *        measured cost of zero blocks on this tree.
+ *        an ampersand, added in the sixth round at a measured cost of zero blocks on this tree, and
+ *        with or without the "Department of" prefix, which needs no alternative of its own because
+ *        the expression is unanchored: the eighth round removed the optional group it had.
  *      - "DOHMH keys the permit on the guest-count threshold." The hyphenated compound. Matching it
  *        costs a false positive on the correction record itself, which writes "the attendee-count
  *        intake field" while DENYING the attribution, so it is declared rather than closed. The
@@ -575,10 +577,20 @@ describe("T-8 F-601/F-109 dependency-graph row, resolved 2026-08-05", () => {
  *    spaces and this tree's prose is hard-wrapped, so a line break inside a count phrase walked
  *    past everything. `spec-conflict-resolutions.fixtures.test.mjs` generates the declared
  *    vocabulary over the artifacts' real formatting now, the seven nouns by the three phrasings by
- *    wrapped-at-this-tree's-`printWidth`, inline code, bold and hyphenated, and asserts that the
- *    cases which miss are EXACTLY the hyphenated compound named above. A fourth phrasing inside the
- *    vocabulary quietly stopping being caught fails there, and this list only has to be kept honest
- *    about what sits outside the vocabulary.
+ *    the formatting axis, and asserts that the cases which miss are EXACTLY the hyphenated compound
+ *    named above. A fourth phrasing inside the vocabulary quietly stopping being caught fails
+ *    there, and this list only has to be kept honest about what sits outside the vocabulary.
+ *
+ *    THE CORPUS'S FORMATTING AXIS IS ITSELF MEASURED NOW, which is the EIGHTH round's item 2 and
+ *    the lesson of the eighth round rather than a detail of it. The seventh round's corpus header
+ *    said "THE FORMATTINGS ARE THE TREE'S, MEASURED" and listed three; what had been measured was
+ *    line WIDTHS, and the inline MARKERS were enumerated from memory as "inline code and bold" and
+ *    then checked against themselves. So the corpus could only exercise the two markers the
+ *    normalization already stripped, and the tree's own underscore emphasis (88 spans in 14 scanned
+ *    files), strikethrough (21 in 6, including the pinned register row) and bracketed links (31 in
+ *    12) were in none of its 1,371 cases and defeated the guard. The axis is counted out of the
+ *    scanned roots now, singles and nested pairs alike, and the completeness claim runs over what
+ *    was counted rather than over what was remembered.
  *
  *    Semantic or model-based detection would be a different project and is out of scope here.
  *

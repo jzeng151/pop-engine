@@ -1,4 +1,4 @@
-import { readFileSync } from "node:fs";
+import { readFileSync, readdirSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
@@ -207,7 +207,14 @@ describe("pairsAgencyWithCount", () => {
     expect(pairsAgencyWithCount("DOHMH publishes the guest list requirements.")).toBe(false);
   });
 
-  it("flags the agency's spelled-out name with an ampersand and without the prefix", () => {
+  /**
+   * ITEM 3 of the eighth PR #247 round, in the half that is about the agency expression. This case
+   * was named "with an ampersand AND WITHOUT THE PREFIX" and asserted on strings that matched
+   * identically whether or not `(?:Department of )?` was there, because the alternation is
+   * unanchored. It names the ampersand, which is the half its assertions can distinguish: the
+   * ampersand really is the difference between a match and no match.
+   */
+  it("flags the agency's spelled-out name with an ampersand", () => {
     expect(
       pairsAgencyWithCount("The Health & Mental Hygiene permit turns on the guest count."),
     ).toBe(true);
@@ -217,6 +224,23 @@ describe("pairsAgencyWithCount", () => {
     expect(pairsAgencyWithCount("Health and Mental Hygiene reads the attendance figure.")).toBe(
       true,
     );
+  });
+
+  /**
+   * ITEM 2 of the eighth PR #247 round, in the half that is about the "number of" phrasing. One
+   * adjective inserted into the declared phrase walked past, and the phrase now takes up to two
+   * words of modifier. The third case is the bound: three words is not one noun phrase here.
+   */
+  it("flags an adjective inserted into the declared 'number of' phrase", () => {
+    expect(
+      pairsAgencyWithCount("DOHMH keys the permit on the number of confirmed guests at intake."),
+    ).toBe(true);
+    expect(
+      pairsAgencyWithCount("DOHMH keys the permit on the number of confirmed adult guests."),
+    ).toBe(true);
+    expect(
+      pairsAgencyWithCount("DOHMH keys the permit on the number of confirmed paying adult guests."),
+    ).toBe(false);
   });
 
   it("does not flag New York STATE's department, whose threshold is published", () => {
@@ -327,6 +351,29 @@ describe("scanFile: the cross-boundary pass, at the artifacts' real width", () =
     expect(flagged[1].text).toContain(planted);
   });
 
+  /**
+   * ITEM 4 of the eighth PR #247 round. The two `isParagraph` guards on the ordinary-English tier
+   * were individually undriven: deleting EITHER one left the whole suite green, because both
+   * existing negatives put two blocks of the SAME non-paragraph kind side by side, so the surviving
+   * check still suppressed them. Nothing covered a MIXED adjacency, which is the case the tier
+   * split is specifically about: a paragraph naming the agency beside the bullet under it.
+   *
+   * Both directions, because each direction drives one of the two checks. The count half is the
+   * ordinary-English one; the outright phrases pair across blocks of any kind by design.
+   */
+  it("item 4: does not pair a paragraph with the bullet under it, or a bullet with the paragraph under it", () => {
+    const agency = "DOHMH publishes the temporary food-service permit for an indoor event.";
+    const count = "The assembly gate opens at 75 or more guests recorded at intake.";
+    expect(scanFile(`${agency}\n\n- ${count}`)).toEqual([]);
+    expect(scanFile(`- ${agency}\n\n${count}`)).toEqual([]);
+    // Neither block pairs on its own, so the empty result above is the boundary and nothing else.
+    expect(pairsAgencyWithCount(agency)).toBe(false);
+    expect(pairsAgencyWithCount(count)).toBe(false);
+    // And the same two halves between two PARAGRAPHS are a finding, so the fixture is measuring
+    // the block kinds rather than a claim that failed to be a claim.
+    expect(scanFile(`${agency}\n\n${count}`)).toHaveLength(1);
+  });
+
   it("does not pair blocks that a third block separates", () => {
     const separated = [
       "F-101 `headcount` is a regulatory input.",
@@ -433,6 +480,111 @@ describe("scanFile: a block is read as one line of prose", () => {
       "// count recorded at intake.",
     ].join("\n");
     expect(scanFile(lineComment, { bounded: true, allowOptOut: true })).toHaveLength(1);
+  });
+
+  /**
+   * ITEM 1 of the EIGHTH PR #247 review round. The normalization stripped `` ` `` and `*` and
+   * called them "the emphasis and inline-code markers". Markdown has two emphasis markers and this
+   * tree writes the other one: 88 underscore-emphasis spans in 14 scanned files, against 94
+   * asterisk spans, and `prettier` rewrites `*italic*` into `_italic_` whenever `pnpm format` runs.
+   *
+   * The first case is the record the eighth round planted as the newest dated record in the real
+   * `docs/BASELINE.md`, verbatim. It added ZERO flags; the same record with the two underscores
+   * removed added one. Two characters were the whole difference.
+   */
+  const UNDERSCORED_RECORD = [
+    "**Decision 2026-08-07 (product owner, issue #248, DOHMH indoor assembly threshold):** the temporary",
+    "food-service permit and the organizer notification DOHMH publishes for an indoor event are keyed on",
+    "the number of _guests_ recorded at intake, not on the vendor count, so raising an RSVP cap moves the",
+    "permit findings.",
+  ].join("\n");
+
+  it("item 1: flags the planted record whose count noun carries underscore emphasis", () => {
+    expect(scanFile(UNDERSCORED_RECORD)).toHaveLength(1);
+    // The control the eighth round ran beside it: the same record with the emphasis removed. Both
+    // are flagged now, and the point of the pair is that the guard no longer tells them apart.
+    expect(scanFile(UNDERSCORED_RECORD.replace(/_guests_/, "guests"))).toHaveLength(1);
+  });
+
+  /**
+   * `_` is a WORD CHARACTER, which is why underscore emphasis was worse than asterisk emphasis
+   * rather than equal to it. `COUNTED_PEOPLE` anchors its noun list on `\b`, so the emphasis
+   * defeated it even wrapping the WHOLE phrase, where the asterisk form was caught all along.
+   */
+  it("item 1: underscore emphasis around a whole counted phrase is a count", () => {
+    const claim = (phrase) => `DOHMH requires a temporary food-service permit above ${phrase}.`;
+    expect(pairsAgencyWithCount(claim("_75 or more guests_"))).toBe(true);
+    expect(pairsAgencyWithCount(claim("__75 or more guests__"))).toBe(true);
+    expect(pairsAgencyWithCount(claim("*75 or more guests*"))).toBe(true);
+  });
+
+  it("item 1: flags a struck-through and a linked count phrase", () => {
+    // The marker sits INSIDE the phrase, which is what makes the case about the marker: tildes
+    // around the whole sentence leave "number of guests" contiguous and were caught all along.
+    expect(
+      pairsAgencyWithCount("DOHMH keys the permit on the number of ~~guests~~ at intake."),
+    ).toBe(true);
+    expect(
+      pairsAgencyWithCount(
+        "DOHMH keys the permit on the number of [guests](https://example.invalid) at intake.",
+      ),
+    ).toBe(true);
+  });
+
+  /**
+   * AN EXPECTED COST rather than a design property, and the eighth round measured it before taking
+   * it. Stripping `_` normalizes a snake_case identifier: `guest_count` becomes `guestcount`, which
+   * `(?:guest) ?count` matches, so a code block naming the agency beside such a field is flagged
+   * with no claim in it. It costs nothing on this tree, where the flag set is byte-identical at ten
+   * entries with `_` stripped, and it is a live cost the day a field of that name is introduced.
+   */
+  it("item 1: EXPECTED COST — a snake_case field normalizes into the count vocabulary", () => {
+    const block = [
+      "// DOHMH publishes the temporary food-service permit for an indoor event.",
+      "const guest_count = intake.guests.length;",
+    ].join("\n");
+    expect(scanFile(block, { bounded: true, allowOptOut: true })).toHaveLength(1);
+    // The same block with the field spelled as one word carries no count and is not flagged, so
+    // what the case measures is the underscore and nothing else.
+    expect(
+      scanFile(block.replace("guest_count", "guestTotal"), { bounded: true, allowOptOut: true }),
+    ).toEqual([]);
+  });
+
+  /**
+   * A markdown HARD LINE BREAK is two spaces before the newline, and `docs/DOCUMENTATION-
+   * GOVERNANCE.md` line 3 plus four other scanned files carry one. The line break used to be
+   * normalized to a space with the two spaces left in front of it, so the phrase read
+   * "guest   count" and the expressions join their words with one space. CRLF was the same defect
+   * with a different character left behind.
+   */
+  it("item 1: flags a count phrase split by a markdown hard line break", () => {
+    const hardBreak =
+      "DOHMH publishes the permit for an indoor event keyed on the guest  \ncount recorded at intake.";
+    expect(hardBreak).toContain("guest  \n");
+    expect(scanFile(hardBreak)).toHaveLength(1);
+  });
+
+  it("item 1: flags a count phrase split by a CRLF line ending", () => {
+    const crlf =
+      "DOHMH publishes the permit for an indoor event keyed on the guest\r\ncount recorded at intake.";
+    expect(scanFile(crlf)).toHaveLength(1);
+  });
+
+  /**
+   * ITEM 3 of the eighth PR #247 round, in the half that is about the `>` leader. The blockquote
+   * alternative in the normalization was undriven: narrowing `(?:\/\/|>)?` to `(?:\/\/)?` left the
+   * whole suite green, because nothing exercised a count phrase inside a blockquote continuation.
+   * A `>` line is not a bullet or a row to `blocksOf`, so a quoted paragraph is one block and its
+   * wrapped continuation carries the leader into the middle of the phrase.
+   */
+  it("item 3: flags a count phrase wrapped inside a blockquote continuation", () => {
+    const quoted = [
+      "> DOHMH publishes the temporary food-service permit for an indoor event keyed on the guest",
+      "> count recorded at intake.",
+    ].join("\n");
+    expect(blocksOf(quoted).filter((block) => block.trim() !== "")).toHaveLength(1);
+    expect(scanFile(quoted)).toHaveLength(1);
   });
 
   /**
@@ -722,8 +874,12 @@ describe("the count vocabulary: 7 nouns by 3 phrasings, every cell asserted", ()
         nounsIn(ATTENDEE_COUNT_SOURCE, /\(\?:([^)]+)\) \?count/),
       ],
       [
+        // The `(?:[a-z]+ ){0,2}?` modifier window sits between "number of" and the noun list, so
+        // the pattern steps over it explicitly rather than taking the first group it finds. Taking
+        // the first group is what a `[^)]+` after "number of" would do, and it would then compare
+        // the modifier window against the noun list and fail with the window's own text.
         "ATTENDEE_COUNT, the 'number of' phrasing",
-        nounsIn(ATTENDEE_COUNT_SOURCE, /number of \(\?:([^)]+)\)/),
+        nounsIn(ATTENDEE_COUNT_SOURCE, /number of \(\?:\[a-z\]\+ \)\{0,2\}\?\(\?:([^)]+)\)/),
       ],
       [
         "COUNTED_PEOPLE, numeral first",
@@ -775,7 +931,8 @@ describe("the count vocabulary: 7 nouns by 3 phrasings, every cell asserted", ()
 });
 
 /**
- * ITEM 2 of the seventh PR #247 review round: the disclosure is DERIVED now, not declared.
+ * ITEM 2 of the seventh PR #247 review round: the disclosure is DERIVED, not declared. ITEM 2 of
+ * the EIGHTH: so is the axis it is derived over.
  *
  * Everything above measures one declaration against another. The grid drives cells someone wrote
  * down; the set equality compares two source strings with each other; the expected misses assert
@@ -784,25 +941,149 @@ describe("the count vocabulary: 7 nouns by 3 phrasings, every cell asserted", ()
  * rounds: "75 or more guests" is a cell of the grid above, and the same words with one newline in
  * them, in a real dated record in `docs/BASELINE.md`, added no flag.
  *
- * So the corpus is GENERATED: the seven declared nouns, by the three declared phrasings, by the
- * formattings this tree's own text uses, and the miss set is READ OFF the result rather than
- * written down. A fourth phrasing inside the declared vocabulary that stops being caught fails
- * `DECLARED_CORPUS_MISSES` below, which is the failure the "EXACTLY THREE" mechanism cannot have.
+ * The seventh round's corpus fixed half of that and its header said so in words it had not earned.
+ * "THE FORMATTINGS ARE THE TREE'S, MEASURED" listed three, and what had actually been measured was
+ * line WIDTHS: 4,658 of 11,762 non-blank markdown lines at 90 to 105 characters. The inline MARKERS
+ * were remembered ("inline code and bold") and then checked against themselves, so the corpus could
+ * only ever exercise the two markers the normalization already stripped. Underscore emphasis,
+ * strikethrough and bracketed links were all in the tree and in none of the 1,371 cases.
  *
- * THE FORMATTINGS ARE THE TREE'S, MEASURED:
+ * SO THE FORMATTING AXIS IS COUNTED OUT OF THE TREE, the way the width axis already was. `MARKUP`
+ * below is a list of CANDIDATE constructs, each carrying both the wrapper the corpus generates and
+ * a detector for the same construct in real text; `measure()` counts the detector's hits over the
+ * same roots and extensions the offender scan walks, and only the constructs with a hit become
+ * corpus axes. Combinations are the same question asked of nested pairs, and there the filter does
+ * real work: 6 of the 42 ordered pairs occur, and 36 do not.
  *
- *   - Wrapped. `.prettierrc` sets `printWidth` 100 and no `proseWrap`, so prose wrapping defaults
- *     to `preserve` and is author-controlled. Of this tree's 11,762 non-blank markdown lines, 4,658
- *     (39.6%) are 90 to 105 characters wide and the median is 95, so the corpus greedy-wraps at 100
- *     and slides the phrase across 60 column positions to put the break in every place it can fall.
- *   - Inline code and bold, around the count phrase and around its final noun. This repository
- *     writes `headcount` in backticks throughout.
- *   - The hyphenated compound, for the phrasing that has one.
+ * WHAT WAS MEASURED ON THIS COMMIT, occurrences and then files:
  *
- * IT IS NOT SAMPLED. The whole cross-product is 1,371 cases of a few regular expressions over short
- * strings, which runs in milliseconds; there is nothing to trade off, so nothing is dropped.
+ *     inline code           10,532 / 183      bold                          2,574 / 58
+ *     emphasis, asterisk        94 / 33       emphasis, underscore             88 / 14
+ *     link                      31 / 12       bold, underscores                29 / 12
+ *     strikethrough             21 /  6
+ *
+ *     bold of inline code       52 /  6       inline code of bold               7 /  3
+ *     strikethrough of bold      4 /  3       link of inline code               2 /  2
+ *     inline code of bold, underscores   1 / 1     inline code of emphasis, asterisk   1 / 1
+ *
+ * Two of those numbers are the round's own finding: underscore emphasis at 88 in 14 files against
+ * asterisk emphasis at 94 in 33, and strikethrough at 21 in 6 including the PINNED REGISTER ROW,
+ * whose subject cell is struck through. Neither was in the corpus, and both defeated the guard.
+ *
+ * THE WIDTH AXIS IS UNCHANGED and is stated here with its measurement, as before. `.prettierrc`
+ * sets `printWidth` 100 and no `proseWrap`, so prose wrapping defaults to `preserve` and is
+ * author-controlled; 4,658 of this tree's 11,762 non-blank markdown lines are 90 to 105 characters
+ * wide and the median is 95, so the corpus greedy-wraps at 100 and slides the phrase across 60
+ * column positions to put the break in every place it can fall.
+ *
+ * IT IS NOT SAMPLED. The whole cross-product is a few thousand cases of a few regular expressions
+ * over short strings, which runs in milliseconds; there is nothing to trade off, so nothing is
+ * dropped.
  */
 describe("the declared vocabulary, over the formatting the artifacts really use", () => {
+  /**
+   * The scanned tree, read once. It is walked here rather than imported from
+   * `spec-conflict-resolutions.test.mjs`, which has the same walk: importing anything out of a
+   * `*.test.mjs` file re-registers that file's suites inside this file's collection, which is the
+   * constraint `spec-conflict-scan.mjs`'s header states. It is not moved INTO that module either,
+   * because that module is pure by contract and takes every input as a string.
+   */
+  const scannedTexts = (() => {
+    const SKIPPED = new Set(["node_modules", "dist", "coverage", ".next"]);
+    const EXTENSIONS = [".md", ".ts", ".tsx", ".mjs", ".js"];
+    const matches = (name) => EXTENSIONS.some((extension) => name.endsWith(extension));
+    const found = [];
+    const walk = (dir) => {
+      for (const entry of readdirSync(dir, { withFileTypes: true })) {
+        if (SKIPPED.has(entry.name)) continue;
+        const path = resolve(dir, entry.name);
+        if (entry.isDirectory()) walk(path);
+        else if (matches(entry.name)) found.push(path);
+      }
+    };
+    for (const root of ["docs", "specs", "apps", "packages", "rules", "scripts"])
+      walk(resolve(repoRoot, root));
+    for (const entry of readdirSync(repoRoot, { withFileTypes: true }))
+      if (!entry.isDirectory() && matches(entry.name)) found.push(resolve(repoRoot, entry.name));
+    return found.map((path) => readFileSync(path, "utf8"));
+  })();
+
+  /** A run of one line carrying a letter and none of the delimiters wrapped around it. */
+  const SPAN = (delimiters) => `(?=[^\\n]{0,120}?[A-Za-z])[^\\n${delimiters}]{1,120}?`;
+  const HREF = "https://example.invalid";
+
+  /**
+   * The CANDIDATE inline constructs. Each carries the wrapper the corpus generates and a detector
+   * for the same construct in real text, with `@` standing for whatever the construct wraps.
+   *
+   * The two are written out separately, which is the shape this round is about, so they are tied
+   * together by an assertion rather than by trust: "every candidate's detector matches its own
+   * wrapper" below drives each wrapper through its own detector. The detectors carry the
+   * disambiguation a wrapper does not need: `*` must not match the inside of `**`, and `_` must not
+   * match inside an identifier, or `__fixtures__` and every `a * b` would be counted as emphasis.
+   */
+  const MARKUP = [
+    { name: "inline code", wrap: (t) => `\`${t}\``, detect: "`@`", inside: "`" },
+    { name: "bold", wrap: (t) => `**${t}**`, detect: "\\*\\*@\\*\\*", inside: "*" },
+    {
+      name: "bold, underscores",
+      wrap: (t) => `__${t}__`,
+      detect: "(?<![A-Za-z0-9_])__@__(?![A-Za-z0-9_])",
+      inside: "_",
+    },
+    {
+      name: "emphasis, underscore",
+      wrap: (t) => `_${t}_`,
+      detect: "(?<![A-Za-z0-9_])_@_(?![A-Za-z0-9_])",
+      inside: "_",
+    },
+    {
+      name: "emphasis, asterisk",
+      wrap: (t) => `*${t}*`,
+      detect: "(?<![*A-Za-z0-9])\\*@\\*(?!\\*)",
+      inside: "*",
+    },
+    { name: "strikethrough", wrap: (t) => `~~${t}~~`, detect: "~~@~~", inside: "~" },
+    // The detector stops at the opening parenthesis: the corpus generates one href and the tree
+    // carries hundreds, and what is being counted is the bracketed span, not the target.
+    { name: "link", wrap: (t) => `[${t}](${HREF})`, detect: "\\[@\\]\\(", inside: "\\[\\]" },
+  ];
+
+  /** How many times a construct occurs in the scanned tree, and in how many files. */
+  const measure = (detect, inside) => {
+    const pattern = new RegExp(detect.replace("@", SPAN(inside)), "g");
+    let occurrences = 0;
+    let files = 0;
+    for (const text of scannedTexts) {
+      const found = text.match(pattern);
+      if (found) {
+        occurrences += found.length;
+        files += 1;
+      }
+    }
+    return { occurrences, files };
+  };
+
+  /** The single constructs the tree really uses, in the order `MARKUP` declares them. */
+  const SINGLES = MARKUP.map((markup) => ({
+    ...markup,
+    ...measure(markup.detect, markup.inside),
+  })).filter(({ occurrences }) => occurrences > 0);
+
+  /**
+   * The nested pairs the tree really uses. This is where the measurement changes the corpus rather
+   * than confirming it: 6 of the 42 ordered pairs occur and the other 36 are not generated.
+   */
+  const COMBINATIONS = MARKUP.flatMap((outer) =>
+    MARKUP.filter((inner) => inner !== outer).map((inner) => ({
+      name: `${outer.name} of ${inner.name}`,
+      wrap: (text) => outer.wrap(inner.wrap(text)),
+      ...measure(outer.detect.replace("@", inner.detect), inner.inside),
+    })),
+  ).filter(({ occurrences }) => occurrences > 0);
+
+  const FORMATTINGS = [...SINGLES, ...COMBINATIONS];
+
   /** Greedy wrap, never breaking a word: `printWidth` 100 with `proseWrap: preserve`. */
   const wrap = (text, columns = 100) => {
     const lines = [""];
@@ -826,10 +1107,10 @@ describe("the declared vocabulary, over the formatting the artifacts really use"
     for (const phrase of phrasings) {
       const noun = phrase.split(" ").pop();
       add("plain", phrase, claim(phrase));
-      add("inline code, whole phrase", phrase, claim(`\`${phrase}\``));
-      add("inline code, noun", phrase, claim(phrase.replace(noun, `\`${noun}\``)));
-      add("bold, whole phrase", phrase, claim(`**${phrase}**`));
-      add("bold, noun", phrase, claim(phrase.replace(noun, `**${noun}**`)));
+      for (const { name, wrap: mark } of FORMATTINGS) {
+        add(`${name}, whole phrase`, phrase, claim(mark(phrase)));
+        add(`${name}, noun`, phrase, claim(phrase.replace(noun, mark(noun))));
+      }
       for (let offset = 0; offset < 60; offset += 1) {
         add(
           `wrapped at 100, offset ${offset}`,
@@ -860,8 +1141,41 @@ describe("the declared vocabulary, over the formatting the artifacts really use"
     .map((outright) => `hyphenated compound: ${outright.replace(" ", "-")}`)
     .sort();
 
+  /**
+   * The wrapper and the detector are two statements of one construct, and this is what stops them
+   * drifting apart: each candidate's detector is driven over its own wrapper's output. A detector
+   * that stopped recognising its construct would silently drop that construct out of `SINGLES` and
+   * out of the corpus, which is the eighth round's defect in a new costume.
+   */
+  it("item 2: every candidate's detector matches its own wrapper", () => {
+    for (const { name, wrap: mark, detect, inside } of MARKUP) {
+      const pattern = new RegExp(detect.replace("@", SPAN(inside)));
+      expect(pattern.test(`a ${mark("number of guests")} b`), name).toBe(true);
+    }
+  });
+
+  /**
+   * The candidate list is a hand list; which of it becomes an axis is not. This asserts the filter
+   * is honest in the direction that can silently lose coverage: a construct that vanishes from the
+   * tree drops out of the corpus, so its disappearance has to be seen rather than inferred. All
+   * seven singles are present today, so the filter is a no-op on them and does real work only on
+   * the 42 combinations, of which 6 survive.
+   */
+  it("item 2: the formatting axis is the constructs the tree really carries", () => {
+    expect(SINGLES.map(({ name }) => name)).toEqual(MARKUP.map(({ name }) => name));
+    for (const { name, occurrences, files } of SINGLES) {
+      expect(occurrences, `${name} occurs in the scanned tree`).toBeGreaterThan(0);
+      expect(files, `${name} occurs in more than one file`).toBeGreaterThan(1);
+    }
+    expect(COMBINATIONS.length, "some nested pairs occur and most do not").toBeGreaterThan(0);
+    expect(COMBINATIONS.length).toBeLessThan(MARKUP.length * (MARKUP.length - 1));
+  });
+
   it("item 2: the corpus is the whole cross-product, unsampled", () => {
-    expect(CORPUS).toHaveLength(7 * 3 * 65 + 6);
+    expect(CORPUS).toHaveLength(NOUNS.length * 3 * (1 + 2 * FORMATTINGS.length + 60) + 6);
+    expect(
+      new Set(CORPUS.map(({ formatting, phrasing }) => `${formatting}|${phrasing}`)).size,
+    ).toBe(CORPUS.length);
   });
 
   it("item 2: exactly the declared misses miss, and everything else is caught", () => {

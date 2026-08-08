@@ -26,16 +26,28 @@ import { createHash } from "node:crypto";
  * as well as the plain form: an earlier `(?<!State )` saw "ate's " in "New York State's
  * Department of Health" and flagged that true published fact as a fabricated claim.
  *
- * The spelled-out name takes an AMPERSAND and takes "Department of" as optional, added in the
- * sixth PR #247 round. The agency renders its own name both ways, and the alternation is free:
- * measured over every scanned root, it flags nothing this tree did not already flag. A bare `DOH`
- * was the other candidate and is deliberately NOT here. It appears nowhere in this tree, so there
- * is no house style to match, and in a regulatory sentence it reads as the STATE department at
- * least as often as the city one, which is the agency the lookbehind above exists to keep out.
- * Matching it would mean flagging the true SDOH attendance threshold on nothing but an acronym.
+ * The spelled-out name takes an AMPERSAND, added in the sixth PR #247 round, and the agency renders
+ * its own name both ways.
+ *
+ * IT ALSO TOOK "Department of" AS AN OPTIONAL PREFIX, and the eighth round's item 3 removed it as
+ * dead. The alternation is unanchored, so any string containing "Department of Health and Mental
+ * Hygiene" also contains "Health and Mental Hygiene" and matched without it. The one thing an
+ * optional prefix can still do is start the match EARLIER, which matters inside `agencyNear`'s
+ * window in `BOUNDED_EXTENSIONS` files, and it could not do that either: the generic form below
+ * matches the bare "Department of Health" at that same position. The one input where the two
+ * differ is "New York State's Department of Health and Mental Hygiene", where the lookbehind blocks
+ * the generic form and the prefix would have widened the window around the STATE department, which
+ * is the agency this expression is shaped to keep out. The fixture that stood for it asserted on a
+ * string that matched identically either way, so its name promised what its assertion could not
+ * distinguish; it names the ampersand alone now.
+ *
+ * A bare `DOH` was the other candidate and is deliberately NOT here. It appears nowhere in this
+ * tree, so there is no house style to match, and in a regulatory sentence it reads as the STATE
+ * department at least as often as the city one, which is the agency the lookbehind above exists to
+ * keep out. Matching it would mean flagging the true SDOH attendance threshold on an acronym alone.
  */
 export const CITY_HEALTH_AGENCY_SOURCE =
-  "\\bDOHMH\\b|\\b(?:Department of )?Health (?:and|&) Mental Hygiene\\b|\\bNYC Health\\b" +
+  "\\bDOHMH\\b|\\bHealth (?:and|&) Mental Hygiene\\b|\\bNYC Health\\b" +
   "|(?<!State |State's |SDOH )\\b(?:Department of Health|Health Department)\\b";
 export const CITY_HEALTH_AGENCY = new RegExp(CITY_HEALTH_AGENCY_SOURCE, "i");
 
@@ -72,6 +84,16 @@ export const CITY_HEALTH_AGENCY = new RegExp(CITY_HEALTH_AGENCY_SOURCE, "i");
  * `crowd size` and `party size` left all 79 cases green, as did deleting `NYC Health` from the
  * agency expression. All three are driven now.
  *
+ * THE "number of" PHRASING TAKES UP TO TWO WORDS OF MODIFIER, which the eighth PR #247 round added.
+ * "the number of confirmed guests" is one adjective away from the declared phrase and missed, close
+ * enough that a reader would expect it caught while the disclosure's paraphrase bullet technically
+ * covered it. The cost was measured rather than assumed: the widened alternation matches NOTHING in
+ * the scanned roots that the narrow one did not, so no text in this tree turns on it, and the flag
+ * set is unchanged at ten. What it buys in exchange is a real reading cost, stated here: two
+ * arbitrary words between "number of" and a count noun are read as one phrase, so a future sentence
+ * like "the number of open questions people have raised" beside an agency mention is a false
+ * positive this alternation, and not the author, created.
+ *
  * THE HYPHENATED COMPOUND IS A DECLARED MISS: "the guest-count threshold" is not matched, and the
  * one-character fix for it (`[ -]?count`) was measured and rejected. It flags `docs/BASELINE.md`'s
  * "No regulatory fact moves here" paragraph, which says "no DOHMH rule may key on the
@@ -82,7 +104,7 @@ export const CITY_HEALTH_AGENCY = new RegExp(CITY_HEALTH_AGENCY_SOURCE, "i");
 export const ATTENDEE_COUNT_SOURCE =
   "(?:head|guest|attendee|people|person|rsvp|patron) ?count" +
   "|attendance|crowd size|party size" +
-  "|number of (?:guests|attendees|people|persons|heads|RSVPs|patrons)";
+  "|number of (?:[a-z]+ ){0,2}?(?:guests|attendees|people|persons|heads|RSVPs|patrons)";
 export const ATTENDEE_COUNT = new RegExp(ATTENDEE_COUNT_SOURCE, "i");
 
 /**
@@ -253,14 +275,57 @@ export const scanOptionsFor = (relative) => ({
  * the #207 guard: it "read physical lines instead, so a bullet wrapped onto a continuation naming
  * F-213 sat outside the filter."
  *
- * THREE THINGS ARE NORMALIZED, each because a phrasing was measured to walk past without it:
+ * THE INLINE MARKERS WERE HALF THE SET UNTIL THE EIGHTH ROUND, which is that round's item 1. This
+ * stripped `` ` `` and `*` and named them "the emphasis and inline-code markers"; one of markdown's
+ * two emphasis markers is an asterisk and the other is an underscore, and the underscore is the one
+ * this tree writes. Measured over the scanned roots, underscore emphasis appears 88 times in 14
+ * files and strikethrough 21 times in 6, including the pinned register row itself. So this record,
+ * planted as the newest one in the real `docs/BASELINE.md`, added no flag, while the same record
+ * with the two underscores removed added one:
  *
- *   - The emphasis and inline-code markers, so "the number of `guests`" and "the number of
- *     **guests**" read as the words they wrap. This repository writes `headcount` in backticks
- *     throughout, so inline code is the house style rather than an edge case.
- *   - The line break, to a single space.
+ *     **Decision 2026-08-07 (product owner, issue #248, DOHMH indoor assembly threshold):** the
+ *     temporary food-service permit and the organizer notification DOHMH publishes for an indoor
+ *     event are keyed on the number of _guests_ recorded at intake, not on the vendor count, so
+ *     raising an RSVP cap moves the permit findings.
+ *
+ * `_` is a WORD CHARACTER, which is what made the underscore worse than the asterisk rather than
+ * equal to it: `COUNTED_PEOPLE`'s noun list is `\b`-anchored, so `_75 or more guests_` failed to be
+ * a count at all even with the emphasis wrapping the whole phrase. Every one of the seven nouns
+ * missed that way. `~~strikethrough~~` and a bracketed link's `[` and `]` failed for the plainer
+ * reason that the marker sits inside the phrase: "the number of [guests](url)" is not the literal
+ * "number of guests" that `ATTENDEE_COUNT` joins with a single space.
+ *
+ * FIVE THINGS ARE NORMALIZED, each because a phrasing was measured to walk past without it:
+ *
+ *   - The inline-code marker, so "the number of `guests`" reads as the words it wraps. This
+ *     repository writes `headcount` in backticks throughout, so it is the house style rather than
+ *     an edge case.
+ *   - BOTH emphasis markers, the strikethrough marker and a link's brackets: `*`, `_`, `~`, `[` and
+ *     `]`, so "the number of **guests**", "the number of _guests_", "~~the number of guests~~" and
+ *     "the number of [guests](url)" all read as the words they wrap. The link's parentheses and URL
+ *     are LEFT ALONE deliberately: the count phrase ends at the closing bracket, so removing the
+ *     brackets is enough, and dropping a parenthesis would join two clauses that are not adjacent.
+ *   - The line break, to a single space, with any surrounding indentation. The TRAILING half is
+ *     what closes markdown's hard line break, two spaces before a newline, which four scanned files
+ *     carry, `docs/DOCUMENTATION-GOVERNANCE.md` line 3 among them: it used to normalize to a triple
+ *     space and miss. `\r?` closes CRLF the same way. Neither is a shape a real author writes
+ *     mid-phrase, which is why the reviewer who found them did not rank them; they are closed
+ *     because they cost two characters each and the flag set did not move.
  *   - The comment leader that follows a line break, so a `//` comment wrapped over two lines is one
  *     line of prose too. The scan reads `.ts`, `.tsx`, `.mjs` and `.js`.
+ *   - The `>` blockquote leader that follows a line break, for the same reason in markdown.
+ *
+ * THE COST OF STRIPPING `_` IS STATED RATHER THAN LEFT TO BE DISCOVERED: a snake_case identifier
+ * like `guest_count` normalizes to `guestcount`, which `(?:guest) ?count` matches, so a code block
+ * naming the agency and such a field would be flagged with no claim in it. It costs nothing today,
+ * measured: the flag set on the clean tree is byte-identical at ten entries with `_` and `~` added.
+ * It is a live cost if a field of that name is ever introduced.
+ *
+ * IT DOES NOT ASSUME THE FORMATTER HAS RUN, and must not. `prettier` 3.9.6 rewrites `*italic*` into
+ * `_italic_`, so underscore is the form italic emphasis survives in once `pnpm format` has run, but
+ * CI runs `typecheck`, `lint`, `test:coverage` and `build` and NOT `format:check`. Both spellings
+ * can therefore reach `main`, which is why both are stripped rather than the formatter's output
+ * alone. The underscore is the tree's house form on its own count, independent of that.
  *
  * TWO FACES OF THE SAME DEFECT ARE NOT CLOSED HERE, and each says why at its own site: the
  * hyphenated compound ("the guest-count threshold") is a declared miss with a measured cost, at
@@ -270,11 +335,11 @@ export const scanOptionsFor = (relative) => ({
  * "food-service" and "2026-08-07" too, and the numeral half deliberately refuses a hyphenated
  * number, so neither face has a normalization that closes it for free.
  *
- * MEASURED, not predicted: with this in place the scan flags the planted record above, and the flag
- * set on the clean tree is unchanged at ten, the four pinned records and the six benign pairs.
+ * MEASURED, not predicted: with this in place the scan flags both planted records above, and the
+ * flag set on the clean tree is unchanged at ten, the four pinned records and the six benign pairs.
  */
 export const normalizeForMatching = (text) =>
-  text.replace(/[`*]/g, "").replace(/\n[ \t]*(?:\/\/|>)?[ \t]*/g, " ");
+  text.replace(/[`*_~[\]]/g, "").replace(/[ \t]*\r?\n[ \t]*(?:\/\/|>)?[ \t]*/g, " ");
 
 /** Paragraphs, list items and table rows. A block ends where the next one begins. */
 export const blocksOf = (text) => {
