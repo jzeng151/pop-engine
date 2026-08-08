@@ -62,7 +62,7 @@ distribution, not the maximum.
 The previous revision of this document conflated two of these. They are measured separately now.
 
 **Property A, does the member reach the merge.** `resolveFindings`
-(`packages/engine/src/findings.ts:271-280`) skips a rule only when its trigger evaluates `false`. A
+(`packages/engine/src/findings.ts:604-608`) skips a rule only when its trigger evaluates `false`. A
 trigger that evaluates `unknown` produces a finding and enters the dedupe merge exactly like a
 `true` one. Call this **findings**: trigger result `true` or `unknown`.
 
@@ -124,6 +124,17 @@ which applies each adaptation programmatically and reports what the parser says 
 | DIAGNOSTIC ONLY, semantics-changing: rewrite the 7 `is_null` leaves and the 1 `lte` leaf                                                                                                             | `rule SAPO-BLOCK-PARTY-INELIGIBLE-001 references undeclared field "event_days"`                                                                                                                                                    |
 | DIAGNOSTIC ONLY: declare the 3 derived values as intake fields                                                                                                                                       | `dedupe key "block_party_eligibility" mixes verification statuses "VERIFIED" and "RESEARCH_REQUIRED"`                                                                                                                              |
 | DIAGNOSTIC ONLY: collapse every verification status                                                                                                                                                  | `intake field "event_address" is declared but no rule trigger, deadline, or scoping condition reads it, so answering it changes nothing. Give a rule that consumes it, or record why it is collected in UNCONSUMED_INTAKE_FIELDS.` |
+
+**"The engine has no case for it" is the parser's verdict here, not a list this harness keeps.**
+Each of the six dropped deadlines is put to `parseEngineRuleset` on its own, placed on a rule of the
+published control, and classified by the parser's own message; the four `published_minimum`
+deadlines land in the second class because the parser names `calendar_days` rather than the type,
+and a deadline the parser rejects for any third reason fails the run instead of being counted under
+a label that does not describe it. A literal set of supported types would have gone stale in the one
+direction that matters: the first row's error is raised by an earlier `conditional` deadline, so the
+engine gaining a case for `fixed_annual_date` would leave every error in this table unchanged while
+the set kept deleting a deadline the engine could now read, and section 3.1 would claim a parser gap
+that had closed.
 
 Which dedupe key the sixth row names depends on which statuses the third row's mapping collapsed.
 **Six** of the nine multi-member groups mix statuses, so some key fails there under any such
@@ -207,8 +218,13 @@ sound rather than assuming it.
 Built from the **draft's own** 63 declared `intake_fields`, not the published ruleset's 33.
 
 The full 63-field factorial is not enumerable: the 43 enum, boolean and multi_enum fields alone
-multiply out to 1.90 x 10^28 combinations, before any of the 17 numeric, 2 date or 1 string fields.
-It was not sampled either. Instead each group was swept **exhaustively over the fields its own
+multiply out to 17,656,085,622,407,823,360,000,000,000 combinations, 1.77 x 10^28, before any of the
+17 numeric, 2 date or 1 string fields. That product is taken over the same domains the sweeps below
+use, so a multi_enum contributes its valid selections rather than its power set; the previous
+revision printed 1.90 x 10^28, which was the power-set count and so contradicted the rule stated two
+paragraphs down. The 63 fields, the 43, the seven type counts and the product are re-derived from
+the artifact by `intakeFieldInventory`, so an unused intake field the draft adds or drops moves them
+here rather than leaving them stale. It was not sampled either. Instead each group was swept **exhaustively over the fields its own
 members read**, expanded through derived-value inputs. This is exact rather than a sample, because
 no draft rule reads a field outside its own trigger, no field read by any of these groups carries
 an `asked_when` clause naming a field outside the swept set (the one exception,
@@ -248,7 +264,13 @@ Value domains, applied uniformly by `domainFor` in the harness:
   (`event_days gt 1`) below, on and above.
 - **`structure_length_ft` and `structure_width_ft`** are the one hand-set domain, `{null, 10, 12,
 20, 21}`, because their thresholds are on their product: those products straddle both published
-  area thresholds (120 and 400) on all three sides.
+  area thresholds (120 and 400) on all three sides. The factors are a choice about how to sweep, but
+  whether they still do that job is read off the artifact rather than asserted here. `domainFor`
+  recomputes the ten products through the draft's own `structure_area_sqft` formula and fails when
+  any published threshold on that value no longer has a product below it, on it and above it, so an
+  area threshold that moved without crossing a product, `gt 400` becoming `gt 401`, stops the
+  measurement instead of leaving every distribution identical while the at-threshold case AGENTS.md
+  requires had quietly stopped being swept.
 
 Sweep sizes: from 36 to 24,330,240 intakes per group, **24,351,972** draft intakes in total, plus
 **622** control intakes. Every one was evaluated; nothing was truncated.
@@ -533,14 +555,14 @@ counterexample to reading `unknown` as "unanswered".
 to `required`); `DOB-TALL-STRUCTURE-001` publishes `MAY_BE_REQUIRED`, a different permit name, no
 deadline and no fee. The merged line reads as the tent permit's name, disposition, deadline and fee,
 with the tall-structure rule contributing its rule id, notes and sources, and `mergeGroup`
-(`findings.ts:365-425`, AD-19) reaches that field by field rather than by file position. Where both
+(`findings.ts:402-470`, AD-19) reaches that field by field rather than by file position. Where both
 members are `true`, `required` is the strongest disposition any route contributes, so the tent rule
 binds identity (name, agency, fee, portal, verification status), and it is also the only route
 publishing a window, so it binds the timeline. Where the tent rule's own trigger is `unknown`
 beside a `true` tall-structure rule, §8.4's ceiling caps its `required` at `may_be_required`, both
 routes then contribute the headline disposition, and the tent rule still binds identity and
 timeline, because a route with a published window sorts ahead of one with none (`compareBinding`,
-`findings.ts:256-266`). That is what makes today's behaviour safe: two members, one shape, and the
+`findings.ts:280-291`). That is what makes today's behaviour safe: two members, one shape, and the
 surviving scalars are the stricter of the two by construction. Under the pre-AD-19 merge the same
 line came out only because `DOB-TENT-001` is listed first, and reversing the two rules in the
 published file turned a `required` finding with a filing date into a `may_be_required` one with
@@ -565,8 +587,15 @@ qualified.
 
 ### 5.1 `sapo_permit`, 14 members, max 14, never 2 on a complete intake
 
-Members are keyed on `sapo_event_type` and, for the six plaza rules, on `plaza_level` and
-`plaza_block_count`. Every pair is disjoint on settled answers: the `true`-only maximum is 1 across
+Every member reads `sapo_event_type`, and five of the fourteen read nothing else
+(`SAPO-STREET-EXTRA-LARGE-001`, `-PRODUCTION-`, `-BLOCK-PARTY-`, `-SINGLE-BLOCK-FESTIVAL-` and
+`-STREET-FESTIVAL-`). Beyond it: the three size-specific street rules read
+`street_event_size`; all six plaza rules read `plaza_level` and `plaza_size`; and four of those six
+also read `plaza_block_count`, the exceptions being `SAPO-PLAZA-C-001` and `SAPO-PLAZA-D-001`, whose
+triggers do not distinguish one block from several. A previous revision described all six plaza
+rules as sharing the same keys and left `plaza_size` and `street_event_size` out altogether, which
+misstated which unsettled classification dimensions produce the sets below; the per-member list is
+now asserted from the draft. Every pair is disjoint on settled answers: the `true`-only maximum is 1 across
 all 6,480 intakes, and 0 of the 1,536 complete intakes produce two findings.
 
 There are 72 distinct co-firing sets over 1,114 events. 720 of those events have `sapo_event_type =
@@ -764,7 +793,7 @@ block holds five branches, three `eq "unknown"` and two `is_null`, so it cannot 
 something is missing, and the pair therefore cannot both be `true` on a complete intake. Zero of
 1,474,560 complete intakes produce a co-firing event of any kind.
 
-**Do they disagree? Yes in the draft, and no on the current mapping.** The disagreement is real as
+**Do they disagree? Yes, and the current mapping now renders it.** The disagreement is real as
 published data. `SAPO-BLOCK-PARTY-INELIGIBLE-001` publishes `status: CLASSIFICATION_INELIGIBLE`,
 `severity: blocking`, and the message "The event does not qualify as a Block Party under the
 supplied facts. Reclassify it before calculating the permit plan", with `suggested_classes`.
@@ -774,38 +803,43 @@ deadline, fee, portal or permit name, so as draft intent the conflict is confine
 "you are disqualified" merged with "we cannot yet tell whether you are eligible", arriving on 7.7%
 of the sweep and never on settled facts.
 
-**That organizer-visible line is draft intent, not something the current mapping produces**, and the
-distinction matters because the previous revision asserted the conflict as an engine outcome.
-`parseRule` (`packages/engine/src/ruleset.ts:484-520`) recognises `output.disposition` and derives a
-name only from `permit_name`, `requirement_name`, `advisory_text` or `note_text`. The ineligibility
-rule publishes none of those: `status`, `message` and `suggested_classes` are fields no engine code
-reads. So the parser defaults this `kind: eligibility` rule to `may_be_required`
-(`DEFAULT_DISPOSITION_BY_RULE_KIND`, `proposals.ts:53`), gives it a null name, and ignores its
-message. What happens next is decided by `mergeGroup` (`findings.ts:365-425`, AD-19) on the two
-findings' published values, not by which array they came from: the merged disposition is the
-strongest any route contributes, and identity (name, agency, fee, portal, verification status) is
-read off the routes that contributed it. `may_be_required` outranks the advisory's `advisory`
-(`DISPOSITION_STRENGTH`, `findings.ts:126-132`), so the nameless blocker binds identity alone, and
-the advisory's own text, which the parser carried as that finding's name, is dropped with the rest
-of its identity fields. Neither member publishes a deadline, fee or portal, so the timeline binding
-changes nothing either way. The line the organizer would see says neither "disqualified" nor "we
-cannot tell". The blocker disappears exactly as the sound blocker does in section 6, and for the
-same reason. Qualifying this as draft intent is not a softening of the finding; it is the finding,
-and it is the same one twice.
+**What the organizer would actually see is neither sentence**, and that is worth stating separately
+from the draft's intent, because a previous revision asserted the disagreement as an engine outcome
+and the revision after it asserted that the blocker dropped out. Both were readings of one number
+that has since moved. `parseRule` (`packages/engine/src/ruleset.ts:470-547`) recognises
+`output.disposition` and derives a name only from `permit_name`, `requirement_name`, `advisory_text`
+or `note_text`. The ineligibility rule publishes none of those: `status`, `message` and
+`suggested_classes` are fields no engine code reads. It publishes no `output.disposition` either, so
+it takes its kind's default, and PR #254 moved that kind from `eligibility` to `prohibition`, whose
+default is `prohibited_or_ineligible` rather than `may_be_required`
+(`DEFAULT_DISPOSITION_BY_RULE_KIND`, `proposals.ts:48`). What happens next is decided by
+`mergeGroup` (`findings.ts:402-470`, AD-19) on the two findings' published values, not by which
+array they came from: the merged disposition is the strongest any route contributes, and identity
+(name, agency, fee, portal, verification status) is read off the routes that contributed it. The
+blocker's `prohibited_or_ineligible` outranks the advisory's `advisory` under either reading of its
+kind (`DISPOSITION_STRENGTH`, `findings.ts:147-153`), so the nameless blocker binds identity alone,
+and the advisory's own text, which the parser carried as that finding's name, is dropped with the
+rest of its identity fields. Neither member publishes a deadline, fee or portal, so the timeline
+binding changes nothing either way, and unlike section 6 there is no window for the line to quote.
+The line the organizer would see is a blocking one that says neither "disqualified" nor "we cannot
+tell", because the blocker's message and the advisory's text are both unreachable. What the
+reclassification changed is the strength of that line, not its emptiness: the ineligibility now
+reaches the organizer as a blocker rather than as a "may be required", but still without the
+sentence explaining it.
 
 The group also mixes `VERIFIED` and `CONDITIONAL` verification statuses, which `ruleset.ts:665`
 refuses on load.
 
 ## 6. The blocker-plus-window shape
 
-The brief singles out one shape: a co-firing set where one member is a blocker (kind `eligibility`,
-or a prohibited disposition) and another is a permit with a filing window, because the merged line
-then reads as prohibited while quoting the permit's deadline.
+The brief singles out one shape: a co-firing set where one member is a blocker (a blocking rule
+kind, or a prohibited disposition) and another is a permit with a filing window, because the merged
+line then reads as prohibited while quoting the permit's deadline.
 
 **Verified: `nypd_sound` is the only group of the nine with that shape, and it is the only group of
 the nine that reaches a disagreement on a complete intake.**
 
-`NYPD-SOUND-COMMERCIAL-ADVERTISING-PROHIBITED-001` is `kind: eligibility`, `severity: blocking`,
+`NYPD-SOUND-COMMERCIAL-ADVERTISING-PROHIBITED-001` is `kind: prohibition`, `severity: blocking`,
 `status: PROHIBITED_USE`, publishing NYC Administrative Code section 10-108 and no permit name, no
 deadline, no fee and no portal. It co-fires `true`-with-`true` against:
 
@@ -820,37 +854,45 @@ It also co-fires `unknown`-side on a further 28 intakes (10 + 9 + 6 + 3), none o
 where the prohibition is unknown because `sound_purpose` is unanswered while the permit fires
 `true`.
 
-Under the current merge the surviving name, deadline, fee and portal would all be the permit's, and
-`mergeGroup` (`findings.ts:365-425`, AD-19) gets there without consulting file position. The permit
-rules are `kind: permit` with no published disposition, so they parse as `required`; the prohibition
-parses as `may_be_required` for the reason in qualification 1 below. `required` is the stronger of
-the two, so the permit binds identity, and it is the only route publishing a window, so it binds the
-timeline as well. §8.4's rule that a blocking finding is never erased on a shared key does not
-engage, because nothing the parser can read makes this finding blocking.
+**This is the shape the brief describes, and PR #254 is what made it so.** `mergeGroup`
+(`findings.ts:402-470`, AD-19) reaches the merged line field by field, without consulting file
+position. The permit rules are `kind: permit` with no published disposition, so they parse as
+`required`. The prohibition publishes no disposition either, so it takes its kind's default from
+`DEFAULT_DISPOSITION_BY_RULE_KIND` (`proposals.ts:48`), and since 2026-08-08 that kind is
+`prohibition` and that default is `prohibited_or_ineligible`, the top of `DISPOSITION_STRENGTH`. So
+the merged disposition is the prohibition's, identity binds off the prohibition alone as the only
+route contributing it, and the timeline still binds off the whole group, where the permit's dated
+and open 5-day window outranks the prohibition's absence of one (`compareBinding`,
+`findings.ts:280-291`). The merged line reads prohibited and quotes the permit's filing window and
+apply-by date. §8.4's rule that a blocking finding is never erased on a shared key now engages,
+because the finding is blocking to the parser.
 
 Two qualifications, both important and neither speculative:
 
-1. **The draft's blocker vocabulary is not engine-readable today.** `severity` and
-   `status: PROHIBITED_USE` are fields no engine code reads (limitation 7), and the rule publishes
-   no `output.disposition`. Under the current parser a `kind: eligibility` rule with no published
-   disposition takes `DEFAULT_DISPOSITION_BY_RULE_KIND` (`proposals.ts:53`), which is
-   `may_be_required`, not `prohibited_or_ineligible`. So on the code as it stands the merged line
-   would not read "prohibited" at all; the prohibition's entire content would be dropped, because
-   the rule contributes no `name`, no `note_text` and no scalar that survives the merge. It would
-   contribute its rule id and its section 10-108 source, and nothing a reader sees as a
-   prohibition.
-2. **That is a statement about the current mapping, not about the draft's intent.** The draft
-   plainly intends a blocker. Which of the two failure shapes actually occurs, a prohibition quoting
-   a filing deadline or a prohibition silently disappearing, depends on schema work that has not
-   happened. Both start from the same measured fact: on 8 of 156 intakes, both rules fire `true`,
-   both reach the same merged line, and every field either rule reads is answered.
+1. **What binds identity is the kind, not the draft's blocker vocabulary.** `severity` and
+   `status: PROHIBITED_USE` are still fields no engine code reads (limitation 7). What the parser
+   reads is `kind`, and the prohibition's entire `output` is `status`, `message` and `dedupe_key`,
+   so it derives a null name and carries no agency, fee or portal. Binding identity off it therefore
+   produces a merged line with the prohibition's disposition and no name, no agency, no fee and no
+   portal, beside the permit's deadline. The section 10-108 message is not on it: `message` is
+   unread, so what a reader sees as the substance of the prohibition survives only as the rule id
+   and the source citation.
+2. **Both of this section's earlier readings are now settled, in the direction the brief feared.**
+   The previous revision recorded the four blocking rules as `kind: eligibility`, which defaulted to
+   `may_be_required`, so the permit bound identity and the prohibition's content dropped out of the
+   line entirely, and it named the two possible failure shapes without being able to say which
+   occurred. PR #254 (merged 2026-08-08, `docs/BASELINE.md`) reclassified all four to
+   `kind: prohibition`, which decides it: the shape is the prohibition quoting a filing deadline,
+   not the prohibition silently disappearing. The measured fact under both readings is the same and
+   did not move: on 8 of 156 intakes both rules fire `true`, both reach the same merged line, and
+   every field either rule reads is answered.
 
 The other groups holding a blocker do not have the shape. The draft has four `severity: blocking`
-rules, all of them `kind: eligibility`: this one, `SAPO-BLOCK-PARTY-INELIGIBLE-001`,
+rules, all of them `kind: prohibition`: this one, `SAPO-BLOCK-PARTY-INELIGIBLE-001`,
 `SAPO-ALCOHOL-PROHIBITION-001` and `PARKS-PROPANE-PROHIBITION-001`. `block_party_eligibility` pairs
-its blocker with an advisory that publishes no window, and its blocker is unreadable to the current
-mapping in exactly the way qualification 1 describes (section 5.9). `sapo_alcohol` and
-`parks_propane` are single-member dedupe groups and never merge with anything.
+its blocker with an advisory that publishes no window, so the blocker binds identity there too but
+there is no deadline for the line to quote (section 5.9). `sapo_alcohol` and `parks_propane` are
+single-member dedupe groups and never merge with anything.
 
 ## 7. Which groups present a merge conflict
 
@@ -865,8 +907,9 @@ Stated plainly, from the numbers above.
 - `sapo_insurance`. Up to 4 members, one requiring a $1 million certificate and another stating the
   requirement does not apply. Never on a complete intake.
 - `block_party_eligibility`. Two members, disagreeing on disposition as the draft publishes them, on
-  7.7% of a 24.3-million intake factorial. Never on a complete intake, and not a conflict the
-  current mapping would render at all (5.9).
+  7.7% of a 24.3-million intake factorial. Never on a complete intake. The current mapping renders
+  the blocker's disposition but neither member's sentence, because the blocker's `message` and the
+  advisory's text are both dropped by the merge (5.9).
 - `nypd_sound`. Up to 3 members, pairing a section 10-108 prohibition with a dated, priced permit.
   **On a complete intake, on 8 of its 84 complete intakes.**
 
@@ -927,8 +970,18 @@ pnpm test:cofiring                  # every figure in sections 3 to 7, asserted
 PRINT_TABLES=1 pnpm test:cofiring   # the same run, printing the tables to diff against this file
 ```
 
-It is four modules and one suite, 1,949 lines together, of which `harness.mjs` is 853 and
-`cofiring.test.mjs` is 659:
+**What "every figure" covers, exactly.** The mapping table below is the inventory: a figure in
+sections 3 to 7 is asserted when some row names the case that asserts it, and nothing in those
+sections is outside a row. That is a claim this document has had to earn twice. Section 3.3's
+opening inventory, the 63 declared fields, the 43 that multiply out and the size of the product,
+sat in the covered range while nothing read it, so an unused intake field the draft added or
+dropped would have left every published number green and that one stale; it is now re-derived by
+`intakeFieldInventory` and asserted with its per-type breakdown. The line counts and case count in
+the next paragraph are about the harness rather than about the draft, so they are section 8's own
+figures and are not asserted by it.
+
+It is four modules and one suite, 2,245 lines together, of which `harness.mjs` is 908 and
+`cofiring.test.mjs` is 812:
 
 | file                | what it is                                                                                                                                    |
 | ------------------- | --------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -936,24 +989,24 @@ It is four modules and one suite, 1,949 lines together, of which `harness.mjs` i
 | `staging.mjs`       | the adaptations of section 3.1, applied to in-memory clones, each reporting what it touched                                                   |
 | `inventory.mjs`     | what the draft publishes, re-derived by parsing it: deadlines, permit names, output identity, blockers, mixed statuses, parser-visible output |
 | `report.mjs`        | one `measure()` call that produces every table, plus the printer                                                                              |
-| `cofiring.test.mjs` | 72 test cases, one or more per published figure                                                                                               |
+| `cofiring.test.mjs` | 78 test cases, one or more per published figure                                                                                               |
 
 Every table maps to a `describe` block with the same number:
 
-| table                                     | assertion                                                                                                                                         |
-| ----------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 3.1, the staging errors and inventories   | `describe("section 3.1, the load-staging errors")`, whose second case asserts the dropped-deadline, mapped-status and mapped-kind counts          |
-| 3.2, the agreement check                  | `describe("section 3.2, what the harness supplies")`                                                                                              |
-| 3.3, the sweep sizes and the domain rules | `describe("section 3.3, the sweep")`, whose headcount case runs `validateIntake` on the rejected value and the admitted one                       |
-| 3.4, limitations 3, 4, 5 and 9            | `describe("section 3.4, the limitations")`                                                                                                        |
-| 3.5, the supplied semantics               | `jq '.engine_operators, .derived_values' rules/proposals/nyc-rules.v2-full-draft.json`, and the `is_null`/`lte` half of `describe("section 3.2")` |
-| 4.1, findings per event                   | `describe("section 4.1, findings per event")`                                                                                                     |
-| 4.2, `true`-only                          | `describe("section 4.2, ...")`                                                                                                                    |
-| 4.3, completeness                         | `describe("section 4.3, completeness")`                                                                                                           |
-| 4.4, the control                          | `describe("section 4.4, the published control")`                                                                                                  |
-| every table and count in section 5        | `describe("section 5, the co-firing sets")`                                                                                                       |
-| section 6's blocker inventory and counts  | `describe("section 6, the blocker-plus-window shape")`                                                                                            |
-| section 7                                 | restates 4.1, 4.2, 4.3 and 4.4; it publishes no figure of its own                                                                                 |
+| table                                                           | assertion                                                                                                                                                                                                                                                                                                                                                     |
+| --------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 3.1, the staging errors and inventories                         | `describe("section 3.1, the load-staging errors")`, whose second case asserts the dropped-deadline, mapped-status and mapped-kind counts                                                                                                                                                                                                                      |
+| 3.2, the agreement check                                        | `describe("section 3.2, what the harness supplies")`                                                                                                                                                                                                                                                                                                          |
+| 3.3, the intake inventory, the sweep sizes and the domain rules | `describe("section 3.3, the sweep")`, whose first case asserts the 63-field inventory, its per-type breakdown and the 1.77 x 10^28 product, whose headcount case runs `validateIntake` on the rejected value and the admitted one, and whose hand-set case fails when the swept structure factors stop bracketing a published `structure_area_sqft` threshold |
+| 3.4, limitations 3, 4, 5 and 9                                  | `describe("section 3.4, the limitations")`                                                                                                                                                                                                                                                                                                                    |
+| 3.5, the supplied semantics                                     | `jq '.engine_operators, .derived_values' rules/proposals/nyc-rules.v2-full-draft.json`, and the `is_null`/`lte` half of `describe("section 3.2")`                                                                                                                                                                                                             |
+| 4.1, findings per event                                         | `describe("section 4.1, findings per event")`                                                                                                                                                                                                                                                                                                                 |
+| 4.2, `true`-only                                                | `describe("section 4.2, ...")`                                                                                                                                                                                                                                                                                                                                |
+| 4.3, completeness                                               | `describe("section 4.3, completeness")`                                                                                                                                                                                                                                                                                                                       |
+| 4.4, the control                                                | `describe("section 4.4, the published control")`                                                                                                                                                                                                                                                                                                              |
+| every table and count in section 5                              | `describe("section 5, the co-firing sets")`                                                                                                                                                                                                                                                                                                                   |
+| section 6's blocker inventory and counts                        | `describe("section 6, the blocker-plus-window shape")`                                                                                                                                                                                                                                                                                                        |
+| section 7                                                       | restates 4.1, 4.2, 4.3 and 4.4; it publishes no figure of its own                                                                                                                                                                                                                                                                                             |
 
 The whole run takes about six seconds, of which five are the 24,330,240-intake
 `block_party_eligibility` sweep. It is not gated behind a flag and it is in the include list
