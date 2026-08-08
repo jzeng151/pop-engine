@@ -1,16 +1,21 @@
 # A merged dedupe line keeps every route, and its headline mode says why the routes co-fired
 
-**Status:** PROPOSED. Not approved, not implementable, and no artifact's status is changed by this
-document. It supersedes part of AD-19 if and when the product owner approves it; until then AD-19
-stands as written and this document is a proposal about it.
+**Status:** APPROVED 2026-08-08 by the product owner (recorded in `docs/BASELINE.md`; AD-19 amended
+in `docs/ARCHITECTURE-FUTURE.md` §2). It was PROPOSED from the day it was written until that date,
+and the engine implemented it while it was unapproved; `SPEC-CONFLICT` #253 records that divergence
+and the approval closes it. What the approval covers is the design in sections 3 to 8 as written:
+one route list carrying each route's own published values and its own trigger result, the two
+headline modes and how they are computed, the mixed resolved-and-unknown case answered per route
+rather than by a third mode value, and the verdict reading the routes. It supersedes exactly the one
+sentence of AD-19 named in section 9.
 
 **Issue:** #239 (dedupe merge), continuing PR #244.
 **Reads:** `docs/research/draft-dedupe-cofiring.md` (MEASUREMENT, branch `measure/draft-dedupe-cofiring`, PR #251),
 `docs/ARCHITECTURE-FUTURE.md` §2 AD-19 and §8.4, `docs/BASELINE.md` (AD-19 record),
 `docs/OPEN-QUESTIONS.md` T-12, `specs/F-102-feasibility-verdict.md`, `specs/F-103-scope-comparator.md`,
 `specs/F-201-permit-plan-generator.md`.
-**Approval this would need if adopted:** product owner, under `docs/DOCUMENTATION-GOVERNANCE.md` §6,
-on three rows at once. See section 10. **No approval is claimed or recorded here.**
+**Approval:** given 2026-08-08 by the product owner, under `docs/DOCUMENTATION-GOVERNANCE.md` §6,
+on all four rows section 10 lists. Recorded in `docs/BASELINE.md` and in AD-19.
 
 ## 1. What is wrong, stated once
 
@@ -462,11 +467,13 @@ move.
 **AD-19 is amended, not left standing beside a second rule.** `docs/ARCHITECTURE-FUTURE.md` §2 AD-19,
 its §8.4 note, and its `docs/BASELINE.md` record all state the per-field identity/timeline split as
 the rule in force. Two rules stated as both in force is the failure this avoids, so the branch
-carrying this proposal writes a SUPERSESSION NOTICE onto AD-19's own row and onto the §8.4 note,
+carrying this proposal wrote a SUPERSESSION NOTICE onto AD-19's own row and onto the §8.4 note,
 naming this document, naming the single sentence that would be replaced, and saying that until the
-product owner approves it AD-19's row is the rule in force. **The notice records a challenge, not an
-approval.** The supersession itself is not applied and no approval record is added: amending an
-approved ADR is the product owner's under governance §6, and this document approves nothing.
+product owner approved it AD-19's row was the rule in force. **On 2026-08-08 the product owner
+approved it**, so the supersession is now applied rather than noticed: AD-19's row records the
+approval and states the replaced sentence as replaced, and the notice's conditional wording goes
+with it. Amending an approved ADR is the product owner's under governance §6, and this records that
+amendment rather than making it.
 
 Precisely what of AD-19 survives and what does not:
 
@@ -535,7 +542,11 @@ approves each:
 | a new organizer-facing outcome (the candidate list and its copy)    | "Product scope, feature meaning, phase", and the first row, because the copy states permit, deadline and fee facts and so is regulatory publication rather than copy-only |
 | superseding AD-19's identity/timeline split                         | "Durable architecture decision or dependency", recorded as an approved ADR                                                                                                |
 
-**No approval record is added to `docs/BASELINE.md` by this branch and no spec's status is flipped.**
+**Approved on all four rows at once, 2026-08-08, by the product owner**, which is the whole
+requirement for each since the second-party review requirement was retired on 2026-08-05. The record
+is the dated decision in `docs/BASELINE.md`; the durable-architecture row's ADR obligation is met by
+the amendment to AD-19 rather than by that record alone, because §6 carves that row out and an
+approval leaving no ADR does not satisfy it.
 
 ## 11. What this does not establish
 

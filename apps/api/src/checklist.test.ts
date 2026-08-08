@@ -29,7 +29,7 @@ import {
 } from "@pop-engine/engine/fixtures";
 import { createAlertScheduler, FILING_WINDOW_HAS_SHUT, type AlertScheduler } from "./alerts";
 import { createApp } from "./app";
-import { createPlanService } from "./plan";
+import { createPlanService, FILING_ORDER_DATE, FILING_ORDER_JOIN } from "./plan";
 import { deadlineReminderOffsets, loadRuleset, rulesFilePath } from "./ruleset";
 import { attachmentDisposition, DocumentStorageError, type DocumentStorage } from "./storage";
 
@@ -2569,6 +2569,53 @@ describe.runIf(databaseUrl.length > 0)("F-202 compliance checklist", () => {
       // Every unmerged line on this plan carries none rather than a restatement of itself.
       const sound = items.find((item) => item.ruleIds.includes("NYPD-SOUND-001"));
       expect(sound?.routes).toBeNull();
+    });
+
+    /**
+     * #252: `FILING_ORDER_JOIN` LACKED THE `routes.length >= 2` GUARD ITS THREE TYPESCRIPT
+     * COUNTERPARTS ALL MAKE.
+     *
+     * `filingRouteOf`, `plan-line.tsx` and `alertSubjects` each treat a ONE-entry route list as an
+     * unmerged line, because a line with a single route has its own columns and `storedRoutes`
+     * collapses it back to the row. The lateral did not, so it read the lone route's window and
+     * ordered the item by it: the same plan sorted one way through the api and another through
+     * SQL. One shape out of 32 exhaustive route-list shapes disagreed, and it disagreed here.
+     *
+     * Written against the stored rendering directly, because no engine output produces a one-entry
+     * list; that is exactly what makes the guard a contract about the column rather than about
+     * something the engine happens not to emit today.
+     */
+    it("orders a one-entry route list off the row's own column, as every other reader does", async () => {
+      const eventId = await createEvent(TALL_TENT);
+      await generatePlan(eventId);
+      const { rows: planRows } = await pool.query<{ id: string }>(
+        "SELECT id FROM permit_plans WHERE event_id = $1 ORDER BY generated_at DESC LIMIT 1",
+        [eventId],
+      );
+      const planId = planRows[0]?.id as string;
+      // The line's own window is NULL and its single route publishes one. Every TypeScript reader
+      // calls this unmerged, so the ordering date is the column: NULL, and the row sorts last.
+      await pool.query(
+        `UPDATE permit_plans
+            SET verdict_detail = jsonb_set(verdict_detail, '{finding_renderings}',
+                  jsonb_build_array(jsonb_build_object(
+                    'rule_ids', to_jsonb(ARRAY['DOB-TENT-001','DOB-TALL-STRUCTURE-001']),
+                    'routes', jsonb_build_array(jsonb_build_object(
+                      'ruleId', 'DOB-TENT-001',
+                      'deadline', 'null'::jsonb,
+                      'latestApplyDate', '2026-08-05')))))
+          WHERE id = $1`,
+        [planId],
+      );
+      const { rows } = await pool.query<{ ordering_date: string | null }>(
+        `SELECT ${FILING_ORDER_DATE} AS ordering_date
+           FROM permit_plan_items AS item
+           ${FILING_ORDER_JOIN}
+          WHERE item.plan_id = $1 AND item.rule_ids @> ARRAY['DOB-TENT-001']`,
+        [planId],
+      );
+      expect(rows).toHaveLength(1);
+      expect(rows[0]?.ordering_date).toBeNull();
     });
   });
 });

@@ -34,6 +34,7 @@ import {
   isNumber,
   isString,
   isToken,
+  nonEmpty,
   nullOr,
   readChecked,
   shapedLike,
@@ -384,7 +385,7 @@ const FINDING_CHECKS: FieldChecks<ConsumedFinding> = {
   verificationStatus: isToken(VERIFICATION_STATUSES),
   lastVerifiedDate: nullOr(isString),
   routes: (value: unknown): value is readonly ConsumedRoute[] | null =>
-    value === undefined || value === null || arrayOf(shapedLike(ROUTE_CHECKS))(value),
+    value === undefined || value === null || nonEmpty(arrayOf(shapedLike(ROUTE_CHECKS)))(value),
   headlineMode: (value: unknown): value is HeadlineMode | null =>
     value === undefined || value === null || isToken(HEADLINE_MODES)(value),
 };

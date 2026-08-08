@@ -44,7 +44,13 @@ import {
   todayInJurisdiction,
 } from "./calendar";
 import { canonicalOptionalPhone } from "./contact";
-import { calendarDateFrom, renderingKey, type FindingRendering } from "./plan";
+import {
+  calendarDateFrom,
+  FILING_ORDER_DATE,
+  FILING_ORDER_JOIN,
+  renderingKey,
+  type FindingRendering,
+} from "./plan";
 
 /** Mirrors the `alerts.alert_type` CHECK in migration 001. */
 export const ALERT_TYPES = ["deadline_reminder", "slack_warning", "dependency_unlocked"] as const;
@@ -214,6 +220,13 @@ const RETRY_BACKOFF = `CASE
 export const FILING_WINDOW_HAS_SHUT = (day: string): string => `(
        (
          alerts.payload->>'controlling_apply_by' IS NULL
+         -- AND IT IS NOT A ROUTE-SCHEDULED ALERT, which is the other half of the same rule and was
+         -- missing. The date below says which window this alert is about; this says the item column
+         -- is not it. A route-scheduled dependency_unlocked, a gated route with an apply_after_date
+         -- and no published filing deadline, has no date to carry, so it fell into this branch and
+         -- was retired the day after a DIFFERENT route's window shut. Nothing had shut: the route
+         -- it is about publishes no window at all.
+         AND alerts.payload->>'route_scheduled' IS NULL
          AND EXISTS (
            SELECT 1
              FROM checklist_items AS closed_checklist
@@ -893,6 +906,24 @@ type PlannedAlert = {
    */
   readonly controllingApplyBy?: string;
   /**
+   * That this alert was scheduled off ONE route of a merged dedupe line, whether or not that route
+   * published a window to record above.
+   *
+   * `controllingApplyBy` alone was not enough to say it. It is only written where the route has a
+   * date, so a route-scheduled `dependency_unlocked` — a gate with an `apply_after_date` and no
+   * `latest_apply_date` — carried nothing, and `FILING_WINDOW_HAS_SHUT` fell through to the item
+   * column. That column is the window of whichever route the merged line READS, so this alert was
+   * retired the day after a DIFFERENT route's window shut, which is the exact outcome that
+   * predicate's own comment says must not happen. A gated route with no published filing deadline
+   * has no window that can shut, and it must be able to say so.
+   *
+   * So the two are read together: the date answers where there is one, and this says the item
+   * column may not answer where there is not. Absent on every alert that is not route-scheduled,
+   * including every row written before this field existed, so those keep reading the column that
+   * is genuinely theirs.
+   */
+  readonly routeScheduled?: true;
+  /**
    * The slot this alert was MEANT for, before it was clamped forward if that moment had passed.
    *
    * Stored so a review can tell a genuine reschedule from recomputing an already-past slot. The
@@ -948,6 +979,16 @@ async function planVerdict(database: Queryable, planId: string): Promise<PlanVer
  * checklist row, and an alert about a line the organizer is not tracking is noise. Rows with no
  * task are skipped rather than scheduled against a null `checklist_item_id`, which is reserved for
  * the plan-level slack warning.
+ *
+ * FILING ORDER IS THE DATE THE ROW RENDERS, not the column. `item.latest_apply_date` is the binding
+ * route's, and a merged dedupe line whose binding route publishes no window leaves it NULL while
+ * the line still files under another route's dated one. Ordering on the column alone sorted such a
+ * line last under a docstring promising filing order, which is the last surviving instance of the
+ * read-the-column class this branch removed everywhere else. It is decorative here — nothing about
+ * an alert's content or identity depends on the order these rows arrive in — and it is corrected
+ * anyway, because the next reader of this function has no way to tell a deliberate exception from
+ * the four places that were defects. Same join and same expression the checklist orders by, so the
+ * two surfaces cannot drift.
  */
 async function planAlertRows(database: Queryable, planId: string): Promise<PlanAlertRow[]> {
   const { rows } = await database.query<PlanAlertRow>(
@@ -957,8 +998,9 @@ async function planAlertRows(database: Queryable, planId: string): Promise<PlanA
             item.portal_url, item.disposition, item.verification_status
        FROM permit_plan_items AS item
        LEFT JOIN checklist_items AS checklist ON checklist.plan_item_id = item.id
+       ${FILING_ORDER_JOIN}
       WHERE item.plan_id = $1
-      ORDER BY item.latest_apply_date NULLS LAST, item.permit_name, item.rule_ids`,
+      ORDER BY ${FILING_ORDER_DATE} NULLS LAST, item.permit_name, item.rule_ids`,
     [planId],
   );
   return rows;
@@ -1500,18 +1542,34 @@ async function plannedAlerts(
     if (planRow.checklist_item_id === null) continue;
     const planRendering = renderings.get(renderingKey(planRow.rule_ids));
     const subjects = alertSubjects(planRow, planRendering);
-    // THE ROUTE ONLY ENTERS AN ALERT'S IDENTITY WHEN THERE IS MORE THAN ONE. A row scheduling from
-    // a single route — every unmerged row, and every merged row where one route publishes the
-    // window — keeps the key it already had, so an alert already sent for it is still the same
-    // alert after this ships and is not sent a second time (AC 7).
-    const routeInIdentity = subjects.length > 1;
+    // THE ROUTE ENTERS A MERGED ROW'S ALERT IDENTITY UNCONDITIONALLY, and it has to be
+    // unconditional to be stable. The first version keyed the route in only while the row scheduled
+    // from more than one, which made the key depend on HOW MANY of the group's routes happened to
+    // publish a date on the day the plan was generated. A merged line whose second route gains a
+    // window between two regenerations — a ruleset publishing the missing deadline, a holiday list
+    // arriving so a business-day window becomes calculable — crossed that count from 1 to 2 and
+    // re-keyed every reminder the line already owned. The reconciler will not touch a `sent` row,
+    // so the re-keyed reminder was INSERTED rather than matched, and the organizer was reminded a
+    // second time in identical words. That is the duplicate delivery F-203 AC 7 forbids and the
+    // comment below already describes this file fixing once.
+    //
+    // `routeRuleId` is null for an unmerged row and non-null for every route of a merged one, so
+    // this adds nothing to the key of any row that has no dedupe group; those keys are untouched.
     for (const { row, rendering, routeRuleId } of subjects) {
-      const routeKey = routeInIdentity && routeRuleId !== null ? `:${routeRuleId}` : "";
+      const routeKey = routeRuleId !== null ? `:${routeRuleId}` : "";
       const applyBy = isoDate(row.latest_apply_date);
       // The window this alert counts down to, recorded on the row wherever it is NOT the window the
-      // sweep would find through the checklist item. See `PlannedAlert.controllingApplyBy`.
+      // sweep would find through the checklist item, together with the fact that this alert is
+      // route-scheduled at all. The second half carries the cases the first cannot: a route with a
+      // gate and no filing deadline has no date to record and still must not be answered for by
+      // another route's. See `PlannedAlert.controllingApplyBy` and `routeScheduled`.
       const routeApplyBy =
-        routeRuleId !== null && applyBy !== null ? { controllingApplyBy: applyBy } : {};
+        routeRuleId === null
+          ? {}
+          : {
+              routeScheduled: true as const,
+              ...(applyBy !== null ? { controllingApplyBy: applyBy } : {}),
+            };
 
       const openOn = isoDate(row.apply_after_date);
       const binding = DEPENDENCY_SEQUENCING_BINDINGS.find(
@@ -1574,8 +1632,8 @@ async function plannedAlerts(
             // day still decides the copy and whether the reminder is a catch-up; it just no longer
             // decides whether this is the same reminder.
             //
-            // WHICH ROUTE joins it only where the row schedules from more than one, so an existing
-            // alert's key is untouched wherever it already identified the reminder uniquely.
+            // WHICH ROUTE joins it on every merged row, whatever the row's dated-route count is on
+            // the day it is generated. An unmerged row adds nothing and keeps the key it had.
             identity: `${row.checklist_item_id}:deadline_reminder:${daysBefore}${routeKey}`,
           });
         }
@@ -2205,6 +2263,7 @@ export function createAlertScheduler(settings: AlertSchedulerSettings): AlertSch
               ...(alert.controllingApplyBy === undefined
                 ? {}
                 : { controlling_apply_by: alert.controllingApplyBy }),
+              ...(alert.routeScheduled === undefined ? {} : { route_scheduled: true }),
               ...(alert.intendedAt === undefined ? {} : { intended_at: alert.intendedAt }),
             }),
           ],

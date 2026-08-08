@@ -85,9 +85,17 @@ function routeEntries(
 /**
  * The merged line narrowed to the route that blocks, so the copy names the route rather than
  * whichever route the headline happens to read. Everything else on the line is retained, because a
- * consumer reading `blockingFinding` still wants its notes, sources and trigger reasons.
+ * consumer reading `blockingFinding` still wants its notes and trigger reasons.
  *
- * EVERY FIELD A ROUTE PUBLISHES IS NARROWED, INCLUDING THE ONES A READER SEES FIRST. The fee, the
+ * SOURCES ARE NARROWED TOO, AND THEY WERE THE ONE FIELD THIS DOCSTRING CLAIMED AND DID NOT DO. They
+ * rode through on the spread, so the blocker carried the whole group's citations in the order the
+ * rules sit in the published FILE while `routes` and the heading are in BINDING order. The panel's
+ * "More information" link takes the first source with a URL (`verdict-detail.tsx`), so on a group
+ * whose file order and binding order differ it pointed the organizer at a rule the heading beside
+ * it does not name. `FindingSource` carries its own `ruleId`, so the narrowing is a filter and
+ * needs no per-route field: the blocker's citations are the blocking rule's citations.
+ *
+ * EVERY OTHER FIELD A ROUTE PUBLISHES IS NARROWED, INCLUDING THE ONES A READER SEES FIRST. The fee, the
  * portal and the organizer summary were left on the merged line, so a blocker panel naming the
  * missed route rendered the binding route's heading, portal and fee beside it (#252 review). The
  * summary has no per-route form to narrow to — `FindingRoute` carries no `userSummary`, because a
@@ -100,6 +108,7 @@ function blockerView(finding: Finding, route: FindingRoute): Finding {
   return {
     ...finding,
     ruleIds: [route.ruleId],
+    sources: finding.sources.filter((source) => source.ruleId === route.ruleId),
     name: route.name,
     agency: route.agency,
     disposition: route.disposition,

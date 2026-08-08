@@ -533,7 +533,12 @@ describe("the blocking route of a merged line (#252)", () => {
     expect(blocker?.deadlineDisplay).toBeNull();
     expect(blocker?.portalName).toBe("missed portal");
     expect(blocker?.portalUrl).toBe("https://example.test/missed");
-    expect(blocker?.sources?.map((source) => source.ruleId)).toEqual(["OPEN-001", "MISSED-001"]);
+    // THE CITATIONS ARE THE BLOCKING ROUTE'S TOO, which this used to assert the opposite of. The
+    // whole group's sources rode through on the spread, in the order the rules sit in the published
+    // FILE, while the heading beside them is in BINDING order. `verdict-detail.tsx` takes the first
+    // source with a URL for its "More information" link, so on a group whose two orders differ the
+    // panel pointed the organizer at a rule its own heading does not name (#252 review).
+    expect(blocker?.sources?.map((source) => source.ruleId)).toEqual(["MISSED-001"]);
   });
 
   /**

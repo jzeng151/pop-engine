@@ -39,6 +39,7 @@ import {
   alertDeliveryHealth,
   createAlertPoller,
   createAlertScheduler,
+  FILING_WINDOW_HAS_SHUT,
   failedDeliveries,
   reconciliationHolds,
   ALERT_POLLER_CONNECTIONS,
@@ -149,6 +150,7 @@ type AlertRow = {
     last_error?: string;
     test?: boolean;
     controlling_apply_by?: string;
+    route_scheduled?: boolean;
     intended_at?: string;
   };
 };
@@ -2686,20 +2688,21 @@ describe.skipIf(databaseUrl === "")("F-203 deadline alerts", () => {
         // is how `pool.query` acquires connections internally.
         const isTheAttemptWriter = (candidate: Pool): boolean =>
           candidate.options.max === SEND_CONCURRENCY && candidate.options.allowExitOnIdle === true;
-        const spy = vi
-          .spyOn(Pool.prototype, "connect")
-          .mockImplementation(function (this: Pool, ...args: unknown[]) {
-            if (!isTheAttemptWriter(this)) return connect.apply(this, args);
-            return (async (): Promise<PoolClient> => {
-              await pool.query(
-                `UPDATE alert_send_attempts
+        const spy = vi.spyOn(Pool.prototype, "connect").mockImplementation(function (
+          this: Pool,
+          ...args: unknown[]
+        ) {
+          if (!isTheAttemptWriter(this)) return connect.apply(this, args);
+          return (async (): Promise<PoolClient> => {
+            await pool.query(
+              `UPDATE alert_send_attempts
                     SET attempted_at = current_timestamp - ($2 || ' hours')::interval
                   WHERE alert_id = $1`,
-                [alertId, PROVIDER_DEDUP_WINDOW_HOURS + 1],
-              );
-              return connect.apply(this, args) as Promise<PoolClient>;
-            })();
-          } as typeof Pool.prototype.connect);
+              [alertId, PROVIDER_DEDUP_WINDOW_HOURS + 1],
+            );
+            return connect.apply(this, args) as Promise<PoolClient>;
+          })();
+        } as typeof Pool.prototype.connect);
         try {
           await createAlertPoller({
             database: pool,
@@ -2759,31 +2762,32 @@ describe.skipIf(databaseUrl === "")("F-203 deadline alerts", () => {
         // alert, so that count identifies the send boundary without the test having to know how
         // many statements the claim runs. Aging the older attempt there is exactly what a stall
         // longer than the reserved margin would have done.
-        const spy = vi
-          .spyOn(Client.prototype, "query")
-          .mockImplementation(function (this: Client, ...args: unknown[]) {
-            const first = args[0];
-            const text =
-              typeof first === "string" ? first : ((first as { text?: string })?.text ?? "");
-            if (!text.includes("controlling_apply_by")) return query.apply(this, args);
-            return (async () => {
-              const { rows } = await pool.query<{ open: number }>(
-                `SELECT count(*)::int AS open FROM alert_send_attempts
+        const spy = vi.spyOn(Client.prototype, "query").mockImplementation(function (
+          this: Client,
+          ...args: unknown[]
+        ) {
+          const first = args[0];
+          const text =
+            typeof first === "string" ? first : ((first as { text?: string })?.text ?? "");
+          if (!text.includes("controlling_apply_by")) return query.apply(this, args);
+          return (async () => {
+            const { rows } = await pool.query<{ open: number }>(
+              `SELECT count(*)::int AS open FROM alert_send_attempts
                   WHERE alert_id = $1 AND outcome_recorded_at IS NULL`,
-                [alertId],
-              );
-              if ((rows[0]?.open ?? 0) >= 2) {
-                await pool.query(
-                  `UPDATE alert_send_attempts
+              [alertId],
+            );
+            if ((rows[0]?.open ?? 0) >= 2) {
+              await pool.query(
+                `UPDATE alert_send_attempts
                       SET attempted_at = current_timestamp - ($2 || ' hours')::interval
                     WHERE alert_id = $1
                       AND attempted_at < current_timestamp - interval '1 hour'`,
-                  [alertId, PROVIDER_DEDUP_WINDOW_HOURS + 1],
-                );
-              }
-              return query.apply(this, args);
-            })();
-          } as typeof Client.prototype.query);
+                [alertId, PROVIDER_DEDUP_WINDOW_HOURS + 1],
+              );
+            }
+            return query.apply(this, args);
+          })();
+        } as typeof Client.prototype.query);
         try {
           await createAlertPoller({
             database: pool,
@@ -2855,25 +2859,26 @@ describe.skipIf(databaseUrl === "")("F-203 deadline alerts", () => {
         let answered = false;
         let refused = false;
         const query = Client.prototype.query as (...args: unknown[]) => unknown;
-        const querySpy = vi
-          .spyOn(Client.prototype, "query")
-          .mockImplementation(function (this: Client, ...args: unknown[]) {
-            const first = args[0];
-            const text =
-              typeof first === "string" ? first : ((first as { text?: string })?.text ?? "");
-            const result = query.apply(this, args) as Promise<unknown>;
-            // Cleared by every other statement, so each send this tick makes gets the delay
-            // applied to it rather than inheriting the previous one's reading.
-            if (!text.includes("AS shut")) {
-              answered = false;
-              return result;
-            }
-            return result.then((rows) => {
-              answered = true;
-              refused = true;
-              return rows;
-            });
-          } as typeof Client.prototype.query);
+        const querySpy = vi.spyOn(Client.prototype, "query").mockImplementation(function (
+          this: Client,
+          ...args: unknown[]
+        ) {
+          const first = args[0];
+          const text =
+            typeof first === "string" ? first : ((first as { text?: string })?.text ?? "");
+          const result = query.apply(this, args) as Promise<unknown>;
+          // Cleared by every other statement, so each send this tick makes gets the delay
+          // applied to it rather than inheriting the previous one's reading.
+          if (!text.includes("AS shut")) {
+            answered = false;
+            return result;
+          }
+          return result.then((rows) => {
+            answered = true;
+            refused = true;
+            return rows;
+          });
+        } as typeof Client.prototype.query);
         const clockSpy = vi
           .spyOn(Date, "now")
           .mockImplementation(() => (answered ? realNow() + SEND_BOUNDARY_MARGIN_MS : realNow()));
@@ -2929,18 +2934,19 @@ describe.skipIf(databaseUrl === "")("F-203 deadline alerts", () => {
         let issued = false;
         let refused = false;
         const query = Client.prototype.query as (...args: unknown[]) => unknown;
-        const querySpy = vi
-          .spyOn(Client.prototype, "query")
-          .mockImplementation(function (this: Client, ...args: unknown[]) {
-            const first = args[0];
-            const text =
-              typeof first === "string" ? first : ((first as { text?: string })?.text ?? "");
-            // Reset by every other statement, so the stall is re-applied to each send this tick
-            // makes rather than leaking into the anchor reading of the next one.
-            issued = text.includes("AS shut");
-            refused ||= issued;
-            return query.apply(this, args) as Promise<unknown>;
-          } as typeof Client.prototype.query);
+        const querySpy = vi.spyOn(Client.prototype, "query").mockImplementation(function (
+          this: Client,
+          ...args: unknown[]
+        ) {
+          const first = args[0];
+          const text =
+            typeof first === "string" ? first : ((first as { text?: string })?.text ?? "");
+          // Reset by every other statement, so the stall is re-applied to each send this tick
+          // makes rather than leaking into the anchor reading of the next one.
+          issued = text.includes("AS shut");
+          refused ||= issued;
+          return query.apply(this, args) as Promise<unknown>;
+        } as typeof Client.prototype.query);
         // The whole delay falls between the statement going out and its result being read here,
         // which is the stall the boundary cannot see: nothing measurable happens after it.
         const clockSpy = vi
@@ -2991,19 +2997,20 @@ describe.skipIf(databaseUrl === "")("F-203 deadline alerts", () => {
         const realNow = Date.now.bind(Date);
         let boundaryAnswers = 0;
         const query = Client.prototype.query as (...args: unknown[]) => unknown;
-        const querySpy = vi
-          .spyOn(Client.prototype, "query")
-          .mockImplementation(function (this: Client, ...args: unknown[]) {
-            const first = args[0];
-            const text =
-              typeof first === "string" ? first : ((first as { text?: string })?.text ?? "");
-            const result = query.apply(this, args) as Promise<unknown>;
-            if (!text.includes("AS shut")) return result;
-            return result.then((rows) => {
-              boundaryAnswers += 1;
-              return rows;
-            });
-          } as typeof Client.prototype.query);
+        const querySpy = vi.spyOn(Client.prototype, "query").mockImplementation(function (
+          this: Client,
+          ...args: unknown[]
+        ) {
+          const first = args[0];
+          const text =
+            typeof first === "string" ? first : ((first as { text?: string })?.text ?? "");
+          const result = query.apply(this, args) as Promise<unknown>;
+          if (!text.includes("AS shut")) return result;
+          return result.then((rows) => {
+            boundaryAnswers += 1;
+            return rows;
+          });
+        } as typeof Client.prototype.query);
         // The margin is spent on the FIRST send only: everything this process reads after that
         // boundary answered is a clock that has moved past what the boundary reserved, and from
         // the second answer on it is the real clock again, so the retry is a healthy handoff and
@@ -3530,31 +3537,32 @@ describe.skipIf(databaseUrl === "")("F-203 deadline alerts", () => {
         const insideTheHandoffMargin = `${PROVIDER_DEDUP_WINDOW_HOURS * 3_600_000 - SEND_BOUNDARY_MARGIN_MS / 2} milliseconds`;
 
         const query = Client.prototype.query as (...args: unknown[]) => unknown;
-        const spy = vi
-          .spyOn(Client.prototype, "query")
-          .mockImplementation(function (this: Client, ...args: unknown[]) {
-            const first = args[0];
-            const text =
-              typeof first === "string" ? first : ((first as { text?: string })?.text ?? "");
-            if (!text.includes("controlling_apply_by")) return query.apply(this, args);
-            return (async () => {
-              const { rows } = await pool.query<{ open: number }>(
-                `SELECT count(*)::int AS open FROM alert_send_attempts
+        const spy = vi.spyOn(Client.prototype, "query").mockImplementation(function (
+          this: Client,
+          ...args: unknown[]
+        ) {
+          const first = args[0];
+          const text =
+            typeof first === "string" ? first : ((first as { text?: string })?.text ?? "");
+          if (!text.includes("controlling_apply_by")) return query.apply(this, args);
+          return (async () => {
+            const { rows } = await pool.query<{ open: number }>(
+              `SELECT count(*)::int AS open FROM alert_send_attempts
                   WHERE alert_id = $1 AND outcome_recorded_at IS NULL`,
-                [alertId],
-              );
-              if ((rows[0]?.open ?? 0) >= 2) {
-                await pool.query(
-                  `UPDATE alert_send_attempts
+              [alertId],
+            );
+            if ((rows[0]?.open ?? 0) >= 2) {
+              await pool.query(
+                `UPDATE alert_send_attempts
                       SET attempted_at = current_timestamp - $2::interval
                     WHERE alert_id = $1
                       AND attempted_at < current_timestamp - interval '1 hour'`,
-                  [alertId, insideTheHandoffMargin],
-                );
-              }
-              return query.apply(this, args);
-            })();
-          } as typeof Client.prototype.query);
+                [alertId, insideTheHandoffMargin],
+              );
+            }
+            return query.apply(this, args);
+          })();
+        } as typeof Client.prototype.query);
         try {
           await createAlertPoller({
             database: pool,
@@ -3714,9 +3722,9 @@ describe.skipIf(databaseUrl === "")("F-203 deadline alerts", () => {
           senders: atUpgrade.senders,
           jurisdiction: ruleset.jurisdiction,
         }).tick();
-        expect.soft(atUpgrade.attempts.map((message) => message.recipient)).not.toContain(
-          "backfilled@example.test",
-        );
+        expect
+          .soft(atUpgrade.attempts.map((message) => message.recipient))
+          .not.toContain("backfilled@example.test");
         expect.soft(held.heldForReconciliation).toBe(1);
 
         // The window the stamp claims, gone by: same effect as the poller running a day later.
@@ -3733,9 +3741,9 @@ describe.skipIf(databaseUrl === "")("F-203 deadline alerts", () => {
           jurisdiction: ruleset.jurisdiction,
         }).tick();
 
-        expect.soft(later.delivered.map((message) => message.recipient)).toContain(
-          "backfilled@example.test",
-        );
+        expect
+          .soft(later.delivered.map((message) => message.recipient))
+          .toContain("backfilled@example.test");
         expect(retried.heldForReconciliation).toBe(0);
       });
 
@@ -6746,6 +6754,350 @@ describe.skipIf(databaseUrl === "")("F-203 deadline alerts", () => {
       expect(rows.filter((row) => row.alert_type === "deadline_reminder").length).toBeGreaterThan(
         0,
       );
+    });
+
+    /**
+     * #252 P1: A REMINDER IS DELIVERED TWICE WHEN A MERGED LINE GAINS A SECOND DATED ROUTE.
+     *
+     * The route entered a reminder's identity only while the row scheduled from more than ONE
+     * route, which made the key depend on how many of the group's routes happened to publish a
+     * date on the day the plan was generated. A merged line's dated-route count crossing 1 to 2
+     * between regenerations re-keyed every reminder the line already owned; the reconciler will
+     * not touch a `sent` row, so the re-keyed reminder was inserted rather than matched and the
+     * organizer was reminded a second time in identical words. F-203 AC 7 forbids exactly that.
+     *
+     * Driven end to end through the real poller: the first regeneration's reminder is DELIVERED,
+     * then the second route gains a window and the plan is regenerated, and the assertion is on
+     * what the provider received. Not reachable on `nyc.v2.11`, whose one dedupe group can never
+     * date its second route, which is the same reachability standard the two cases above use.
+     */
+    describe("a merged line's dated-route count crossing 1 to 2 (#252)", () => {
+      const mergedRoute = (overrides: Record<string, unknown>) => ({
+        triggerResult: "true",
+        unknownFields: [],
+        agency: "NYPD",
+        deadline: null,
+        deadlineDisplay: null,
+        latestApplyDate: null,
+        applyAfterDate: null,
+        deadlineStatus: "not_applicable",
+        slackDays: null,
+        feeDisplay: null,
+        portalName: null,
+        portalUrl: null,
+        portalInstructions: null,
+        ...overrides,
+      });
+
+      /**
+       * One generation of a plan carrying a two-route merged line, with the SECOND route dated
+       * only when asked for. `reuseChecklistItemId` is what makes this a regeneration rather than
+       * a fresh event: `materialize` re-points an existing task at the new plan's item, and a
+       * fresh task per plan would give every alert a fresh key and hide the collision entirely.
+       */
+      const insertMergedPlan = async (
+        eventId: string,
+        options: { secondRouteDated: boolean; checklistItemId: string },
+      ): Promise<string> => {
+        const planId = randomUUID();
+        const itemId = randomUUID();
+        const applyBy = dayFromToday(0);
+        await pool.query(
+          `INSERT INTO permit_plans (id, event_id, event_revision, ruleset_version, snapshot_date,
+                                     verdict, verdict_detail, intake_snapshot, generated_at)
+           VALUES ($1, $2, 1, $3, $4, 'feasible', $5::jsonb, '{}'::jsonb, clock_timestamp())`,
+          [
+            planId,
+            eventId,
+            ruleset.rulesetVersion,
+            ruleset.snapshotDate,
+            JSON.stringify({
+              today: todayInJurisdiction("US-NY-NYC"),
+              minSlackDays: null,
+              finding_renderings: [
+                {
+                  rule_ids: ["NYPD-SOUND-001", "PARKS-EVENT-001"],
+                  notes: [],
+                  note_text: null,
+                  conflict_text: null,
+                  deadline_display: "file at least 5 days before use",
+                  slack_days: null,
+                  deadline_unknown_fields: [],
+                  timeline_unresolved_reason: null,
+                  portal_instructions: null,
+                  headline_mode: "applies_together",
+                  routes: [
+                    mergedRoute({
+                      ruleId: "NYPD-SOUND-001",
+                      disposition: "required",
+                      name: "Sound Device Permit",
+                      latestApplyDate: applyBy,
+                      deadlineStatus: "deadline_approaching",
+                      deadlineDisplay: "file at least 5 days before use",
+                    }),
+                    mergedRoute({
+                      ruleId: "PARKS-EVENT-001",
+                      disposition: "may_be_required",
+                      name: "Special Event Permit",
+                      // The second route gains a published window between the two generations:
+                      // a ruleset publishing the missing deadline, or a holiday list arriving so
+                      // a business-day count becomes calculable.
+                      ...(options.secondRouteDated
+                        ? {
+                            latestApplyDate: dayFromToday(1),
+                            deadlineStatus: "deadline_approaching",
+                            deadlineDisplay: "apply at least 21 days ahead",
+                          }
+                        : {}),
+                    }),
+                  ],
+                },
+              ],
+            }),
+          ],
+        );
+        // The merged line's own columns are the BINDING route's, which is the dated one here.
+        await pool.query(
+          `INSERT INTO permit_plan_items (id, plan_id, rule_ids, triggered_by, permit_name, agency,
+                                          latest_apply_date, sources, kind, disposition,
+                                          deadline_status, verification_status)
+           VALUES ($1, $2, ARRAY['NYPD-SOUND-001','PARKS-EVENT-001'], '[]'::jsonb,
+                   'Sound Device Permit', 'NYPD', $3, '[]'::jsonb, 'permit', 'required',
+                   'deadline_approaching', 'SOURCE_CONFIRMED')`,
+          [itemId, planId, applyBy],
+        );
+        await pool.query(
+          `INSERT INTO checklist_items (id, plan_item_id, cohort_position) VALUES ($1, $2, 0)
+             ON CONFLICT (id) DO UPDATE SET plan_item_id = EXCLUDED.plan_item_id`,
+          [options.checklistItemId, itemId],
+        );
+        return planId;
+      };
+
+      const schedule = async (eventId: string, planId: string): Promise<void> => {
+        const client = await pool.connect();
+        try {
+          await schedulerWith()(client, eventId, planId, {
+            email: "organizer@example.test",
+            phone: null,
+          });
+        } finally {
+          client.release();
+        }
+      };
+
+      it("delivers the reminder once across the regeneration that dates the second route", async () => {
+        const eventId = await createEvent(scenario("C"));
+        const checklistItemId = randomUUID();
+        const provider = fakeProvider();
+        const poller = () =>
+          createAlertPoller({
+            database: pool,
+            senders: provider.senders,
+            jurisdiction: ruleset.jurisdiction,
+          }).tick();
+
+        // Generation 1: one of the two routes publishes a window.
+        await schedule(
+          eventId,
+          await insertMergedPlan(eventId, {
+            secondRouteDated: false,
+            checklistItemId,
+          }),
+        );
+        await poller();
+        const afterFirst = await alertsOf(eventId);
+        const firstReminders = afterFirst.filter((row) => row.alert_type === "deadline_reminder");
+        expect(firstReminders.length).toBeGreaterThan(0);
+        expect(firstReminders.every((row) => row.status === "sent")).toBe(true);
+        const deliveredFirst = provider.delivered.length;
+
+        // Generation 2: the second route gains a published window. Its OWN reminders are new and
+        // legitimate; the first route's are the same reminders and must not be sent again.
+        await schedule(
+          eventId,
+          await insertMergedPlan(eventId, {
+            secondRouteDated: true,
+            checklistItemId,
+          }),
+        );
+        await poller();
+
+        const soundReminders = (await alertsOf(eventId)).filter(
+          (row) =>
+            row.alert_type === "deadline_reminder" &&
+            row.idempotency_key.includes("NYPD-SOUND-001"),
+        );
+        // One row per published offset for that route, not two. Before the fix the first
+        // generation's rows carried no route in their key at all and these were additional.
+        expect(soundReminders).toHaveLength(reminderOffsets.length);
+        expect(new Set(soundReminders.map((row) => row.idempotency_key)).size).toBe(
+          soundReminders.length,
+        );
+
+        // WHAT THE ORGANIZER RECEIVED, which is what AC 7 is about. Every delivered message is a
+        // distinct reminder: no two share a subject and body for the same recipient.
+        const seen = new Set<string>();
+        for (const message of provider.delivered) {
+          const key = `${message.recipient}|${message.subject}|${message.body}`;
+          expect(seen.has(key)).toBe(false);
+          seen.add(key);
+        }
+        // Not vacuous: the second route's own reminders really were added by generation 2, so the
+        // fix is not "nothing was scheduled".
+        expect(provider.delivered.length).toBeGreaterThan(deliveredFirst);
+      });
+
+      it("keys an unmerged row exactly as it did before, so its sent reminder is untouched", async () => {
+        // The other half. `routeRuleId` is null for a row with no dedupe group, so the identity
+        // adds nothing there and a reminder already sent for it is still the same reminder.
+        const eventId = await createEvent(scenario("C"));
+        const { planId, checklistItemId } = await insertDuePlan(eventId);
+        await schedule(eventId, planId);
+        const before = await alertsOf(eventId);
+        expect(before.length).toBeGreaterThan(0);
+        expect(before.every((row) => !row.idempotency_key.includes("NYPD-SOUND-001"))).toBe(true);
+
+        const { planId: regenerated } = await insertDuePlan(eventId, {
+          reuseChecklistItemId: checklistItemId,
+        });
+        await schedule(eventId, regenerated);
+        const after = await alertsOf(eventId);
+        expect(after.map((row) => row.idempotency_key).sort()).toEqual(
+          before.map((row) => row.idempotency_key).sort(),
+        );
+      });
+    });
+
+    /**
+     * #252: A ROUTE-SCHEDULED `dependency_unlocked` WITH A GATE AND NO WINDOW.
+     *
+     * It carries no `controlling_apply_by`, because there is no window to record, and
+     * `FILING_WINDOW_HAS_SHUT` fell through to the plan item's `latest_apply_date` column. That
+     * column is the window of whichever route the merged line READS, so the unlock was retired
+     * the day after a DIFFERENT route's window shut. Nothing had shut: the route this alert is
+     * about publishes no filing deadline at all. `payload.route_scheduled` is what says the column
+     * may not answer for it.
+     */
+    it("does not retire a gated route's unlock on another route's closed window (#252)", async () => {
+      const eventId = await createEvent(scenario("C"));
+      const planId = randomUUID();
+      const itemId = randomUUID();
+      // The binding route's window closed yesterday, and it is the item column.
+      const closedYesterday = dayFromToday(-1);
+      const route = (overrides: Record<string, unknown>) => ({
+        triggerResult: "true",
+        unknownFields: [],
+        agency: "NYPD",
+        deadline: null,
+        deadlineDisplay: null,
+        latestApplyDate: null,
+        applyAfterDate: null,
+        deadlineStatus: "not_applicable",
+        slackDays: null,
+        feeDisplay: null,
+        portalName: null,
+        portalUrl: null,
+        portalInstructions: null,
+        ...overrides,
+      });
+      await pool.query(
+        `INSERT INTO permit_plans (id, event_id, event_revision, ruleset_version, snapshot_date,
+                                   verdict, verdict_detail, intake_snapshot, generated_at)
+         VALUES ($1, $2, 1, $3, $4, 'conditional', $5::jsonb, '{}'::jsonb, current_timestamp)`,
+        [
+          planId,
+          eventId,
+          ruleset.rulesetVersion,
+          ruleset.snapshotDate,
+          JSON.stringify({
+            today: todayInJurisdiction("US-NY-NYC"),
+            minSlackDays: null,
+            finding_renderings: [
+              {
+                rule_ids: ["NYPD-SOUND-001", "PARKS-EVENT-001"],
+                notes: [],
+                note_text: null,
+                conflict_text: null,
+                deadline_display: null,
+                slack_days: null,
+                deadline_unknown_fields: [],
+                timeline_unresolved_reason: null,
+                portal_instructions: null,
+                headline_mode: "applies_together",
+                routes: [
+                  // The gated route: an open-on date and NO published filing deadline, so it has
+                  // no window of its own to record and none that can shut.
+                  route({
+                    ruleId: "NYPD-SOUND-001",
+                    disposition: "required",
+                    name: "Sound Device Permit",
+                    applyAfterDate: dayFromToday(0),
+                  }),
+                  route({
+                    ruleId: "PARKS-EVENT-001",
+                    disposition: "may_be_required",
+                    name: "Special Event Permit",
+                    latestApplyDate: closedYesterday,
+                    deadlineStatus: "published_deadline_missed",
+                  }),
+                ],
+              },
+            ],
+          }),
+        ],
+      );
+      await pool.query(
+        `INSERT INTO permit_plan_items (id, plan_id, rule_ids, triggered_by, permit_name, agency,
+                                        latest_apply_date, sources, kind, disposition,
+                                        deadline_status, verification_status)
+         VALUES ($1, $2, ARRAY['NYPD-SOUND-001','PARKS-EVENT-001'], '[]'::jsonb,
+                 'Special Event Permit', 'NYPD', $3, '[]'::jsonb, 'permit', 'required',
+                 'published_deadline_missed', 'SOURCE_CONFIRMED')`,
+        [itemId, planId, closedYesterday],
+      );
+      await pool.query(
+        "INSERT INTO checklist_items (id, plan_item_id, cohort_position) VALUES ($1, $2, 0)",
+        [randomUUID(), itemId],
+      );
+
+      const client = await pool.connect();
+      try {
+        await schedulerWith()(client, eventId, planId, {
+          email: "organizer@example.test",
+          phone: null,
+        });
+      } finally {
+        client.release();
+      }
+
+      const unlock = (await alertsOf(eventId)).find(
+        (row) => row.alert_type === "dependency_unlocked",
+      );
+      expect(unlock).toBeDefined();
+      // It has no window of its own, so it records none, and it says it is route-scheduled.
+      expect(unlock?.payload.controlling_apply_by).toBeUndefined();
+      expect(unlock?.payload.route_scheduled).toBe(true);
+
+      // The predicate, asked directly, about a day after the OTHER route's window shut. Before the
+      // guard this was true and the poller cancelled the alert.
+      const { rows } = await pool.query<{ shut: boolean }>(
+        `SELECT ${FILING_WINDOW_HAS_SHUT("$2")} AS shut FROM alerts WHERE id = $1`,
+        [unlock?.id, dayFromToday(0)],
+      );
+      expect(rows[0]?.shut).toBe(false);
+
+      // The poller delivers it rather than cancelling it.
+      const provider = fakeProvider();
+      await createAlertPoller({
+        database: pool,
+        senders: provider.senders,
+        jurisdiction: ruleset.jurisdiction,
+      }).tick();
+      const afterTick = (await alertsOf(eventId)).find(
+        (row) => row.alert_type === "dependency_unlocked",
+      );
+      expect(afterTick?.status).toBe("sent");
     });
 
     it("still warns about slack while a filing date is ahead", async () => {

@@ -2470,7 +2470,6 @@ describe("F-202 AC 9 · moved-deadline notice", () => {
   });
 });
 
-
 /**
  * #252. A merged dedupe line reads as its binding route, and where that route publishes no window
  * the api reads the filing date, status, fee and filing details off another route of the same
@@ -2545,5 +2544,113 @@ describe("a checklist row whose window comes from another route (#252)", () => {
 
     const row = await expandedRowFor(STREET_MEDIUM);
     expect(within(row).queryByText(/The published rules give this requirement/)).toBeNull();
+    expect(within(row).queryByTestId("deciding-question")).toBeNull();
+  });
+
+  /**
+   * #252: THE DECIDING QUESTION REACHES THE SURFACE THE ORGANIZER WORKS THE ITEM ON.
+   *
+   * `headlineMode` was served on this response and read by nothing. The plan page said "the
+   * answers so far do not say which of these applies, answering tent area would decide it" and the
+   * checklist, which `checklist-item.tsx`'s own comment calls the place the organizer works the
+   * item, said only "may be required". The conditionality survived to it; the question that would
+   * settle it did not, and all 56 affected plans are `candidate`.
+   */
+  it("names the question that would decide a candidate row", async () => {
+    stubApi({
+      [GET_CHECKLIST]: checklistOf({
+        created: true,
+        items: [
+          trackedItem(STREET_MEDIUM, {
+            latestApplyDate: "2026-08-26",
+            routes: [TALL_ROUTE, TENT_ROUTE],
+            headlineMode: "candidate",
+            filingRouteRuleId: "DOB-TENT-001",
+          }),
+        ],
+      }),
+    });
+    await renderView();
+
+    const row = await expandedRowFor(STREET_MEDIUM);
+    // TALL_ROUTE's trigger resolved, so the requirement IS reached and what is open is which of
+    // its routes reach it. The sentence must not say the requirement itself may not apply.
+    expect(within(row).getByTestId("deciding-question").textContent).toBe(
+      "The answers so far do not say which of the published routes to this requirement apply." +
+        " Answering tent area sqft would decide it.",
+    );
+  });
+
+  it("says the requirement itself is unsettled when no route has resolved", async () => {
+    stubApi({
+      [GET_CHECKLIST]: checklistOf({
+        created: true,
+        items: [
+          trackedItem(STREET_MEDIUM, {
+            latestApplyDate: "2026-08-26",
+            routes: [
+              {
+                ...TALL_ROUTE,
+                triggerResult: "unknown",
+                unknownFields: ["structure_over_10ft_tall"],
+              },
+              TENT_ROUTE,
+            ],
+            headlineMode: "candidate",
+            filingRouteRuleId: "DOB-TENT-001",
+          }),
+        ],
+      }),
+    });
+    await renderView();
+
+    const row = await expandedRowFor(STREET_MEDIUM);
+    expect(within(row).getByTestId("deciding-question").textContent).toBe(
+      "The answers so far do not say whether this requirement applies." +
+        " Answering structure over 10ft tall, tent area sqft would decide it.",
+    );
+  });
+
+  it("renders no deciding question when every route resolved", async () => {
+    // `applies_together`: the routes are triggered, so there is nothing left to decide and a
+    // sentence saying otherwise would be false.
+    stubApi({
+      [GET_CHECKLIST]: checklistOf({
+        created: true,
+        items: [
+          trackedItem(STREET_MEDIUM, {
+            latestApplyDate: "2026-08-26",
+            routes: [TALL_ROUTE, { ...TENT_ROUTE, triggerResult: "true", unknownFields: [] }],
+            headlineMode: "applies_together",
+            filingRouteRuleId: "DOB-TENT-001",
+          }),
+        ],
+      }),
+    });
+    await renderView();
+
+    const row = await expandedRowFor(STREET_MEDIUM);
+    expect(within(row).queryByTestId("deciding-question")).toBeNull();
+  });
+
+  /**
+   * #252: `routes: []` PASSED THE VALIDATOR AND ANSWERED EVERY QUESTION ASKED OF IT.
+   *
+   * `every` is vacuously true on an empty array, so an empty route list is not a harmless
+   * degenerate case: it is the one value that agrees with anything. On the plan page it made
+   * `hasOnlyUndatedDeadlines` print "No dated deadlines identified." on a FEASIBLE plan beside a
+   * dated line. The wire contract says the field is null-or-non-empty, and the validator now says
+   * so too rather than documenting it.
+   */
+  it("refuses a checklist response whose route list is empty", async () => {
+    stubApi({
+      [GET_CHECKLIST]: checklistOf({
+        created: true,
+        items: [trackedItem(STREET_MEDIUM, { latestApplyDate: "2026-08-26", routes: [] })],
+      }),
+    });
+    await renderView();
+
+    expect(screen.queryByText(STREET_MEDIUM)).toBeNull();
   });
 });

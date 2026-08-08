@@ -114,6 +114,24 @@ export function PlanContextBody({
       ? null
       : ((context.routes ?? []).find((route) => route.ruleId === context.filingRouteRuleId) ??
         null);
+  // THE QUESTION THAT WOULD DECIDE IT, on the surface the organizer works the item on.
+  //
+  // The conditionality already reached this row — the disposition badge above reads "may be
+  // required" — but the answer that would settle it did not. It was served on the checklist
+  // response and read by nothing, so the plan page said "the answers so far do not say which of
+  // these applies, answering tent area would decide it" while the checklist said only "may be
+  // required", and the one actionable thing about the row lived on the page the organizer is not
+  // working from (#252 review). AC 5's reasoning for keeping `applyAfterDate` here is the same
+  // reasoning: the checklist is where the item is worked, so what to do next about it is summary
+  // information there.
+  //
+  // The routes themselves are NOT listed here. The plan line is where a reader compares two routes'
+  // windows, fees and portals; what the checklist needs is the question, and the fields naming it
+  // are each route's own `unknownFields`, deduplicated. Nothing is composed: the sentence is fixed
+  // and the field names are the intake registry's.
+  const candidateRoutes = context.headlineMode === "candidate" ? (context.routes ?? []) : [];
+  const decidingFields = [...new Set(candidateRoutes.flatMap((route) => route.unknownFields))];
+  const triggeredRoutes = candidateRoutes.filter((route) => route.triggerResult === "true").length;
   const summaryShowsResearchTreatment =
     context.verificationStatus === "RESEARCH_REQUIRED" &&
     includesAgencyConfirmation([context.deadlineDisplay, context.feeDisplay]);
@@ -214,6 +232,22 @@ export function PlanContextBody({
           The published rules give this requirement {(context.routes ?? []).length} routes. The
           filing date, fee and filing details above are {filingRoute.name ?? filingRoute.ruleId}
           &apos;s.
+        </p>
+      )}
+
+      {/* See `decidingFields` above. Two routes or it is not a merged line, the same guard the plan
+          line makes. The leading sentence branches because a candidate group can already have a
+          triggered route: where one has, the requirement is reached and what is open is which
+          routes reach it, and a sentence saying the requirement itself may not apply would be
+          false. Neither branch repeats the filing-route sentence's opening words, so a reader (and
+          a test) can tell the two apart by their first clause. */}
+      {candidateRoutes.length >= 2 && (
+        <p className="check-item__text" data-testid="deciding-question">
+          {triggeredRoutes > 0
+            ? "The answers so far do not say which of the published routes to this requirement apply."
+            : "The answers so far do not say whether this requirement applies."}
+          {decidingFields.length > 0 &&
+            ` Answering ${decidingFields.map(humanize).join(", ")} would decide it.`}
         </p>
       )}
 

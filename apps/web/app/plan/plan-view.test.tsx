@@ -1166,6 +1166,28 @@ describe("F-102 · undated deadlines note", () => {
     await screen.findByRole("complementary", { name: "Rules snapshot" });
     expect(screen.queryByTestId("no-dated-deadlines")).toBeNull();
   });
+
+  /**
+   * #252: `routes: []` PASSED THE VALIDATOR, AND AN EMPTY ARRAY ANSWERS EVERY QUESTION YES.
+   *
+   * `hasOnlyUndatedDeadlines` asks whether every route is undated, and `[].every()` is true, so an
+   * empty route list printed "No dated deadlines identified." on a FEASIBLE plan beside a line
+   * showing a date. The wire contract has always said `routes` is null-or-non-empty; the validator
+   * now enforces it rather than documenting it, so the shape is refused at the boundary rather
+   * than reinterpreted by whichever consumer reaches it first.
+   */
+  it("refuses a plan whose route list is empty rather than reading it as no routes", async () => {
+    stubApi(
+      plan({
+        verdict: "FEASIBLE",
+        findings: [finding({ deadlineStatus: "on_track", routes: [], headlineMode: "candidate" })],
+      }),
+    );
+    renderPlan();
+
+    expect(await screen.findByRole("alert")).toBeDefined();
+    expect(screen.queryByTestId("no-dated-deadlines")).toBeNull();
+  });
 });
 
 describe("F-102 · CONDITIONAL branch table and INFEASIBLE rescope ladder", () => {

@@ -286,10 +286,13 @@ export function filingRouteOf(
  * THE ORDER THE WORK HAPPENS IN IS THE ORDER OF THE DATE THE ROW SHOWS. `latest_apply_date NULLS
  * LAST` reads a column that a merged dedupe line leaves NULL whenever its binding route publishes
  * no window, and that line still renders "apply by <a date>" off its filing route. Sorted on the
- * column alone, measured over 1,600 intakes with a published holiday list, 42 checklists reordered
- * and the only DATED requirement sorted BEHIND a research-required one (#252 review). `materialize`
- * then freezes that into `cohort_position`, which migration 007 exists to make permanent, so a
- * later regeneration does not correct it.
+ * column alone, 42 of the 3,200 intakes in `scripts/checklist-order-sweep.mts` reorder under a
+ * published holiday list, with the only DATED requirement sorted BEHIND a research-required one
+ * (#252 review). Under the deployed `holidays: null` the same sweep reorders 0, because a
+ * business-day window nothing can date is not a window that can sort ahead of anything. Every one
+ * of the 42 has `structure_over_10ft_tall: "yes"`. `materialize` then freezes whichever order it
+ * got into `cohort_position`, which migration 007 exists to make permanent, so a later
+ * regeneration does not correct it.
  *
  * IN SQL RATHER THAN IN TYPESCRIPT, deliberately. The order's other two keys are `permit_name` and
  * `rule_ids`, and a text comparison moved out of the database is a text comparison under a
@@ -313,6 +316,16 @@ export const FILING_ORDER_JOIN = `LEFT JOIN LATERAL (
                   WITH ORDINALITY AS listed(route, route_position)
           WHERE ordering_plan.id = item.plan_id
             AND rendering->'rule_ids' = to_jsonb(item.rule_ids)
+            -- TWO ROUTES OR IT IS NOT A MERGED LINE, the same guard filingRouteOf, plan-line.tsx
+            -- and alertSubjects all make, and it was the one place that did not make it. A stored
+            -- rendering carrying a ONE-entry route list describes a line with a single route, whose
+            -- own columns are that route's; storedRoutes collapses it back to the row and every
+            -- TypeScript reader treats it as unmerged. Without this test the lateral read the lone
+            -- route's window instead and ordered the row by it, so the same plan sorted one way
+            -- through the API and another through SQL. One shape out of 32 exhaustive route-list
+            -- shapes disagreed, and it disagreed here.
+            AND jsonb_array_length(
+                  coalesce(nullif(rendering->'routes', 'null'::jsonb), '[]'::jsonb)) >= 2
             -- A PUBLISHED WINDOW, NOT A COMPUTED DATE, which is the same test filingRouteOf makes
             -- and for the same reason: a business-day count with no published holiday list is a
             -- window the engine cannot date, and it is still the route this line files under.

@@ -100,6 +100,22 @@ export const arrayOf =
     Array.isArray(value) && value.every(check);
 
 /**
+ * A list the wire contract says is present-or-null and NEVER EMPTY, enforced rather than documented.
+ *
+ * `every` is vacuously true on an empty array, so an empty list is not a harmless degenerate case
+ * here: it is the one value that answers every question asked of it in the affirmative. A finding
+ * carrying `routes: []` passed the shape check and then told `hasOnlyUndatedDeadlines` that all of
+ * its routes were undated, printing "No dated deadlines identified." on a FEASIBLE plan beside a
+ * line showing a date (#252 review). A shape the contract says cannot exist is rejected here, not
+ * reinterpreted downstream, so a reader never has to guess which of "no routes" and "unmerged" an
+ * empty list meant.
+ */
+export const nonEmpty =
+  <T>(check: (value: unknown) => value is readonly T[]) =>
+  (value: unknown): value is readonly T[] =>
+    check(value) && value.length > 0;
+
+/**
  * A token set that cannot fall behind the engine's union, and that carries the union it came from so
  * `isToken` proves the right one. `Record<Union, true>` is exhaustive, so adding a member to
  * `Verdict` or `VerificationStatus` upstream breaks the caller until it is listed; the phantom
