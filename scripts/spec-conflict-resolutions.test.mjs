@@ -6,9 +6,12 @@ import { describe, expect, it } from "vitest";
 import {
   BENIGN_ADJACENT_PAIRS,
   HISTORICAL_RECORDS,
+  INDEPENDENCE_ASSERTIONS,
   OPT_OUT_EXTENSIONS,
   OPT_OUT_MARKER,
+  blockDigest,
   blocksOf,
+  countClaimsInPublishedOutput,
   pinnedDigest,
   scanFile,
   scanOptionsFor,
@@ -796,36 +799,73 @@ describe("no DOHMH rule is attributed to headcount, removed 2026-08-05 (#235)", 
     return rulesets;
   }
 
-  /**
-   * Whether any published ruleset keys a city health rule on the attendee-count intake field. This
-   * IS the attribution test the prose scan below uses: the prose claim is true exactly when this is
-   * true, so it is answered from the parsed trigger rather than from how a sentence is phrased.
-   */
-  function aHealthRuleReadsTheAttendeeCount() {
-    return publishedRulesets().some(([, artifact]) =>
-      artifact.rules
-        .filter(
-          (rule) =>
-            CITY_HEALTH_RULE.test(rule.id ?? "") ||
-            CITY_HEALTH_RULE.test(rule.output?.agency ?? ""),
-        )
-        .some((rule) => triggerFields(rule.trigger).has(ATTENDEE_COUNT_FIELD)),
+  /** Every city health rule of one parsed ruleset, by id OR by published agency. */
+  const cityHealthRules = (artifact) =>
+    artifact.rules.filter(
+      (rule) =>
+        CITY_HEALTH_RULE.test(rule.id ?? "") || CITY_HEALTH_RULE.test(rule.output?.agency ?? ""),
     );
+
+  /**
+   * The IDS of the city health rules whose published trigger reads the attendee-count intake field.
+   * Empty on this tree, and that is the fact the whole prose scan rests on: a sentence saying a city
+   * health requirement depends on the count is true exactly of a rule in this set.
+   *
+   * A SET RATHER THAN A BOOLEAN, which is the tenth PR #247 round. It was a boolean and
+   * `flaggedBlocks()` short-circuited to nothing on it, so ONE health rule starting to read
+   * `headcount` would have suppressed every prose finding in the repository. A sentence about that
+   * new rule would indeed have become true; a sentence inventing a count trigger for an unrelated
+   * vendor permit or notification would have gone past unchecked in the same run, and so would every
+   * pair in every document. The exception is scoped to what changed now: prose that NAMES one of
+   * these rules is attributable to it and exempt, and everything else is scanned exactly as before.
+   */
+  function healthRulesReadingTheAttendeeCount() {
+    const ids = new Set();
+    for (const [, artifact] of publishedRulesets()) {
+      for (const rule of cityHealthRules(artifact)) {
+        if (triggerFields(rule.trigger).has(ATTENDEE_COUNT_FIELD)) ids.add(rule.id);
+      }
+    }
+    return ids;
   }
 
   it("no published ruleset keys a DOHMH rule on an attendee count", () => {
     for (const [path, artifact] of publishedRulesets()) {
-      const health = artifact.rules.filter(
-        (rule) =>
-          CITY_HEALTH_RULE.test(rule.id ?? "") || CITY_HEALTH_RULE.test(rule.output?.agency ?? ""),
-      );
-      for (const rule of health) {
+      for (const rule of cityHealthRules(artifact)) {
         expect(
           [...triggerFields(rule.trigger)],
           `${path}: ${rule.id} reads no attendee count`,
         ).not.toContain(ATTENDEE_COUNT_FIELD);
       }
     }
+  });
+
+  /**
+   * The published ruleset's own prose, scanned. `countClaimsInPublishedOutput` in
+   * `spec-conflict-scan.mjs` states what it reads and why; it lives there rather than here so that
+   * the fixture suite can drive it over a planted ruleset, which is the same reason the block scan
+   * moved out of this file in the sixth PR #247 round.
+   *
+   * The `.json` artifacts were outside the prose walk while the only JSON anything read was each
+   * rule's trigger, so the artifact at the top of AGENTS.md's authority order was the one prose
+   * artifact nobody scanned.
+   */
+  it("no published rule's organizer-facing output states a count-based city health requirement", () => {
+    const attributed = healthRulesReadingTheAttendeeCount();
+    const offenders = [];
+    for (const [path, artifact] of publishedRulesets()) {
+      for (const found of countClaimsInPublishedOutput(artifact, { attributed })) {
+        offenders.push(`${path}: ${found.ruleId}: ${found.string}`);
+      }
+    }
+    expect(
+      offenders,
+      "no DOHMH rule reads headcount, so no published rule may TELL an organizer that one does." +
+        " The ruleset is the highest authority in AGENTS.md's order, so a claim here is not a" +
+        " document to correct: it is a regulatory publication, and only the product owner changes" +
+        " one (docs/DOCUMENTATION-GOVERNANCE.md §6):\n" +
+        offenders.join("\n"),
+    ).toEqual([]);
   });
 
   /** Every block of one tracked file, flagged or not. */
@@ -840,9 +880,11 @@ describe("no DOHMH rule is attributed to headcount, removed 2026-08-05 (#235)", 
    * scanned, and the one condition under which scanning them is pointless.
    */
   function flaggedBlocks() {
-    // The ruleset decides whether the pairing is an offence at all. If a published DOHMH rule ever
-    // does key on the attendee count, the prose claim becomes true and there is nothing to flag.
-    if (aHealthRuleReadsTheAttendeeCount()) return [];
+    // The ruleset decides whether a pairing is an offence, RULE BY RULE. A block that names a rule
+    // whose published trigger reads the attendee count is stating that rule's own published fact,
+    // so it is exempt; nothing else is. This used to be a repository-wide short-circuit on the same
+    // question asked as a yes/no, which one rule change would have used to silence the whole scan.
+    const attributed = [...healthRulesReadingTheAttendeeCount()];
 
     const flagged = [];
     for (const path of filesUnder(SCANNED_ROOTS, [".md", ".ts", ".tsx", ".mjs", ".js"])) {
@@ -851,7 +893,10 @@ describe("no DOHMH rule is attributed to headcount, removed 2026-08-05 (#235)", 
       // answered in `scanOptionsFor` rather than here since the sixth: both of those answers were
       // one clause of this function, and reverting either left the whole suite green.
       const found = scanFile(readFileSync(path, "utf8"), scanOptionsFor(relative));
-      for (const item of found) flagged.push({ relative, ...item });
+      for (const item of found) {
+        if (attributed.some((id) => item.text.includes(id))) continue;
+        flagged.push({ relative, ...item });
+      }
     }
     return flagged;
   }
@@ -878,10 +923,12 @@ describe("no DOHMH rule is attributed to headcount, removed 2026-08-05 (#235)", 
 
   it("every pinned historical record is present exactly once and byte-for-byte unchanged", () => {
     for (const pin of HISTORICAL_RECORDS) {
-      // Read off the RAW file, not off the flagged set. Presence is a fact about the record and
-      // has nothing to do with whether the prose scan ran: `flaggedBlocks()` returns nothing at
-      // all once a published ruleset keys a health rule on the attendee count, and reading
-      // presence from it reported four deleted approvals when a ruleset changed and docs did not.
+      // Read off the RAW file, not off the flagged set. Presence is a fact about the record and has
+      // nothing to do with whether the scan flags it: a record only reaches the flagged set while it
+      // still pairs the agency with a count, so an edit that took the count half out would report
+      // four DELETED approvals when nothing had been deleted. Until the tenth PR #247 round this
+      // note named the ruleset short-circuit as the reason, which was one instance of it and is
+      // gone; the reason itself is not, and it is the one written here.
       const byAnchor = blocksOfFile(pin.file).filter((item) => item.text.includes(pin.anchor));
       expect(byAnchor.length, pinFailure(pin, "is missing from the file")).toBeGreaterThan(0);
       // EXACTLY once. A pin says one specific historical record is present unchanged; it does not
@@ -904,19 +951,11 @@ describe("no DOHMH rule is attributed to headcount, removed 2026-08-05 (#235)", 
   // separates the two blocks or removes the co-occurrence, this fails and the entry comes out.
   it("every measured benign adjacent pair is still exactly one flagged pair", () => {
     const flagged = flaggedBlocks();
-    // `flaggedBlocks()` returns nothing at all once a published ruleset keys a DOHMH rule on the
-    // attendee count, so on that commit all six entries below fail at once, with a message about
-    // edits separating blocks that no edit made. `HISTORICAL_RECORDS` reads the raw files to avoid
-    // exactly this; the benign list cannot, because what it pins is a SCAN RESULT rather than a
-    // record. The failure is still the right one to have (it lands beside the ruleset hard-fail
-    // above, which is the real news), so the fix is to say which failure this is rather than to
-    // suppress it.
-    const scanIsOff = aHealthRuleReadsTheAttendeeCount()
-      ? "\nNOTE: a published ruleset now keys a DOHMH rule on the attendee count, so the prose scan" +
-        " short-circuits to nothing and EVERY entry in this list fails together. Nothing separated" +
-        " these blocks. Read the sibling assertion 'no published ruleset keys a DOHMH rule on an" +
-        " attendee count' first; that is the change, and this list follows from it."
-      : "";
+    // No note about the ruleset here any more. A published DOHMH rule that starts reading the
+    // attendee count used to short-circuit the scan to nothing, so every entry below failed at once
+    // over a change that separated no blocks, and this test carried a paragraph explaining that.
+    // The tenth PR #247 round scoped that exception to prose naming the changed rule, so these six
+    // pairs are flagged exactly as before and the paragraph has nothing left to explain.
     for (const pin of BENIGN_ADJACENT_PAIRS) {
       const matched = flagged.filter(
         (item) => item.relative === pin.file && pinnedDigest(pin, item.text) === pin.sha256,
@@ -928,8 +967,7 @@ describe("no DOHMH rule is attributed to headcount, removed 2026-08-05 (#235)", 
           "If an edit separated the two blocks or changed either one's wording, read the pair" +
           " again. If it is still two facts rather than one claim, recompute the digest in the" +
           " same commit and say what moved. If it is now a claim, the claim is the thing to" +
-          " remove. Do not add an entry here to quiet a live claim." +
-          scanIsOff,
+          " remove. Do not add an entry here to quiet a live claim.",
       ).toBe(1);
     }
   });
@@ -996,6 +1034,60 @@ describe("no DOHMH rule is attributed to headcount, removed 2026-08-05 (#235)", 
       marked,
       `${OPT_OUT_MARKER} is honoured in ${OPT_OUT_EXTENSIONS.join(", ")} files only. Prose` +
         " cannot opt out of this scan: write around the pairing, or record the wording as a pin.",
+    ).toEqual([]);
+  });
+
+  /**
+   * The pinned exemption is present, unique, and still the block that was read. This is the
+   * `HISTORICAL_RECORDS` assertion applied to the opt-out, and the tenth PR #247 round is why: the
+   * marker used to suppress on its own, so nothing checked that the block it marked went on
+   * asserting anything. A pin that is never verified against the file is the same defect one level
+   * up, so it is verified here and its absence is reported as a missing exemption rather than as an
+   * unexplained offender three assertions later.
+   */
+  it("every pinned independence assertion is present exactly once and unchanged", () => {
+    for (const pin of INDEPENDENCE_ASSERTIONS) {
+      const byAnchor = blocksOfFile(pin.file).filter((item) => item.text.includes(pin.anchor));
+      const failure = [
+        `${pin.file}: the pinned block ${pin.block} no longer matches its digest.`,
+        "",
+        "This block is the ONE exemption from the DOHMH/headcount scan that source code has. It",
+        `carries the "${OPT_OUT_MARKER}" marker, and the marker alone exempts nothing: the block`,
+        "must also be this pinned block, so that removing its assertions or writing a claim back",
+        "into its comment costs the exemption instead of keeping it.",
+        "",
+        "If you edited the block and it still asserts that DOHMH findings do not move with the",
+        "count, recompute the digest in the same commit and say what moved. If it no longer",
+        "asserts that, the exemption is what to remove, not the assertion.",
+      ].join("\n");
+      expect(byAnchor.length, failure).toBe(1);
+      expect(blockDigest(byAnchor[0].text), failure).toBe(pin.sha256);
+      expect(byAnchor[0].text, failure).toContain(OPT_OUT_MARKER);
+    }
+  });
+
+  // Every marker in the tree belongs to a pinned block. A marker anywhere else is inert, and its
+  // author is told so here rather than left believing they opted out: the offender scan would
+  // report their block as a live claim with no hint that the marker did nothing.
+  it("every opt-out marker outside the guard's own sources sits in a pinned block", () => {
+    const unpinned = [];
+    for (const path of filesUnder(SCANNED_ROOTS, [".md", ".ts", ".tsx", ".mjs", ".js"])) {
+      const relative = path.replace(`${repoRoot}/`, "");
+      const digests = scanOptionsFor(relative).optOutDigests;
+      for (const block of blocksOf(readFileSync(path, "utf8"))) {
+        if (!block.includes(OPT_OUT_MARKER)) continue;
+        if (!digests.includes(blockDigest(block))) {
+          unpinned.push(`${relative}: ${block.replace(/\s+/g, " ").trim().slice(0, 120)}`);
+        }
+      }
+    }
+    expect(
+      unpinned,
+      `${OPT_OUT_MARKER} suppresses nothing unless the block it marks is pinned in` +
+        " INDEPENDENCE_ASSERTIONS (scripts/spec-conflict-scan.mjs). A second entry there is a" +
+        " governance action, not a way to quiet this guard: it asserts that some other block is" +
+        " the executable proof that DOHMH findings do not move with the count.\n" +
+        unpinned.join("\n"),
     ).toEqual([]);
   });
 });

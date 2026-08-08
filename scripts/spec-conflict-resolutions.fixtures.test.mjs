@@ -11,11 +11,14 @@ import {
   COUNTED_PEOPLE,
   COUNTED_PEOPLE_SOURCE,
   HISTORICAL_RECORDS,
+  INDEPENDENCE_ASSERTIONS,
   OPT_OUT_EXTENSIONS,
   OPT_OUT_MARKER,
   PROXIMITY,
   UNBOUNDED_RECORD_FILES,
+  blockDigest,
   blocksOf,
+  countClaimsInPublishedOutput,
   isParagraph,
   normalizeForMatching,
   pairsAgencyWithCount,
@@ -617,26 +620,75 @@ describe("scanFile: a block is read as one line of prose", () => {
   });
 
   /**
-   * AN EXPECTED MISS, and a structural one rather than a lexical one: `blocksOf` reads a ` * `
-   * leader as a list bullet, so every line of a `*`-leader doc comment is its OWN block and there
-   * is no wrapped line to rejoin. Each half then fails to be a count on its own ("keyed on 75 or",
-   * "more guests recorded at intake"), so the boundary pass has nothing to pair either.
+   * WAS AN EXPECTED MISS UNTIL THE TENTH PR #247 ROUND, and it should not have been. `blocksOf`
+   * read a ` * ` leader as a list bullet, so every line of a wrapped doc comment was its own block,
+   * each half failed to be a count on its own ("keyed on 75 or", "more guests recorded at intake"),
+   * and the boundary pass had nothing to pair either. The declaration here said the fix was
+   * impossible because "a markdown `* ` bullet is indistinguishable from a doc-comment line".
    *
-   * Not closed, because the fix is in `blocksOf` rather than in the normalization: a markdown `* `
-   * bullet is indistinguishable from a doc-comment line, and every list item being its own block
-   * is what the ordinary-English tier of the cross-boundary pass is built on. The same claim on ONE
-   * line of a doc comment is flagged, and so is the `//` form above, which is the form
-   * `docs/BASELINE.md`'s correction record names in `apps/api/src/rsvps.ts`.
+   * It is distinguishable, by the `/**` on the line above, and that is the whole fix. So the
+   * declaration was an accommodation of `blocksOf`'s behaviour rather than a decision about it, in
+   * the one shape that matters most: a doc comment in a `.ts` file, wrapped at this tree's own
+   * width, is exactly where the struck clause has already been twice.
+   *
+   * The case that made the old reading TRUE is still asserted, in the case under this one: a `* `
+   * bullet an author wrote INSIDE a doc comment is still a bullet and still its own block.
    */
-  it("item 1: EXPECTED MISS — a doc comment's `*` leader makes every line its own block", () => {
+  it("item 1: flags a claim wrapped across a JSDoc comment's continuation lines", () => {
     const docComment = [
+      "/**",
       " * DOHMH publishes the temporary food-service permit for an indoor event keyed on 75 or",
       " * more guests recorded at intake.",
+      " */",
     ].join("\n");
-    expect(blocksOf(docComment).filter((block) => block.trim() !== "")).toHaveLength(2);
-    expect(scanFile(docComment, { bounded: true, allowOptOut: true })).toEqual([]);
-    const oneLine = " * DOHMH publishes the permit for an indoor event of 75 or more guests.";
-    expect(scanFile(oneLine, { bounded: true, allowOptOut: true })).toHaveLength(1);
+    expect(scanFile(docComment, { bounded: true, allowOptOut: true })).toHaveLength(1);
+    // Neither half is a count on its own, so the flag can come from nowhere but the rejoin.
+    for (const half of docComment.split("\n").slice(1, 3)) {
+      expect(pairsAgencyWithCount(half), half).toBe(false);
+    }
+    // The same two lines with no comment open above them are two markdown bullets, and stay two.
+    const bullets = docComment.split("\n").slice(1, 3).join("\n");
+    expect(blocksOf(bullets).filter((block) => block.trim() !== "")).toHaveLength(2);
+    expect(scanFile(bullets, { bounded: true, allowOptOut: true })).toEqual([]);
+  });
+
+  it("item 1: a bullet written inside a doc comment is still a bullet", () => {
+    const withBullets = [
+      "/**",
+      " * DOHMH publishes the temporary food-service permit for an indoor event.",
+      " *",
+      " *   - The event expects 75 attendees.",
+      " */",
+    ].join("\n");
+    // The leader is stripped for the list test; the ` - ` under it is not, so the count sits in a
+    // block of its own and the ordinary-English tier keeps the boundary it is built on.
+    expect(scanFile(withBullets, { bounded: true, allowOptOut: true })).toEqual([]);
+  });
+
+  it("item 1: a blank comment line separates two paragraphs of one doc comment", () => {
+    const twoParagraphs = [
+      "/**",
+      " * DOHMH publishes the temporary food-service permit for an indoor",
+      " * event.",
+      " *",
+      " * The gate opens at the guest count recorded at intake.",
+      " */",
+    ].join("\n");
+    // Two blocks, adjacent: nothing but the comment's own blank line between them. The agency is in
+    // the first and the count in the second, which is what the cross-boundary pass is for. Pushing
+    // the raw ` *` line instead of an empty block would put a third block between the two and the
+    // pass would stop reading them together.
+    const flagged = scanFile(twoParagraphs, { bounded: true, allowOptOut: true });
+    expect(flagged.map((item) => item.kind)).toEqual(["pair"]);
+    // The ordinary-English tier is NOT extended to them, and that is deliberate: a doc-comment line
+    // still reads as a bullet to `isParagraph`, which is what that tier's paragraph filter asks.
+    // Closing the wrap was the reported defect; widening the tier is a separate question with its
+    // own false-positive cost, and nothing measured says to answer it here.
+    const counted = twoParagraphs.replace(
+      "the guest count recorded at intake",
+      "75 or more guests recorded at intake",
+    );
+    expect(scanFile(counted, { bounded: true, allowOptOut: true })).toEqual([]);
   });
 
   /**
@@ -716,27 +768,51 @@ describe("scanFile: the bound does not readmit the clause to the files it was st
    * `.mjs` and `.js` rows.
    */
   it("item 2: every file kind gets the options its rules give it", () => {
+    // `digests` is the third answer, added in the tenth round: which of this file's blocks the
+    // marker may exempt. Exactly one file in the tree has one, so every other row is empty and the
+    // marker is inert there however the file is spelled.
     const FILES = [
-      { relative: "docs/BASELINE.md", bounded: false, allowOptOut: false },
-      { relative: "specs/F-302-rsvp-guest-list.md", bounded: false, allowOptOut: false },
-      { relative: "packages/engine/src/acceptance.test.ts", bounded: true, allowOptOut: true },
+      { relative: "docs/BASELINE.md", bounded: false, allowOptOut: false, digests: [] },
+      {
+        relative: "specs/F-302-rsvp-guest-list.md",
+        bounded: false,
+        allowOptOut: false,
+        digests: [],
+      },
+      {
+        relative: "packages/engine/src/acceptance.test.ts",
+        bounded: true,
+        allowOptOut: true,
+        digests: [],
+      },
       {
         relative: "apps/web/app/events/[id]/guests/guest-list.tsx",
         bounded: true,
         allowOptOut: true,
+        digests: [],
       },
       // The two files `docs/BASELINE.md`'s correction record says the clause "is removed in place
       // and stays removed". Code, so the marker is honoured; unbounded, so the bound cannot
       // readmit the clause to them.
-      { relative: "apps/api/src/rsvps.ts", bounded: false, allowOptOut: true },
-      { relative: "apps/api/src/rsvps.test.ts", bounded: false, allowOptOut: true },
-      // A guard fixture under `scripts/`: unbounded like prose, and the marker is its remedy.
-      { relative: "scripts/new-guard.test.mjs", bounded: false, allowOptOut: true },
-      { relative: "apps/web/next.config.js", bounded: false, allowOptOut: true },
+      { relative: "apps/api/src/rsvps.ts", bounded: false, allowOptOut: true, digests: [] },
+      {
+        relative: "apps/api/src/rsvps.test.ts",
+        bounded: false,
+        allowOptOut: true,
+        digests: [INDEPENDENCE_ASSERTIONS[0].sha256],
+      },
+      // A guard fixture under `scripts/`: unbounded like prose. The marker is no longer its remedy
+      // on its own; a pinned entry is, and until there is one the marker suppresses nothing here.
+      { relative: "scripts/new-guard.test.mjs", bounded: false, allowOptOut: true, digests: [] },
+      { relative: "apps/web/next.config.js", bounded: false, allowOptOut: true, digests: [] },
     ];
 
-    for (const { relative, bounded, allowOptOut } of FILES) {
-      expect(scanOptionsFor(relative), relative).toEqual({ bounded, allowOptOut });
+    for (const { relative, bounded, allowOptOut, digests } of FILES) {
+      expect(scanOptionsFor(relative), relative).toEqual({
+        bounded,
+        allowOptOut,
+        optOutDigests: digests,
+      });
     }
     // The two record files are named by the correction record, so they have to be real files that
     // carry the citation, not just rows in the table above.
@@ -765,20 +841,76 @@ describe("scanFile: the bound does not readmit the clause to the files it was st
 });
 
 describe("scanFile: the code opt-out", () => {
-  const REGRESSION_TEST = [
-    "  // guard: asserts-independence. This block asserts DOHMH findings do not move with the count.",
-    "  it('DOHMH findings are invariant under headcount', () => {",
-    "    expect(dohmhFindings(20)).toEqual(dohmhFindings(500));",
-    "  });",
-  ].join("\n");
+  /**
+   * THE REAL EXEMPTED BLOCK, read out of the file it exempts, for the reason this file's header
+   * gives: a hand-written miniature cannot fail the way the real thing fails. The block is the
+   * `#235` regression test in `apps/api/src/rsvps.test.ts` together with the comment that marks it,
+   * which are ONE block because no blank line separates them.
+   */
+  const optOutFile = "apps/api/src/rsvps.test.ts";
+  const REGRESSION_TEST = blocksOf(read(optOutFile)).find((block) =>
+    block.includes(OPT_OUT_MARKER),
+  );
+  const optOutOptions = scanOptionsFor(optOutFile);
 
-  it("item 7: the marker exempts the block in a bounded (code) file", () => {
-    expect(scanFile(REGRESSION_TEST, { bounded: true, allowOptOut: true })).toEqual([]);
+  it("item 7: the pinned block is the real one, and the pin is what exempts it", () => {
+    expect(REGRESSION_TEST, `${optOutFile} carries the marked block`).toBeDefined();
+    expect(blockDigest(REGRESSION_TEST)).toBe(INDEPENDENCE_ASSERTIONS[0].sha256);
+    expect(scanFile(REGRESSION_TEST, optOutOptions)).toEqual([]);
+    // The same block, with the pin withdrawn and nothing else changed, is an ordinary offender. So
+    // what exempts it is the pin and not the marker sitting in it.
+    expect(scanFile(REGRESSION_TEST, { ...optOutOptions, optOutDigests: [] })).toHaveLength(1);
+  });
+
+  /**
+   * THE TENTH PR #247 ROUND, and the defect that round names: the marker declared an obligation and
+   * nothing checked it, so the block could stop asserting the independence and keep the exemption.
+   *
+   * Both halves of that are driven here, on the REAL block rather than on a fixture shaped like it.
+   * Deleting its `expect` calls and restoring the struck clause to its comment are two different
+   * edits, and neither one touches the marker; both used to leave this guard green, and both cost
+   * the exemption now because both change the block the digest names.
+   */
+  it("item 10: losing the assertions costs the exemption, marker and all", () => {
+    const gutted = REGRESSION_TEST.replace(/^.*expect\(.*$/gm, "    // assertion removed");
+    expect(gutted, "the edit removed something").not.toBe(REGRESSION_TEST);
+    expect(gutted).toContain(OPT_OUT_MARKER);
+    expect(scanFile(gutted, optOutOptions)).toHaveLength(1);
+  });
+
+  it("item 10: writing the struck clause back into the marked comment costs it too", () => {
+    const restored = REGRESSION_TEST.replace(
+      "// The regression test for the fact issue #235 corrected.",
+      "// The DOHMH thresholds are driven by the guest count recorded at intake.",
+    );
+    expect(restored, "the edit replaced the comment's opening sentence").not.toBe(REGRESSION_TEST);
+    expect(restored).toContain(OPT_OUT_MARKER);
+    expect(scanFile(restored, optOutOptions)).toHaveLength(1);
+  });
+
+  it("item 10: the marker in an unpinned file suppresses nothing", () => {
+    const planted = [
+      `  // ${OPT_OUT_MARKER}. This block asserts DOHMH findings do not move with the count.`,
+      "  it('DOHMH findings are invariant under headcount', () => {",
+      "    expect(dohmhFindings(20)).toEqual(dohmhFindings(500));",
+      "  });",
+    ].join("\n");
+    // A code file, the marker honoured in its extension, and no pin: exactly the file a copied
+    // marker lands in. `scanOptionsFor` gives it no digests, so it is scanned like any other.
+    expect(scanOptionsFor("apps/api/src/other.test.ts").optOutDigests).toEqual([]);
+    expect(scanFile(planted, scanOptionsFor("apps/api/src/other.test.ts"))).toHaveLength(1);
+    // And with its own digest pinned it is exempt, so what the case measures is the pin.
+    const block = blocksOf(planted).find((item) => item.includes(OPT_OUT_MARKER));
+    expect(
+      scanFile(planted, { bounded: true, allowOptOut: true, optOutDigests: [blockDigest(block)] }),
+    ).toEqual([]);
   });
 
   it("item 7: the same text without the marker is flagged", () => {
     const unmarked = REGRESSION_TEST.replace(OPT_OUT_MARKER, "no marker here");
-    expect(scanFile(unmarked, { bounded: true, allowOptOut: true })).toHaveLength(1);
+    expect(
+      scanFile(unmarked, { ...optOutOptions, optOutDigests: [blockDigest(unmarked)] }),
+    ).toHaveLength(1);
   });
 
   it("item 7: prose cannot opt out, however the marker is spelled", () => {
@@ -803,9 +935,18 @@ describe("scanFile: the code opt-out", () => {
       "\n",
     );
     const neighbour = "  // The assembly gate opens at 75 or more guests recorded at intake.";
-    expect(scanFile(marked, { bounded: true, allowOptOut: true })).toEqual([]);
+    // The marked block is pinned by its own digest, so the case is about the boundary and not
+    // about whether the exemption applies at all.
+    const pinned = (text) => ({
+      bounded: true,
+      allowOptOut: true,
+      optOutDigests: blocksOf(text)
+        .filter((block) => block.includes(OPT_OUT_MARKER))
+        .map(blockDigest),
+    });
+    expect(scanFile(marked, pinned(marked))).toEqual([]);
     expect(scanFile(neighbour, { bounded: true, allowOptOut: true })).toEqual([]);
-    const flagged = scanFile(`${marked}\n\n${neighbour}`, { bounded: true, allowOptOut: true });
+    const flagged = scanFile(`${marked}\n\n${neighbour}`, pinned(marked));
     expect(flagged.map((item) => item.kind)).toEqual(["pair"]);
     expect(flagged[0].text).toContain(OPT_OUT_MARKER);
     expect(flagged[0].text).toContain("75 or more guests");
@@ -830,12 +971,33 @@ describe("scanFile: the code opt-out", () => {
   it("item 4: the marker is honoured in every scanned code extension, not just the bounded ones", () => {
     expect(OPT_OUT_EXTENSIONS).toEqual([".ts", ".tsx", ".mjs", ".js"]);
     for (const extension of BOUNDED_EXTENSIONS) expect(OPT_OUT_EXTENSIONS).toContain(extension);
-    expect(scanFile(NEW_GUARD_FIXTURE, { bounded: false, allowOptOut: true })).toEqual([]);
+    const marked = blocksOf(NEW_GUARD_FIXTURE).find((block) => block.includes(OPT_OUT_MARKER));
+    expect(
+      scanFile(NEW_GUARD_FIXTURE, {
+        bounded: false,
+        allowOptOut: true,
+        optOutDigests: [blockDigest(marked)],
+      }),
+    ).toEqual([]);
+    // The extension is still only half the answer, and the tenth round added the other half: an
+    // unpinned marker under `scripts/` is inert, so the remedy for a new guard fixture is a pinned
+    // entry rather than the marker alone. `allowOptOut: false` was the fifth round's defect and it
+    // stays fixed; a bare marker being enough was this round's.
+    expect(scanFile(NEW_GUARD_FIXTURE, scanOptionsFor("scripts/new-guard.test.mjs"))).toHaveLength(
+      1,
+    );
   });
 
   it("item 4: the same fixture without the marker is still flagged", () => {
     const unmarked = NEW_GUARD_FIXTURE.replace(OPT_OUT_MARKER, "no marker here");
-    expect(scanFile(unmarked, { bounded: false, allowOptOut: true })).toHaveLength(1);
+    const marked = blocksOf(unmarked).find((block) => block.includes("no marker here"));
+    expect(
+      scanFile(unmarked, {
+        bounded: false,
+        allowOptOut: true,
+        optOutDigests: [blockDigest(marked)],
+      }),
+    ).toHaveLength(1);
   });
 });
 
@@ -1687,5 +1849,150 @@ describe("the declared misses, asserted as expected misses", () => {
     expect(pairsAgencyWithCount("DOHMH requires a permit at seventy-five or more guests.")).toBe(
       false,
     );
+  });
+});
+
+/**
+ * THE PUBLISHED RULESET'S OWN PROSE, driven over a bad artifact. The tenth PR #247 round: the prose
+ * walk covered `.md`, `.ts`, `.tsx`, `.mjs` and `.js`, and the only JSON anything parsed was each
+ * rule's trigger, so the artifact at the top of AGENTS.md's authority order was the one prose
+ * artifact nobody scanned.
+ *
+ * The fixtures below are built from the REAL published rule, for the reason this file's header
+ * gives: `rules/nyc-rules.v2.11.json`'s `DOHMH-VENDOR-PERMIT-001` with one string edited is the
+ * shape a bad publication actually has, and a hand-written rule object is a miniature that cannot
+ * fail the way the artifact fails.
+ */
+describe("countClaimsInPublishedOutput: the published ruleset is prose too", () => {
+  const published = JSON.parse(read("rules/nyc-rules.v2.11.json"));
+  // A deep copy, so an edit below cannot reach the parsed artifact the other cases read.
+  const copyOf = (rule) => JSON.parse(JSON.stringify(rule));
+  const ruleWith = (id, edit) => ({
+    ...published,
+    rules: published.rules.map((rule) => (rule.id === id ? edit(copyOf(rule)) : rule)),
+  });
+
+  it("finds nothing in the ruleset as published", () => {
+    expect(countClaimsInPublishedOutput(published)).toEqual([]);
+  });
+
+  /**
+   * The failure the thread names: every DOHMH trigger stays food-based, so the trigger assertion
+   * and the whole prose walk stay green, and the unsupported claim ships to organizers anyway.
+   */
+  it("finds a count-based claim added to a DOHMH rule's note", () => {
+    const bad = ruleWith("DOHMH-VENDOR-PERMIT-001", (rule) => {
+      rule.output.notes.push("Required once the event expects 75 or more guests.");
+      return rule;
+    });
+    // The trigger is untouched, which is what made this reachable: the rule still reads
+    // `food_present` and `event_open_to_public` and nothing else.
+    const trigger = JSON.stringify(bad.rules.find((rule) => rule.id === "DOHMH-VENDOR-PERMIT-001"));
+    expect(trigger).not.toContain('"field": "headcount"');
+    const found = countClaimsInPublishedOutput(bad);
+    expect(found.map((item) => item.ruleId)).toEqual(["DOHMH-VENDOR-PERMIT-001"]);
+  });
+
+  it("finds one in a user_summary point, which is the string an organizer reads first", () => {
+    const bad = ruleWith("DOHMH-ORGANIZER-NOTIFY-001", (rule) => {
+      rule.output.user_summary.points[0].text =
+        "Notify the Health Department once the guest count passes the threshold.";
+      return rule;
+    });
+    expect(countClaimsInPublishedOutput(bad).map((item) => item.ruleId)).toEqual([
+      "DOHMH-ORGANIZER-NOTIFY-001",
+    ]);
+  });
+
+  /**
+   * A CITY HEALTH RULE'S OWN STRING NEEDS NO AGENCY NAME to be a claim about that agency, and this
+   * is the half a plain agency-and-count scan would miss: `output.agency` already says DOHMH, so
+   * the sentence inside it is attributed whether or not it repeats the name.
+   */
+  it("finds one that names no agency, inside a rule whose agency is DOHMH", () => {
+    const bad = ruleWith("DOHMH-EXEMPTION-001", (rule) => {
+      rule.output.note_text = "The exemption ends at 75 or more attendees.";
+      return rule;
+    });
+    expect(
+      bad.rules.find((rule) => rule.id === "DOHMH-EXEMPTION-001").output.note_text,
+    ).not.toMatch(CITY_HEALTH_AGENCY);
+    expect(countClaimsInPublishedOutput(bad).map((item) => item.ruleId)).toEqual([
+      "DOHMH-EXEMPTION-001",
+    ]);
+  });
+
+  /**
+   * The other direction: another agency's rule inventing a count trigger for this one. The rule is
+   * not DOHMH's, so its string has to name the agency itself, and this one does.
+   */
+  it("finds a DOHMH claim written into another agency's rule", () => {
+    const parks = published.rules.find((rule) => rule.id === "PARKS-EVENT-001");
+    expect(parks, "the Parks rule this case is built from").toBeDefined();
+    const bad = ruleWith("PARKS-EVENT-001", (rule) => {
+      rule.output.notes = [
+        ...(rule.output.notes ?? []),
+        "DOHMH also requires a permit at 75 guests.",
+      ];
+      return rule;
+    });
+    expect(countClaimsInPublishedOutput(bad).map((item) => item.ruleId)).toEqual([
+      "PARKS-EVENT-001",
+    ]);
+  });
+
+  /**
+   * An advisory is organizer-facing too, and it is a separate array. Scanning `rules` alone would
+   * have left the four advisories outside the guard for the same reason `.json` was outside it.
+   */
+  it("finds one in an advisory, not just in a rule", () => {
+    const bad = {
+      ...published,
+      advisories: published.advisories.map((advisory, index) =>
+        index === 0
+          ? {
+              ...advisory,
+              output: {
+                ...advisory.output,
+                advisory_text: "The Health Department keys this on the guest count.",
+              },
+            }
+          : advisory,
+      ),
+    };
+    expect(countClaimsInPublishedOutput(bad)).toHaveLength(1);
+  });
+
+  /**
+   * THE EXEMPTION IS SCOPED TO THE RULE WHOSE TRIGGER CHANGED, which is the same correction the
+   * prose scan took this round. A rule that really does read the count may say so; the rule beside
+   * it may not, and it is still reported in the same run.
+   */
+  it("exempts a rule whose published trigger really reads the count, and only that rule", () => {
+    const bad = ruleWith("DOHMH-VENDOR-PERMIT-001", (rule) => {
+      rule.output.notes.push("Required once the event expects 75 or more guests.");
+      return rule;
+    });
+    const alsoBad = {
+      ...bad,
+      rules: bad.rules.map((rule) =>
+        rule.id === "DOHMH-EXEMPTION-001"
+          ? { ...rule, output: { ...rule.output, note_text: "Ends at 75 or more attendees." } }
+          : rule,
+      ),
+    };
+    const attributed = new Set(["DOHMH-VENDOR-PERMIT-001"]);
+    expect(
+      countClaimsInPublishedOutput(alsoBad, { attributed }).map((item) => item.ruleId),
+    ).toEqual(["DOHMH-EXEMPTION-001"]);
+  });
+
+  /** A source URL is not prose, and a path fragment must not be read as a count. */
+  it("does not read a source url as prose", () => {
+    const bad = ruleWith("DOHMH-VENDOR-PERMIT-001", (rule) => {
+      rule.output.user_summary.points[0].sources[0].url = "https://example.test/dohmh/75-guests";
+      return rule;
+    });
+    expect(countClaimsInPublishedOutput(bad)).toEqual([]);
   });
 });

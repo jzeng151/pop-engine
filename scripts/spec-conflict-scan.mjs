@@ -250,8 +250,45 @@ export const OPT_OUT_EXTENSIONS = [".ts", ".tsx", ".mjs", ".js"];
  * and both of those are visible. A marker in a source file is visible in the same way, and it
  * carries an obligation a reader can check: the block it marks must actually assert the
  * independence, not merely mention it.
+ *
+ * THE MARKER ALONE NO LONGER SUPPRESSES ANYTHING, which is the tenth PR #247 round. Until this
+ * round the obligation in the paragraph above was carried by nobody: `block.includes(marker)` asked
+ * whether a block DECLARES that it asserts the independence and never whether it does, so a future
+ * comment could restore the struck clause beside the marker, or the regression test could lose its
+ * assertions and keep it, and this guard stayed green either way. That is the shape this branch has
+ * spent nine rounds removing everywhere else, an exemption that trusts a declaration. The marker is
+ * a NECESSARY condition now and `INDEPENDENCE_ASSERTIONS` below is the sufficient one.
  */
 export const OPT_OUT_MARKER = "guard: asserts-independence";
+
+/**
+ * The blocks the marker actually exempts: pinned by file and by the SHA-256 of the block, the same
+ * way `HISTORICAL_RECORDS` is pinned, and for the same reason. A digest asserts what a marker
+ * cannot: this exact block, in this file, is the one whose author took on the obligation, and its
+ * assertions are still the assertions that were read.
+ *
+ * BOTH FAILURE MODES THE MARKER LEFT OPEN CLOSE ON THE DIGEST. Restoring the struck clause to the
+ * marked comment changes the block, so the digest stops matching and the claim is reported. Deleting
+ * the `expect` calls that make it a regression test changes the same block, because the marked
+ * comment and the `describe` it introduces are ONE block: no blank line separates them, and
+ * `blocksOf` ends a block only where the next one begins. That is what makes the pin worth more here
+ * than a file allowlist, which would have closed the copy and neither of these.
+ *
+ * ONE ENTRY, and a second is a governance action rather than a way to quiet the guard, exactly as a
+ * fifth `HISTORICAL_RECORDS` pin is. Adding one means asserting that some other block is the
+ * executable proof that DOHMH findings are invariant under the count. THE COST IS REAL AND IS
+ * STATED: this is a live test file, so an ordinary edit inside the marked block fails the guard
+ * until the digest is recomputed in the same commit. That is the price of the exemption being
+ * checked instead of declared, and the exemption was worth nothing checked-by-declaration.
+ */
+export const INDEPENDENCE_ASSERTIONS = [
+  {
+    file: "apps/api/src/rsvps.test.ts",
+    block: 'the "DOHMH findings do not move with headcount (#235)" regression test',
+    anchor: 'describe("DOHMH findings do not move with headcount (#235)"',
+    sha256: "689afb8c31ef419e5170861f5fb4a2e34ab7f11ef74176ce875b050c8a584460",
+  },
+];
 
 /**
  * The two options `scanFile` takes, for one repository-relative path.
@@ -268,6 +305,11 @@ export const scanOptionsFor = (relative) => ({
     BOUNDED_EXTENSIONS.some((extension) => relative.endsWith(extension)) &&
     !UNBOUNDED_RECORD_FILES.includes(relative),
   allowOptOut: OPT_OUT_EXTENSIONS.some((extension) => relative.endsWith(extension)),
+  // Which blocks of this file the marker may exempt. A file with no pin gets an empty list, so the
+  // marker is inert in it and its author is told so rather than silently trusted.
+  optOutDigests: INDEPENDENCE_ASSERTIONS.filter((pin) => pin.file === relative).map(
+    (pin) => pin.sha256,
+  ),
 });
 
 /**
@@ -374,13 +416,17 @@ export const scanOptionsFor = (relative) => ({
  * can therefore reach `main`, which is why both are stripped rather than the formatter's output
  * alone. The underscore is the tree's house form on its own count, independent of that.
  *
- * TWO FACES OF THE SAME DEFECT ARE NOT CLOSED HERE, and each says why at its own site: the
- * hyphenated compound ("the guest-count threshold") is a declared miss with a measured cost, at
- * `ATTENDEE_COUNT_SOURCE` above; and a count phrase wrapped inside a `*`-leader DOC COMMENT is a
- * structural miss rather than a lexical one, because `blocksOf` reads a ` * ` leader as a list
- * bullet and each line is then its own block. Turning every hyphen into a space would rewrite
- * "food-service" and "2026-08-07" too, and the numeral half deliberately refuses a hyphenated
- * number, so neither face has a normalization that closes it for free.
+ * ONE FACE OF THE SAME DEFECT IS NOT CLOSED HERE, and it says why at its own site: the hyphenated
+ * compound ("the guest-count threshold") is a declared miss with a measured cost, at
+ * `ATTENDEE_COUNT_SOURCE` above. Turning every hyphen into a space would rewrite "food-service" and
+ * "2026-08-07" too, and the numeral half deliberately refuses a hyphenated number, so it has no
+ * normalization that closes it for free.
+ *
+ * The other face was a count phrase wrapped inside a `*`-leader DOC COMMENT, and it was structural
+ * rather than lexical: `blocksOf` read a ` * ` leader as a list bullet, so each line was its own
+ * block and there was no wrapped line left for this function to rejoin. It is closed in `blocksOf`,
+ * where it lived, and nothing here changed to close it: stripping `*` already put the two halves
+ * on one line the moment they were in one block.
  *
  * MEASURED, not predicted: with this in place the scan flags both planted records above, and the
  * flag set on the clean tree is unchanged at ten, the four pinned records and the six benign pairs.
@@ -392,19 +438,56 @@ export const normalizeForMatching = (text) =>
     .replace(/(?<![A-Za-z0-9])'|'(?![A-Za-z0-9])/g, "")
     .replace(/[ \t]*\r?\n[ \t]*(?:\/\/|>)?[ \t]*/g, " ");
 
-/** Paragraphs, list items and table rows. A block ends where the next one begins. */
+/** A line that opens a list item or a table row, and so begins a block of its own. */
+const LIST_OR_ROW = /^[\s/*#-]*([-*+]\s|\d+\.\s|\|)/;
+
+/**
+ * Paragraphs, list items and table rows. A block ends where the next one begins.
+ *
+ * INSIDE A `/* ... *\/` COMMENT THE LEADING `*` IS THE COMMENT'S OWN LEADER rather than a markdown
+ * bullet, and the list test reads the line with that leader removed. This is the NINTH round's
+ * declared miss closed rather than restated: a normally wrapped doc comment put every continuation
+ * line in a block of its own, so a claim with the agency on one line and "75 or more guests" on the
+ * next was two half-claims and neither half was a count. `spec-conflict-resolutions.fixtures.test
+ * .mjs` carried that as an EXPECTED MISS, on the reading that "a markdown `* ` bullet is
+ * indistinguishable from a doc-comment line". It is distinguishable: the `/**` that opened the
+ * comment is on an earlier line, which is what this loop tracks. That reading was an accommodation
+ * of this function's behaviour rather than a decision, and the shape it left open is the one this
+ * whole guard exists about, in the file kind where the struck clause actually sat.
+ *
+ * A `* ` line in a MARKDOWN file is still a bullet and still its own block, because no comment is
+ * open there. So is a `* ` line inside a doc comment, which is an ordinary markdown bullet an author
+ * wrote in a comment: the leader is stripped, the bullet under it is not, and the ordinary-English
+ * tier of the cross-boundary pass keeps the boundary it is built on.
+ *
+ * The block text stays RAW, leader included, because that is what a pin digests. Rejoining the
+ * wrapped line is `normalizeForMatching`'s job and it already does it: `*` is one of the inline
+ * markers it strips, so the leader is gone before the line break is collapsed.
+ *
+ * A blank comment line (` *` alone) becomes an EMPTY block, which is what it is: a paragraph break
+ * inside the comment. Pushing the raw line instead would leave a block between two paragraphs a
+ * reader sees as adjacent, and the cross-boundary pass would stop reading them together.
+ */
 export const blocksOf = (text) => {
   const blocks = [""];
+  let inComment = false;
   for (const line of text.split("\n")) {
-    if (line.trim() === "" || /^[\s/*#-]*([-*+]\s|\d+\.\s|\|)/.test(line)) blocks.push(line);
+    const content = inComment ? line.replace(/^[ \t]*\*(?!\/)/, "") : line;
+    const blank = content.trim().length === 0;
+    if (blank || LIST_OR_ROW.test(content)) blocks.push(blank ? "" : line);
     else blocks[blocks.length - 1] += `\n${line}`;
+    // Read off the raw line and after it is classified, so the `/**` that opens a comment is still
+    // the bullet-shaped line it has always been and only what FOLLOWS it is a continuation.
+    const opened = line.lastIndexOf("/*");
+    const closed = line.lastIndexOf("*/");
+    if (opened > closed) inComment = true;
+    else if (closed > opened) inComment = false;
   }
   return blocks;
 };
 
 /** Whether a block is a prose paragraph rather than a list item or a table row. */
-export const isParagraph = (block) =>
-  !/^[\s/*#-]*([-*+]\s|\d+\.\s|\|)/.test(block.trim().split("\n")[0] ?? "");
+export const isParagraph = (block) => !LIST_OR_ROW.test(block.trim().split("\n")[0] ?? "");
 
 /**
  * Whether one block supplies the agency and the other supplies a `count` match, in either
@@ -507,8 +590,11 @@ export const pairsAgencyWithCount = (raw, { bounded = false } = {}) => {
  *     literal with nothing but test scaffolding between them. So the bound stays in code, minus
  *     the files `UNBOUNDED_RECORD_FILES` names.
  */
-export function scanFile(text, { bounded = false, allowOptOut = false } = {}) {
-  const optedOut = (block) => allowOptOut && block.includes(OPT_OUT_MARKER);
+export function scanFile(text, { bounded = false, allowOptOut = false, optOutDigests = [] } = {}) {
+  // The marker says the author took the obligation on; the digest says this is the block that was
+  // read against it. Both, or the block is scanned like any other.
+  const optedOut = (block) =>
+    allowOptOut && block.includes(OPT_OUT_MARKER) && optOutDigests.includes(blockDigest(block));
   // Empty blocks are dropped so that ADJACENT means "nothing between them but whitespace". A
   // paragraph followed by a blank line and then a bullet produces an empty block in between, and
   // that is the third of the structural shapes the fourth PR #247 round found: with the empty
@@ -547,6 +633,71 @@ export function scanFile(text, { bounded = false, allowOptOut = false } = {}) {
   }
   return flagged;
 }
+
+/** The rule id or published agency that makes a rule the city health agency's. */
+export const cityHealthRule = ({ id = "", output }) =>
+  CITY_HEALTH_AGENCY.test(id) || CITY_HEALTH_AGENCY.test(output?.agency ?? "");
+
+/**
+ * Every organizer-facing string a published rule or advisory carries, at any nesting depth of its
+ * `output`: `permit_name`, `requirement_name`, `note_text`, `advisory_text`, `disposition`, the
+ * `notes` array, the `deadline` and `fee` displays, and every `user_summary` heading and point.
+ *
+ * A `url` is not prose and is excluded: it carries no claim, and a path fragment like
+ * `.../guests-75` would read as a count. Everything else under `output` is read, rather than the
+ * dozen keys that exist today, so a key a future publication adds is scanned the day it lands.
+ */
+export const outputStrings = (node, into = []) => {
+  if (typeof node === "string") into.push(node);
+  else if (Array.isArray(node)) for (const child of node) outputStrings(child, into);
+  else if (node && typeof node === "object") {
+    for (const [key, value] of Object.entries(node)) {
+      if (key !== "url") outputStrings(value, into);
+    }
+  }
+  return into;
+};
+
+/**
+ * THE PUBLISHED RULESET'S OWN PROSE, scanned: every string of every rule's and advisory's `output`
+ * that states a count-based city health requirement. This is the tenth PR #247 round.
+ *
+ * The prose walk covered `.md`, `.ts`, `.tsx`, `.mjs` and `.js`, and the only JSON anything read was
+ * the TRIGGER of each rule. So the artifact at the top of AGENTS.md's authority order was the one
+ * prose artifact nobody scanned. A publication that left every DOHMH trigger food-based and added a
+ * `note_text` or a `user_summary` point saying the requirement depends on the headcount kept every
+ * assertion green while shipping the unsupported claim straight to organizers, which is further
+ * than any document this guard does scan can reach.
+ *
+ * TWO QUESTIONS, because a rule's strings are attributable to the rule in a way a document's are
+ * not:
+ *
+ *   - A CITY HEALTH RULE's own output may not carry an attendee count at all. The string sits
+ *     inside the requirement, so it needs no agency name of its own to be a claim about that
+ *     agency; `output.agency` supplies it. The agency name is prefixed to the string here so that
+ *     both questions go through `pairsAgencyWithCount` rather than through two near-copies of it.
+ *   - ANY rule's output may not PAIR the city health agency with a count, which is the same
+ *     question the prose scan asks of a document block. This is what catches a Parks or DOB rule
+ *     whose note says a DOHMH requirement is count-based.
+ *
+ * `attributed` is the ids whose published trigger really does read the count, so their own prose is
+ * a published fact rather than a claim. It is empty on this tree and is passed in rather than
+ * decided here, because the trigger is the caller's parse.
+ *
+ * Measured on this tree: zero strings, over 42 rules and 4 advisories.
+ */
+export const countClaimsInPublishedOutput = (artifact, { attributed = new Set() } = {}) => {
+  const found = [];
+  for (const rule of [...(artifact.rules ?? []), ...(artifact.advisories ?? [])]) {
+    if (attributed.has(rule.id)) continue;
+    const ownRequirement = cityHealthRule(rule);
+    for (const string of outputStrings(rule.output)) {
+      const scanned = ownRequirement ? `${rule.output?.agency ?? "DOHMH"}. ${string}` : string;
+      if (pairsAgencyWithCount(scanned)) found.push({ ruleId: rule.id, string });
+    }
+  }
+  return found;
+};
 
 /**
  * A register table row, with the two things a neighbouring edit moves normalized away: the row
@@ -729,8 +880,8 @@ export const BENIGN_ADJACENT_PAIRS = [
   },
 ];
 
+/** One block's SHA-256, over its raw text. */
+export const blockDigest = (block) => createHash("sha256").update(block, "utf8").digest("hex");
+
 /** The text a pin protects: the whole block, minus any part the pin declares unstable. */
-export const pinnedDigest = (pin, block) =>
-  createHash("sha256")
-    .update(pin.stable ? pin.stable(block) : block, "utf8")
-    .digest("hex");
+export const pinnedDigest = (pin, block) => blockDigest(pin.stable ? pin.stable(block) : block);
