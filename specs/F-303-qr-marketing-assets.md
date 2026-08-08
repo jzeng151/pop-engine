@@ -1,6 +1,6 @@
 # F-303 · QR Marketing Assets
 
-**Status:** PROPOSED (2026-07-26) — approval blocked by `docs/OPEN-QUESTIONS.md` T-7 / [SPEC-CONFLICT #210](https://github.com/jzeng151/pop-engine/issues/210); not implementable until approved and listed in `docs/BASELINE.md`.
+**Status:** PROPOSED (2026-07-26; `docs/OPEN-QUESTIONS.md` T-7 / [SPEC-CONFLICT #210](https://github.com/jzeng151/pop-engine/issues/210) RESOLVED 2026-08-04 by the product owner, which restricted this feature to rehearsal use and approved no production route) — the remaining Approval Blockers below still stand; not implementable until approved and listed in `docs/BASELINE.md`.
 
 **Phase:** 2 · **Issue:** [#20](https://github.com/jzeng151/pop-engine/issues/20) · **Owner:** TBD · **Reviewer:** product owner plus affected architecture, contract, security, and lane owners (TBD) · **Approval date:** —
 
@@ -26,13 +26,13 @@ An organizer can print a clear event flyer or poster whose QR sends attendees to
 - F-301 published public event page and F-401 QR infrastructure.
 - The F-701/F-702/F-703 gate. F-702 supplies the workspace membership boundary the event whose asset is generated resolves against and F-703 supplies the permission matrix `F303-AC-06` checks; F-701 supplies the authenticated actor both read from. All three are PROPOSED, so the gate is not an approved input today and this spec is not implementable against it until they are approved and listed in `docs/BASELINE.md`.
 - A stable public slug/token contract from `ARCHITECTURE-FUTURE.md`.
-- Under approved F-301 AC 6, anonymous exposure exists only during rehearsal; production activation requires T-7 / SPEC-CONFLICT #210 to approve a hardened production route or explicitly restrict this feature to rehearsal.
+- Under approved F-301 AC 6, anonymous exposure exists only during rehearsal, and T-7 / SPEC-CONFLICT #210 was resolved on 2026-08-04 (product owner) by restricting this feature to rehearsal use. `docs/PRD.md` §5 and the `docs/ROADMAP.md` F-303 row carry that restriction: no hardened production public-route contract is approved, and this spec may not authorize production exposure of the event page. Lifting the restriction is a product-scope decision that returns to `docs/PRD.md`, not something this spec can settle.
 - Baseline at draft time: PRD, Roadmap, Design, and Phase 0–1.5 Architecture approved 2026-07-22; `ARCHITECTURE-FUTURE.md` approved as a planning target 2026-07-25; NYC ruleset `nyc.v2.7`, rules schema `popengine-rules/v2`, and scenario fixtures v5 where regulatory output is consumed.
 - The approval PR must re-pin any baseline version that changes before approval. A proposed or superseded input blocks implementation.
 
 ## Inputs, Outputs, State, Validation, and Errors
 
-- Input is one published event page; output is one printable page with an SVG or equally lossless QR and human-readable fallback URL. No production-ready asset state exists while T-7 is unresolved.
+- Input is one published event page; output is one printable page with an SVG or equally lossless QR and human-readable fallback URL. No production-ready asset state exists, and none is in scope: T-7 was resolved on 2026-08-04 to rehearsal-only use.
 - Asset state is unavailable while unpublished or blocked by the effective public-route gate, ready only while the slug and anonymous route are active, and stale after slug rotation until regenerated.
 - The QR payload is the canonical HTTPS public URL only; user text cannot alter its host or route.
 - Missing or unresolved material data stays visibly unset, unknown, pending, or failed as appropriate; it never becomes a successful or complete result.
@@ -86,11 +86,11 @@ Exact HTTP, JSON Schema, migration, job, and provider shapes belong in their rev
 
 ## Rollout and Fallback
 
-- Use a native print stylesheet for rehearsal; do not claim or enable production readiness until T-7 is resolved.
+- Use a native print stylesheet for rehearsal; do not claim or enable production readiness. T-7's 2026-08-04 resolution restricts this feature to rehearsal use, so there is no production route to enable here.
 - Rollback disables the new surface and workers/provider calls without deleting confirmed user data or rewriting immutable plans, rulesets, revisions, or history.
 
 ## Approval Blockers
 
-- Resolve T-7 / SPEC-CONFLICT #210, then approve paper size, scan-distance rehearsal, public-slug lifecycle, production exposure or explicit rehearsal-only scope, and final public copy.
+- Approve paper size, scan-distance rehearsal, public-slug lifecycle, and final public copy. T-7 / SPEC-CONFLICT #210 is resolved (2026-08-04, product owner): the scope is rehearsal-only, so production exposure is not an option this spec may approve, and proposing it again is a product-scope decision for `docs/PRD.md` rather than an approval blocker to clear here.
 - Approve F-701, F-702, and F-703, and name with F-703 the asset generation and download permissions `F303-AC-06` checks. That criterion checks a permission no approved artifact defines today and may not invent one, so until the matrix names them it is testable only at the membership level stated there.
 - Assign the owner and independent reviewer, approve this spec, and add it to `docs/BASELINE.md`.
