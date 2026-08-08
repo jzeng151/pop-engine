@@ -1,8 +1,28 @@
+import { availableParallelism } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { defineConfig } from "vitest/config";
 
 const repoRoot = path.dirname(fileURLToPath(import.meta.url));
+
+// One core is reserved for the main process, which is the reporter's and the RPC server's.
+//
+// Vitest defaults to one worker per core and does not count the main process, so a two-core runner
+// gets two CPU-bound workers and a main process fighting for the same two cores. Workers report
+// results by calling `onTaskUpdate` on the main process over birpc, which throws after 60 seconds
+// unanswered, and vitest counts that throw as an unhandled error and exits non-zero with every test
+// passing. That is exactly how runs 31269789560 and 31272998939 failed: `Test Files 67 passed`,
+// `Tests 1813 passed`, `Errors 1 error`, coverage over threshold on all four metrics.
+//
+// It began when `scripts/dedupe-cofiring/` landed, and the reason is the load, not the suite: that
+// file is 80 seconds of uninterruptible sweeping on the runner against 6 seconds here, and it runs
+// beside `scripts/check-baseline-drift.test.mjs`, which is another 67 seconds and additionally
+// spawns `tsc` children vitest's scheduler cannot see. Total test time was 266 seconds inside a
+// 113-second wall, so the main process was getting a fraction of a core for minutes at a time.
+//
+// Leaving it a core costs wall-clock on small machines and buys back most of it in lost contention.
+// It is deliberately not a hard-coded 1: a developer's machine keeps its parallelism.
+const workers = Math.max(1, availableParallelism() - 1);
 
 // Single root config runs every workspace test suite (`pnpm test`).
 // Coverage is enforced at 90% per CONTRIBUTING.md across the engine, the api, and the
@@ -41,6 +61,8 @@ export default defineConfig({
     // and the property that actually fixed the reporter timeout is the awaiting rather than the
     // parallelism, so buying safety with it is cheap.
     maxConcurrency: 2,
+    maxWorkers: workers,
+    minWorkers: 1,
 
     // Workspace packages export TypeScript source; force Vite to transform them.
     server: { deps: { inline: ["@pop-engine/engine"] } },
