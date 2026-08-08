@@ -1611,9 +1611,7 @@ async function plannedAlerts(
       // off a window the plan no longer publishes, and a live alert was cancelled. F-203's Outputs
       // suppress on a date that has GONE, never on the ABSENCE of one.
       const routeApplyBy =
-        routeRuleId === null
-          ? {}
-          : { routeScheduled: true as const, controllingApplyBy: applyBy };
+        routeRuleId === null ? {} : { routeScheduled: true as const, controllingApplyBy: applyBy };
 
       const openOn = isoDate(row.apply_after_date);
       const binding = DEPENDENCY_SEQUENCING_BINDINGS.find(

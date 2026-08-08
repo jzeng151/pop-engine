@@ -6881,9 +6881,7 @@ describe.skipIf(databaseUrl === "")("F-203 deadline alerts", () => {
       }
       // The settled route keeps the imperative, and quotes its own date.
       for (const row of settled) {
-        expect(row.payload.body).toContain(
-          `Sound Device Permit (NYPD): file by ${applyBy}.`,
-        );
+        expect(row.payload.body).toContain(`Sound Device Permit (NYPD): file by ${applyBy}.`);
         expect(row.payload.body).not.toContain("may be required");
       }
     });

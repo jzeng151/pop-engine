@@ -388,9 +388,7 @@ function MissedMayBeRequiredSection({
           ruleIds: [ruleId],
           label: route.name ?? ruleId,
           source:
-            source === undefined
-              ? null
-              : { label: source.citation, url: source.urls[0] as string },
+            source === undefined ? null : { label: source.citation, url: source.urls[0] as string },
           portalName: route.portalName,
           portalUrl: route.portalUrl,
         },
