@@ -765,6 +765,32 @@ describe("the routes of a merged dedupe line", () => {
     expect(line.queryByText(/do not say which of these applies/)).toBeNull();
   });
 
+  /**
+   * #252 P2: TWO ROUTES DIFFERING ONLY BY TRIGGER RESULT ARE NOT TWO ROUTES PUBLISHING THE SAME
+   * THING, and the signature that decided they were made the whole candidate block vanish.
+   *
+   * `checklist-item.tsx` renders its deciding question off the same payload with no such test, so
+   * the two surfaces disagreed on one plan and the plan page was the one hiding it: the checklist
+   * asked which route applies while the plan line said nothing at all.
+   */
+  it("still asks the question when two routes differ only by trigger result", async () => {
+    const line = await lineWith({
+      ruleIds: ["DOB-STAGE-001", "DOB-STRUCTURE-DURATION-001"],
+      headlineMode: "candidate",
+      routes: [
+        route({ ruleId: "DOB-STAGE-001", triggerResult: "true" }),
+        route({
+          ruleId: "DOB-STRUCTURE-DURATION-001",
+          triggerResult: "unknown",
+          unknownFields: ["structure_duration_days"],
+        }),
+      ],
+    });
+    expect(line.getByText(/do not say which of these applies/)).toBeDefined();
+    expect(line.getByText(/structure duration days/)).toBeDefined();
+    expect(line.getByText("May apply")).toBeDefined();
+  });
+
   it("says both apply, and names each route's own window and fee, when every trigger resolved", async () => {
     const line = await lineWith({
       ruleIds: ["NYPD-SOUND-PUBLIC-001", "NYPD-SOUND-PROHIBITED-001"],
@@ -1677,6 +1703,92 @@ describe("F-102 · CONDITIONAL branch table and INFEASIBLE rescope ladder", () =
     expect(section.textContent).toContain("Temporary structure filing");
     expect(section.textContent).not.toContain("DOB-TENT-001");
     expect(section.textContent).not.toContain("DOB-TALL-STRUCTURE-001");
+  });
+
+  /**
+   * #252 P2: THE PANEL NAMED THE LINE AND NOT THE MISSED ROUTE.
+   *
+   * `computeWindowVerdict` emits `missedRuleIds` as ROUTE ids. This section resolved each one back
+   * to the containing finding and rendered THAT line's name, citation, portal and disposition, so a
+   * `required` route's name appeared under a heading saying these findings carry a may-be-required
+   * disposition. `blockerView` already narrows the INFEASIBLE panel to the blocking route for the
+   * same reason; this is the other panel that reads the same ids.
+   */
+  it("names the missed route, not the merged line it sits on", async () => {
+    stubApi(
+      plan({
+        verdict: "CONDITIONAL",
+        findings: [
+          finding({
+            ruleIds: ["DOB-TENT-001", "DOB-TALL-STRUCTURE-001"],
+            name: "Temporary structure filing",
+            disposition: "may_be_required",
+            portalName: "DOB NOW",
+            portalUrl: "https://example.gov/dobnow",
+            headlineMode: "applies_together",
+            sources: [
+              { ruleId: "DOB-TENT-001", citation: "Tent FAQ", urls: ["https://example.gov/tent"] },
+              {
+                ruleId: "DOB-TALL-STRUCTURE-001",
+                citation: "Tall structure FAQ",
+                urls: ["https://example.gov/tall"],
+              },
+            ],
+            routes: [
+              {
+                ruleId: "DOB-TENT-001",
+                triggerResult: "true",
+                disposition: "may_be_required",
+                unknownFields: [],
+                name: "Temporary structure filing",
+                agency: "DOB",
+                deadline: null,
+                deadlineDisplay: null,
+                latestApplyDate: "2026-07-20",
+                applyAfterDate: null,
+                deadlineStatus: "on_track",
+                slackDays: null,
+                feeDisplay: null,
+                portalName: "DOB NOW",
+                portalUrl: "https://example.gov/dobnow",
+                portalInstructions: null,
+              },
+              {
+                ruleId: "DOB-TALL-STRUCTURE-001",
+                triggerResult: "true",
+                disposition: "may_be_required",
+                unknownFields: [],
+                name: "Tall structure permit",
+                agency: "DOB",
+                deadline: null,
+                deadlineDisplay: null,
+                latestApplyDate: "2026-07-01",
+                applyAfterDate: null,
+                deadlineStatus: "published_deadline_missed",
+                slackDays: null,
+                feeDisplay: null,
+                portalName: "DOB tall structures",
+                portalUrl: "https://example.gov/tall-portal",
+                portalInstructions: null,
+              },
+            ],
+          }),
+        ],
+        verdictDetail: {
+          ...emptyVerdictDetail,
+          // The route that missed, which is NOT the route the merged line reads.
+          missedRuleIds: ["DOB-TALL-STRUCTURE-001"],
+        },
+      }),
+    );
+    renderPlan();
+    await screen.findByTestId("missed-may-be-required");
+
+    const section = screen.getByTestId("missed-may-be-required");
+    expect(section.textContent).toContain("Tall structure permit");
+    expect(section.textContent).not.toContain("Temporary structure filing");
+    expect(section.querySelector('a[href="https://example.gov/tall"]')).not.toBeNull();
+    expect(section.querySelector('a[href="https://example.gov/dobnow"]')).toBeNull();
   });
 
   it("shows nothing under a FEASIBLE verdict that has no branch or rescope work", async () => {

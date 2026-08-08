@@ -1773,6 +1773,83 @@ describe.concurrent("round 16: a glob row expands to artifacts, never to directo
   });
 });
 
+// Round 16 closed the INSTANCE and not the class (#252 review). Two rules came out of it: a path a
+// manifest row names may be anything on disk, and a guard that stops guarding is the failure this
+// file exists to remove. Both are still broken in three places, and the second one was made WORSE
+// by the fix: filtering expansions on a filename pattern silently drops the files it cannot spell.
+describe.concurrent("round 17: a manifest row's path is whatever is on disk (#252)", () => {
+  const approvedRow = (artifact, extra = "") =>
+    `# Fixture manifest\n\n| Concern | Artifact | Status | Notes |\n| --- | --- | --- | --- |\n` +
+    `| Drafts | \`${artifact}\` | APPROVED 2026-08-08 by the product owner | ${extra} |\n`;
+
+  // ITEM 5. The filename pattern the round 16 fix put on expansions drops any name it cannot
+  // spell, and a dropped expansion is a file the row marks APPROVED that nothing inspects. Each of
+  // these four declares PROPOSED under an APPROVED glob and origin/main failed every one of them.
+  it.each([
+    ["a space", "draft note.md"],
+    ["a non-ASCII letter", "réunion.md"],
+    ["a newline", "draft\nnote.md"],
+    ["an uppercase extension", "DRAFT.MD"],
+  ])("fails a PROPOSED file a glob reaches whose name has %s", async (_label, name) => {
+    const { status, output } = await runOn({
+      "docs/BASELINE.md": approvedRow("docs/proposals/*"),
+      // A sibling the pattern DOES spell, so the expansion is non-empty and the run reaches the
+      // status check. That is the shape the real manifest has, and it is what made the dropped
+      // file exit 0 printing "Baseline status check passed" rather than failing as empty.
+      "docs/proposals/ordinary.md": "# Ordinary\n\n**Status:** APPROVED 2026-08-08\n",
+      [`docs/proposals/${name}`]: "# Draft\n\n**Status:** PROPOSED\n",
+    });
+
+    expect(status).toBe(1);
+    expect(output).toContain('header says "PROPOSED"');
+  });
+
+  // ITEM 4a. The checksum loop reads the file's bytes and runs BEFORE the status loop's report, so
+  // a digest published for a path that is a directory died on a bare EISDIR naming the syscall.
+  it("reports a checksum row whose path is a directory rather than throwing EISDIR", async () => {
+    const { status, output } = await runOn({
+      "docs/BASELINE.md": approvedRow(
+        "docs/proposals/legacy.md",
+        "sha256 `" + "0".repeat(64) + "`",
+      ),
+      "docs/proposals/legacy.md/inner.md": "# Inner\n\n**Status:** PROPOSED\n",
+    });
+
+    expect(status).toBe(1);
+    expect(output).toContain("docs/proposals/legacy.md");
+    expect(output).toContain('named by manifest row "Drafts"');
+    expect(output).not.toContain("at readFileSync");
+  });
+
+  // ITEM 4b. A glob whose directory half is a FILE. `existsSync` says yes and `readdirSync` throws
+  // ENOTDIR, which is the same defect from the other side: the row is wrong and must read as wrong.
+  it("reports a glob rooted at a file rather than throwing ENOTDIR", async () => {
+    const { status, output } = await runOn({
+      "docs/BASELINE.md": approvedRow("docs/proposals/one.md/*"),
+      "docs/proposals/one.md": "# One\n\n**Status:** APPROVED 2026-08-08\n",
+    });
+
+    expect(status).toBe(1);
+    expect(output).toContain("docs/proposals/one.md/*");
+    expect(output).toContain('named by manifest row "Drafts"');
+    expect(output).not.toContain("at readdirSync");
+  });
+
+  // ITEM 4c. `publishedRulesets` listed names without asking what they are, so a DIRECTORY named
+  // like a ruleset counted as published and a reference to it resolved against something no
+  // deployment can open.
+  it("does not count a directory under rules/ as a published ruleset", async () => {
+    const { status, output } = await runOn({
+      [`rules/${MISSING}/placeholder.json`]: "{}\n",
+    });
+
+    expect(status).toBe(0);
+    expect(output).toContain("check passed");
+    // The message the bug produced: a directory counted towards "exactly one published ruleset".
+    expect(output).not.toContain("holds 2 published rulesets");
+  });
+});
+
 // The SPEC-CONFLICT #127 item 2 rule (governance §5 step 7). The reconciliation dropped a
 // standalone `Square/POS integrations` bullet from the Roadmap because it contradicted the PRD and
 // ARCHITECTURE-FUTURE, which assign the Square capability to F-408. A one-time edit closes that

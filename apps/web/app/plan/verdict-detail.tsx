@@ -369,6 +369,37 @@ function MissedMayBeRequiredSection({
       });
       continue;
     }
+    // THE ROUTE THAT MISSED, NOT THE LINE IT SITS ON. `computeWindowVerdict` emits `missedRuleIds`
+    // as ROUTE ids, and resolving each one back to its containing finding rendered the merged
+    // line's name, citation, portal and disposition instead: a `required` route appeared under a
+    // heading saying these findings carry a may-be-required disposition, named after a different
+    // permit. `blockerView` narrows the INFEASIBLE panel for the same reason; this is the other
+    // panel that reads the same ids, and it is narrowed the same way — the route's own published
+    // name, portal and disposition, and the citations `FindingSource.ruleId` attributes to it.
+    const route = finding.routes?.find((entry) => entry.ruleId === ruleId);
+    if (route !== undefined) {
+      if (seenFindingKeys.has(ruleId)) continue;
+      seenFindingKeys.add(ruleId);
+      const source = (finding.sources ?? []).find(
+        (entry) => entry.ruleId === ruleId && entry.urls.length > 0,
+      );
+      missed.push({
+        reference: {
+          ruleIds: [ruleId],
+          label: route.name ?? ruleId,
+          source:
+            source === undefined
+              ? null
+              : { label: source.citation, url: source.urls[0] as string },
+          portalName: route.portalName,
+          portalUrl: route.portalUrl,
+        },
+        disposition: route.disposition,
+      });
+      continue;
+    }
+    // No route list: an unmerged line, or an artifact stored before the field existed. Its own
+    // rule ids are its routes and the line's values are the route's, so it is listed once.
     const key = finding.ruleIds.join("|");
     if (seenFindingKeys.has(key)) continue;
     seenFindingKeys.add(key);

@@ -163,9 +163,18 @@ function SummarySources({ sources }: { sources: readonly SummarySourceLink[] }) 
 /**
  * The published values a reader compares two routes on. Two routes "publish the same thing" when
  * every one of these is equal, which is a comparison of published values rather than a judgement.
+ *
+ * `triggerResult` IS ONE OF THEM, and leaving it out made the whole candidate block vanish on the
+ * plan a candidate block exists for. Two routes alike in name, window and fee but differing in
+ * whether their trigger resolved are not two renderings of one permit: one is triggered and the
+ * other is the open question, the entries below label them differently, and the introduction is
+ * built out of exactly that difference. Collapsed to one signature, `Routes` returned null and the
+ * plan page said nothing while `checklist-item.tsx` rendered its deciding question off the same
+ * payload — two surfaces disagreeing on one plan (#252 review).
  */
 const routeSignature = (route: ConsumedRoute): string =>
   JSON.stringify([
+    route.triggerResult,
     route.name,
     route.agency,
     route.disposition,
