@@ -2,6 +2,7 @@
 // window check, so an unknown-conditioned finding can never render INFEASIBLE (Scenario F).
 
 import { BLOCKING_DISPOSITION_FLOOR, DISPOSITION_STRENGTH, resolveFindings } from "./findings";
+import type { DefiniteRoutes } from "./findings";
 import type { PlanContext } from "./deadlines";
 import {
   MISSED_MAY_BE_REQUIRED_IS_CONDITIONAL,
@@ -40,7 +41,7 @@ const isMissed = (finding: Finding): boolean =>
   finding.deadlineStatus === "published_deadline_missed";
 
 /**
- * Whether a missed finding blocks. Two conditions, and both are load-bearing.
+ * Whether a missed finding blocks. Three conditions, and each is load-bearing.
  *
  * `required` is the BAR rather than the whole set: `prohibited_or_ineligible` sits ABOVE `required`
  * in `DISPOSITION_STRENGTH`, so testing for equality let a finding that is both barred and past its
@@ -59,19 +60,24 @@ const isMissed = (finding: Finding): boolean =>
  * engine does not know the fact the bar hangs off, is the failure this repository forbids everywhere
  * else. So the disposition still renders; only the verdict waits for the answer.
  *
- * `definiteBlockingRuleIds` carries which routes resolved, because a merged line's disposition is
- * the strongest ANY route contributes (`mergeGroup`) and the trigger result is not on `Finding`. A
- * group holding an unknown-triggered prohibition beside a resolved advisory reads
- * `prohibited_or_ineligible` and blocks on nothing; one holding a resolved `required` route blocks
- * on that route, exactly as before.
+ * `DefiniteRoutes` carries which routes resolved, because a merged line's fields are read off
+ * several routes (`mergeGroup`) and the trigger result is not on `Finding`. It takes TWO sets rather
+ * than one, because the disposition and the closed window that together make a plan INFEASIBLE are
+ * not read off the same route: `disposition` is the strongest ANY route contributes and the timeline
+ * is the group's TIGHTEST window whatever tier supplied it. Checking only the first let an unrelated
+ * resolved blocker in the group make an unknown-triggered route's timeline definitive: a group
+ * holding a resolved bar with no deadline beside an unknown-triggered route whose window has closed
+ * reads `prohibited_or_ineligible` and `published_deadline_missed`, and answering the unknown so that
+ * second route does not apply removes the missed deadline entirely. Where the unknown is one
+ * `alternativeValues()` cannot enumerate there are no branches to say so, so the window check decided
+ * the plan (#254 review). Both routes now have to have resolved: a group holding a resolved
+ * `required` route with its own closed window blocks on that route, exactly as before.
  */
-const blocksWhenMissed = (
-  finding: Finding,
-  definiteBlockingRuleIds: ReadonlySet<string>,
-): boolean =>
+const blocksWhenMissed = (finding: Finding, definite: DefiniteRoutes): boolean =>
   DISPOSITION_STRENGTH.indexOf(finding.disposition) >=
     DISPOSITION_STRENGTH.indexOf(BLOCKING_DISPOSITION_FLOOR) &&
-  finding.ruleIds.some((ruleId) => definiteBlockingRuleIds.has(ruleId));
+  finding.ruleIds.some((ruleId) => definite.blockingRuleIds.has(ruleId)) &&
+  finding.ruleIds.some((ruleId) => definite.windowRuleIds.has(ruleId));
 
 /**
  * Steps 4–6: the window checks, with no branch expansion. Also the per-branch and per-rescope
@@ -79,7 +85,7 @@ const blocksWhenMissed = (
  */
 export function computeWindowVerdict(
   findings: readonly Finding[],
-  definiteBlockingRuleIds: ReadonlySet<string>,
+  definite: DefiniteRoutes,
 ): WindowVerdict {
   const missed = findings.filter(isMissed);
   const missedRuleIds = missed.flatMap((finding) => finding.ruleIds);
@@ -90,7 +96,7 @@ export function computeWindowVerdict(
 
   // The blocking finding is the missed one with the longest published lead, i.e. the earliest date.
   const blocking = missed
-    .filter((finding) => blocksWhenMissed(finding, definiteBlockingRuleIds))
+    .filter((finding) => blocksWhenMissed(finding, definite))
     .sort((left, right) =>
       (left.latestApplyDate ?? "").localeCompare(right.latestApplyDate ?? ""),
     )[0];
@@ -288,7 +294,7 @@ function evaluateConditional(
   context: PlanContext,
 ): ConditionalEvaluation {
   const resolved = resolveFindings(intake, ruleset, context);
-  const window = computeWindowVerdict(resolved.findings, resolved.definiteBlockingRuleIds);
+  const window = computeWindowVerdict(resolved.findings, resolved.definiteRoutes);
   const unresolvedTimelines = resolved.findings
     .filter((finding) => finding.timelineUnresolvedReason !== null)
     .map((finding) => ({

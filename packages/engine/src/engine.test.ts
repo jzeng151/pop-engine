@@ -1105,6 +1105,146 @@ describe("an unknown trigger never blocks, however barred the finding (F-102 AC 
   });
 });
 
+/**
+ * The same bar, one route further along. A merged line reads its DISPOSITION off the strongest route
+ * and its TIMELINE off the tightest window in the whole group (AD-19, `mergeGroup`), so the barred
+ * route and the closed window that together close a plan need not be the same route. Checking only
+ * that the barred route resolved let a resolved bar with no deadline lend its resolution to another
+ * route's conditional window: the merged line read `prohibited_or_ineligible` and
+ * `published_deadline_missed`, and with the second route's unknown field one `alternativeValues()`
+ * cannot enumerate there were no branches to show that answering it removes the missed deadline
+ * altogether (#254 review).
+ */
+describe("a merged line's window has to resolve too, not just its bar (F-102 AC 2, AC 10)", () => {
+  /** Resolved, barred, and undated: it contributes the disposition and no window at all. */
+  const undatedBar = {
+    id: "BAR-NODATE-001",
+    kind: "prohibition",
+    trigger: { all: [{ field: "headcount", op: "gte", value: 10 }] },
+    output: { permit_name: "barred route", agency: "DOB", dedupe_key: "dob-structure" },
+    verification: { status: "SOURCE_CONFIRMED" },
+    source: { citation: "citation BAR-NODATE-001", urls: ["https://example.test/BAR-NODATE-001"] },
+  };
+
+  /** Shares the key, publishes the group's only window, and hangs off `structure_height_ft`. */
+  const datedRoute = {
+    id: "RULE-B",
+    kind: "permit",
+    trigger: {
+      all: [
+        { field: "headcount", op: "gte", value: 10 },
+        { field: "structure_height_ft", op: "gte", value: 20 },
+      ],
+    },
+    output: {
+      permit_name: "dated route",
+      agency: "DOB",
+      deadline: calendarWindow(45),
+      dedupe_key: "dob-structure",
+    },
+    verification: { status: "SOURCE_CONFIRMED" },
+    source: { citation: "citation RULE-B", urls: ["https://example.test/RULE-B"] },
+  };
+
+  /** 45 calendar days before 2026-08-02 is 2026-06-18, which `TODAY` is already past. */
+  const planWithHeight = (structureHeightFt: number | string) =>
+    evaluate(
+      {
+        event_date: "2026-08-02",
+        headcount: 50,
+        structure_height_ft: structureHeightFt,
+      } as unknown as EventIntake,
+      syntheticRuleset(
+        [undatedBar, datedRoute],
+        [{ field: "structure_height_ft", type: "integer" }],
+      ),
+      TODAY,
+      { id: "test-calendar@2026", holidays: [] },
+    );
+
+  it("waits for the answer when the window comes from the route that did not resolve", () => {
+    const plan = planWithHeight("unknown");
+    expect(plan.findings).toHaveLength(1);
+    // The merged line still says both things it published: barred, and past a filing window.
+    expect(plan.findings[0]?.disposition).toBe("prohibited_or_ineligible");
+    expect(plan.findings[0]?.deadlineStatus).toBe("published_deadline_missed");
+    expect(plan.findings[0]?.latestApplyDate).toBe("2026-06-18");
+    // Only the verdict waits: answering under 20 ft drops RULE-B and with it the missed window.
+    expect(plan.verdict).toBe("CONDITIONAL");
+    expect(plan.verdictDetail.blockingFinding).toBeNull();
+    // `structure_height_ft` is an integer, so there is no branch table to carry the answer; the
+    // plan asks for the fact instead, which is what makes the window check load-bearing here.
+    expect(plan.verdictDetail.missingFacts.map((fact) => fact.field)).toEqual([
+      "structure_height_ft",
+    ]);
+  });
+
+  it("still blocks once that same route resolves", () => {
+    const plan = planWithHeight(30);
+    expect(plan.findings[0]?.deadlineStatus).toBe("published_deadline_missed");
+    expect(plan.verdict).toBe("INFEASIBLE");
+    expect(plan.verdictDetail.blockingFinding?.ruleIds).toEqual(["BAR-NODATE-001", "RULE-B"]);
+  });
+});
+
+/**
+ * F-102: "An OFFICIAL_CONFLICT finding never flips the verdict by itself; it renders MAY_BE_REQUIRED
+ * with both readings." Live official pages disagree about what the rule says, so the engine deciding
+ * a plan on one of the two readings would resolve the conflict silently, in the harsher direction.
+ * The finding is excluded from the blocking set rather than corrected at parse time: what a rule
+ * publishes is regulatory content, and the published ruleset outranks the engine (AGENTS.md).
+ */
+describe("an official conflict never closes a plan on its own (F-102)", () => {
+  const conflictedRule = (kind: string, disposition?: string) => ({
+    id: "CONFLICT-001",
+    kind,
+    trigger: { all: [{ field: "headcount", op: "gte", value: 10 }] },
+    output: {
+      permit_name: "conflicted route",
+      agency: "DOB",
+      deadline: calendarWindow(45),
+      note_text: "One page says 45 days ahead; the FAQ says December 31 of the preceding year.",
+      ...(disposition === undefined ? {} : { disposition }),
+    },
+    verification: { status: "OFFICIAL_CONFLICT" },
+    source: { citation: "citation CONFLICT-001", urls: ["https://example.test/CONFLICT-001"] },
+  });
+
+  /** 45 calendar days before 2026-08-02 is 2026-06-18, which `TODAY` is already past. */
+  const closedWindowPlan = (kind: string, disposition?: string) =>
+    evaluate(
+      { event_date: "2026-08-02", headcount: 50 } as unknown as EventIntake,
+      syntheticRuleset([conflictedRule(kind, disposition)]),
+      TODAY,
+      { id: "test-calendar@2026", holidays: [] },
+    );
+
+  it("leaves a barred, missed official conflict conditional", () => {
+    // `prohibition` with no published disposition resolves to `prohibited_or_ineligible`, so this
+    // is the same route the amended AC 10 bar reaches — with SOURCE_CONFIRMED it is INFEASIBLE.
+    const plan = closedWindowPlan("prohibition");
+    expect(plan.findings[0]?.disposition).toBe("prohibited_or_ineligible");
+    expect(plan.findings[0]?.deadlineStatus).toBe("published_deadline_missed");
+    expect(plan.verdict).toBe("CONDITIONAL");
+    expect(plan.verdictDetail.blockingFinding).toBeNull();
+    // Nothing is hidden: the line still renders as barred, and it still renders the conflict.
+    expect(plan.findings[0]?.verificationStatus).toBe("OFFICIAL_CONFLICT");
+    expect(plan.findings[0]?.conflictText).toBe(
+      "One page says 45 days ahead; the FAQ says December 31 of the preceding year.",
+    );
+    expect(plan.verdictDetail.missedRuleIds).toEqual(["CONFLICT-001"]);
+  });
+
+  it("leaves a required, missed official conflict conditional as well", () => {
+    // The exclusion is the whole blocking floor, not the top tier of it.
+    const plan = closedWindowPlan("permit");
+    expect(plan.findings[0]?.disposition).toBe("required");
+    expect(plan.findings[0]?.deadlineStatus).toBe("published_deadline_missed");
+    expect(plan.verdict).toBe("CONDITIONAL");
+    expect(plan.verdictDetail.blockingFinding).toBeNull();
+  });
+});
+
 describe("verification treatments", () => {
   it("leaves RESEARCH_REQUIRED confirmation to the renderer instead of duplicating it in notes", () => {
     const plan = evaluate(
