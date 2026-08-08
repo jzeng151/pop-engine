@@ -347,6 +347,57 @@ export const scanOptionsFor = (relative) => ({
   ),
 });
 
+const isHorizontalSpace = (character) => character === " " || character === "\t";
+
+/** A line with the whitespace that sat before its line break removed, the CR included. */
+const withoutTrailingSpace = (line) => {
+  let end = line.length;
+  if (end > 0 && line[end - 1] === "\r") end -= 1;
+  while (end > 0 && isHorizontalSpace(line[end - 1])) end -= 1;
+  return line.slice(0, end);
+};
+
+/** A continuation line with its indentation and its one comment or blockquote leader removed. */
+const withoutLeader = (line) => {
+  let start = 0;
+  while (start < line.length && isHorizontalSpace(line[start])) start += 1;
+  if (line.startsWith("//", start)) start += 2;
+  else if (line[start] === ">") start += 1;
+  while (start < line.length && isHorizontalSpace(line[start])) start += 1;
+  return line.slice(start);
+};
+
+/**
+ * Every line break of a text, with the whitespace and the one comment or blockquote leader around
+ * it, collapsed to a single space. This is the last step of `normalizeForMatching` below, which
+ * states what each part of it is for.
+ *
+ * IT IS A SCAN RATHER THAN THE ONE GLOBAL REGEX IT REPLACES, `[ \t]*\r?\n[ \t]*(?:\/\/|>)?[ \t]*`,
+ * and that is a MEASURED performance fix rather than a style preference. That regex is quadratic in
+ * the length of a run of spaces: the leading `[ \t]*` matches the whole run from every position
+ * inside it and then backtracks one character at a time when no line break follows. A table pads
+ * every cell to the width of its column, so `docs/BASELINE.md` carries 84 runs of 100 spaces or
+ * more and its longest is 8,633; the sum of the squares of its runs is 2.4 billion. Timed on one
+ * synthetic run of spaces, the regex costs 0.6ms at 1,000 characters, 2.0ms at 2,000, 7.9ms at
+ * 4,000 and 31.3ms at 8,000, which is the doubling-time-quadruples signature.
+ *
+ * What that cost on this tree: scanning `docs/BASELINE.md` alone took 2,880ms of the whole tree's
+ * 3,232ms, and `spec-conflict-resolutions.test.mjs` walks the tree twice, so CI's 5-second per-test
+ * limit was overrun by a file's table padding. The scan is unchanged in what it matches: the
+ * equivalence to the regex was checked character-for-character over every block of every scanned
+ * file before the regex was removed.
+ */
+export const joinWrappedLines = (text) => {
+  const lines = text.split("\n");
+  const last = lines.length - 1;
+  return lines
+    .map((line, index) => {
+      const body = index === 0 ? line : withoutLeader(line);
+      return index === last ? body : withoutTrailingSpace(body);
+    })
+    .join(" ");
+};
+
 /**
  * One block's text as one line of prose, for MATCHING ONLY. Never for a digest: every pin reads
  * the raw block, so nothing here can widen or narrow what a pin protects.
@@ -467,11 +518,12 @@ export const scanOptionsFor = (relative) => ({
  * flag set on the clean tree is unchanged at ten, the four pinned records and the six benign pairs.
  */
 export const normalizeForMatching = (text) =>
-  text
-    .replace(/\]\([^)\n]*\)/g, "]")
-    .replace(/[`*_~[\]"“”]/g, "")
-    .replace(/(?<![A-Za-z0-9])'|'(?![A-Za-z0-9])/g, "")
-    .replace(/[ \t]*\r?\n[ \t]*(?:\/\/|>)?[ \t]*/g, " ");
+  joinWrappedLines(
+    text
+      .replace(/\]\([^)\n]*\)/g, "]")
+      .replace(/[`*_~[\]"“”]/g, "")
+      .replace(/(?<![A-Za-z0-9])'|'(?![A-Za-z0-9])/g, ""),
+  );
 
 /** A line that opens a list item or a table row, and so begins a block of its own. */
 const LIST_OR_ROW = /^[\s/*#-]*([-*+]\s|\d+\.\s|\|)/;
@@ -587,6 +639,49 @@ export const claimedCounts = (raw) => {
  */
 export const countsSupportedBy = (raw, published) =>
   [...claimedCounts(raw)].every((value) => published.has(value));
+
+/**
+ * The sentences of a text already read as one line of prose. A sentence ends at a period followed
+ * by whitespace, which is the same boundary `COUNTED_PEOPLE`'s noun-first alternation already
+ * refuses to cross, so no phrase either count expression matches can straddle one of these splits.
+ */
+const sentencesOf = (text) => text.split(/(?<=\.)\s+/);
+
+/** Whether a text states an attendee count at all, in either count vocabulary. */
+const statesACount = (text) => ATTENDEE_COUNT.test(text) || COUNTED_PEOPLE.test(text);
+
+/**
+ * Whether every count a text states is attributable to a rule whose published trigger really reads
+ * the attendee count: the count sits in a SENTENCE that names that rule, and states no number the
+ * rule does not publish. `attributed` is the same rule-id-to-thresholds mapping `claimedCounts`'
+ * caller builds from the published triggers.
+ *
+ * THE UNIT IS THE SENTENCE AND NOT THE BLOCK, which is the twelfth PR #247 round. The caller used
+ * to ask whether the block NAMES an attributed rule and whether the BLOCK's counts are supported,
+ * which is attribution by co-occurrence: the day a city health rule legitimately reads the count,
+ * one sentence naming that rule exempts every other claim sharing its block. On a rule publishing
+ * 75, "HEALTH-ASSEMBLY-001 applies at 75 guests. DOHMH-VENDOR-PERMIT-001 depends on the guest
+ * count." was skipped whole, and the second sentence is an unsupported claim about a rule whose
+ * trigger reads no count at all.
+ *
+ * A COUNT-STATING SENTENCE THAT NAMES NO RULE IS NOT ATTRIBUTED, which is stricter than removing
+ * the sentences that are and re-reading the rest. "HEALTH-ASSEMBLY-001, published by DOHMH, applies
+ * at 75 guests. The vendor permit starts at 500 guests." has a second sentence that names no agency
+ * of its own, so a residue test would find no pairing left in it and exempt the block. The cost of
+ * the strict reading is stated: a future publication that legitimately reads the count has to write
+ * the rule id in the same sentence as the number, which is the wording an organizer can check
+ * anyway.
+ */
+export const countsAttributed = (raw, attributed) => {
+  const rules = [...attributed];
+  const claims = sentencesOf(normalizeForMatching(raw)).filter(statesACount);
+  return (
+    claims.length > 0 &&
+    claims.every((claim) =>
+      rules.some(([id, thresholds]) => claim.includes(id) && countsSupportedBy(claim, thresholds)),
+    )
+  );
+};
 
 /**
  * Every block of one file that pairs the city health agency with an attendee count, within one
@@ -724,6 +819,39 @@ export const outputStrings = (node, into = []) => {
 };
 
 /**
+ * Every organizer-facing string one published rule or advisory carries: its whole `output`, plus
+ * the VERIFICATION QUALIFICATION, which sits outside `output` and reaches organizers all the same.
+ *
+ * The qualification was outside this audit until the twelfth PR #247 round, and it is not an
+ * internal note: `packages/engine/src/findings.ts:55-64` appends it to every finding's `notes`
+ * alongside the rule's own, and `apps/web/app/plan/plan-line.tsx:366-369` renders those notes as
+ * paragraphs of the finding. So a sentence such as "DOHMH requires a permit at 75 or more guests"
+ * written there is published to an organizer exactly as a `note_text` is, and this audit named no
+ * offender for it. Nine of this ruleset's rules publish one today.
+ *
+ * `verification.status` and `verification.evidence` are not here. The status is an enumerated
+ * value that renderers own, and the evidence is a research reference ("VS Round2 #2") the engine
+ * never puts in a finding.
+ */
+export const organizerFacingStrings = (rule) => [
+  ...outputStrings(rule.output),
+  ...(typeof rule.verification?.qualification === "string"
+    ? [rule.verification.qualification]
+    : []),
+];
+
+/**
+ * What joins two of a rule's strings when the rule is read as the one card an organizer sees.
+ *
+ * A PERIOD AND A SPACE, so the join cannot invent a phrase that neither string carries: the seam
+ * ends a sentence, which is the bound `COUNTED_PEOPLE`'s noun-first alternation already respects,
+ * so a count noun at the end of a heading is not read against a numeral at the start of the point
+ * under it. What the join is for is the AGENCY-to-COUNT pairing across the two, which is the
+ * relationship a per-string scan cannot see.
+ */
+const RENDERED_SEPARATOR = ". ";
+
+/**
  * THE PUBLISHED RULESET'S OWN PROSE, scanned: every string of every rule's and advisory's `output`
  * that states a count-based city health requirement. This is the tenth PR #247 round.
  *
@@ -765,18 +893,39 @@ export const outputStrings = (node, into = []) => {
  * branch removing from this guard once already, and it leaked then. The number is what an organizer
  * acts on and it is what is checked.
  *
- * Measured on this tree: zero strings, over 42 rules and 4 advisories.
+ * THE RULE IS READ AS ONE RENDERED UNIT AND NOT AS A LIST OF INDEPENDENT STRINGS, which is the
+ * twelfth PR #247 round. Each string used to be scanned alone, so a claim whose two halves sat in
+ * two of them produced no offender: a `user_summary` heading reading "DOHMH requirements" over a
+ * point reading "Required at 75 or more guests" names the agency in one string and the count in the
+ * other, and neither string carries both. `apps/web/app/plan/plan-line.tsx:204-243` renders the
+ * heading and every point of one finding inside one `article`, so an organizer reads them as one
+ * requirement, which is what makes the pair a claim.
+ *
+ * SO EVERY STRING IS SCANNED FIRST AND THE UNIT SECOND, in that order, and the unit is reported
+ * only when no single string of it is. That is what keeps the report at the granularity of the
+ * offending sentence wherever one string carries the whole claim, which is every case this audit
+ * has had, and widens it to the card only where the claim is the relationship between two strings.
+ *
+ * Measured on this tree: zero strings and zero units, over 42 rules and 4 advisories, with the
+ * verification qualifications included.
  */
 export const countClaimsInPublishedOutput = (artifact, { attributed = new Map() } = {}) => {
   const found = [];
   for (const rule of [...(artifact.rules ?? []), ...(artifact.advisories ?? [])]) {
     const published = attributed.get(rule.id);
     const ownRequirement = cityHealthRule(rule);
-    for (const string of outputStrings(rule.output)) {
+    const claims = (string) => {
       const scanned = ownRequirement ? `${rule.output?.agency ?? "DOHMH"}. ${string}` : string;
-      if (!pairsAgencyWithCount(scanned)) continue;
-      if (published !== undefined && countsSupportedBy(scanned, published)) continue;
-      found.push({ ruleId: rule.id, string });
+      if (!pairsAgencyWithCount(scanned)) return false;
+      return published === undefined || !countsSupportedBy(scanned, published);
+    };
+    const strings = organizerFacingStrings(rule);
+    const offending = strings.filter(claims);
+    const unit = strings.join(RENDERED_SEPARATOR);
+    if (offending.length > 0) {
+      for (const string of offending) found.push({ ruleId: rule.id, string });
+    } else if (claims(unit)) {
+      found.push({ ruleId: rule.id, string: unit });
     }
   }
   return found;

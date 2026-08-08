@@ -13,7 +13,7 @@ import {
   blocksOf,
   cityHealthRule,
   countClaimsInPublishedOutput,
-  countsSupportedBy,
+  countsAttributed,
   pinnedDigest,
   scanFile,
   scanOptionsFor,
@@ -916,13 +916,14 @@ describe("no DOHMH rule is attributed to headcount, removed 2026-08-05 (#235)", 
    * scanned, and the one condition under which scanning them is pointless.
    */
   function flaggedBlocks() {
-    // The ruleset decides whether a pairing is an offence, RULE BY RULE AND THRESHOLD BY THRESHOLD.
-    // A block that names a rule whose published trigger reads the attendee count is stating that
-    // rule's own published fact, and only while the numbers it states are that rule's own: naming
-    // the rule is not a licence to state a threshold it does not publish. This used to be a
-    // repository-wide short-circuit on the same question asked as a yes/no, which one rule change
-    // would have used to silence the whole scan.
-    const attributed = [...attendeeCountThresholdsByRule()];
+    // The ruleset decides whether a pairing is an offence, RULE BY RULE, THRESHOLD BY THRESHOLD AND
+    // CLAIM BY CLAIM. A sentence that names a rule whose published trigger reads the attendee count
+    // is stating that rule's own published fact, and only while the numbers it states are that
+    // rule's own: naming the rule is not a licence to state a threshold it does not publish, and it
+    // is not a licence for the OTHER claims in its block either. `countsAttributed` is where the
+    // three questions are asked; this used to be a repository-wide short-circuit on the same
+    // question asked as a yes/no, which one rule change would have used to silence the whole scan.
+    const attributed = attendeeCountThresholdsByRule();
 
     const flagged = [];
     for (const path of filesUnder(SCANNED_ROOTS, [".md", ".ts", ".tsx", ".mjs", ".js"])) {
@@ -932,13 +933,7 @@ describe("no DOHMH rule is attributed to headcount, removed 2026-08-05 (#235)", 
       // one clause of this function, and reverting either left the whole suite green.
       const found = scanFile(readFileSync(path, "utf8"), scanOptionsFor(relative));
       for (const item of found) {
-        if (
-          attributed.some(
-            ([id, thresholds]) =>
-              item.text.includes(id) && countsSupportedBy(item.text, thresholds),
-          )
-        )
-          continue;
+        if (countsAttributed(item.text, attributed)) continue;
         flagged.push({ relative, ...item });
       }
     }

@@ -19,9 +19,11 @@ import {
   blockDigest,
   blocksOf,
   countClaimsInPublishedOutput,
+  countsAttributed,
   countsSupportedBy,
   isParagraph,
   normalizeForMatching,
+  organizerFacingStrings,
   pairsAgencyWithCount,
   pinnedDigest,
   scanFile,
@@ -2107,5 +2109,132 @@ describe("countClaimsInPublishedOutput: the published ruleset is prose too", () 
       return rule;
     });
     expect(countClaimsInPublishedOutput(bad)).toEqual([]);
+  });
+
+  /**
+   * THE CLAIM SPLIT BETWEEN TWO STRINGS OF ONE RENDERED FINDING, which is the twelfth PR #247
+   * round. Each string used to be scanned alone, so the pair below named no offender: the heading
+   * carries the agency and the point under it carries the count, and neither carries both. The two
+   * are rendered inside one `article` by `apps/web/app/plan/plan-line.tsx:204-243`.
+   *
+   * Built on a rule with NO count anywhere else in its output, so that the pairing this case
+   * asserts is the one it plants rather than one the artifact already had.
+   */
+  it("finds a claim split between a user_summary heading and the point under it", () => {
+    const heading = "DOHMH requirements";
+    const point = "Required at 75 or more guests.";
+    const bad = ruleWith("SAPO-SCOPE-001", (rule) => {
+      rule.output.user_summary.heading = heading;
+      rule.output.user_summary.points[0].text = point;
+      return rule;
+    });
+    // Neither string is a claim on its own, which is why the per-string scan reported nothing.
+    expect(pairsAgencyWithCount(heading)).toBe(false);
+    expect(pairsAgencyWithCount(point)).toBe(false);
+    const found = countClaimsInPublishedOutput(bad);
+    expect(found.map((item) => item.ruleId)).toEqual(["SAPO-SCOPE-001"]);
+    // Reported as the unit, because no single string of it is the offender.
+    expect(found[0].string).toContain(heading);
+    expect(found[0].string).toContain(point);
+  });
+
+  /**
+   * One string that carries the whole claim is still reported as that string. The unit pass is a
+   * second question asked only where the first found nothing, so the report stays at the
+   * granularity of the offending sentence wherever one string is the offender.
+   */
+  it("reports the string and not the unit when one string carries the claim", () => {
+    const bad = ruleWith("SAPO-SCOPE-001", (rule) => {
+      rule.output.user_summary.points[0].text = "DOHMH requires a permit at 75 or more guests.";
+      return rule;
+    });
+    expect(countClaimsInPublishedOutput(bad).map((item) => item.string)).toEqual([
+      "DOHMH requires a permit at 75 or more guests.",
+    ]);
+  });
+
+  /**
+   * THE VERIFICATION QUALIFICATION IS PUBLISHED PROSE, which is the twelfth round's other half. It
+   * sits outside `output`, so the audit did not read it, and `packages/engine/src/findings.ts:55-64`
+   * appends it to every finding's `notes`, which `apps/web/app/plan/plan-line.tsx:366-369` renders.
+   */
+  it("finds a claim published in a verification qualification", () => {
+    const claim = "DOHMH requires a permit at 75 or more guests.";
+    const bad = ruleWith("DOB-TENT-001", (rule) => {
+      rule.verification.qualification = claim;
+      return rule;
+    });
+    const edited = bad.rules.find((rule) => rule.id === "DOB-TENT-001");
+    // The claim is nowhere under `output`, which is the whole of what this audit used to read.
+    expect(JSON.stringify(edited.output)).not.toContain("75 or more guests");
+    expect(countClaimsInPublishedOutput(bad).map((item) => item.string)).toEqual([claim]);
+  });
+
+  /** The published rules that carry one, so the case above stands for a field this ruleset uses. */
+  it("nine published rules carry a verification qualification", () => {
+    const withQualification = [...published.rules, ...published.advisories].filter(
+      (rule) => typeof rule.verification?.qualification === "string",
+    );
+    expect(withQualification.length).toBe(9);
+    for (const rule of withQualification) {
+      expect(organizerFacingStrings(rule)).toContain(rule.verification.qualification);
+    }
+  });
+});
+
+/**
+ * THE EXEMPTION IS ATTRIBUTED TO A CLAIM RATHER THAN TO A BLOCK, which is the twelfth PR #247
+ * round. The repository scan exempts a flagged block when the ruleset really does publish what it
+ * says; the question is what "it" is. Asking it of the whole block is attribution by
+ * co-occurrence, and one legitimate sentence then covers every other claim beside it.
+ */
+describe("countsAttributed: the exemption is scoped to the claim", () => {
+  // One city health rule that legitimately reads the count, published at 75. Empty on this tree,
+  // which is why every case here has to state it rather than read it out of the artifact.
+  const attributed = new Map([["HEALTH-ASSEMBLY-001", new Set([75])]]);
+
+  it("exempts a claim that names the rule and states the threshold it publishes", () => {
+    expect(countsAttributed("HEALTH-ASSEMBLY-001 applies at 75 or more guests.", attributed)).toBe(
+      true,
+    );
+  });
+
+  it("does not exempt a number the named rule does not publish", () => {
+    expect(countsAttributed("HEALTH-ASSEMBLY-001 applies at 500 or more guests.", attributed)).toBe(
+      false,
+    );
+  });
+
+  /**
+   * The thread's own example. The first sentence is the legitimate rule's published fact; the
+   * second is an unsupported claim about a rule whose trigger reads no count at all, and the block
+   * used to be skipped whole on the first sentence's account.
+   */
+  it("does not exempt a second claim about another rule sharing the block", () => {
+    const block =
+      "HEALTH-ASSEMBLY-001 applies at 75 guests." +
+      " DOHMH-VENDOR-PERMIT-001 depends on the guest count.";
+    // The block is one the scan flags, so the exemption is what decides whether it is reported.
+    expect(scanFile(block)).toHaveLength(1);
+    expect(countsAttributed(block, attributed)).toBe(false);
+  });
+
+  /**
+   * A count stated in a sentence that names no rule is not attributed either. Removing the
+   * attributed sentences and re-reading the rest would exempt this one: what is left names no
+   * agency, so nothing in the residue pairs.
+   */
+  it("does not exempt a count sentence that names no rule", () => {
+    const block =
+      "HEALTH-ASSEMBLY-001, published by DOHMH, applies at 75 guests." +
+      " The vendor permit starts at 500 guests.";
+    expect(countsAttributed(block, attributed)).toBe(false);
+  });
+
+  /** With no rule reading the count, which is this tree, nothing is exempt. */
+  it("exempts nothing while no published trigger reads the count", () => {
+    expect(countsAttributed("HEALTH-ASSEMBLY-001 applies at 75 or more guests.", new Map())).toBe(
+      false,
+    );
   });
 });
