@@ -38,8 +38,12 @@ was supplied and on what basis, and section 3.5 re-checks each one against the d
 
 **Status:** MEASUREMENT.
 **Measured by:** `scripts/dedupe-cofiring/`, on branch `measure/draft-dedupe-cofiring`. Every figure
-below is asserted by `pnpm test:cofiring`, which runs in `pnpm test`, so the commit this was
-measured on is any commit that command passes on. Section 8 maps each table to its command.
+in sections 3 to 7 is asserted by `pnpm test:cofiring`, which runs in `pnpm test`, so the commit
+this was measured on is any commit that command passes on. That covers the inventories section 3.1
+counts as well as the tables: the adaptations report what they touched and the suite asserts it, so
+a draft that gains one more unsupported deadline or one more `conditional_requirement` fails rather
+than making a published count stale. Section 8 maps each table to its command, and describes the
+harness; its own file and line counts are the one part of this document the suite does not check.
 **Artifacts measured:** `rules/proposals/nyc-rules.v2-full-draft.json` (PROPOSED, 59 rules plus 4
 advisories) and `rules/nyc-rules.v2.11.json` (published, 46 rules) as the control.
 
@@ -129,9 +133,14 @@ mapping. Grouping all rules and advisories by `output.dedupe_key` and counting d
 `sla_alcohol`, which understated both the loader-blocker inventory and the set of groups that can
 reach `rejectMixedDedupeVerificationStatuses`.
 
-The decisive row is the third. Everything above it is outside trigger evaluation: deadline types,
-verification statuses, rule kinds, and the holiday-calendar key are all read after `parseTrigger`
-has run, so adapting them could not change which rules fire. `is_null` and `lte` are trigger
+The decisive row is the third. Everything above it is outside trigger evaluation, but not because
+the parser reads it later: `parseRule` checks `kind` (`ruleset.ts:481-482`), parses the deadline
+(490) and checks the verification status (492-499) all before it calls `parseTrigger` (512). The
+sequence in the table is produced by the rules, not by the field order inside one rule, because
+earlier rules reach their triggers before later rules expose a metadata error. What makes those
+adaptations safe is simpler and does not depend on order at all: deadline types, verification
+statuses, rule kinds and the holiday-calendar key are not trigger inputs. No trigger reads any of
+them, so changing them cannot change which rules fire. `is_null` and `lte` are trigger
 operators, and the draft's three trigger-read `derived_values` are trigger operands. There is no
 way to express them in the engine's current condition vocabulary without asserting semantics the
 engine does not have. `is_null` has no engine equivalent at all: the closest rewrite, `eq
@@ -522,10 +531,20 @@ counterexample to reading `unknown` as "unanswered".
 35.4% of its complete intakes. The two published members do disagree: `DOB-TENT-001` publishes a
 `business_days_minimum` of 15 with a fee display and no explicit disposition (so `permit` defaults
 to `required`); `DOB-TALL-STRUCTURE-001` publishes `MAY_BE_REQUIRED`, a different permit name, no
-deadline and no fee. `dedupe` keeps the first-listed rule's scalars, so today the merged line reads
-as the tent permit's name, disposition, deadline and fee, with the tall-structure rule contributing
-its rule id, notes and sources. That is what makes today's behaviour safe: two members, one shape,
-and the surviving scalars are the stricter of the two.
+deadline and no fee. The merged line reads as the tent permit's name, disposition, deadline and fee,
+with the tall-structure rule contributing its rule id, notes and sources, and `mergeGroup`
+(`findings.ts:365-425`, AD-19) reaches that field by field rather than by file position. Where both
+members are `true`, `required` is the strongest disposition any route contributes, so the tent rule
+binds identity (name, agency, fee, portal, verification status), and it is also the only route
+publishing a window, so it binds the timeline. Where the tent rule's own trigger is `unknown`
+beside a `true` tall-structure rule, §8.4's ceiling caps its `required` at `may_be_required`, both
+routes then contribute the headline disposition, and the tent rule still binds identity and
+timeline, because a route with a published window sorts ahead of one with none (`compareBinding`,
+`findings.ts:256-266`). That is what makes today's behaviour safe: two members, one shape, and the
+surviving scalars are the stricter of the two by construction. Under the pre-AD-19 merge the same
+line came out only because `DOB-TENT-001` is listed first, and reversing the two rules in the
+published file turned a `required` finding with a filing date into a `may_be_required` one with
+none (#239).
 
 ## 5. The co-firing sets, group by group
 
@@ -678,7 +697,7 @@ boundary, and no unknown reopens it: `headcount` is non-nullable in the draft, s
 unanswered state to sweep.
 
 The sweep is 120 rather than the 160 an earlier revision reported because `headcount = 0` was in it,
-and `validateIntake` rejects a headcount at or below one (`validate.ts:316-317`). The dropped 40
+and `validateIntake` rejects a headcount at or below zero (`validate.ts:316-317`). The dropped 40
 rows are 1 invalid headcount x 10 `location_type` values x 2 `amplified_sound` values x 2
 `structures` values. The boundary the group turns on is untouched: 19, 20 and 21 are all still
 swept, which is what the partition claim above rests on.
@@ -762,12 +781,17 @@ name only from `permit_name`, `requirement_name`, `advisory_text` or `note_text`
 rule publishes none of those: `status`, `message` and `suggested_classes` are fields no engine code
 reads. So the parser defaults this `kind: eligibility` rule to `may_be_required`
 (`DEFAULT_DISPOSITION_BY_RULE_KIND`, `proposals.ts:53`), gives it a null name, and ignores its
-message. It is also listed first in `rules[]`, ahead of the advisory in `advisories[]`, and `dedupe`
-(`findings.ts:153-166`) retains the first finding's scalars, so its null name and defaulted
-disposition survive and the later advisory's own text is dropped. The line the organizer would see
-says neither "disqualified" nor "we cannot tell". The blocker disappears exactly as the sound
-blocker does in section 6, and for the same reason. Qualifying this as draft intent is not a
-softening of the finding; it is the finding, and it is the same one twice.
+message. What happens next is decided by `mergeGroup` (`findings.ts:365-425`, AD-19) on the two
+findings' published values, not by which array they came from: the merged disposition is the
+strongest any route contributes, and identity (name, agency, fee, portal, verification status) is
+read off the routes that contributed it. `may_be_required` outranks the advisory's `advisory`
+(`DISPOSITION_STRENGTH`, `findings.ts:126-132`), so the nameless blocker binds identity alone, and
+the advisory's own text, which the parser carried as that finding's name, is dropped with the rest
+of its identity fields. Neither member publishes a deadline, fee or portal, so the timeline binding
+changes nothing either way. The line the organizer would see says neither "disqualified" nor "we
+cannot tell". The blocker disappears exactly as the sound blocker does in section 6, and for the
+same reason. Qualifying this as draft intent is not a softening of the finding; it is the finding,
+and it is the same one twice.
 
 The group also mixes `VERIFIED` and `CONDITIONAL` verification statuses, which `ruleset.ts:665`
 refuses on load.
@@ -796,9 +820,13 @@ It also co-fires `unknown`-side on a further 28 intakes (10 + 9 + 6 + 3), none o
 where the prohibition is unknown because `sound_purpose` is unanswered while the permit fires
 `true`.
 
-The permit rules are listed first in `rules[]` (indices 29 and 30, against 32 for the prohibition),
-and `dedupe` (`findings.ts:153-166`) keeps the first finding's scalars, so under the current merge
-the surviving name, deadline, fee and portal would all be the permit's.
+Under the current merge the surviving name, deadline, fee and portal would all be the permit's, and
+`mergeGroup` (`findings.ts:365-425`, AD-19) gets there without consulting file position. The permit
+rules are `kind: permit` with no published disposition, so they parse as `required`; the prohibition
+parses as `may_be_required` for the reason in qualification 1 below. `required` is the stronger of
+the two, so the permit binds identity, and it is the only route publishing a window, so it binds the
+timeline as well. §8.4's rule that a blocking finding is never erased on a shared key does not
+engage, because nothing the parser can read makes this finding blocking.
 
 Two qualifications, both important and neither speculative:
 
@@ -862,10 +890,20 @@ aggregate as a settled fact, and is withdrawn.
 **Control, for comparison:** the published ruleset's one group merges on 54.0% of its sweep and on
 35.4% of its complete intakes, and its two members do differ in name, disposition, deadline and fee.
 Both shares are several times what the previous revision reported, because that sweep counted
-selections the intake contract rejects and out-of-scope answers nobody can give (3.3, 4.4). The
-published baseline is therefore not a smaller version of the same behaviour: measured over valid
-submissions only, the shipped ruleset's one dedupe group faces a merge choice **more** often than
-any draft group does, and more often than it does on a complete intake than any of them.
+selections the intake contract rejects and out-of-scope answers nobody can give (3.3, 4.4).
+
+**Read both as shares of an enumerated group space, not as submission rates.** The 622 rows are the
+enumeration of the four fields `dob-structure` reads, under the contract's rules for those fields.
+They are not whole submissions and the document does not claim they are: every row leaves the
+published ruleset's other intake fields unanswered, which is exactly what section 3.3 says
+`validateIntake` would reject, and limitation 6 says a percentage over a uniform enumeration is not
+a real-world frequency. So 54.0% is the share of `dob-structure`'s enumerated group space on which
+the merge faces a choice, and nothing more than that. The published baseline is still not a smaller
+version of the same behaviour, and that is the comparison worth keeping: over its own group space
+the shipped ruleset's one dedupe group faces a merge choice on a **larger** share than any draft
+group does over its own, on complete intakes as well as overall. It is a comparison of nine group
+spaces built the same way by the same enumerator, not of nine submission populations, and no figure
+here says how often an organizer sends any of these shapes.
 
 **What this does and does not say about the engine design that cites this document.** The
 discriminator that design uses is each route's own trigger result, resolved versus unknown. Nothing
@@ -878,33 +916,33 @@ counted three times. What changed alongside them is this document's characterisa
 groups genuinely overlap. On the corrected measurement, a merged line with two decisive members and
 no missing facts happens in three of the nine draft groups, and in only one of them do the members
 disagree about anything. The one figure a reader of that design should re-read is the control's:
-its group merges on 54.0% of valid submissions, not 14.0%.
+its group merges on 54.0% of its enumerated group space, not 14.0%.
 
 ## 8. Reproducing this
 
 **The harness is committed.** It lives in `scripts/dedupe-cofiring/` and runs on one command:
 
 ```sh
-pnpm test:cofiring                  # every figure in this document, asserted
+pnpm test:cofiring                  # every figure in sections 3 to 7, asserted
 PRINT_TABLES=1 pnpm test:cofiring   # the same run, printing the tables to diff against this file
 ```
 
-It is four modules and one suite, 1,906 lines together, of which `harness.mjs` is 853 and
-`cofiring.test.mjs` is 639:
+It is four modules and one suite, 1,949 lines together, of which `harness.mjs` is 853 and
+`cofiring.test.mjs` is 659:
 
 | file                | what it is                                                                                                                                    |
 | ------------------- | --------------------------------------------------------------------------------------------------------------------------------------------- |
 | `harness.mjs`       | field definitions, value domains, the valid-intake enumerator, `evalTrigger`, the group sweeps and the control sweep                          |
-| `staging.mjs`       | the adaptations of section 3.1, applied to in-memory clones                                                                                   |
+| `staging.mjs`       | the adaptations of section 3.1, applied to in-memory clones, each reporting what it touched                                                   |
 | `inventory.mjs`     | what the draft publishes, re-derived by parsing it: deadlines, permit names, output identity, blockers, mixed statuses, parser-visible output |
 | `report.mjs`        | one `measure()` call that produces every table, plus the printer                                                                              |
-| `cofiring.test.mjs` | 71 test cases, one or more per published figure                                                                                               |
+| `cofiring.test.mjs` | 72 test cases, one or more per published figure                                                                                               |
 
 Every table maps to a `describe` block with the same number:
 
 | table                                     | assertion                                                                                                                                         |
 | ----------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 3.1, the load-staging errors              | `describe("section 3.1, the load-staging errors")`                                                                                                |
+| 3.1, the staging errors and inventories   | `describe("section 3.1, the load-staging errors")`, whose second case asserts the dropped-deadline, mapped-status and mapped-kind counts          |
 | 3.2, the agreement check                  | `describe("section 3.2, what the harness supplies")`                                                                                              |
 | 3.3, the sweep sizes and the domain rules | `describe("section 3.3, the sweep")`, whose headcount case runs `validateIntake` on the rejected value and the admitted one                       |
 | 3.4, limitations 3, 4, 5 and 9            | `describe("section 3.4, the limitations")`                                                                                                        |

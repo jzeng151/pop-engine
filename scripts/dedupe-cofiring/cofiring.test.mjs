@@ -71,6 +71,26 @@ describe("section 3.1, the load-staging errors", () => {
     expect(errors[6]).toContain('intake field "event_address" is declared but no rule trigger');
   });
 
+  test("the inventory each adaptation touches, as the table's left column publishes it", () => {
+    expect(m.staging[1].changed).toEqual({
+      deadlinesDropped: {
+        byUnsupportedType: {
+          conditional: 3,
+          official_conflict: 1,
+          fixed_annual_date: 1,
+          dependency: 1,
+        },
+        byMissingCalendarDays: 4,
+      },
+    });
+    expect(m.staging[2].changed).toEqual({
+      statusesMapped: { VERIFIED_WITH_QUALIFICATION: 33, CONDITIONAL: 8 },
+    });
+    expect(m.staging[3].changed).toEqual({
+      kindsMapped: { conditional_requirement: 4, approval: 1, certificate: 1 },
+    });
+  });
+
   test("six of the nine multi-member groups mix verification statuses", () => {
     expect(
       m.inventory

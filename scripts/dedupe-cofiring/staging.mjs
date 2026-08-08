@@ -40,24 +40,35 @@ export const ADAPTATIONS = [
       "drop the deadlines whose type the engine has no case for, and the `published_minimum` " +
       "deadlines that publish no `calendar_days`",
     apply: (ruleset) => {
+      const byUnsupportedType = {};
+      let byMissingCalendarDays = 0;
       for (const rule of allRules(ruleset)) {
         const deadline = rule.output?.deadline;
         if (deadline === undefined || deadline === null) continue;
         const unsupportedType = !ENGINE_DEADLINE_TYPES.has(deadline.type);
         const missingDays =
           deadline.type === "published_minimum" && typeof deadline.calendar_days !== "number";
+        if (unsupportedType)
+          byUnsupportedType[deadline.type] = (byUnsupportedType[deadline.type] ?? 0) + 1;
+        else if (missingDays) byMissingCalendarDays += 1;
         if (unsupportedType || missingDays) delete rule.output.deadline;
       }
+      return { deadlinesDropped: { byUnsupportedType, byMissingCalendarDays } };
     },
   },
   {
     label: "map the verification statuses the engine does not declare onto statuses it does",
     apply: (ruleset) => {
       const mapping = { VERIFIED_WITH_QUALIFICATION: "VERIFIED", CONDITIONAL: "RESEARCH_REQUIRED" };
+      const statusesMapped = {};
       for (const rule of allRules(ruleset)) {
-        const mapped = mapping[rule.verification?.status];
-        if (mapped !== undefined) rule.verification.status = mapped;
+        const status = rule.verification?.status;
+        const mapped = mapping[status];
+        if (mapped === undefined) continue;
+        statusesMapped[status] = (statusesMapped[status] ?? 0) + 1;
+        rule.verification.status = mapped;
       }
+      return { statusesMapped };
     },
   },
   {
@@ -69,14 +80,18 @@ export const ADAPTATIONS = [
         approval: "permit",
         certificate: "insurance",
       };
+      const kindsMapped = {};
       for (const rule of allRules(ruleset)) {
         const mapped = mapping[rule.kind];
-        if (mapped !== undefined) rule.kind = mapped;
+        if (mapped === undefined) continue;
+        kindsMapped[rule.kind] = (kindsMapped[rule.kind] ?? 0) + 1;
+        rule.kind = mapped;
       }
       ruleset.config ??= {};
       ruleset.config.business_day_math ??= {};
       ruleset.config.business_day_math.calendar = "US-NY";
       ruleset.config.slack_warning_days ??= { value: 7 };
+      return { kindsMapped };
     },
   },
   {
@@ -116,17 +131,25 @@ export const ADAPTATIONS = [
   },
 ];
 
-/** Apply each adaptation in turn and record the parser's next complaint. */
+/**
+ * Apply each adaptation in turn and record the parser's next complaint, plus what the adaptation
+ * touched.
+ *
+ * `changed` is what section 3.1's left column counts: how many deadlines were dropped and why, and
+ * how many rules carry a verification status or a kind the engine does not declare. It is returned
+ * rather than written into the document by hand so that a draft that gains one more
+ * `conditional_requirement` fails the suite instead of quietly making the published count stale.
+ */
 export function stagingSequence(draft) {
   const staged = clone(draft);
   return ADAPTATIONS.map((adaptation) => {
-    adaptation.apply(staged);
+    const changed = adaptation.apply(staged) ?? null;
     let error = null;
     try {
       parseEngineRuleset(clone(staged));
     } catch (thrown) {
       error = thrown instanceof Error ? thrown.message : String(thrown);
     }
-    return { adaptation: adaptation.label, error };
+    return { adaptation: adaptation.label, changed, error };
   });
 }
