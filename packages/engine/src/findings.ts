@@ -123,7 +123,7 @@ function buildFinding(
  * that end: a blocking eligibility or prohibition finding is never erased by a permit finding with
  * the same key.
  */
-const DISPOSITION_STRENGTH: readonly Disposition[] = [
+export const DISPOSITION_STRENGTH: readonly Disposition[] = [
   "no_new_requirement",
   "advisory",
   "may_be_required",

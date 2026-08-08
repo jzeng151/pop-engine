@@ -1,7 +1,7 @@
 // Verdict algorithm, ARCHITECTURE steps 3–6. Branch evaluation for unknowns runs before any
 // window check, so an unknown-conditioned finding can never render INFEASIBLE (Scenario F).
 
-import { resolveFindings } from "./findings";
+import { DISPOSITION_STRENGTH, resolveFindings } from "./findings";
 import type { PlanContext } from "./deadlines";
 import {
   MISSED_MAY_BE_REQUIRED_IS_CONDITIONAL,
@@ -40,6 +40,15 @@ const isMissed = (finding: Finding): boolean =>
   finding.deadlineStatus === "published_deadline_missed";
 
 /**
+ * Whether a missed finding blocks. `required` is the bar, not the whole set: `prohibited_or_ineligible`
+ * sits ABOVE `required` in `DISPOSITION_STRENGTH`, so testing for equality let a finding that is both
+ * barred and past its published window fall through to the missed-but-not-blocking branch and read
+ * CONDITIONAL. Product owner, 2026-08-08.
+ */
+const blocksWhenMissed = (finding: Finding): boolean =>
+  DISPOSITION_STRENGTH.indexOf(finding.disposition) >= DISPOSITION_STRENGTH.indexOf("required");
+
+/**
  * Steps 4–6: the window checks, with no branch expansion. Also the per-branch and per-rescope
  * verdict, which is why it is separate from `computeVerdict`.
  */
@@ -53,7 +62,7 @@ export function computeWindowVerdict(findings: readonly Finding[]): WindowVerdic
 
   // The blocking finding is the missed one with the longest published lead, i.e. the earliest date.
   const blocking = missed
-    .filter((finding) => finding.disposition === "required")
+    .filter(blocksWhenMissed)
     .sort((left, right) =>
       (left.latestApplyDate ?? "").localeCompare(right.latestApplyDate ?? ""),
     )[0];

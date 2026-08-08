@@ -2,7 +2,7 @@
 // tri-state rules, business-day arithmetic, and every way evaluation can fail loudly.
 
 import { execFileSync } from "node:child_process";
-import { readFileSync } from "node:fs";
+import { readFileSync, readdirSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import { PUBLISHED_RULES_FILE } from "./__fixtures__/published-ruleset";
@@ -485,12 +485,13 @@ describe("dedupe field merge (#239)", () => {
     // a published filing was already late. The two weaker tiers now reach INFEASIBLE, which is
     // what the group's rules published before a `dedupe_key` was added to them.
     //
-    // The blocker tier reaches CONDITIONAL rather than INFEASIBLE, and that is `computeWindowVerdict`
-    // rather than the merge: it blocks only on a missed finding whose disposition is `required`
-    // (`verdict.ts:55`), and the merged disposition here is `prohibited_or_ineligible`. Two
-    // unmerged lines read INFEASIBLE because the closed route kept its own `required`. So the
-    // merge still moves that verdict, from INFEASIBLE to CONDITIONAL; what this fix recovers is
-    // the missed status, the apply-by date and the fee, which had all been dropped.
+    // AMENDED 2026-08-08. The blocker tier used to read CONDITIONAL here, and that was
+    // `computeWindowVerdict` rather than the merge: it blocked only on a missed finding whose
+    // disposition was EXACTLY `required`, so `prohibited_or_ineligible`, which is STRONGER, fell
+    // through to the missed-but-not-blocking branch. The product owner corrected the rule to block
+    // at or above `required` in the strength order (F-102 acceptance criteria, amended the same
+    // day), so all three tiers now reach INFEASIBLE and the merge no longer moves this verdict at
+    // all. What the #244 fix recovers is still the missed status, the apply-by date and the fee.
     const missedThenStronger = (missed: string, stronger: string) =>
       evaluate(
         { event_date: "2026-08-02", headcount: 50 } as unknown as EventIntake,
@@ -502,7 +503,7 @@ describe("dedupe field merge (#239)", () => {
         { id: "test-calendar@2026", holidays: [] },
       );
     const cases = [
-      ["REQUIRED", "PROHIBITED_OR_INELIGIBLE", "CONDITIONAL"],
+      ["REQUIRED", "PROHIBITED_OR_INELIGIBLE", "INFEASIBLE"],
       ["MAY_BE_REQUIRED", "REQUIRED", "INFEASIBLE"],
       ["ADVISORY", "REQUIRED", "INFEASIBLE"],
     ] as const;
@@ -858,6 +859,172 @@ describe("dedupe field merge (#239)", () => {
     expect(alternativeFirst?.slackDays).toBe(gatedFirst?.slackDays);
     expect(alternativeFirst?.notes.join(" ")).toContain("sequenced after PARKS-EVENT-001");
     expect(gatedFirst?.notes.join(" ")).toContain("sequenced after PARKS-EVENT-001");
+  });
+});
+
+/**
+ * F-102's acceptance criteria, amended 2026-08-08 by the product owner.
+ *
+ * `computeWindowVerdict` chose its blocking finding from missed findings whose disposition was
+ * EXACTLY `required`. `prohibited_or_ineligible` is STRONGER, so a finding that was both barred and
+ * past its published window fell through to the missed-but-not-blocking branch and the plan read
+ * CONDITIONAL. Nothing about deduplication was involved: a lone barred rule with a closed window and
+ * no dedupe key anywhere in it read CONDITIONAL too, which is what the first case pins. The rule is
+ * now "at or above `required` in `DISPOSITION_STRENGTH`", and the two cases below it pin that the
+ * tiers on either side of the bar did not move.
+ */
+/**
+ * The one draft ruleset in `rules/proposals/`, found rather than named for the same reason
+ * `__fixtures__/published-ruleset.ts` finds the published one: a spelled-out artifact filename
+ * rots at the next publish, and `scripts/check-baseline-drift.mjs` refuses one in executable code.
+ * Zero and two both throw with what was actually found.
+ */
+function draftRulesFile(): string {
+  const directory = fileURLToPath(new URL("../../../rules/proposals/", import.meta.url));
+  const drafts = readdirSync(directory).filter((entry) => entry.endsWith(".json"));
+  if (drafts.length !== 1) {
+    throw new Error(
+      `expected exactly one draft ruleset in ${directory}, found ${drafts.join(", ")}`,
+    );
+  }
+  return `${directory}${drafts[0] as string}`;
+}
+
+/**
+ * The four blocking rules in the v2 full draft, corrected 2026-08-08.
+ *
+ * They each declared `kind: "eligibility"` and published no `output.disposition`, so the engine's
+ * default map read every one of them as `may_be_required`: the draft's `severity: "blocking"` and
+ * `output.status` are fields no engine code reads. `prohibition` is the kind that already says what
+ * they mean, and this asserts it against the file itself rather than a copy of it.
+ *
+ * The draft does not load through `parseEngineRuleset` (docs/research/draft-dedupe-cofiring.md §3.1
+ * on branch `measure/draft-dedupe-cofiring`: `is_null`, `lte` and three derived values are outside
+ * the engine's trigger vocabulary), so each rule's own declared `kind` is carried onto a rule the
+ * parser does accept and evaluated. What that measures is the mapping, which is the whole change.
+ */
+describe("the draft's blocking rules resolve as prohibitions (product owner, 2026-08-08)", () => {
+  const draft: {
+    rules: { id: string; kind: string; severity?: string; output: Record<string, unknown> }[];
+  } = JSON.parse(readFileSync(draftRulesFile(), "utf8"));
+
+  const BLOCKING = [
+    "SAPO-BLOCK-PARTY-INELIGIBLE-001",
+    "SAPO-ALCOHOL-PROHIBITION-001",
+    "NYPD-SOUND-COMMERCIAL-ADVERTISING-PROHIBITED-001",
+    "PARKS-PROPANE-PROHIBITION-001",
+  ];
+
+  it("names the same four rules the draft marks blocking", () => {
+    // If the draft ever marks a fifth rule blocking, this list stops describing the file and the
+    // cases below stop covering it.
+    expect(
+      draft.rules.filter((rule) => rule.severity === "blocking").map((rule) => rule.id),
+    ).toEqual(BLOCKING);
+  });
+
+  for (const ruleId of BLOCKING) {
+    it(`resolves ${ruleId} to prohibited_or_ineligible`, () => {
+      const declared = draft.rules.find((rule) => rule.id === ruleId);
+      expect(declared?.kind).toBe("prohibition");
+      // No `output.disposition`: the default map is the mechanism, per the decision.
+      expect(declared?.output.disposition).toBeUndefined();
+
+      const plan = evaluate(
+        { event_date: "2026-12-04", headcount: 50 } as unknown as EventIntake,
+        syntheticRuleset([
+          {
+            id: ruleId,
+            kind: declared?.kind,
+            trigger: { all: [{ field: "headcount", op: "gte", value: 10 }] },
+            output: { note_text: String(declared?.output.message) },
+            verification: { status: "SOURCE_CONFIRMED" },
+            source: { citation: `citation ${ruleId}`, urls: [`https://example.test/${ruleId}`] },
+          },
+        ]),
+        TODAY,
+        { id: "test-calendar@2026", holidays: [] },
+      );
+      expect(plan.findings[0]?.disposition).toBe("prohibited_or_ineligible");
+      expect(plan.findings[0]?.kind).toBe("prohibition");
+    });
+  }
+
+  it("finds no rule in the published ruleset that could carry the same error", () => {
+    // `severity` and `output.status` are the two fields the draft used to mean "blocking" and that
+    // no engine code reads. The published ruleset uses neither, so no published rule can be saying
+    // something blocking through a field the engine ignores.
+    const published = rawRuleset.rules as Record<string, unknown>[];
+    expect(published.filter((rule) => "severity" in rule)).toEqual([]);
+    expect(
+      published.filter((rule) => "status" in (rule.output as Record<string, unknown>)),
+    ).toEqual([]);
+    // And every published rule that means "barred" says so: either by kind, or on its own output.
+    for (const finding of ["SAPO-BLOCK-PARTY-ELIG-001", "PARKS-PROPANE-001"]) {
+      const rule = published.find((entry) => entry.id === finding) as Record<string, unknown>;
+      const output = rule.output as Record<string, unknown>;
+      expect(rule.kind === "prohibition" || output.disposition === "PROHIBITED_OR_INELIGIBLE").toBe(
+        true,
+      );
+    }
+  });
+});
+
+describe("a missed window blocks at or above `required` (F-102, amended 2026-08-08)", () => {
+  /** One rule, one finding, no `dedupe_key`: nothing here can be a merge result. */
+  const loneRule = (kind: string, disposition: string | undefined) => ({
+    id: "LONE-001",
+    kind,
+    trigger: { all: [{ field: "headcount", op: "gte", value: 10 }] },
+    output: {
+      permit_name: "lone route",
+      agency: "DOB",
+      deadline: calendarWindow(45),
+      ...(disposition === undefined ? {} : { disposition }),
+    },
+    verification: { status: "SOURCE_CONFIRMED" },
+    source: { citation: "citation LONE-001", urls: ["https://example.test/LONE-001"] },
+  });
+
+  /** 45 calendar days before 2026-08-02 is 2026-06-18, which `TODAY` is already past. */
+  const closedWindowPlan = (kind: string, disposition?: string) =>
+    evaluate(
+      { event_date: "2026-08-02", headcount: 50 } as unknown as EventIntake,
+      syntheticRuleset([loneRule(kind, disposition)]),
+      TODAY,
+      { id: "test-calendar@2026", holidays: [] },
+    );
+
+  it("blocks on a barred finding whose published window has closed", () => {
+    // The disposition is not published on the rule: `prohibition` is the kind, and the engine's
+    // own default map is what makes it `prohibited_or_ineligible` (proposals §1). That is the same
+    // route the four draft rules take, so this pins both halves of the correction at once.
+    const plan = closedWindowPlan("prohibition");
+    expect(plan.findings[0]?.disposition).toBe("prohibited_or_ineligible");
+    expect(plan.findings[0]?.deadlineStatus).toBe("published_deadline_missed");
+    expect(plan.findings[0]?.latestApplyDate).toBe("2026-06-18");
+    expect(plan.verdict).toBe("INFEASIBLE");
+    // The organizer is told which finding closed the plan, not merely that something did.
+    expect(plan.verdictDetail.blockingFinding?.ruleIds).toEqual(["LONE-001"]);
+    expect(plan.verdictDetail.missedRuleIds).toEqual(["LONE-001"]);
+  });
+
+  it("still blocks on a missed `required` finding, exactly as before", () => {
+    const plan = closedWindowPlan("permit");
+    expect(plan.findings[0]?.disposition).toBe("required");
+    expect(plan.findings[0]?.deadlineStatus).toBe("published_deadline_missed");
+    expect(plan.verdict).toBe("INFEASIBLE");
+    expect(plan.verdictDetail.blockingFinding?.ruleIds).toEqual(["LONE-001"]);
+  });
+
+  it("leaves a missed finding below the bar conditional, exactly as before", () => {
+    // proposals §3: a missed window on a finding that may not apply is CONDITIONAL, not INFEASIBLE.
+    // Widening the filter upward must not widen it downward.
+    const plan = closedWindowPlan("permit", "MAY_BE_REQUIRED");
+    expect(plan.findings[0]?.disposition).toBe("may_be_required");
+    expect(plan.findings[0]?.deadlineStatus).toBe("published_deadline_missed");
+    expect(plan.verdict).toBe("CONDITIONAL");
+    expect(plan.verdictDetail.blockingFinding).toBeNull();
   });
 });
 
