@@ -179,13 +179,33 @@ const ruleIdsOf = (findings: readonly Finding[]): string[] =>
 /**
  * What a branch has to agree on before its unknown can be called immaterial: ARCHITECTURE step 3
  * makes an unknown that changes the finding set OR THE TIMELINE conditional, so the signature
- * carries each finding's date, not just the verdict.
+ * carries each finding's timeline, not just the verdict.
+ *
+ * EVERY ROUTE'S TIMELINE, NOT THE MERGED SCALAR, AND FOR THE SAME REASON THE WINDOW CHECK READS
+ * ROUTES. The merged line shows one window, so an unknown that moves only a NON-BINDING route's
+ * date left the headline `latestApplyDate`, the verdict and the merged `ruleIds` all equal and the
+ * two branches signed identically. The window check above reads every route, so those branches do
+ * NOT observe the same timelines: one of them can hold a route whose published window is missed
+ * while the other does not, and the engine returned FEASIBLE with the unknown discarded rather than
+ * CONDITIONAL (#252 review). Whatever the check can see, the signature has to see.
+ *
+ * THE STATUS TRAVELS WITH THE DATE because a route can change state without changing its date: the
+ * same published window read on the branch that misses it and the branch that does not is one date
+ * and two deadline statuses, and it is the status the check blocks on.
  */
 const branchSignature = (verdict: Verdict, findings: readonly Finding[]): string =>
   [
     verdict,
     ...[...findings]
-      .map((finding) => `${finding.ruleIds.join("+")}@${finding.latestApplyDate ?? "-"}`)
+      .map(
+        (finding) =>
+          `${finding.ruleIds.join("+")}@` +
+          routesOf(finding)
+            .map(
+              (route) => `${route.ruleId}:${route.latestApplyDate ?? "-"}:${route.deadlineStatus}`,
+            )
+            .join(","),
+      )
       .sort(),
   ].join("|");
 

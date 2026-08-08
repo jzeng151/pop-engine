@@ -877,10 +877,27 @@ type PlannedAlert = {
   readonly subject: string;
   readonly body: string;
   /**
-   * What makes this alert the same alert across regenerations. Combined with the channel into the
-   * row's `idempotency_key`, which is what keeps a sent alert from being sent again (AC 7).
+   * What this alert is about with no route in it: the task, the kind of alert, and for a reminder
+   * the published offset. The route joins it in `assignIdentities`, which is the ONE place an
+   * identity is minted. See the identity statement above that function.
    */
-  readonly identity: string;
+  readonly identityBase: string;
+  /**
+   * The route this alert was scheduled off, or null on a row that has no dedupe group.
+   *
+   * Provenance, not identity: it says which route produced these words, and `assignIdentities`
+   * decides which route NAMES them. The two differ whenever a line's routes publish the same copy.
+   */
+  readonly routeRuleId: string | null;
+  /**
+   * Every route of the merged line this alert came from, whether or not that route schedules an
+   * alert of its own. Empty on a row with no dedupe group.
+   *
+   * Read for one purpose: to name the identities these same words may ALREADY be stored under, so
+   * a route joining or leaving the set that publishes them re-keys the existing row instead of
+   * inserting a second one beside it. See `ScheduledAlert.supersededIdentities`.
+   */
+  readonly groupRouteRuleIds: readonly string[];
   /**
    * The event revision this alert's plan was evaluated at, for the one row the staleness JOIN
    * cannot reach. Only the plan-level slack warning sets it; everything else finds its plan
@@ -937,29 +954,41 @@ type PlannedAlert = {
    * intent for it to differ from.
    */
   readonly intendedAt?: string;
+};
+
+/** A planned alert with its identity minted. See the statement above `assignIdentities`. */
+type ScheduledAlert = PlannedAlert & {
   /**
-   * The identity this same alert had BEFORE plans stored route lists, for a route-keyed alert only.
-   *
-   * THE DEPLOY BOUNDARY IS A RE-KEYING, and a re-keying is how this file delivers something twice.
-   * A plan generated before the route list existed carries none, so `alertSubjects` returns the
-   * merged line itself and its reminders are keyed without a route. The first regeneration after
-   * the deploy expands that same line into its routes and keys each one, the reconciler will not
-   * touch a `sent` row, and the route-keyed row is INSERTED and delivered — the same subject and
-   * the same body to the same recipient, twice. That is the identical duplicate a merged line's
-   * dated-route count crossing 1 to 2 produced, arriving through the deploy instead of through a
-   * regeneration, and F-203 AC 7 forbids it just the same.
-   *
-   * So the row that already said those words is given the key of the alert that would say them
-   * again, once, before the upsert runs. Matched on the STORED SUBJECT rather than on which route
-   * is binding, because binding is not stable across generations and the subject is the thing the
-   * organizer would receive a second time: whichever route reproduces the words, that is the alert
-   * the old row is. Where no route reproduces them, nothing is adopted and nothing is duplicated,
-   * because nothing is about to be sent in those words at all.
-   *
-   * Self-limiting. After one regeneration every row on the line is route-keyed, no legacy key
-   * remains to match, and the adoption is a no-op for the rest of the deployment's life.
+   * What makes this alert the same alert across regenerations. Combined with the channel and the
+   * destination into the row's `idempotency_key`, which is what keeps a sent alert from being sent
+   * again (AC 7).
    */
-  readonly legacyIdentity?: string;
+  readonly identity: string;
+  /**
+   * The identities these same words may already be stored under, for a route-keyed alert only.
+   *
+   * A RE-KEYING IS HOW THIS FILE DELIVERS SOMETHING TWICE, and there are two ways a row's key can
+   * be out of step with the identity the current plan mints for its words:
+   *
+   *   THE DEPLOY BOUNDARY. A plan generated before route lists existed keys its reminders without
+   *   a route at all. The first regeneration after the deploy expands that same line into its
+   *   routes and keys each one; the reconciler will not touch a `sent` row, so the route-keyed row
+   *   is INSERTED and delivered — same subject, same body, same recipient, twice.
+   *
+   *   THE SET OF ROUTES PUBLISHING THESE WORDS CHANGING. The words are named by the lowest rule id
+   *   among the routes that publish them, so a route joining that set with a lower id, or the
+   *   naming route leaving it (its window withdrawn, its copy diverging), moves the name to another
+   *   route of the same line. Same words, new key, same duplicate.
+   *
+   * So the row that already said these words is given the key they are about to be said under,
+   * once, before the upsert runs. Matched on the STORED SUBJECT: whichever key the words are
+   * filed under, that row is this alert. Where no stored row reproduces them, nothing is adopted
+   * and nothing is duplicated, because nothing is about to be sent in those words at all.
+   *
+   * Self-limiting in both cases. After one regeneration the row carries the current identity, no
+   * superseded key matches, and the adoption is a no-op until the set changes again.
+   */
+  readonly supersededIdentities: readonly string[];
 };
 
 const isoDate = (value: Date | string | null): string | null =>
@@ -1052,12 +1081,20 @@ type AlertSubject = {
   readonly row: PlanAlertRow;
   readonly rendering: FindingRendering | undefined;
   readonly routeRuleId: string | null;
+  /**
+   * Every route of the line, including the ones that schedule nothing. A route with no window
+   * schedules no alert and can still be the route a stored row is keyed on, from a generation where
+   * it had one, so the set an identity is compared against is the line's routes rather than the
+   * ones expanded here.
+   */
+  readonly groupRouteRuleIds: readonly string[];
 };
 
 const subjectFromRoute = (
   row: PlanAlertRow,
   rendering: FindingRendering | undefined,
   route: FindingRoute,
+  groupRouteRuleIds: readonly string[],
 ): AlertSubject => ({
   row: {
     ...row,
@@ -1094,6 +1131,7 @@ const subjectFromRoute = (
           portal_instructions: route.portalInstructions,
         },
   routeRuleId: route.ruleId,
+  groupRouteRuleIds,
 });
 
 /**
@@ -1103,10 +1141,13 @@ const subjectFromRoute = (
  */
 function alertSubjects(row: PlanAlertRow, rendering: FindingRendering | undefined): AlertSubject[] {
   const routes = rendering?.routes;
-  if (routes == null || routes.length < 2) return [{ row, rendering, routeRuleId: null }];
+  if (routes == null || routes.length < 2) {
+    return [{ row, rendering, routeRuleId: null, groupRouteRuleIds: [] }];
+  }
+  const groupRouteRuleIds = routes.map((route) => route.ruleId);
   return routes
     .filter((route) => route.latestApplyDate !== null || route.applyAfterDate !== null)
-    .map((route) => subjectFromRoute(row, rendering, route));
+    .map((route) => subjectFromRoute(row, rendering, route, groupRouteRuleIds));
 }
 
 const requirementLabel = (row: PlanAlertRow): string => row.permit_name ?? row.rule_ids.join(", ");
@@ -1521,7 +1562,7 @@ async function plannedAlerts(
   planId: string,
   settings: AlertSchedulerSettings,
   now: Date,
-): Promise<PlannedAlert[]> {
+): Promise<ScheduledAlert[]> {
   const plan = await planVerdict(client, planId);
   if (plan === null) return [];
   const rows = await planAlertRows(client, planId);
@@ -1583,21 +1624,12 @@ async function plannedAlerts(
     if (planRow.checklist_item_id === null) continue;
     const planRendering = renderings.get(renderingKey(planRow.rule_ids));
     const subjects = alertSubjects(planRow, planRendering);
-    // THE ROUTE ENTERS A MERGED ROW'S ALERT IDENTITY UNCONDITIONALLY, and it has to be
-    // unconditional to be stable. The first version keyed the route in only while the row scheduled
-    // from more than one, which made the key depend on HOW MANY of the group's routes happened to
-    // publish a date on the day the plan was generated. A merged line whose second route gains a
-    // window between two regenerations — a ruleset publishing the missing deadline, a holiday list
-    // arriving so a business-day window becomes calculable — crossed that count from 1 to 2 and
-    // re-keyed every reminder the line already owned. The reconciler will not touch a `sent` row,
-    // so the re-keyed reminder was INSERTED rather than matched, and the organizer was reminded a
-    // second time in identical words. That is the duplicate delivery F-203 AC 7 forbids and the
-    // comment below already describes this file fixing once.
-    //
-    // `routeRuleId` is null for an unmerged row and non-null for every route of a merged one, so
-    // this adds nothing to the key of any row that has no dedupe group; those keys are untouched.
-    for (const { row, rendering, routeRuleId } of subjects) {
-      const routeKey = routeRuleId !== null ? `:${routeRuleId}` : "";
+    // NO IDENTITY IS MINTED IN THIS LOOP. Each scheduling records what it is about and which route
+    // it came from, and `assignIdentities` turns that into a key once every scheduling is known —
+    // because which route NAMES a reminder depends on the other schedulings beside it, and a
+    // per-scheduling answer is exactly the order-dependent choice this key has failed on four
+    // times. The statement above `assignIdentities` is the whole rule.
+    for (const { row, rendering, routeRuleId, groupRouteRuleIds } of subjects) {
       const applyBy = isoDate(row.latest_apply_date);
       // The window this alert counts down to, recorded on the row wherever it is NOT the window the
       // sweep would find through the checklist item, together with the fact that this alert is
@@ -1674,16 +1706,11 @@ async function plannedAlerts(
             // day still decides the copy and whether the reminder is a catch-up; it just no longer
             // decides whether this is the same reminder.
             //
-            // WHICH ROUTE joins it on every merged row, whatever the row's dated-route count is on
-            // the day it is generated. An unmerged row adds nothing and keeps the key it had.
-            identity: `${row.checklist_item_id}:deadline_reminder:${daysBefore}${routeKey}`,
-            // The key this same reminder had on a plan written before route lists existed. See
-            // `PlannedAlert.legacyIdentity`.
-            ...(routeKey === ""
-              ? {}
-              : {
-                  legacyIdentity: `${row.checklist_item_id}:deadline_reminder:${daysBefore}`,
-                }),
+            // WHICH ROUTE joins it on every merged row, in `assignIdentities`. An unmerged row adds
+            // nothing and keeps the key it had.
+            identityBase: `${row.checklist_item_id}:deadline_reminder:${daysBefore}`,
+            routeRuleId,
+            groupRouteRuleIds,
           });
         }
       }
@@ -1734,10 +1761,9 @@ async function plannedAlerts(
           // unlock whose predecessor was already sent and therefore correctly untouchable, and the
           // organizer was told a second time that they may now pursue something they had already
           // been told was open.
-          identity: `${row.checklist_item_id}:dependency_unlocked${routeKey}`,
-          ...(routeKey === ""
-            ? {}
-            : { legacyIdentity: `${row.checklist_item_id}:dependency_unlocked` }),
+          identityBase: `${row.checklist_item_id}:dependency_unlocked`,
+          routeRuleId,
+          groupRouteRuleIds,
         });
       }
     }
@@ -1938,52 +1964,149 @@ async function plannedAlerts(
       //
       // The evaluation date rides the payload, so a pending warning is rewritten with the current
       // date and a sent one is left alone.
-      identity: "slack_warning",
+      identityBase: "slack_warning",
+      routeRuleId: null,
+      groupRouteRuleIds: [],
     });
   }
 
-  return coalesceIdenticalReminders(planned);
+  return assignIdentities(planned);
 }
 
 /**
- * Rule 1 of the identity block above, applied where the identities are minted: two schedulings that
- * would deliver the same words about the same task are ONE reminder.
+ * WHAT A REMINDER IS, AND WHAT ITS IDENTITY IS ACROSS EVERY TRANSITION IT CAN MAKE. Written out in
+ * full and kept beside the code that mints it, because four rounds have patched this key one
+ * transition at a time and a duplicate delivery came back after each of them. A fifth patch is not
+ * what this needs; a statement the next reader can check the code against is.
  *
- * WHAT PRODUCES TWO OF THEM. A merged dedupe line expands into one scheduling subject per route,
- * and routes of one group can publish the same name, disposition, deadline text, filing date and
- * portal data — three of the nine multi-member groups in the v2 full draft publish byte-identical
- * outputs, and those are the groups that merge most often
- * (`docs/research/draft-dedupe-cofiring.md` §5.2, §5.7, §5.8). Their route ids differ, so the keys
- * differ, so both rows were inserted and the organizer received the same reminder twice — which is
- * the duplicate F-203 AC 7 forbids, arriving through the very groups this branch was written to
- * support (#252 review).
+ * A REMINDER IS A MESSAGE AN ORGANIZER RECEIVES: one checklist task's words, on one channel, at one
+ * destination. Everything else a row carries — which route produced it, which rule ids, which plan
+ * generation, which day it is due, how many times it has been attempted — is PROVENANCE. Provenance
+ * is how PopEngine finds the message again; it is not what makes two messages the same message.
+ * Two sentences follow, and every defect this key has had is a violation of one of them:
  *
- * THE TEST IS THE WORDS, NOT THE FIELDS THEY CAME FROM. Every difference between two routes that an
- * organizer could act on is in the copy by construction: the name, the agency, the date, the fee,
- * the portal and the published deadline text are all rendered into the subject or the body. Two
- * routes whose copy is identical are therefore indistinguishable to the person receiving it, and
- * comparing the rendered strings needs no list of fields to be kept in step with `reminderCopy`.
+ *   1. Two schedulings that would deliver the same words to the same destination are ONE reminder,
+ *      whatever produced them.
+ *   2. A reminder keeps its identity while its provenance changes, because the organizer receives
+ *      the same message either way.
  *
- * SCOPED TO ONE CHECKLIST TASK, so this can never merge two requirements. Two tasks with identical
- * copy are still two things to file, and nothing here may decide otherwise; the type is in the key
- * for the same reason.
+ * SO THE IDENTITY IS: the checklist task, the alert type, the published offset for a reminder, and
+ * — on a merged dedupe line — the CANONICAL ROUTE OF THE WORDS, which is the lowest rule id among
+ * the routes of that line whose copy is identical to this one's. Not the first route, not the
+ * binding route, not the route this particular scheduling came from. Plus the channel and the
+ * destination, which `idempotencyKey` adds and which are part of the message rather than of its
+ * provenance.
  *
- * FIRST WINS, and that is stable rather than incidental: routes arrive in binding order, the engine
- * is byte-stable for the same inputs, and the surviving alert therefore keeps the same route key
- * across regenerations. Rule 2 then applies to it like any other reminder.
+ * THE CANONICAL ROUTE IS COMPUTED FROM THE SET, NEVER FROM AN ORDER, and that is the correction
+ * this round makes. "The first of the identical routes" was stable only while binding order was,
+ * and binding order is a function of which triggers have resolved: two byte-identical
+ * `may_be_required` routes stay coalesced when the lower-id one goes from `unknown` to `true`, but
+ * the resolved route now sorts first, so the words changed their name and the reminder was
+ * delivered a second time (#252 review). A minimum over a set has no such input. The same argument
+ * retires every ordering answer this key has been given.
+ *
+ * THE TRANSITIONS, and what holds the two sentences at each:
+ *
+ *   CREATED — the identity is minted here, from the plan alone. Nothing is read from the alerts
+ *   table, so two generations of the same plan mint the same key.
+ *
+ *   RESCHEDULED, the filing date moves and the copy is rewritten — SAME identity. The send day and
+ *   the intended day are provenance (rounds 9 and 20); the upsert moves the row it already owns.
+ *
+ *   ROUTE ADDED to the group, ROUTE REMOVED from it — same identity for every reminder whose words
+ *   are unchanged, because the canonical route is the lowest id among the routes publishing THOSE
+ *   WORDS and a route with different copy is not one of them. Where the arriving route publishes
+ *   the same words with a lower id, the name moves and `supersededIdentities` re-keys the row that
+ *   already holds them rather than letting a second one be inserted.
+ *
+ *   ROUTE WINDOW GAINED, ROUTE WINDOW LOST — same identity. The route is in the key
+ *   unconditionally on every merged row, so the key cannot depend on how many of the line's routes
+ *   happened to publish a date the day the plan was generated (the 1-to-2 count defect). Where the
+ *   naming route is the one that loses its window and stops scheduling at all, the name moves to
+ *   the next id publishing the words and `supersededIdentities` carries the row across.
+ *
+ *   COALESCED, two or more routes publishing byte-identical copy — ONE reminder, named by the
+ *   lowest of their ids. Three of the nine multi-member groups in the v2 full draft publish
+ *   byte-identical outputs and are the ones that merge most often
+ *   (`docs/research/draft-dedupe-cofiring.md` §5.2, §5.7, §5.8), so this is the common case rather
+ *   than the exotic one.
+ *
+ *   RETRIED — same identity, and nothing here is consulted. Failure count, backoff and last error
+ *   live on the row and survive the upsert's payload merge.
+ *
+ *   RETIRED, the requirement or its window goes — the key leaves the plan's set and the reconciler
+ *   cancels the row. REVIVED, it comes back — the same key returns and the cancelled row goes back
+ *   to pending, which is why the key may not carry anything about the row's state.
+ *
+ *   REPLAYED AFTER A DEPLOY, a plan written before route lists existed — its rows are keyed with no
+ *   route at all, and `supersededIdentities` gives them the key the words are about to be said
+ *   under, once, before the upsert can mint a second row beside them.
+ *
+ * WHERE IT CANNOT BE HELD, NAMED RATHER THAN LEFT TO BE DISCOVERED. The identity rests on rule ids
+ * being stable across ruleset publications. If a published rule is reissued under a NEW id, every
+ * reminder that route names re-keys: the adoption below matches on the stored subject, so it is
+ * carried across only while some other route of the same line still publishes those exact words,
+ * and otherwise the organizer receives one duplicate of each already-sent reminder on that line.
+ * The alternative — keying on the words themselves — breaks sentence 2 on every moved date, which
+ * is the far commoner transition. Rule ids are the published anchor everything else in this
+ * repository already keys on, so a rule id changing is a ruleset event, not a routine one.
+ *
+ * AND THERE ARE TWO IDENTITIES, WHICH IS THE PART EVERY ROUND MISSED. The row key here says which
+ * reminder this is TO POPENGINE, and it is recomputed from the current plan. The provider key says
+ * which message is already IN FLIGHT AT THE PROVIDER, and it is fixed by the first handoff. They
+ * coincide until something re-keys a row that has already been attempted, which is exactly what the
+ * adoption does — so `providerKey` reads the attempt rather than the row.
  */
-function coalesceIdenticalReminders(planned: readonly PlannedAlert[]): PlannedAlert[] {
-  const delivered = new Set<string>();
-  return planned.filter((alert) => {
+function assignIdentities(planned: readonly PlannedAlert[]): ScheduledAlert[] {
+  // THE TEST IS THE WORDS, NOT THE FIELDS THEY CAME FROM. Every difference between two routes an
+  // organizer could act on is in the copy by construction: the name, the agency, the date, the fee,
+  // the portal and the published deadline text are all rendered into the subject or the body. Two
+  // routes whose copy is identical are indistinguishable to the person receiving it, and comparing
+  // the rendered strings needs no list of fields kept in step with `reminderCopy`.
+  //
+  // SCOPED TO ONE CHECKLIST TASK AND ONE TYPE, so this can never merge two requirements. Two tasks
+  // with identical copy are still two things to file, and nothing here may decide otherwise.
+  const groups = new Map<string, PlannedAlert[]>();
+  for (const alert of planned) {
     const words = JSON.stringify([
       alert.alertType,
       alert.checklistItemId,
       alert.subject,
       alert.body,
     ]);
-    if (delivered.has(words)) return false;
-    delivered.add(words);
-    return true;
+    const group = groups.get(words);
+    if (group === undefined) groups.set(words, [alert]);
+    else group.push(alert);
+  }
+
+  return [...groups.values()].map((group) => {
+    // The lowest id wins, over the SET of schedulings that deliver these words. `sort()` on the
+    // ids rather than picking a member of the group, so nothing about the order the schedulings
+    // arrived in can reach the key.
+    const first = group[0] as PlannedAlert;
+    const canonical =
+      first.routeRuleId === null
+        ? null
+        : ([...group]
+            .map((alert) => alert.routeRuleId)
+            .filter((ruleId): ruleId is string => ruleId !== null)
+            .sort()[0] ?? null);
+    const identity = canonical === null ? first.identityBase : `${first.identityBase}:${canonical}`;
+    // Every other key these same words could already be stored under: the pre-route-list key, and
+    // every OTHER route of the line, whether or not it schedules anything on this generation. A
+    // route publishing different copy is named here too and cannot be adopted by mistake, because
+    // the adoption matches on the stored subject and its subject is not this one.
+    const superseded =
+      canonical === null
+        ? []
+        : [
+            first.identityBase,
+            ...[...new Set(group.flatMap((alert) => alert.groupRouteRuleIds))]
+              .filter((ruleId) => ruleId !== canonical)
+              .sort()
+              .map((ruleId) => `${first.identityBase}:${ruleId}`),
+          ];
+    return { ...first, identity, supersededIdentities: superseded };
   });
 }
 
@@ -1993,45 +2116,6 @@ function shiftDays(day: string, days: number): string {
   shifted.setUTCDate(shifted.getUTCDate() + days);
   return shifted.toISOString().slice(0, 10);
 }
-
-/**
- * WHAT A REMINDER IS, ACROSS EVERY TRANSITION IT CAN MAKE. Written once, because four rounds have
- * patched this key one case at a time and a duplicate delivery came back after each of them.
- *
- * A REMINDER IS A MESSAGE AN ORGANIZER RECEIVES: one requirement's words, on one channel, at one
- * destination. Everything else a row carries — which route produced it, which rule ids, which plan
- * generation, which offset, which day it is due — is PROVENANCE. Provenance is how PopEngine finds
- * the message again; it is not what makes two messages the same message. Two sentences follow, and
- * every defect this file has had is a violation of one of them:
- *
- *   1. Two schedulings that would deliver the same words to the same destination are ONE reminder,
- *      whatever produced them.
- *   2. A reminder keeps its identity while its provenance changes, because the organizer receives
- *      the same message either way.
- *
- * The transitions, and what holds the rule at each:
- *
- *   A merged line's dated-route count crossing 1 to 2 re-keyed reminders the line already owned
- *   (rule 2). Held by keying the route in UNCONDITIONALLY on every merged row, so the key cannot
- *   depend on how many routes happened to publish a date that day.
- *
- *   The deploy boundary: a plan written before route lists existed keys without a route, and the
- *   first regeneration keys the same words with one (rule 2). Held by `legacyIdentity`, which gives
- *   the row that already said those words the key the new one would say them under.
- *
- *   Two routes of one merged line publishing byte-identical copy (rule 1). Held by
- *   `coalesceIdenticalReminders`, which collapses them before any identity is assigned, rather than
- *   by letting two identities exist and hoping something downstream matches them.
- *
- *   A moved filing date, a corrected destination, a cancellation and revival: rounds 9, 11, 20, 27
- *   and 33, each decided on the upsert clause that carries it and not reopened here.
- *
- * AND THERE ARE TWO IDENTITIES, WHICH IS THE PART EVERY ROUND MISSED. The row key below says which
- * reminder this is TO POPENGINE, and it is recomputed from the current plan. The provider key says
- * which message is already IN FLIGHT AT THE PROVIDER, and it is fixed by the first handoff. They
- * coincide until something re-keys a row that has already been attempted, which is exactly what the
- * adoption above does — so `providerKey` reads the attempt rather than the row.
- */
 
 /**
  * The row's identity, per ARCHITECTURE's `{event_id}:{checklist_item_id}:{alert_type}:{send_at}`
@@ -2257,18 +2341,33 @@ export function createAlertScheduler(settings: AlertSchedulerSettings): AlertSch
         const key = idempotencyKey(eventId, alert.identity, channel, recipient);
         keys.push(key);
         // THE ROW THAT ALREADY SAID THESE WORDS TAKES THIS KEY, before the upsert can mint a second
-        // one beside it. `legacyIdentity` explains why the boundary exists; what it needs here is
-        // one statement. The subject match is the whole test: this row is about to be delivered
+        // one beside it. `supersededIdentities` explains which keys those are; what it needs here
+        // is one statement. The subject match is the whole test: this row is about to be delivered
         // saying exactly what that row was delivered saying, so they are one alert and one of them
-        // has already gone out. `NOT EXISTS` because two routes of one line can publish the same
-        // name and the same window, and only the first of them may adopt.
-        if (alert.legacyIdentity !== undefined) {
+        // may already have gone out.
+        //
+        // AT MOST ONE ROW, AND THE SENT ONE FIRST. `idempotency_key` is UNIQUE, so re-keying two
+        // rows to one key would abort the review; and where a sent row and an unsent row both hold
+        // these words, adopting the unsent one would cancel the record of the delivered message and
+        // then deliver it again. The rest are superseded and the reconciler cancels them, which is
+        // what rule 1 says they are. `NOT EXISTS` because the current key may already be taken, and
+        // a row that already holds it is this alert.
+        if (alert.supersededIdentities.length > 0) {
           await client.query(
             `UPDATE alerts SET idempotency_key = $2
-              WHERE idempotency_key = $1
-                AND payload->>'subject' = $3
+              WHERE id = (SELECT prior.id FROM alerts prior
+                           WHERE prior.idempotency_key = ANY($1::text[])
+                             AND prior.payload->>'subject' = $3
+                           ORDER BY (prior.status = 'sent') DESC, prior.idempotency_key
+                           LIMIT 1)
                 AND NOT EXISTS (SELECT 1 FROM alerts held WHERE held.idempotency_key = $2)`,
-            [idempotencyKey(eventId, alert.legacyIdentity, channel, recipient), key, alert.subject],
+            [
+              alert.supersededIdentities.map((identity) =>
+                idempotencyKey(eventId, identity, channel, recipient),
+              ),
+              key,
+              alert.subject,
+            ],
           );
         }
         const { rows } = await client.query<{ id: string; inserted: boolean; revived: boolean }>(

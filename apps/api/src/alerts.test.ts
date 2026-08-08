@@ -6920,6 +6920,24 @@ describe.skipIf(databaseUrl === "")("F-203 deadline alerts", () => {
       });
 
       /**
+       * The stored route list, in the binding order this generation produced. `routes` arrives in
+       * binding order and nothing pins that order across generations, so a test that never varies
+       * it cannot see a re-keying that a resolved trigger causes.
+       */
+      const routeList = (
+        routes: Record<string, unknown>[],
+        options: { reverseRouteOrder?: boolean; triggerResults?: Record<string, string> },
+      ): Record<string, unknown>[] => {
+        const resolved = routes.map((route) => ({
+          ...route,
+          ...(options.triggerResults?.[route.ruleId as string] === undefined
+            ? {}
+            : { triggerResult: options.triggerResults[route.ruleId as string] }),
+        }));
+        return options.reverseRouteOrder === true ? [...resolved].reverse() : resolved;
+      };
+
+      /**
        * One generation of a plan carrying a two-route merged line, with the SECOND route dated
        * only when asked for. `reuseChecklistItemId` is what makes this a regeneration rather than
        * a fresh event: `materialize` re-points an existing task at the new plan's item, and a
@@ -6932,6 +6950,15 @@ describe.skipIf(databaseUrl === "")("F-203 deadline alerts", () => {
           checklistItemId: string;
           /** Both routes publishing exactly the same thing, which three v2 draft groups do. */
           secondRouteIdentical?: boolean;
+          /**
+           * The stored list is in BINDING order, and binding order is not stable across
+           * generations: the binding route is drawn from the resolved routes wherever any of them
+           * is resolved, so a route whose trigger goes from `unknown` to `true` can take the lead
+           * with nothing else about the line changing. Reversed here to stand for that.
+           */
+          reverseRouteOrder?: boolean;
+          /** What each route's trigger resolved to, which the reversal above stands for. */
+          triggerResults?: Record<string, string>;
         },
       ): Promise<string> => {
         const planId = randomUUID();
@@ -6961,41 +6988,44 @@ describe.skipIf(databaseUrl === "")("F-203 deadline alerts", () => {
                   timeline_unresolved_reason: null,
                   portal_instructions: null,
                   headline_mode: "applies_together",
-                  routes: [
-                    mergedRoute({
-                      ruleId: "NYPD-SOUND-001",
-                      disposition: "required",
-                      name: "Sound Device Permit",
-                      latestApplyDate: applyBy,
-                      deadlineStatus: "deadline_approaching",
-                      deadlineDisplay: "file at least 5 days before use",
-                    }),
-                    mergedRoute({
-                      ruleId: "PARKS-EVENT-001",
-                      ...(options.secondRouteIdentical === true
-                        ? {
-                            disposition: "required",
-                            name: "Sound Device Permit",
-                            latestApplyDate: applyBy,
-                            deadlineStatus: "deadline_approaching",
-                            deadlineDisplay: "file at least 5 days before use",
-                          }
-                        : {
-                            disposition: "may_be_required",
-                            name: "Special Event Permit",
-                            // The second route gains a published window between the two
-                            // generations: a ruleset publishing the missing deadline, or a holiday
-                            // list arriving so a business-day count becomes calculable.
-                            ...(options.secondRouteDated
-                              ? {
-                                  latestApplyDate: dayFromToday(1),
-                                  deadlineStatus: "deadline_approaching",
-                                  deadlineDisplay: "apply at least 21 days ahead",
-                                }
-                              : {}),
-                          }),
-                    }),
-                  ],
+                  routes: routeList(
+                    [
+                      mergedRoute({
+                        ruleId: "NYPD-SOUND-001",
+                        disposition: "required",
+                        name: "Sound Device Permit",
+                        latestApplyDate: applyBy,
+                        deadlineStatus: "deadline_approaching",
+                        deadlineDisplay: "file at least 5 days before use",
+                      }),
+                      mergedRoute({
+                        ruleId: "PARKS-EVENT-001",
+                        ...(options.secondRouteIdentical === true
+                          ? {
+                              disposition: "required",
+                              name: "Sound Device Permit",
+                              latestApplyDate: applyBy,
+                              deadlineStatus: "deadline_approaching",
+                              deadlineDisplay: "file at least 5 days before use",
+                            }
+                          : {
+                              disposition: "may_be_required",
+                              name: "Special Event Permit",
+                              // The second route gains a published window between the two
+                              // generations: a ruleset publishing the missing deadline, or a holiday
+                              // list arriving so a business-day count becomes calculable.
+                              ...(options.secondRouteDated
+                                ? {
+                                    latestApplyDate: dayFromToday(1),
+                                    deadlineStatus: "deadline_approaching",
+                                    deadlineDisplay: "apply at least 21 days ahead",
+                                  }
+                                : {}),
+                            }),
+                      }),
+                    ],
+                    options,
+                  ),
                 },
               ],
             }),
@@ -7155,6 +7185,72 @@ describe.skipIf(databaseUrl === "")("F-203 deadline alerts", () => {
         );
         expect(new Set(words).size).toBe(words.length);
         expect(words).toHaveLength(reminderOffsets.length);
+      });
+
+      /**
+       * #252 P1: THE COALESCED REMINDER CHANGED ITS NAME WHEN THE ROUTE ORDER DID.
+       *
+       * Two byte-identical routes are ONE reminder, and the surviving scheduling used to be
+       * whichever route came first. Routes arrive in BINDING order, and binding order is a function
+       * of which triggers have resolved: the binding route is drawn from the resolved routes
+       * wherever any of them is resolved, so a route going from `unknown` to `true` takes the lead
+       * with nothing else about the line changing. The words are then keyed on a different route,
+       * the reconciler will not touch the sent row, and the same reminder is inserted and delivered
+       * a second time.
+       *
+       * The identity is the LOWEST rule id among the routes publishing those words, which no order
+       * can move.
+       */
+      it("keeps a coalesced reminder's identity when the binding route changes (#252)", async () => {
+        const eventId = await createEvent(scenario("C"));
+        const checklistItemId = randomUUID();
+        const provider = fakeProvider();
+        const poller = () =>
+          createAlertPoller({
+            database: pool,
+            senders: provider.senders,
+            jurisdiction: ruleset.jurisdiction,
+          }).tick();
+
+        // Generation 1: PARKS-EVENT-001 is the resolved route, so it binds and leads the list.
+        await schedule(
+          eventId,
+          await insertMergedPlan(eventId, {
+            secondRouteDated: true,
+            secondRouteIdentical: true,
+            checklistItemId,
+            reverseRouteOrder: true,
+            triggerResults: { "NYPD-SOUND-001": "unknown" },
+          }),
+        );
+        await poller();
+        const first = await alertsOf(eventId);
+        const deliveredFirst = provider.delivered.length;
+        expect(deliveredFirst).toBeGreaterThan(0);
+
+        // Generation 2: NYPD-SOUND-001's trigger resolves too, so it binds and leads instead.
+        // Same two routes, same words, same task — nothing an organizer would receive has changed.
+        await schedule(
+          eventId,
+          await insertMergedPlan(eventId, {
+            secondRouteDated: true,
+            secondRouteIdentical: true,
+            checklistItemId,
+          }),
+        );
+        await poller();
+
+        const after = await alertsOf(eventId);
+        expect(after.map((row) => row.idempotency_key).sort()).toEqual(
+          first.map((row) => row.idempotency_key).sort(),
+        );
+        // WHAT THE ORGANIZER RECEIVED, which is what AC 7 is about: nothing at all the second time,
+        // and no message twice.
+        expect(provider.delivered.length).toBe(deliveredFirst);
+        const words = provider.delivered.map(
+          (message) => `${message.recipient}|${message.subject}|${message.body}`,
+        );
+        expect(new Set(words).size).toBe(words.length);
       });
 
       /**

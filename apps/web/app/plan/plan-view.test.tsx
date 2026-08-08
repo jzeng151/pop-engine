@@ -824,6 +824,88 @@ describe("the routes of a merged dedupe line", () => {
     expect(line.getByText(/treat none of the routes below as settled/)).toBeDefined();
   });
 
+  /**
+   * #252 review: THE HEADING IS THE QUESTION, NOT A PERMIT (route-list design §5.3).
+   *
+   * The deciding question used to be appended BELOW a heading still taken from the summary or the
+   * binding route's permit name, so a candidate line led with one unresolved route and its scalar
+   * summary as the requirement and only afterwards said the routes were unsettled. The heading and
+   * what leads the line are chosen by `headlineMode`.
+   */
+  it("heads a candidate line with the question and puts it before the merged summary", async () => {
+    stubApi(
+      plan({
+        findings: [
+          finding({
+            ruleIds: ["DOB-STAGE-001", "DOB-STRUCTURE-DURATION-001"],
+            name: "Temporary structure permit",
+            userSummary: {
+              heading: "Do you need a temporary structure permit?",
+              points: [
+                { kind: "overview", text: "A stage over 10ft needs a permit.", sources: [] },
+              ],
+            },
+            headlineMode: "candidate",
+            routes: [
+              route({
+                ruleId: "DOB-STAGE-001",
+                name: "Stage permit",
+                triggerResult: "unknown",
+                unknownFields: ["structure_duration_days"],
+              }),
+              route({
+                ruleId: "DOB-STRUCTURE-DURATION-001",
+                name: "Structure duration permit",
+                triggerResult: "unknown",
+                unknownFields: ["structure_duration_days"],
+              }),
+            ],
+          }),
+        ],
+      }),
+    );
+    renderPlan();
+    const line = within(await screen.findByRole("article"));
+
+    expect(line.getByRole("heading").textContent).toBe(
+      "The answers so far do not say which of these applies.",
+    );
+    // Said once. It was the heading of the routes block before it was the heading of the line.
+    expect(line.getAllByText(/do not say which of these applies/)).toHaveLength(1);
+
+    // AND BEFORE THE SCALARS IT QUALIFIES: the summary below belongs to the binding route, and on
+    // a candidate line no route is known to be the one.
+    const article = await screen.findByRole("article");
+    const routesBlock = article.querySelector(".line__routes");
+    const summary = article.querySelector(".line__summary");
+    expect(routesBlock).not.toBeNull();
+    expect(summary).not.toBeNull();
+    expect(
+      (routesBlock as Element).compareDocumentPosition(summary as Element) &
+        Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeGreaterThan(0);
+    // The permit name is still on the line, on its own route entry, where a reader can tell whose
+    // it is.
+    expect(line.getByText("Stage permit")).toBeDefined();
+  });
+
+  it("keeps the permit heading when the routes apply together", async () => {
+    const line = await lineWith({
+      ruleIds: ["NYPD-SOUND-PUBLIC-001", "NYPD-SOUND-PROHIBITED-001"],
+      name: "Sound Device Permit",
+      headlineMode: "applies_together",
+      routes: [
+        route({ ruleId: "NYPD-SOUND-PUBLIC-001", name: "Sound Device Permit" }),
+        route({
+          ruleId: "NYPD-SOUND-PROHIBITED-001",
+          name: "Commercial advertising by sound device",
+          disposition: "prohibited_or_ineligible",
+        }),
+      ],
+    });
+    expect(line.getByRole("heading").textContent).toBe("Sound Device Permit");
+  });
+
   it("says both apply, and names each route's own window and fee, when every trigger resolved", async () => {
     const line = await lineWith({
       ruleIds: ["NYPD-SOUND-PUBLIC-001", "NYPD-SOUND-PROHIBITED-001"],

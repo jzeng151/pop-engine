@@ -28,6 +28,7 @@ import type {
   DeadlineStatus,
   Finding,
   FindingKind,
+  FindingRoute,
   VerificationStatus,
 } from "@pop-engine/engine";
 import {
@@ -276,8 +277,25 @@ const isoDate = (value: Date | string | null): string | null =>
  * the item table has no columns for them (see `plan.ts`); they are carried through here rather
  * than restated, so there is one copy of each string.
  */
+/**
+ * The value a field takes when a filing route is what the row renders: THAT ROUTE'S, INCLUDING ITS
+ * NULLS.
+ *
+ * `??` reads null as "missing" and falls back, and the filing route's null is not missing: it is
+ * the route publishing no fee, no portal or no instruction. Falling back put the binding row's fee
+ * and portal beside the filing route's deadline under a sentence saying all of those filing details
+ * belong to the selected route, which is the one-route-end-to-end rule this whole file is built on,
+ * broken in the fields a reader acts on (#252 review). A route either supplies these values or the
+ * line has none to show.
+ */
+const fromFilingRoute =
+  (filing: FindingRoute | null) =>
+  <Value>(read: (route: FindingRoute) => Value, columnValue: Value): Value =>
+    filing === null ? columnValue : read(filing);
+
 const planContext = (item: PlanItemRow, rendering: FindingRendering) => {
   const filing = filingRouteOf(item, rendering);
+  const filed = fromFilingRoute(filing);
   return {
     ruleIds: item.rule_ids,
     permitName: item.permit_name,
@@ -285,12 +303,12 @@ const planContext = (item: PlanItemRow, rendering: FindingRendering) => {
     agency: item.agency,
     kind: item.kind,
     disposition: item.disposition,
-    deadline: filing?.deadline ?? item.deadline,
-    deadlineDisplay: filing?.deadlineDisplay ?? rendering.deadline_display,
-    latestApplyDate: filing?.latestApplyDate ?? isoDate(item.latest_apply_date),
-    applyAfterDate: filing?.applyAfterDate ?? isoDate(item.apply_after_date),
-    deadlineStatus: filing?.deadlineStatus ?? item.deadline_status,
-    slackDays: filing?.slackDays ?? rendering.slack_days,
+    deadline: filed((route) => route.deadline, item.deadline),
+    deadlineDisplay: filed((route) => route.deadlineDisplay, rendering.deadline_display),
+    latestApplyDate: filed((route) => route.latestApplyDate, isoDate(item.latest_apply_date)),
+    applyAfterDate: filed((route) => route.applyAfterDate, isoDate(item.apply_after_date)),
+    deadlineStatus: filed((route) => route.deadlineStatus, item.deadline_status),
+    slackDays: filed((route) => route.slackDays, rendering.slack_days),
     /**
      * Every contributing route of a merged dedupe line, and which one the window, status and fee
      * above were read off when the line publishes none of its own. `filingRouteRuleId` is null on
@@ -320,10 +338,10 @@ const planContext = (item: PlanItemRow, rendering: FindingRendering) => {
     conflictText: rendering.conflict_text,
     // The filing route's fee, not another route's: it travels with the window above so an organizer
     // reads one rule's date and that same rule's price, never one of each.
-    feeDisplay: filing?.feeDisplay ?? item.fee_display,
-    portalName: filing?.portalName ?? item.portal_name,
-    portalUrl: filing?.portalUrl ?? item.portal_url,
-    portalInstructions: filing?.portalInstructions ?? rendering.portal_instructions,
+    feeDisplay: filed((route) => route.feeDisplay, item.fee_display),
+    portalName: filed((route) => route.portalName, item.portal_name),
+    portalUrl: filed((route) => route.portalUrl, item.portal_url),
+    portalInstructions: filed((route) => route.portalInstructions, rendering.portal_instructions),
     sources: item.sources,
     sourceUrl: item.source_url,
     sourcePlan: {
@@ -341,11 +359,12 @@ const planContext = (item: PlanItemRow, rendering: FindingRendering) => {
  */
 const noticeItemFrom = (item: PlanItemRow, rendering: FindingRendering): NoticePlanItem => {
   const filing = filingRouteOf(item, rendering);
+  const filed = fromFilingRoute(filing);
   return {
-    deadline: filing?.deadline ?? item.deadline,
-    latest_apply_date: filing?.latestApplyDate ?? isoDate(item.latest_apply_date),
-    apply_after_date: filing?.applyAfterDate ?? isoDate(item.apply_after_date),
-    deadline_status: filing?.deadlineStatus ?? item.deadline_status,
+    deadline: filed((route) => route.deadline, item.deadline),
+    latest_apply_date: filed((route) => route.latestApplyDate, isoDate(item.latest_apply_date)),
+    apply_after_date: filed((route) => route.applyAfterDate, isoDate(item.apply_after_date)),
+    deadline_status: filed((route) => route.deadlineStatus, item.deadline_status),
     verification_status: item.verification_status,
     last_verified_date: isoDate(item.last_verified_date),
     sources: item.sources,

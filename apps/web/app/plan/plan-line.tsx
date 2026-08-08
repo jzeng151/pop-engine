@@ -175,6 +175,26 @@ function SummarySources({ sources }: { sources: readonly SummarySourceLink[] }) 
  * READ ONLY IN `applies_together` MODE, which is the other half of that same defect and is enforced
  * at the call rather than by a further field here. See `Routes`.
  */
+/**
+ * The deciding question a candidate line is headed by, which is the approved route-list design
+ * §5.3: "the heading is the question, not a permit". A candidate group has not settled which of
+ * its published routes applies, so the heading a line would otherwise carry — the summary heading
+ * or the binding route's permit name — states one unresolved candidate as the requirement. The
+ * same sentence the routes block used to lead with, moved to where the design puts it and rendered
+ * once.
+ */
+const CANDIDATE_HEADING = "The answers so far do not say which of these applies.";
+
+/**
+ * The routes of a line whose headline mode says the answers do not decide it. Two or more, which is
+ * the same guard `Routes` makes: one route is not a choice between routes.
+ */
+const candidateRoutesOf = (finding: ConsumedFinding): readonly ConsumedRoute[] | null => {
+  const routes = finding.routes ?? null;
+  if (routes === null || finding.headlineMode !== "candidate" || routes.length < 2) return null;
+  return routes;
+};
+
 const routeSignature = (route: ConsumedRoute): string =>
   JSON.stringify([
     route.triggerResult,
@@ -292,8 +312,11 @@ function Routes({ finding }: { finding: ConsumedFinding }) {
           </>
         ) : (
           <>
-            <strong>The answers so far do not say which of these applies.</strong> {routes.length}{" "}
-            published routes are open on the answers recorded in this plan
+            {/* NOT REPEATED HERE, because in candidate mode it is the line's HEADING: design §5.3,
+                "the heading is the question, not a permit". It used to lead this paragraph while
+                the heading above it named a permit, so the line presented an unresolved route as
+                the requirement and only then said the routes were unsettled (#252 review). */}
+            {routes.length} published routes are open on the answers recorded in this plan
             {applying > 0 &&
               `, and ${applying === 1 ? "one of them is triggered" : `${applying} of them are triggered`} on the answers so far`}
             .
@@ -357,6 +380,11 @@ export function PlanLine({ finding }: { finding: ConsumedFinding }) {
   const userSummary = finding.userSummary ?? null;
   const hasUserSummary = userSummary !== null;
   const name = userSummary?.heading ?? finding.name ?? ruleIds;
+  // THE HEADING AND WHAT LEADS THE LINE ARE CHOSEN BY `headlineMode`, not decorated afterwards
+  // (design §5.3, #252 review). `name` is still what the disclosure labels this requirement by,
+  // because a control's label has to name the thing it opens; the heading is the question.
+  const isCandidate = candidateRoutesOf(finding) !== null;
+  const heading = isCandidate ? CANDIDATE_HEADING : name;
   const [primarySource, ...furtherSources] = finding.sources;
   const deadlineSources = [
     ...new Map(
@@ -381,10 +409,16 @@ export function PlanLine({ finding }: { finding: ConsumedFinding }) {
     >
       <div className="line__head">
         <h3 className="line__name" id={`line-${finding.ruleIds.join("-")}`}>
-          {name}
+          {heading}
         </h3>
         <VerificationBadge status={finding.verificationStatus} />
       </div>
+
+      {/* THE UNSETTLED STATEMENT COMES BEFORE THE SCALARS IT QUALIFIES. The merged summary, the
+          disposition and the apply-by date below are ONE route's — the binding route's — and on a
+          candidate line no route is known to be the one. Rendered after them, the routes block
+          corrected a requirement the organizer had already read. */}
+      {isCandidate && <Routes finding={finding} />}
 
       {hasUserSummary && (
         <p className="line__meta">
@@ -430,9 +464,10 @@ export function PlanLine({ finding }: { finding: ConsumedFinding }) {
         </>
       )}
 
-      {/* The contributing routes of a merged line, visible before any interaction: in candidate
-          mode this is the whole answer to "which of these do I actually have to file". */}
-      <Routes finding={finding} />
+      {/* The contributing routes of a merged line, visible before any interaction. In candidate
+          mode this is the whole answer to "which of these do I actually have to file", and it is
+          rendered above rather than here. */}
+      {!isCandidate && <Routes finding={finding} />}
 
       {/* A RESEARCH_REQUIRED line has no located primary source, which the organizer has to see
           on the line itself rather than discover behind an expand: the absence IS the finding. */}

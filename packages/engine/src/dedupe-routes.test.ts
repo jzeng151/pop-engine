@@ -701,26 +701,108 @@ describe("dependency sequencing over a merged gated line (#252)", () => {
     },
   } as const;
 
-  it("sequences the gated ROUTE off its own window, and the line off the line's", () => {
+  it("sequences the gated ROUTE off its own window, and leaves the headline to its own route", () => {
     const evaluated = plan([PARKS, DEPENDENCY, SOUND, SOUND_ALT]);
     const sound = evaluated.findings.find((finding) => finding.ruleIds.includes("NYPD-SOUND-001"));
     const gatedRoute = sound?.routes?.find((route) => route.ruleId === "NYPD-SOUND-001");
     const otherRoute = sound?.routes?.find((route) => route.ruleId === "NYPD-SOUND-ALT-001");
 
-    // The line binds to the tightest window, which is the ALTERNATE route's, so the line's
-    // `applyAfterDate` and `slackDays` are measured against a window that is not the gated rule's.
+    // The line binds to the tightest window, which is the ALTERNATE route's, and that route is not
+    // the gated one.
     expect(sound?.latestApplyDate).toBe("2026-10-05");
+    expect(sound?.routes?.[0]?.ruleId).toBe("NYPD-SOUND-ALT-001");
     expect(gatedRoute?.latestApplyDate).toBe("2026-11-29");
-    expect(sound?.applyAfterDate).toBe("2026-08-12");
 
-    // Each route carries the sequencing measured against ITS OWN window, which is what `verdict.ts`
-    // reads. The gated route's slack is 109 days from the gate to its own 2026-11-29 window; the
-    // line's is 54, from the same gate to the alternate route's 2026-10-05. The two numbers are
-    // about two different windows and both are correct about the window they name.
+    // SO THE HEADLINE IS NOT SEQUENCED (#252 review). Writing the gate onto the merged scalars put
+    // the NYPD gate and the gated slack beside a name, a window and a status belonging to a route
+    // that is not gated at all, while that route's own entry read `applyAfterDate: null` two lines
+    // below. The scalars stay the binding route's: no gate, and its own ungated 75-day slack from
+    // today to 2026-10-05.
+    expect(sound?.applyAfterDate).toBeNull();
+    expect(sound?.slackDays).toBe(75);
+
+    // The gated ROUTE carries the sequencing, measured against ITS OWN window: 109 days from the
+    // 2026-08-12 gate to its 2026-11-29 deadline. `verdict.ts` reads the routes, so the narrowed
+    // slack is still what the verdict sees.
     expect(gatedRoute?.applyAfterDate).toBe("2026-08-12");
     expect(gatedRoute?.slackDays).toBe(109);
-    expect(sound?.slackDays).toBe(54);
     // The route that is not gated is untouched by the sequencing.
     expect(otherRoute?.applyAfterDate).toBeNull();
+    // The sequence is still stated on the line, because the note is one sentence about the group.
+    expect(sound?.notes.some((note) => note.includes("sequenced after PARKS-EVENT-001"))).toBe(
+      true,
+    );
+  });
+});
+
+/**
+ * #252: A BRANCH SIGNATURE BUILT FROM THE MERGED SCALAR CANNOT SEE A ROUTE'S TIMELINE.
+ *
+ * The window checks read every route. The branch comparison read the merged line's one
+ * `latestApplyDate`, so an unknown that moves only a NON-BINDING route's date left the verdict, the
+ * merged rule ids and that scalar all equal: the branches signed identically, the unknown was
+ * called immaterial and the plan read FEASIBLE with a material timing question discarded.
+ * ARCHITECTURE step 3 makes an unknown that changes the finding set OR THE TIMELINE conditional.
+ */
+describe("an unknown that moves only a non-binding route's window (#252)", () => {
+  const PLAZA_FIELD = [
+    { field: "plaza_level", type: "enum", values: ["unknown", "a", "b"] },
+    { field: "plaza_multiple_blocks", type: "boolean" },
+  ];
+  /** The binding route: the tightest window on the line, and the same date on every branch. */
+  const BINDING = {
+    id: "SAPO-EVENT-001",
+    dedupeKey: "plaza",
+    trigger: ALWAYS,
+    output: {
+      permit_name: "Plaza event permit",
+      deadline: { type: "published_minimum", calendar_days: 60 },
+    },
+  } as const;
+  /**
+   * The non-binding route. Its window is published BY LEVEL, so the unanswered level is what stops
+   * it being dated — and every level publishes a window looser than the binding route's 60 days, so
+   * resolving it moves this route's date and nothing else on the line.
+   */
+  const BY_LEVEL = {
+    id: "SAPO-PLAZA-001",
+    dedupeKey: "plaza",
+    trigger: ALWAYS,
+    output: {
+      permit_name: "Plaza permit by level",
+      deadline: {
+        type: "published_minimum_by_level",
+        level_field: "plaza_level",
+        multi_block_field: "plaza_multiple_blocks",
+        levels: { a: { calendar_days: 30 }, b: { calendar_days: 20 } },
+      },
+    },
+  } as const;
+
+  const evaluated = (level: string) =>
+    plan([BINDING, BY_LEVEL], { plaza_level: level, plaza_multiple_blocks: false }, PLAZA_FIELD);
+
+  it("reads CONDITIONAL, because the branches do not observe the same timelines", () => {
+    // NOT VACUOUS: on both branches the merged line is byte-identical — same rule ids, same name,
+    // same window, same status — which is exactly why the scalar signature could not tell them
+    // apart. The difference is one route's date.
+    const withA = evaluated("a").findings[0];
+    const withB = evaluated("b").findings[0];
+    expect(withA?.ruleIds).toEqual(withB?.ruleIds);
+    expect(withA?.latestApplyDate).toBe("2026-10-05");
+    expect(withB?.latestApplyDate).toBe("2026-10-05");
+    expect(withA?.deadlineStatus).toBe(withB?.deadlineStatus);
+    expect(withA?.routes?.[1]?.latestApplyDate).toBe("2026-11-04");
+    expect(withB?.routes?.[1]?.latestApplyDate).toBe("2026-11-14");
+    expect(evaluated("a").verdict).toBe("FEASIBLE");
+    expect(evaluated("b").verdict).toBe("FEASIBLE");
+
+    // So the unanswered level is a material unknown, and the plan says so instead of resolving it
+    // silently to whichever date the branch happened to produce.
+    const unresolved = evaluated("unknown");
+    expect(unresolved.verdict).toBe("CONDITIONAL");
+    expect(unresolved.verdictDetail.missingFacts.map((fact) => fact.field)).toContain(
+      "plaza_level",
+    );
   });
 });

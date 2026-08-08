@@ -162,6 +162,70 @@ describe("loadPlan", () => {
     expect(result.ok && result.plan.findings).toHaveLength(1);
   });
 
+  /**
+   * #252: the F-201 route contract publishes exactly two trigger results. A route that resolved
+   * `false` produced no finding and cannot be a member of a merged line, so "false" on the wire is
+   * a plan this page has no reading for — and a plan carrying one with `headlineMode:
+   * "applies_together"` renders "the answers recorded in this plan meet each route's own
+   * conditions" over a route that explicitly does not.
+   */
+  const mergedFinding = (triggerResult: string) => ({
+    ...storedFinding,
+    ruleIds: ["PARKS-EVENT-001", "SAPO-PERMIT-001"],
+    headlineMode: "applies_together",
+    routes: [
+      {
+        ruleId: "PARKS-EVENT-001",
+        triggerResult: "true",
+        disposition: "required",
+        unknownFields: [],
+        name: "Special Event Permit",
+        agency: "NYC Parks",
+        deadlineDisplay: null,
+        latestApplyDate: null,
+        deadlineStatus: "not_applicable",
+        feeDisplay: null,
+        portalName: null,
+        portalUrl: null,
+        portalInstructions: null,
+      },
+      {
+        ruleId: "SAPO-PERMIT-001",
+        triggerResult,
+        disposition: "required",
+        unknownFields: [],
+        name: "SAPO permit",
+        agency: "SAPO (CECM)",
+        deadlineDisplay: null,
+        latestApplyDate: null,
+        deadlineStatus: "not_applicable",
+        feeDisplay: null,
+        portalName: null,
+        portalUrl: null,
+        portalInstructions: null,
+      },
+    ],
+  });
+
+  it("reads a merged finding whose routes carry the two published trigger results", async () => {
+    for (const triggerResult of ["true", "unknown"]) {
+      stubFetch(async () =>
+        jsonResponse(200, { ...storedPlan, findings: [mergedFinding(triggerResult)] }),
+      );
+      const result = await loadPlan("https://api.example.com", "event-1");
+      expect(result.ok).toBe(true);
+    }
+  });
+
+  it("refuses a route whose trigger result is false, which the route contract has no reading for", async () => {
+    stubFetch(async () => jsonResponse(200, { ...storedPlan, findings: [mergedFinding("false")] }));
+    await expect(loadPlan("https://api.example.com", "event-1")).resolves.toEqual({
+      ok: false,
+      missing: false,
+      message: "The API returned a plan this page cannot read.",
+    });
+  });
+
   it("reports an unreachable api instead of throwing", async () => {
     stubFetch(async () => {
       throw new TypeError("Failed to fetch");

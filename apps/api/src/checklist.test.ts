@@ -2447,6 +2447,118 @@ describe.runIf(databaseUrl.length > 0)("F-202 compliance checklist", () => {
       );
     });
 
+    /**
+     * #252 review: THE FILING ROUTE'S NULLS ARE THE FILING ROUTE'S ANSWER.
+     *
+     * `??` reads null as "missing", so where the selected filing route published no fee and no
+     * portal the row fell back to the binding route's — and the sentence above them says all of
+     * these filing details belong to the selected route. One route's deadline beside another
+     * route's price and application portal, presented as one rule's.
+     *
+     * SYNTHETIC, and it has to be: on `nyc.v2.11` the one dedupe group runs the other way round
+     * (DOB-TENT-001 is the dated route AND the one publishing the fee, DOB-TALL-STRUCTURE-001
+     * publishes neither), so the fallback cannot fire there. The shape is a plan written directly
+     * with the group's own rule ids; every value below is this fixture's, not the ruleset's.
+     */
+    it("keeps the filing route's own nulls instead of the binding route's fee and portal", async () => {
+      const eventId = await createEvent(TALL_TENT);
+      const planId = randomUUID();
+      const itemId = randomUUID();
+      const route = (overrides: Record<string, unknown>) => ({
+        triggerResult: "true",
+        unknownFields: [],
+        agency: "DOB",
+        deadline: null,
+        deadlineDisplay: null,
+        latestApplyDate: null,
+        applyAfterDate: null,
+        deadlineStatus: "not_applicable",
+        slackDays: null,
+        feeDisplay: null,
+        portalName: null,
+        portalUrl: null,
+        portalInstructions: null,
+        ...overrides,
+      });
+      await pool.query(
+        `INSERT INTO permit_plans
+           (id, event_id, event_revision, ruleset_version, snapshot_date, verdict, verdict_detail,
+            intake_snapshot, generated_at)
+         VALUES ($1, $2, 1, $3, $4, 'conditional', $5::jsonb, '{}'::jsonb, clock_timestamp())`,
+        [
+          planId,
+          eventId,
+          ruleset.rulesetVersion,
+          ruleset.snapshotDate,
+          JSON.stringify({
+            finding_renderings: [
+              {
+                rule_ids: ["DOB-TALL-STRUCTURE-001", "DOB-TENT-001"],
+                notes: [],
+                note_text: null,
+                conflict_text: null,
+                deadline_display: null,
+                slack_days: null,
+                deadline_unknown_fields: [],
+                timeline_unresolved_reason: null,
+                // The binding route's, like every other column below.
+                portal_instructions: "file through the binding route's counter",
+                headline_mode: "candidate",
+                routes: [
+                  // Binding: a fee and a portal, and no window at all.
+                  route({
+                    ruleId: "DOB-TALL-STRUCTURE-001",
+                    disposition: "may_be_required",
+                    name: "DOB permit — structure over 10 feet tall",
+                    feeDisplay: "$500 fixture fee",
+                    portalName: "Fixture portal",
+                    portalUrl: "https://example.test/fixture",
+                    portalInstructions: "file through the binding route's counter",
+                  }),
+                  // The filing route: the window, and nothing else published.
+                  route({
+                    ruleId: "DOB-TENT-001",
+                    disposition: "required",
+                    triggerResult: "unknown",
+                    name: "DOB permit — tent/canopy",
+                    latestApplyDate: "2026-08-05",
+                    deadlineStatus: "on_track",
+                  }),
+                ],
+              },
+            ],
+          }),
+        ],
+      );
+      await pool.query(
+        `INSERT INTO permit_plan_items
+           (id, plan_id, rule_ids, triggered_by, sources, kind, disposition, deadline_status,
+            verification_status, permit_name, agency, latest_apply_date, fee_display, portal_name,
+            portal_url)
+         VALUES ($1, $2, ARRAY['DOB-TALL-STRUCTURE-001','DOB-TENT-001'], '[]'::jsonb, '[]'::jsonb,
+                 'permit', 'may_be_required', 'not_applicable', 'SOURCE_CONFIRMED',
+                 'DOB permit — structure over 10 feet tall', 'DOB', NULL, '$500 fixture fee',
+                 'Fixture portal', 'https://example.test/fixture')`,
+        [itemId, planId],
+      );
+
+      const response = await review(appWith(fakeStorage()), eventId, planId);
+      expect(response.status).toBe(201);
+      const item = (response.body.items as ChecklistItemView[]).find((candidate) =>
+        candidate.ruleIds.includes("DOB-TENT-001"),
+      ) as ChecklistItemView & Record<string, unknown>;
+
+      // The window is the filing route's, which is the whole reason the row reads that route.
+      expect(item.latestApplyDate).toBe("2026-08-05");
+      expect(item.filingRouteRuleId).toBe("DOB-TENT-001");
+      // And so is everything the sentence beside it claims: that route publishes no fee, no portal
+      // and no instruction, so the row shows none rather than the other route's.
+      expect(item.feeDisplay).toBeNull();
+      expect(item.portalName).toBeNull();
+      expect(item.portalUrl).toBeNull();
+      expect(item.portalInstructions).toBeNull();
+    });
+
     it("schedules the reminders that route's window earns, naming that route", async () => {
       const eventId = await createEvent(TALL_TENT);
       await generatePlan(eventId);

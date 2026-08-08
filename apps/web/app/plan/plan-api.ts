@@ -340,8 +340,19 @@ const SOURCE_CHECKS: FieldChecks<FindingSource> = {
 
 export const HEADLINE_MODES = tokensOf<HeadlineMode>({ applies_together: true, candidate: true });
 
-/** A route is never "false": a trigger that resolves false produces no finding to merge. */
-const TRIGGER_RESULTS = tokensOf<Tristate>({ true: true, false: true, unknown: true });
+/**
+ * A route is never "false": a trigger that resolves false produces no finding to merge, so the
+ * F-201 route contract publishes exactly two results.
+ *
+ * NARROWED HERE RATHER THAN LEFT AS THE FULL `Tristate`, because this is the wire boundary and the
+ * whole point of the boundary is to refuse what the contract does not permit. Validating against
+ * the union let a stored or upstream `triggerResult: "false"` through `readPlan`, and a plan
+ * carrying one with `headlineMode: "applies_together"` renders "the answers recorded in this plan
+ * meet each route's own conditions" over a route whose own trigger says it does not (#252 review).
+ * The route list then reads as a settled statement built out of a value the contract has no
+ * meaning for.
+ */
+const TRIGGER_RESULTS = tokensOf<Exclude<Tristate, "false">>({ true: true, unknown: true });
 
 export const ROUTE_CHECKS: FieldChecks<ConsumedRoute> = {
   ruleId: isString,

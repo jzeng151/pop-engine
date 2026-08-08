@@ -565,6 +565,21 @@ function applyDependencySequencing(
     // window the rule itself closed.
     const directFilingOpen = gated.deadlineStatus !== "published_deadline_missed";
 
+    // WHOSE WINDOW THE HEADLINE SEQUENCING IS ABOUT. The merged line's scalars are the BINDING
+    // route's, entirely, so that a line can never name one route and date another; `routes[0]` is
+    // that route, because `mergeGroup` builds the list in binding order. Where the gated rule is a
+    // non-binding member, sequencing the line wrote the gate, the gated slack and the squeezed
+    // status onto scalars belonging to a route that is not gated at all — a headline naming the
+    // ungated route while displaying the NYPD gate, with that route's own entry still reading
+    // `applyAfterDate: null` beside it (#252 review). The route entries are sequenced either way,
+    // which is where the gated route's own window has lived since `verdict.ts` began reading them,
+    // so nothing is dropped by leaving the scalars to their route.
+    //
+    // An unmerged finding has one route and it is the binding one, so this is the whole of the
+    // change: every single-rule line sequences exactly as before.
+    const gatedRouteBinds =
+      gated.routes === undefined || gated.routes[0]?.ruleId === binding.gatedRuleId;
+
     sequenced.set(binding.gatedRuleId, {
       ...gated,
       // `apply_after_date` is an actionable gate: F-202 renders it as the start date and F-203
@@ -573,13 +588,21 @@ function applyDependencySequencing(
       // it late — so the field is null and the note below carries the conflict instead. Both
       // consumers read the field: a date means "wait until this date", null means there is no
       // gate to wait for.
-      applyAfterDate: sequenceClosedWindow ? null : applyAfterDate,
+      applyAfterDate: !gatedRouteBinds
+        ? gated.applyAfterDate
+        : sequenceClosedWindow
+          ? null
+          : applyAfterDate,
       // Slack for a gated finding is the window it can actually be filed in, not the distance
       // from today to its own deadline (F-102 AC 5: latest_apply − apply_after). Keeping the
       // ungated figure overstates the buffer that deadline copy and F-203's alerts read.
-      slackDays: sequenceClosedWindow ? null : (gatedWindowDays ?? gated.slackDays),
+      slackDays: !gatedRouteBinds
+        ? gated.slackDays
+        : sequenceClosedWindow
+          ? null
+          : (gatedWindowDays ?? gated.slackDays),
       deadlineStatus:
-        isSqueezed && gated.deadlineStatus === "on_track"
+        isSqueezed && gatedRouteBinds && gated.deadlineStatus === "on_track"
           ? "deadline_approaching"
           : gated.deadlineStatus,
       // The gated rule's own route carries the same sequencing, computed off ITS OWN window rather
