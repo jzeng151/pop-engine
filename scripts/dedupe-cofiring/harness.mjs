@@ -282,6 +282,22 @@ const HAND_SET_NUMERIC_DOMAINS = {
   structure_width_ft: [10, 12, 20, 21, null],
 };
 
+/**
+ * The smallest value the intake contract admits for a numeric field, where it names one.
+ *
+ * `validateIntake` rejects a headcount at or below zero
+ * (`packages/engine/src/intake/validate.ts:316-317`), so the generic numeric domain's `0` anchor is
+ * not an answer any organizer can submit. Sweeping it would count events the contract refuses and
+ * weight every distribution, completeness figure and percentage by them, which is the same error
+ * the multi_enum power set and the out-of-scope enumeration were. It is read off the engine rather
+ * than the artifact because the draft declares no minimum; `intakeMinimumsAreTheEngines` in
+ * `cofiring.test.mjs` fails when the engine's rule moves.
+ *
+ * Only `headcount` is listed because `validateIntake` names only `headcount`. Every other numeric
+ * field takes zero, so nothing else is filtered.
+ */
+const NUMERIC_MINIMUMS = { headcount: 1 };
+
 // ---------------------------------------------------------------------------------------------
 // Field definitions
 // ---------------------------------------------------------------------------------------------
@@ -296,6 +312,7 @@ export function buildFieldDefinitions(artifact, { translateAskedWhen = false } =
     field: field.field,
     type: field.type,
     values: field.values ?? null,
+    derived: field.derived === true,
     askedWhen:
       typeof field.asked_when === "string"
         ? field.asked_when
@@ -310,6 +327,7 @@ export function buildFieldDefinitions(artifact, { translateAskedWhen = false } =
     field: name,
     type: definition.type,
     values: null,
+    derived: true,
     askedWhen: null,
     askedWhenClauses: null,
     nullable: true,
@@ -443,7 +461,7 @@ function thresholdsFor(field, members) {
  *     answer, so that value is a genuine tri-state input and is distinct from `null`.
  *   - multi_enum: every valid selection (see `validMultiEnumSelections`).
  *   - numeric: `0`, plus `t-1`, `t`, `t+1` for every threshold `t` any member compares the field
- *     against, plus `null` when nullable.
+ *     against, plus `null` when nullable, less any value below the field's `NUMERIC_MINIMUMS` entry.
  *   - date: `event_date` is fixed; `event_end_date` ranges over null, the same day, the next day,
  *     giving `event_days` of 1, 1 and 2, which covers the only threshold (`event_days gt 1`) below,
  *     on and above.
@@ -462,13 +480,17 @@ export function domainFor(field, definition, members) {
       return definition.nullable ? [true, false, null] : [true, false];
     case "integer":
     case "number": {
+      const minimum = NUMERIC_MINIMUMS[field] ?? 0;
       const points = new Set([0]);
       for (const threshold of thresholdsFor(field, members)) {
         for (const point of [threshold - 1, threshold, threshold + 1]) {
-          if (point >= 0) points.add(point);
+          points.add(point);
         }
       }
-      const sorted = [...points].sort((left, right) => left - right);
+      const sorted = [...points].filter((point) => point >= minimum).sort((a, b) => a - b);
+      if (sorted.length === 0) {
+        throw new Error(`no value of "${field}" at or above ${minimum} is in the swept domain`);
+      }
       return definition.nullable ? [...sorted, null] : sorted;
     }
     case "date":
@@ -607,11 +629,31 @@ const RESULT_INDEX = { false: 0, true: 1, unknown: 2 };
 const fieldsOfMask = (fields, mask) => fields.filter((_, index) => (mask & (1 << index)) !== 0);
 
 /**
+ * The swept fields the draft marks `derived: true`, which is what makes a sweep an unconstrained
+ * product rather than a statement about reachable events.
+ *
+ * A derived field's value is not an answer an organizer gives; it is produced from raw answers by
+ * `classify_sapo_event`, which the draft publishes as prose rather than as an algorithm
+ * (`docs/proposals/documentation-audit-2026-07-22.md:56`). With no derivation to run, this harness
+ * enumerates each derived field over its declared enum independently, so the product contains
+ * classification combinations that may be jointly unreachable. Supplying a classifier here would be
+ * inventing rule semantics, which `AGENTS.md` forbids and which no approved artifact supports, so
+ * the sweep is reported with the fact stated rather than repaired: every figure over a group with a
+ * non-empty list below is an upper bound over an unconstrained product, not a count of events.
+ *
+ * Read off the artifact rather than listed here, so a draft that derives one more field, or that
+ * lands a real derivation and drops the flag, moves this list and the document's qualification with
+ * it instead of leaving a stale claim behind.
+ */
+const derivedSweptFields = (fields, definitions) =>
+  fields.filter((field) => definitions.get(field)?.derived === true);
+
+/**
  * Sweep one dedupe group.
  *
  * Returns the three properties the document keeps apart: A (findings, trigger `true` or `unknown`),
  * B (`true` only) and C (completeness, computed from the intake and the scope resolver alone and
- * never from a trigger result).
+ * never from a trigger result), plus `derivedFields` (see `derivedSweptFields`).
  */
 export function sweepGroup(group, definitions) {
   const members = group.members;
@@ -695,6 +737,7 @@ export function sweepGroup(group, definitions) {
     key: group.key,
     memberIds: members.map((member) => member.id),
     fields,
+    derivedFields: derivedSweptFields(fields, definitions),
     sweep,
     complete,
     completeAndTwoFindings,
@@ -807,4 +850,4 @@ export function multiMemberGroups(artifact) {
     .map(([key, members]) => ({ key, members }));
 }
 
-export { DERIVED_VALUES, UNKNOWN_ANSWER, NULL_IS_A_DECLARED_ANSWER };
+export { DERIVED_VALUES, NUMERIC_MINIMUMS, UNKNOWN_ANSWER, NULL_IS_A_DECLARED_ANSWER };

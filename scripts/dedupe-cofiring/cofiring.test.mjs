@@ -12,9 +12,16 @@ import { join } from "node:path";
 
 import { beforeAll, describe, expect, test } from "vitest";
 
+import { parseIntakeContract } from "../../packages/engine/src/intake/registry.ts";
+import { validateIntake } from "../../packages/engine/src/intake/validate.ts";
+
 import {
+  EVENT_DATE,
+  NUMERIC_MINIMUMS,
   askedWhenExpression,
   assertDerivedValuesMatchDraft,
+  domainFor,
+  loadControl,
   measuredDraftPath,
   validMultiEnumSelections,
 } from "./harness.mjs";
@@ -27,6 +34,9 @@ import {
 } from "./report.mjs";
 
 let m;
+
+/** The published control's contract, for the intake rules the engine applies to every ruleset. */
+const controlContract = parseIntakeContract(loadControl());
 
 beforeAll(() => {
   m = measure();
@@ -216,13 +226,32 @@ describe("section 3.3, the sweep", () => {
       sla_alcohol: 60,
       sapo_insurance: 36,
       nypd_sound: 156,
-      parks_special_event: 160,
+      parks_special_event: 120,
       fdny_generator: 4_800,
       dob_assembly: 80,
       block_party_eligibility: 24_330_240,
     });
-    expect(m.totalIntakes).toBe(24_352_012);
+    expect(m.totalIntakes).toBe(24_351_972);
     expect(m.control.sweep).toBe(622);
+  });
+
+  test("a numeric domain holds no value the intake contract refuses", () => {
+    // `headcount` is the one numeric field `validateIntake` gives a minimum, and the minimum is
+    // read from the engine here rather than asserted as a constant, so the sweep follows a change
+    // to the rule instead of outliving it.
+    const headcountErrors = (headcount) =>
+      validateIntake(controlContract, { headcount }, EVENT_DATE)
+        .errors.filter((error) => error.field === "headcount")
+        .map((error) => error.code);
+    const admits = (headcount) => headcountErrors(headcount).length === 0;
+    expect(headcountErrors(NUMERIC_MINIMUMS.headcount - 1)).toEqual(["must_be_positive"]);
+    expect(admits(NUMERIC_MINIMUMS.headcount)).toBe(true);
+
+    const domain = domainFor("headcount", { type: "integer", nullable: false }, [
+      { trigger: { field: "headcount", op: "gt", value: 20 } },
+    ]);
+    expect(domain).toEqual([19, 20, 21]);
+    expect(domain.every((value) => admits(value))).toBe(true);
   });
 });
 
@@ -237,6 +266,37 @@ describe("section 3.4, the limitations", () => {
       "event_days",
       "structure_area_sqft",
     ]);
+  });
+
+  test("limitation 9: which sweeps are products over draft-derived classifications", () => {
+    // These fields are not answers. The draft derives them with `classify_sapo_event`, which it
+    // publishes as prose rather than as an algorithm, so no reachability constraint exists to
+    // apply and each is swept over its declared enum independently. Every figure for a group
+    // listed here is an upper bound over an unconstrained product, not a count of reachable
+    // events. The list is read off the artifact's `derived: true` flags, so a draft that lands a
+    // derivation and drops a flag moves it.
+    expect(Object.fromEntries(m.groups.map((group) => [group.key, group.derivedFields]))).toEqual({
+      sapo_permit: [
+        "sapo_event_type",
+        "street_event_size",
+        "plaza_level",
+        "plaza_block_count",
+        "plaza_size",
+      ],
+      block_party_eligibility: ["sapo_event_type"],
+      sapo_insurance: ["sapo_event_type"],
+      parks_special_event: [],
+      nypd_sound: [],
+      fdny_generator: [],
+      dob_assembly: [],
+      dob_temporary_structure: [],
+      sla_alcohol: [],
+    });
+  });
+
+  test("limitation 9: the published control derives no intake field, so it is not qualified", () => {
+    expect(m.draft.intake_fields.filter((field) => field.derived === true)).not.toHaveLength(0);
+    expect(loadControl().intake_fields.filter((field) => field.derived === true)).toHaveLength(0);
   });
 
   test("limitation 5: three rules read a fuel field, each in a single-member group", () => {
@@ -255,7 +315,7 @@ describe("section 4.1, findings per event", () => {
     ["sla_alcohol", [37, 11, 2, 4, 2, 4]],
     ["sapo_insurance", [4, 26, 2, 2, 2]],
     ["nypd_sound", [84, 27, 36, 9, 0]],
-    ["parks_special_event", [132, 28, 0, 0]],
+    ["parks_special_event", [98, 22, 0, 0]],
     ["fdny_generator", [2_686, 1_706, 344, 64]],
     ["dob_assembly", [59, 15, 3, 3]],
     ["block_party_eligibility", [18_923_544, 737_256, 4_669_440]],
@@ -271,7 +331,7 @@ describe("section 4.2, the same sweeps counting only `true` triggers", () => {
     ["sla_alcohol", [43, 17]],
     ["sapo_insurance", [9, 27]],
     ["nypd_sound", [90, 58, 8]],
-    ["parks_special_event", [146, 14]],
+    ["parks_special_event", [109, 11]],
     ["fdny_generator", [3_913, 852, 35]],
     ["dob_assembly", [68, 12]],
     ["block_party_eligibility", [21_627_024, 830_448, 1_872_768]],
@@ -293,7 +353,7 @@ describe("section 4.3, completeness", () => {
     ["sla_alcohol", 24, 0, 0],
     ["sapo_insurance", 16, 0, 0],
     ["nypd_sound", 84, 8, 8],
-    ["parks_special_event", 144, 0, 0],
+    ["parks_special_event", 108, 0, 0],
     ["fdny_generator", 2_016, 35, 35],
     ["dob_assembly", 63, 0, 0],
     ["block_party_eligibility", 1_474_560, 0, 0],

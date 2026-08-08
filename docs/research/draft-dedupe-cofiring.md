@@ -225,7 +225,10 @@ Value domains, applied uniformly by `domainFor` in the harness:
 - **multi_enum:** every valid selection, per the rule above. No draft group swept below reads a
   `multi_enum` field, so this rule binds only on the control's `structure_types`.
 - **numeric:** `0`, plus `t-1`, `t`, `t+1` for every threshold `t` any member compares the field
-  against, plus `null` when nullable.
+  against, plus `null` when nullable, less any value the intake contract refuses. `validateIntake`
+  rejects a headcount at or below zero (`packages/engine/src/intake/validate.ts:316-317`), so
+  `headcount` sweeps `{19, 20, 21}` and not `{0, 19, 20, 21}`. It is the only numeric field the
+  engine gives a minimum, so no other numeric domain is filtered.
 - **dates:** `event_date` is fixed at `2026-09-01`; `event_end_date` ranges over `{null,
 2026-09-01, 2026-09-02}`, giving `event_days` of 1, 1 and 2, which covers the only threshold
   (`event_days gt 1`) below, on and above.
@@ -233,7 +236,7 @@ Value domains, applied uniformly by `domainFor` in the harness:
 20, 21}`, because their thresholds are on their product: those products straddle both published
   area thresholds (120 and 400) on all three sides.
 
-Sweep sizes: from 36 to 24,330,240 intakes per group, **24,352,012** draft intakes in total, plus
+Sweep sizes: from 36 to 24,330,240 intakes per group, **24,351,972** draft intakes in total, plus
 **622** control intakes. Every one was evaluated; nothing was truncated.
 
 **What is still not a whole valid submission.** A sweep answers a group's own fields and holds the
@@ -245,7 +248,10 @@ outside the swept set. What the sweeps are is the exact enumeration of a group's
 under the contract's rules for the fields that space is built from, not a catalogue of complete
 questionnaires.
 
-**Two sweep sizes changed in this revision, and both are the intake-contract corrections above.**
+**Three sweep sizes changed in this revision, and all three are the intake-contract corrections
+above.** `parks_special_event` is **120** rather than 160, because `headcount = 0` is not an answer
+the contract admits and is no longer swept; that removes 40 rows, one for each combination of the
+group's other three fields, and it is the correction the paragraph below retracts in part.
 `nypd_sound` is **156** rather than 360, because `sound_audible_in_public_space` is now omitted on
 the intakes that do not ask it. The control is **622** rather than 2,400, because `structure_types`
 now ranges over its 16 valid selections rather than 32 power-set members and because
@@ -254,10 +260,12 @@ of scope. The agreement check is therefore 28,612 comparisons rather than 110,40
 with either sweep size in its denominator moved; sections 4.1 to 4.4, 5.5, 6 and 7 give the new
 values and say which sentences they change.
 
-One earlier revision's domain corrections still stand and are recorded here so the history is
-readable: `0` belongs in the domain of every numeric field, and `structure_over_10ft_tall` is not
-nullable in `rules/nyc-rules.v2.11.json`. That is why `dob_temporary_structure` is 10,000 rather
-than 8,750 and `block_party_eligibility` is 24,330,240 rather than 19,464,192.
+An earlier revision's domain corrections still stand, with one narrowed, and are recorded here so
+the history is readable: `0` belongs in the domain of every numeric field **the contract admits it
+for**, and `structure_over_10ft_tall` is not nullable in `rules/nyc-rules.v2.11.json`. That is why
+`dob_temporary_structure` is 10,000 rather than 8,750 and `block_party_eligibility` is 24,330,240
+rather than 19,464,192. The narrowing is `headcount`, above: the earlier statement was made about
+numeric domains in general and was never checked against `validateIntake`'s per-field minimum.
 
 ### 3.4 Limitations, stated plainly
 
@@ -279,7 +287,8 @@ and are stated as the enumeration found them.
    threshold, and cannot surface a discontinuity that exists nowhere near a threshold. Enumerated:
    every leaf in the draft that reads a numeric field uses `gt`, `gte`, `lte`, `eq` or `is_null`,
    and every one of them names its own constant, so there is no construct that discriminates away
-   from a swept value. The `0` in each numeric domain is the only non-threshold point swept.
+   from a swept value. The `0` in each numeric domain is the only non-threshold point swept, and it
+   is dropped for `headcount`, where the contract refuses it (section 3.3).
 4. **The date axis is minimal.** Enumerated: `event_days` is the only date-derived value any
    trigger in the draft reads, in any group, multi-member or not; the draft's other date-derived
    value, `business_days_until_event`, is read by no trigger. `event_days` has a single threshold,
@@ -300,6 +309,33 @@ and are stated as the enumeration found them.
    any member reads is settled, so an intake can be incomplete for the group while every field the
    two actually-co-firing members read is settled. Section 5 reports both counts wherever they
    differ.
+9. **Three sweeps are unconstrained products over classifications the draft derives, not counts of
+   reachable events.** The draft marks `sapo_event_type`, `street_event_size`, `plaza_level`,
+   `plaza_size` and `plaza_block_count` `derived: true`. They are not answers an organizer gives;
+   they are produced from raw public-space facts by `classify_sapo_event`, which the draft
+   publishes as prose rather than as an algorithm, and which
+   `docs/proposals/documentation-audit-2026-07-22.md:56` records as having no complete
+   deterministic derivation in the supplied file. With no derivation to run and no approved
+   reachability constraint to apply, this harness enumerates each of them over its declared enum
+   independently. **The products therefore contain classification combinations that may be jointly
+   unreachable**, so every figure for a group in the table below is an upper bound over a product,
+   not a count of events the classifier can produce. Supplying a classifier here would be inventing
+   rule semantics, which `AGENTS.md` forbids and which no approved artifact supports, so the fact
+   is stated rather than repaired.
+
+   | group                     | derived fields swept                                                                     |
+   | ------------------------- | ---------------------------------------------------------------------------------------- |
+   | `sapo_permit`             | `sapo_event_type`, `street_event_size`, `plaza_level`, `plaza_block_count`, `plaza_size` |
+   | `block_party_eligibility` | `sapo_event_type`                                                                        |
+   | `sapo_insurance`          | `sapo_event_type`                                                                        |
+
+   The list is read off the artifact's `derived: true` flags rather than written down here, so a
+   draft that lands a real derivation and drops a flag moves the qualification with it. The other
+   six groups sweep no derived field and carry no such qualification, and neither does the control:
+   `rules/nyc-rules.v2.11.json` derives no intake field. What this limitation does **not** touch is
+   which members share a `dedupe_key`, which is published data, or the sets in section 5, which
+   name the combinations rather than counting them; it bears on the sweep sizes, the distributions,
+   the completeness counts and every percentage over them for those three groups.
 
 ### 3.5 The supplied semantics, re-checked against the draft
 
@@ -338,6 +374,12 @@ under both readings, which is why section 4.3 finds the group never co-fires on 
 
 ## 4. Results
 
+**Read the `sapo_permit`, `block_party_eligibility` and `sapo_insurance` rows against limitation 9.**
+Those three sweep fields the draft derives with `classify_sapo_event`, which it publishes as prose
+rather than as an algorithm, so their rows are unconstrained products over the declared enums and
+are upper bounds rather than counts of reachable events. The other six groups and the control sweep
+only fields an organizer answers, and carry no such qualification.
+
 ### 4.1 Property A, findings per event (trigger `true` or `unknown`), draft
 
 | group                     | members | sweep      | 0          | 1       | 2         | 3   | 4   | 5   | 6+  | max    | share >= 2 |
@@ -347,7 +389,7 @@ under both readings, which is why section 4.3 finds the group never co-fires on 
 | `sla_alcohol`             | 5       | 60         | 37         | 11      | 2         | 4   | 2   | 4   | 0   | **5**  | 20.0%      |
 | `sapo_insurance`          | 4       | 36         | 4          | 26      | 2         | 2   | 2   | 0   | 0   | **4**  | 16.7%      |
 | `nypd_sound`              | 4       | 156        | 84         | 27      | 36        | 9   | 0   | 0   | 0   | **3**  | 28.8%      |
-| `parks_special_event`     | 3       | 160        | 132        | 28      | 0         | 0   | 0   | 0   | 0   | **1**  | 0.0%       |
+| `parks_special_event`     | 3       | 120        | 98         | 22      | 0         | 0   | 0   | 0   | 0   | **1**  | 0.0%       |
 | `fdny_generator`          | 3       | 4,800      | 2,686      | 1,706   | 344       | 64  | 0   | 0   | 0   | **3**  | 8.5%       |
 | `dob_assembly`            | 3       | 80         | 59         | 15      | 3         | 3   | 0   | 0   | 0   | **3**  | 7.5%       |
 | `block_party_eligibility` | 2       | 24,330,240 | 18,923,544 | 737,256 | 4,669,440 | 0   | 0   | 0   | 0   | **2**  | 19.2%      |
@@ -363,7 +405,7 @@ The `sapo_permit` 6+ column expands to 6: 212, 7: 200, 8: 94, 9: 80, 10: 80, 11:
 | `sla_alcohol`             | 43         | 17      | 0         | **1** | 0.0%       |
 | `sapo_insurance`          | 9          | 27      | 0         | **1** | 0.0%       |
 | `nypd_sound`              | 90         | 58      | 8         | **2** | 5.1%       |
-| `parks_special_event`     | 146        | 14      | 0         | **1** | 0.0%       |
+| `parks_special_event`     | 109        | 11      | 0         | **1** | 0.0%       |
 | `fdny_generator`          | 3,913      | 852     | 35        | **2** | 0.7%       |
 | `dob_assembly`            | 68         | 12      | 0         | **1** | 0.0%       |
 | `block_party_eligibility` | 21,627,024 | 830,448 | 1,872,768 | **2** | 7.7%       |
@@ -384,7 +426,7 @@ computed from the intake and the scope resolver alone.
 | `sla_alcohol`             | 60         | 24        | 40.0%          | **0**                      | **0**                  |
 | `sapo_insurance`          | 36         | 16        | 44.4%          | **0**                      | **0**                  |
 | `nypd_sound`              | 156        | 84        | 53.8%          | **8**                      | **8**                  |
-| `parks_special_event`     | 160        | 144       | 90.0%          | **0**                      | **0**                  |
+| `parks_special_event`     | 120        | 108       | 90.0%          | **0**                      | **0**                  |
 | `fdny_generator`          | 4,800      | 2,016     | 42.0%          | **35**                     | **35**                 |
 | `dob_assembly`            | 80         | 63        | 78.8%          | **0**                      | **0**                  |
 | `block_party_eligibility` | 24,330,240 | 1,474,560 | 6.1%           | **0**                      | **0**                  |
@@ -480,6 +522,8 @@ and the surviving scalars are the stricter of the two.
 Every set below was produced by an evaluation; each "one concrete intake" is the first intake in
 the sweep's enumeration order that produced that exact set. Fields not listed were held unanswered.
 `complete` is the group-level count from 4.3; where the set-level count differs, both are given.
+The sets themselves name combinations rather than counting events, so limitation 9 bears on the
+counts beside each set in 5.1, 5.4 and 5.9, not on which members appear together.
 
 ### 5.1 `sapo_permit`, 14 members, max 14, never 2 on a complete intake
 
@@ -607,12 +651,18 @@ reaches a genuine disagreement with every material fact answered.
 
 ### 5.6 `parks_special_event`, 3 members, max 1
 
-**Never co-fires.** Zero events in 160 produced two findings, and zero of the 144 complete intakes
+**Never co-fires.** Zero events in 120 produced two findings, and zero of the 108 complete intakes
 did. `PARKS-SPECIAL-EVENT-001` needs `headcount gt 20`, `PARKS-SPECIAL-ELEMENT-001` needs
 `headcount lte 20` plus sound or structures, and `PARKS-EXACT-20-CONFLICT-001` needs exactly 20
 with neither sound nor structures. The three partition the space cleanly, including at the
 boundary, and no unknown reopens it: `headcount` is non-nullable in the draft, so it has no
 unanswered state to sweep.
+
+The sweep is 120 rather than the 160 an earlier revision reported because `headcount = 0` was in it,
+and `validateIntake` rejects a headcount at or below one (`validate.ts:316-317`). The dropped 40
+rows are 1 invalid headcount x 10 `location_type` values x 2 `amplified_sound` values x 2
+`structures` values. The boundary the group turns on is untouched: 19, 20 and 21 are all still
+swept, which is what the partition claim above rests on.
 
 This is the only group of the nine with no merge behaviour at all.
 
@@ -788,7 +838,7 @@ aggregate as a settled fact, and is withdrawn.
 
 **Never merges, one group:**
 
-- `parks_special_event`. Zero co-firing events in 160. A genuine partition, boundary included.
+- `parks_special_event`. Zero co-firing events in 120. A genuine partition, boundary included.
 
 **Control, for comparison:** the published ruleset's one group merges on 54.0% of its sweep and on
 35.4% of its complete intakes, and its two members do differ in name, disposition, deadline and fee.
@@ -828,7 +878,7 @@ It is four modules and one suite, all under 700 lines together:
 | `staging.mjs`       | the adaptations of section 3.1, applied to in-memory clones                                                                                   |
 | `inventory.mjs`     | what the draft publishes, re-derived by parsing it: deadlines, permit names, output identity, blockers, mixed statuses, parser-visible output |
 | `report.mjs`        | one `measure()` call that produces every table, plus the printer                                                                              |
-| `cofiring.test.mjs` | 59 assertions, one or more per published figure                                                                                               |
+| `cofiring.test.mjs` | 71 test cases, one or more per published figure                                                                                               |
 
 Every table maps to a `describe` block with the same number:
 
@@ -836,8 +886,8 @@ Every table maps to a `describe` block with the same number:
 | ----------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------- |
 | 3.1, the load-staging errors              | `describe("section 3.1, the load-staging errors")`                                                                                                |
 | 3.2, the agreement check                  | `describe("section 3.2, what the harness supplies")`                                                                                              |
-| 3.3, the sweep sizes and the domain rules | `describe("section 3.3, the sweep")`                                                                                                              |
-| 3.4, limitations 3, 4 and 5               | `describe("section 3.4, the limitations")`                                                                                                        |
+| 3.3, the sweep sizes and the domain rules | `describe("section 3.3, the sweep")`, whose headcount case runs `validateIntake` on the rejected value and the admitted one                       |
+| 3.4, limitations 3, 4, 5 and 9            | `describe("section 3.4, the limitations")`                                                                                                        |
 | 3.5, the supplied semantics               | `jq '.engine_operators, .derived_values' rules/proposals/nyc-rules.v2-full-draft.json`, and the `is_null`/`lte` half of `describe("section 3.2")` |
 | 4.1, findings per event                   | `describe("section 4.1, findings per event")`                                                                                                     |
 | 4.2, `true`-only                          | `describe("section 4.2, ...")`                                                                                                                    |
