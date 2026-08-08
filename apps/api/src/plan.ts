@@ -254,8 +254,16 @@ export function storedRoutes(
  *
  * A merged line takes its identity and timeline from ONE route, the binding route, so that a line
  * can never name one route and date another. Where that route publishes no window the line has
- * none, and the columns say so: no `latest_apply_date`, `deadline_status = 'not_applicable'`, no
- * `fee_display`. The requirement's published window did not stop existing; it is on another route.
+ * none, and the columns say so: no `deadline`, no `latest_apply_date`,
+ * `deadline_status = 'not_applicable'`, no `fee_display`. The requirement's published window did
+ * not stop existing; it is on another route.
+ *
+ * THE TEST IS A PUBLISHED WINDOW, NOT A COMPUTED DATE. A rule can publish a window the engine
+ * cannot turn into a date — a business-day count with no published holiday list, which is what
+ * DOB-TENT-001 is in production — and that line reads `not_calculable` with a fee and a published
+ * deadline type. Keying this on `latest_apply_date` alone dropped exactly those: measured over the
+ * 3,200-intake control sweep with no holiday list published, 56 lines lost the tent route's TUP fee
+ * and reported `not_applicable` where the same rules unmerged report `not_calculable`.
  *
  * `routes` arrives in binding order, so the first entry publishing a window is the tightest one the
  * merged disposition still rests on. It supplies the window, the status AND the fee together, from
@@ -266,10 +274,10 @@ export function filingRouteOf(
   item: StoredPlanItem,
   rendering: FindingRendering | undefined,
 ): FindingRoute | null {
-  if (storedDate(item.latest_apply_date) !== null) return null;
+  if (item.deadline !== null || storedDate(item.latest_apply_date) !== null) return null;
   const routes = storedRoutes(item, rendering);
   if (routes.length < 2) return null;
-  return routes.find((route) => route.latestApplyDate !== null) ?? null;
+  return routes.find((route) => route.deadline !== null || route.latestApplyDate !== null) ?? null;
 }
 
 async function insertPlan(

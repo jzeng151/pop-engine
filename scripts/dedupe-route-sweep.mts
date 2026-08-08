@@ -33,7 +33,13 @@ const { evaluate, parseEngineRuleset } = engine;
 const RULES = path.resolve(process.cwd(), "rules/nyc-rules.v2.11.json");
 const ruleset = parseEngineRuleset(JSON.parse(readFileSync(RULES, "utf8")));
 /** The ruleset's own pinned calendar, with no published holiday list, as `pinnedCalendar` gives. */
-const calendar = { id: ruleset.calendarId, holidays: null };
+// `HOLIDAYS=published` runs the sweep against a published (empty) holiday list, which is what the
+// api's own suites inject; unset runs it against production's, where none is published and a
+// business-day window is NOT_CALCULABLE. Both are measured, because the loss looks different.
+const calendar = {
+  id: ruleset.calendarId,
+  holidays: process.env.HOLIDAYS === "published" ? [] : null,
+};
 
 const TODAY = "2026-07-22";
 const EVENT_DATE = "2026-09-19";
@@ -65,6 +71,7 @@ type Row = {
   readonly latestApplyDate: string | null;
   readonly feeDisplay: string | null;
   readonly deadlineStatus: string;
+  readonly deadlineType: string | null;
   readonly schedulingRoutes: number;
   readonly routeRuleIds: readonly string[];
   readonly headlineMode: string | null;
@@ -80,6 +87,7 @@ const routesOf = (finding: Record<string, unknown>): Record<string, unknown>[] =
       feeDisplay: finding.feeDisplay,
       deadlineStatus: finding.deadlineStatus,
       applyAfterDate: finding.applyAfterDate,
+      deadline: finding.deadline,
     },
   ];
 
@@ -88,10 +96,10 @@ const routesOf = (finding: Record<string, unknown>): Record<string, unknown>[] =
  * expressed against a finding rather than a stored row. Null when the line publishes its own.
  */
 function filingRoute(finding: Record<string, unknown>): Record<string, unknown> | null {
-  if (finding.latestApplyDate !== null) return null;
+  if (finding.deadline !== null || finding.latestApplyDate !== null) return null;
   const routes = finding.routes as Record<string, unknown>[] | undefined;
   if (routes === undefined || routes.length < 2) return null;
-  return routes.find((route) => route.latestApplyDate !== null) ?? null;
+  return routes.find((route) => route.deadline !== null || route.latestApplyDate !== null) ?? null;
 }
 
 /**
@@ -118,16 +126,24 @@ for (const structures of STRUCTURE_SETS) {
       for (const days of TENT_DAYS) {
         {
           id += 1;
+          // EVERY OTHER COLLECTED FIELD IS ANSWERED, so the only unknowns in the sweep are the
+          // four dimensions it varies. An unanswered field expands into branches, and leaving the
+          // rest open made the sweep about branch arithmetic rather than about the dedupe group.
           const intake: Record<string, unknown> = {
             borough: "manhattan",
             location_type: "street",
+            obstructs_public_way: "no",
             event_date: EVENT_DATE,
             headcount: 120,
-            structure_types: structures,
             event_open_to_public: "yes",
-            // Multi-selects are answered explicitly: an absent one is not a multi-select and the
-            // engine refuses it rather than guessing, which is the tri-state discipline working.
-            open_flame_or_cooking: [],
+            food_present: false,
+            selling_anything: false,
+            amplified_sound: false,
+            structure_types: structures,
+            open_flame_or_cooking: ["none"],
+            generator_present: false,
+            battery_present: false,
+            alcohol: false,
           };
           if (over10 !== undefined) intake.structure_over_10ft_tall = over10;
           if (area !== undefined) intake.tent_area_sqft = area;
@@ -158,6 +174,8 @@ for (const structures of STRUCTURE_SETS) {
               (dob.feeDisplay as string | null),
             deadlineStatus:
               (filing?.deadlineStatus as string | undefined) ?? (dob.deadlineStatus as string),
+            deadlineType:
+              ((filing?.deadline ?? dob.deadline) as { type?: string } | null)?.type ?? null,
             schedulingRoutes: schedulingRoutes(dob),
             routeRuleIds: routesOf(dob).map((route) => route.ruleId as string),
             headlineMode: (dob.headlineMode as string | undefined) ?? null,
