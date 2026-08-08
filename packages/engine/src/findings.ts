@@ -25,11 +25,32 @@ import type {
   Tristate,
 } from "./types";
 
+/**
+ * Which routes resolved, by the role they play in a merged line. `verdict.ts` needs both, because a
+ * merged line's disposition and its timeline are read off DIFFERENT routes (`mergeGroup`), and a
+ * missed window may only close a plan when each of those two routes resolved on its own trigger.
+ */
+export type DefiniteRoutes = {
+  /**
+   * Rules that published a disposition at or above `required` AND whose own trigger resolved, so
+   * the requirement or bar they assert does not hang off an unanswered question. `verdict.ts` reads
+   * this to decide which missed findings may close a plan; see `blocksWhenMissed` there.
+   */
+  readonly blockingRuleIds: ReadonlySet<string>;
+  /**
+   * Per finding, the id of the route whose published window the finding's timeline came from, and
+   * only where that route's own trigger resolved. A finding whose id is absent carries a window that
+   * hangs off an unanswered question, so its `published_deadline_missed` is conditional too.
+   */
+  readonly windowRuleIds: ReadonlySet<string>;
+};
+
 export type ResolvedFindings = {
   readonly findings: readonly Finding[];
   readonly trace: readonly EvaluationTraceEntry[];
   /** Intake fields whose unanswered state left at least one finding conditional. */
   readonly unknownFields: readonly string[];
+  readonly definiteRoutes: DefiniteRoutes;
 };
 
 function findingKind(rule: EngineRule): FindingKind {
@@ -123,7 +144,7 @@ function buildFinding(
  * that end: a blocking eligibility or prohibition finding is never erased by a permit finding with
  * the same key.
  */
-const DISPOSITION_STRENGTH: readonly Disposition[] = [
+export const DISPOSITION_STRENGTH: readonly Disposition[] = [
   "no_new_requirement",
   "advisory",
   "may_be_required",
@@ -133,6 +154,9 @@ const DISPOSITION_STRENGTH: readonly Disposition[] = [
 
 /** The strongest a route whose own trigger did not resolve can contribute (§8.4, and see below). */
 const UNRESOLVED_ROUTE_CEILING: Disposition = "may_be_required";
+
+/** The weakest disposition a missed finding can close a plan on (`verdict.ts`, F-102 AC 10). */
+export const BLOCKING_DISPOSITION_FLOOR: Disposition = "required";
 
 /** The weakest RESOLVED contribution a group can hold for that ceiling to bite (see below). */
 const UNRESOLVED_ROUTE_CAP_TRIGGER: Disposition = "required";
@@ -362,9 +386,24 @@ function mergeUserSummary(
  * here asserts a new regulatory fact. Every merged value is some contributing rule's own published
  * value, and every contributing rule stays in `ruleIds` and `sources`.
  */
-function mergeGroup(group: readonly Contribution[]): Finding {
+/**
+ * A merged finding, plus the id of the route its TIMELINE was read off — carried only where that
+ * route's own trigger resolved, and null otherwise. The trigger result is not on `Finding`, and the
+ * window-binding route is not always the one that contributed the disposition, so `verdict.ts`
+ * cannot recover either from the merged line: a group holding a resolved bar with no deadline beside
+ * an unknown-triggered route with a closed window renders `prohibited_or_ineligible` and
+ * `published_deadline_missed` while the missed window is entirely conditional (#254 review).
+ */
+type MergedFinding = { readonly finding: Finding; readonly windowRuleId: string | null };
+
+const definiteWindowRuleId = ({ finding, triggerResult }: Contribution): string | null =>
+  triggerResult === "unknown" ? null : (finding.ruleIds[0] ?? null);
+
+function mergeGroup(group: readonly Contribution[]): MergedFinding {
   const first = group[0] as Contribution;
-  if (group.length === 1) return first.finding;
+  if (group.length === 1) {
+    return { finding: first.finding, windowRuleId: definiteWindowRuleId(first) };
+  }
 
   const ceilingApplies = unresolvedRouteCeilingApplies(group);
   const contributed = (contribution: Contribution): Disposition =>
@@ -378,9 +417,13 @@ function mergeGroup(group: readonly Contribution[]): Finding {
     .filter((contribution) => contributed(contribution) === disposition)
     .map((contribution) => contribution.finding)
     .sort(compareBinding);
-  const byTimeline = [...findings].sort(compareBinding);
+  const byTimelineRoutes = [...group].sort((left, right) =>
+    compareBinding(left.finding, right.finding),
+  );
+  const byTimeline = byTimelineRoutes.map((contribution) => contribution.finding);
   const identityBinding = byIdentity[0] as Finding;
-  const windowBinding = byTimeline[0] as Finding;
+  const windowRoute = byTimelineRoutes[0] as Contribution;
+  const windowBinding = windowRoute.finding;
   // Each family's binding route first, then the rest, for the fields it leaves empty.
   const identityOrder = [
     identityBinding,
@@ -399,7 +442,7 @@ function mergeGroup(group: readonly Contribution[]): Finding {
       ? published.reduce((earliest, date) => (date < earliest ? date : earliest))
       : null;
 
-  return {
+  const merged: Finding = {
     // Identity: kind, name, agency, feeDisplay, the three portal fields and verificationStatus.
     ...identityBinding,
     disposition,
@@ -423,12 +466,13 @@ function mergeGroup(group: readonly Contribution[]): Finding {
     conflictText: identityText((finding) => finding.conflictText),
     ...(verificationDates.some((date) => date !== undefined) ? { lastVerifiedDate } : {}),
   };
+  return { finding: merged, windowRuleId: definiteWindowRuleId(windowRoute) };
 }
 
 /** Findings sharing a dedupe key merge deterministically, retaining every contributing rule and source. */
 function dedupe(
   findings: readonly (Contribution & { readonly dedupeKey: string | null })[],
-): Finding[] {
+): MergedFinding[] {
   const groups: Contribution[][] = [];
   const positionByKey = new Map<string, number>();
   for (const { dedupeKey, ...contribution } of findings) {
@@ -555,6 +599,7 @@ export function resolveFindings(
   const trace: EvaluationTraceEntry[] = [];
   const triggered: (Contribution & { dedupeKey: string | null })[] = [];
   const unknownFields = new Set<string>();
+  const blockingRuleIds = new Set<string>();
 
   for (const rule of ruleset.rules) {
     const evaluation = evaluateTrigger(rule.trigger, intake, scope);
@@ -564,12 +609,44 @@ export function resolveFindings(
     const finding = buildFinding(rule, evaluation.result, evaluation.triggeredBy, deadlineContext);
     // An unknown that surfaces while dating a finding is as material as one from its trigger.
     for (const field of finding.deadlineUnknownFields) unknownFields.add(field);
+    // OFFICIAL_CONFLICT is excluded because F-102 states it plainly: an official-conflict finding
+    // never flips the verdict by itself. The rule's own reading of its window may be one of the two
+    // that disagree, so closing a plan on it would resolve the conflict in the engine, in the
+    // direction of the harsher reading, and `ARCHITECTURE-FUTURE.md` §8.4 says the same of
+    // deduplication ("candidate requirements produced by official-conflict [...] branches remain
+    // conditional"). The line still renders as published, with both readings and every source, and
+    // it still contributes its window and its disposition to a merged line; it just cannot be the
+    // route that closes the plan. Excluding it here rather than rejecting the disposition at parse
+    // time is deliberate: what a rule publishes is regulatory content and the published ruleset is
+    // authoritative over the engine (AGENTS.md), so the engine may decline to block on it but may
+    // not overwrite it. A group cannot smuggle one in either, since `parseEngineRuleset` refuses a
+    // dedupe key that mixes verification statuses, so an official-conflict route only ever merges
+    // with other official-conflict routes (#254 review).
+    if (
+      evaluation.result === "true" &&
+      rule.verificationStatus !== "OFFICIAL_CONFLICT" &&
+      DISPOSITION_STRENGTH.indexOf(finding.disposition) >=
+        DISPOSITION_STRENGTH.indexOf(BLOCKING_DISPOSITION_FLOOR)
+    ) {
+      blockingRuleIds.add(rule.id);
+    }
     triggered.push({ finding, triggerResult: evaluation.result, dedupeKey: rule.dedupeKey });
   }
 
+  const merged = dedupe(triggered);
+  const windowRuleIds = new Set(
+    merged
+      .map(({ windowRuleId }) => windowRuleId)
+      .filter((ruleId): ruleId is string => ruleId !== null),
+  );
+
   return {
-    findings: applyDependencySequencing(dedupe(triggered), deadlineContext),
+    findings: applyDependencySequencing(
+      merged.map(({ finding }) => finding),
+      deadlineContext,
+    ),
     trace,
     unknownFields: [...unknownFields],
+    definiteRoutes: { blockingRuleIds, windowRuleIds },
   };
 }

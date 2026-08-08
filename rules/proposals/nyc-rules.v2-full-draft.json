@@ -1223,7 +1223,7 @@
     },
     {
       "id": "SAPO-BLOCK-PARTY-INELIGIBLE-001",
-      "kind": "eligibility",
+      "kind": "prohibition",
       "severity": "blocking",
       "title": "Block Party eligibility failure",
       "trigger": {
@@ -2190,7 +2190,7 @@
     },
     {
       "id": "SAPO-ALCOHOL-PROHIBITION-001",
-      "kind": "eligibility",
+      "kind": "prohibition",
       "severity": "blocking",
       "title": "Alcohol prohibited for specified SAPO event classes",
       "trigger": {
@@ -2831,7 +2831,7 @@
     },
     {
       "id": "NYPD-SOUND-COMMERCIAL-ADVERTISING-PROHIBITED-001",
-      "kind": "eligibility",
+      "kind": "prohibition",
       "severity": "blocking",
       "title": "Commercial advertising through sound device prohibited near public space",
       "trigger": {
@@ -3519,7 +3519,7 @@
     },
     {
       "id": "PARKS-PROPANE-PROHIBITION-001",
-      "kind": "eligibility",
+      "kind": "prohibition",
       "severity": "blocking",
       "title": "Propane prohibited in NYC Parks",
       "trigger": {
