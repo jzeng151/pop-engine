@@ -1,0 +1,664 @@
+// The measurement harness behind `docs/research/draft-dedupe-cofiring.md`.
+//
+// It answers one question: over an intake sweep, how many members of a dedupe group co-fire on a
+// single event? It exists in the repository rather than as scratch code because every table in that
+// document is an assertion in `cofiring.test.mjs` against what this file computes, so the document
+// fails CI when the draft, the engine, or the harness moves under it.
+//
+// What is the engine's and what is this file's:
+//
+//   - Operator semantics, the explicit-`unknown` answer, out-of-scope handling, the declared
+//     conditional boundary and the multi-select `in` rule are the engine's. Every trigger node the
+//     engine supports is delegated to `evaluateTrigger`/`createScopeResolver`.
+//   - The `all`/`any` tri-state combinator is restated here, because delegation happens per node.
+//   - `is_null` and `lte` are supplied here. `packages/engine` has no case for either and the draft
+//     publishes no semantics for either; section 3.2 of the document says so, and says on what
+//     basis the readings below were chosen.
+//
+// The draft artifact is never modified. Nothing here writes to `rules/`.
+
+import { readdirSync, readFileSync } from "node:fs";
+import { join } from "node:path";
+import { fileURLToPath, URL } from "node:url";
+
+import {
+  createScopeResolver,
+  evaluateTrigger,
+  parseAskedWhen,
+} from "../../packages/engine/src/conditions.ts";
+
+const repoRoot = fileURLToPath(new URL("../../", import.meta.url));
+
+/**
+ * Both artifacts are found by reading their directory rather than by naming a version.
+ *
+ * Naming one would pin this harness to a filename a publication deletes, which is the failure
+ * `scripts/check-baseline-drift.mjs` exists to catch. Reading the directory also gives the signal
+ * this measurement wants: publish a new ruleset and `cofiring.test.mjs` fails with the control
+ * figure that moved, rather than passing against a file that is no longer the published one.
+ */
+function soleArtifact(directory, describe) {
+  const names = readdirSync(join(repoRoot, directory)).filter((name) => name.endsWith(".json"));
+  if (names.length !== 1) {
+    throw new Error(`${directory} holds ${names.length} JSON artifacts; ${describe} is ambiguous`);
+  }
+  return join(repoRoot, directory, names[0]);
+}
+
+export const DRAFT_PATH = () => soleArtifact("rules/proposals", "the draft");
+export const CONTROL_PATH = () => soleArtifact("rules", "the published control");
+
+export const loadDraft = () => JSON.parse(readFileSync(DRAFT_PATH(), "utf8"));
+export const loadControl = () => JSON.parse(readFileSync(CONTROL_PATH(), "utf8"));
+
+/** The engine's explicit-unknown answer (`conditions.ts:242`). */
+const UNKNOWN_ANSWER = "unknown";
+
+/** The exclusive multi_enum option `validateIntake` refuses to combine with any other. */
+const EXCLUSIVE_OPTION = "none";
+
+/** The intake date every sweep fixes, so `event_days` varies only through `event_end_date`. */
+export const EVENT_DATE = "2026-09-01";
+
+/**
+ * The draft publishes `asked_when` as a condition object; the engine's registry grammar is a
+ * string, and `parseIntakeField` reads it with `optionalString`, so an object silently becomes
+ * `null` and the field would be unconditionally in scope. Both draft expressions are exactly
+ * expressible in the engine's grammar, so both are translated and then parsed by the engine's own
+ * `parseAskedWhen` rather than dropped.
+ */
+const ASKED_WHEN_TRANSLATIONS = {
+  public_space_interference: "location_type in street/sidewalk/curb_lane/plaza",
+  sound_audible_in_public_space:
+    "amplified_sound AND location_type in private_indoor/private_rooftop/private_outdoor",
+};
+
+/**
+ * The draft's derived values that a trigger reads, added to the intake as declared pseudo-fields so
+ * the comparisons *on* them run through the engine's operator table rather than a second one. The
+ * formulas and null behaviours are the draft's, quoted in section 3.5 of the document.
+ */
+const DERIVED_VALUES = {
+  structure_area_sqft: {
+    type: "number",
+    inputs: ["structure_length_ft", "structure_width_ft"],
+    // "unknown if either dimension is missing"
+    compute: (intake) => {
+      const length = intake.structure_length_ft;
+      const width = intake.structure_width_ft;
+      if (typeof length !== "number" || typeof width !== "number") return null;
+      return length * width;
+    },
+  },
+  event_days: {
+    type: "integer",
+    inputs: ["event_date", "event_end_date"],
+    // "1 when event_end_date is null"
+    compute: (intake) => {
+      const start = intake.event_date;
+      const end = intake.event_end_date ?? start;
+      if (typeof start !== "string" || typeof end !== "string") return null;
+      const day = 24 * 60 * 60 * 1000;
+      return (
+        Math.round((Date.parse(`${end}T00:00:00Z`) - Date.parse(`${start}T00:00:00Z`)) / day) + 1
+      );
+    },
+  },
+  effective_fuel_types: {
+    type: "multi_enum",
+    inputs: ["fuel_types", "generator_fuel_type"],
+    // "fuel_types only"
+    compute: (intake) => {
+      const base = Array.isArray(intake.fuel_types) ? [...intake.fuel_types] : [];
+      const generator = intake.generator_fuel_type;
+      if (typeof generator === "string" && generator !== "none" && generator !== UNKNOWN_ANSWER) {
+        if (!base.includes(generator)) base.push(generator);
+      }
+      return base;
+    },
+  },
+};
+
+/**
+ * A `null` answer is unanswered, except where the artifact publishes a definite meaning for it.
+ *
+ * The draft's `event_days` null behaviour is `"1 when event_end_date is null"`: a blank end date is
+ * the declared way to say "one day", not a missing fact. Every trigger consuming it therefore has a
+ * definite result, so completeness counts it as settled. No other published null behaviour names a
+ * definite value: `structure_area_sqft` is `"unknown if either dimension is missing"`, and the
+ * `is_null` leaves exist precisely to flag a fact nobody supplied.
+ */
+const NULL_IS_A_DECLARED_ANSWER = new Set(["event_end_date"]);
+
+/** Dimensions whose thresholds are on their product, so the domain is set on the product's behalf. */
+const HAND_SET_NUMERIC_DOMAINS = {
+  structure_length_ft: [10, 12, 20, 21, null],
+  structure_width_ft: [10, 12, 20, 21, null],
+};
+
+// ---------------------------------------------------------------------------------------------
+// Field definitions
+// ---------------------------------------------------------------------------------------------
+
+/**
+ * Build `IntakeFieldDefinition`s for an artifact, with the draft's two `asked_when` objects
+ * translated into the engine's grammar and parsed by the engine's parser. Derived values are added
+ * as unscoped pseudo-fields so the scope resolver can answer for them.
+ */
+export function buildFieldDefinitions(artifact, { translateAskedWhen = false } = {}) {
+  const declared = artifact.intake_fields.map((field) => ({
+    field: field.field,
+    type: field.type,
+    values: field.values ?? null,
+    askedWhen:
+      typeof field.asked_when === "string"
+        ? field.asked_when
+        : translateAskedWhen
+          ? (ASKED_WHEN_TRANSLATIONS[field.field] ?? null)
+          : null,
+    askedWhenClauses: null,
+    nullable: field.nullable === true,
+  }));
+
+  const derived = Object.entries(DERIVED_VALUES).map(([name, definition]) => ({
+    field: name,
+    type: definition.type,
+    values: null,
+    askedWhen: null,
+    askedWhenClauses: null,
+    nullable: true,
+  }));
+
+  const all = [...declared, ...derived];
+  return all.map((field) =>
+    field.askedWhen === null
+      ? field
+      : { ...field, askedWhenClauses: parseAskedWhen(field.askedWhen, all) },
+  );
+}
+
+const byField = (fields) => new Map(fields.map((field) => [field.field, field]));
+
+// ---------------------------------------------------------------------------------------------
+// Trigger evaluation
+// ---------------------------------------------------------------------------------------------
+
+/**
+ * `is_null`: true when the field is in scope and its answer is absent; false otherwise, never
+ * unknown. An explicit `"unknown"` answer is not treated as null. Nothing in the draft says this;
+ * section 3.2 of the document states it as this harness's reading and section 3.5 reports what it
+ * moves (nothing, under these domains).
+ */
+function evaluateIsNull(condition, intake, scope) {
+  if (!scope.isInScope(condition.field)) return "false";
+  const value = intake[condition.field];
+  return value === undefined || value === null ? "true" : "false";
+}
+
+/**
+ * `lte`: numeric `<=`; unknown when the answer is absent or explicitly unknown. The comparison
+ * follows from the operator's name and its company (`lt`, `gt`, `gte`); the tri-state behaviour is
+ * copied from how the engine treats every other numeric comparison.
+ */
+function evaluateLte(condition, intake, scope) {
+  if (!scope.isInScope(condition.field)) return "false";
+  const value = intake[condition.field];
+  if (value === undefined || value === null || value === UNKNOWN_ANSWER) return "unknown";
+  if (typeof value !== "number") {
+    throw new Error(`${condition.field} must be numeric for op "lte"`);
+  }
+  return value <= condition.value ? "true" : "false";
+}
+
+/**
+ * Tri-state walk. Every node the engine supports is handed to the engine; the combinator is the
+ * only engine logic restated, and it short-circuits on a decisive child, which is exact because a
+ * decisive child settles the node whatever its siblings say.
+ */
+export function evalTrigger(node, intake, scope) {
+  if ("field" in node) {
+    if (node.op === "is_null") return evaluateIsNull(node, intake, scope);
+    if (node.op === "lte") return evaluateLte(node, intake, scope);
+    return evaluateTrigger(node, intake, scope).result;
+  }
+
+  const isAll = "all" in node;
+  const children = isAll ? node.all : node.any;
+  const decisive = isAll ? "false" : "true";
+  let sawUnknown = false;
+  for (const child of children) {
+    const result = evalTrigger(child, intake, scope);
+    if (result === decisive) return decisive;
+    if (result === "unknown") sawUnknown = true;
+  }
+  return sawUnknown ? "unknown" : isAll ? "true" : "false";
+}
+
+/** Every field a trigger reads, in walk order, with each derived value expanded to its inputs. */
+export function triggerFieldsInOrder(node, seen = []) {
+  if ("field" in node) {
+    const derived = DERIVED_VALUES[node.field];
+    const names = derived === undefined ? [node.field] : derived.inputs;
+    for (const name of names) if (!seen.includes(name)) seen.push(name);
+    return seen;
+  }
+  for (const child of "all" in node ? node.all : node.any) triggerFieldsInOrder(child, seen);
+  return seen;
+}
+
+/** Every operator a trigger uses, with the field it is applied to. */
+export function triggerOperators(node, found = []) {
+  if ("field" in node) {
+    found.push({ field: node.field, op: node.op, value: node.value });
+    return found;
+  }
+  for (const child of "all" in node ? node.all : node.any) triggerOperators(child, found);
+  return found;
+}
+
+// ---------------------------------------------------------------------------------------------
+// Value domains
+// ---------------------------------------------------------------------------------------------
+
+/**
+ * The valid selections of a multi_enum, not its power set.
+ *
+ * `validateIntake` (`packages/engine/src/intake/validate.ts:88-101`) rejects the empty selection and
+ * any selection combining the exclusive `none` option with another value, so those members of the
+ * power set are not submissions the intake contract admits and enumerating them would count events
+ * that cannot occur.
+ */
+export function validMultiEnumSelections(values) {
+  const others = values.filter((value) => value !== EXCLUSIVE_OPTION);
+  const selections = [];
+  for (let mask = 1; mask < 1 << others.length; mask += 1) {
+    selections.push(others.filter((_, index) => (mask & (1 << index)) !== 0));
+  }
+  if (values.includes(EXCLUSIVE_OPTION)) selections.push([EXCLUSIVE_OPTION]);
+  return selections;
+}
+
+/** Every numeric constant any member of the sweep compares this field against. */
+function thresholdsFor(field, members) {
+  const thresholds = new Set();
+  for (const member of members) {
+    for (const leaf of triggerOperators(member.trigger)) {
+      if (leaf.field === field && typeof leaf.value === "number") thresholds.add(leaf.value);
+    }
+  }
+  return [...thresholds];
+}
+
+/**
+ * The value domain of one field, applied uniformly:
+ *
+ *   - enum / boolean: every value the artifact declares, plus `null` when it marks the field
+ *     nullable. Several enums declare `"unknown"`, which the engine reads as the explicit-unknown
+ *     answer, so that value is a genuine tri-state input and is distinct from `null`.
+ *   - multi_enum: every valid selection (see `validMultiEnumSelections`).
+ *   - numeric: `0`, plus `t-1`, `t`, `t+1` for every threshold `t` any member compares the field
+ *     against, plus `null` when nullable.
+ *   - date: `event_date` is fixed; `event_end_date` ranges over null, the same day, the next day,
+ *     giving `event_days` of 1, 1 and 2, which covers the only threshold (`event_days gt 1`) below,
+ *     on and above.
+ */
+export function domainFor(field, definition, members) {
+  if (HAND_SET_NUMERIC_DOMAINS[field] !== undefined) return HAND_SET_NUMERIC_DOMAINS[field];
+
+  switch (definition.type) {
+    case "enum":
+      return definition.nullable ? [...definition.values, null] : [...definition.values];
+    case "multi_enum": {
+      const selections = validMultiEnumSelections(definition.values);
+      return definition.nullable ? [...selections, null] : selections;
+    }
+    case "boolean":
+      return definition.nullable ? [true, false, null] : [true, false];
+    case "integer":
+    case "number": {
+      const points = new Set([0]);
+      for (const threshold of thresholdsFor(field, members)) {
+        for (const point of [threshold - 1, threshold, threshold + 1]) {
+          if (point >= 0) points.add(point);
+        }
+      }
+      const sorted = [...points].sort((left, right) => left - right);
+      return definition.nullable ? [...sorted, null] : sorted;
+    }
+    case "date":
+      if (field === "event_date") return [EVENT_DATE];
+      return [null, EVENT_DATE, "2026-09-02"];
+    default:
+      throw new Error(`no domain rule for field "${field}" of type "${definition.type}"`);
+  }
+}
+
+// ---------------------------------------------------------------------------------------------
+// Sweeping
+// ---------------------------------------------------------------------------------------------
+
+/** A scope resolver that refuses to answer for a scoped field, proving the shortcut sound. */
+function strictResolver(scopedFields) {
+  return {
+    isInScope: (field) => {
+      if (scopedFields.has(field)) {
+        throw new Error(`sweep consulted scoped field "${field}" with no scope resolver`);
+      }
+      return true;
+    },
+  };
+}
+
+/** Order the swept fields so a field's `asked_when` gates are assigned before it is. */
+function scopeOrder(fields, definitions) {
+  const ordered = [];
+  const remaining = [...fields];
+  while (remaining.length > 0) {
+    const index = remaining.findIndex((field) => {
+      const clauses = definitions.get(field)?.askedWhenClauses ?? null;
+      if (clauses === null) return true;
+      return clauses.every((clause) => !remaining.includes(clause.field) || clause.field === field);
+    });
+    if (index === -1) throw new Error(`cyclic asked_when among ${remaining.join(", ")}`);
+    ordered.push(...remaining.splice(index, 1));
+  }
+  return ordered;
+}
+
+const isSettled = (field, value, inScope) => {
+  if (!inScope) return true;
+  if (value === undefined || value === null) return NULL_IS_A_DECLARED_ANSWER.has(field);
+  return value !== UNKNOWN_ANSWER;
+};
+
+/**
+ * Enumerate every valid intake over `fields`.
+ *
+ * "Valid" is the intake contract's own word: a field the event is not asked is omitted, because
+ * `validateIntake` rejects a supplied value for an out-of-scope field with `not_applicable`
+ * (`packages/engine/src/intake/validate.ts:285-300`). Enumerating an out-of-scope field's whole
+ * domain would count one event several times over and weight the sweep by answers nobody can give.
+ *
+ * `visit(intake, unsettledMask, ordinal, scope)`. `unsettledMask` has bit `i` set when
+ * `fields[i]` is in scope and unanswered; an intake is complete when the mask is zero.
+ */
+export function enumerateIntakes(fields, definitions, members, visit) {
+  const definitionList = [...definitions.values()];
+  const assignmentOrder = scopeOrder(fields, definitions);
+  const bitOf = new Map(fields.map((field, index) => [field, 1 << index]));
+  const domains = new Map(
+    fields.map((field) => [field, domainFor(field, definitions.get(field), members)]),
+  );
+  const scoped = new Set(
+    fields.filter((field) => definitions.get(field).askedWhenClauses !== null),
+  );
+  const everyScopedField = new Set(
+    definitionList.filter((field) => field.askedWhenClauses !== null).map((field) => field.field),
+  );
+  const unscopedResolver = strictResolver(everyScopedField);
+
+  // A derived value is recomputed only at the depth that fixes its last input, and only when some
+  // member reads it: injecting one nothing reads would put a value in the intake no rule asked for.
+  const derivedRead = new Set(
+    members.flatMap((member) => triggerOperators(member.trigger).map((leaf) => leaf.field)),
+  );
+  const derivedAtDepth = assignmentOrder.map(() => []);
+  for (const [name, definition] of Object.entries(DERIVED_VALUES)) {
+    if (!derivedRead.has(name)) continue;
+    if (!definition.inputs.some((input) => fields.includes(input))) continue;
+    const last = Math.max(
+      ...definition.inputs.map((input) => assignmentOrder.indexOf(input)).filter((i) => i >= 0),
+    );
+    derivedAtDepth[last].push([name, definition]);
+  }
+
+  const intake = {};
+  let ordinal = 0;
+
+  const walk = (depth, unsettledMask) => {
+    if (depth === assignmentOrder.length) {
+      visit(
+        intake,
+        unsettledMask,
+        ordinal,
+        scoped.size === 0
+          ? unscopedResolver
+          : createScopeResolver(intake, { intakeFields: definitionList }),
+      );
+      ordinal += 1;
+      return;
+    }
+    const field = assignmentOrder[depth];
+    const inScope =
+      !scoped.has(field) ||
+      createScopeResolver(intake, { intakeFields: definitionList }).isInScope(field);
+    const values = inScope ? domains.get(field) : [null];
+    const bit = bitOf.get(field);
+    for (const value of values) {
+      intake[field] = value;
+      for (const [name, definition] of derivedAtDepth[depth])
+        intake[name] = definition.compute(intake);
+      walk(depth + 1, isSettled(field, value, inScope) ? unsettledMask : unsettledMask | bit);
+    }
+    intake[field] = null;
+  };
+
+  walk(0, 0);
+  return ordinal;
+}
+
+/** The size of a sweep, without evaluating anything. */
+export function sweepSize(fields, definitions, members) {
+  let count = 0;
+  enumerateIntakes(fields, definitions, members, () => {
+    count += 1;
+  });
+  return count;
+}
+
+const RESULT_INDEX = { false: 0, true: 1, unknown: 2 };
+
+const fieldsOfMask = (fields, mask) => fields.filter((_, index) => (mask & (1 << index)) !== 0);
+
+/**
+ * Sweep one dedupe group.
+ *
+ * Returns the three properties the document keeps apart: A (findings, trigger `true` or `unknown`),
+ * B (`true` only) and C (completeness, computed from the intake and the scope resolver alone and
+ * never from a trigger result).
+ */
+export function sweepGroup(group, definitions) {
+  const members = group.members;
+  const fields = [];
+  for (const member of members) triggerFieldsInOrder(member.trigger, fields);
+  const memberFieldMask = members.map((member) => {
+    let mask = 0;
+    for (const field of triggerFieldsInOrder(member.trigger)) mask |= 1 << fields.indexOf(field);
+    return mask;
+  });
+
+  const findingsHistogram = new Array(members.length + 1).fill(0);
+  const trueHistogram = new Array(members.length + 1).fill(0);
+  const sets = new Map();
+  const results = new Array(members.length);
+  let sweep = 0;
+  let complete = 0;
+  let completeAndTwoFindings = 0;
+  let completeAndTwoTrue = 0;
+
+  enumerateIntakes(fields, definitions, members, (intake, unsettledMask, ordinal, scope) => {
+    let findings = 0;
+    let decisive = 0;
+    let key = 0;
+    let setFieldMask = 0;
+    for (let index = 0; index < members.length; index += 1) {
+      const result = evalTrigger(members[index].trigger, intake, scope);
+      results[index] = result;
+      key = key * 3 + RESULT_INDEX[result];
+      if (result !== "false") {
+        findings += 1;
+        setFieldMask |= memberFieldMask[index];
+        if (result === "true") decisive += 1;
+      }
+    }
+    const isComplete = unsettledMask === 0;
+
+    sweep += 1;
+    findingsHistogram[findings] += 1;
+    trueHistogram[decisive] += 1;
+    if (isComplete) {
+      complete += 1;
+      if (findings >= 2) completeAndTwoFindings += 1;
+      if (decisive >= 2) completeAndTwoTrue += 1;
+    }
+    if (findings < 2) return;
+
+    let entry = sets.get(key);
+    if (entry === undefined) {
+      entry = {
+        results: [...results],
+        members: members.filter((_, index) => results[index] !== "false").map((m) => m.id),
+        count: 0,
+        complete: 0,
+        setComplete: 0,
+        unsettledMasks: new Map(),
+        firstIntake: { ...intake },
+        firstCompleteIntake: null,
+      };
+      sets.set(key, entry);
+    }
+    entry.count += 1;
+    if (isComplete) {
+      entry.complete += 1;
+      entry.firstCompleteIntake ??= { ...intake };
+    }
+    if ((unsettledMask & setFieldMask) === 0) entry.setComplete += 1;
+    entry.unsettledMasks.set(unsettledMask, (entry.unsettledMasks.get(unsettledMask) ?? 0) + 1);
+  });
+
+  for (const entry of sets.values()) {
+    entry.unsettled = new Map();
+    for (const [mask, count] of entry.unsettledMasks) {
+      for (const field of fieldsOfMask(fields, mask)) {
+        entry.unsettled.set(field, (entry.unsettled.get(field) ?? 0) + count);
+      }
+    }
+  }
+
+  return {
+    key: group.key,
+    memberIds: members.map((member) => member.id),
+    fields,
+    sweep,
+    complete,
+    completeAndTwoFindings,
+    completeAndTwoTrue,
+    findings: findingsHistogram,
+    true: trueHistogram,
+    sets: [...sets.values()].sort((left, right) => right.count - left.count),
+  };
+}
+
+/**
+ * Sweep the published control through the real parser and the engine's own `evaluateTrigger`.
+ *
+ * The same sweep carries the agreement check: for every intake and every published rule, this
+ * harness's `evalTrigger` is compared against the engine's. That tests the combinator and the
+ * delegation. It cannot test `is_null`, `lte` or the derived values, which have no engine
+ * counterpart to compare against.
+ */
+export function sweepControl(ruleset) {
+  const group = [...ruleset.rules]
+    .filter((rule) => rule.dedupeKey !== null)
+    .reduce((groups, rule) => {
+      groups.set(rule.dedupeKey, [...(groups.get(rule.dedupeKey) ?? []), rule]);
+      return groups;
+    }, new Map());
+  const [key, members] = [...group.entries()].find(([, rules]) => rules.length > 1);
+
+  const definitions = byField(ruleset.intakeFields);
+  const fields = [];
+  for (const member of members) triggerFieldsInOrder(member.trigger, fields);
+
+  const findings = [0, 0, 0];
+  const decisive = [0, 0, 0];
+  const completeFindings = [0, 0, 0];
+  const completeDecisive = [0, 0, 0];
+  const shapes = new Map();
+  let sweep = 0;
+  let complete = 0;
+  let comparisons = 0;
+  let mismatches = 0;
+
+  enumerateIntakes(fields, definitions, members, (intake, unsettledMask, ordinal, scope) => {
+    for (const rule of ruleset.rules) {
+      const engineResult = evaluateTrigger(rule.trigger, intake, scope).result;
+      comparisons += 1;
+      if (evalTrigger(rule.trigger, intake, scope) !== engineResult) mismatches += 1;
+    }
+
+    const results = members.map((member) => evaluateTrigger(member.trigger, intake, scope).result);
+    const reached = results.filter((result) => result !== "false").length;
+    const settled = results.filter((result) => result === "true").length;
+    const isComplete = unsettledMask === 0;
+
+    sweep += 1;
+    findings[reached] += 1;
+    decisive[settled] += 1;
+    if (isComplete) {
+      complete += 1;
+      completeFindings[reached] += 1;
+      completeDecisive[settled] += 1;
+    }
+
+    if (reached < 2) return;
+    const shapeKey = results.join("/");
+    let shape = shapes.get(shapeKey);
+    if (shape === undefined) {
+      shape = {
+        results,
+        count: 0,
+        complete: 0,
+        firstIntake: { ...intake },
+        firstCompleteIntake: null,
+      };
+      shapes.set(shapeKey, shape);
+    }
+    shape.count += 1;
+    if (isComplete) {
+      shape.complete += 1;
+      shape.firstCompleteIntake ??= { ...intake };
+    }
+  });
+
+  return {
+    key,
+    memberIds: members.map((member) => member.id),
+    fields,
+    sweep,
+    complete,
+    findings,
+    true: decisive,
+    completeFindings,
+    completeTrue: completeDecisive,
+    shapes: [...shapes.values()],
+    agreement: { comparisons, mismatches, rules: ruleset.rules.length },
+  };
+}
+
+/** The nine multi-member dedupe groups of the draft, in artifact order. */
+export function multiMemberGroups(artifact) {
+  const published = [...artifact.rules, ...artifact.advisories];
+  const byKey = new Map();
+  for (const rule of published) {
+    const key = rule.output?.dedupe_key ?? null;
+    if (key === null) continue;
+    if (!byKey.has(key)) byKey.set(key, []);
+    byKey.get(key).push(rule);
+  }
+  return [...byKey.entries()]
+    .filter(([, members]) => members.length > 1)
+    .map(([key, members]) => ({ key, members }));
+}
+
+export { DERIVED_VALUES, UNKNOWN_ANSWER, NULL_IS_A_DECLARED_ANSWER };
