@@ -2,7 +2,7 @@
 // tri-state rules, business-day arithmetic, and every way evaluation can fail loudly.
 
 import { execFileSync } from "node:child_process";
-import { readFileSync, readdirSync } from "node:fs";
+import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import { PUBLISHED_RULES_FILE } from "./__fixtures__/published-ruleset";
@@ -863,93 +863,52 @@ describe("dedupe field merge (#239)", () => {
 });
 
 /**
- * F-102's acceptance criteria, amended 2026-08-08 by the product owner.
+ * The mapping the 2026-08-08 draft correction turns on, pinned on a synthetic ruleset.
  *
- * `computeWindowVerdict` chose its blocking finding from missed findings whose disposition was
- * EXACTLY `required`. `prohibited_or_ineligible` is STRONGER, so a finding that was both barred and
- * past its published window fell through to the missed-but-not-blocking branch and the plan read
- * CONDITIONAL. Nothing about deduplication was involved: a lone barred rule with a closed window and
- * no dedupe key anywhere in it read CONDITIONAL too, which is what the first case pins. The rule is
- * now "at or above `required` in `DISPOSITION_STRENGTH`", and the two cases below it pin that the
- * tiers on either side of the bar did not move.
+ * The four blocking rules in `rules/proposals/nyc-rules.v2-full-draft.json` each declared
+ * `kind: "eligibility"` and published no `output.disposition`, so the engine's default map read
+ * every one of them as `may_be_required`: the draft's `severity: "blocking"` and `output.status`
+ * are fields no engine code reads. `prohibition` is the kind that already says what they mean.
+ *
+ * This suite deliberately does NOT read the draft. `rules/proposals/*` is PROPOSED in
+ * `docs/BASELINE.md`, and an approved engine suite that loads it makes an unapproved artifact a
+ * dependency of current-engine CI: an ordinary draft edit turns this suite red, and a second draft
+ * file would break collection for every case in this file rather than one. What the draft says is
+ * reviewed as regulatory content under governance §6 and recorded in `docs/BASELINE.md`; what the
+ * ENGINE does with a declared kind is this suite's business, and it is what the two cases pin.
  */
-/**
- * The one draft ruleset in `rules/proposals/`, found rather than named for the same reason
- * `__fixtures__/published-ruleset.ts` finds the published one: a spelled-out artifact filename
- * rots at the next publish, and `scripts/check-baseline-drift.mjs` refuses one in executable code.
- * Zero and two both throw with what was actually found.
- */
-function draftRulesFile(): string {
-  const directory = fileURLToPath(new URL("../../../rules/proposals/", import.meta.url));
-  const drafts = readdirSync(directory).filter((entry) => entry.endsWith(".json"));
-  if (drafts.length !== 1) {
-    throw new Error(
-      `expected exactly one draft ruleset in ${directory}, found ${drafts.join(", ")}`,
+describe("a rule's kind decides its default disposition (product owner, 2026-08-08)", () => {
+  const planForKind = (kind: string) =>
+    evaluate(
+      { event_date: "2026-12-04", headcount: 50 } as unknown as EventIntake,
+      syntheticRuleset([
+        {
+          id: "KIND-001",
+          kind,
+          trigger: { all: [{ field: "headcount", op: "gte", value: 10 }] },
+          output: { note_text: "the kind under test" },
+          verification: { status: "SOURCE_CONFIRMED" },
+          source: { citation: "citation KIND-001", urls: ["https://example.test/KIND-001"] },
+        },
+      ]),
+      TODAY,
+      { id: "test-calendar@2026", holidays: [] },
     );
-  }
-  return `${directory}${drafts[0] as string}`;
-}
 
-/**
- * The four blocking rules in the v2 full draft, corrected 2026-08-08.
- *
- * They each declared `kind: "eligibility"` and published no `output.disposition`, so the engine's
- * default map read every one of them as `may_be_required`: the draft's `severity: "blocking"` and
- * `output.status` are fields no engine code reads. `prohibition` is the kind that already says what
- * they mean, and this asserts it against the file itself rather than a copy of it.
- *
- * The draft does not load through `parseEngineRuleset` (docs/research/draft-dedupe-cofiring.md §3.1
- * on branch `measure/draft-dedupe-cofiring`: `is_null`, `lte` and three derived values are outside
- * the engine's trigger vocabulary), so each rule's own declared `kind` is carried onto a rule the
- * parser does accept and evaluated. What that measures is the mapping, which is the whole change.
- */
-describe("the draft's blocking rules resolve as prohibitions (product owner, 2026-08-08)", () => {
-  const draft: {
-    rules: { id: string; kind: string; severity?: string; output: Record<string, unknown> }[];
-  } = JSON.parse(readFileSync(draftRulesFile(), "utf8"));
-
-  const BLOCKING = [
-    "SAPO-BLOCK-PARTY-INELIGIBLE-001",
-    "SAPO-ALCOHOL-PROHIBITION-001",
-    "NYPD-SOUND-COMMERCIAL-ADVERTISING-PROHIBITED-001",
-    "PARKS-PROPANE-PROHIBITION-001",
-  ];
-
-  it("names the same four rules the draft marks blocking", () => {
-    // If the draft ever marks a fifth rule blocking, this list stops describing the file and the
-    // cases below stop covering it.
-    expect(
-      draft.rules.filter((rule) => rule.severity === "blocking").map((rule) => rule.id),
-    ).toEqual(BLOCKING);
+  it("resolves `prohibition` with no published disposition to prohibited_or_ineligible", () => {
+    // No `output.disposition` anywhere: the default map is the mechanism, per the decision.
+    const plan = planForKind("prohibition");
+    expect(plan.findings[0]?.kind).toBe("prohibition");
+    expect(plan.findings[0]?.disposition).toBe("prohibited_or_ineligible");
   });
 
-  for (const ruleId of BLOCKING) {
-    it(`resolves ${ruleId} to prohibited_or_ineligible`, () => {
-      const declared = draft.rules.find((rule) => rule.id === ruleId);
-      expect(declared?.kind).toBe("prohibition");
-      // No `output.disposition`: the default map is the mechanism, per the decision.
-      expect(declared?.output.disposition).toBeUndefined();
+  it("resolves `eligibility` with no published disposition to may_be_required", () => {
+    // The kind the four draft rules used to declare, and the reason each of them read as a maybe.
+    expect(planForKind("eligibility").findings[0]?.disposition).toBe("may_be_required");
+  });
+});
 
-      const plan = evaluate(
-        { event_date: "2026-12-04", headcount: 50 } as unknown as EventIntake,
-        syntheticRuleset([
-          {
-            id: ruleId,
-            kind: declared?.kind,
-            trigger: { all: [{ field: "headcount", op: "gte", value: 10 }] },
-            output: { note_text: String(declared?.output.message) },
-            verification: { status: "SOURCE_CONFIRMED" },
-            source: { citation: `citation ${ruleId}`, urls: [`https://example.test/${ruleId}`] },
-          },
-        ]),
-        TODAY,
-        { id: "test-calendar@2026", holidays: [] },
-      );
-      expect(plan.findings[0]?.disposition).toBe("prohibited_or_ineligible");
-      expect(plan.findings[0]?.kind).toBe("prohibition");
-    });
-  }
-
+describe("the published ruleset says `barred` in a field the engine reads", () => {
   it("finds no rule in the published ruleset that could carry the same error", () => {
     // `severity` and `output.status` are the two fields the draft used to mean "blocking" and that
     // no engine code reads. The published ruleset uses neither, so no published rule can be saying
@@ -970,6 +929,17 @@ describe("the draft's blocking rules resolve as prohibitions (product owner, 202
   });
 });
 
+/**
+ * F-102's acceptance criteria, amended 2026-08-08 by the product owner.
+ *
+ * `computeWindowVerdict` chose its blocking finding from missed findings whose disposition was
+ * EXACTLY `required`. `prohibited_or_ineligible` is STRONGER, so a finding that was both barred and
+ * past its published window fell through to the missed-but-not-blocking branch and the plan read
+ * CONDITIONAL. Nothing about deduplication was involved: a lone barred rule with a closed window and
+ * no dedupe key anywhere in it read CONDITIONAL too, which is what the first case pins. The rule is
+ * now "at or above `required` in `DISPOSITION_STRENGTH`", and the two cases below it pin that the
+ * tiers on either side of the bar did not move.
+ */
 describe("a missed window blocks at or above `required` (F-102, amended 2026-08-08)", () => {
   /** One rule, one finding, no `dedupe_key`: nothing here can be a merge result. */
   const loneRule = (kind: string, disposition: string | undefined) => ({
