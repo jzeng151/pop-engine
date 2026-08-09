@@ -14,7 +14,8 @@
     "check:baseline": "node scripts/check-baseline-drift.mjs",
     "test": "vitest run",
     "test:watch": "vitest",
-    "test:coverage": "vitest run --coverage"
+    "test:coverage": "vitest run --coverage --exclude '**/node_modules/**'",
+    "test:cofiring": "vitest run --root . --config scripts/dedupe-cofiring/vitest.config.mjs"
   },
   "devDependencies": {
     "@eslint/js": "^9.17.0",
