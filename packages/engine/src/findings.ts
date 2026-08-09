@@ -393,10 +393,9 @@ export function routesOf(finding: Finding): readonly FindingRoute[] {
  *    sitting in a weaker disposition tier; that reason is gone, because no window is dropped now.
  *    The binding route is the tightest window among the routes contributing the merged disposition,
  *    intersected with the RESOLVED routes where any resolved route exists, so the headline only ever
- *    moves from a route that might apply to one that does. Where that intersection is empty the
- *    resolved routes themselves bind, because a non-empty resolved subset always supplies the
- *    binding route (design §4.2); only a group with no resolved route at all binds on an unresolved
- *    one, and the mode is `candidate` there and the copy says so.
+ *    moves from a route that might apply to one that does. The intersection is skipped where it
+ *    would be empty, which is where the headline disposition comes only from unresolved routes: the
+ *    mode is `candidate` there and the copy says so.
  * 4. `ruleIds`, `notes`, `sources`, `triggeredBy`, `deadlineUnknownFields` and the summary points
  *    concatenate over every route in contributing order, which is the approved contract that a
  *    merged finding retains every contributing rule and source. `lastVerifiedDate` is the earliest
@@ -441,29 +440,11 @@ function mergeGroup(group: readonly Contribution[]): Finding {
   const findings = group.map((contribution) => contribution.finding);
 
   // The routes that contributed the headline disposition, narrowed to those known to apply where
-  // any of them is. Skipped where the GROUP holds no resolved route at all, i.e. where nothing in
-  // the group is known to apply and the mode is `candidate` for every route.
-  //
-  // THE RESOLVED SUBSET IS THE GROUP'S, NOT THE CONTRIBUTORS'. §4.2 answers this in one sentence:
-  // when the resolved subset is non-empty the binding route is chosen from it, and only when it is
-  // empty is it chosen from the whole group. Computing it over the contributors instead made the
-  // subset empty whenever no contributing route resolved, and the fallback then bound the headline
-  // to an unresolved route while the group held a resolved one. A resolved `advisory` beside an
-  // unknown-triggered `may_be_required` is that shape, and the ceiling does not bite there because
-  // no resolved route reaches `required`: the merged line published the candidate's name, window,
-  // fee and portal (#252 review). Three pools, most specific first, so §4.3 step 2's intersection
-  // still decides wherever it has members.
+  // any of them is. Skipped where that leaves nothing, i.e. where the headline disposition comes
+  // only from routes whose triggers did not resolve.
   const contributing = group.filter((contribution) => contributed(contribution) === disposition);
-  const isResolved = (contribution: Contribution): boolean =>
-    contribution.triggerResult !== "unknown";
-  const resolved = group.filter(isResolved);
-  const resolvedContributing = contributing.filter(isResolved);
-  const bindingPool =
-    resolvedContributing.length > 0
-      ? resolvedContributing
-      : resolved.length > 0
-        ? resolved
-        : contributing;
+  const resolved = contributing.filter((contribution) => contribution.triggerResult !== "unknown");
+  const bindingPool = resolved.length > 0 ? resolved : contributing;
   const binding = bindingPool
     .map((contribution) => contribution.finding)
     .sort(compareBinding)[0] as Finding;
