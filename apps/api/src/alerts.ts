@@ -989,6 +989,27 @@ type ScheduledAlert = PlannedAlert & {
    * superseded key matches, and the adoption is a no-op until the set changes again.
    */
   readonly supersededIdentities: readonly string[];
+  /**
+   * The identities this reminder may already be stored under WHATEVER WORDS those rows carry,
+   * because no other reminder of this generation can claim them.
+   *
+   * THE COPY MATCH IS WHY THIS LIST IS SEPARATE, and it is right where it applies. A line's routes
+   * can publish the same subject and different bodies, so `supersededIdentities` names keys that
+   * two of this generation's reminders both list, and the stored copy is what tells them apart.
+   * That test asks the prior row to already contain the message about to be sent, which it cannot
+   * when the same regeneration ALSO rewrites the copy: a filing date moving and the canonical route
+   * moving are each identity-preserving on their own, and composed they made the adoption skip and
+   * the upsert insert the new key beside a sent row, delivering the corrected reminder to the same
+   * destination (#252 review).
+   *
+   * The routes listed here are the ones whose schedulings this reminder COALESCES on this
+   * generation. A route publishes one copy per task, type and offset, so it belongs to exactly one
+   * group and these lists are disjoint across the generation's reminders: a row filed under one of
+   * them is this reminder under a former name and nothing else, with or without matching copy.
+   * Every other route of the line stays in `supersededIdentities` and keeps the copy test, since a
+   * route that is not in this group may still be publishing its own distinct reminder.
+   */
+  readonly coalescedIdentities: readonly string[];
 };
 
 const isoDate = (value: Date | string | null): string | null =>
@@ -2025,6 +2046,15 @@ async function plannedAlerts(
  *   naming route is the one that loses its window and stops scheduling at all, the name moves to
  *   the next id publishing the words and `supersededIdentities` carries the row across.
  *
+ *   RESCHEDULED AND RENAMED AT ONCE — same identity, and this is the one the transitions above
+ *   do not settle between them. Each of the two is identity-preserving on its own, and the
+ *   mechanisms that hold them apart are different: a reschedule keeps the key and lets the upsert
+ *   move the row, a rename keeps the words and lets the adoption move the key. Composed, neither
+ *   holds, because the row that must be adopted is filed under the old name AND stores the old
+ *   words. `coalescedIdentities` is what carries it: the keys of the routes this reminder now
+ *   coalesces belong to no other reminder of the generation, so they are adopted without asking
+ *   the prior row to contain the message it has not been sent yet.
+ *
  *   COALESCED, two or more routes publishing byte-identical copy — ONE reminder, named by the
  *   lowest of their ids. Three of the nine multi-member groups in the v2 full draft publish
  *   byte-identical outputs and are the ones that merge most often
@@ -2092,22 +2122,31 @@ function assignIdentities(planned: readonly PlannedAlert[]): ScheduledAlert[] {
             .filter((ruleId): ruleId is string => ruleId !== null)
             .sort()[0] ?? null);
     const identity = canonical === null ? first.identityBase : `${first.identityBase}:${canonical}`;
-    // Every other key these same words could already be stored under: the pre-route-list key, and
-    // every OTHER route of the line, whether or not it schedules anything on this generation. A
-    // route publishing different copy is named here too and cannot be adopted by mistake, because
-    // the adoption matches on the stored subject AND body — the same pair grouped on above — and a
-    // route differing in either is not this reminder.
+    // The routes whose schedulings THIS reminder coalesces, which no other reminder of this
+    // generation lists, so a row under one of their keys is this reminder whatever words it stores.
+    const coalescedRuleIds = new Set(
+      group
+        .map((alert) => alert.routeRuleId)
+        .filter((ruleId): ruleId is string => ruleId !== null && ruleId !== canonical),
+    );
+    const keyFor = (ruleId: string) => `${first.identityBase}:${ruleId}`;
+    const coalesced = canonical === null ? [] : [...coalescedRuleIds].sort().map(keyFor);
+    // Every OTHER key these same words could already be stored under: the pre-route-list key, and
+    // the routes of the line this reminder does not speak for, whether or not they schedule
+    // anything on this generation. Both are keys another reminder of the same line also lists, so
+    // the copy match below is what tells them apart, and a route publishing different copy cannot
+    // be adopted by mistake.
     const superseded =
       canonical === null
         ? []
         : [
             first.identityBase,
             ...[...new Set(group.flatMap((alert) => alert.groupRouteRuleIds))]
-              .filter((ruleId) => ruleId !== canonical)
+              .filter((ruleId) => ruleId !== canonical && !coalescedRuleIds.has(ruleId))
               .sort()
-              .map((ruleId) => `${first.identityBase}:${ruleId}`),
+              .map(keyFor),
           ];
-    return { ...first, identity, supersededIdentities: superseded };
+    return { ...first, identity, supersededIdentities: superseded, coalescedIdentities: coalesced };
   });
 }
 
@@ -2358,19 +2397,31 @@ export function createAlertScheduler(settings: AlertSchedulerSettings): AlertSch
         // "a route publishing different copy ... its subject is not this one", which is true only
         // where the copy differs in the subject; the code now tests what the statement means.
         //
+        // AND THE COPY MATCH DOES NOT APPLY TO EVERY SUPERSEDED KEY, which is the composition the
+        // five preceding rounds each left open. The test above asks the prior row to already carry
+        // the message about to be sent, and it cannot when THE SAME regeneration rewrites the copy
+        // and moves the canonical route: a moved filing date rewrites the words while a lower-id
+        // route joining the identical-copy set moves the name, and each transition on its own is
+        // identity-preserving. Composed, the adoption skipped and the upsert inserted the new key
+        // beside the sent row, delivering the corrected reminder to the same destination (#252
+        // review). `coalescedIdentities` names the keys of the routes THIS reminder now speaks for,
+        // which no other reminder of this generation lists, so those rows are adopted on the key
+        // alone. Every other superseded key keeps the copy test, because it is shared.
+        //
         // AT MOST ONE ROW, AND THE SENT ONE FIRST. `idempotency_key` is UNIQUE, so re-keying two
         // rows to one key would abort the review; and where a sent row and an unsent row both hold
         // these words, adopting the unsent one would cancel the record of the delivered message and
         // then deliver it again. The rest are superseded and the reconciler cancels them, which is
         // what rule 1 says they are. `NOT EXISTS` because the current key may already be taken, and
         // a row that already holds it is this alert.
-        if (alert.supersededIdentities.length > 0) {
+        if (alert.supersededIdentities.length > 0 || alert.coalescedIdentities.length > 0) {
           await client.query(
             `UPDATE alerts SET idempotency_key = $2
               WHERE id = (SELECT prior.id FROM alerts prior
-                           WHERE prior.idempotency_key = ANY($1::text[])
-                             AND prior.payload->>'subject' = $3
-                             AND prior.payload->>'body' = $4
+                           WHERE prior.idempotency_key = ANY($5::text[])
+                              OR (prior.idempotency_key = ANY($1::text[])
+                                  AND prior.payload->>'subject' = $3
+                                  AND prior.payload->>'body' = $4)
                            ORDER BY (prior.status = 'sent') DESC, prior.idempotency_key
                            LIMIT 1)
                 AND NOT EXISTS (SELECT 1 FROM alerts held WHERE held.idempotency_key = $2)`,
@@ -2381,6 +2432,9 @@ export function createAlertScheduler(settings: AlertSchedulerSettings): AlertSch
               key,
               alert.subject,
               alert.body,
+              alert.coalescedIdentities.map((identity) =>
+                idempotencyKey(eventId, identity, channel, recipient),
+              ),
             ],
           );
         }

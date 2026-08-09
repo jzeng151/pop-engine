@@ -7203,6 +7203,138 @@ describe.skipIf(databaseUrl === "")("F-203 deadline alerts", () => {
       });
 
       /**
+       * #252 P1: A RESCHEDULE AND A RENAME IN ONE REGENERATION DELIVERED THE REMINDER TWICE.
+       *
+       * Each half is identity-preserving and each is held by a different mechanism. A moved filing
+       * date keeps the key and lets the upsert move the row it already owns. A canonical route
+       * moving keeps the words and lets `supersededIdentities` hand the existing row the new key,
+       * matched on the stored subject AND body. Composed, neither holds: the row to be adopted is
+       * filed under the old name and stores the old words, so the copy test failed, the upsert
+       * inserted the new key beside the sent row, and the corrected reminder went to the same
+       * destination a second time.
+       *
+       * Driven through the real poller, and the assertion is on what the provider received.
+       */
+      it("delivers once when the date moves and the canonical route moves together (#252)", async () => {
+        const eventId = await createEvent(scenario("C"));
+        const checklistItemId = randomUUID();
+
+        /**
+         * One generation. `DOB-TENT-001` sorts below `NYPD-SOUND-001`, so once it publishes the
+         * same words it takes the name; until then it publishes no window and schedules nothing.
+         */
+        const insertPlan = async (applyBy: string, tentMatches: boolean): Promise<string> => {
+          const planId = randomUUID();
+          const itemId = randomUUID();
+          const sound = mergedRoute({
+            ruleId: "NYPD-SOUND-001",
+            disposition: "required",
+            name: "Sound Device Permit",
+            latestApplyDate: applyBy,
+            deadlineStatus: "deadline_approaching",
+            deadlineDisplay: "file at least 5 days before use",
+          });
+          await pool.query(
+            `INSERT INTO permit_plans (id, event_id, event_revision, ruleset_version, snapshot_date,
+                                       verdict, verdict_detail, intake_snapshot, generated_at)
+             VALUES ($1, $2, 1, $3, $4, 'feasible', $5::jsonb, '{}'::jsonb, clock_timestamp())`,
+            [
+              planId,
+              eventId,
+              ruleset.rulesetVersion,
+              ruleset.snapshotDate,
+              JSON.stringify({
+                today: todayInJurisdiction("US-NY-NYC"),
+                minSlackDays: null,
+                finding_renderings: [
+                  {
+                    rule_ids: ["NYPD-SOUND-001", "DOB-TENT-001"],
+                    notes: [],
+                    note_text: null,
+                    conflict_text: null,
+                    deadline_display: "file at least 5 days before use",
+                    slack_days: null,
+                    deadline_unknown_fields: [],
+                    timeline_unresolved_reason: null,
+                    portal_instructions: null,
+                    headline_mode: "applies_together",
+                    routes: [
+                      sound,
+                      tentMatches
+                        ? { ...sound, ruleId: "DOB-TENT-001" }
+                        : mergedRoute({
+                            ruleId: "DOB-TENT-001",
+                            disposition: "may_be_required",
+                            name: "Temporary Use Permit",
+                            agency: "DOB",
+                          }),
+                    ],
+                  },
+                ],
+              }),
+            ],
+          );
+          await pool.query(
+            `INSERT INTO permit_plan_items (id, plan_id, rule_ids, triggered_by, permit_name,
+                                            agency, latest_apply_date, sources, kind, disposition,
+                                            deadline_status, verification_status)
+             VALUES ($1, $2, ARRAY['NYPD-SOUND-001','DOB-TENT-001'], '[]'::jsonb,
+                     'Sound Device Permit', 'NYPD', $3, '[]'::jsonb, 'permit', 'required',
+                     'deadline_approaching', 'SOURCE_CONFIRMED')`,
+            [itemId, planId, applyBy],
+          );
+          await pool.query(
+            `INSERT INTO checklist_items (id, plan_item_id, cohort_position) VALUES ($1, $2, 0)
+               ON CONFLICT (id) DO UPDATE SET plan_item_id = EXCLUDED.plan_item_id`,
+            [checklistItemId, itemId],
+          );
+          return planId;
+        };
+
+        const provider = fakeProvider();
+        const poller = () =>
+          createAlertPoller({
+            database: pool,
+            senders: provider.senders,
+            jurisdiction: ruleset.jurisdiction,
+          }).tick();
+
+        // Generation 1: one dated route, named by itself, and its reminders are delivered.
+        await schedule(eventId, await insertPlan(dayFromToday(0), false));
+        await poller();
+        const sent = (await alertsOf(eventId)).filter(
+          (row) => row.alert_type === "deadline_reminder",
+        );
+        expect(sent.length).toBeGreaterThan(0);
+        expect(sent.every((row) => row.status === "sent")).toBe(true);
+        expect(sent.every((row) => row.idempotency_key.includes("NYPD-SOUND-001"))).toBe(true);
+        const deliveredFirst = provider.delivered.length;
+
+        // Generation 2: the date moves, so every word of the reminder is rewritten, AND the tent
+        // route now publishes those same words with a lower id, so the name moves to it.
+        await schedule(eventId, await insertPlan(dayFromToday(1), true));
+        await poller();
+
+        const reminders = (await alertsOf(eventId)).filter(
+          (row) => row.alert_type === "deadline_reminder",
+        );
+        // The rows were CARRIED ACROSS, not inserted beside: one per offset, all under the new
+        // name, and all still sent.
+        expect(reminders).toHaveLength(reminderOffsets.length);
+        expect(reminders.every((row) => row.idempotency_key.includes("DOB-TENT-001"))).toBe(true);
+        expect(reminders.every((row) => row.status === "sent")).toBe(true);
+        // WHAT THE ORGANIZER RECEIVED. Nothing further was delivered, and no two messages the
+        // provider took are the same message to the same destination (AC 7).
+        expect(provider.delivered.length).toBe(deliveredFirst);
+        const seen = new Set<string>();
+        for (const message of provider.delivered) {
+          const key = `${message.recipient}|${message.subject}|${message.body}`;
+          expect(seen.has(key)).toBe(false);
+          seen.add(key);
+        }
+      });
+
+      /**
        * #252 P1: ONE ROUTE'S REMINDER WAS NEVER DELIVERED WHEN ANOTHER SHARED ITS SUBJECT.
        *
        * `assignIdentities` groups schedulings by their whole rendered message, subject AND body, so
