@@ -474,6 +474,77 @@ describe("loadChecklist", () => {
     }
   });
 
+  /**
+   * #252 review: a null filing id is a claim too. It says the values above are the line's OWN, and a
+   * merged line's own values are its binding route's — `routes[0]`. A row carrying the SECOND
+   * route's date, fee or portal beside a null id asserts that about values no route publishes as
+   * the line's, which is the same crossing the named-route branch refuses, on the normal case.
+   */
+  it("refuses a row whose own filing fields are not its binding route's", async () => {
+    const routes = mergedRoutes("true");
+    const crossed = [
+      { latestApplyDate: "2026-09-30" },
+      { feeDisplay: "$1,050 licence fee" },
+      { portalUrl: "https://example.test/elsewhere" },
+    ];
+    for (const override of crossed) {
+      stubFetch(async () =>
+        jsonResponse(
+          200,
+          checklistBody({
+            items: [
+              trackedItem(STREET_MEDIUM, {
+                routes,
+                headlineMode: "applies_together",
+                filingRouteRuleId: null,
+                ...override,
+              }),
+            ],
+          }),
+        ),
+      );
+
+      await expect(loadChecklist("https://api.example.com", "event-1")).resolves.toMatchObject({
+        ok: false,
+      });
+    }
+  });
+
+  /**
+   * The approved state where the row's filing fields are nobody's: no resolved route contributes the
+   * merged disposition, so the line publishes none of them (design §4.3, amended 2026-08-09). It
+   * must not be read as a crossed row.
+   */
+  it("reads a row that publishes no filing fields of its own", async () => {
+    stubFetch(async () =>
+      jsonResponse(
+        200,
+        checklistBody({
+          items: [
+            trackedItem(STREET_MEDIUM, {
+              routes: mergedRoutes("unknown"),
+              headlineMode: "candidate",
+              filingRouteRuleId: null,
+              deadline: null,
+              deadlineDisplay: null,
+              latestApplyDate: null,
+              applyAfterDate: null,
+              deadlineStatus: "not_calculable",
+              feeDisplay: null,
+              portalName: null,
+              portalUrl: null,
+              portalInstructions: null,
+            }),
+          ],
+        }),
+      ),
+    );
+
+    await expect(loadChecklist("https://api.example.com", "event-1")).resolves.toMatchObject({
+      ok: true,
+    });
+  });
+
   /** The other half, so the check cannot be written as "a filing route id is never accepted". */
   it("reads a row whose filing-route id names one of its own routes", async () => {
     stubFetch(async () =>

@@ -146,13 +146,22 @@ export const planContext = (
   };
 };
 
-/** The fields the api attributes to `filingRouteRuleId`, read off that route in the fixture's list. */
+/**
+ * The fields the api attributes to a route: the one `filingRouteRuleId` names, or `routes[0]` where
+ * it names none. A null filing id says the values above are the line's OWN, and a merged line's own
+ * values are its binding route's, which `mergeGroup()` puts first in the list. Both branches read
+ * off a route, because the boundary refuses a row whose filed fields disagree with the route it
+ * attributes them to.
+ */
 const filedFrom = (overrides: Record<string, unknown>): Record<string, unknown> => {
   const named = overrides.filingRouteRuleId;
   const routes = overrides.routes;
-  if (typeof named !== "string" || !Array.isArray(routes)) return {};
-  const route = routes.find((entry) => (entry as { readonly ruleId: string }).ruleId === named) as
-    Record<string, unknown> | undefined;
+  if (!Array.isArray(routes) || routes.length === 0) return {};
+  const route = (
+    typeof named === "string"
+      ? routes.find((entry) => (entry as { readonly ruleId: string }).ruleId === named)
+      : routes[0]
+  ) as Record<string, unknown> | undefined;
   if (route === undefined) return {};
   const filed: Record<string, unknown> = {
     deadline: route.deadline === null || route.deadline === undefined ? null : route.deadline,

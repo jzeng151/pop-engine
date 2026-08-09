@@ -230,6 +230,67 @@ describe("loadPlan", () => {
   });
 
   /**
+   * #252 review: THE HEADLINE IS THE BINDING ROUTE'S, AND NOTHING CHECKED IT.
+   *
+   * `mergeGroup()` spreads the binding route into the merged finding and leads `routes` with it, so
+   * the headline tuple and `routes[0]` are the same rule's values. A body carrying valid matching
+   * routes and rule ids beside a headline taken from the OTHER route cleared every check, and the
+   * page rendered the crossed tuple as the heading.
+   */
+  it("refuses a merged finding whose headline is not its binding route's", async () => {
+    const crossed = [
+      { name: "SAPO permit" },
+      { latestApplyDate: "2026-09-30" },
+      { feeDisplay: "$1,050" },
+      { portalUrl: "https://example.test/elsewhere" },
+      { deadlineStatus: "published_deadline_missed" },
+    ];
+    for (const override of crossed) {
+      const finding = mergedFinding("true");
+      stubFetch(async () =>
+        jsonResponse(200, { ...storedPlan, findings: [{ ...finding, ...override }] }),
+      );
+      await expect(loadPlan("https://api.example.com", "event-1")).resolves.toMatchObject({
+        ok: false,
+      });
+    }
+  });
+
+  /**
+   * The approved state where the headline is deliberately nobody's: no resolved route contributes
+   * the merged disposition, so the line publishes no scalars and reads `not_calculable`
+   * (design §4.3, amended 2026-08-09). It must not be read as a crossed headline.
+   */
+  it("reads a merged finding that publishes no scalars of its own", async () => {
+    const finding = mergedFinding("unknown", "candidate");
+    stubFetch(async () =>
+      jsonResponse(200, {
+        ...storedPlan,
+        findings: [
+          {
+            ...finding,
+            name: null,
+            agency: null,
+            deadline: null,
+            deadlineDisplay: null,
+            latestApplyDate: null,
+            applyAfterDate: null,
+            deadlineStatus: "not_calculable",
+            feeDisplay: null,
+            portalName: null,
+            portalUrl: null,
+            portalInstructions: null,
+          },
+        ],
+      }),
+    );
+
+    await expect(loadPlan("https://api.example.com", "event-1")).resolves.toMatchObject({
+      ok: true,
+    });
+  });
+
+  /**
    * #252 review: THE WIDENED BLOCKER KEYS ARE A VERSION, SO A PARTIAL SET IS NOT A VERSION.
    *
    * `verdict-detail.tsx` turns the legacy fallback off as soon as ANY of them is present, on the

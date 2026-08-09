@@ -2623,6 +2623,19 @@ describe("a checklist row whose window comes from another route (#252)", () => {
     feeDisplay: null,
   };
 
+  /**
+   * The binding route with the row's own portal on it, which is what a real payload carries: a null
+   * `filingRouteRuleId` says the values above are the line's own, and a merged line's own values are
+   * its binding route's. DOB-TALL-STRUCTURE-001 publishes no portal, so a row rendering one while
+   * naming that route as its binding route is a shape the api cannot produce and the boundary now
+   * refuses.
+   */
+  const BINDING_WITH_PORTAL = {
+    ...TALL_ROUTE,
+    portalName: portalNameOf(STREET_MEDIUM),
+    portalUrl: portalUrlOf(STREET_MEDIUM),
+  };
+
   it("renders the date and fee, and names the route that publishes them", async () => {
     stubApi({
       [GET_CHECKLIST]: checklistOf({
@@ -2813,9 +2826,10 @@ describe("a checklist row whose window comes from another route (#252)", () => {
           // portal below is the row's own. DOB-TENT-001 publishes no portal at all, so naming it
           // as the filing route would leave this row with none to render — and would be the
           // crossed attribution the boundary now refuses (#252 review).
+          // No date override: with a null filing id the row's window is its binding route's, and
+          // this one publishes none. The date is not what this test is about.
           trackedItem(STREET_MEDIUM, {
-            latestApplyDate: "2026-08-26",
-            routes: [TALL_ROUTE, TENT_ROUTE],
+            routes: [BINDING_WITH_PORTAL, TENT_ROUTE],
             headlineMode: "candidate",
             filingRouteRuleId: null,
           }),
@@ -2843,7 +2857,10 @@ describe("a checklist row whose window comes from another route (#252)", () => {
         items: [
           // The row's own portal, for the reason given on the candidate case above.
           trackedItem(STREET_MEDIUM, {
-            routes: [TALL_ROUTE, { ...TENT_ROUTE, triggerResult: "true", unknownFields: [] }],
+            routes: [
+              BINDING_WITH_PORTAL,
+              { ...TENT_ROUTE, triggerResult: "true", unknownFields: [] },
+            ],
             headlineMode: "applies_together",
             filingRouteRuleId: null,
           }),

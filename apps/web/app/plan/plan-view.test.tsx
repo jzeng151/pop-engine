@@ -86,6 +86,37 @@ const rulesetReferences = {
 /** The exactly-20 conflict: two official readings, three pages between them. */
 const CONFLICT_RULE = publishedRule("PARKS-EVENT-EXACTLY-20-001");
 
+/**
+ * THE HEADLINE OF A MERGED LINE IS ITS BINDING ROUTE'S, and `routes[0]` is that route: `mergeGroup()`
+ * spreads the binding route into the finding and leads the list with it, and the plan boundary now
+ * refuses a body where the two disagree. A fixture that supplies `routes` therefore takes its
+ * headline scalars from the first of them, exactly as a served plan does, unless the test overrides
+ * one of those fields explicitly — which is how a test asks for the crossed headline on purpose.
+ */
+const HEADLINE_FROM_BINDING = [
+  "name",
+  "agency",
+  "deadline",
+  "deadlineDisplay",
+  "latestApplyDate",
+  "applyAfterDate",
+  "deadlineStatus",
+  "feeDisplay",
+  "portalName",
+  "portalUrl",
+  "portalInstructions",
+] as const;
+
+const headlineOf = (overrides: Partial<Finding>): Partial<Finding> => {
+  const binding = overrides.routes?.[0];
+  if (binding === undefined) return {};
+  const headline: Record<string, unknown> = {};
+  for (const field of HEADLINE_FROM_BINDING) {
+    headline[field] = field in overrides ? overrides[field] : binding[field];
+  }
+  return headline as Partial<Finding>;
+};
+
 const finding = (overrides: Partial<Finding> = {}): Finding => ({
   ruleIds: ["PARKS-EVENT-001"],
   kind: "permit",
@@ -114,6 +145,7 @@ const finding = (overrides: Partial<Finding> = {}): Finding => ({
   lastVerifiedDate: null,
   triggeredBy: [],
   ...overrides,
+  ...headlineOf(overrides),
 });
 
 const emptyVerdictDetail = {
@@ -936,7 +968,7 @@ describe("the routes of a merged dedupe line", () => {
         findings: [
           finding({
             ruleIds: ["DOB-STAGE-001", "DOB-STRUCTURE-DURATION-001"],
-            name: "Temporary structure permit",
+            // No name override: a merged line's name is its binding route's, which is `routes[0]`.
             userSummary: {
               heading: "Do you need a temporary structure permit?",
               points: [
@@ -1028,11 +1060,13 @@ describe("the routes of a merged dedupe line", () => {
     // Approved copy, amended into design §5.2 on 2026-08-09 with §5.3's labels (product owner).
     expect(line.getByText(/Both of these have their conditions met/)).toBeDefined();
     expect(line.getByText(/each of their conditions is met/)).toBeDefined();
-    expect(line.getByText("Sound Device Permit")).toBeDefined();
+    // Twice: the heading is the binding route's name, and the entry names it again. That is what a
+    // served plan carries, since the merged line's scalars ARE `routes[0]`'s.
+    expect(line.getAllByText("Sound Device Permit").length).toBeGreaterThan(0);
     expect(line.getByText("Commercial advertising by sound device")).toBeDefined();
     // The permit's window and fee are on the permit's entry, not on the barred line's headline.
-    expect(line.getByText(/apply by 2026-11-29/)).toBeDefined();
-    expect(line.getByText(/\$45 per sound device/)).toBeDefined();
+    expect(line.getAllByText(/apply by 2026-11-29/).length).toBeGreaterThan(0);
+    expect(line.getAllByText(/\$45 per sound device/).length).toBeGreaterThan(0);
   });
 
   it("reads as a question, not a list of requirements, when a trigger did not resolve", async () => {
@@ -1155,7 +1189,13 @@ describe("the routes of a merged dedupe line", () => {
       portalName: "DOB NOW: Build",
       portalUrl: "https://example.test/dob-now",
       routes: [
-        route({ ruleId: "DOB-STAGE-001", name: "Stage permit" }),
+        // The binding route, whose portal the line's own is: a merged line's portal is `routes[0]`'s.
+        route({
+          ruleId: "DOB-STAGE-001",
+          name: "Stage permit",
+          portalName: "DOB NOW: Build",
+          portalUrl: "https://example.test/dob-now",
+        }),
         route({
           ruleId: "DOB-TENT-001",
           portalName: "DOB NOW: Build",
@@ -2247,6 +2287,130 @@ describe("F-102 · CONDITIONAL branch table and INFEASIBLE rescope ladder", () =
     expect(section.textContent).not.toContain("Temporary structure filing");
     expect(section.querySelector('a[href="https://example.gov/tall"]')).not.toBeNull();
     expect(section.querySelector('a[href="https://example.gov/dobnow"]')).toBeNull();
+  });
+
+  /**
+   * #252 review: TWO DEFECTS IN THE SAME SECTION, both about a route the answers have not settled.
+   *
+   * A candidate route whose window is past enters `missedRuleIds`, and this section carried its
+   * portal into a reference, which renders "Apply through" — a filing instruction for a route the
+   * plan line and the checklist row both present non-actionably. And the lede asserted that every
+   * finding listed carries a may-be-required disposition, while a barred route whose own trigger is
+   * unresolved reaches this same section (`blocksWhenMissed` requires a RESOLVED trigger before a
+   * bar can close a plan) and prints "(prohibited or ineligible)" two lines below the sentence.
+   */
+  it("names an unsettled route's portal without telling the organizer to file it", async () => {
+    const route = (overrides: Partial<FindingRoute> = {}): FindingRoute => ({
+      ruleId: "DOB-TENT-001",
+      triggerResult: "unknown",
+      disposition: "may_be_required",
+      unknownFields: ["tent_area_sqft"],
+      name: "Tent permit",
+      agency: "DOB",
+      deadline: null,
+      deadlineDisplay: null,
+      latestApplyDate: "2026-07-01",
+      applyAfterDate: null,
+      deadlineStatus: "published_deadline_missed",
+      slackDays: null,
+      feeDisplay: null,
+      portalName: "DOB NOW",
+      portalUrl: "https://example.gov/dobnow",
+      portalInstructions: null,
+      ...overrides,
+    });
+    stubApi(
+      plan({
+        verdict: "CONDITIONAL",
+        findings: [
+          finding({
+            ruleIds: ["DOB-TENT-001", "DOB-TALL-STRUCTURE-001"],
+            name: "Tent permit",
+            deadlineStatus: "published_deadline_missed",
+            latestApplyDate: "2026-07-01",
+            portalName: "DOB NOW",
+            portalUrl: "https://example.gov/dobnow",
+            headlineMode: "candidate",
+            routes: [
+              route({}),
+              route({
+                ruleId: "DOB-TALL-STRUCTURE-001",
+                name: "Tall structure permit",
+                triggerResult: "true",
+                unknownFields: [],
+                portalName: "DOB tall structures",
+                portalUrl: "https://example.gov/tall-portal",
+              }),
+            ],
+          }),
+        ],
+        verdictDetail: {
+          ...emptyVerdictDetail,
+          missedRuleIds: ["DOB-TENT-001", "DOB-TALL-STRUCTURE-001"],
+        },
+      }),
+    );
+    renderPlan();
+    await screen.findByTestId("missed-may-be-required");
+
+    const section = screen.getByTestId("missed-may-be-required");
+    // The unsettled route: named, still linked, and not an instruction to file.
+    const unsettled = section.querySelector('a[href="https://example.gov/dobnow"]');
+    expect(unsettled?.textContent).toBe("DOB NOW");
+    expect(section.textContent).toContain("portal: DOB NOW");
+    // The settled route beside it keeps the action, so this is not a blanket suppression.
+    expect(
+      section.querySelector('a[href="https://example.gov/tall-portal"]')?.textContent,
+    ).toContain("Apply through");
+  });
+
+  it("describes a barred conditional miss without calling it may-be-required", async () => {
+    const barredRoute = {
+      ruleId: "NYPD-SOUND-PROHIBITED-001",
+      triggerResult: "unknown" as const,
+      disposition: "prohibited_or_ineligible",
+      unknownFields: ["sound_purpose"],
+      name: "Commercial advertising by sound device",
+      agency: "NYPD",
+      deadline: null,
+      deadlineDisplay: null,
+      latestApplyDate: "2026-07-01",
+      applyAfterDate: null,
+      deadlineStatus: "published_deadline_missed",
+      slackDays: null,
+      feeDisplay: null,
+      portalName: null,
+      portalUrl: null,
+      portalInstructions: null,
+    };
+    stubApi(
+      plan({
+        verdict: "CONDITIONAL",
+        findings: [
+          finding({
+            ruleIds: ["NYPD-SOUND-PROHIBITED-001"],
+            name: "Commercial advertising by sound device",
+            disposition: "prohibited_or_ineligible",
+            deadlineStatus: "published_deadline_missed",
+            latestApplyDate: "2026-07-01",
+          }),
+        ],
+        verdictDetail: {
+          ...emptyVerdictDetail,
+          missedRuleIds: ["NYPD-SOUND-PROHIBITED-001"],
+        },
+      }),
+    );
+    renderPlan();
+    await screen.findByTestId("missed-may-be-required");
+
+    const section = screen.getByTestId("missed-may-be-required");
+    // The value the list prints, and a sentence that agrees with it rather than contradicting it.
+    expect(section.textContent).toContain("(prohibited or ineligible)");
+    expect(section.textContent).not.toContain("These findings carry a may-be-required disposition");
+    expect(section.textContent).toContain("publish a prohibition or an ineligibility");
+    expect(section.textContent).toContain("The bar stands as each rule publishes it");
+    expect(barredRoute.disposition).toBe("prohibited_or_ineligible");
   });
 
   it("shows nothing under a FEASIBLE verdict that has no branch or rescope work", async () => {

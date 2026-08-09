@@ -117,6 +117,26 @@ const findIn = (plan: typeof evaluated, ruleId: string): Finding => {
 
 const findingFor = (ruleId: string): Finding => findIn(evaluated, ruleId);
 
+/**
+ * A published deadline swapped onto a merged line AND onto its binding route, because those are one
+ * rule's value: `mergeGroup()` spreads the binding route into the finding, and the plan boundary
+ * refuses a body where the headline and `routes[0]` disagree. Changing only the finding builds a
+ * line no api can serve.
+ */
+const withBindingDeadline = (finding: Finding, deadline: unknown): Finding =>
+  ({
+    ...finding,
+    deadline,
+    timelineUnresolvedReason: null,
+    ...(finding.routes === undefined
+      ? {}
+      : {
+          routes: finding.routes.map((route, index) =>
+            index === 0 ? { ...route, deadline } : route,
+          ),
+        }),
+  }) as Finding;
+
 /** DOB-TENT-001 with no route merged into it, off the height-answered evaluation. */
 const tentAlone = (): Finding => findIn(evaluatedAlone, "DOB-TENT-001");
 
@@ -428,11 +448,11 @@ describe("the cases this copy must not reach", () => {
   it("never states a window for a research_required deadline", async () => {
     // No agency published a lead time at all, so there is no window to state. This is the same
     // `not_calculable` status arrived at from a different cause.
-    const researchRequired = {
-      ...findingFor("DOB-TENT-001"),
-      deadline: { type: "research_required", display: null, boundary: "inclusive" },
-      timelineUnresolvedReason: null,
-    };
+    const researchRequired = withBindingDeadline(findingFor("DOB-TENT-001"), {
+      type: "research_required",
+      display: null,
+      boundary: "inclusive",
+    });
 
     const line = await applyByLine(researchRequired);
     expect(line).toContain(`Exact apply-by date: not calculable — ${CONFIRM_WITH_AGENCY}`);
@@ -442,10 +462,11 @@ describe("the cases this copy must not reach", () => {
   it("never states a window when an unanswered intake field is what blocked the date", async () => {
     // SAPO-PLAZA-001's unknown level: a real published window, but by level and in calendar days.
     const unknownLevel = {
-      ...findingFor("DOB-TENT-001"),
-      deadline: { type: "published_minimum_by_level", boundary: "inclusive" },
+      ...withBindingDeadline(findingFor("DOB-TENT-001"), {
+        type: "published_minimum_by_level",
+        boundary: "inclusive",
+      }),
       deadlineUnknownFields: ["plaza_level"],
-      timelineUnresolvedReason: null,
     };
 
     expect(await applyByLine(unknownLevel)).not.toContain("business days before your event");

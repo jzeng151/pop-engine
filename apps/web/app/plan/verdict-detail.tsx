@@ -16,6 +16,20 @@ export type FindingReference = {
   readonly source: { readonly label: string; readonly url: string } | null;
   readonly portalName: string | null;
   readonly portalUrl: string | null;
+  /**
+   * Whether the answers have decided that this route applies. False only for a route whose own
+   * trigger came back `unknown`, which is a route the plan line lists under "May apply".
+   *
+   * IT DECIDES WHETHER THE PORTAL IS AN INSTRUCTION. "Apply through X" tells an organizer to file,
+   * and telling them to file a permit the recorded answers have not decided they need is the one
+   * thing the approved candidate design forbids (§5.3). The plan line and the checklist row already
+   * withhold it, through `PortalBlock`'s `lead`; this panel renders the third copy of the same
+   * action and did not, so a missed candidate route in the conditional section offered the filing
+   * link the other two surfaces had just stopped offering (#252 review). Absent means settled: every
+   * other reference on this panel is a rule the plan says applies, or a finding with no route list,
+   * whose single route reads `"true"`.
+   */
+  readonly settled?: boolean;
 };
 
 /**
@@ -24,7 +38,9 @@ export type FindingReference = {
  * plan stored before it carried them — is rendered by the same function as a plan line.
  */
 type ReferenceSource = Pick<ConsumedFinding, "ruleIds" | "name"> &
-  Partial<Pick<ConsumedFinding, "userSummary" | "sources" | "portalName" | "portalUrl">>;
+  Partial<
+    Pick<ConsumedFinding, "userSummary" | "sources" | "portalName" | "portalUrl" | "headlineMode">
+  >;
 
 const referenceFromFinding = (finding: ReferenceSource): FindingReference => {
   const summarySource = finding.userSummary?.points.flatMap((point) => point.sources)[0];
@@ -39,6 +55,12 @@ const referenceFromFinding = (finding: ReferenceSource): FindingReference => {
         : { label: fallbackSource.citation, url: fallbackSource.urls[0] as string }),
     portalName: finding.portalName ?? null,
     portalUrl: finding.portalUrl ?? null,
+    // THE SAME RULE EVERY OTHER SECTION OF THIS PANEL NOW APPLIES. A merged line's portal is its
+    // binding route's, and on a `candidate` line no route is known to be the one, so the panel
+    // names the portal without instructing a filing — wherever it names it. Reached from the branch
+    // tables, the unresolved-timeline list and the unmerged-finding fallback in the missed-route
+    // list, so the treatment does not depend on which section happens to build the reference.
+    settled: finding.headlineMode !== "candidate",
   };
 };
 
@@ -95,11 +117,22 @@ function FindingReferences({ references }: { references: readonly FindingReferen
               </a>
             )}
             {showSource && reference.portalUrl !== null ? " · " : ""}
-            {reference.portalUrl !== null && (
-              <a href={reference.portalUrl} target="_blank" rel="noreferrer">
-                Apply{reference.portalName === null ? "" : ` through ${reference.portalName}`}
-              </a>
-            )}
+            {reference.portalUrl !== null &&
+              (reference.settled === false ? (
+                // Named and still linked, never an instruction: the same treatment `PortalBlock`
+                // gives a candidate route's portal on the plan line and the checklist row. The rule
+                // published it, so it is not dropped; what is withheld is the imperative.
+                <>
+                  {"portal: "}
+                  <a href={reference.portalUrl} target="_blank" rel="noreferrer">
+                    {reference.portalName ?? reference.portalUrl}
+                  </a>
+                </>
+              ) : (
+                <a href={reference.portalUrl} target="_blank" rel="noreferrer">
+                  Apply{reference.portalName === null ? "" : ` through ${reference.portalName}`}
+                </a>
+              ))}
             {")"}
           </>
         )}
@@ -387,6 +420,11 @@ function missedRouteEntries(
             source === undefined ? null : { label: source.citation, url: source.urls[0] as string },
           portalName: route.portalName,
           portalUrl: route.portalUrl,
+          // The route's own trigger result, which is what decides whether its portal reads as an
+          // instruction. A route whose window is past and whose trigger is unresolved is exactly
+          // the case: the verdict says the requirement applies only conditionally, and an "Apply
+          // through" beside it says otherwise.
+          settled: route.triggerResult === "true",
         },
         disposition: route.disposition,
       });
@@ -418,15 +456,37 @@ function MissedMayBeRequiredSection({
   rulesetReferences: readonly FindingReference[];
 }) {
   const missed = missedRouteEntries(missedRuleIds, findings, rulesetReferences);
+  // What is actually in the list, which is what the sentence above it may claim. A route with no
+  // disposition recorded (a stored plan whose line is no longer among the findings) counts as
+  // neither: nothing is known about it to describe.
+  const barred = missed.filter((entry) => entry.disposition === "prohibited_or_ineligible");
+  const hedged = missed.filter(
+    (entry) => entry.disposition !== null && entry.disposition !== "prohibited_or_ineligible",
+  );
   return (
     <section className="verdict-detail__missed-conditional" data-testid="missed-may-be-required">
       <h2 className="verdict-detail__section-title">
         Published windows that are past only if the requirement applies
       </h2>
       <p className="verdict-detail__lede">
-        These findings carry a may-be-required disposition, so a passed published date keeps the
-        verdict conditional rather than treating the window as a definitive miss. Each finding below
-        states its own published date and qualification on the plan line.
+        {/* BRANCHED ON THE DISPOSITIONS ACTUALLY LISTED, not asserted over them. The sentence said
+            every finding below carries a may-be-required disposition, and the list two lines down
+            renders each route's own: a barred route whose own trigger is unresolved reaches this
+            section — `blocksWhenMissed` requires the trigger to have RESOLVED before a bar can close
+            a plan, so an unresolved one stays conditional and is listed here — and the copy then
+            contradicted the "(prohibited or ineligible)" printed beside it (#252 review).
+
+            Branched rather than neutralised. One sentence covering a bar and a may-be-required
+            equally has to describe the weaker of the two, and understating a published prohibition
+            is a defect this repository has shipped once already. What keeps the verdict conditional
+            is different in the two cases and the copy now says which: a hedged disposition for one,
+            an unanswered trigger for the other. */}
+        {barred.length === 0
+          ? "These findings carry a may-be-required disposition, so a passed published date keeps the verdict conditional rather than treating the window as a definitive miss."
+          : hedged.length === 0
+            ? "The findings below publish a prohibition or an ineligibility, and their own triggers are unresolved, so a passed published date keeps the verdict conditional rather than closing the plan. The bar stands as each rule publishes it."
+            : "The findings below differ in what they publish: some carry a may-be-required disposition, and some publish a prohibition or an ineligibility whose own trigger is unresolved. In both cases a passed published date keeps the verdict conditional rather than settling it, and each keeps the disposition its own rule publishes."}{" "}
+        Each finding below states its own published date and qualification on the plan line.
       </p>
       <ul>
         {missed.map((entry) => (

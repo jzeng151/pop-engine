@@ -510,8 +510,56 @@ const routesMatchRuleIds = (
   );
 };
 
+/**
+ * THE HEADLINE IS THE BINDING ROUTE'S, AND THE BINDING ROUTE IS `routes[0]`.
+ *
+ * `mergeGroup()` spreads the binding route into the merged finding and leads `routes` with it, so on
+ * every merged line the headline tuple and the first route entry are the same rule's published
+ * values. Nothing checked it: `routeContractHolds` reads the ids, the list and the mode, so a body
+ * carrying valid matching `routes` and `ruleIds` beside a headline taken from a DIFFERENT route
+ * cleared the boundary, and `PlanLine` rendered the crossed tuple as the heading — which is the
+ * cross-route attribution the whole route shape exists to prevent (#252 review).
+ *
+ * THE ALL-NULL STATE IS APPROVED AND IS NOT A FAILURE. Where the group holds a resolved route and
+ * none of them contributes the merged disposition, the line publishes no scalars at all and
+ * `deadlineStatus` reads `not_calculable` (design §4.3, amended 2026-08-09). That is a line whose
+ * headline is deliberately nobody's, so it is accepted as its own state rather than compared.
+ *
+ * `disposition` IS NOT IN THE TUPLE, deliberately: the merged disposition is the STRONGEST any route
+ * contributes, so it is the group's rather than the binding route's and differs from `routes[0]`'s
+ * legitimately. Nor are `noteText`, `conflictText` or `timelineUnresolvedReason`, which fall back
+ * through the remaining routes in binding order where the binding route publishes none.
+ */
+const HEADLINE_SCALARS = [
+  "name",
+  "agency",
+  "deadlineDisplay",
+  "latestApplyDate",
+  "applyAfterDate",
+  "deadlineStatus",
+  "feeDisplay",
+  "portalName",
+  "portalUrl",
+  "portalInstructions",
+] as const satisfies readonly (keyof ConsumedFinding & keyof ConsumedRoute)[];
+
+const publishesNoScalars = (finding: ConsumedFinding): boolean =>
+  finding.deadlineStatus === "not_calculable" &&
+  finding.deadline === null &&
+  HEADLINE_SCALARS.every((field) => field === "deadlineStatus" || finding[field] === null);
+
+const headlineMatchesBinding = (finding: ConsumedFinding): boolean => {
+  const binding = finding.routes?.[0];
+  if (binding === undefined) return true;
+  if (publishesNoScalars(finding)) return true;
+  return (
+    (finding.deadline?.type ?? null) === (binding.deadline?.type ?? null) &&
+    HEADLINE_SCALARS.every((field) => finding[field] === binding[field])
+  );
+};
+
 const isConsumedFinding = (value: unknown): value is ConsumedFinding =>
-  shapedLike(FINDING_CHECKS)(value) && routeContractHolds(value);
+  shapedLike(FINDING_CHECKS)(value) && routeContractHolds(value) && headlineMatchesBinding(value);
 
 const BRANCH_OUTCOME_CHECKS: FieldChecks<ConsumedBranchOutcome> = {
   value: isString,

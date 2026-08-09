@@ -212,7 +212,11 @@ describe("AC 5: this is an addition, not a replacement", () => {
     // not become the only place a field renders. Sources/citations stay PlanLine's.
     const finding = findingFor(STREET_INSURANCE, {
       sources: [
-        { ruleId: STREET_INSURANCE.id, citation: "50 RCNY §1-08(b)", urls: ["https://example.gov"] },
+        {
+          ruleId: STREET_INSURANCE.id,
+          citation: "50 RCNY §1-08(b)",
+          urls: ["https://example.gov"],
+        },
       ],
     });
     render(<InsurancePanel findings={[finding]} eventId="event-1" />);
@@ -263,7 +267,9 @@ describe("Edge cases", () => {
     // findings list" fact the engine produces post-rescope.
     const { container } = render(
       <InsurancePanel
-        findings={[nonInsuranceFinding("DOHMH-ORGANIZER-NOTIFY-001", "DOHMH organizer notification")]}
+        findings={[
+          nonInsuranceFinding("DOHMH-ORGANIZER-NOTIFY-001", "DOHMH organizer notification"),
+        ]}
         eventId="event-1"
       />,
     );

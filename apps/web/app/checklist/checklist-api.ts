@@ -474,17 +474,37 @@ const FILED_FIELDS = [
   "portalInstructions",
 ] as const satisfies readonly (keyof PlanContext & keyof ConsumedRoute)[];
 
+/**
+ * The approved state where the row's filing fields are nobody's: the merged line publishes no
+ * scalars because no resolved route contributes its disposition (design §4.3, amended 2026-08-09).
+ * Every filed field is null and the status reads `not_calculable`, so there is nothing to attribute
+ * and nothing to compare against.
+ */
+const publishesNoFilingFields = (context: PlanContext): boolean =>
+  context.deadlineStatus === "not_calculable" &&
+  context.deadline === null &&
+  FILED_FIELDS.every((field) => field === "deadlineStatus" || context[field] === null);
+
+const matchesRoute = (context: PlanContext, route: ConsumedRoute): boolean =>
+  (context.deadline?.type ?? null) === (route.deadline?.type ?? null) &&
+  FILED_FIELDS.every((field) => context[field] === route[field]);
+
+/**
+ * A NULL FILING ROUTE IS A CLAIM TOO, and it was the one this check waved through. Null says the
+ * values above are the line's OWN, and a merged line's own values are its binding route's, which is
+ * `routes[0]`: `mergeGroup()` spreads the binding route into the finding and leads the list with it.
+ * So a row with valid routes, a null filing id and a date, fee or portal from the SECOND route said
+ * "these are this line's own" about values no route on the row publishes as the line's — the same
+ * crossing the non-null branch refuses, on the branch that is the normal case (#252 review).
+ */
 const filingRouteIsCarried = (context: PlanContext): boolean => {
-  if (context.filingRouteRuleId == null) return true;
-  const named = (context.routes ?? []).filter(
-    (route) => route.ruleId === context.filingRouteRuleId,
-  );
+  const routes = context.routes ?? [];
+  if (routes.length === 0) return true;
+  if (publishesNoFilingFields(context)) return true;
+  if (context.filingRouteRuleId == null) return matchesRoute(context, routes[0] as ConsumedRoute);
+  const named = routes.filter((route) => route.ruleId === context.filingRouteRuleId);
   if (named.length !== 1) return false;
-  const route = named[0] as ConsumedRoute;
-  return (
-    (context.deadline?.type ?? null) === (route.deadline?.type ?? null) &&
-    FILED_FIELDS.every((field) => context[field] === route[field])
-  );
+  return matchesRoute(context, named[0] as ConsumedRoute);
 };
 
 /**

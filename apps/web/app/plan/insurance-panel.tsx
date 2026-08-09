@@ -112,7 +112,9 @@ function InsuranceCard({ finding, eventId }: { finding: ConsumedFinding; eventId
 
       {trackable && (
         <p className="insurance__action">
-          <a href={`/events/${eventId}/checklist`}>Track the certificate on your compliance checklist</a>
+          <a href={`/events/${eventId}/checklist`}>
+            Track the certificate on your compliance checklist
+          </a>
         </p>
       )}
     </article>
