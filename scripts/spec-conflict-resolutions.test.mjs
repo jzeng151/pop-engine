@@ -17,6 +17,7 @@ import {
   cityHealthRule,
   countClaimsInPublishedOutput,
   countsAttributed,
+  isCapturedSourcePage,
   pinnedDigest,
   publishedClaimSubjects,
   scanFile,
@@ -801,6 +802,14 @@ describe("no DOHMH rule is attributed to headcount, removed 2026-08-05 (#235)", 
    * THE COST IS STATED: adding a `.png`, a `.svg` or any other new file kind to this repository
    * fails this suite until somebody says which side of the line it is on. That is the price of the
    * question being asked at all, and it is one line of answer.
+   *
+   * `.html` LEFT THIS MAP IN THE TWENTY-FIRST ROUND, and the reason it was here is now a PATH rule
+   * in `spec-conflict-scan.mjs`. An extension-wide entry classified every present and future HTML
+   * file as an agency's published words on the strength of eight captured nyc.gov pages, so a page
+   * this repository authored, such as `apps/web/public/permit-help.html`, could state a city health
+   * trigger and be read by neither the walk nor this assertion. An exemption may be no wider than
+   * the files that justify it, which is the same correction `NON_REGULATORY_JSON` records making
+   * for `.json` in the nineteenth round.
    */
   const NON_PROSE_EXTENSIONS = new Map([
     [
@@ -809,12 +818,6 @@ describe("no DOHMH rule is attributed to headcount, removed 2026-08-05 (#235)", 
         " walk, which would read JSON syntax as prose blocks. Which JSON files that means is a" +
         " PATH question and NON_REGULATORY_JSON below answers it: every tracked .json except the" +
         " workspace and TypeScript configuration is handed to that scanner.",
-    ],
-    [
-      ".html",
-      "the captured nyc.gov source pages under docs/proposals/. They are an agency's own published" +
-        " words, which AGENTS.md's authority order puts ABOVE this repository's prose; a threshold" +
-        " quoted there is a primary source and not a claim this repository makes.",
     ],
     [".css", "stylesheets. They carry no sentences."],
     [".yml", "the CI workflow."],
@@ -835,6 +838,55 @@ describe("no DOHMH rule is attributed to headcount, removed 2026-08-05 (#235)", 
     const dot = name.lastIndexOf(".");
     return dot === -1 ? "" : name.slice(dot);
   };
+
+  /** Every tracked path, as git lists it. */
+  const trackedFiles = () =>
+    execFileSync("git", ["ls-files", "-z"], { cwd: repoRoot, encoding: "utf8" })
+      .split("\0")
+      .filter(Boolean);
+
+  /**
+   * The path-scoped exemption held to the same two questions `NON_REGULATORY_JSON` answers: it has
+   * to match something, and everything it does not match has to be read by the scan. An exemption
+   * that matches nothing is an exemption nobody needs, sitting here waiting to catch the next file
+   * that happens to look like it.
+   */
+  it("the captured source page exemption matches the pages it exists for, and nothing else", () => {
+    const html = trackedFiles().filter((relative) => relative.endsWith(".html"));
+    const captured = html.filter(isCapturedSourcePage);
+    expect(html.length, "the tree carries the captured agency pages").toBeGreaterThan(0);
+    expect(
+      captured,
+      "CAPTURED_SOURCE_PAGES matches no tracked file, so it exempts nothing and hides whatever" +
+        " matches it next. Remove it, or correct the path rule.",
+    ).not.toEqual([]);
+    expect(
+      captured.filter((relative) => !relative.startsWith("docs/proposals/")),
+      "a captured source page sits under docs/proposals/. A page outside it is this repository's" +
+        " own prose and is scanned.",
+    ).toEqual([]);
+  });
+
+  /**
+   * The other half of that partition, and the reason the exemption was narrowed: a repository
+   * authored page is scanned. Asserted against the walk rather than against the extension list,
+   * because the extension list is what used to make this question unanswerable.
+   */
+  it("scans every tracked HTML page the capture exemption does not name", () => {
+    const scanned = new Set(
+      filesUnder(PROSE_EXTENSIONS)
+        .map((path) => path.replace(`${repoRoot}/`, ""))
+        .filter((relative) => !isCapturedSourcePage(relative)),
+    );
+    expect(
+      trackedFiles().filter(
+        (relative) =>
+          relative.endsWith(".html") && !isCapturedSourcePage(relative) && !scanned.has(relative),
+      ),
+      "a tracked HTML page is neither a captured agency source nor read by the prose scan. It is" +
+        " this repository's own rendered prose: scan it, or say why its path is a capture.",
+    ).toEqual([]);
+  });
 
   it("classifies every tracked file kind as prose or as deliberately not prose", () => {
     const tracked = execFileSync("git", ["ls-files", "-z"], { cwd: repoRoot, encoding: "utf8" })
@@ -1247,6 +1299,10 @@ describe("no DOHMH rule is attributed to headcount, removed 2026-08-05 (#235)", 
     const flagged = [];
     for (const path of filesUnder(PROSE_EXTENSIONS)) {
       const relative = path.replace(`${repoRoot}/`, "");
+      // The one path-scoped exemption the prose walk carries, stated where the walk is rather than
+      // as a missing extension: a captured agency page is a primary source, and AGENTS.md's
+      // authority order puts it above this repository's prose. Every other `.html` is scanned.
+      if (isCapturedSourcePage(relative)) continue;
       // Two independent questions, answered by two lists since the fifth PR #247 round, and
       // answered in `scanOptionsFor` rather than here since the sixth: both of those answers were
       // one clause of this function, and reverting either left the whole suite green.

@@ -9,6 +9,7 @@ import {
   BOUNDED_EXTENSIONS,
   CITY_HEALTH_AGENCY,
   COUNTED_PEOPLE,
+  COUNT_PHRASE_REACH,
   COUNTED_PEOPLE_SOURCE,
   HISTORICAL_RECORDS,
   INDEPENDENCE_ASSERTIONS,
@@ -24,6 +25,7 @@ import {
   countClaimsInPublishedOutput,
   countsAttributed,
   countsSupportedBy,
+  isCapturedSourcePage,
   isParagraph,
   normalizeForMatching,
   organizerFacingStrings,
@@ -1013,8 +1015,10 @@ describe("scanFile: the code opt-out", () => {
     for (const extension of BOUNDED_EXTENSIONS) expect(OPT_OUT_EXTENSIONS).toContain(extension);
     // And every code extension the prose walk reads can take the marker: an extension the walk
     // scans but the marker is inert in leaves its author the no-remedy position the fifth round
-    // found under `scripts/`. `.md` is the one prose extension that is deliberately not code.
-    for (const extension of PROSE_EXTENSIONS.filter((each) => each !== ".md"))
+    // found under `scripts/`. `.md` and `.html` are the prose extensions that are deliberately not
+    // code, and prose cannot opt out: it writes around the pairing or is pinned as a record.
+    const NOT_CODE = [".md", ".html"];
+    for (const extension of PROSE_EXTENSIONS.filter((each) => !NOT_CODE.includes(each)))
       expect(OPT_OUT_EXTENSIONS, extension).toContain(extension);
     const marked = blocksOf(NEW_GUARD_FIXTURE).find((block) => block.includes(OPT_OUT_MARKER));
     expect(
@@ -1320,8 +1324,37 @@ describe("the declared vocabulary, over the formatting the artifacts really use"
       }
     };
     walk(repoRoot);
-    return found.map((path) => ({ prose: path.endsWith(".md"), text: readFileSync(path, "utf8") }));
+    // The captured agency pages are outside this corpus for the reason they are outside the offender
+    // scan: they are nyc.gov's markup rather than wrapping this repository authored, so declaring
+    // their constructs would describe a source page's HTML instead of the tree's own prose.
+    return found
+      .filter((path) => !isCapturedSourcePage(path.replace(`${repoRoot}/`, "")))
+      .map((path) => ({ prose: path.endsWith(".md"), text: readFileSync(path, "utf8") }));
   })();
+
+  /**
+   * ROUND 21, THREAD 218. `COUNT_PHRASE_REACH` bounds how far the noun-first count phrase reaches
+   * forward for its numeral, which is a performance bound rather than a reading of English. Its
+   * cost is measured HERE, against the corpus this describe already walks: if a document writes a
+   * count noun further from its numeral than the bound allows, this fails and names the decision
+   * rather than quietly dropping the phrase.
+   */
+  it("bounds no noun-to-numeral gap the scanned tree actually writes", () => {
+    const gaps = [];
+    const noun = /\b(?:guests|attendees|people|persons|heads|RSVPs|patrons)\b([^.!?;\n]*?)\d/gi;
+    for (const { text } of scannedTexts) {
+      for (const block of blocksOf(text)) {
+        for (const match of normalizeForMatching(block).matchAll(noun)) gaps.push(match[1].length);
+      }
+    }
+    expect(gaps.length, "the tree writes count nouns followed by numerals").toBeGreaterThan(0);
+    expect(
+      Math.max(...gaps),
+      "a scanned block writes a count noun further from its numeral than COUNT_PHRASE_REACH" +
+        " allows, so the bound now drops a phrase this tree really carries. Raise it and say what" +
+        " the new measurement is, or reword the sentence.",
+    ).toBeLessThanOrEqual(COUNT_PHRASE_REACH);
+  });
 
   /** A run of one line carrying a letter and none of the delimiters wrapped around it. */
   const SPAN = (chars) =>
@@ -2471,9 +2504,15 @@ describe("round 14: the lexical layer, one class of three", () => {
    */
   it("splits only at a terminator that whitespace follows", () => {
     expect(countsAttributed("HEALTH-ASSEMBLY-001(!) applies at 75 guests.", attributed)).toBe(true);
-    expect(
-      countsAttributed("HEALTH-ASSEMBLY-001 applies above 74.5 at 75 guests.", attributed),
-    ).toBe(true);
+    // The decimal case, held to the rule's own numbers. It is ONE sentence, so both numerals sit in
+    // one unit and a rule publishing both licenses it; a split at the decimal point would put "5 at
+    // 75 guests" in a unit that names no rule and this would be false. The twenty-first round made
+    // the decimal a stated threshold in its own right, which is why the map here publishes it.
+    const decimal = "HEALTH-ASSEMBLY-001 applies above 74.5 at 75 guests.";
+    expect(countsAttributed(decimal, new Map([["HEALTH-ASSEMBLY-001", new Set([74.5, 75])]]))).toBe(
+      true,
+    );
+    expect(countsAttributed(decimal, attributed)).toBe(false);
   });
 
   /**
@@ -3040,16 +3079,44 @@ describe("round 17: a count claim states every numeral of its sentence", () => {
     );
   });
 
-  /** The shapes the two extra numeral guards exist for, none of which is a stated threshold. */
-  it("refuses a date, a rule id, a decimal and the prefix of a grouped number", () => {
+  /** The shapes the extra numeral guards exist for, none of which is a stated threshold. */
+  it("refuses a date, a rule id and the prefix of a grouped number", () => {
     expect(claimedCounts("Published 2026-08-07: DOHMH requires a permit at 75 guests.")).toEqual(
       new Set([75]),
     );
     expect(claimedCounts("DOHMH-VENDOR-PERMIT-001 applies at 75 guests.")).toEqual(new Set([75]));
-    expect(claimedCounts("HEALTH-ASSEMBLY-001 applies above 74.5 at 75 guests.")).toEqual(
-      new Set([75]),
-    );
     expect(claimedCounts("DOHMH covers a 1,075-person event.")).toEqual(new Set([1075]));
+  });
+
+  /**
+   * ROUND 21, THREAD 984. A decimal is read WHOLE rather than dropped. Both halves used to be
+   * refused, so a claim whose number was written as a decimal stated none: the count expressions
+   * still paired on the fraction ("0 guests"), the claimed set came back empty, and
+   * `countsSupportedBy`'s `every` passed vacuously over it, so an invented threshold borrowed an
+   * attributed rule's exemption. A count-bearing claim may not produce a vacuous pass.
+   */
+  it("reads a decimal count whole rather than claiming nothing", () => {
+    const claim = "HEALTH-ASSEMBLY-001, published by DOHMH, applies at 500.0 guests.";
+    // The pairing was never the missing half: it fires on the fraction with or without this fix.
+    expect(pairsAgencyWithCount(claim)).toBe(true);
+    expect(claimedCounts(claim)).toEqual(new Set([500]));
+    expect(countsSupportedBy(claim, new Set([75]))).toBe(false);
+    expect(countsAttributed(claim, attributed)).toBe(false);
+    // And the rule that really publishes it still licenses it, written either way.
+    expect(countsAttributed(claim, new Map([["HEALTH-ASSEMBLY-001", new Set([500])]]))).toBe(true);
+  });
+
+  /**
+   * The cost of reading it whole, stated where it is measured: a decimal in a count sentence is a
+   * stated threshold, so "74.5" is one number rather than none. A fee written "$1.2M" is still no
+   * threshold, which is the case the dropped guard was carrying: the trailing guard refuses a
+   * numeral followed by a word character.
+   */
+  it("reads a half-person threshold as stated and a suffixed figure as no threshold", () => {
+    expect(claimedCounts("HEALTH-ASSEMBLY-001 applies above 74.5 at 75 guests.")).toEqual(
+      new Set([74.5, 75]),
+    );
+    expect(claimedCounts("HEALTH-ASSEMBLY-001 charges $1.2M at 75 guests.")).toEqual(new Set([75]));
   });
 });
 
@@ -3087,6 +3154,73 @@ describe("round 17: a link destination is removed whole", () => {
     expect(normalizeForMatching("DOHMH reads the [guest](https://example.test/x count")).toBe(
       "DOHMH reads the guest(https://example.test/x count",
     );
+  });
+});
+
+/**
+ * ROUND 21, THREAD 622. The destination scan above closed the INLINE spelling; the reference-style
+ * spelling was the same defect one markdown form over. `[guest][ref]` renders as "guest", and
+ * stripping the brackets alone left `guestref`, so the count phrase was broken in the middle and
+ * the claim was invisible to the repository scan and to the published-output audit alike.
+ */
+describe("round 21: a reference-style link label is removed too", () => {
+  it("keeps the count phrase across a full reference link", () => {
+    const claim = "DOHMH depends on the [guest][ref] count";
+    expect(normalizeForMatching(claim)).toBe("DOHMH depends on the guest count");
+    expect(pairsAgencyWithCount(claim)).toBe(true);
+    expect(scanFile(claim)).toHaveLength(1);
+  });
+
+  /** The collapsed form needed nothing, and is covered by the same expression rather than by luck. */
+  it("keeps the count phrase across a collapsed reference link", () => {
+    expect(normalizeForMatching("DOHMH depends on the [guest][] count")).toBe(
+      "DOHMH depends on the guest count",
+    );
+  });
+
+  /** A label that never closes on its line is not a link, on the same reading as a destination. */
+  it("leaves an unclosed label alone", () => {
+    expect(normalizeForMatching("DOHMH reads the [guest][ref count")).toBe(
+      "DOHMH reads the guestref count",
+    );
+  });
+
+  /** The inline form is unchanged: this runs before the brackets are stripped, not instead of it. */
+  it("still removes an inline destination", () => {
+    expect(normalizeForMatching("the [guest](https://example.test/x) count")).toBe(
+      "the guest count",
+    );
+  });
+});
+
+/**
+ * ROUND 21, THREAD 623. Every expression in the guard writes its gaps as a literal single space,
+ * so an ordinary formatting variant of the same rendered sentence matched nothing: two spaces, a
+ * tab, or a non-breaking space pasted from a rendered page.
+ */
+describe("round 21: horizontal whitespace is collapsed before matching", () => {
+  const claim = (gap) => `DOHMH requires a permit for 75${gap}guests`;
+
+  it("flags the claim whatever whitespace separates the count from its noun", () => {
+    for (const [name, gap] of [
+      ["one space", " "],
+      ["two spaces", "  "],
+      ["a tab", "\t"],
+      ["a non-breaking space", "\u00a0"],
+      ["a narrow no-break space", "\u202f"],
+    ]) {
+      expect(scanFile(claim(gap)), name).toHaveLength(1);
+    }
+  });
+
+  /** The other vocabulary reads its gaps the same way, so it gets the same collapse. */
+  it("flags the outright count phrase across a doubled space", () => {
+    expect(scanFile("The DOHMH permit depends on the guest  count")).toHaveLength(1);
+  });
+
+  /** A line break is NOT collapsed here: which lines rejoin is `joinWrappedLines`' decision. */
+  it("leaves the line break to the wrapped-line rule", () => {
+    expect(normalizeForMatching("a  b\nc  d")).toBe("a b c d");
   });
 });
 
@@ -3290,6 +3424,99 @@ describe("round 19: a semicolon separates two attribution units", () => {
  * description is and what it was measured against. These fixtures pin both sides of that line, and
  * the artifact the measurement was taken on.
  */
+/**
+ * ROUND 21, THREAD 906. The semicolon round above closed one mark; the em dash is the same
+ * boundary in the mark this repository's own house style writes most, and it was not one, so a
+ * clause naming an attributed rule licensed the clause after the dash.
+ */
+/**
+ * ROUND 21, THREAD 218. The noun-first alternation reached to the end of its sentence, so a block
+ * carrying count nouns and no numeral made the engine rescan the suffix from every noun. Both
+ * suites walk every tracked prose block, so a long enough generated record or changelog would
+ * overrun Vitest's per-test limit and fail changes with nothing to do with this guard, which is
+ * what table padding in `docs/BASELINE.md` did to this repository once already.
+ */
+describe("round 21: the noun-first count phrase has a bounded reach", () => {
+  /** A gap of exactly the reach still pairs; one character more does not. The bound is driven. */
+  it("reaches its numeral at the bound and not past it", () => {
+    const claim = (gap) => `guests ${"x".repeat(gap - 2)} 75`;
+    expect(COUNTED_PEOPLE.test(claim(COUNT_PHRASE_REACH)), "at the bound").toBe(true);
+    expect(COUNTED_PEOPLE.test(claim(COUNT_PHRASE_REACH + 1)), "past the bound").toBe(false);
+  });
+
+  /**
+   * The other two alternations are unbounded, so a NUMERAL-FIRST claim of any length is unaffected:
+   * the reach is a property of the noun-first branch alone.
+   */
+  it("leaves the numeral-first phrase unbounded", () => {
+    expect(COUNTED_PEOPLE.test("75 or more guests")).toBe(true);
+    expect(COUNTED_PEOPLE.test("75-person")).toBe(true);
+  });
+
+  /**
+   * The bound as a running cost rather than as a regex property. On the shape the thread measured,
+   * a repeated count noun with no numeral anywhere, the unbounded reach cost 15.7 seconds; this
+   * runs in tens of milliseconds. The threshold is two seconds, far above the measured cost and far
+   * below the old one, so it fails on the defect without failing on a slow machine.
+   */
+  it("stays linear on a long block of count nouns with no numeral", () => {
+    const text = `DOHMH ${"guests word ".repeat(64000)}`;
+    const started = Date.now();
+    expect(pairsAgencyWithCount(text)).toBe(false);
+    expect(Date.now() - started).toBeLessThan(2000);
+  });
+});
+
+describe("round 21: an em dash separates two attribution units", () => {
+  const attributed = new Map([["HEALTH-A", new Set([75])]]);
+  const publishedIds = ["HEALTH-A", "DOHMH-VENDOR-PERMIT-001"];
+
+  /** The gap this closes, in the thread's own wording. */
+  it("does not let a supported clause license the clause after the em dash", () => {
+    const claim =
+      "HEALTH-A, published by DOHMH, applies at 75 guests \u2014 the vendor permit depends on the" +
+      " guest count.";
+    expect(pairsAgencyWithCount(claim)).toBe(true);
+    expect(countsAttributed(claim, attributed, { publishedIds })).toBe(false);
+    // The semicolon spelling of the same sentence, which is the behaviour this matches.
+    expect(countsAttributed(claim.replace(" \u2014 ", "; "), attributed, { publishedIds })).toBe(
+      false,
+    );
+  });
+
+  /** An invented NUMBER cannot hide behind a supported one across the dash either. */
+  it("does not let a supported clause license an invented threshold after the em dash", () => {
+    const claim =
+      "HEALTH-A applies at 75 guests \u2014 DOHMH-VENDOR-PERMIT-001 applies at 500 guests.";
+    expect(countsAttributed(claim, attributed, { publishedIds })).toBe(false);
+  });
+
+  /** A claim whose every clause names its own rule and its own number is still exempt. */
+  it("still exempts a claim each of whose clauses is attributed", () => {
+    const claim = "HEALTH-A applies at 75 guests \u2014 HEALTH-A reads the guest count.";
+    expect(countsAttributed(claim, attributed, { publishedIds })).toBe(true);
+  });
+
+  /**
+   * The mark is a boundary with or without spaces, unlike the sentence terminators: nothing writes
+   * a number around an em dash, so there is no "75.5" case to protect here.
+   */
+  it("splits at an em dash written tight against its clauses", () => {
+    const claim =
+      "HEALTH-A applies at 75 guests\u2014the vendor permit depends on the guest count.";
+    expect(countsAttributed(claim, attributed, { publishedIds })).toBe(false);
+  });
+
+  /**
+   * The EN dash is not a boundary. This tree writes it unspaced inside ranges ("Phase 2\u20134"),
+   * which is one token rather than two clauses.
+   */
+  it("does not split at an en dash", () => {
+    const claim = "HEALTH-A applies at 75 guests \u2013 it reads the guest count.";
+    expect(countsAttributed(claim, attributed, { publishedIds })).toBe(true);
+  });
+});
+
 describe("round 19: a titled instrument named in summary text is a claim subject", () => {
   const published = JSON.parse(read("rules/nyc-rules.v2.11.json"));
   const subjects = publishedClaimSubjects(published);

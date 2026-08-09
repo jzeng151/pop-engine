@@ -212,10 +212,39 @@ const COUNTED_PERSON_NOUN = "(?:guest|attendee|people|person|head|RSVP|patron)s?
 export const NUMERAL_BODY = "(?:\\d{1,3}(?:,\\d{3})+|\\d{1,6})";
 /** The same numeral, refusing a word, a hyphen or the tail of a grouped number on either side. */
 const COUNT_NUMERAL = `(?<![\\w-])(?<!\\d,)${NUMERAL_BODY}(?![\\w-])`;
+
+/**
+ * How far the NOUN-FIRST alternation below reaches forward for its numeral. The twenty-first PR
+ * #247 round, and a performance bound rather than a reading of English.
+ *
+ * The reach was the rest of the sentence, so a block carrying count nouns and no numeral made the
+ * engine rescan the suffix from every noun: `pairsAgencyWithCount` over "DOHMH " and a repeated
+ * "guests word " cost 56ms at 4,000 repetitions, 226ms at 8,000 and 922ms at 16,000 on this tree's
+ * Node, which is the doubling-time-quadruples signature `joinWrappedLines` already carries a fix
+ * for. Both suites walk every tracked prose block, so one generated record or changelog long enough
+ * would overrun Vitest's per-test limit and fail changes that have nothing to do with this guard.
+ * That is not hypothetical here: table padding in `docs/BASELINE.md` did exactly that once.
+ *
+ * WHY A BOUND RATHER THAN A REWRITE. The linear form of this question is "find the numerals once,
+ * then look back for a noun", and this expression is not only used through `test`: `claimSubject`
+ * builds proximity windows out of its SOURCE, so the span it matches is measured. A bounded lazy
+ * gap is linear in the block (201 attempts per noun, each O(1)) and leaves the matched span exactly
+ * what it was.
+ *
+ * 200 IS MEASURED AND NOT CHOSEN. Over every scanned root, this alternation matches 70 times and
+ * the longest gap between the noun and its numeral is 188 characters, in a sentence of this guard's
+ * own prose; the longest in anything claim-shaped is 109. So the bound changes no match on this
+ * tree, which was checked by diffing the whole flag set across the change rather than by argument.
+ * The cost is stated: a count noun and its numeral more than 200 characters apart in one sentence
+ * are no longer one phrase. The other two alternations are unbounded, so a numeral-first claim of
+ * any length is unaffected.
+ */
+export const COUNT_PHRASE_REACH = 200;
 export const COUNTED_PEOPLE_SOURCE =
   `${COUNT_NUMERAL} ?(?:or more |or fewer |\\+ ?)?(?:[a-z][a-z-]*,? ){0,2}?${COUNTED_PERSON_NOUN}\\b` +
   `|(?<![\\w-])(?<!\\d,)${NUMERAL_BODY}-${COUNTED_PERSON_NOUN}\\b` +
-  `|\\b(?:guests|attendees|people|persons|heads|RSVPs|patrons)\\b[^.!?;\\n]*?${COUNT_NUMERAL}`;
+  `|\\b(?:guests|attendees|people|persons|heads|RSVPs|patrons)\\b` +
+  `[^.!?;\\n]{0,${COUNT_PHRASE_REACH}}?${COUNT_NUMERAL}`;
 export const COUNTED_PEOPLE = new RegExp(COUNTED_PEOPLE_SOURCE, "i");
 
 /**
@@ -312,8 +341,42 @@ export const OPT_OUT_EXTENSIONS = [".ts", ".tsx", ".mts", ".cts", ".mjs", ".js"]
  * `.mts` and `.cts` are TypeScript, so they are in `BOUNDED_EXTENSIONS` and `OPT_OUT_EXTENSIONS`
  * on the same terms `.ts` is: the distance bound applies inside their blocks, and their authors
  * have the opt-out a `.ts` author has.
+ *
+ * `.html` IS PROSE, which is the twenty-first PR #247 round, and the exemption that used to keep it
+ * out is now the path list below. A whole extension classified as an agency's published words is an
+ * exemption far wider than the eight captures that justify it: a repository-authored page such as
+ * `apps/web/public/permit-help.html` could state a city health trigger and be read by neither the
+ * walk nor the assertion about the walk, because the coverage partition accepts any extension the
+ * non-prose map names. Rendered HTML is prose an organizer reads, so the default is to scan it.
  */
-export const PROSE_EXTENSIONS = [".md", ".ts", ".tsx", ".mts", ".cts", ".mjs", ".js"];
+export const PROSE_EXTENSIONS = [".md", ".html", ".ts", ".tsx", ".mts", ".cts", ".mjs", ".js"];
+
+/**
+ * THE CAPTURED AGENCY SOURCE PAGES, by path, and the one exemption `.html` gets.
+ *
+ * `docs/proposals/<capture>/<name>.page.html` is a saved nyc.gov page: an agency's OWN published
+ * words, which AGENTS.md's authority order puts ABOVE this repository's prose. A threshold quoted
+ * there is a primary source, and reporting one as a fabricated regulatory claim would be this guard
+ * contradicting the order it exists to enforce. Everything else with an `.html` extension is a page
+ * this repository wrote, and it is scanned like any other prose.
+ *
+ * IT IS A PATH RULE AND IT NAMES THE CAPTURE CONVENTION rather than the eight files: a refetch
+ * lands a new dated directory of `.page.html` files, and enumerating today's eight would leave
+ * tomorrow's capture reported as this repository's own invented claim on the day it lands. A page
+ * this repository authors is not written under `docs/proposals/` with that suffix.
+ *
+ * Measured: the eight captures on this tree produce ZERO flags if they are scanned, so this
+ * exemption moves nothing today. It is a decision about what a FUTURE capture means, which is why
+ * it is worth stating rather than leaving to the extension list.
+ *
+ * Declared here rather than in either suite for the reason `PROSE_EXTENSIONS` is: both suites walk
+ * the tree, neither can import the other, and a skip that disagrees between them is a file one
+ * reads and the other does not.
+ */
+export const CAPTURED_SOURCE_PAGES = /^docs\/proposals\/[^/]+\/[^/]+\.page\.html$/;
+
+/** Whether a repository-relative path is one of the captured agency source pages. */
+export const isCapturedSourcePage = (relative) => CAPTURED_SOURCE_PAGES.test(relative);
 
 /**
  * The directories a prose walk does NOT descend into: `.git`, and the four build and dependency
@@ -615,11 +678,49 @@ const withoutLinkTargets = (text) => {
   }
 };
 
+/**
+ * Every REFERENCE-STYLE link label removed, the visible text kept. This is the twenty-first PR #247
+ * round, and it is the same defect as the destination scan above one markdown spelling over.
+ *
+ * `[guest][ref]` renders as "guest". Stripping the brackets alone left `guestref`, so "DOHMH
+ * depends on the [guest][ref] count" normalized to "DOHMH depends on the guestref count", which is
+ * neither the "guest count" phrase `ATTENDEE_COUNT` joins with a single space nor anything else
+ * either count expression matches. The claim was then missed by the repository scan and by the
+ * published-output audit alike, on a link a reader sees no defect in, exactly as the inline form
+ * was before the seventeenth round.
+ *
+ * The label ends at the first `]` and may not cross a line, on the same reading that leaves an
+ * unbalanced inline destination alone: a `][` with no closing bracket on its line is not a link,
+ * and removing text up to some later line's bracket would delete prose the author wrote. The
+ * COLLAPSED form `[guest][]` needed nothing here and still does, because an empty label leaves the
+ * two brackets adjacent, but it is covered by the same expression rather than by luck.
+ */
+const withoutReferenceLabels = (text) => text.replace(/\]\[[^\]\n]*\]/g, "]");
+
+/**
+ * Horizontal whitespace collapsed to the single space every count expression joins its words with.
+ * The twenty-first PR #247 round, and the lexical half of the same defect `joinWrappedLines` closes
+ * structurally.
+ *
+ * Every expression in this module writes its gaps as a literal `" "`, so "75  guests" with two
+ * spaces, "75\tguests" with a tab and a "75 guests" whose space is U+00A0 pasted from a rendered
+ * page each failed to match while rendering as the phrase an organizer reads. All three are
+ * ordinary formatting: a double space survives markdown, a tab is what a paste from a table gives,
+ * and a non-breaking space is what a paste from a rendered page gives.
+ *
+ * The class is every whitespace character EXCEPT the line break, so this cannot join two lines that
+ * `joinWrappedLines` decided to keep apart, and it is one linear pass rather than a quantified
+ * expression that can backtrack, which is the cost that function's own header measures.
+ */
+const collapseSpaces = (text) => text.replace(/[^\S\n]+/g, " ");
+
 export const normalizeForMatching = (text) =>
-  joinWrappedLines(
-    withoutLinkTargets(text)
-      .replace(/[`*_~[\]"“”]/g, "")
-      .replace(/(?<![A-Za-z0-9])'|'(?![A-Za-z0-9])/g, ""),
+  collapseSpaces(
+    joinWrappedLines(
+      withoutReferenceLabels(withoutLinkTargets(text))
+        .replace(/[`*_~[\]"“”]/g, "")
+        .replace(/(?<![A-Za-z0-9])'|'(?![A-Za-z0-9])/g, ""),
+    ),
   );
 
 /** A line that opens a list item or a table row, and so begins a block of its own. */
@@ -902,8 +1003,22 @@ export const pairsAgencyWithCount = (raw, { bounded = false, subjects = [] } = {
  * `countsAttributed` exempted it and the second half's unsupported claim was reported by nobody.
  * The terminator required whitespace after it before and still does, so "75.5" and "$1.2M" are
  * not two sentences.
+ *
+ * AN EM DASH IS A BOUNDARY TOO, which is the twenty-first PR #247 round and is the semicolon case
+ * in the one punctuation mark this repository's own house style writes most. On a rule legitimately
+ * publishing 75, "HEALTH-A, published by DOHMH, applies at 75 guests — the vendor permit depends on
+ * the guest count." came out of this split as ONE unit naming HEALTH-A and stating 75, so
+ * `countsAttributed` exempted it whole and the second clause, which names no rule at all, was
+ * reported by nobody. That is the semicolon defect the nineteenth round closed, reachable again
+ * through a different mark.
+ *
+ * The mark is the boundary WITH OR WITHOUT the spaces around it, unlike the terminators above,
+ * because an em dash is not a decimal point or a thousands separator: nothing writes a number
+ * around one, so there is no "75.5" case here to protect. The EN dash is deliberately not a
+ * boundary: this tree writes it unspaced inside ranges ("Phase 2–4"), which is one token rather
+ * than two clauses.
  */
-const sentencesOf = (text) => text.split(/(?<=[.!?;])\s+/);
+const sentencesOf = (text) => text.split(/(?<=[.!?;])\s+|\s*—\s*/);
 
 /** Whether a text states an attendee count at all, in either count vocabulary. */
 const statesACount = (text) => ATTENDEE_COUNT.test(text) || COUNTED_PEOPLE.test(text);
@@ -952,13 +1067,33 @@ const statesACount = (text) => ATTENDEE_COUNT.test(text) || COUNTED_PEOPLE.test(
  *     alternative, but where the token after the group defeats a lookahead the plain alternative
  *     backtracks into it: "1,075-person" would otherwise be read as 1, on the "1" that ends in the
  *     separator. It is the mirror of the `(?<!\d,)` guard the fifteenth round added for the suffix.
- *   - NOT EITHER HALF OF A DECIMAL (`(?<!\d\.)` and `(?!\.\d)`). A decimal point is not a sentence
+ *   - NOT THE FRACTIONAL HALF OF A DECIMAL (`(?<!\d\.)`). A decimal point is not a sentence
  *     terminator here, precisely so a claim written around one stays one claim, so "applies above
  *     74.5 at 75 guests" is one sentence and its digits are in reach. 74 and 5 are not two stated
- *     thresholds; 75 is the one, and a fee written "$1.2M" is not a threshold of 1 or of 2 either.
+ *     thresholds there.
+ *
+ * A DECIMAL IS READ WHOLE RATHER THAN DROPPED, which is the twenty-first PR #247 round and is the
+ * one guard of these two that changed. Both halves used to be refused, so a claim whose number was
+ * WRITTEN as a decimal stated no number at all: on a rule legitimately publishing 75, "HEALTH-A,
+ * published by DOHMH, applies at 500.0 guests" pairs (the count expressions read "0 guests" off the
+ * fraction), names an attributed rule, and produced the EMPTY claimed set, so `countsSupportedBy`'s
+ * `every` was satisfied vacuously and an invented threshold borrowed the rule's attribution. A
+ * vacuous pass on a count-bearing claim is the one outcome this reader may not produce.
+ *
+ * So the fraction is part of the numeral and "500.0" claims 500, which is the number an organizer
+ * reads. "74.5" claims 74.5, which no trigger publishes and which is therefore an offender rather
+ * than a silence: a claim that states a half-person threshold about a rule is stating a number the
+ * rule does not publish.
+ *
+ * THE DECIMAL IS ALL OR NOTHING, which is the one thing the two alternatives buy over an optional
+ * group. An optional fraction BACKTRACKS: on "$1.2M" the whole decimal fails the trailing guard at
+ * the `M`, the group gives up its ".2", and the bare "1" passes, so a fee would claim a threshold
+ * of 1. The bare alternative therefore refuses a numeral a fraction follows, which is the guard the
+ * old expression carried as `(?!\.\d)`, kept for the case it was really for.
  */
 const CLAIMED_NUMERAL = new RegExp(
-  `(?<![\\w-])(?<!\\d,)(?<!\\d\\.)${NUMERAL_BODY}(?!,\\d{3})(?!\\.\\d)` +
+  `(?<![\\w-])(?<!\\d,)(?<!\\d\\.)` +
+    `(?:${NUMERAL_BODY}\\.\\d+|${NUMERAL_BODY}(?!\\.\\d))(?!,\\d{3})` +
     `(?:(?![\\w-])|(?=-${COUNTED_PERSON_NOUN}\\b))`,
   "gi",
 );
