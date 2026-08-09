@@ -447,12 +447,12 @@ describe("DOHMH findings do not move with headcount (#235)", () => {
     expect(publishedBoundaries, "the published headcount thresholds").toEqual([20, 75]);
     expect(COMPARED_HEADCOUNTS).toEqual([19, 20, 21, 74, 75, 76, 500]);
     for (const fixture of SCENARIO_INTAKE_FIXTURES) {
-      const [first, ...rest] = COMPARED_HEADCOUNTS;
-      const baseline = cityHealthFindings(fixture, first);
-      for (const headcount of rest) {
+      const lowest = Math.min(...COMPARED_HEADCOUNTS);
+      const baseline = cityHealthFindings(fixture, lowest);
+      for (const headcount of COMPARED_HEADCOUNTS) {
         expect(
           cityHealthFindings(fixture, headcount),
-          `scenario ${fixture.scenario} at ${headcount} against ${first}`,
+          `scenario ${fixture.scenario} at ${headcount} against ${lowest}`,
         ).toEqual(baseline);
       }
     }
