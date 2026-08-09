@@ -7,7 +7,10 @@ and the approval closes it. What the approval covers is the design in sections 3
 one route list carrying each route's own published values and its own trigger result, the two
 headline modes and how they are computed, the mixed resolved-and-unknown case answered per route
 rather than by a third mode value, and the verdict reading the routes. It supersedes exactly the one
-sentence of AD-19 named in section 9.
+sentence of AD-19 named in section 9. §4.2's closing paragraph was amended on 2026-08-09 by a
+product-owner decision recorded in `docs/BASELINE.md`, which corrects what that paragraph said about
+how the draft's `nypd_sound` prohibition renders. That amendment approves nothing new, moves no
+other section, and changes no engine behaviour; the 2026-08-08 approval stands as given.
 
 **Issue:** #239 (dedupe merge), continuing PR #244.
 **Reads:** `docs/research/draft-dedupe-cofiring.md` (MEASUREMENT, branch `measure/draft-dedupe-cofiring`, PR #251),
@@ -255,12 +258,22 @@ answered facts, and it takes it on 54 of 360 intakes in one draft ruleset that d
 governance §6 row of its own, to describe one group of one unloadable draft, is the wrong trade
 against a per-route property that describes every group including that one.
 
-**What this decision does NOT settle.** It does not say the prohibition on the 15-intake and
-3-intake both-resolved sets is rendered correctly today. It is not: the draft's blocker vocabulary
-(`severity`, `status: PROHIBITED_USE`) is read by no engine code and the rule publishes no
-`output.disposition`, so under `DEFAULT_DISPOSITION_BY_RULE_KIND` (`proposals.ts:53`) it takes
-`may_be_required` (measurement §6, qualification 1). Making a `kind: eligibility` rule read as a
-blocker is a rules-schema change and is not this.
+**The prohibition on the both-resolved sets, amended by the product owner on 2026-08-09.** This
+decision does not settle blocker handling in general, and the 15-intake and 3-intake both-resolved
+sets do render the prohibition today. On both sets each route's own trigger resolves `true`, so
+`unresolvedRouteCeilingApplies` does not cap what the prohibition contributes,
+`prohibited_or_ineligible` is the top of `DISPOSITION_STRENGTH`, and §4.3 steps 2 and 3 bind the
+headline to that route: it is the only route contributing the merged disposition, and it is in the
+resolved subset. The rule still publishes no `output.disposition` and needs none, because it
+declares `kind: "prohibition"`, which `DEFAULT_DISPOSITION_BY_RULE_KIND` (`proposals.ts:54`) maps to
+`prohibited_or_ineligible`. The `eligibility` row this paragraph used to cite is no longer the row
+that applies. **Why it changed.** PR #254, merged as `91a1894b`, rewrote `kind` from `eligibility`
+to `prohibition` on the four blocking rules of the draft, on the finding that declaring "blocking"
+only through `severity` and `output.status`, which no engine code reads, was a rule-authoring error
+rather than the rules-schema gap this paragraph had diagnosed it as. The engine's map did not
+change; the artifact did. What is unchanged by it and by this: `rules/proposals/*` is still draft
+material, the draft still does not load through `parseEngineRuleset` for the unrelated reasons at
+measurement §3.1, and nothing here approves it.
 
 ### 4.3 The binding route
 
