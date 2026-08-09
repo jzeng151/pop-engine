@@ -333,13 +333,84 @@ describe("section 3.2, what the harness supplies", () => {
     const substring = { ...m.draft, notes: ["deltec_lteq is not an operator"] };
     expect(named(substring, "lte")).toBe(false);
 
-    // A trigger applying the operator is not a statement about it, so `rules` stays excluded.
+    // A trigger applying the operator is not a statement about it, so the trigger tree stays out.
     const applied = {
       ...m.draft,
       notes: [],
       rules: [{ id: "x", trigger: { field: "headcount", op: "lte", value: 1 } }],
     };
     expect(named(applied, "lte")).toBe(false);
+  });
+
+  test("a semantics a rule or an advisory states in its own prose is detected too", () => {
+    // The fix above closed the instance and left the class: it kept the whole `rules` and
+    // `advisories` arrays out, on the grounds that an operator name in a rule is a trigger applying
+    // it. A rule's own prose is not a trigger. An output note defining `is_null` would have gone on
+    // reporting no semantics while the draft contradicted the reading every figure here rests on
+    // (#251 review). Only the applications are out now.
+    const named = (draft, name) =>
+      m.inventory.operatorSemantics(draft).find((operator) => operator.name === name)
+        .describedOutsideTheList;
+
+    const [rule, ...otherRules] = m.draft.rules;
+    const inARuleNote = {
+      ...m.draft,
+      rules: [
+        {
+          ...rule,
+          output: { ...rule.output, notes: ["is_null matches an answer the organizer never gave"] },
+        },
+        ...otherRules,
+      ],
+    };
+    expect(named(inARuleNote, "is_null")).toBe(true);
+
+    // Advisories are a separate array and were excluded by the same clause.
+    const [advisory, ...otherAdvisories] = m.draft.advisories;
+    const inAnAdvisoryNote = {
+      ...m.draft,
+      advisories: [
+        { ...advisory, output: { ...advisory.output, note_text: "lte is inclusive of the value" } },
+        ...otherAdvisories,
+      ],
+    };
+    expect(named(inAnAdvisoryNote, "lte")).toBe(true);
+
+    // And the draft as published still reports neither, which is what makes walking the rules safe
+    // rather than merely wider: its own triggers apply both operators and that is not a definition.
+    expect(named(m.draft, "is_null")).toBe(false);
+    expect(named(m.draft, "lte")).toBe(false);
+  });
+
+  test("the two fields that carry an `asked_when` are the only two, whatever their type", () => {
+    // Section 3.2's "only two of the draft's 63 intake fields carry an `asked_when` at all", and
+    // section 3.3's promise that any added, widened or withdrawn `asked_when` moves the inventory.
+    // Neither was carried by anything: both counts in `intakeFieldInventory` range over enum,
+    // boolean and multi_enum fields alone, and no group sweep reads a field no rule reads, so a
+    // clause added to a numeric, date or string field moved nothing at all (#251 review).
+    expect(m.inventory.intakeFieldInventory(m.draft).conditionalFields).toEqual([
+      { field: "public_space_interference", type: "enum", gates: ["location_type"] },
+      {
+        field: "sound_audible_in_public_space",
+        type: "enum",
+        gates: ["amplified_sound", "location_type"],
+      },
+    ]);
+
+    // The shape the counts cannot see: a string field no rule reads, gated by one that is read.
+    const gatedString = {
+      ...m.draft,
+      intake_fields: m.draft.intake_fields.map((field) =>
+        field.field === "event_address"
+          ? { ...field, asked_when: { field: "location_type", op: "eq", value: "street" } }
+          : field,
+      ),
+    };
+    const widened = m.inventory.intakeFieldInventory(gatedString);
+    expect(widened.conditionalFields).toHaveLength(3);
+    expect(widened.conditionalFields.map((entry) => entry.field)).toContain("event_address");
+    // It moves neither count, which is the reason it needed its own carrier.
+    expect(widened.combinations).toBe(m.inventory.intakeFieldInventory(m.draft).combinations);
   });
 
   test("the harness agrees with the engine on every published rule and every control intake", () => {
@@ -1644,12 +1715,12 @@ describe("section 8, the harness footprint", () => {
     expect(counts).toEqual({
       "harness.mjs": 1009,
       "staging.mjs": 266,
-      "inventory.mjs": 491,
+      "inventory.mjs": 514,
       "report.mjs": 103,
-      "cofiring.test.mjs": 1669,
+      "cofiring.test.mjs": 1740,
       "vitest.config.mjs": 19,
     });
-    expect(Object.values(counts).reduce((total, count) => total + count, 0)).toBe(3_557);
+    expect(Object.values(counts).reduce((total, count) => total + count, 0)).toBe(3_651);
   });
 
   test("the published case count is the one Vitest collected", (context) => {
@@ -1664,6 +1735,6 @@ describe("section 8, the harness footprint", () => {
         (total, child) => total + (child.type === "test" ? 1 : collected(child)),
         0,
       );
-    expect(collected(context.task.file)).toBe(100);
+    expect(collected(context.task.file)).toBe(102);
   });
 });

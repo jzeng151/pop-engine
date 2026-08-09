@@ -96,6 +96,15 @@ const FACTORIAL_TYPES = new Set(["enum", "boolean", "multi_enum"]);
  * An unused intake field the draft adds or drops moves `fields`, `byType` and both counts, and so
  * does an `asked_when` the draft adds, widens or withdraws, and so does a `derived` flag the draft
  * lands or withdraws, so the section's inventory cannot go stale while the suite stays green.
+ *
+ * `conditionalFields` is that last promise's own carrier, and it is deliberately not a projection of
+ * the counts. Both counts range over enum, boolean and multi_enum fields alone, so an `asked_when`
+ * added to a numeric, date or string field, `event_address` for instance, moved neither of them; no
+ * group sweep reads such a field either, so section 3.2's "only two of the draft's 63 intake fields
+ * carry an `asked_when` at all" and this promise could both go stale with the suite green
+ * (#251 review). It is read off the artifact's own `asked_when` keys rather than off the translated
+ * definitions, so a clause too complex for `askedWhenExpression` still counts as one the draft
+ * carries instead of disappearing into a `null`.
  */
 export function intakeFieldInventory(artifact) {
   const byType = {};
@@ -117,6 +126,17 @@ export function intakeFieldInventory(artifact) {
   return {
     fields: artifact.intake_fields.length,
     byType,
+    conditionalFields: artifact.intake_fields
+      .filter((field) => field.asked_when != null)
+      .map((field) => ({
+        field: field.field,
+        type: field.type,
+        gates: [
+          ...new Set(
+            (definitions.get(field.field).askedWhenClauses ?? []).map((clause) => clause.field),
+          ),
+        ],
+      })),
     factorialFields: factorial.length,
     derivedFactorialFields: derived,
     combinations: factorialCombinations(factorial, definitions),
@@ -310,29 +330,32 @@ export function mixedStatusGroups(draft) {
  * started contradicting (#251 review). Word boundaries are `[^a-z0-9_]` rather than `\b`, because
  * `\b` does not fire around the underscore in `is_null`.
  *
- * `rules` and `advisories` are excluded because an operator name there is a trigger applying it,
- * not a statement about it. `engine_operators` is excluded because it is the list itself: naming an
- * operator in it is what makes it an operator, not what describes one.
+ * What is skipped is operator APPLICATIONS, and nothing wider. The earlier fix skipped the whole
+ * `rules` and `advisories` arrays on the grounds that an operator name in a rule is a trigger
+ * applying it, which closed the instance and left the class: a rule's own prose, an output note
+ * reading `is_null matches an answer the organizer never gave`, defines the operator as squarely as
+ * a legend does and went on reporting none (#251 review). So a rule is walked like any other part of
+ * the draft except for its `trigger` tree, which is applications and nothing else, and except for
+ * the value of any `op` key, which is one application wherever it sits (`output.paths[].when` is
+ * the draft's other place for them). `engine_operators` is excluded because it is the list itself:
+ * naming an operator in it is what makes it an operator, not what describes one.
  */
 export function operatorSemantics(draft) {
   const strings = [];
-  const walk = (node) => {
+  const walk = (node, insideRule) => {
     if (typeof node === "string") strings.push(node);
-    else if (Array.isArray(node)) node.forEach(walk);
+    else if (Array.isArray(node)) node.forEach((child) => walk(child, insideRule));
     else if (node !== null && typeof node === "object") {
       for (const [key, value] of Object.entries(node)) {
+        if (insideRule && (key === "trigger" || key === "op")) continue;
         strings.push(key);
-        walk(value);
+        walk(value, insideRule);
       }
     }
   };
-  const {
-    rules: _rules,
-    advisories: _advisories,
-    engine_operators: operators,
-    ...metadata
-  } = draft;
-  walk(metadata);
+  const { rules, advisories, engine_operators: operators, ...metadata } = draft;
+  walk(metadata, false);
+  for (const rule of [...rules, ...advisories]) walk(rule, true);
 
   return operators.map((name) => {
     const occurrence = new RegExp(`(^|[^a-z0-9_])${name}([^a-z0-9_]|$)`, "i");
