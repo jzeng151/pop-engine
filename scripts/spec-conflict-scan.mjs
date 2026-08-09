@@ -351,7 +351,7 @@ export const INDEPENDENCE_ASSERTIONS = [
     file: "apps/api/src/rsvps.test.ts",
     block: 'the "DOHMH findings do not move with headcount (#235)" regression test',
     anchor: 'describe("DOHMH findings do not move with headcount (#235)"',
-    sha256: "e00b42f31821a18e775ba69db82a43d8762d783e2da6a8a09e84b3d77f67efb8",
+    sha256: "a5e74c06f2771cf07af6229c7e090ee52c44049e0c195946c47b9e95a81aea59",
   },
 ];
 
@@ -496,8 +496,10 @@ export const joinWrappedLines = (text) => {
  *     is the case that reading missed: the target sits INSIDE the phrase, between the two words
  *     `ATTENDEE_COUNT` joins with a single space. The round-8 cell that stood for this wrapped the
  *     last word of the phrase, which for "guest count" is "count", so it asserted the case that
- *     works. The link's own parentheses elsewhere are still left alone: a parenthetical is a second
- *     clause, and dropping its delimiters would join two clauses that are not adjacent.
+ *     works. The destination is removed by COUNTING its parentheses rather than by stopping at the
+ *     first one, which is the seventeenth round and is stated at `withoutLinkTargets` below.
+ *     Parentheses OUTSIDE a destination are still left alone: a parenthetical is a second clause,
+ *     and dropping its delimiters would join two clauses that are not adjacent.
  *   - QUOTATION MARKS: `"`, `“` and `”` always, and the straight apostrophe only where it flanks a
  *     word. This is the ninth round's item 2 and it is byte-for-byte the eighth round's defect with
  *     `_guests_` written `"guests"`: quoted spans are the most common inline construct in this
@@ -547,10 +549,48 @@ export const joinWrappedLines = (text) => {
  * MEASURED, not predicted: with this in place the scan flags both planted records above, and the
  * flag set on the clean tree is unchanged at ten, the four pinned records and the six benign pairs.
  */
+/**
+ * Every markdown link destination removed, the whole destination and not a prefix of it.
+ *
+ * IT COUNTS PARENTHESES RATHER THAN STOPPING AT THE FIRST `)`, which is the seventeenth PR #247
+ * round. The `\]\([^)\n]*\)` this replaces ended the destination at its first closing parenthesis,
+ * and a balanced pair inside a URL is an ordinary shape rather than a contrived one: the archival
+ * and encyclopedic sources this repository's `docs/VERIFICATION-SOURCES.md` cites write them. So
+ * "DOHMH depends on the [guest](https://example.test/source_(archived)) count" left the trailing
+ * `)` in the prose and normalized to "DOHMH depends on the guest) count", which is neither the
+ * "guest count" phrase `ATTENDEE_COUNT` joins with a single space nor anything else either count
+ * expression matches. The unsupported trigger was then missed by the repository scan and by the
+ * published-output audit alike, on a link a reader sees no defect in.
+ *
+ * A destination that never balances, or that runs past the end of its line, is LEFT ALONE, which is
+ * what the old expression did with it too: a `](` with no closing parenthesis on its line is not a
+ * link, and removing text up to some later line's parenthesis would delete prose the author wrote.
+ */
+const withoutLinkTargets = (text) => {
+  let kept = "";
+  let from = 0;
+  for (;;) {
+    const opened = text.indexOf("](", from);
+    if (opened === -1) return kept + text.slice(from);
+    let depth = 0;
+    let at = opened + 1;
+    for (; at < text.length && text[at] !== "\n"; at += 1) {
+      if (text[at] === "(") depth += 1;
+      else if (text[at] === ")" && (depth -= 1) === 0) break;
+    }
+    if (depth === 0 && text[at] === ")") {
+      kept += `${text.slice(from, opened)}]`;
+      from = at + 1;
+    } else {
+      kept += text.slice(from, opened + 2);
+      from = opened + 2;
+    }
+  }
+};
+
 export const normalizeForMatching = (text) =>
   joinWrappedLines(
-    text
-      .replace(/\]\([^)\n]*\)/g, "]")
+    withoutLinkTargets(text)
       .replace(/[`*_~[\]"“”]/g, "")
       .replace(/(?<![A-Za-z0-9])'|'(?![A-Za-z0-9])/g, ""),
   );
@@ -641,72 +681,6 @@ export const pairsAgencyWithCount = (raw, { bounded = false } = {}) => {
 };
 
 /**
- * Every threshold a text states: the numerals its counted-people phrases carry, read the same way
- * `pairsAgencyWithCount` reads them, so a claim and its numbers come out of one expression.
- *
- * The numerals are taken from the MATCHED PHRASE and not from the whole text. A note carries fees,
- * dates and section numbers, and none of those is a stated attendee threshold: `$75` in one
- * sentence would otherwise excuse a claim of 75 guests in the next.
- *
- * BOTH DECLARED COUNT VOCABULARIES ARE READ, which is the sixteenth PR #247 round. This searched
- * `COUNTED_PEOPLE` alone, on the reading that an `ATTENDEE_COUNT` phrase ("the guest count") states
- * the field and no number. That is true of the phrase and false of the sentence it sits in: those
- * phrasings take their numeral OUTSIDE the phrase, which is the one place the other vocabulary puts
- * it inside. So "HEALTH-A's guest count is 500" is detected as a claim by `ATTENDEE_COUNT`, and
- * this returned an EMPTY SET for it, and `countsSupportedBy`'s `every` over an empty set is true.
- * On a rule published at 75 the unsupported 500 was therefore exempt in repository prose and in
- * published output alike, which is the same hole the numeral vocabulary closed one round earlier.
- * `attendance`, `crowd size`, `party size` and the `number of ...` phrasings all take a numeral the
- * same way, so all of them are read.
- *
- * The `ATTENDEE_COUNT` half reaches to the numeral IN EITHER DIRECTION and no further than the
- * SENTENCE, the same bound and the same class `COUNTED_PEOPLE`'s noun-first alternation uses: "the
- * guest count is 500" and "500 is the expected attendance" are one claim each, and a numeral in the
- * next sentence is a different statement. Its cost is the mirror of that alternation's and is
- * stated rather than discovered: an unrelated numeral sharing a sentence with a count phrase is
- * read as a stated threshold, so "apply 21 days ahead if the guest count is high" claims 21. What
- * that costs is an offender reported against a rule that publishes no 21, not a claim missed.
- *
- * THE REACH IS LAZY, so a sentence stating two numerals beside one count phrase contributes the
- * NEARER one only. That is `COUNTED_PEOPLE`'s existing behaviour and not a new limit, and it is
- * declared here because it is now reachable from two vocabularies rather than one.
- *
- * The numeral is read out of the phrase with `NUMERAL_BODY`, the same token the phrase was matched
- * with, so a formatted count is parsed as the whole number an organizer reads: "1,075 guests" is
- * 1075 and not 75. It carries the two LOOKBEHINDS `COUNT_NUMERAL` carries and not its lookahead:
- * the hyphenated alternation matches "75-person", where the numeral is followed by a hyphen, so a
- * trailing guard would drop the very count that alternation exists to read. The leading guards are
- * what keep a rule id out of a phrase that spans one: an `ATTENDEE_COUNT` phrase reaches across
- * "DOHMH-VENDOR-PERMIT-001" to its numeral, and `-001` is not a threshold of 1.
- */
-const CLAIMED_NUMERAL = new RegExp(`(?<![\\w-])(?<!\\d,)${NUMERAL_BODY}`, "g");
-/** An attendee-count phrase and the numeral it states, in either order, within one sentence. */
-const ATTENDEE_COUNT_NUMERAL =
-  `(?:${ATTENDEE_COUNT_SOURCE})[^.!?\\n]*?${COUNT_NUMERAL}` +
-  `|${COUNT_NUMERAL}[^.!?\\n]*?(?:${ATTENDEE_COUNT_SOURCE})`;
-export const CLAIMED_COUNT_SOURCE = `${COUNTED_PEOPLE_SOURCE}|${ATTENDEE_COUNT_NUMERAL}`;
-export const claimedCounts = (raw) => {
-  const found = new Set();
-  const phrases = normalizeForMatching(raw).match(new RegExp(CLAIMED_COUNT_SOURCE, "gi")) ?? [];
-  for (const phrase of phrases) {
-    for (const numeral of phrase.match(CLAIMED_NUMERAL) ?? []) {
-      found.add(Number(numeral.replaceAll(",", "")));
-    }
-  }
-  return found;
-};
-
-/**
- * Whether every threshold a text states is one the rule it belongs to really publishes.
- *
- * `published` is that rule's own trigger values for the attendee-count field. A text stating no
- * number is supported by a rule that reads the field; a text stating a number the rule does not
- * publish is not, whatever field its trigger reads.
- */
-export const countsSupportedBy = (raw, published) =>
-  [...claimedCounts(raw)].every((value) => published.has(value));
-
-/**
  * The sentences of a text already read as one line of prose. A sentence ends at one of the three
  * ordinary terminators followed by whitespace, which is the same boundary `COUNTED_PEOPLE`'s
  * noun-first alternation refuses to cross, so no phrase either count expression matches can
@@ -722,6 +696,84 @@ export const countsSupportedBy = (raw, published) =>
  * not two sentences.
  */
 const sentencesOf = (text) => text.split(/(?<=[.!?])\s+/);
+
+/** Whether a text states an attendee count at all, in either count vocabulary. */
+const statesACount = (text) => ATTENDEE_COUNT.test(text) || COUNTED_PEOPLE.test(text);
+
+/**
+ * Every threshold a text states: EVERY count numeral of every SENTENCE that states a count, read
+ * with the same guarded numeral both count expressions are built out of.
+ *
+ * THE UNIT IS THE SENTENCE AND THE QUANTIFIER IS `every`, which is the seventeenth PR #247 round.
+ * This used to collect the numerals of each MATCHED PHRASE, and both count expressions reach to
+ * their numeral LAZILY, so a phrase stopped at the first numeral it found and the rest of the
+ * sentence was read by nobody. On a rule legitimately published at 75, "HEALTH-A applies when the
+ * guest count is 75 rather than 500" produced the single-element set `{75}`, `countsSupportedBy`'s
+ * `every` was satisfied by it, and the invented 500 was suppressed in repository prose and in
+ * published output alike. One valid value concealing an invented one is the shape of the hole, and
+ * widening the reach from lazy to greedy would only have swapped which of the two was concealed:
+ * the set has to be every numeral or a claim can always hide behind the one that checks out.
+ *
+ * That makes the sentence the unit here, which is the unit `countsAttributed` already holds a claim
+ * to, so a claim and the numbers it is audited on are now the same span of text. It replaces the
+ * two phrase-level reaches (`COUNTED_PEOPLE`'s own, and the either-direction reach the sixteenth
+ * round gave the `ATTENDEE_COUNT` vocabulary) with one rule that needs neither.
+ *
+ * THE COST IS THE MIRROR OF THE REACH IT REPLACES, widened from the phrase to the sentence and
+ * stated rather than left to be discovered: an unrelated numeral sharing a sentence with a count
+ * phrase is read as a stated threshold. "Apply 21 days ahead when the guest count is high" claimed
+ * 21 under the old reach and still does; "the $75 fee applies once the guest count reaches 500" now
+ * claims 75 as well. What that costs is an offender reported against a rule that publishes no 75,
+ * which is a failure a reader can check and correct in one edit, not a claim missed. The numerals
+ * of a sentence that states NO count are still read by nobody, so a fee or a date in a neighbouring
+ * sentence excuses nothing.
+ *
+ * THE NUMERAL IS THE GUARDED TOKEN `COUNT_NUMERAL` IS, widened by the one shape the hyphenated
+ * alternation of `COUNTED_PEOPLE` admits: a numeral whose hyphen is followed by a counted-person
+ * noun ("75-person"). Reading the numerals of a whole sentence rather than of a matched phrase is
+ * what makes the TRAILING guard affordable, and it is worth having: `-001` and `2026-08-07` are a
+ * rule id and a date in any sentence, and the phrase-level reader had to drop that guard because
+ * "75-person" would have lost it. `NUMERAL_BODY` is the body, so a formatted count is still parsed
+ * as the whole number an organizer reads and "1,075 guests" is 1075 rather than 75.
+ *
+ * TWO GUARDS ARE HERE THAT `COUNT_NUMERAL` DOES NOT CARRY, and the sentence is what forces both.
+ * A phrase-level reader only ever saw the digits its own phrase matched; a sentence carries the
+ * tokens around them too.
+ *
+ *   - NOT THE PREFIX OF A GROUPED NUMBER (`(?!,\d{3})`). `NUMERAL_BODY` prefers its grouped
+ *     alternative, but where the token after the group defeats a lookahead the plain alternative
+ *     backtracks into it: "1,075-person" would otherwise be read as 1, on the "1" that ends in the
+ *     separator. It is the mirror of the `(?<!\d,)` guard the fifteenth round added for the suffix.
+ *   - NOT EITHER HALF OF A DECIMAL (`(?<!\d\.)` and `(?!\.\d)`). A decimal point is not a sentence
+ *     terminator here, precisely so a claim written around one stays one claim, so "applies above
+ *     74.5 at 75 guests" is one sentence and its digits are in reach. 74 and 5 are not two stated
+ *     thresholds; 75 is the one, and a fee written "$1.2M" is not a threshold of 1 or of 2 either.
+ */
+const CLAIMED_NUMERAL = new RegExp(
+  `(?<![\\w-])(?<!\\d,)(?<!\\d\\.)${NUMERAL_BODY}(?!,\\d{3})(?!\\.\\d)` +
+    `(?:(?![\\w-])|(?=-${COUNTED_PERSON_NOUN}\\b))`,
+  "gi",
+);
+export const claimedCounts = (raw) => {
+  const found = new Set();
+  for (const sentence of sentencesOf(normalizeForMatching(raw))) {
+    if (!statesACount(sentence)) continue;
+    for (const numeral of sentence.match(CLAIMED_NUMERAL) ?? []) {
+      found.add(Number(numeral.replaceAll(",", "")));
+    }
+  }
+  return found;
+};
+
+/**
+ * Whether every threshold a text states is one the rule it belongs to really publishes.
+ *
+ * `published` is that rule's own trigger values for the attendee-count field. A text stating no
+ * number is supported by a rule that reads the field; a text stating a number the rule does not
+ * publish is not, whatever field its trigger reads.
+ */
+export const countsSupportedBy = (raw, published) =>
+  [...claimedCounts(raw)].every((value) => published.has(value));
 
 /**
  * Whether a text NAMES a rule, as a complete token rather than as a substring.
@@ -751,9 +803,6 @@ const namesRule = (text, id) => {
   }
   return false;
 };
-
-/** Whether a text states an attendee count at all, in either count vocabulary. */
-const statesACount = (text) => ATTENDEE_COUNT.test(text) || COUNTED_PEOPLE.test(text);
 
 /**
  * Whether every count a text states is attributable to a rule whose published trigger really reads

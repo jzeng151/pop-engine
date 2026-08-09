@@ -2808,10 +2808,14 @@ describe("round 15: a formatted count is one numeral", () => {
    * with no space after the comma has a last member sitting behind a `digit,` seam, so it reads as
    * the tail of a grouped number and is not a count. The spaced form, which is what this tree
    * writes, is unaffected.
+   *
+   * The spaced form's SET grew in round 17. It was the nearest numeral alone, which is what the
+   * lazy phrase reach returned; a sentence listing three numerals beside a count noun states three
+   * thresholds, and all three are now audited.
    */
   it("declares the unspaced numeral list as a miss and the spaced one as a count", () => {
     expect(COUNTED_PEOPLE.test("DOHMH publishes 20,50,75 guests.")).toBe(false);
-    expect(claimedCounts("DOHMH publishes 20, 50, 75 guests.")).toEqual(new Set([75]));
+    expect(claimedCounts("DOHMH publishes 20, 50, 75 guests.")).toEqual(new Set([20, 50, 75]));
   });
 });
 
@@ -2969,6 +2973,88 @@ describe("round 16: a count claim is audited in the vocabulary that detected it"
   it("reports no new offender on the published artifact", () => {
     expect(countClaimsInPublishedOutput(JSON.parse(read("rules/nyc-rules.v2.11.json")))).toEqual(
       [],
+    );
+  });
+});
+
+describe("round 17: a count claim states every numeral of its sentence", () => {
+  const attributed = new Map([["HEALTH-ASSEMBLY-001", new Set([75])]]);
+
+  /**
+   * THREAD 693. Both count expressions reach to their numeral lazily, and the phrase-level reader
+   * collected the numerals of the MATCHED PHRASE, so the phrase stopped at the first numeral and
+   * the rest of the sentence was read by nobody. On a rule published at 75 the set came out
+   * `{75}`, `countsSupportedBy`'s `every` was satisfied by it, and the invented 500 beside it was
+   * suppressed. Greedy would only have swapped which of the two was concealed.
+   */
+  it("extracts a second numeral that a valid one used to conceal", () => {
+    const claim = "HEALTH-ASSEMBLY-001 applies when the guest count is 75 rather than 500.";
+    expect(claimedCounts(claim)).toEqual(new Set([75, 500]));
+    expect(countsSupportedBy(claim, new Set([75]))).toBe(false);
+    expect(countsAttributed(claim, attributed)).toBe(false);
+  });
+
+  /** The same concealment in the other vocabulary, where the numeral sits inside the phrase. */
+  it("extracts it in the counted-people vocabulary too", () => {
+    const claim = "HEALTH-ASSEMBLY-001 applies at 75 or more guests, not at 500.";
+    expect(claimedCounts(claim)).toEqual(new Set([75, 500]));
+    expect(countsAttributed(claim, attributed)).toBe(false);
+  });
+
+  /** A sentence that states no count contributes no numeral, so a neighbouring fee excuses nothing
+   * and is not itself a claim. */
+  it("reads the numerals of count sentences only", () => {
+    expect(claimedCounts("HEALTH-ASSEMBLY-001 reads the guest count. Fees start at 500.")).toEqual(
+      new Set(),
+    );
+  });
+
+  /** The shapes the two extra numeral guards exist for, none of which is a stated threshold. */
+  it("refuses a date, a rule id, a decimal and the prefix of a grouped number", () => {
+    expect(claimedCounts("Published 2026-08-07: DOHMH requires a permit at 75 guests.")).toEqual(
+      new Set([75]),
+    );
+    expect(claimedCounts("DOHMH-VENDOR-PERMIT-001 applies at 75 guests.")).toEqual(new Set([75]));
+    expect(claimedCounts("HEALTH-ASSEMBLY-001 applies above 74.5 at 75 guests.")).toEqual(
+      new Set([75]),
+    );
+    expect(claimedCounts("DOHMH covers a 1,075-person event.")).toEqual(new Set([1075]));
+  });
+});
+
+describe("round 17: a link destination is removed whole", () => {
+  /**
+   * THREAD 553. The destination was removed by `\]\([^)\n]*\)`, which ends at the FIRST closing
+   * parenthesis, so a balanced pair inside a URL left the trailing `)` sitting in the prose. The
+   * count phrase was then broken in the middle and the claim was invisible to the repository scan
+   * and to the published-output audit alike.
+   */
+  it("keeps the count phrase when the destination carries balanced parentheses", () => {
+    const claim = "DOHMH depends on the [guest](https://example.test/source_(archived)) count";
+    expect(normalizeForMatching(claim)).toBe("DOHMH depends on the guest count");
+    expect(pairsAgencyWithCount(claim)).toBe(true);
+  });
+
+  /** Nesting is counted rather than assumed to be one level deep. */
+  it("removes a destination nested more than one level", () => {
+    const claim = "DOHMH depends on the [guest](https://example.test/a_(b_(c))_d) count";
+    expect(pairsAgencyWithCount(claim)).toBe(true);
+  });
+
+  /** The plain destination, which is what this tree writes, is unchanged. */
+  it("still removes an ordinary destination", () => {
+    expect(normalizeForMatching("the [guest](https://example.test/x) count")).toBe(
+      "the guest count",
+    );
+  });
+
+  /**
+   * A `](` that never balances on its line is NOT a link, and the text after it is prose the
+   * author wrote. It is left alone, which is what the expression this replaces did with it.
+   */
+  it("leaves an unbalanced destination alone", () => {
+    expect(normalizeForMatching("DOHMH reads the [guest](https://example.test/x count")).toBe(
+      "DOHMH reads the guest(https://example.test/x count",
     );
   });
 });

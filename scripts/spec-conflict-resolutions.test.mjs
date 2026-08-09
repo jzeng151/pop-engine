@@ -1,3 +1,4 @@
+import { execFileSync } from "node:child_process";
 import { readdirSync, readFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -694,14 +695,32 @@ describe("T-8 F-601/F-109 dependency-graph row, resolved 2026-08-05", () => {
  * quotes SDOH's own attendance threshold, which is a real published fact about SDOH.
  */
 describe("no DOHMH rule is attributed to headcount, removed 2026-08-05 (#235)", () => {
-  const SCANNED_ROOTS = ["docs", "specs", "apps", "packages", "rules", "scripts"];
-  const SKIPPED_DIRS = new Set(["node_modules", "dist", "coverage", ".next"]);
+  /**
+   * The directories the walk below does NOT descend into. Everything else under the repository
+   * root is scanned, whatever its name.
+   *
+   * THE ROOTS ARE NOT ENUMERATED ANY MORE, which is the seventeenth PR #247 round. This walked six
+   * named lanes (`docs`, `specs`, `apps`, `packages`, `rules`, `scripts`), so a tracked document or
+   * source file added under a SEVENTH top-level directory sat outside the guard and nothing failed
+   * to say so. That is not hypothetical in shape: `scripts/` was itself the sixth entry, added on
+   * 2026-08-05 to close exactly this hole one directory at a time, and the comment below already
+   * says of the repository root's own files that "an enumerated list leaves the next root document
+   * added to this repository outside the guard". The same sentence was true of the lanes and the
+   * list was enumerated anyway. A future `workers/` or `tools/` needs nobody to remember it now.
+   *
+   * Every name here is generated output or repository internals: `.git`, and the four build and
+   * dependency directories `.gitignore` already excludes from version control. THE LIST IS NOT
+   * TRUSTED, which is what keeps it from becoming the enumeration it replaced: the "scans every
+   * tracked file" assertion below reads the tracked set out of git and fails if anything here, or
+   * anything else this walk skips, ever holds a file the repository actually carries.
+   */
+  const SKIPPED_DIRS = new Set([".git", "node_modules", "dist", "coverage", ".next"]);
 
   /**
    * The guard's own three source files. They are skipped EXPLICITLY, and they are the only skipped
    * files.
    *
-   * `scripts/` was outside `SCANNED_ROOTS` until 2026-08-05, and so were the repository-root
+   * `scripts/` was outside the walk until 2026-08-05, and so were the repository-root
    * markdown files, so `AGENTS.md`, the document carrying the non-negotiable this guard enforces,
    * could take the banned clause with the whole suite green. Adding them puts this file inside its
    * own scan, where it necessarily fails: it QUOTES the clause in the comment above, and it quotes
@@ -732,13 +751,15 @@ describe("no DOHMH rule is attributed to headcount, removed 2026-08-05 (#235)", 
   );
 
   /**
-   * Every scanned file: the roots walked recursively, plus the repository root's OWN files, which
-   * are read non-recursively so the walk never descends into `.git` or `node_modules`. The root is
-   * read as a directory rather than as a list of filenames on purpose. An enumerated list leaves
-   * the next root document added to this repository outside the guard, which is the exact hole
-   * being closed.
+   * Every scanned file: the repository root walked recursively, minus `SKIPPED_DIRS` and minus the
+   * three guard sources. The tree is read as a directory rather than as a list of names on purpose.
+   * An enumerated list leaves the next document, source file or whole lane added to this repository
+   * outside the guard, which is the exact hole being closed.
+   *
+   * The walk reads the working tree rather than git's index, so a file is guarded from the moment
+   * it is written and not from the moment it is staged.
    */
-  function filesUnder(roots, extensions) {
+  function filesUnder(extensions) {
     const found = [];
     const matches = (name) => extensions.some((extension) => name.endsWith(extension));
     const walk = (dir) => {
@@ -749,12 +770,45 @@ describe("no DOHMH rule is attributed to headcount, removed 2026-08-05 (#235)", 
         else if (matches(entry.name)) found.push(path);
       }
     };
-    for (const root of roots) walk(resolve(repoRoot, root));
-    for (const entry of readdirSync(repoRoot, { withFileTypes: true })) {
-      if (!entry.isDirectory() && matches(entry.name)) found.push(resolve(repoRoot, entry.name));
-    }
+    walk(repoRoot);
     return found.filter((path) => !GUARD_SOURCES.has(path));
   }
+
+  /** Every extension the prose walk reads, which is every extension this guard reads as prose. */
+  const PROSE_EXTENSIONS = [".md", ".ts", ".tsx", ".mjs", ".js"];
+
+  /**
+   * WHAT DRIVES `SKIPPED_DIRS`, so the walk's coverage is checked rather than declared. `filesUnder`
+   * reads the working tree, which cannot tell a generated directory from a lane; this reads the set
+   * the repository actually carries out of git and asserts the walk reaches all of it.
+   *
+   * It is the assertion the six enumerated roots never had. Adding a top-level lane used to be
+   * silent in both directions: the new lane went unscanned, and nothing said so. Now a tracked file
+   * this walk misses fails HERE, naming the file, whether it was missed because a skipped name
+   * turned out to hold real work or because some future filter excluded it. The three guard sources
+   * are the only allowed absences, and they are the exemption the comment above already states.
+   *
+   * `git ls-files` is the tracked set and nothing else: the untracked build output the walk skips
+   * is absent from it by construction, so the two lists agree without either one enumerating this
+   * repository's directories.
+   */
+  it("scans every tracked file it reads as prose, whatever directory it sits in", () => {
+    const tracked = execFileSync("git", ["ls-files", "-z"], { cwd: repoRoot, encoding: "utf8" })
+      .split("\0")
+      .filter((relative) => PROSE_EXTENSIONS.some((extension) => relative.endsWith(extension)));
+    const scanned = new Set(
+      filesUnder(PROSE_EXTENSIONS).map((path) => path.replace(`${repoRoot}/`, "")),
+    );
+    const exempt = new Set([...GUARD_SOURCES].map((path) => path.replace(`${repoRoot}/`, "")));
+
+    expect(tracked.length, "git lists the tracked prose files").toBeGreaterThan(0);
+    expect(
+      tracked.filter((relative) => !scanned.has(relative) && !exempt.has(relative)),
+      "every tracked file this guard reads as prose has to be inside its walk. A file listed" +
+        " here is outside the scan: it is under a SKIPPED_DIRS name that now holds real work, or" +
+        " behind a filter that excludes it. Widen the walk rather than the exemptions.",
+    ).toEqual([]);
+  });
 
   /** Every `field` a trigger names, at any nesting depth of `all` / `any` / `not`. */
   function triggerFields(node, into = new Set()) {
@@ -808,7 +862,7 @@ describe("no DOHMH rule is attributed to headcount, removed 2026-08-05 (#235)", 
    */
   const PUBLISHED_RULESET_PATH = /^rules\/[^/]+\.json$/;
   function publishedRulesets() {
-    const rulesets = filesUnder(SCANNED_ROOTS, [".json"])
+    const rulesets = filesUnder([".json"])
       .map((path) => [path.replace(`${repoRoot}/`, ""), path])
       .filter(([relative]) => PUBLISHED_RULESET_PATH.test(relative))
       .map(([relative, path]) => [relative, JSON.parse(readFileSync(path, "utf8"))])
@@ -952,7 +1006,7 @@ describe("no DOHMH rule is attributed to headcount, removed 2026-08-05 (#235)", 
     const publishedIds = publishedRuleIds();
 
     const flagged = [];
-    for (const path of filesUnder(SCANNED_ROOTS, [".md", ".ts", ".tsx", ".mjs", ".js"])) {
+    for (const path of filesUnder(PROSE_EXTENSIONS)) {
       const relative = path.replace(`${repoRoot}/`, "");
       // Two independent questions, answered by two lists since the fifth PR #247 round, and
       // answered in `scanOptionsFor` rather than here since the sixth: both of those answers were
@@ -1090,7 +1144,7 @@ describe("no DOHMH rule is attributed to headcount, removed 2026-08-05 (#235)", 
   // under `scripts/*.mjs` had no remedy: the marker was inert there and this assertion told its
   // author so, while the offender scan reported the fixture as a live claim.
   it("the scan's opt-out marker appears only where it is honoured", () => {
-    const marked = filesUnder(SCANNED_ROOTS, [".md", ".ts", ".tsx", ".mjs", ".js"])
+    const marked = filesUnder(PROSE_EXTENSIONS)
       .filter((path) => readFileSync(path, "utf8").includes(OPT_OUT_MARKER))
       .map((path) => path.replace(`${repoRoot}/`, ""))
       .filter((relative) => !OPT_OUT_EXTENSIONS.some((extension) => relative.endsWith(extension)));
@@ -1136,7 +1190,7 @@ describe("no DOHMH rule is attributed to headcount, removed 2026-08-05 (#235)", 
   // report their block as a live claim with no hint that the marker did nothing.
   it("every opt-out marker outside the guard's own sources sits in a pinned block", () => {
     const unpinned = [];
-    for (const path of filesUnder(SCANNED_ROOTS, [".md", ".ts", ".tsx", ".mjs", ".js"])) {
+    for (const path of filesUnder(PROSE_EXTENSIONS)) {
       const relative = path.replace(`${repoRoot}/`, "");
       const digests = scanOptionsFor(relative).optOutDigests;
       for (const block of blocksOf(readFileSync(path, "utf8"))) {

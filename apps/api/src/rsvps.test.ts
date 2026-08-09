@@ -10,6 +10,7 @@ import {
   SCENARIO_INTAKE_FIXTURES,
   fixtureSubmission,
 } from "@pop-engine/engine/fixtures";
+import type { ScenarioIntakeFixture } from "@pop-engine/engine/fixtures";
 import { cityHealthRule } from "../../../scripts/spec-conflict-scan.mjs";
 import type { PublishedRuleShape } from "../../../scripts/spec-conflict-scan.mjs";
 import { createApp } from "./app";
@@ -382,16 +383,14 @@ describe("DOHMH findings do not move with headcount (#235)", () => {
   };
   const ruleset = parseEngineRuleset(published);
   const calendar: HolidayCalendar = { id: ruleset.calendarId, holidays: [] };
-  const scenario = SCENARIO_INTAKE_FIXTURES.find((candidate) => candidate.scenario === "A");
-  if (scenario === undefined) throw new Error("no fixture A");
   const declared = new Set(ruleset.intakeFields.map((field) => field.field));
   const cityHealthIds = new Set(
     [...(published.rules ?? []), ...(published.advisories ?? [])]
       .filter((rule) => cityHealthRule(rule))
       .map((rule) => rule.id),
   );
-  const dohmhFindings = (headcount: number) => {
-    const answers = { ...fixtureSubmission(scenario), headcount };
+  const cityHealthFindings = (fixture: ScenarioIntakeFixture, headcount: number) => {
+    const answers = { ...fixtureSubmission(fixture), headcount };
     const intake = Object.fromEntries(
       Object.entries(answers).filter(([field]) => declared.has(field)),
     ) as EventIntake;
@@ -399,11 +398,40 @@ describe("DOHMH findings do not move with headcount (#235)", () => {
       finding.ruleIds.some((ruleId) => cityHealthIds.has(ruleId)),
     );
   };
+  // EVERY SCENARIO AND NOT SCENARIO A ALONE, which is the seventeenth PR #247 round. Comparing one
+  // intake compares only the branches that intake reaches, and A is `event_open_to_public: "yes"`,
+  // so `DOHMH-EXEMPTION-001`, whose published trigger reads `no` or `unknown`, contributed no
+  // finding at any of the three headcounts. All three assertions were green on a rule the
+  // comparison never evaluated, and a future count-sensitive rule that deduplicates with that
+  // advisory for private events only would have moved city health output with all three still
+  // green. That is the same defect this file's own comment names one level down: a rule need not
+  // read the count itself for deduplication to move its finding.
+  //
+  // The scenarios are the approved fixtures rather than intakes written here, so the comparison
+  // rests on the answer key instead of on hand-built inputs, and the assertion under it is what
+  // makes the coverage a fact rather than a hope.
   it("returns the same findings at 20, at the 75 assembly threshold, and at 500", () => {
-    const atTwenty = dohmhFindings(20);
-    expect(atTwenty.length, "scenario A carries DOHMH findings to compare").toBeGreaterThan(0);
-    expect(dohmhFindings(75)).toEqual(atTwenty);
-    expect(dohmhFindings(500)).toEqual(atTwenty);
+    for (const fixture of SCENARIO_INTAKE_FIXTURES) {
+      const atTwenty = cityHealthFindings(fixture, 20);
+      expect(cityHealthFindings(fixture, 75), `scenario ${fixture.scenario}`).toEqual(atTwenty);
+      expect(cityHealthFindings(fixture, 500), `scenario ${fixture.scenario}`).toEqual(atTwenty);
+    }
+  });
+  // What makes the comparison above worth running: a published city health rule no scenario reaches
+  // is a rule this regression cannot say anything about, and it would go on saying nothing while
+  // looking green. Asserted by id rather than by count, so a rule added to the artifact fails here
+  // until a fixture reaches it.
+  it("reaches every published city health rule across the compared scenarios", () => {
+    const reached = new Set(
+      SCENARIO_INTAKE_FIXTURES.flatMap((fixture) =>
+        cityHealthFindings(fixture, 20).flatMap((finding) =>
+          finding.ruleIds.filter((ruleId) => cityHealthIds.has(ruleId)),
+        ),
+      ),
+    );
+    expect([...reached].sort(), "every published city health rule is compared").toEqual(
+      [...cityHealthIds].sort(),
+    );
   });
   // What drives the classification above, since the artifact cannot: all three of this ruleset's
   // city health rules carry the prefix today, so the two readings agree on it and no assertion
