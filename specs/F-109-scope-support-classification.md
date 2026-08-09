@@ -1,0 +1,109 @@
+# F-109 · Scope-Support Classification
+
+**Status:** PROPOSED (2026-07-26) — ready for review; not implementable until approved and listed in `docs/BASELINE.md`.
+
+**Phase:** 4 · **Issue:** [#54](https://github.com/jzeng151/pop-engine/issues/54) · **Owner:** TBD · **Reviewer:** product owner · **Approval date:** —
+
+## Purpose and User Outcome
+
+PopEngine can tell users whether their described scope is fully supported, partially supported, unsupported, ambiguous, or awaiting information before open-ended intake reaches the rules engine.
+
+## Scope
+
+**In scope**
+
+- Define and carry the five Roadmap scope support states through intake, proposals, evaluation gating, plan/API, and UI.
+- Attach machine-readable reasons and user actions without inventing regulatory conclusions.
+- Carry scope support separately from result completeness, verdict, finding disposition, verification status, and evaluation error.
+
+**Non-goals**
+
+- Inferring missing regulatory rules, treating partially supported scope as complete, replacing tri-state conditions, or grading AI confidence.
+- Adding open-ended intake; F-601 consumes this contract.
+
+## Dependencies and Baseline
+
+- Approved shared-enum/type-authority handoff and scope-support decision table.
+- Operand binding and replay ordering for client-supplied identities: `specs/F-411-staff-roles-credentialed-entry.md` F411-AC-08 states once, for this whole branch, that a client-supplied identity is committed with the operands that determine its recorded result, that a reuse carrying different operands is a conflict rather than a replay, and that a committed identity is resolved before any version, generation, state, or limit check whose answer the committed operation itself changed, while the acting actor's current authority is re-read at the replay and must still admit the operation before any stored outcome is returned. The classification identity in `F109-AC-07` relies on both. F-411 is PROPOSED, so those rules are not an approved input today and this spec is not implementable against them until F-411 is approved or they are promoted to an approved shared invariant; F411-AC-08 records both paths.
+- F-108 where location or authority metadata contributes; F-601 is blocked on F-109. `docs/DESIGN.md:90` states that it is a consequence note and not a build-order constraint (product owner, 2026-08-05, ADR AD-17, closing T-8), so it asserts no order and does not disturb that dependency.
+- The F-701/F-702/F-703 gate. F-702 supplies the workspace membership boundary the Event whose confirmed structured scope is classified resolves against and F-703 supplies the permission matrix `F109-AC-06` checks; F-701 supplies the authenticated actor both read from. F-701 is APPROVED (2026-07-28, `docs/BASELINE.md`); F-702 and F-703 remain PROPOSED, so the gate is not an approved input today and this spec is not implementable against it until those two are approved and listed in `docs/BASELINE.md`.
+- Baseline at draft time: PRD, Roadmap, Design, and Phase 0–1.5 Architecture approved 2026-07-22; `ARCHITECTURE-FUTURE.md` approved as a planning target 2026-07-25; NYC ruleset `nyc.v2.7`, rules schema `popengine-rules/v2`, and scenario fixtures v5 where regulatory output is consumed.
+- The approval PR must re-pin any baseline version that changes before approval. A proposed or superseded input blocks implementation.
+
+## Inputs, Outputs, State, Validation, and Errors
+
+- Inputs are confirmed structured scope plus registry/ruleset jurisdiction metadata; output is exactly one scope support state with reasons.
+- State may change only when confirmed inputs or versioned scope-support artifacts change; history pins the prior result.
+- Ambiguous and awaiting-information remain non-terminal; unsupported and partial never produce a complete-plan claim.
+- Missing or unresolved material data stays visibly unset, unknown, pending, or failed as appropriate; it never becomes a successful or complete result.
+- Invalid input produces a field or action-specific error without partial mutation. Retriable external failures preserve the user's confirmed state and expose a safe retry.
+
+## UI and Accessibility
+
+- Scope support state, reason, missing information, and safe next action appear before evaluation and beside any partial output; wording is not color-only.
+- The complete workflow is keyboard operable, uses programmatic labels and visible focus, does not encode status by color alone, and announces asynchronous success or failure.
+- Empty, loading, permission-denied, validation, provider-failure, and unavailable states have explicit copy and a safe next action.
+
+## System Impact
+
+| Concern              | Proposed impact                                                                                                                                                                       |
+| -------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| API                  | Add the five scope-support states/reasons to approved OpenAPI/JSON Schema and generated shared types atomically.                                                                      |
+| Schema               | Shared enum/schema change requires the product owner's approval under `docs/DOCUMENTATION-GOVERNANCE.md` §6; persistence stores state, reasons, input revision, and artifact version. |
+| Jobs                 | None.                                                                                                                                                                                 |
+| Providers            | None; provider confidence from F-108 is an input, not scope-support authority.                                                                                                        |
+| Privacy and security | No sensitive intake values in reason telemetry; rate limits apply to classification/evaluation.                                                                                       |
+
+Exact HTTP, JSON Schema, migration, job, and provider shapes belong in their reviewed machine contracts; this proposal does not authorize parallel local types or edits to merged migrations.
+
+## Acceptance Criteria
+
+1. **F109-AC-01:** The only scope support states are fully supported, partially supported, unsupported, ambiguous, and awaiting information in every contract and UI, as `docs/PRD.md` and `docs/ROADMAP.md` state.
+2. **F109-AC-02:** The approved decision table maps the same confirmed input/artifact versions to the same state/reasons deterministically.
+3. **F109-AC-03:** Partial, unsupported, ambiguous, or awaiting-information output cannot be labeled a complete permit plan.
+4. **F109-AC-04:** Scope support is carried separately from `ARCHITECTURE-FUTURE.md` §7.1 result completeness, feasibility verdict, rule verification status, finding disposition, and evaluation failure; this criterion does not decide whether the two pre/post-evaluation axes represent one fact observed at different points.
+5. **F109-AC-05:** Unknown or failed classification cannot fall back to fully supported.
+6. **F109-AC-06:** Every user-facing operation this feature defines names the Event whose confirmed structured scope it acts on and the workspace that owns it, and is admitted only by the acting actor's current F-702 membership of that workspace together with the F-703 permission approved for the action, both re-read server-side from stored membership and role at the moment of the operation and, for a write, inside the same transaction that commits it. That covers every user-triggered classification or re-classification of a confirmed structured scope, and every user-facing read of the resulting state and reasons through intake, proposals, evaluation gating, plan/API, and UI under F109-AC-01 through F109-AC-05. A classification the system invokes internally as part of an evaluation is not a user operation and is outside this criterion; it carries the authority of the operation that invoked it, which that operation's own authorization criterion gates, so no internal invocation widens what any actor can reach. A request failing the check is refused before any durable write and before any scope support state, reason, or missing-information item is disclosed, and its response does not distinguish an Event that does not exist from one the actor may not see. The check is at the operation and not at session start or workspace switch, so authority removed while a request is in flight causes that request to fail rather than commit.
+
+   Without this criterion F109-AC-01 through F109-AC-05 all pass for a caller who names another workspace's Event. They fix the closed state set, the deterministic decision table, the complete-plan labeling bar, the separation of axes, and the failure fallback, and not one asks who the actor is; the only scoping language in this spec is the rate-limit line in the System Impact privacy row, which is not an acceptance criterion an implementation is built to. A scope support state and its machine-readable reasons disclose what another organizer's confirmed structured scope contains and where it falls short, and a user-triggered re-classification against changed artifacts writes a new pinned result into that Event's history.
+
+   One input this criterion needs is not established by any approved artifact today and is not invented here. F-703 is PROPOSED and names no role set, so the permission above cannot be named. Until F-703 is approved this criterion is testable only as "every user-triggered classification or re-classification and every user-facing read of scope support state and reasons is refused unless the acting actor holds an active membership of the workspace that owns the named Event, read server-side at that operation, and a refusal discloses nothing about whether that Event exists", not against a named role or permission identifier. Naming the classification and scope-support read permissions with F-703 is an approval blocker below.
+
+7. **F109-AC-07:** A user-triggered classification or re-classification names the exact confirmed input and artifact versions it read, the Event revision the confirmed structured scope belongs to and the version of every scope-support artifact the approved decision table consumed, and the transaction that persists the result compare-and-swaps every one of them; any mismatch rejects the whole classification, persists nothing, and requires the classification to be recomposed against the current inputs. The same request also binds a stable client-supplied request identity, committed with the persisted result under a uniqueness constraint scoped to the Event, and that identity is resolved in the order `F411-AC-08` states once for every client-supplied identity on this branch, before the version comparison above, returning the result that request originally recorded; it binds its operands under the same rule, so a reuse naming different input or artifact versions is refused as a conflict rather than answered with the stored result. The acting actor's current authority is not one of the checks that identity is resolved past: the authority that admits a first attempt, membership and permission where an organizer acts and the equivalent admission where the caller is a public or door client, is re-read server-side at the replay, and the stored outcome is returned only if it still admits the request, so a replay presented after that authority is gone is refused and discloses no more than a first request would; the only exception is authority the committed operation itself removed, which `F411-AC-08` states once for this branch.
+
+   F109-AC-02 makes the decision table deterministic for a given set of confirmed input and artifact versions and says nothing about which set is current when the result is written. A classification composed against one Event revision or scope-support artifact version, overtaken by a revision save or an artifact update before it commits, is therefore internally correct under AC-02 and still persisted and exposed as the current support state of a scope it never read, changing the evaluation gating and complete-plan labeling AC-03 governs for inputs that no longer exist. The identity and the comparison are both needed and neither substitutes for the other: without the comparison a stale classification commits as current, and without the identity the comparison rejects a retry after a lost response, because the commit the retry repeats is exactly what moved the versions it names.
+
+   **The same boundary binds the inputs a classification reads, not only the Event it names.** The confirmed structured scope, the Event revision it belongs to, and every scope-support artifact version the decision table consumed must resolve to the exact Event the operation names and to the workspace that owns it, compared server-side inside the transaction that persists the result, alongside the compare-and-swap above. This is `F702-AC-10`'s fourth obligation, that every record an operation names must resolve to one workspace, together with its narrower-scope sentence requiring the comparison at a spec's own aggregate as well and not instead; the Event is that aggregate here, as F109-AC-06 and the persisted result's own uniqueness scope both already treat it. `F104-AC-04`, `F406-AC-09`, and `F407-AC-08` state the pair the same way for the versions a refresh, a P&L, and a post-mortem pin.
+
+   The comparisons above are all about currency and none is about location. An organizer who can reach events A and B classifies B while naming A's confirmed structured-scope revision and A's current scope-support artifact versions: A's versions genuinely are current, F109-AC-06 admits the actor against B, which is the Event the operation names and the only place it looks, and the compare-and-swap asks only whether each named version is still the current one, not whose it is. What commits is a scope support state and its machine-readable reasons derived entirely from A's confirmed scope, persisted and exposed as B's current state, changing the evaluation gating and complete-plan labeling F109-AC-03 governs for B and disclosing to B's organizer what A's scope contains and where it falls short. A shows nothing, because being read changes nothing there. A mismatch on either scope rejects the whole classification on the same terms a stale version does, persists nothing, and returns a response that does not distinguish a revision or artifact version that does not exist from one that resolves to a different Event or workspace. The two halves have different approval states and are stated so an implementation can build the half that is available: the Event a confirmed scope revision resolves to is an approved input today, so that comparison is implementable and testable now, while F-702 is `PROPOSED` and the workspace half is not implementable until F-702 is approved and listed in `docs/BASELINE.md`.
+
+   Where an implementation cannot fence the result this way, the only truthful alternative is to persist the classification as a result visibly labeled historical and pinned to the versions it read, never presented as the current state and never read by evaluation gating or complete-plan labeling. The persistence itself is not an approved artifact today: the System Impact Schema row states it as proposed impact and gates it on the shared enum/schema approval, so until that approval lands this criterion is testable only as "a persisted classification names the exact confirmed input and artifact versions it read, a classification whose named versions are no longer current is rejected rather than exposed as the current state, and a retry presenting a committed classification identity returns that classification's recorded result", not against a named table, column, or endpoint.
+
+## Fixtures and Verification
+
+- Planned automated fixture IDs are the acceptance IDs above; each must map one-to-one to a runnable test before approval can claim implementation readiness.
+- Regulatory fixtures: Add independently reviewed scope-support fixtures for every state/reason branch; existing scenarios A–F must remain fully classified under their approved structured scope.
+- F109-AC-07 includes a fixture in which a classification is composed against one Event revision and scope-support artifact version, a revision save commits before it, and the classification is rejected rather than persisted as the current state; a fixture in which a classification commits, its response is lost, and the retry presenting the same classification identity returns the original result rather than a version rejection and persists no second result; and a mismatched-reuse fixture in which that committed identity is re-presented naming a different artifact version and is refused as a conflict, persisting nothing.
+- F109-AC-07 includes a sibling-event fixture in which an organizer classifies Event B while naming Event A's genuinely current confirmed structured-scope revision and scope-support artifact versions: the classification is refused, nothing is persisted, B's current scope support state and reasons are unchanged, and no state, reason, or missing-information item derived from A is returned. It is paired with an equivalent fixture across two workspaces the actor belongs to, and a same-event control fixture in which the identical classification commits.
+- F109-AC-06 includes a fixture in which an actor holding no membership of the owning workspace names a valid Event and is refused at user-triggered classification and re-classification and at every user-facing read of scope support state and reasons across intake, proposals, evaluation gating, plan/API, and UI, with a response that does not distinguish absence from denial, a fixture in which membership removed while a re-classification is in flight fails the request rather than committing a new pinned result, and a paired fixture confirming a system-internal evaluation-invoked classification is unaffected and carries the invoking operation's authority.
+- Security-sensitive and cross-workspace paths require negative authorization tests; provider paths require success, duplicate-delivery, retry, invalid-signature, and permanent-failure tests where applicable.
+
+## Allowed Footprint and Coordination
+
+- `apps/web` and `apps/api` feature code and tests.
+- New ordered forward migrations and approved OpenAPI/JSON Schema changes required by this feature.
+- No repository restructuring, speculative package, or unrelated feature edit.
+- Shared contracts, migrations, provider adapters, engine/rules artifacts, consent policy, and cross-lane UI primitives require the approvals named in `docs/DOCUMENTATION-GOVERNANCE.md` §6.
+
+## Rollout and Fallback
+
+- Introduce the contract before F-601; keep open-ended intake disabled until all five states pass end-to-end tests.
+- Rollback disables the new surface and workers/provider calls without deleting confirmed user data or rewriting immutable plans, rulesets, revisions, or history.
+
+## Approval Blockers
+
+- Resolve `docs/OPEN-QUESTIONS.md` T-4 before approval, including its durable-architecture and shared-enum approvals and verification/rules review if the decision retires or redefines `COVERAGE_GAP`.
+- Approve the scope-support decision table/reason taxonomy and atomic OpenAPI/JSON Schema/type handoff.
+- Obtain the product owner's approval for the shared enum under `docs/DOCUMENTATION-GOVERNANCE.md` §6. That approval is the whole requirement: the affected-lane-owner capacities this blocker used to name were collapsed into it on 2026-08-04 and the second-party element was retired on 2026-08-05 (product owner; see §6 and `docs/BASELINE.md`).
+- Approve F-702 and F-703, and name with F-703 the classification and scope-support read permissions `F109-AC-06` checks. That criterion checks a permission no approved artifact defines today and may not invent one, so until the matrix names them it is testable only at the membership level stated there.
+- Assign the owner, approve this spec, and add it to `docs/BASELINE.md`. The reviewer and approver is the product owner (`docs/DOCUMENTATION-GOVERNANCE.md` §6), which is what this spec's header records, and that is the whole requirement: the independent-reviewer element this blocker used to carry was retired on 2026-08-05 (product owner; see §6 and `docs/BASELINE.md`). Until those three things are done this blocker is not satisfied and this spec is not approved: it stays PROPOSED under governance §3, its Approval date stays `—`, and it is not implementable and not listed in `docs/BASELINE.md`. Retiring the reviewer element made this spec approvable; it did not approve it.
