@@ -69,17 +69,41 @@ function soleArtifact(directory, describe) {
  * this measurement reads, nor break the suite. The document measures one named draft, so the
  * identity is stated here and matched against what each candidate publishes about itself; a rename
  * still resolves, and a second artifact claiming the same identity fails rather than being picked.
+ *
+ * A candidate that cannot be read at all is a nonmatch, not a failure. Parsing every file eagerly
+ * meant an unrelated proposal that was malformed, unreadable, or a valid non-object such as `null`
+ * threw out of this filter before it could select anything, so `pnpm test:cofiring` became unusable
+ * over a file the measurement does not read and the `nyc.v2` artifact stayed untouched (#251
+ * review). That is the exact failure this function exists to prevent. Unreadable nonmatches are
+ * therefore skipped, and problems with the measured identity are left to the count check below,
+ * which still fires when the measured draft itself is the file that stopped parsing: it becomes a
+ * nonmatch, no artifact declares the identity, and the zero case throws naming it.
  */
 const MEASURED_DRAFT = { schema: "popengine-rules/v2", rulesetVersion: "nyc.v2" };
+
+/** What one candidate publishes about itself, or `null` when it publishes nothing readable. */
+function declaredIdentity(path) {
+  let candidate;
+  try {
+    candidate = JSON.parse(readFileSync(path, "utf8"));
+  } catch {
+    return null;
+  }
+  // Arrays and primitives fall out here too: neither declares a schema, and `null` would throw on
+  // the property read rather than returning `undefined`.
+  if (candidate === null || typeof candidate !== "object") return null;
+  return { schema: candidate.schema, rulesetVersion: candidate.ruleset_version };
+}
 
 export function measuredDraftPath(directory = join(repoRoot, "rules/proposals")) {
   const matches = readdirSync(directory)
     .filter((name) => name.endsWith(".json"))
     .filter((name) => {
-      const candidate = JSON.parse(readFileSync(join(directory, name), "utf8"));
+      const identity = declaredIdentity(join(directory, name));
       return (
-        candidate.schema === MEASURED_DRAFT.schema &&
-        candidate.ruleset_version === MEASURED_DRAFT.rulesetVersion
+        identity !== null &&
+        identity.schema === MEASURED_DRAFT.schema &&
+        identity.rulesetVersion === MEASURED_DRAFT.rulesetVersion
       );
     });
   if (matches.length !== 1) {

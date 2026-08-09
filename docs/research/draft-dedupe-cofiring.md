@@ -1044,7 +1044,7 @@ Stated plainly, from the numbers above.
 - `sapo_insurance`. Up to 4 members, one requiring a $1 million certificate and another stating the
   requirement does not apply. Never on a complete intake.
 - `block_party_eligibility`. Two members, disagreeing on disposition as the draft publishes them, on
-  7.7% of a 24.3-million intake factorial. Never on a complete intake. The current mapping renders
+  7.7% of a 32.4-million intake factorial. Never on a complete intake. The current mapping renders
   the blocker's disposition but neither member's sentence, because the blocker's `message` and the
   advisory's text are both dropped by the merge (5.9).
 - `nypd_sound`. Up to 3 members, pairing a section 10-108 prohibition with a dated, priced permit.
@@ -1143,9 +1143,9 @@ green. It is now counted off the suite's own collected task tree, which is the n
 `pnpm test:cofiring` reports rather than a count of `test(` calls in the source: four blocks use
 `test.each` and expand at collection time, so those two quantities are not the same.
 
-It is four modules, one suite and one config, 3,293 lines together: `harness.mjs` 972,
-`cofiring.test.mjs` 1,543, `inventory.mjs` 390, `staging.mjs` 266, `report.mjs` 103 and
-`vitest.config.mjs` 19, reporting 93 cases. Those eight figures are read off disk and off
+It is four modules, one suite and one config, 3,361 lines together: `harness.mjs` 996,
+`cofiring.test.mjs` 1,587, `inventory.mjs` 390, `staging.mjs` 266, `report.mjs` 103 and
+`vitest.config.mjs` 19, reporting 96 cases. Those eight figures are read off disk and off
 the task tree and asserted by `describe("section 8, the harness footprint")`, so a module, the suite
 or the case list growing moves them here rather than leaving the reproduction section understating
 the code behind the numbers.
@@ -1156,7 +1156,7 @@ the code behind the numbers.
 | `staging.mjs`       | the adaptations of section 3.1, applied to in-memory clones, each reporting what it touched                                                   |
 | `inventory.mjs`     | what the draft publishes, re-derived by parsing it: deadlines, permit names, output identity, blockers, mixed statuses, parser-visible output |
 | `report.mjs`        | one `measure()` call that produces every table, plus the printer                                                                              |
-| `cofiring.test.mjs` | the 93 cases `pnpm test:cofiring` reports, one or more per published figure                                                                   |
+| `cofiring.test.mjs` | the 96 cases `pnpm test:cofiring` reports, one or more per published figure                                                                   |
 | `vitest.config.mjs` | the include this suite runs under, which is why it is outside the root config and outside CI                                                  |
 
 Every table maps to a `describe` block with the same number:
@@ -1174,7 +1174,7 @@ Every table maps to a `describe` block with the same number:
 | 4.4, the control                                                | `describe("section 4.4, the published control")`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
 | every table and count in section 5                              | `describe("section 5, the co-firing sets")`, whose 5.1 cases assert the seven permit names and the fourteen fee displays verbatim rather than their counts, and whose 5.9 case asserts the both-true intake the section quotes                                                                                                                                                                                                                                                                                                                                                                                                                    |
 | section 6's blocker inventory and counts                        | `describe("section 6, the blocker-plus-window shape")`, whose four-shape case asserts each `unknown`-side shape's members, results and answered-`sound_purpose` rows rather than their sum, and whose merge case puts all four shapes to `evaluate` on a synthetic group and asserts which of them reads prohibited                                                                                                                                                                                                                                                                                                                               |
-| section 7                                                       | restates 4.1, 4.2, 4.3 and 4.4; it publishes no figure of its own                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
+| section 7                                                       | restates 4.1, 4.2, 4.3 and 4.4, and `describe("section 7, the summary restatements")` asserts the one figure it does publish on its own account: the rounded 32.4-million block-party denominator and the 7.7% beside it, both read off the group so the two cannot part company again                                                                                                                                                                                                                                                                                                                                                            |
 
 The whole run takes about nine seconds, of which most is the 32,440,320-intake
 `block_party_eligibility` sweep. It is not gated behind a flag, but it is deliberately **not** run
@@ -1183,7 +1183,7 @@ by CI and not part of `pnpm test`, and that is a governance constraint rather th
 **Why this suite is on demand.** Its only input is `rules/proposals/nyc-rules.v2-full-draft.json`,
 which `docs/BASELINE.md` carries as "ARCHIVED / PROPOSED drafts" and which this document's own
 preamble names as PROPOSED. A required CI step reading it would make a proposed artifact an enforced
-main-branch input: any ordinary revision of the proposal would turn CI red until all 93 cases here
+main-branch input: any ordinary revision of the proposal would turn CI red until all 96 cases here
 were resynchronised with it, so the proposal could only move at this measurement's pace. That is the
 `AGENTS.md` rule to stop rather than build against a proposed input, applied backwards, and a
 research harness is not the thing that should force it. So `scripts/dedupe-cofiring/` sits outside

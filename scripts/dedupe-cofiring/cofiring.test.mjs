@@ -218,10 +218,13 @@ describe("section 3.1, the load-staging errors", () => {
 });
 
 describe("choosing the measured draft", () => {
+  // A string value is written verbatim, so a case can plant a file that is not JSON at all;
+  // anything else is serialised.
   const directoryHolding = (files) => {
     const directory = mkdtempSync(join(tmpdir(), "cofiring-proposals-"));
     for (const [name, artifact] of Object.entries(files)) {
-      writeFileSync(join(directory, name), JSON.stringify(artifact));
+      const text = typeof artifact === "string" ? artifact : JSON.stringify(artifact);
+      writeFileSync(join(directory, name), text);
     }
     return directory;
   };
@@ -235,6 +238,33 @@ describe("choosing the measured draft", () => {
       "not-a-ruleset.json": { notes: [] },
     });
     expect(measuredDraftPath(directory)).toBe(join(directory, "renamed-draft.json"));
+  });
+
+  test("an unreadable unrelated proposal does not break the lookup", () => {
+    // Every candidate used to be parsed eagerly, so one malformed or non-object file anywhere in
+    // the directory threw before anything could be selected and made `pnpm test:cofiring` unusable
+    // over a file the measurement never reads (#251 review). Each of these is a nonmatch, not a
+    // failure, and the `nyc.v2` artifact is still found.
+    const directory = directoryHolding({
+      "renamed-draft.json": measured,
+      "truncated.json": '{"schema": "popengine-rules/v2",',
+      "not-json-at-all.json": "# a note somebody dropped in here",
+      "empty.json": "",
+      "null.json": null,
+      "a-number.json": 42,
+      "a-string.json": '"popengine-rules/v2"',
+      "an-array.json": [measured],
+    });
+    expect(measuredDraftPath(directory)).toBe(join(directory, "renamed-draft.json"));
+  });
+
+  test("an unreadable measured draft is reported by the identity check, not swallowed", () => {
+    // Tolerating unreadable nonmatches must not tolerate an unreadable draft. It becomes a
+    // nonmatch, nothing declares the identity, and the zero case throws naming what it looked for.
+    const directory = directoryHolding({ "the-draft.json": '{"schema": "popengine-rules/v2",' });
+    expect(() => measuredDraftPath(directory)).toThrow(
+      /holds 0 artifacts declaring schema "popengine-rules\/v2" version "nyc.v2"/,
+    );
   });
 
   test("two artifacts claiming the same identity fail rather than one being picked", () => {
@@ -1498,6 +1528,20 @@ describe("section 6, the blocker-plus-window shape", () => {
   });
 });
 
+describe("section 7, the summary restatements", () => {
+  test("the rounded block-party denominator is the sweep it restates", () => {
+    // Section 7 restates the other sections rather than measuring anything, so nothing here was
+    // asserted. Its block-party sentence quotes "7.7% of a 32.4-million intake factorial", and the
+    // rounded denominator is a figure of its own: when the below-threshold end-date case widened
+    // the sweep, the percentage was updated and the rounded total was not, leaving the summary
+    // pairing a current share with the previous denominator (#251 review). Both halves of that
+    // sentence are now read off the group, rounded the way the sentence rounds them.
+    const group = m.group("block_party_eligibility");
+    expect(Math.round(group.sweep / 100_000) / 10).toBe(32.4);
+    expect(Math.round((group.true[2] / group.sweep) * 1_000) / 10).toBe(7.7);
+  });
+});
+
 describe("section 8, the harness footprint", () => {
   // Section 8 publishes these to scope the code behind the measurement, and they are the only
   // figures in the document about the harness rather than about the draft. Nothing read them, and
@@ -1516,14 +1560,14 @@ describe("section 8, the harness footprint", () => {
       "vitest.config.mjs": lines("vitest.config.mjs"),
     };
     expect(counts).toEqual({
-      "harness.mjs": 972,
+      "harness.mjs": 996,
       "staging.mjs": 266,
       "inventory.mjs": 390,
       "report.mjs": 103,
-      "cofiring.test.mjs": 1543,
+      "cofiring.test.mjs": 1587,
       "vitest.config.mjs": 19,
     });
-    expect(Object.values(counts).reduce((total, count) => total + count, 0)).toBe(3293);
+    expect(Object.values(counts).reduce((total, count) => total + count, 0)).toBe(3_361);
   });
 
   test("the published case count is the one Vitest collected", (context) => {
@@ -1538,6 +1582,6 @@ describe("section 8, the harness footprint", () => {
         (total, child) => total + (child.type === "test" ? 1 : collected(child)),
         0,
       );
-    expect(collected(context.task.file)).toBe(93);
+    expect(collected(context.task.file)).toBe(96);
   });
 });
