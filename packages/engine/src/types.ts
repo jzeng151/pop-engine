@@ -295,6 +295,24 @@ export type FindingRoute = {
   readonly portalName: string | null;
   readonly portalUrl: string | null;
   readonly portalInstructions: string | null;
+  /**
+   * This route's own published notes, as `ruleNotes()` built them for its own rule: the rule's
+   * `notes`, its deadline qualification, its verification qualification, and the confirm-with-agency
+   * floor where its own window could not be dated.
+   *
+   * WITHOUT IT THE ATTRIBUTION EXISTS NOWHERE. The merged line's `notes` concatenate over the group
+   * with no marker saying which rule published which string, so a consumer holding one route cannot
+   * recover its notes from the line — and `alerts.ts` sends a reminder headed with ONE route's name
+   * and filing date, so it was quoting another route's threshold and qualification as if they
+   * qualified this filing (#252 review). Every other value that reminder reads is already per route;
+   * this was the one the merge alone knew.
+   *
+   * Optional because a plan stored before this field carries no per-route notes, and a replayed
+   * artifact is read as it was written. A consumer treats absence as "not recorded" rather than as
+   * "this route publishes none"; there is no way to tell the two apart on such a plan, which is why
+   * absence is not a value.
+   */
+  readonly notes?: readonly string[];
 };
 
 /**

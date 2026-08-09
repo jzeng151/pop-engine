@@ -111,6 +111,8 @@ export type FindingRoute = {
   readonly portalName: string | null;
   readonly portalUrl: string | null;
   readonly portalInstructions: string | null;
+  /** This route's own published notes. Absent on a plan stored before this field. */
+  readonly notes?: readonly string[];
 };
 
 export type HeadlineMode = "applies_together" | "candidate";
@@ -139,6 +141,22 @@ which answers stopped a ROUTE resolving.
 `route.applyAfterDate`, `route.deadlineStatus` and `route.slackDays` carry any dependency sequencing
 that applied to that route, so the route list and the headline never disagree about a sequenced
 window.
+
+**`route.notes` was added on 2026-08-09** by a product-owner decision recorded in `docs/BASELINE.md`,
+as the fix for a defect this section's original shape caused. It is the route's own notes exactly as
+`ruleNotes()` built them for its own rule: the rule's `notes`, its deadline qualification, its
+verification qualification, and the confirm-with-agency floor where its own window could not be
+dated. **Why the merged line cannot answer it.** `Finding.notes` concatenates over the group with no
+marker recording which rule published which string, so a consumer holding one route cannot recover
+that route's notes from the line. `alerts.ts` sends a reminder headed with ONE route's name and
+filing date and quotes every note verbatim beneath it, so on a merged line it attached another
+route's threshold and deadline qualification to this route's filing: wrong regulatory text in a
+message an organizer acts on. Every other value that reminder reads was already per route; this was
+the one the merge alone knew. **Optional, and absence is not a value.** A plan stored before this
+field carries no per-route notes and there is no way to tell "this route publishes none" from "this
+plan does not record it", so a consumer treats absence as not recorded and falls back to the line's
+notes rather than dropping a published qualification off a filing date. Those stored rows keep the
+crossing until they are regenerated.
 
 **`verificationStatus` is deliberately not on a route.** `rejectMixedDedupeVerificationStatuses()`
 (`packages/engine/src/ruleset.ts:665`) refuses at load any ruleset whose dedupe key mixes
@@ -368,11 +386,21 @@ are all equal. That is a comparison of published values, not a judgement.
 
 Heading unchanged (the binding route's). Beneath the line's summary:
 
-> **Both of these apply.** The published rules give more than one route to this requirement, and on
-> the answers recorded in this plan each of them applies.
+> **Both of these have their conditions met.** The published rules give more than one route to this
+> requirement, and on the answers recorded in this plan each of their conditions is met. What each
+> one then requires is beside its name.
 
-For three or more routes, "Both of these apply" becomes "All of these apply." Then one entry per
-route:
+For three or more routes, "Both of these" becomes "All of these." Then one entry per route:
+
+**This sentence was amended on 2026-08-09 by a product-owner decision recorded in
+`docs/BASELINE.md`, as an extension of the same day's §5.3 amendment.** It read "**Both of these
+apply.** The published rules give more than one route to this requirement, and on the answers
+recorded in this plan each of them applies." Both triggers resolving says each route's own
+conditions are met; it does not say each route requires anything, and `DOB-TALL-STRUCTURE-001`
+publishes `MAY_BE_REQUIRED` in an `applies_together` group as readily as in a `candidate` one. That
+is the same overstatement §5.3's `Applies` carried, on the same screen, so the two move together
+rather than leaving one vocabulary beside the other. The per-route entry format below is unchanged:
+disposition, agency, deadline, fee and the portal block are exactly as approved.
 
 > **{route.name or route.ruleId}**: {humanized route.disposition}{, route.agency}
 > {route.deadlineDisplay}{ · apply by {route.latestApplyDate}}{ · {humanized route.deadlineStatus}}

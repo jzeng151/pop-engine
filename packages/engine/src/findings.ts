@@ -343,6 +343,7 @@ function routeFrom(
     portalName: finding.portalName,
     portalUrl: finding.portalUrl,
     portalInstructions: finding.portalInstructions,
+    notes: finding.notes,
   };
 }
 

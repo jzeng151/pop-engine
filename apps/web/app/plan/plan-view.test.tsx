@@ -754,14 +754,14 @@ describe("the routes of a merged dedupe line", () => {
 
   it("renders nothing extra when the routes publish the same thing", async () => {
     // Three of the nine multi-member groups in the v2 full draft are byte-identical and are the
-    // ones that merge most often. A "both of these apply" block listing one permit twice would be
-    // a rendering fault presented as regulatory content.
+    // ones that merge most often. A block listing one permit twice under "both of these have their
+    // conditions met" would be a rendering fault presented as regulatory content.
     const line = await lineWith({
       ruleIds: ["DOB-STAGE-001", "DOB-STRUCTURE-DURATION-001"],
       headlineMode: "applies_together",
       routes: [route({ ruleId: "DOB-STAGE-001" }), route({ ruleId: "DOB-STRUCTURE-DURATION-001" })],
     });
-    expect(line.queryByText(/Both of these apply/)).toBeNull();
+    expect(line.queryByText(/Both of these have their conditions met/)).toBeNull();
     expect(line.queryByText(/do not say which of these applies/)).toBeNull();
   });
 
@@ -1023,9 +1023,11 @@ describe("the routes of a merged dedupe line", () => {
         }),
       ],
     });
-    // "triggered", not "applies": NYPD-SOUND-PROHIBITED-001's trigger resolving does not mean the
-    // requirement applies, and the heading may not say more than the mode knows (#252 review).
-    expect(line.getByText(/Both of these are triggered/)).toBeDefined();
+    // "have their conditions met", not "apply": NYPD-SOUND-PROHIBITED-001's trigger resolving does
+    // not mean the requirement applies, and the heading may not say more than the mode knows.
+    // Approved copy, amended into design §5.2 on 2026-08-09 with §5.3's labels (product owner).
+    expect(line.getByText(/Both of these have their conditions met/)).toBeDefined();
+    expect(line.getByText(/each of their conditions is met/)).toBeDefined();
     expect(line.getByText("Sound Device Permit")).toBeDefined();
     expect(line.getByText("Commercial advertising by sound device")).toBeDefined();
     // The permit's window and fee are on the permit's entry, not on the barred line's headline.

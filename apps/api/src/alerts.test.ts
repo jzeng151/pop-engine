@@ -6887,6 +6887,135 @@ describe.skipIf(databaseUrl === "")("F-203 deadline alerts", () => {
     });
 
     /**
+     * #252 review: A ROUTE'S REMINDER QUOTED ANOTHER ROUTE'S PUBLISHED NOTES.
+     *
+     * `reminderCopy` quotes every note verbatim under a heading carrying one route's name and
+     * filing date, and the merged line's `notes` concatenate over the whole group with no marker
+     * saying which rule published which string. So a reminder for route A carried route B's
+     * threshold and B's deadline qualification as if they qualified A's filing.
+     *
+     * `FindingRoute.notes` is what closes it: the attribution now exists on the route rather than
+     * only inside the merge, and `subjectFromRoute` reads it like every other value.
+     */
+    it("quotes only the route's own published notes in its reminder (#252)", async () => {
+      const eventId = await createEvent(scenario("C"));
+      const planId = randomUUID();
+      const itemId = randomUUID();
+      const applyBy = dayFromToday(9);
+      const otherApplyBy = dayFromToday(12);
+      const route = (overrides: Record<string, unknown>) => ({
+        triggerResult: "true",
+        unknownFields: [],
+        agency: "NYPD",
+        deadline: null,
+        deadlineDisplay: null,
+        latestApplyDate: null,
+        applyAfterDate: null,
+        deadlineStatus: "not_applicable",
+        slackDays: null,
+        feeDisplay: null,
+        portalName: null,
+        portalUrl: null,
+        portalInstructions: null,
+        notes: [],
+        ...overrides,
+      });
+      await pool.query(
+        `INSERT INTO permit_plans (id, event_id, event_revision, ruleset_version, snapshot_date,
+                                   verdict, verdict_detail, intake_snapshot, generated_at)
+         VALUES ($1, $2, 1, $3, $4, 'conditional', $5::jsonb, '{}'::jsonb, current_timestamp)`,
+        [
+          planId,
+          eventId,
+          ruleset.rulesetVersion,
+          ruleset.snapshotDate,
+          JSON.stringify({
+            today: todayInJurisdiction("US-NY-NYC"),
+            minSlackDays: null,
+            finding_renderings: [
+              {
+                rule_ids: ["NYPD-SOUND-001", "PARKS-EVENT-001"],
+                // What the merge produces: both routes' notes, in one list, unattributed.
+                notes: ["sound: confirm the precinct form number", "parks: over 400 sq ft only"],
+                note_text: null,
+                conflict_text: null,
+                deadline_display: null,
+                slack_days: null,
+                deadline_unknown_fields: [],
+                timeline_unresolved_reason: null,
+                portal_instructions: null,
+                headline_mode: "applies_together",
+                routes: [
+                  route({
+                    ruleId: "NYPD-SOUND-001",
+                    disposition: "required",
+                    name: "Sound Device Permit",
+                    latestApplyDate: applyBy,
+                    deadlineStatus: "deadline_approaching",
+                    notes: ["sound: confirm the precinct form number"],
+                  }),
+                  route({
+                    ruleId: "PARKS-EVENT-001",
+                    disposition: "required",
+                    name: "Special Event Permit",
+                    latestApplyDate: otherApplyBy,
+                    deadlineStatus: "deadline_approaching",
+                    notes: ["parks: over 400 sq ft only"],
+                  }),
+                ],
+              },
+            ],
+          }),
+        ],
+      );
+      await pool.query(
+        `INSERT INTO permit_plan_items (id, plan_id, rule_ids, triggered_by, permit_name, agency,
+                                        latest_apply_date, sources, kind, disposition,
+                                        deadline_status, verification_status)
+         VALUES ($1, $2, ARRAY['NYPD-SOUND-001','PARKS-EVENT-001'], '[]'::jsonb,
+                 'Sound Device Permit', 'NYPD', $3, '[]'::jsonb, 'permit', 'required',
+                 'deadline_approaching', 'SOURCE_CONFIRMED')`,
+        [itemId, planId, applyBy],
+      );
+      await pool.query(
+        "INSERT INTO checklist_items (id, plan_item_id, cohort_position) VALUES ($1, $2, 0)",
+        [randomUUID(), itemId],
+      );
+
+      const client = await pool.connect();
+      try {
+        await schedulerWith()(client, eventId, planId, {
+          email: "organizer@example.test",
+          phone: null,
+        });
+      } finally {
+        client.release();
+      }
+
+      const reminders = (await alertsOf(eventId)).filter(
+        (row) => row.alert_type === "deadline_reminder",
+      );
+      const sound = reminders.filter((row) =>
+        String(row.payload.body).includes("Sound Device Permit"),
+      );
+      const parks = reminders.filter((row) =>
+        String(row.payload.body).includes("Special Event Permit"),
+      );
+      expect(sound.length).toBeGreaterThan(0);
+      expect(parks.length).toBeGreaterThan(0);
+      // Each reminder carries its own route's note and not the sibling's, which is the whole point:
+      // a threshold that qualifies one filing must not arrive attached to another's date.
+      for (const row of sound) {
+        expect(row.payload.body).toContain("sound: confirm the precinct form number");
+        expect(row.payload.body).not.toContain("over 400 sq ft only");
+      }
+      for (const row of parks) {
+        expect(row.payload.body).toContain("parks: over 400 sq ft only");
+        expect(row.payload.body).not.toContain("confirm the precinct form number");
+      }
+    });
+
+    /**
      * #252 review: A BARRED ROUTE WAS REMINDED AS A FILING.
      *
      * A merged line takes its `kind` from the binding route, so a group holding a permit beside a

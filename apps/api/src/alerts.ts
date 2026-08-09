@@ -1150,6 +1150,21 @@ const subjectFromRoute = (
           deadline_display: route.deadlineDisplay,
           slack_days: route.slackDays,
           portal_instructions: route.portalInstructions,
+          // THE NOTES ARE THIS ROUTE'S, WHERE THE PLAN RECORDED WHOSE THEY ARE. `reminderCopy`
+          // quotes every note verbatim under a heading carrying ONE route's name and filing date,
+          // and the merged line's `notes` concatenate over the whole group, so a reminder for
+          // route A carried route B's threshold and B's deadline qualification as if they
+          // qualified A's filing. That is wrong regulatory text in a message an organizer acts on,
+          // not a display fault (#252 review).
+          //
+          // A PLAN STORED BEFORE `FindingRoute.notes` EXISTED CANNOT BE ATTRIBUTED, and this does
+          // not guess at it. The merge kept no marker saying which rule published which string, and
+          // nothing else in the row records it, so for those plans the group's notes are all there
+          // is: they are carried unchanged rather than dropped, because dropping them would take a
+          // published qualification off a filing date, which is the defect this file's own note
+          // block exists to prevent. Those rows keep the crossing until they are regenerated, and
+          // that residue is stated rather than closed here.
+          ...(route.notes === undefined ? {} : { notes: route.notes }),
         },
   routeRuleId: route.ruleId,
   groupRouteRuleIds,

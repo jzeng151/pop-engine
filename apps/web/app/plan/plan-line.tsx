@@ -401,12 +401,24 @@ function Routes({ finding }: { finding: ConsumedFinding }) {
       <p className="line__routes-intro">
         {mode === "applies_together" ? (
           <>
+            {/* APPROVED COPY, amended into design §5.2 on 2026-08-09 by a product-owner decision
+                recorded in `docs/BASELINE.md`, as an extension of the same day's §5.3 amendment.
+                The section as approved read "Both of these apply ... each of them applies", which
+                overstates in exactly the way §5.3's `Applies` did: both triggers resolving says the
+                conditions are met, not that each route requires anything, and
+                DOB-TALL-STRUCTURE-001 publishes MAY_BE_REQUIRED in an applies-together group as
+                readily as in a candidate one. An earlier revision of this branch substituted
+                "triggered" here with no authority to do so, which the #252 review was right to
+                stop; the amendment settles the wording rather than reverting it, because two
+                vocabularies for one claim on one screen is worse than either alone. */}
             <strong>
-              {routes.length === 2 ? "Both of these are triggered." : "All of these are triggered."}
+              {routes.length === 2
+                ? "Both of these have their conditions met."
+                : "All of these have their conditions met."}
             </strong>{" "}
-            The published rules give more than one route to this requirement, and the answers
-            recorded in this plan meet each route&apos;s own conditions. What each one then requires
-            is on its own entry below.
+            The published rules give more than one route to this requirement, and on the answers
+            recorded in this plan each of their conditions is met. What each one then requires is
+            beside its name.
           </>
         ) : (
           <>
