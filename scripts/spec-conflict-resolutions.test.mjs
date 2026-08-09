@@ -10,6 +10,8 @@ import {
   INDEPENDENCE_ASSERTIONS,
   OPT_OUT_EXTENSIONS,
   OPT_OUT_MARKER,
+  PROSE_EXTENSIONS,
+  SKIPPED_DIRS,
   blockDigest,
   blocksOf,
   cityHealthRule,
@@ -713,8 +715,12 @@ describe("no DOHMH rule is attributed to headcount, removed 2026-08-05 (#235)", 
    * TRUSTED, which is what keeps it from becoming the enumeration it replaced: the "scans every
    * tracked file" assertion below reads the tracked set out of git and fails if anything here, or
    * anything else this walk skips, ever holds a file the repository actually carries.
+   *
+   * It is declared in `spec-conflict-scan.mjs` as of the eighteenth PR #247 round, because the
+   * formatting corpus walks the tree too and a skip list that disagrees between the two suites is a
+   * file one of them reads and the other does not.
    */
-  const SKIPPED_DIRS = new Set([".git", "node_modules", "dist", "coverage", ".next"]);
+  const SKIPPED = new Set(SKIPPED_DIRS);
 
   /**
    * The guard's own three source files. They are skipped EXPLICITLY, and they are the only skipped
@@ -764,7 +770,7 @@ describe("no DOHMH rule is attributed to headcount, removed 2026-08-05 (#235)", 
     const matches = (name) => extensions.some((extension) => name.endsWith(extension));
     const walk = (dir) => {
       for (const entry of readdirSync(dir, { withFileTypes: true })) {
-        if (SKIPPED_DIRS.has(entry.name)) continue;
+        if (SKIPPED.has(entry.name)) continue;
         const path = resolve(dir, entry.name);
         if (entry.isDirectory()) walk(path);
         else if (matches(entry.name)) found.push(path);
@@ -774,8 +780,83 @@ describe("no DOHMH rule is attributed to headcount, removed 2026-08-05 (#235)", 
     return found.filter((path) => !GUARD_SOURCES.has(path));
   }
 
-  /** Every extension the prose walk reads, which is every extension this guard reads as prose. */
-  const PROSE_EXTENSIONS = [".md", ".ts", ".tsx", ".mjs", ".js"];
+  /**
+   * EVERY TRACKED EXTENSION THAT IS DELIBERATELY NOT PROSE, with the reason each one is not, so the
+   * question "is this file kind audited?" is answered for every file the repository carries rather
+   * than for the file kinds somebody remembered.
+   *
+   * THE COVERAGE ASSERTION USED TO BE CIRCULAR, which is the eighteenth PR #247 round. "Scans every
+   * tracked file it reads as prose" filters the tracked set through `PROSE_EXTENSIONS` and then
+   * checks that the walk reached all of it, so an extension missing from that list is missing from
+   * both sides of the comparison and the assertion stays green while the file kind sits entirely
+   * outside the audit. `.mts` was exactly that: `scripts/spec-conflict-scan.d.mts` is tracked,
+   * carries prose, and neither the walk nor the assertion about the walk mentioned it.
+   *
+   * So the tracked set is partitioned instead of filtered. Every extension git lists is either read
+   * as prose or named here, and a file kind nobody has classified fails the assertion below rather
+   * than passing unread. That is what makes `PROSE_EXTENSIONS` a decision a reader can audit
+   * instead of a list whose omissions are invisible.
+   *
+   * THE COST IS STATED: adding a `.png`, a `.svg` or any other new file kind to this repository
+   * fails this suite until somebody says which side of the line it is on. That is the price of the
+   * question being asked at all, and it is one line of answer.
+   */
+  const NON_PROSE_EXTENSIONS = new Map([
+    [
+      ".json",
+      "the published artifacts, audited as prose by countClaimsInPublishedOutput rather than by" +
+        " the generic walk. `rules/*.json` is scanned string by string above.",
+    ],
+    [
+      ".html",
+      "the captured nyc.gov source pages under docs/proposals/. They are an agency's own published" +
+        " words, which AGENTS.md's authority order puts ABOVE this repository's prose; a threshold" +
+        " quoted there is a primary source and not a claim this repository makes.",
+    ],
+    [".css", "stylesheets. They carry no sentences."],
+    [".yml", "the CI workflow."],
+    [".yaml", "the pnpm workspace and lockfile."],
+    [".jpg", "documentation screenshots."],
+    [".webp", "a web asset."],
+    [".example", "the env templates. They carry configuration keys and no regulatory prose."],
+    [".gitattributes", "git configuration."],
+    [".gitignore", "git configuration."],
+    [".nvmrc", "the pinned node version."],
+    [".prettierrc", "formatter configuration."],
+    ["", "LICENSE and NOTICE, which are third-party legal text this repository does not author."],
+  ]);
+
+  /** A tracked path's extension, or the empty string where its basename carries no dot. */
+  const extensionOf = (relative) => {
+    const name = relative.slice(relative.lastIndexOf("/") + 1);
+    const dot = name.lastIndexOf(".");
+    return dot === -1 ? "" : name.slice(dot);
+  };
+
+  it("classifies every tracked file kind as prose or as deliberately not prose", () => {
+    const tracked = execFileSync("git", ["ls-files", "-z"], { cwd: repoRoot, encoding: "utf8" })
+      .split("\0")
+      .filter(Boolean);
+    const unclassified = [
+      ...new Set(
+        tracked
+          .map(extensionOf)
+          .filter(
+            (extension) =>
+              !PROSE_EXTENSIONS.includes(extension) && !NON_PROSE_EXTENSIONS.has(extension),
+          ),
+      ),
+    ];
+
+    expect(tracked.length, "git lists the tracked files").toBeGreaterThan(0);
+    expect(
+      unclassified.sort(),
+      "every tracked file kind is either read as prose (PROSE_EXTENSIONS in" +
+        " scripts/spec-conflict-scan.mjs) or named in NON_PROSE_EXTENSIONS with the reason it is" +
+        " not. A file kind listed here is audited by nobody and nothing else says so: add it to" +
+        " the prose list, or say here why its files carry no regulatory claim.",
+    ).toEqual([]);
+  });
 
   /**
    * WHAT DRIVES `SKIPPED_DIRS`, so the walk's coverage is checked rather than declared. `filesUnder`

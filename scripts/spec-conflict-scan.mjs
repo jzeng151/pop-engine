@@ -264,7 +264,7 @@ export const AGENCY_NEAR_ANY_COUNT = agencyNear(
  * literal. It is the ONLY block in the tree that pairs the agency with counted people beyond 120
  * characters, measured over the whole tree rather than assumed, and it stays unflagged.
  */
-export const BOUNDED_EXTENSIONS = [".ts", ".tsx"];
+export const BOUNDED_EXTENSIONS = [".ts", ".tsx", ".mts", ".cts"];
 
 /**
  * The code files the bound does NOT apply in, in-block or across a boundary, whatever their
@@ -299,7 +299,45 @@ export const UNBOUNDED_RECORD_FILES = ["apps/api/src/rsvps.ts", "apps/api/src/rs
  * them instead. The bound is a separate question and is answered separately: these files are
  * scanned unbounded, like prose, because nothing measured says otherwise.
  */
-export const OPT_OUT_EXTENSIONS = [".ts", ".tsx", ".mjs", ".js"];
+export const OPT_OUT_EXTENSIONS = [".ts", ".tsx", ".mts", ".cts", ".mjs", ".js"];
+
+/**
+ * EVERY EXTENSION THIS GUARD READS AS PROSE, declared once for both suites.
+ *
+ * It was a local of `spec-conflict-resolutions.test.mjs` and a near-copy of it was a local of
+ * `spec-conflict-resolutions.fixtures.test.mjs`: two lists that
+ * have to agree and nothing that makes them, which is the eighteenth PR #247 round. Neither suite
+ * can import the other's (importing out of
+ * a `*.test.mjs` file re-registers its suites), so the shared declaration lives here, beside the
+ * two extension lists that already decide how a path is scanned. A list of extensions is a
+ * declaration and not a file walk, so it costs this module nothing of the purity its header states.
+ *
+ * THE TYPESCRIPT MODULE EXTENSIONS ARE HERE, which is the same round's other item. The list read
+ * `.md`, `.ts`, `.tsx`, `.mjs` and `.js`, so `scripts/spec-conflict-scan.d.mts`, the declaration
+ * file this branch introduced, was outside every prose assertion this guard makes; regulatory prose
+ * written into it, or into any future `.mts` or `.cts` module, was read by nobody. The tracked-file
+ * coverage assertion filtered on this same list, so it stayed green over the hole rather than
+ * naming it, which is why `spec-conflict-resolutions.test.mjs` now classifies every tracked
+ * extension instead of filtering by this one.
+ *
+ * `.mts` and `.cts` are TypeScript, so they are in `BOUNDED_EXTENSIONS` and `OPT_OUT_EXTENSIONS`
+ * on the same terms `.ts` is: the distance bound applies inside their blocks, and their authors
+ * have the opt-out a `.ts` author has.
+ */
+export const PROSE_EXTENSIONS = [".md", ".ts", ".tsx", ".mts", ".cts", ".mjs", ".js"];
+
+/**
+ * The directories a prose walk does NOT descend into: `.git`, and the four build and dependency
+ * directories `.gitignore` already keeps out of version control. Everything else under the
+ * repository root is walked, whatever its name.
+ *
+ * Declared here for the same reason `PROSE_EXTENSIONS` is: both suites walk the tree, neither can
+ * import the other, and a skip list that disagrees between them is a file one of them reads and the
+ * other does not. THE LIST IS NOT TRUSTED by either: `spec-conflict-resolutions.test.mjs` reads the
+ * tracked set out of git and fails if anything skipped here turns out to hold a file the repository
+ * actually carries.
+ */
+export const SKIPPED_DIRS = [".git", "node_modules", "dist", "coverage", ".next"];
 
 /**
  * The opt-out a source file may take, honoured in `OPT_OUT_EXTENSIONS` files and NOWHERE else.

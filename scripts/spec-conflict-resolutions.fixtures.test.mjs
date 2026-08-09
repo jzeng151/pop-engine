@@ -14,7 +14,9 @@ import {
   INDEPENDENCE_ASSERTIONS,
   OPT_OUT_EXTENSIONS,
   OPT_OUT_MARKER,
+  PROSE_EXTENSIONS,
   PROXIMITY,
+  SKIPPED_DIRS,
   UNBOUNDED_RECORD_FILES,
   blockDigest,
   blocksOf,
@@ -308,7 +310,7 @@ describe("pairsAgencyWithCount", () => {
 
   it("item 3: keeps the distance bound where the file kind asks for it", () => {
     expect(pairsAgencyWithCount(TWO_SENTENCE_RECORD, { bounded: true })).toBe(false);
-    expect(BOUNDED_EXTENSIONS).toEqual([".ts", ".tsx"]);
+    expect(BOUNDED_EXTENSIONS).toEqual([".ts", ".tsx", ".mts", ".cts"]);
   });
 
   it("item 3: the compressed form of the same claim fires either way", () => {
@@ -831,6 +833,16 @@ describe("scanFile: the bound does not readmit the clause to the files it was st
       // on its own; a pinned entry is, and until there is one the marker suppresses nothing here.
       { relative: "scripts/new-guard.test.mjs", bounded: false, allowOptOut: true, digests: [] },
       { relative: "apps/web/next.config.js", bounded: false, allowOptOut: true, digests: [] },
+      // The TypeScript module extensions, added in the eighteenth round with the prose walk that
+      // reads them. They are TypeScript, so they are bounded and take the marker exactly as `.ts`
+      // does; `scripts/spec-conflict-scan.d.mts` is the file in the tree today.
+      {
+        relative: "scripts/spec-conflict-scan.d.mts",
+        bounded: true,
+        allowOptOut: true,
+        digests: [],
+      },
+      { relative: "scripts/legacy.cts", bounded: true, allowOptOut: true, digests: [] },
     ];
 
     for (const { relative, bounded, allowOptOut, digests } of FILES) {
@@ -995,8 +1007,13 @@ describe("scanFile: the code opt-out", () => {
   ].join("\n");
 
   it("item 4: the marker is honoured in every scanned code extension, not just the bounded ones", () => {
-    expect(OPT_OUT_EXTENSIONS).toEqual([".ts", ".tsx", ".mjs", ".js"]);
+    expect(OPT_OUT_EXTENSIONS).toEqual([".ts", ".tsx", ".mts", ".cts", ".mjs", ".js"]);
     for (const extension of BOUNDED_EXTENSIONS) expect(OPT_OUT_EXTENSIONS).toContain(extension);
+    // And every code extension the prose walk reads can take the marker: an extension the walk
+    // scans but the marker is inert in leaves its author the no-remedy position the fifth round
+    // found under `scripts/`. `.md` is the one prose extension that is deliberately not code.
+    for (const extension of PROSE_EXTENSIONS.filter((each) => each !== ".md"))
+      expect(OPT_OUT_EXTENSIONS, extension).toContain(extension);
     const marked = blocksOf(NEW_GUARD_FIXTURE).find((block) => block.includes(OPT_OUT_MARKER));
     expect(
       scanFile(NEW_GUARD_FIXTURE, {
@@ -1271,11 +1288,26 @@ describe("the declared vocabulary, over the formatting the artifacts really use"
    * `*.test.mjs` file re-registers that file's suites inside this file's collection, which is the
    * constraint `spec-conflict-scan.mjs`'s header states. It is not moved INTO that module either,
    * because that module is pure by contract and takes every input as a string.
+   *
+   * IT WALKS THE REPOSITORY ROOT, which is the eighteenth PR #247 round. The offender scan stopped
+   * enumerating roots in the seventeenth, and this corpus kept the old six (`docs`, `specs`, `apps`,
+   * `packages`, `rules`, `scripts`) plus the root's own files. What that costs is not a missed
+   * offender but a missed AXIS: this corpus is what enumerates the inline constructs the normalizer
+   * has to handle, and it enumerates them out of the files it reads. A new top-level lane writing
+   * `DOHMH depends on the curly-single-quoted word guest, U+2018 and U+2019, count.` in
+   * `workers/check.md` produces no scan finding, because the normalizer does not strip that pair,
+   * and the "every wrapping construct the tree carries is declared" assertions below never saw the
+   * file, so nothing named the gap either. (The delimiters are NAMED here rather than written: the
+   * corpus reads this file too, and `EXCLUDED_DELIMITERS` records as a measured fact that U+2018
+   * occurs nowhere in this tree.)
+   *
+   * The walk, the skip list and the extension list are now the ones the offender scan uses, taken
+   * from the same two declarations in `spec-conflict-scan.mjs`, so the corpus is derived from the
+   * scanned tree rather than from a second description of it.
    */
   const scannedTexts = (() => {
-    const SKIPPED = new Set(["node_modules", "dist", "coverage", ".next"]);
-    const EXTENSIONS = [".md", ".ts", ".tsx", ".mjs", ".js"];
-    const matches = (name) => EXTENSIONS.some((extension) => name.endsWith(extension));
+    const SKIPPED = new Set(SKIPPED_DIRS);
+    const matches = (name) => PROSE_EXTENSIONS.some((extension) => name.endsWith(extension));
     const found = [];
     const walk = (dir) => {
       for (const entry of readdirSync(dir, { withFileTypes: true })) {
@@ -1285,10 +1317,7 @@ describe("the declared vocabulary, over the formatting the artifacts really use"
         else if (matches(entry.name)) found.push(path);
       }
     };
-    for (const root of ["docs", "specs", "apps", "packages", "rules", "scripts"])
-      walk(resolve(repoRoot, root));
-    for (const entry of readdirSync(repoRoot, { withFileTypes: true }))
-      if (!entry.isDirectory() && matches(entry.name)) found.push(resolve(repoRoot, entry.name));
+    walk(repoRoot);
     return found.map((path) => ({ prose: path.endsWith(".md"), text: readFileSync(path, "utf8") }));
   })();
 
