@@ -398,6 +398,36 @@ describe("DOHMH findings do not move with headcount (#235)", () => {
       finding.ruleIds.some((ruleId) => cityHealthIds.has(ruleId)),
     );
   };
+  // EVERY PUBLISHED BOUNDARY, BELOW AND AT AND ABOVE, which is the eighteenth PR #247 round. The
+  // comparison ran at 20, 75 and 500, so every value it compared was AT OR ABOVE the lowest
+  // published headcount boundary and the below-20 state was never evaluated: at 19 neither
+  // `PARKS-EVENT-001` (`gt` 20) nor `PARKS-EXACTLY-20-001` (`eq` 20) contributes, and those two
+  // routes are mutually exclusive, so a city health finding sharing a dedupe key with both of them
+  // can produce byte-identical output at 20, 75 and 500 and different output at 19. The reachability
+  // assertion below says nothing about it either: it evaluates one headcount and asks which rules
+  // were reached, not which thresholds were crossed. `AGENTS.md` lines 59-60 already required this
+  // shape ("numeric rule thresholds require below/at/above boundary tests") and
+  // `specs/F-201-permit-plan-generator.md` criterion 8 names `park headcount 19/20/21` as a fixture.
+  //
+  // THE BOUNDARIES ARE READ OUT OF THE PUBLISHED TRIGGERS rather than written here, so a
+  // publication that moves a threshold moves this comparison with it instead of leaving it testing
+  // last year's numbers. 500 stays as the far-above value the earlier rounds compared at, above
+  // every published boundary rather than beside one.
+  const COUNT_FIELD = "headcount";
+  const publishedCountThresholds = (node: unknown, into = new Set<number>()): Set<number> => {
+    if (Array.isArray(node)) for (const child of node) publishedCountThresholds(child, into);
+    else if (node !== null && typeof node === "object") {
+      const record = node as Record<string, unknown>;
+      if (record.field === COUNT_FIELD && typeof record.value === "number") into.add(record.value);
+      for (const value of Object.values(record)) publishedCountThresholds(value, into);
+    }
+    return into;
+  };
+  const ascending = (a: number, b: number) => a - b;
+  const publishedBoundaries = [...publishedCountThresholds(published)].sort(ascending);
+  const COMPARED_HEADCOUNTS = [
+    ...new Set([...publishedBoundaries.flatMap((at) => [at - 1, at, at + 1]), 500]),
+  ].sort(ascending);
   // EVERY SCENARIO AND NOT SCENARIO A ALONE, which is the seventeenth PR #247 round. Comparing one
   // intake compares only the branches that intake reaches, and A is `event_open_to_public: "yes"`,
   // so `DOHMH-EXEMPTION-001`, whose published trigger reads `no` or `unknown`, contributed no
@@ -410,11 +440,21 @@ describe("DOHMH findings do not move with headcount (#235)", () => {
   // The scenarios are the approved fixtures rather than intakes written here, so the comparison
   // rests on the answer key instead of on hand-built inputs, and the assertion under it is what
   // makes the coverage a fact rather than a hope.
-  it("returns the same findings at 20, at the 75 assembly threshold, and at 500", () => {
+  it("returns the same findings below, at and above every published headcount boundary", () => {
+    // The derivation is pinned, so a comparison that quietly stopped reading the artifact's
+    // thresholds fails here rather than running over a shorter list. 20 is the Parks special event
+    // threshold (`gt` and `eq`), 75 the place-of-assembly one (`gte`).
+    expect(publishedBoundaries, "the published headcount thresholds").toEqual([20, 75]);
+    expect(COMPARED_HEADCOUNTS).toEqual([19, 20, 21, 74, 75, 76, 500]);
     for (const fixture of SCENARIO_INTAKE_FIXTURES) {
-      const atTwenty = cityHealthFindings(fixture, 20);
-      expect(cityHealthFindings(fixture, 75), `scenario ${fixture.scenario}`).toEqual(atTwenty);
-      expect(cityHealthFindings(fixture, 500), `scenario ${fixture.scenario}`).toEqual(atTwenty);
+      const [first, ...rest] = COMPARED_HEADCOUNTS;
+      const baseline = cityHealthFindings(fixture, first);
+      for (const headcount of rest) {
+        expect(
+          cityHealthFindings(fixture, headcount),
+          `scenario ${fixture.scenario} at ${headcount} against ${first}`,
+        ).toEqual(baseline);
+      }
     }
   });
   // What makes the comparison above worth running: a published city health rule no scenario reaches

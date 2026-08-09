@@ -389,7 +389,7 @@ export const INDEPENDENCE_ASSERTIONS = [
     file: "apps/api/src/rsvps.test.ts",
     block: 'the "DOHMH findings do not move with headcount (#235)" regression test',
     anchor: 'describe("DOHMH findings do not move with headcount (#235)"',
-    sha256: "a5e74c06f2771cf07af6229c7e090ee52c44049e0c195946c47b9e95a81aea59",
+    sha256: "989201f4dd2cae6c3d61c46da3b6231510260fb4d8fc74148d60f8a7d91f059d",
   },
 ];
 
