@@ -194,8 +194,10 @@ describe("loadPlan", () => {
       {
         ruleId: "SAPO-PERMIT-001",
         triggerResult,
+        // The pair the engine produces: an unresolved trigger always names the field it stopped
+        // on, and a resolved one names none, which this boundary now reads rather than assumes.
+        unknownFields: triggerResult === "unknown" ? ["sapo_event_type"] : [],
         disposition: "required",
-        unknownFields: [],
         name: "SAPO permit",
         agency: "SAPO (CECM)",
         deadline: null,
@@ -224,6 +226,47 @@ describe("loadPlan", () => {
       );
       const result = await loadPlan("https://api.example.com", "event-1");
       expect(result.ok).toBe(true);
+    }
+  });
+
+  /**
+   * #252 review: AN UNRESOLVED ROUTE MUST NAME WHAT WOULD SETTLE IT.
+   *
+   * The engine cannot produce either half of this wrong: `evaluateTrigger` returns `unknown` only
+   * when a child did, and every unknown leaf carries its own `condition.field`, while every
+   * decisive branch returns an empty list. Unread, a body could still say `unknown` and name
+   * nothing, and the plan line's introduction, its unsettled sentence and the checklist's deciding
+   * question are all built from these fields, so the one actionable thing about the route would
+   * disappear with no sign it was missing.
+   */
+  it("refuses a route whose unknown fields contradict its own trigger result", async () => {
+    const contradictions = [
+      // Unresolved and naming nothing that would decide it.
+      { triggerResult: "unknown", unknownFields: [], headlineMode: "candidate" },
+      // Resolved and still naming an open question.
+      {
+        triggerResult: "true",
+        unknownFields: ["sapo_event_type"],
+        headlineMode: "applies_together",
+      },
+    ];
+    for (const { triggerResult, unknownFields, headlineMode } of contradictions) {
+      const finding = mergedFinding(triggerResult, headlineMode);
+      stubFetch(async () =>
+        jsonResponse(200, {
+          ...storedPlan,
+          findings: [
+            {
+              ...finding,
+              routes: [finding.routes[0], { ...finding.routes[1], unknownFields }],
+            },
+          ],
+        }),
+      );
+
+      await expect(loadPlan("https://api.example.com", "event-1")).resolves.toMatchObject({
+        ok: false,
+      });
     }
   });
 

@@ -263,8 +263,10 @@ describe("loadChecklist", () => {
     {
       ruleId: "SAPO-PERMIT-001",
       triggerResult,
+      // The pair the engine produces: an unresolved trigger always names the field it stopped on,
+      // and a resolved one names none, which the boundary now reads rather than assumes.
+      unknownFields: triggerResult === "unknown" ? ["sapo_event_type"] : [],
       disposition: "required",
-      unknownFields: [],
       name: "SAPO permit",
       agency: "SAPO (CECM)",
       deadline: null,
@@ -388,6 +390,44 @@ describe("loadChecklist", () => {
     for (const row of rows) {
       stubFetch(async () =>
         jsonResponse(200, checklistBody({ items: [trackedItem(STREET_MEDIUM, row)] })),
+      );
+
+      await expect(loadChecklist("https://api.example.com", "event-1")).resolves.toMatchObject({
+        ok: false,
+      });
+    }
+  });
+
+  /**
+   * #252 review: NAMING THE RIGHT ROUTE IS NOT THE SAME AS CARRYING ITS VALUES. Membership alone
+   * still accepted a row whose date, status, fee or portal came from a different route than the one
+   * it names, and `PlanContextBody` states in as many words that the filing details above belong to
+   * the named route — so the row asserts an attribution that is false rather than dropping one.
+   */
+  it("refuses a row whose filing fields are not the named route's", async () => {
+    const routes = mergedRoutes("true");
+    const named = routes[1] as Record<string, unknown>;
+    const crossed = [
+      { latestApplyDate: "2026-09-30" },
+      { feeDisplay: "$1,050 licence fee" },
+      { portalUrl: "https://example.test/elsewhere" },
+      { deadlineStatus: "published_deadline_missed" },
+    ];
+    for (const override of crossed) {
+      stubFetch(async () =>
+        jsonResponse(
+          200,
+          checklistBody({
+            items: [
+              trackedItem(STREET_MEDIUM, {
+                routes,
+                headlineMode: "applies_together",
+                filingRouteRuleId: named.ruleId,
+                ...override,
+              }),
+            ],
+          }),
+        ),
       );
 
       await expect(loadChecklist("https://api.example.com", "event-1")).resolves.toMatchObject({

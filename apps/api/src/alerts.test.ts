@@ -6887,6 +6887,124 @@ describe.skipIf(databaseUrl === "")("F-203 deadline alerts", () => {
     });
 
     /**
+     * #252 review: A BARRED ROUTE WAS REMINDED AS A FILING.
+     *
+     * A merged line takes its `kind` from the binding route, so a group holding a permit beside a
+     * `prohibited_or_ineligible` route is trackable and reaches the scheduler. The expansion then
+     * scheduled the barred route on its own date, and `isSettledRequirement` tests for `required`,
+     * so the copy took the hedged branch: "may be required for your event. If it applies, file by
+     * <date>". That is a filing path invented for a rule that publishes a bar.
+     *
+     * Unreachable on `nyc.v2.11`, where the two published `prohibited_or_ineligible` rules carry
+     * neither a deadline nor a dedupe key, so this builds the shape directly.
+     */
+    it("schedules no filing reminder for a barred route of a merged line (#252)", async () => {
+      const eventId = await createEvent(scenario("C"));
+      const planId = randomUUID();
+      const itemId = randomUUID();
+      const applyBy = dayFromToday(9);
+      const barredApplyBy = dayFromToday(12);
+      const route = (overrides: Record<string, unknown>) => ({
+        triggerResult: "true",
+        unknownFields: [],
+        agency: "NYPD",
+        deadline: null,
+        deadlineDisplay: null,
+        latestApplyDate: null,
+        applyAfterDate: null,
+        deadlineStatus: "not_applicable",
+        slackDays: null,
+        feeDisplay: null,
+        portalName: null,
+        portalUrl: null,
+        portalInstructions: null,
+        ...overrides,
+      });
+      await pool.query(
+        `INSERT INTO permit_plans (id, event_id, event_revision, ruleset_version, snapshot_date,
+                                   verdict, verdict_detail, intake_snapshot, generated_at)
+         VALUES ($1, $2, 1, $3, $4, 'conditional', $5::jsonb, '{}'::jsonb, current_timestamp)`,
+        [
+          planId,
+          eventId,
+          ruleset.rulesetVersion,
+          ruleset.snapshotDate,
+          JSON.stringify({
+            today: todayInJurisdiction("US-NY-NYC"),
+            minSlackDays: null,
+            finding_renderings: [
+              {
+                rule_ids: ["NYPD-SOUND-001", "PARKS-EVENT-001"],
+                notes: [],
+                note_text: null,
+                conflict_text: null,
+                deadline_display: null,
+                slack_days: null,
+                deadline_unknown_fields: [],
+                timeline_unresolved_reason: null,
+                portal_instructions: null,
+                headline_mode: "candidate",
+                routes: [
+                  route({
+                    ruleId: "NYPD-SOUND-001",
+                    disposition: "required",
+                    name: "Sound Device Permit",
+                    latestApplyDate: applyBy,
+                    deadlineStatus: "deadline_approaching",
+                  }),
+                  route({
+                    ruleId: "PARKS-EVENT-001",
+                    disposition: "prohibited_or_ineligible",
+                    name: "Commercial advertising by sound device",
+                    triggerResult: "unknown",
+                    unknownFields: ["sound_purpose"],
+                    latestApplyDate: barredApplyBy,
+                    deadlineStatus: "deadline_approaching",
+                  }),
+                ],
+              },
+            ],
+          }),
+        ],
+      );
+      await pool.query(
+        `INSERT INTO permit_plan_items (id, plan_id, rule_ids, triggered_by, permit_name, agency,
+                                        latest_apply_date, sources, kind, disposition,
+                                        deadline_status, verification_status)
+         VALUES ($1, $2, ARRAY['NYPD-SOUND-001','PARKS-EVENT-001'], '[]'::jsonb,
+                 'Sound Device Permit', 'NYPD', $3, '[]'::jsonb, 'permit', 'required',
+                 'deadline_approaching', 'SOURCE_CONFIRMED')`,
+        [itemId, planId, applyBy],
+      );
+      await pool.query(
+        "INSERT INTO checklist_items (id, plan_item_id, cohort_position) VALUES ($1, $2, 0)",
+        [randomUUID(), itemId],
+      );
+
+      const client = await pool.connect();
+      try {
+        await schedulerWith()(client, eventId, planId, {
+          email: "organizer@example.test",
+          phone: null,
+        });
+      } finally {
+        client.release();
+      }
+
+      const reminders = (await alertsOf(eventId)).filter(
+        (row) => row.alert_type === "deadline_reminder",
+      );
+      // NOT VACUOUS: the permit sibling on the same line still schedules, on its own date, which is
+      // what keeps this a suppression of one route rather than of the row.
+      expect(reminders.length).toBeGreaterThan(0);
+      for (const row of reminders) {
+        expect(row.payload.body).toContain("Sound Device Permit");
+        expect(row.payload.body).not.toContain("Commercial advertising by sound device");
+        expect(row.payload.body).not.toContain(barredApplyBy);
+      }
+    });
+
+    /**
      * #252 P1: A REMINDER IS DELIVERED TWICE WHEN A MERGED LINE GAINS A SECOND DATED ROUTE.
      *
      * The route entered a reminder's identity only while the row scheduled from more than ONE

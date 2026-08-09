@@ -452,10 +452,40 @@ const PLAN_CONTEXT_CHECKS: FieldChecks<PlanContext> = {
  *
  * Exactly one member, not at least one, so this holds on its own wherever a row carries the field
  * rather than leaning on `routeContractHolds` refusing the duplicate.
+ *
+ * AND THE VALUES ARE THAT ROUTE'S, not merely some route's. Membership alone still accepted a row
+ * whose `deadline`, dates, status, fee or portal came from a DIFFERENT route than the one it names:
+ * `PlanContextBody` resolves the named route and states in as many words that the filing details
+ * above belong to it, so the row asserts an attribution that is false rather than dropping one
+ * (#252 review). The api reads every one of these fields off the named route through
+ * `fromFilingRoute`, so equality is what it already produces; this refuses the bodies it cannot.
+ *
+ * The comparison is over the fields the api attributes, and `deadline` by its published TYPE, which
+ * is the only part of it either side carries.
  */
-const filingRouteIsCarried = (context: PlanContext): boolean =>
-  context.filingRouteRuleId == null ||
-  (context.routes ?? []).filter((route) => route.ruleId === context.filingRouteRuleId).length === 1;
+const FILED_FIELDS = [
+  "deadlineDisplay",
+  "latestApplyDate",
+  "applyAfterDate",
+  "deadlineStatus",
+  "feeDisplay",
+  "portalName",
+  "portalUrl",
+  "portalInstructions",
+] as const satisfies readonly (keyof PlanContext & keyof ConsumedRoute)[];
+
+const filingRouteIsCarried = (context: PlanContext): boolean => {
+  if (context.filingRouteRuleId == null) return true;
+  const named = (context.routes ?? []).filter(
+    (route) => route.ruleId === context.filingRouteRuleId,
+  );
+  if (named.length !== 1) return false;
+  const route = named[0] as ConsumedRoute;
+  return (
+    (context.deadline?.type ?? null) === (route.deadline?.type ?? null) &&
+    FILED_FIELDS.every((field) => context[field] === route[field])
+  );
+};
 
 /**
  * The same cross-field rule the plan boundary applies, at the door the organizer works the item

@@ -137,7 +137,39 @@ export const planContext = (
     sourceUrl: rule.source?.urls[0] ?? null,
     sourcePlan: { ...PUBLISHED_SNAPSHOT },
     ...overrides,
+    // THE FILED FIELDS ARE THE NAMED ROUTE'S, which is what the api serves: `planContext` in
+    // `apps/api/src/checklist.ts` reads every one of them off the filing route through
+    // `fromFilingRoute`, and the boundary refuses a row where they disagree with the route it
+    // names. A fixture that sets `filingRouteRuleId` therefore gets that route's values, unless it
+    // also overrides one of them, which is how a test asks for the mismatch on purpose.
+    ...filedFrom(overrides),
   };
+};
+
+/** The fields the api attributes to `filingRouteRuleId`, read off that route in the fixture's list. */
+const filedFrom = (overrides: Record<string, unknown>): Record<string, unknown> => {
+  const named = overrides.filingRouteRuleId;
+  const routes = overrides.routes;
+  if (typeof named !== "string" || !Array.isArray(routes)) return {};
+  const route = routes.find((entry) => (entry as { readonly ruleId: string }).ruleId === named) as
+    Record<string, unknown> | undefined;
+  if (route === undefined) return {};
+  const filed: Record<string, unknown> = {
+    deadline: route.deadline === null || route.deadline === undefined ? null : route.deadline,
+    deadlineDisplay: route.deadlineDisplay,
+    latestApplyDate: route.latestApplyDate,
+    applyAfterDate: route.applyAfterDate,
+    deadlineStatus: route.deadlineStatus,
+    feeDisplay: route.feeDisplay,
+    portalName: route.portalName,
+    portalUrl: route.portalUrl,
+    portalInstructions: route.portalInstructions,
+  };
+  // An explicit override still wins, so a test can still build the crossed row on purpose.
+  for (const field of Object.keys(filed)) {
+    if (field in overrides) filed[field] = overrides[field];
+  }
+  return filed;
 };
 
 /** A trackable row: the organizer's state on top of that plan context. */

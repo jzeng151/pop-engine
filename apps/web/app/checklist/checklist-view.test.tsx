@@ -2809,11 +2809,15 @@ describe("a checklist row whose window comes from another route (#252)", () => {
       [GET_CHECKLIST]: checklistOf({
         created: true,
         items: [
+          // The row publishes its own window here, so nothing is attributed elsewhere and the
+          // portal below is the row's own. DOB-TENT-001 publishes no portal at all, so naming it
+          // as the filing route would leave this row with none to render — and would be the
+          // crossed attribution the boundary now refuses (#252 review).
           trackedItem(STREET_MEDIUM, {
             latestApplyDate: "2026-08-26",
             routes: [TALL_ROUTE, TENT_ROUTE],
             headlineMode: "candidate",
-            filingRouteRuleId: "DOB-TENT-001",
+            filingRouteRuleId: null,
           }),
         ],
       }),
@@ -2837,10 +2841,11 @@ describe("a checklist row whose window comes from another route (#252)", () => {
       [GET_CHECKLIST]: checklistOf({
         created: true,
         items: [
+          // The row's own portal, for the reason given on the candidate case above.
           trackedItem(STREET_MEDIUM, {
             routes: [TALL_ROUTE, { ...TENT_ROUTE, triggerResult: "true", unknownFields: [] }],
             headlineMode: "applies_together",
-            filingRouteRuleId: "DOB-TENT-001",
+            filingRouteRuleId: null,
           }),
         ],
       }),

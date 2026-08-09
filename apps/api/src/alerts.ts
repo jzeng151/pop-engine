@@ -1159,6 +1159,26 @@ const subjectFromRoute = (
  * The routes a row schedules from. An unmerged row is itself, so nothing about its alerts moves;
  * only a row that stored a route list expands, and only into routes that publish a date to schedule
  * against.
+ *
+ * A BARRED ROUTE SCHEDULES NOTHING, because every reminder this file writes is a filing instruction
+ * and a prohibition has no filing to instruct. `reminderCopy` chooses between "file by <date>" and
+ * "may be required ... if it applies, file by <date>" on `isSettledRequirement`, which tests for
+ * `required`, so a `prohibited_or_ineligible` route took the second branch: the reminder read the
+ * barred route as merely unsettled and told the organizer to file it. That is a filing path
+ * PopEngine invented for a rule that publishes a bar, which is the one thing AGENTS.md's regulatory
+ * safety section forbids outright (#252 review).
+ *
+ * IT ONLY ARISES ON A MERGED LINE. An unmerged barred finding never reaches here at all: its kind is
+ * `prohibition` or `eligibility`, `TRACKABLE_FINDING_KINDS` in `checklist.ts` admits only `permit`
+ * and `insurance`, so no checklist row and no alert exist for it. A merged line takes its `kind`
+ * from the binding route, so a group holding a permit beside a barred route IS trackable, and the
+ * expansion above then reached the barred route the parent row's trackability was never about.
+ *
+ * SUPPRESSED RATHER THAN REWORDED. A reminder for a bar would have to say something no published
+ * value supports: the rule states the event is barred, not that a filing is due, and there is no
+ * date to remind against that means anything. The route keeps its disposition, its note and its
+ * sources on the plan line and on the checklist row's route list, which is where a reader learns
+ * about it; what it does not get is a notification telling them to file.
  */
 function alertSubjects(row: PlanAlertRow, rendering: FindingRendering | undefined): AlertSubject[] {
   const routes = rendering?.routes;
@@ -1167,6 +1187,7 @@ function alertSubjects(row: PlanAlertRow, rendering: FindingRendering | undefine
   }
   const groupRouteRuleIds = routes.map((route) => route.ruleId);
   return routes
+    .filter((route) => route.disposition !== "prohibited_or_ineligible")
     .filter((route) => route.latestApplyDate !== null || route.applyAfterDate !== null)
     .map((route) => subjectFromRoute(row, rendering, route, groupRouteRuleIds));
 }

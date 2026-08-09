@@ -458,11 +458,32 @@ export const routeContractHolds = (carrier: {
   const mode = carrier.headlineMode ?? null;
   if (routes === null || mode === null) return routes === null && mode === null;
   if (!routesMatchRuleIds(routes, carrier.ruleIds)) return false;
+  if (!routes.every(unknownFieldsMatchTriggerResult)) return false;
   if (mode === "applies_together") {
     return routes.every((route) => route.triggerResult === "true");
   }
   return routes.some((route) => route.triggerResult === "unknown");
 };
+
+/**
+ * AN UNRESOLVED ROUTE NAMES WHAT WOULD SETTLE IT, AND A RESOLVED ONE NAMES NOTHING.
+ *
+ * The engine cannot produce either half wrong. `evaluateTrigger` returns `unknown` only when some
+ * child returned `unknown`, and every unknown leaf carries its own `condition.field`, so an
+ * unresolved trigger always names at least one field; every decisive branch returns
+ * `unknownFields: []`. This is that invariant read at the door rather than assumed through it.
+ *
+ * What it stops: a `candidate` route with `triggerResult: "unknown"` and an empty list renders as
+ * "May apply" with nothing saying what would decide it, on both surfaces — the plan line's
+ * introduction and its unsettled sentence are built from these fields, and so is the checklist's
+ * deciding question, so the one actionable thing about the route disappears with no sign it is
+ * missing. The other direction is a resolved route carrying fields it does not turn on, which puts
+ * an answered question into a sentence that says answering it would decide something.
+ */
+const unknownFieldsMatchTriggerResult = (route: ConsumedRoute): boolean =>
+  route.triggerResult === "unknown"
+    ? route.unknownFields.length > 0
+    : route.unknownFields.length === 0;
 
 /**
  * ONE ROUTE PER CONTRIBUTING RULE, AND THE SAME RULES THE LINE ALREADY NAMES. `mergeGroup()` builds
