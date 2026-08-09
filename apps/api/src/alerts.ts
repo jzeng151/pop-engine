@@ -2374,12 +2374,30 @@ export function createAlertScheduler(settings: AlertSchedulerSettings): AlertSch
     const keys: string[] = [];
     /** Alerts this review brought back from `cancelled`, whose attempts belong to what it ended. */
     const revived: string[] = [];
+    // EVERY ADOPTION RUNS BEFORE ANY UPSERT, so a key holds the row that is its own by the time
+    // anything claims it. Both statements were already right; their order was not, and the order
+    // only shows on a generation where one alert's adoption moves a row out from under ANOTHER
+    // alert of the same generation. A coalesced set that splits is that generation: two routes
+    // publish one reminder, then one route's copy is corrected while the other still publishes the
+    // words that went out, so the corrected route keeps the key and the delivered words move to the
+    // second route's. Interleaved, the corrected route's upsert ran first, found the sent row still
+    // filed under its key, and left it exactly as it is, which is what AC 7 requires of a row that
+    // IS this alert's. It was not: it was the other reminder's row, not yet moved. The adoption
+    // then moved it away, leaving no row under the corrected route, and its reminder was inserted
+    // and delivered by the NEXT regeneration instead — an alert waiting on a later review of a plan
+    // that did not change (#252 review).
+    //
+    // Two passes rather than a rule about which alerts may adopt: the adoption is a statement about
+    // the rows a PRIOR generation left, and the upsert is a statement about the row this one owns,
+    // so nothing is being ordered here that was not already two separate things.
     for (const alert of planned) {
+      if (alert.supersededIdentities.length === 0 && alert.coalescedIdentities.length === 0) {
+        continue;
+      }
       for (const channel of channels) {
         // Non-null: `channels` is filtered on exactly this.
         const recipient = recipientFor(contacts, channel) ?? "";
         const key = idempotencyKey(eventId, alert.identity, channel, recipient);
-        keys.push(key);
         // THE ROW THAT ALREADY SAID THESE WORDS TAKES THIS KEY, before the upsert can mint a second
         // one beside it. `supersededIdentities` explains which keys those are; what it needs here
         // is one statement. The copy match is the whole test: this row is about to be delivered
@@ -2414,9 +2432,8 @@ export function createAlertScheduler(settings: AlertSchedulerSettings): AlertSch
         // then deliver it again. The rest are superseded and the reconciler cancels them, which is
         // what rule 1 says they are. `NOT EXISTS` because the current key may already be taken, and
         // a row that already holds it is this alert.
-        if (alert.supersededIdentities.length > 0 || alert.coalescedIdentities.length > 0) {
-          await client.query(
-            `UPDATE alerts SET idempotency_key = $2
+        await client.query(
+          `UPDATE alerts SET idempotency_key = $2
               WHERE id = (SELECT prior.id FROM alerts prior
                            WHERE prior.idempotency_key = ANY($5::text[])
                               OR (prior.idempotency_key = ANY($1::text[])
@@ -2425,19 +2442,27 @@ export function createAlertScheduler(settings: AlertSchedulerSettings): AlertSch
                            ORDER BY (prior.status = 'sent') DESC, prior.idempotency_key
                            LIMIT 1)
                 AND NOT EXISTS (SELECT 1 FROM alerts held WHERE held.idempotency_key = $2)`,
-            [
-              alert.supersededIdentities.map((identity) =>
-                idempotencyKey(eventId, identity, channel, recipient),
-              ),
-              key,
-              alert.subject,
-              alert.body,
-              alert.coalescedIdentities.map((identity) =>
-                idempotencyKey(eventId, identity, channel, recipient),
-              ),
-            ],
-          );
-        }
+          [
+            alert.supersededIdentities.map((identity) =>
+              idempotencyKey(eventId, identity, channel, recipient),
+            ),
+            key,
+            alert.subject,
+            alert.body,
+            alert.coalescedIdentities.map((identity) =>
+              idempotencyKey(eventId, identity, channel, recipient),
+            ),
+          ],
+        );
+      }
+    }
+
+    for (const alert of planned) {
+      for (const channel of channels) {
+        // Non-null: `channels` is filtered on exactly this.
+        const recipient = recipientFor(contacts, channel) ?? "";
+        const key = idempotencyKey(eventId, alert.identity, channel, recipient);
+        keys.push(key);
         const { rows } = await client.query<{ id: string; inserted: boolean; revived: boolean }>(
           // The status BEFORE this statement, which `RETURNING` cannot see: it returns the row as
           // written, and a revival is only recognisable by what the row was. Read in a CTE, so it

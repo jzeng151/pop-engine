@@ -6965,6 +6965,12 @@ describe.skipIf(databaseUrl === "")("F-203 deadline alerts", () => {
           reverseRouteOrder?: boolean;
           /** What each route's trigger resolved to, which the reversal above stands for. */
           triggerResults?: Record<string, string>;
+          /**
+           * The FIRST route's published name, so a generation can correct one route's copy while
+           * the second keeps the words that already went out. Defaults to the shared name, which is
+           * what `secondRouteIdentical` matches, so a coalesced set splits when this is set.
+           */
+          firstRouteName?: string;
         },
       ): Promise<string> => {
         const planId = randomUUID();
@@ -6999,7 +7005,7 @@ describe.skipIf(databaseUrl === "")("F-203 deadline alerts", () => {
                       mergedRoute({
                         ruleId: "NYPD-SOUND-001",
                         disposition: "required",
-                        name: "Sound Device Permit",
+                        name: options.firstRouteName ?? "Sound Device Permit",
                         latestApplyDate: applyBy,
                         deadlineStatus: "deadline_approaching",
                         deadlineDisplay: "file at least 5 days before use",
@@ -7449,6 +7455,86 @@ describe.skipIf(databaseUrl === "")("F-203 deadline alerts", () => {
           (message) => `${message.recipient}|${message.subject}|${message.body}`,
         );
         expect(new Set(words).size).toBe(words.length);
+      });
+
+      /**
+       * #252 P1: A SPLITTING COALESCED SET DELIVERED THE CORRECTED REMINDER A GENERATION LATE.
+       *
+       * Two routes publish the same words, so they are one reminder keyed on the lower rule id, and
+       * it is delivered. The next generation corrects that route's copy while the other route still
+       * publishes the words that went out. The set splits: the corrected words are a new reminder
+       * under the same key, and the delivered words keep their reminder under the second route's
+       * key, which `supersededIdentities` moves the sent row to.
+       *
+       * Both statements were right and their ORDER was not. The upsert ran first, found the sent
+       * row still filed under the corrected route's key, and left it exactly as it is, which is
+       * what AC 7 requires of a row that IS this alert's. It was not: it was the other reminder's
+       * row, not yet moved. The adoption then moved it away, leaving no row under the corrected
+       * route at all, so its reminder was inserted and delivered by the NEXT regeneration instead —
+       * an alert whose delivery waits on a later review of a plan that did not change.
+       *
+       * Every adoption now runs before any upsert, so each key holds the row that is its own by the
+       * time anything claims it.
+       */
+      it("delivers a split coalesced reminder's corrected copy in the generation that corrects it (#252)", async () => {
+        const eventId = await createEvent(scenario("C"));
+        const checklistItemId = randomUUID();
+        const provider = fakeProvider();
+        const poller = () =>
+          createAlertPoller({
+            database: pool,
+            senders: provider.senders,
+            jurisdiction: ruleset.jurisdiction,
+          }).tick();
+
+        // Generation 1: byte-identical routes, so one reminder goes out under NYPD-SOUND-001.
+        await schedule(
+          eventId,
+          await insertMergedPlan(eventId, {
+            secondRouteDated: true,
+            secondRouteIdentical: true,
+            checklistItemId,
+          }),
+        );
+        await poller();
+        const corrected = () =>
+          provider.attempts.filter((message) => message.subject.includes("(corrected)")).length;
+        expect(provider.attempts.length).toBeGreaterThan(0);
+        expect(corrected()).toBe(0);
+
+        // Generation 2: NYPD-SOUND-001's copy is corrected; PARKS-EVENT-001 still publishes the
+        // words already delivered.
+        const split = {
+          secondRouteDated: true,
+          secondRouteIdentical: true,
+          checklistItemId,
+          firstRouteName: "Sound Device Permit (corrected)",
+        };
+        await schedule(eventId, await insertMergedPlan(eventId, split));
+        await poller();
+        // The corrected words are handed over in the generation that corrects them, not one review
+        // later. `attempts` rather than `delivered`, because the corrected reminder keeps the key
+        // its coalesced predecessor was delivered under and the fake provider dedups on that key
+        // exactly as a real one does inside its window; what this is about is which review hands
+        // the message over.
+        expect(corrected()).toBeGreaterThan(0);
+        const afterSplit = provider.attempts.length;
+
+        // Generation 3 changes nothing, so it hands nothing over.
+        await schedule(eventId, await insertMergedPlan(eventId, split));
+        await poller();
+        expect(provider.attempts.length).toBe(afterSplit);
+
+        // Both routes end holding their own row, which is what stops a later regeneration
+        // re-inserting either one: the corrected route's rows and the delivered words' rows.
+        const rows = await alertsOf(eventId);
+        expect(rows.every((row) => row.status === "sent")).toBe(true);
+        expect(
+          rows.filter((row) => row.idempotency_key.includes(":NYPD-SOUND-001:")).length,
+        ).toBeGreaterThan(0);
+        expect(
+          rows.filter((row) => row.idempotency_key.includes(":PARKS-EVENT-001:")).length,
+        ).toBeGreaterThan(0);
       });
 
       /**
