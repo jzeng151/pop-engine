@@ -914,12 +914,12 @@ position. The permit rules are `kind: permit` with no published disposition, so 
 `required`. The prohibition publishes no disposition either, so it takes its kind's default from
 `DEFAULT_DISPOSITION_BY_RULE_KIND` (`proposals.ts:48`), and since 2026-08-08 that kind is
 `prohibition` and that default is `prohibited_or_ineligible`, the top of `DISPOSITION_STRENGTH`. So
-the merged disposition is the prohibition's, identity binds off the prohibition alone as the only
-route contributing it, and the timeline still binds off the whole group, where the permit's dated
-and open 5-day window outranks the prohibition's absence of one (`compareBinding`,
-`findings.ts:280-291`). The merged line reads prohibited and quotes the permit's filing window and
-apply-by date. §8.4's rule that a blocking finding is never erased on a shared key now engages,
-because the finding is blocking to the parser.
+on the rows just identified as this shape, and only on those, the merged disposition is the
+prohibition's: identity binds off the prohibition alone as the only route contributing it, and the
+timeline still binds off the whole group, where the permit's dated and open 5-day window outranks
+the prohibition's absence of one (`compareBinding`, `findings.ts:280-291`). The merged line reads
+prohibited and quotes the permit's filing window and apply-by date. §8.4's rule that a blocking
+finding is never erased on a shared key now engages, because the finding is blocking to the parser.
 
 Two qualifications, both important and neither speculative:
 
