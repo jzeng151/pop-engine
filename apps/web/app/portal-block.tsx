@@ -41,8 +41,7 @@ export function PortalBlock({
   instructionsClassName,
   lead = "apply at",
 }: PortalBlockProps) {
-  const hasPortal =
-    portalName !== null || portalUrl !== null || portalInstructions !== null;
+  const hasPortal = portalName !== null || portalUrl !== null || portalInstructions !== null;
   if (!hasPortal) return null;
 
   const label = portalName ?? portalUrl;
@@ -66,9 +65,7 @@ export function PortalBlock({
           )}
         </p>
       )}
-      {portalInstructions !== null && (
-        <p className={instructionsClassName}>{portalInstructions}</p>
-      )}
+      {portalInstructions !== null && <p className={instructionsClassName}>{portalInstructions}</p>}
     </>
   );
 }

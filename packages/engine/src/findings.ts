@@ -581,8 +581,7 @@ function applyDependencySequencing(
     // the scalars, so nothing moves for either.
     // `??` is not usable here: a route publishing no date is not a route with no values, and
     // reading its null as "missing" would put the binding route's date back.
-    const gatedRoute =
-      gated.routes?.find((route) => route.ruleId === binding.gatedRuleId) ?? gated;
+    const gatedRoute = gated.routes?.find((route) => route.ruleId === binding.gatedRuleId) ?? gated;
     const gatedLatestApplyDate = gatedRoute.latestApplyDate;
     const gatedDeadlineStatus = gatedRoute.deadlineStatus;
 
