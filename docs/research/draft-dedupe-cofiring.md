@@ -220,13 +220,22 @@ sound rather than assuming it.
 Built from the **draft's own** 63 declared `intake_fields`, not the published ruleset's 33.
 
 The full 63-field factorial is not enumerable: the 43 enum, boolean and multi_enum fields alone
-multiply out to 17,656,085,622,407,823,360,000,000,000 combinations, 1.77 x 10^28, before any of the
-17 numeric, 2 date or 1 string fields. That product is taken over the same domains the sweeps below
-use, so a multi_enum contributes its valid selections rather than its power set; the previous
-revision printed 1.90 x 10^28, which was the power-set count and so contradicted the rule stated two
-paragraphs down. The 63 fields, the 43, the seven type counts and the product are re-derived from
-the artifact by `intakeFieldInventory`, so an unused intake field the draft adds or drops moves them
-here rather than leaving them stale. It was not sampled either. Instead each group was swept **exhaustively over the fields its own
+admit 4,119,753,311,895,158,784,000,000,000 valid intakes, 4.12 x 10^27, before any of the
+17 numeric, 2 date or 1 string fields. That count is built by the same two rules the sweeps below
+use, and by calling the same code. A multi_enum contributes its valid selections rather than its
+power set; the previous revision printed 1.90 x 10^28, which was the power-set count and so
+contradicted the rule stated two paragraphs down. And a field the event is not asked is omitted and
+contributes one value rather than its whole domain, which is the rule the revision after that one
+still broke: it printed 1.77 x 10^28, the unconstrained Cartesian product over all 43 full domains,
+while `public_space_interference` and `sound_audible_in_public_space` are both scoped by an
+`asked_when`. Those two fields and the two that gate them, `location_type` and `amplified_sound`,
+have 180 combinations between them, of which 42 are valid intakes; every other field is independent
+of the gates and factors out, so the two figures differ by 180/42 and the second is the size of the
+intake contract rather than of a product. The 63 fields, the 43, the seven type counts and the count
+are re-derived from the artifact by `intakeFieldInventory`, which runs `sweepSize` over the gated
+fields and their gates, so an unused intake field the draft adds or drops moves them here rather
+than leaving them stale, and so does an `asked_when` the draft adds, widens or withdraws. It was not
+sampled either. Instead each group was swept **exhaustively over the fields its own
 members read**, expanded through derived-value inputs. This is exact rather than a sample, because
 no draft rule reads a field outside its own trigger, no field read by any of these groups carries
 an `asked_when` clause naming a field outside the swept set (the one exception,
@@ -975,12 +984,15 @@ PRINT_TABLES=1 pnpm test:cofiring   # the same run, printing the tables to diff 
 **What "every figure" covers, exactly.** The mapping table below is the inventory: a figure in
 sections 3 to 7 is asserted when some row names the case that asserts it, and nothing in those
 sections is outside a row. That is a claim this document has had to earn twice. Section 3.3's
-opening inventory, the 63 declared fields, the 43 that multiply out and the size of the product,
+opening inventory, the 63 declared fields, the 43 that multiply out and the size of the count,
 sat in the covered range while nothing read it, so an unused intake field the draft added or
 dropped would have left every published number green and that one stale; it is now re-derived by
-`intakeFieldInventory` and asserted with its per-type breakdown. The line counts and case count in
-the next paragraph are about the harness rather than about the draft, so they are section 8's own
-figures and are not asserted by it.
+`intakeFieldInventory` and asserted with its per-type breakdown. Being asserted was not sufficient
+on its own: the first assertion pinned an unconstrained Cartesian product, which is a different
+quantity from the one the section claims, so a second case now also fails if the gated fields stop
+being gated or if a gate starts reading a field the count does not range over. The line counts and
+case count in the next paragraph are about the harness rather than about the draft, and they have
+gone stale twice while every other figure stayed green, so they are asserted too.
 
 It is four modules and one suite, 2,245 lines together, of which `harness.mjs` is 908 and
 `cofiring.test.mjs` is 812:
@@ -999,7 +1011,7 @@ Every table maps to a `describe` block with the same number:
 | --------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | 3.1, the staging errors and inventories                         | `describe("section 3.1, the load-staging errors")`, whose second case asserts the dropped-deadline, mapped-status and mapped-kind counts                                                                                                                                                                                                                      |
 | 3.2, the agreement check                                        | `describe("section 3.2, what the harness supplies")`                                                                                                                                                                                                                                                                                                          |
-| 3.3, the intake inventory, the sweep sizes and the domain rules | `describe("section 3.3, the sweep")`, whose first case asserts the 63-field inventory, its per-type breakdown and the 1.77 x 10^28 product, whose headcount case runs `validateIntake` on the rejected value and the admitted one, and whose hand-set case fails when the swept structure factors stop bracketing a published `structure_area_sqft` threshold |
+| 3.3, the intake inventory, the sweep sizes and the domain rules | `describe("section 3.3, the sweep")`, whose first case asserts the 63-field inventory, its per-type breakdown and the 4.12 x 10^27 count, whose `asked_when` case fails if that count stops applying the two gates or if a gate starts reading a field the count does not range over, whose headcount case runs `validateIntake` on the rejected value and the admitted one, and whose hand-set case fails when the swept structure factors stop bracketing a published `structure_area_sqft` threshold |
 | 3.4, limitations 3, 4, 5 and 9                                  | `describe("section 3.4, the limitations")`                                                                                                                                                                                                                                                                                                                    |
 | 3.5, the supplied semantics                                     | `jq '.engine_operators, .derived_values' rules/proposals/nyc-rules.v2-full-draft.json`, and the `is_null`/`lte` half of `describe("section 3.2")`                                                                                                                                                                                                             |
 | 4.1, findings per event                                         | `describe("section 4.1, findings per event")`                                                                                                                                                                                                                                                                                                                 |

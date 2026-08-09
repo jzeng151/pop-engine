@@ -7,7 +7,13 @@
 import { DISPOSITION_STRENGTH } from "../../packages/engine/src/findings.ts";
 import { DEFAULT_DISPOSITION_BY_RULE_KIND } from "../../packages/engine/src/proposals.ts";
 
-import { multiMemberGroups, triggerOperators, validMultiEnumSelections } from "./harness.mjs";
+import {
+  buildFieldDefinitions,
+  domainFor,
+  multiMemberGroups,
+  sweepSize,
+  triggerOperators,
+} from "./harness.mjs";
 
 const published = (draft) => [...draft.rules, ...draft.advisories];
 
@@ -36,38 +42,97 @@ export function sharedOutputFields(draft, dedupeKey) {
     );
 }
 
+/** The field types that multiply out, for section 3.3's opening figures. */
+const FACTORIAL_TYPES = new Set(["enum", "boolean", "multi_enum"]);
+
 /**
  * The declared intake surface of an artifact, for section 3.3's opening figures: how many fields it
- * declares, how many of each type, and how many combinations its enum, boolean and multi_enum
- * fields multiply out to.
+ * declares, how many of each type, and how many valid intakes its enum, boolean and multi_enum
+ * fields admit.
  *
- * The product is taken over the same domains `domainFor` sweeps, so it is the size of the factorial
- * the section says it could not enumerate rather than a differently-built number: an enum or boolean
- * contributes its declared values plus `null` where the field is nullable, and a multi_enum
- * contributes its valid selections rather than its power set, which is the rule the section states
- * for every other sweep. It is a `BigInt` because the value exceeds an exact double.
+ * The count is built by the two rules section 3.3 states for every other sweep, and by calling the
+ * same code rather than a parallel implementation of them:
  *
- * An unused intake field the draft adds or drops moves `fields`, `byType` and `combinations`, so the
- * section's inventory cannot go stale while the suite stays green.
+ *   - each field's domain is `domainFor`'s, so a multi_enum contributes its valid selections rather
+ *     than its power set, and an enum or boolean contributes `null` only where it is nullable;
+ *   - a field the event is not asked is omitted and contributes one value rather than its whole
+ *     domain, because `validateIntake` rejects a supplied value for an out-of-scope field.
+ *
+ * The second rule is why this is not one product. A gated field's size depends on the answers that
+ * gate it, so the gated fields and every field their `asked_when` clauses read are counted together
+ * by running `sweepSize` over exactly that set, which is `enumerateIntakes` and therefore the same
+ * scope resolution the group sweeps use. The remaining fields are independent of the gates and
+ * multiply in as constant factors. The result is the size of the valid intake contract over these
+ * 43 fields, not an unconstrained Cartesian product over their full domains. It is a `BigInt`
+ * because the value exceeds an exact double.
+ *
+ * An unused intake field the draft adds or drops moves `fields`, `byType` and `combinations`, and so
+ * does an `asked_when` the draft adds, widens or withdraws, so the section's inventory cannot go
+ * stale while the suite stays green.
  */
 export function intakeFieldInventory(artifact) {
   const byType = {};
-  let combinations = 1n;
-  let factorialFields = 0;
   for (const field of artifact.intake_fields) {
     byType[field.type] = (byType[field.type] ?? 0) + 1;
-    const nullable = field.nullable === true ? 1 : 0;
-    let values = null;
-    if (field.type === "enum") values = field.values.length + nullable;
-    else if (field.type === "boolean") values = 2 + nullable;
-    else if (field.type === "multi_enum") {
-      values = validMultiEnumSelections(field.values).length + nullable;
-    }
-    if (values === null) continue;
-    factorialFields += 1;
-    combinations *= BigInt(values);
   }
-  return { fields: artifact.intake_fields.length, byType, factorialFields, combinations };
+
+  const definitions = new Map(
+    buildFieldDefinitions(artifact, { translateAskedWhen: true }).map((field) => [
+      field.field,
+      field,
+    ]),
+  );
+  const factorial = artifact.intake_fields
+    .filter((field) => FACTORIAL_TYPES.has(field.type))
+    .map((field) => field.field);
+
+  const conditional = new Set();
+  const pending = factorial.filter((field) => definitions.get(field).askedWhenClauses !== null);
+  while (pending.length > 0) {
+    const field = pending.pop();
+    if (conditional.has(field)) continue;
+    conditional.add(field);
+    for (const clause of definitions.get(field).askedWhenClauses ?? []) {
+      // A gate that reads a field this count does not range over is held unanswered, which is the
+      // same convention the group sweeps apply to fields outside their own set. Both of the draft's
+      // gates read fields that are inside, so the draft's figure never rests on it; the published
+      // control's one gate reads `headcount`, which is not, and is why this is a skip and not a
+      // failure. `gatesReadOutsideTheCount` reports the difference and the suite asserts it.
+      if (factorial.includes(clause.field)) pending.push(clause.field);
+    }
+  }
+
+  let combinations = BigInt(sweepSize([...conditional], definitions, []));
+  for (const field of factorial) {
+    if (conditional.has(field)) continue;
+    combinations *= BigInt(domainFor(field, definitions.get(field), []).length);
+  }
+
+  return {
+    fields: artifact.intake_fields.length,
+    byType,
+    factorialFields: factorial.length,
+    combinations,
+  };
+}
+
+/**
+ * Gates that read a field `intakeFieldInventory` does not range over, as `field -> gate field`.
+ *
+ * Empty for the draft, which is what makes its published count a statement about the intake
+ * contract rather than one resting on a field held unanswered outside the count.
+ */
+export function gatesReadOutsideTheCount(artifact) {
+  const counted = new Set(
+    artifact.intake_fields.filter((field) => FACTORIAL_TYPES.has(field.type)).map((f) => f.field),
+  );
+  return buildFieldDefinitions(artifact, { translateAskedWhen: true })
+    .filter((field) => counted.has(field.field) && field.askedWhenClauses !== null)
+    .flatMap((field) =>
+      field.askedWhenClauses
+        .filter((clause) => !counted.has(clause.field))
+        .map((clause) => ({ field: field.field, gateField: clause.field })),
+    );
 }
 
 export function sapoPermitInventory(draft) {

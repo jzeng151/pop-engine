@@ -20,6 +20,7 @@ import {
   NUMERIC_MINIMUMS,
   askedWhenExpression,
   assertDerivedValuesMatchDraft,
+  buildFieldDefinitions,
   domainFor,
   loadControl,
   measuredDraftPath,
@@ -297,9 +298,33 @@ describe("section 3.3, the sweep", () => {
       string: 1,
     });
     expect(draft.factorialFields).toBe(43);
-    expect(draft.combinations).toBe(17_656_085_622_407_823_360_000_000_000n);
-    expect(Number(draft.combinations) / 1e28).toBeCloseTo(1.77, 2);
+    expect(draft.combinations).toBe(4_119_753_311_895_158_784_000_000_000n);
+    expect(Number(draft.combinations) / 1e27).toBeCloseTo(4.12, 2);
     expect(m.inventory.intakeFieldInventory(loadControl()).fields).toBe(33);
+  });
+
+  test("the factorial applies `asked_when`, and rests on no field held outside itself", () => {
+    // The count is over valid intakes, not over full domains, so a field the event is not asked
+    // carries one value. Without this the unconstrained product, 1.77 x 10^28, passed the case
+    // above while contradicting the omitted-field rule the section states below it.
+    const definitions = new Map(
+      buildFieldDefinitions(m.draft, { translateAskedWhen: true }).map((f) => [f.field, f]),
+    );
+    for (const field of ["public_space_interference", "sound_audible_in_public_space"]) {
+      expect(definitions.get(field).askedWhenClauses).not.toBeNull();
+    }
+    const unconstrained = m.draft.intake_fields
+      .filter((field) => ["enum", "boolean", "multi_enum"].includes(field.type))
+      .reduce(
+        (total, field) =>
+          total * BigInt(domainFor(field.field, definitions.get(field.field), []).length),
+        1n,
+      );
+    expect(unconstrained).toBe(17_656_085_622_407_823_360_000_000_000n);
+    // The two gates and the two fields they gate have 180 combinations between them, of which 42
+    // are valid intakes; every other field is independent of the gates and factors out.
+    expect(m.inventory.intakeFieldInventory(m.draft).combinations * 180n).toBe(unconstrained * 42n);
+    expect(m.inventory.gatesReadOutsideTheCount(m.draft)).toEqual([]);
   });
 
   test("a multi_enum domain is its valid selections, not its power set", () => {
