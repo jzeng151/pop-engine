@@ -45,12 +45,12 @@ The verification team can manage source metadata, bounded excerpts, archives, an
 
 ## System Impact
 
-| Concern              | Proposed impact                                                                                                                                      |
-| -------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------- |
-| API                  | Source/version/link-check/review operations require platform-admin OpenAPI contracts.                                                                |
-| Schema               | Forward migrations for source records/versions/archives/link checks and rule links.                                                                  |
-| Jobs                 | Durable allow-listed link checks/archive refresh with rate limits, bounded retry, and SSRF controls.                                                 |
-| Providers            | Approved archival/fetch provider if used; direct primary source remains the authority.                                                               |
+| Concern              | Proposed impact                                                                                                                                                                                |
+| -------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| API                  | Source/version/link-check/review operations require platform-admin OpenAPI contracts.                                                                                                          |
+| Schema               | Forward migrations for source records/versions/archives/link checks and rule links.                                                                                                            |
+| Jobs                 | Durable allow-listed link checks/archive refresh with rate limits, bounded retry, and SSRF controls.                                                                                           |
+| Providers            | Approved archival/fetch provider if used; direct primary source remains the authority.                                                                                                         |
 | Privacy and security | Separate rules-admin role plus the product owner's reserved verification decision, SSRF-safe fetching, allow-listed protocols/hosts, bounded content, audit, and copyright/retention controls. |
 
 Exact HTTP, JSON Schema, migration, job, and provider shapes belong in their reviewed machine contracts; this proposal does not authorize parallel local types or edits to merged migrations.
