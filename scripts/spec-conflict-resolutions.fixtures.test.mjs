@@ -3384,3 +3384,43 @@ describe("round 19: a titled instrument named in summary text is a claim subject
     ]);
   });
 });
+
+/**
+ * ROUND 19, THREAD 809. Classifying every `.json` as non-prose exempted more files than the
+ * classification said: the output scanner ran over `rules/*.json` and nothing else, so the
+ * organizer-facing finding fixture and the superseded replay ruleset beside it were in neither
+ * guard.
+ *
+ * `spec-conflict-resolutions.test.mjs` decides which files that means, by path. What these fixtures
+ * prove is the part a walk over a good tree cannot: the scanner fires on a finding fixture, which
+ * has no `rules` array and no ruleset shape at all, and it fires on the real one rather than on a
+ * hand-written stand-in.
+ */
+describe("round 19: a finding fixture is audited by the output scanner", () => {
+  const FIXTURE = "packages/engine/src/__fixtures__/plaza-finding-nyc.v2.3.json";
+  const finding = JSON.parse(read(FIXTURE));
+
+  it("reports no offender in the fixture as the repository carries it", () => {
+    expect(countClaimsInPublishedOutput(finding)).toEqual([]);
+  });
+
+  /**
+   * The claim the thread names, planted in the field the engine copies into a rendered plan line.
+   * A finding carries no `rules` array, so this is `rulesetProseStrings` reading the whole file as
+   * top-level units, which is the same path the published artifact's `status` and `provenance` take.
+   */
+  it("names the offender when a lower-authority finding fixture states the claim", () => {
+    const planted = { ...finding, noteText: "DOHMH requires a permit for 75 guests." };
+    expect(countClaimsInPublishedOutput(planted)).toEqual([
+      { ruleId: "ruleset.noteText", string: "DOHMH requires a permit for 75 guests." },
+    ]);
+  });
+
+  /** The instrument title is a subject here too, so a fixture may not drop the agency label either. */
+  it("names the offender when the fixture names the instrument instead of the agency", () => {
+    const subjects = publishedClaimSubjects(JSON.parse(read("rules/nyc-rules.v2.11.json")));
+    const claim = "A Temporary Food Service Establishment permit is required for 75 guests.";
+    expect(pairsAgencyWithCount(claim, { subjects })).toBe(true);
+    expect(pairsAgencyWithCount(claim)).toBe(false);
+  });
+});

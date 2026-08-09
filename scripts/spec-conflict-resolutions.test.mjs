@@ -805,8 +805,10 @@ describe("no DOHMH rule is attributed to headcount, removed 2026-08-05 (#235)", 
   const NON_PROSE_EXTENSIONS = new Map([
     [
       ".json",
-      "the published artifacts, audited as prose by countClaimsInPublishedOutput rather than by" +
-        " the generic walk. `rules/*.json` is scanned string by string above.",
+      "regulatory artifacts, audited by countClaimsInPublishedOutput rather than by the generic" +
+        " walk, which would read JSON syntax as prose blocks. Which JSON files that means is a" +
+        " PATH question and NON_REGULATORY_JSON below answers it: every tracked .json except the" +
+        " workspace and TypeScript configuration is handed to that scanner.",
     ],
     [
       ".html",
@@ -990,15 +992,18 @@ describe("no DOHMH rule is attributed to headcount, removed 2026-08-05 (#235)", 
    * every number a string can state. A rule triggered at 75 does not make a note about 500 a
    * published fact.
    */
-  function attendeeCountThresholdsByRule() {
+  const attendeeCountThresholds = (artifacts) => {
     const thresholds = new Map();
-    for (const [, artifact] of publishedRulesets()) {
+    for (const artifact of artifacts) {
       for (const rule of cityHealthRules(artifact)) {
         if (!triggerFields(rule.trigger).has(ATTENDEE_COUNT_FIELD)) continue;
         thresholds.set(rule.id, triggerValues(rule.trigger, ATTENDEE_COUNT_FIELD));
       }
     }
     return thresholds;
+  };
+  function attendeeCountThresholdsByRule() {
+    return attendeeCountThresholds(publishedRulesets().map(([, artifact]) => artifact));
   }
 
   /**
@@ -1082,6 +1087,103 @@ describe("no DOHMH rule is attributed to headcount, removed 2026-08-05 (#235)", 
         " one (docs/DOCUMENTATION-GOVERNANCE.md §6):\n" +
         offenders.join("\n"),
     ).toEqual([]);
+  });
+
+  /**
+   * THE `.json` FILES THAT CARRY NO REGULATORY CONTENT, by path, so the exemption the extension
+   * partition records is a decision about FILES rather than about a file kind.
+   *
+   * "Every `.json` is non-prose" was the whole answer until the nineteenth PR #247 round, and it
+   * exempted more than it said: `countClaimsInPublishedOutput` runs over `rules/*.json` and
+   * nothing else, so `packages/engine/src/__fixtures__/nyc-rules.v2.3.json` and the finding
+   * fixture beside it were in neither guard. AGENTS.md's authority order names an approved fixture
+   * as a level of its own, above engine output and UI copy, and nothing read those two.
+   *
+   * SO THE EXEMPTION IS THE LIST AND THE AUDIT IS THE DEFAULT, in that direction rather than the
+   * other. A `.json` file added to this repository tomorrow is handed to the output scanner unless
+   * somebody puts it here with a reason, which is the safe way round: an unclassified artifact is
+   * read rather than skipped. The two names here are the workspace manifests and the TypeScript
+   * project files, which carry dependency names, paths and compiler flags.
+   *
+   * WHAT THE SCANNER DOES WITH A NON-RULESET FILE is what it already did with the published
+   * artifact's top-level keys: `rulesetProseStrings` groups every string a file carries by the
+   * object it hangs under, so a finding fixture is read as the units an organizer would read, with
+   * no ruleset shape required of it.
+   */
+  const NON_REGULATORY_JSON = [
+    {
+      match: /(^|\/)package\.json$/,
+      why: "the workspace manifests: dependency names, versions and script lines.",
+    },
+    {
+      match: /(^|\/)tsconfig(\.[^/]+)?\.json$/,
+      why: "the TypeScript project configuration: compiler flags and path mappings.",
+    },
+  ];
+
+  /** Every tracked `.json` file the list above does not exempt, with its parsed artifact. */
+  function regulatoryJsonArtifacts() {
+    return filesUnder([".json"])
+      .map((path) => [path.replace(`${repoRoot}/`, ""), path])
+      .filter(([relative]) => !NON_REGULATORY_JSON.some(({ match }) => match.test(relative)))
+      .map(([relative, path]) => [relative, JSON.parse(readFileSync(path, "utf8"))]);
+  }
+
+  /**
+   * THE SAME OUTPUT SCANNER OVER EVERY REGULATORY JSON ARTIFACT, not over `rules/*.json` alone.
+   *
+   * The published ruleset is still the one this repository ships, and the assertion above is still
+   * the one that carries the governance consequence. What this adds is the artifacts BELOW it in
+   * AGENTS.md's authority order: the superseded replay ruleset, its finding fixture, and the
+   * proposed draft. A claim written into one of those contradicts the published rule from a lower
+   * level, and AGENTS.md says to fix the lower level when two disagree, which needs somebody to
+   * notice the disagreement first.
+   *
+   * EACH ARTIFACT IS AUDITED AGAINST THE PUBLISHED THRESHOLDS AND ITS OWN. A claim is held to the
+   * rule it names, and a superseded or proposed artifact's rule is a rule this repository can read
+   * a trigger out of, so its own published trigger licenses its own prose. Nothing else does: a
+   * draft rule that reads no count licenses no count, in the draft as in the publication.
+   */
+  it("no regulatory JSON artifact states a count-based city health requirement", () => {
+    const published = publishedRulesets().map(([, artifact]) => artifact);
+    const artifacts = regulatoryJsonArtifacts();
+    const offenders = [];
+    for (const [relative, artifact] of artifacts) {
+      const attributed = attendeeCountThresholds([...published, artifact]);
+      for (const found of countClaimsInPublishedOutput(artifact, { attributed })) {
+        offenders.push(`${relative}: ${found.ruleId}: ${found.string}`);
+      }
+    }
+
+    expect(
+      artifacts.map(([relative]) => relative).sort(),
+      "the audit reaches the fixtures and the draft, not only the published ruleset",
+    ).toEqual([
+      "packages/engine/src/__fixtures__/nyc-rules.v2.3.json",
+      "packages/engine/src/__fixtures__/plaza-finding-nyc.v2.3.json",
+      "rules/nyc-rules.v2.11.json",
+      "rules/proposals/nyc-rules.v2-full-draft.json",
+    ]);
+    expect(
+      offenders,
+      "a regulatory JSON artifact tells an organizer that a city health rule reads the attendee" +
+        " count, and no such rule is published. A fixture or a draft sits BELOW the published" +
+        " ruleset in AGENTS.md's authority order, so the lower level is the one to fix:\n" +
+        offenders.join("\n"),
+    ).toEqual([]);
+  });
+
+  /**
+   * The exemption list is a decision that has to keep being true. An entry matching nothing is an
+   * exemption nobody needs, and it would sit here hiding the next file that matches it.
+   */
+  it("every non-regulatory JSON exemption matches a tracked file", () => {
+    const tracked = execFileSync("git", ["ls-files", "-z"], { cwd: repoRoot, encoding: "utf8" })
+      .split("\0")
+      .filter((relative) => relative.endsWith(".json"));
+    for (const { match, why } of NON_REGULATORY_JSON) {
+      expect(tracked.filter((relative) => match.test(relative)).length, why).toBeGreaterThan(0);
+    }
   });
 
   /** Every block of one tracked file, flagged or not. */
