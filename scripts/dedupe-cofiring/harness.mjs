@@ -906,7 +906,20 @@ export function sweepControl(ruleset) {
       groups.set(rule.dedupeKey, [...(groups.get(rule.dedupeKey) ?? []), rule]);
       return groups;
     }, new Map());
-  const [key, members] = [...group.entries()].find(([, rules]) => rules.length > 1);
+  // Sections 4.4 and 7 read the control as having exactly one multi-member dedupe group, and every
+  // figure they quote is this one group's sweep. Taking the first match would keep sweeping
+  // `dob-structure` after a later publication added a second group, so the suite would stay green
+  // while the document omitted the new merge behaviour entirely (#251 review). The count is
+  // asserted instead, and a second group stops the run rather than hiding behind it.
+  const multiMember = [...group.entries()].filter(([, rules]) => rules.length > 1);
+  if (multiMember.length !== 1) {
+    throw new Error(
+      `the published control has ${multiMember.length} multi-member dedupe groups ` +
+        `(${multiMember.map(([key]) => key).join(", ") || "none"}), and sections 4.4 and 7 ` +
+        `describe exactly one; sweep and report every group before republishing them`,
+    );
+  }
+  const [[key, members]] = multiMember;
 
   const definitions = byField(ruleset.intakeFields);
   const fields = [];

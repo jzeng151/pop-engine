@@ -27,6 +27,7 @@ import {
   domainFor,
   loadControl,
   measuredDraftPath,
+  sweepControl,
   validMultiEnumSelections,
 } from "./harness.mjs";
 import {
@@ -907,6 +908,26 @@ describe("section 4.3, completeness", () => {
 });
 
 describe("section 4.4, the published control", () => {
+  test("the one multi-member group these figures describe is asserted, not assumed", () => {
+    // Sections 4.4 and 7 both read the control as having exactly one multi-member dedupe group, and
+    // every figure below is that group's sweep. Sweeping the first match would keep this suite
+    // green after a later publication added a second group, with the document silently describing
+    // one of two (#251 review).
+    expect(m.control.key).toBe("dob-structure");
+    const control = parseEngineRuleset(loadControl());
+    const added = { ...control.rules[0], dedupeKey: "a_second_group" };
+    expect(() =>
+      sweepControl({
+        ...control,
+        rules: [
+          ...control.rules,
+          { ...added, id: "SECOND-GROUP-A-001" },
+          { ...added, id: "SECOND-GROUP-B-001" },
+        ],
+      }),
+    ).toThrow(/2 multi-member dedupe groups \(dob-structure, a_second_group\)/);
+  });
+
   test("the distributions", () => {
     expect(m.control.sweep).toBe(622);
     expect(m.control.complete).toBe(271);
