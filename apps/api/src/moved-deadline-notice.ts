@@ -106,6 +106,29 @@ const sameJson = (left: unknown, right: unknown): boolean =>
 const coarseStatus = (status: DeadlineStatus): "dated" | "not_calculable" | "not_applicable" =>
   status === "not_calculable" || status === "not_applicable" ? status : "dated";
 
+/**
+ * EVERY GATE THE ROW RENDERS, NOT ONLY THE ONE ITS SCALAR CARRIES.
+ *
+ * A merged row shows two kinds of gate: its own `applyAfterDate`, which is the filing route's where
+ * one was selected, and one line per OTHER route that publishes a gate (`checklist-item.tsx`
+ * `gatedRoutesOf`). Reading the scalar alone missed the second kind entirely, and the shape that
+ * reaches it is ordinary: a binding route publishing a gate but no window, beside a sibling
+ * publishing the window, makes `filingRouteOf` select the sibling, so the scalar is the sibling's
+ * null gate. A regeneration that adds or removes the binding route's gate then moved a date the row
+ * visibly renders while both sides read `gated: false`, and no notice was emitted (#252 review).
+ * F-202 AC 9 counts gate presence as a deadline-state change.
+ *
+ * Presence over the union, which is what the notice's own copy says: "this requirement is now gated
+ * on another permit decision", about the requirement rather than about one route. Naming which route
+ * gained or lost the gate would be a different notice and a wider contract than AC 9 describes.
+ *
+ * No two-route guard, because none is needed here: a one-entry list's route is the row itself and
+ * its gate is the scalar already read, so the union is the same either way.
+ */
+const rendersGate = (item: NoticePlanItem, rendering: FindingRendering): boolean =>
+  item.apply_after_date !== null ||
+  (rendering.routes ?? []).some((route) => route.applyAfterDate !== null);
+
 function stateSide(item: NoticePlanItem, rendering: FindingRendering): DeadlineStateSide {
   return {
     deadlineStatus: item.deadline_status,
@@ -113,7 +136,7 @@ function stateSide(item: NoticePlanItem, rendering: FindingRendering): DeadlineS
     deadlineDisplay: rendering.deadline_display,
     timelineUnresolvedReason: rendering.timeline_unresolved_reason,
     deadlineUnknownFields: rendering.deadline_unknown_fields,
-    gated: item.apply_after_date !== null,
+    gated: rendersGate(item, rendering),
   };
 }
 

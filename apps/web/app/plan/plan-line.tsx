@@ -60,18 +60,32 @@ const hasDeadlineData = (finding: ConsumedFinding): boolean =>
   finding.deadline !== null;
 
 /**
+ * The published timing fields, which a merged line and one of its routes both carry. Structural so
+ * the rule below is written once: the shape is what decides it, not which of the two published it.
+ */
+type PublishedTiming = Pick<
+  ConsumedFinding,
+  "deadline" | "deadlineDisplay" | "latestApplyDate" | "applyAfterDate" | "deadlineStatus"
+>;
+
+/**
  * The published deadline's own type, for a rule that states a kind of deadline but no prose and
  * no computable date. SAPO-INSURANCE-001 publishes `{type: "before_issuance"}` and nothing else:
  * "before issuance" is the whole timing requirement, and dropping it leaves the line silent about
  * when the insurance has to exist.
+ *
+ * A ROUTE PUBLISHES THAT SHAPE TOO. A non-binding route in it has `deadlineStatus: "not_applicable"`
+ * and no dates, so the route entry's timing block was suppressed whole and the type went with it,
+ * on the one surface a merged line has for a non-binding route's window (#252 review). Same rule,
+ * same copy, read off whichever of the two is asking.
  */
-const deadlineTypeLabel = (finding: ConsumedFinding): string | null =>
-  finding.deadlineDisplay === null &&
-  finding.latestApplyDate === null &&
-  finding.applyAfterDate === null &&
-  finding.deadlineStatus === "not_applicable" &&
-  finding.deadline !== null
-    ? humanize(finding.deadline.type)
+const deadlineTypeLabel = (timing: PublishedTiming): string | null =>
+  timing.deadlineDisplay === null &&
+  timing.latestApplyDate === null &&
+  timing.applyAfterDate === null &&
+  timing.deadlineStatus === "not_applicable" &&
+  timing.deadline !== null
+    ? humanize(timing.deadline.type)
     : null;
 
 /**
@@ -198,12 +212,24 @@ const candidateRoutesOf = (finding: ConsumedFinding): readonly ConsumedRoute[] |
   return routes;
 };
 
+/**
+ * What an entry renders, so two routes rendering the same thing are the same entry.
+ *
+ * THE PUBLISHED DEADLINE TYPE IS PART OF IT, because the entry renders it (`deadlineTypeLabel`).
+ * Left out, two routes whose ONLY timing difference is a typed-only deadline signed identically and
+ * suppressed the whole routes block as "these publish the same thing", which is the block dropping
+ * published timing rather than declining to repeat it (#252 review). Design §5.1 names ten fields
+ * for that comparison and this is an eleventh, for the same reason `triggerResult` is already a
+ * twelfth: the rule is that identical ENTRIES are not listed twice, and a field the entry shows
+ * cannot be missing from the test of whether two entries are identical.
+ */
 const routeSignature = (route: ConsumedRoute): string =>
   JSON.stringify([
     route.triggerResult,
     route.name,
     route.agency,
     route.disposition,
+    route.deadline?.type ?? null,
     route.deadlineDisplay,
     route.latestApplyDate,
     route.deadlineStatus,
@@ -242,9 +268,13 @@ function Route({ route, mode }: { route: ConsumedRoute; mode: HeadlineMode }) {
       </p>
       {(route.deadlineDisplay !== null ||
         route.latestApplyDate !== null ||
-        route.deadlineStatus !== "not_applicable") && (
+        route.deadlineStatus !== "not_applicable" ||
+        route.deadline !== null) && (
         <p className="line__route-deadline">
           {route.deadlineDisplay !== null && route.deadlineDisplay}
+          {deadlineTypeLabel(route) !== null && (
+            <span className="line__route-deadline-type">{deadlineTypeLabel(route)}</span>
+          )}
           {route.latestApplyDate !== null && (
             <span>
               {route.deadlineDisplay !== null && " · "}apply by {route.latestApplyDate}

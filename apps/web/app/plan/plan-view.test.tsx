@@ -766,6 +766,35 @@ describe("the routes of a merged dedupe line", () => {
   });
 
   /**
+   * #252 review: A TYPED-ONLY DEADLINE IS THE WHOLE TIMING REQUIREMENT, on a route as on a line.
+   *
+   * SAPO-INSURANCE-001 publishes `{type: "before_issuance"}` and nothing else, so a route carrying
+   * it has no display, no dates and `not_applicable` status. The entry's timing block tested those
+   * four and suppressed itself, taking the published type with it, though the finding-level renderer
+   * has handled exactly this shape through `deadlineTypeLabel` all along. Both halves are here: the
+   * entry renders it, and the signature counts it, so a group whose only timing difference is that
+   * deadline is not collapsed as "these publish the same thing".
+   */
+  it("renders a route's typed-only deadline and does not collapse the group over it", async () => {
+    const line = await lineWith({
+      ruleIds: ["DOB-TENT-001", "DOB-TALL-STRUCTURE-001"],
+      headlineMode: "applies_together",
+      routes: [
+        route({ ruleId: "DOB-TENT-001" }),
+        route({
+          ruleId: "DOB-TALL-STRUCTURE-001",
+          deadline: { type: "before_issuance" } as FindingRoute["deadline"],
+        }),
+      ],
+    });
+    // NOT VACUOUS: the two routes are identical in every other rendered field, including the name,
+    // so the typed deadline is the only thing keeping the block on screen. Asserted on the block
+    // rather than on its leading sentence, whose wording is a separate open thread.
+    expect(screen.getByRole("article").querySelectorAll(".line__route")).toHaveLength(2);
+    expect(line.getByText("before issuance")).toBeDefined();
+  });
+
+  /**
    * #252 P2: TWO ROUTES DIFFERING ONLY BY TRIGGER RESULT ARE NOT TWO ROUTES PUBLISHING THE SAME
    * THING, and the signature that decided they were made the whole candidate block vanish.
    *
