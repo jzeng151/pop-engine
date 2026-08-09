@@ -3423,4 +3423,117 @@ describe("round 19: a finding fixture is audited by the output scanner", () => {
     expect(pairsAgencyWithCount(claim, { subjects })).toBe(true);
     expect(pairsAgencyWithCount(claim)).toBe(false);
   });
+
+  /**
+   * ROUND 20, THREAD 1159. The round-19 case above stops at `pairsAgencyWithCount`, which is the
+   * predicate rather than the audit: `countClaimsInPublishedOutput` derives its subjects from the
+   * artifact it is handed, and this fixture has no `rules` and no `advisories`, so its subject set
+   * was empty and the same claim produced no offender through the audit the test above stands for.
+   * The instrument's identity comes from the published ruleset; the fixture is organizer-facing
+   * output one authority level below it.
+   */
+  it("names the offender when the published subjects are carried into the fixture audit", () => {
+    const subjects = publishedClaimSubjects(JSON.parse(read("rules/nyc-rules.v2.11.json")));
+    const claim = "A Temporary Food Service Establishment permit is required for 75 guests.";
+    const planted = { ...finding, noteText: claim };
+    expect(countClaimsInPublishedOutput(planted, { subjects })).toEqual([
+      { ruleId: "ruleset.noteText", string: claim },
+    ]);
+    // Without them the artifact is read as its own authority, which is the defect and not a
+    // second opinion about the claim.
+    expect(countClaimsInPublishedOutput(planted)).toEqual([]);
+  });
+
+  /** The union, not the replacement: an artifact that publishes its own identities keeps them. */
+  it("keeps the artifact's own subjects when the caller supplies more", () => {
+    const bad = {
+      rules: [
+        {
+          id: "DOHMH-DRAFT-001",
+          output: {
+            agency: "DOHMH",
+            permit_name: "Draft Assembly Clearance permit",
+            note_text: "A Draft Assembly Clearance permit is required for 75 guests.",
+          },
+        },
+      ],
+    };
+    const claim = bad.rules[0].output.note_text;
+    expect(countClaimsInPublishedOutput(bad, { subjects: ["Some other permit"] })).toEqual([
+      { ruleId: "DOHMH-DRAFT-001", string: claim },
+    ]);
+  });
+});
+
+/**
+ * ROUND 20, THREAD 1162. The rendered-output audit reads a finding's heading and its points as one
+ * card, and the repository scan did not read the markdown spelling of the same structure: the
+ * ordinary-English tier required both blocks to be paragraphs, and a bullet is not one, so
+ * `## DOHMH requirements` over `- Required for 75 guests` produced no offender in tracked prose.
+ *
+ * These are literal strings rather than a planted real document, on this file's own rule: what is
+ * under test is the guard's block model, not any artifact's contents.
+ */
+describe("round 20: a list item is read against the heading it sits under", () => {
+  const AGENCY = "## DOHMH requirements";
+  const COUNT = "- Required for 75 guests";
+  const document = (...blocks) => blocks.join("\n\n");
+  const texts = (...blocks) => scanFile(document(...blocks)).map((item) => item.text.trim());
+
+  /** Neither half is a claim on its own, so every result below is the boundary and nothing else. */
+  it("pairs neither half on its own", () => {
+    expect(pairsAgencyWithCount(AGENCY)).toBe(false);
+    expect(pairsAgencyWithCount(COUNT)).toBe(false);
+  });
+
+  it("flags the heading and the bullet under it", () => {
+    expect(texts(AGENCY, COUNT)).toEqual([`${AGENCY}\n${COUNT}`.trim()]);
+  });
+
+  /** Both directions: the heading may carry either half, the same as any other boundary. */
+  it("flags the heading that states the count over the bullet that names the agency", () => {
+    expect(texts("## Required for 75 guests", "- The DOHMH permit is the gate")).toHaveLength(1);
+  });
+
+  /**
+   * The scope is the RUN of items, not the first one. A requirements list puts the qualifying
+   * clause first as often as not, and stopping at the first bullet would leave the same claim one
+   * row further down unread.
+   */
+  it("flags a bullet further down the same list", () => {
+    expect(texts(AGENCY, "- Applies to private events", COUNT)).toEqual([
+      `${AGENCY}\n${COUNT}`.trim(),
+    ]);
+  });
+
+  /** And it ends where the list does: a paragraph between them is a block that separates them. */
+  it("does not reach past a paragraph that ends the list", () => {
+    expect(
+      texts(AGENCY, "- Applies to private events", "This section is about parks.", COUNT),
+    ).toEqual([]);
+  });
+
+  /** Nor past the next heading, which starts a section of its own. */
+  it("does not reach past the next heading", () => {
+    expect(texts(AGENCY, "## Parks requirements", COUNT)).toEqual([]);
+  });
+
+  /**
+   * THE FOURTH ROUND'S REVERTED CHANGE STAYS REVERTED. Two adjacent bullets are two rows that
+   * happen to touch, and pairing them is what cost more than it caught. The heading has to supply
+   * one half of every pair this adds.
+   */
+  it("does not pair two list items under no heading", () => {
+    expect(texts("- The DOHMH permit is the gate", COUNT)).toEqual([]);
+  });
+
+  /** A list item ABOVE a heading is not under it: the heading opens the section after it. */
+  it("does not read a heading as scoping the list above it", () => {
+    expect(texts("- The DOHMH permit is the gate", "## Required for 75 guests")).toEqual([]);
+  });
+
+  /** The paragraph-to-bullet negative the eighth round measured is unchanged: no heading, no pair. */
+  it("still does not pair a plain paragraph with the bullet under it", () => {
+    expect(texts("DOHMH publishes the temporary food-service permit.", COUNT)).toEqual([]);
+  });
 });

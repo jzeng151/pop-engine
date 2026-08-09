@@ -670,8 +670,24 @@ export const blocksOf = (text) => {
   return blocks;
 };
 
+/** The line a block's kind is read off: its first, with the block's own indentation removed. */
+const openingLine = (block) => block.trim().split("\n")[0] ?? "";
+
 /** Whether a block is a prose paragraph rather than a list item or a table row. */
-export const isParagraph = (block) => !LIST_OR_ROW.test(block.trim().split("\n")[0] ?? "");
+export const isParagraph = (block) => !LIST_OR_ROW.test(openingLine(block));
+
+/** A line that opens a markdown heading, comment leader included, and a line that opens a list
+ * item. A table row is neither: `LIST_OR_ROW` covers both list items and rows, and the scoping
+ * below is about a list under a heading rather than about a table. */
+const HEADING = /^[\s/*]*#{1,6}\s/;
+const LIST_ITEM = /^[\s/*]*(?:[-*+]\s|\d+\.\s)/;
+
+/** Whether a block is a markdown heading. Headings are paragraphs by `isParagraph`, which is what
+ * `LIST_OR_ROW` says they are; this is the narrower question the heading scoping asks. */
+export const isHeading = (block) => HEADING.test(openingLine(block));
+
+/** Whether a block is a list item, ordered or not. */
+export const isListItem = (block) => LIST_ITEM.test(openingLine(block));
 
 /**
  * THE SUBJECTS A CLAIM MAY NAME: the city health agency, and every INSTRUMENT IDENTITY the
@@ -1086,6 +1102,24 @@ export const countsAttributed = (raw, attributed, { publishedIds = [], host } = 
  *     numeral beside one in a NEIGHBOURING REGISTER ENTRY is usually a different agency's
  *     published fact rather than a claim about this one.
  *
+ * A LIST ITEM IS READ AGAINST THE HEADING IT SITS UNDER, which is the twentieth PR #247 round and
+ * is the ordinary-English tier's one exception to "two paragraphs". `## DOHMH requirements` over
+ * `- Required for 75 guests` is the markdown spelling of the rendered heading-and-point pair that
+ * `countClaimsInPublishedOutput` already reads as one unit, and the paragraph predicate refused it
+ * because the bullet is not a paragraph, so a tracked document could publish an unsupported trigger
+ * in the commonest layout a requirements list has.
+ *
+ * A HEADING IS NOT A NEIGHBOUR, WHICH IS WHY THIS IS NOT THE FOURTH ROUND'S REVERTED CHANGE. That
+ * round paired any two adjacent blocks and cost more than it caught, because two adjacent bullets
+ * are two independent rows that happen to touch. A heading is the opposite relation: every item
+ * below it is written under it, so the pairing is the document's own structure rather than
+ * proximity. That is also why the scope is a RUN of list items rather than the first one, and why
+ * it ends at the first paragraph, table row or heading, and why no pairing between two list items
+ * is added: the heading has to supply one half of every pair it licenses.
+ *
+ * Measured over every scanned root: this flags nothing new on this tree, so `BENIGN_ADJACENT_PAIRS`
+ * does not move.
+ *
  * Both tiers used to be paragraph-only, and the third PR #247 round's own comment named "a
  * register table row" as one of the two historical sites while that filter excluded every table
  * row and list item: the claim split across two adjacent register rows, or two adjacent bullets,
@@ -1139,31 +1173,46 @@ export function scanFile(
   // what a pin digests. See `normalizeForMatching`.
   const matchable = blocks.map(normalizeForMatching);
   const flagged = [];
+  // The heading the block under consideration sits below, while nothing but list items separates
+  // them. `undefined` as soon as any other block intervenes: a heading scopes the list written
+  // under it and stops scoping at the first paragraph, table row or heading that follows.
+  let heading;
   for (let index = 0; index < blocks.length; index += 1) {
     const block = matchable[index];
     const next = matchable[index + 1];
     if (!optedOut(blocks[index]) && pairsAgencyWithCount(block, { bounded, subjects })) {
       flagged.push({ kind: "block", text: blocks[index] });
     }
+    if (isHeading(blocks[index])) heading = index;
+    else if (!isListItem(blocks[index])) heading = undefined;
     if (next === undefined) continue;
+    // WHICH BLOCK THE ORDINARY-ENGLISH TIER READS THE NEXT ONE AGAINST: the block before it where
+    // both are paragraphs, and the heading above it where it is a list item under one. Undefined
+    // where neither holds, which is every list item under no heading and every table row.
+    const scoping = isParagraph(blocks[index + 1])
+      ? isParagraph(blocks[index])
+        ? index
+        : undefined
+      : isListItem(blocks[index + 1])
+        ? heading
+        : undefined;
     const pair = `${block}\n${next}`;
     // The distance bound, where the file kind asks for it, is still measured over the pair. It is
     // a NECESSARY condition here rather than the whole test: what makes a pair a cross-boundary
     // finding is `splitAcrossBoundary`, and the bound only asks that the two halves also sit close
     // enough together to be read as one claim.
-    const withinBound = (near) => !bounded || near.test(pair);
+    const withinBound = (near, text = pair) => !bounded || near.test(text);
     const acrossAnyBlocks =
       splitAcrossBoundary(block, next, ATTENDEE_COUNT, subject.pattern) &&
       withinBound(subject.nearAttendeeCount);
-    const acrossParagraphs =
-      // Read off the RAW blocks: normalizing strips the emphasis markers, and a `* bullet` would
-      // read as a paragraph without them.
-      isParagraph(blocks[index]) &&
-      isParagraph(blocks[index + 1]) &&
-      splitAcrossBoundary(block, next, COUNTED_PEOPLE, subject.pattern) &&
-      withinBound(subject.nearAnyCount);
-    if (acrossAnyBlocks || acrossParagraphs) {
-      flagged.push({ kind: "pair", text: `${blocks[index]}\n${blocks[index + 1]}` });
+    const acrossOrdinaryEnglish =
+      scoping !== undefined &&
+      splitAcrossBoundary(matchable[scoping], next, COUNTED_PEOPLE, subject.pattern) &&
+      withinBound(subject.nearAnyCount, `${matchable[scoping]}\n${next}`);
+    if (acrossAnyBlocks || acrossOrdinaryEnglish) {
+      // The pair as it reads: the two blocks the halves actually sit in.
+      const first = acrossAnyBlocks ? index : scoping;
+      flagged.push({ kind: "pair", text: `${blocks[first]}\n${blocks[index + 1]}` });
     }
   }
   return flagged;
@@ -1441,17 +1490,32 @@ const countClaimsInProse = (raw, subjects = []) => {
  * predicate for both questions now, so the repository scan and this audit cannot disagree about
  * what licenses a count.
  *
+ * THE SUBJECTS AN ARTIFACT DOES NOT PUBLISH ARE THE CALLER'S TO SUPPLY, which is the twentieth PR
+ * #247 round. The subject set was `publishedClaimSubjects(artifact)` and nothing else, which reads
+ * every artifact as its own authority. That is right for the published ruleset and wrong for
+ * everything below it: a finding fixture carries no `rules` and no `advisories`, so its subject set
+ * was empty, and "A Temporary Food Service Establishment permit is required for 75 guests." named
+ * an instrument identity that comes from the PUBLISHED ruleset, in an organizer-facing artifact one
+ * level down, and produced no offender. The instrument's identity does not belong to the file that
+ * mentions it. `subjects` is unioned with the artifact's own rather than replacing them, so a
+ * superseded or proposed ruleset is still read against the instruments it publishes itself.
+ *
  * Measured on this tree: zero strings and zero units, over 42 rules and 4 advisories, with the
  * verification qualifications and the source citations included, and zero top-level units. The
  * named-rule branch changes no verdict here, because no rule on this tree is attributed at all.
  */
-export const countClaimsInPublishedOutput = (artifact, { attributed = new Map() } = {}) => {
+export const countClaimsInPublishedOutput = (
+  artifact,
+  { attributed = new Map(), subjects: given = [] } = {},
+) => {
   const found = [];
   const publishedRules = [...(artifact.rules ?? []), ...(artifact.advisories ?? [])];
   const publishedIds = publishedRules.map((rule) => rule.id).filter(Boolean);
-  // The subjects are the artifact's own: this audit reads the ruleset, so it knows which permit and
-  // requirement identities the city health agency publishes without being told.
-  const subjects = publishedClaimSubjects(artifact);
+  // The artifact's own identities, plus whatever the caller says is published elsewhere. The
+  // artifact's own are what let this audit read a ruleset without being told anything; `subjects`
+  // is what a LOWER-AUTHORITY artifact needs, and it is the caller's answer because only the
+  // caller knows which artifact in the tree is the publication.
+  const subjects = [...new Set([...publishedClaimSubjects(artifact), ...given])].sort();
   for (const rule of publishedRules) {
     const ownRequirement = cityHealthRule(rule);
     const claims = (string) => {

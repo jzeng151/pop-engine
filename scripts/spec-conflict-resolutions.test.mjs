@@ -1149,14 +1149,27 @@ describe("no DOHMH rule is attributed to headcount, removed 2026-08-05 (#235)", 
    * rule it names, and a superseded or proposed artifact's rule is a rule this repository can read
    * a trigger out of, so its own published trigger licenses its own prose. Nothing else does: a
    * draft rule that reads no count licenses no count, in the draft as in the publication.
+   *
+   * AND AGAINST THE PUBLISHED SUBJECTS, which the thresholds' direction does not carry over to.
+   * Attribution is the artifact's own question because a draft rule publishes its own trigger.
+   * IDENTITY is not: the "Temporary Food Service Establishment permit" is the published ruleset's
+   * instrument wherever its name is written, and a finding fixture that names it carries no `rules`
+   * to derive it from. Deriving subjects per artifact therefore left every agency-free claim in
+   * every rule-free artifact unread, which is most of what this assertion adds over the one above.
    */
   it("no regulatory JSON artifact states a count-based city health requirement", () => {
     const published = publishedRulesets().map(([, artifact]) => artifact);
     const artifacts = regulatoryJsonArtifacts();
+    // The published instrument identities travel WITH the audit, the same way they travel with the
+    // repository scan below. `countClaimsInPublishedOutput` derives subjects from the artifact it
+    // is handed, and a finding fixture has no `rules` and no `advisories` to derive them from, so
+    // an agency-free claim naming a published permit was unreadable in exactly the artifacts this
+    // assertion exists to reach.
+    const subjects = publishedSubjects();
     const offenders = [];
     for (const [relative, artifact] of artifacts) {
       const attributed = attendeeCountThresholds([...published, artifact]);
-      for (const found of countClaimsInPublishedOutput(artifact, { attributed })) {
+      for (const found of countClaimsInPublishedOutput(artifact, { attributed, subjects })) {
         offenders.push(`${relative}: ${found.ruleId}: ${found.string}`);
       }
     }
