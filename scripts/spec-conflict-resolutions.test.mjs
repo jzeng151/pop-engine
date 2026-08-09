@@ -1121,6 +1121,12 @@ describe("no DOHMH rule is attributed to headcount, removed 2026-08-05 (#235)", 
     },
   ];
 
+  /** Every tracked `.json` path, as git lists it. */
+  const trackedJson = () =>
+    execFileSync("git", ["ls-files", "-z"], { cwd: repoRoot, encoding: "utf8" })
+      .split("\0")
+      .filter((relative) => relative.endsWith(".json"));
+
   /** Every tracked `.json` file the list above does not exempt, with its parsed artifact. */
   function regulatoryJsonArtifacts() {
     return filesUnder([".json"])
@@ -1155,15 +1161,13 @@ describe("no DOHMH rule is attributed to headcount, removed 2026-08-05 (#235)", 
       }
     }
 
+    // The gap this closes, asserted as a property rather than as a list of names: an artifact
+    // OUTSIDE `rules/` is read. Naming the files here would pin a ruleset version in a string
+    // literal, which `scripts/check-baseline-drift.mjs` rejects for the reason it states.
     expect(
-      artifacts.map(([relative]) => relative).sort(),
-      "the audit reaches the fixtures and the draft, not only the published ruleset",
-    ).toEqual([
-      "packages/engine/src/__fixtures__/nyc-rules.v2.3.json",
-      "packages/engine/src/__fixtures__/plaza-finding-nyc.v2.3.json",
-      "rules/nyc-rules.v2.11.json",
-      "rules/proposals/nyc-rules.v2-full-draft.json",
-    ]);
+      artifacts.map(([relative]) => relative).filter((relative) => !relative.startsWith("rules/")),
+      "the audit reaches regulatory JSON outside rules/, which is the whole gap it closes",
+    ).not.toEqual([]);
     expect(
       offenders,
       "a regulatory JSON artifact tells an organizer that a city health rule reads the attendee" +
@@ -1178,12 +1182,28 @@ describe("no DOHMH rule is attributed to headcount, removed 2026-08-05 (#235)", 
    * exemption nobody needs, and it would sit here hiding the next file that matches it.
    */
   it("every non-regulatory JSON exemption matches a tracked file", () => {
-    const tracked = execFileSync("git", ["ls-files", "-z"], { cwd: repoRoot, encoding: "utf8" })
-      .split("\0")
-      .filter((relative) => relative.endsWith(".json"));
+    const tracked = trackedJson();
     for (const { match, why } of NON_REGULATORY_JSON) {
       expect(tracked.filter((relative) => match.test(relative)).length, why).toBeGreaterThan(0);
     }
+  });
+
+  /**
+   * The other half of the partition, read out of git rather than out of the walk: a tracked `.json`
+   * that is neither exempt nor audited is a regulatory artifact nobody reads, which is the state
+   * the two fixtures sat in until this round.
+   */
+  it("audits every tracked JSON file the exemption list does not name", () => {
+    const audited = new Set(regulatoryJsonArtifacts().map(([relative]) => relative));
+    expect(
+      trackedJson().filter(
+        (relative) =>
+          !audited.has(relative) && !NON_REGULATORY_JSON.some(({ match }) => match.test(relative)),
+      ),
+      "a tracked JSON file is in neither the exemption list nor the audit. Add it to" +
+        " NON_REGULATORY_JSON with the reason it carries no regulatory claim, or leave it where" +
+        " the output scanner can read it.",
+    ).toEqual([]);
   });
 
   /** Every block of one tracked file, flagged or not. */
