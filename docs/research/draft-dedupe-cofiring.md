@@ -1125,8 +1125,8 @@ PRINT_TABLES=1 pnpm test:cofiring   # the same run, printing the tables to diff 
 ```
 
 **What "every figure" covers, exactly.** The mapping table below is the inventory: a figure in
-sections 3 to 7 is asserted when some row names the case that asserts it, and nothing in those
-sections is outside a row. That is a claim this document has had to earn twice. Section 3.3's
+sections 1 and 3 to 7 is asserted when some row names the case that asserts it, and nothing in
+those sections is outside a row. That is a claim this document has had to earn twice. Section 3.3's
 opening inventory, the 63 declared fields, the 43 that multiply out and the size of the count,
 sat in the covered range while nothing read it, so an unused intake field the draft added or
 dropped would have left every published number green and that one stale; it is now re-derived by
@@ -1143,9 +1143,9 @@ green. It is now counted off the suite's own collected task tree, which is the n
 `pnpm test:cofiring` reports rather than a count of `test(` calls in the source: four blocks use
 `test.each` and expand at collection time, so those two quantities are not the same.
 
-It is four modules, one suite and one config, 3,531 lines together: `harness.mjs` 1,009,
-`cofiring.test.mjs` 1,660, `inventory.mjs` 474, `staging.mjs` 266, `report.mjs` 103 and
-`vitest.config.mjs` 19, reporting 99 cases. Those eight figures are read off disk and off
+It is four modules, one suite and one config, 3,557 lines together: `harness.mjs` 1,009,
+`cofiring.test.mjs` 1,669, `inventory.mjs` 491, `staging.mjs` 266, `report.mjs` 103 and
+`vitest.config.mjs` 19, reporting 100 cases. Those eight figures are read off disk and off
 the task tree and asserted by `describe("section 8, the harness footprint")`, so a module, the suite
 or the case list growing moves them here rather than leaving the reproduction section understating
 the code behind the numbers.
@@ -1156,13 +1156,14 @@ the code behind the numbers.
 | `staging.mjs`       | the adaptations of section 3.1, applied to in-memory clones, each reporting what it touched                                                   |
 | `inventory.mjs`     | what the draft publishes, re-derived by parsing it: deadlines, permit names, output identity, blockers, mixed statuses, parser-visible output |
 | `report.mjs`        | one `measure()` call that produces every table, plus the printer                                                                              |
-| `cofiring.test.mjs` | the 99 cases `pnpm test:cofiring` reports, one or more per published figure                                                                   |
+| `cofiring.test.mjs` | the 100 cases `pnpm test:cofiring` reports, one or more per published figure                                                                  |
 | `vitest.config.mjs` | the include this suite runs under, which is why it is excluded from the root config and outside CI                                            |
 
 Every table maps to a `describe` block with the same number:
 
 | table                                                           | assertion                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
 | --------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1, the dedupe-group inventory                                   | `describe("section 1, the dedupe-group inventory")`, which asserts the 25 declared groups alongside the nine multi-member ones, because `multiMemberGroups` returns the same nine whatever a new single-member key does                                                                                                                                                                                                                                                                                                                                                                                                                           |
 | 3.1, the staging errors and inventories                         | `describe("section 3.1, the load-staging errors")`, whose second case asserts the dropped-deadline, mapped-status, mapped-kind and rewritten-operator counts                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
 | 3.2, the agreement check                                        | `describe("section 3.2, what the harness supplies")`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
 | 3.3, the intake inventory, the sweep sizes and the domain rules | `describe("section 3.3, the sweep")`, whose first case asserts the 63-field inventory, its per-type breakdown and the 4.12 x 10^27 upper bound, whose upper-bound case asserts the five derived dimensions, the 5.09 x 10^23 answered product and the factor of 8,100 between them, whose `asked_when` case fails if that count stops applying the two gates or if a gate starts reading a field the count does not range over, whose headcount case runs `validateIntake` on the rejected value and the admitted one, and whose hand-set case fails when the swept structure factors stop bracketing a published `structure_area_sqft` threshold |
@@ -1183,7 +1184,7 @@ by CI and not part of `pnpm test`, and that is a governance constraint rather th
 **Why this suite is on demand.** Its only input is `rules/proposals/nyc-rules.v2-full-draft.json`,
 which `docs/BASELINE.md` carries as "ARCHIVED / PROPOSED drafts" and which this document's own
 preamble names as PROPOSED. A required CI step reading it would make a proposed artifact an enforced
-main-branch input: any ordinary revision of the proposal would turn CI red until all 99 cases here
+main-branch input: any ordinary revision of the proposal would turn CI red until all 100 cases here
 were resynchronised with it, so the proposal could only move at this measurement's pace. That is the
 `AGENTS.md` rule to stop rather than build against a proposed input, applied backwards, and a
 research harness is not the thing that should force it. So `scripts/dedupe-cofiring/` is named in

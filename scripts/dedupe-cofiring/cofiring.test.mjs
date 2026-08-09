@@ -62,6 +62,15 @@ const setNamed = (group, ids, results) =>
       ids.every((id, index) => set.results[group.memberIds.indexOf(id)] === results[index]),
   );
 
+describe("section 1, the dedupe-group inventory", () => {
+  test("the draft declares 25 dedupe groups, nine of which hold more than one member", () => {
+    // The sweep sizes and every section 5 table are keyed on the nine multi-member groups, and
+    // nothing read the total. A rule or advisory added under a new single-member key moved neither,
+    // so the opening sentence's 25 could go stale with the whole suite green (#251 review).
+    expect(m.inventory.dedupeGroupInventory(m.draft)).toEqual({ groups: 25, multiMember: 9 });
+  });
+});
+
 describe("section 3.1, the load-staging errors", () => {
   test("the parser's complaints arrive in the published order", () => {
     const errors = m.staging.map((step) => step.error);
@@ -1635,12 +1644,12 @@ describe("section 8, the harness footprint", () => {
     expect(counts).toEqual({
       "harness.mjs": 1009,
       "staging.mjs": 266,
-      "inventory.mjs": 474,
+      "inventory.mjs": 491,
       "report.mjs": 103,
-      "cofiring.test.mjs": 1660,
+      "cofiring.test.mjs": 1669,
       "vitest.config.mjs": 19,
     });
-    expect(Object.values(counts).reduce((total, count) => total + count, 0)).toBe(3_531);
+    expect(Object.values(counts).reduce((total, count) => total + count, 0)).toBe(3_557);
   });
 
   test("the published case count is the one Vitest collected", (context) => {
@@ -1655,6 +1664,6 @@ describe("section 8, the harness footprint", () => {
         (total, child) => total + (child.type === "test" ? 1 : collected(child)),
         0,
       );
-    expect(collected(context.task.file)).toBe(99);
+    expect(collected(context.task.file)).toBe(100);
   });
 });

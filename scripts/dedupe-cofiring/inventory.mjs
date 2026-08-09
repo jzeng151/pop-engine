@@ -22,6 +22,23 @@ const published = (draft) => [...draft.rules, ...draft.advisories];
 const membersOf = (draft, dedupeKey) =>
   published(draft).filter((rule) => rule.output?.dedupe_key === dedupeKey);
 
+/**
+ * Section 1's opening count: every distinct non-null `dedupe_key` the draft publishes, and how many
+ * of those groups hold more than one member.
+ *
+ * `multiMemberGroups` returns the same nine whatever the single-member keys do, so a rule or
+ * advisory the draft added under a new single-member key left the published total of 25 stale while
+ * every sweep size and every section 5 figure stayed green (#251 review). `multiMember` is that
+ * function's own answer rather than a second count of the same thing, so the two cannot part
+ * company.
+ */
+export function dedupeGroupInventory(artifact) {
+  const keys = published(artifact)
+    .map((rule) => rule.output?.dedupe_key ?? null)
+    .filter((key) => key !== null);
+  return { groups: new Set(keys).size, multiMember: multiMemberGroups(artifact).length };
+}
+
 /** The output objects of a group, serialised, so "byte-identical" is a comparison and not a read. */
 export function distinctOutputs(draft, dedupeKey) {
   const serialised = membersOf(draft, dedupeKey).map((rule) => {
