@@ -441,6 +441,23 @@ const PLAN_CONTEXT_CHECKS: FieldChecks<PlanContext> = {
 };
 
 /**
+ * A FILING ROUTE THE ROW DOES NOT CARRY NAMES NOTHING. `filingRouteRuleId` says which route the
+ * window, status, fee and filing details above it were read off, and the api sets it from a route
+ * of the row's own list. A body supplying valid matching `routes` and `ruleIds` beside an unrelated
+ * `filingRouteRuleId` cleared every check here: `PlanContextBody` then resolves no route, drops the
+ * attribution sentence with no sign it did, and leaves the alternate route's date, fee and portal
+ * rendered beneath the binding permit's heading, so crossed values read as a complete row (#252
+ * review). `gatedRoutesOf` reads the same field to decide which route's gate the row already shows,
+ * and an id naming no route makes it skip the wrong one.
+ *
+ * Exactly one member, not at least one, so this holds on its own wherever a row carries the field
+ * rather than leaning on `routeContractHolds` refusing the duplicate.
+ */
+const filingRouteIsCarried = (context: PlanContext): boolean =>
+  context.filingRouteRuleId == null ||
+  (context.routes ?? []).filter((route) => route.ruleId === context.filingRouteRuleId).length === 1;
+
+/**
  * The same cross-field rule the plan boundary applies, at the door the organizer works the item
  * through. `routeContractHolds` is shared rather than restated: this boundary serves the same two
  * fields and had no cross-field check at all, so a row carrying `triggerResult: "unknown"` under
@@ -450,7 +467,9 @@ const PLAN_CONTEXT_CHECKS: FieldChecks<PlanContext> = {
  * spreads the same field checks.
  */
 const isPlanContext = (value: unknown): value is PlanContext =>
-  shapedLike(PLAN_CONTEXT_CHECKS)(value) && routeContractHolds(value);
+  shapedLike(PLAN_CONTEXT_CHECKS)(value) &&
+  routeContractHolds(value) &&
+  filingRouteIsCarried(value);
 
 const DOCUMENT_CHECKS: FieldChecks<ChecklistDocument> = { id: isString, filename: isString };
 
@@ -525,7 +544,7 @@ const ITEM_CHECKS: FieldChecks<ChecklistItem> = {
 
 /** An item is a `PlanContext` with the row's own fields, so it carries the same route contract. */
 const isChecklistItem = (value: unknown): value is ChecklistItem =>
-  shapedLike(ITEM_CHECKS)(value) && routeContractHolds(value);
+  shapedLike(ITEM_CHECKS)(value) && routeContractHolds(value) && filingRouteIsCarried(value);
 
 /**
  * One count per status, keyed off the engine's own list, so a status added upstream stops this

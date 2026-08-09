@@ -370,6 +370,54 @@ describe("loadChecklist", () => {
     }
   });
 
+  /**
+   * #252 review: the sibling invariant, on the one field only this boundary carries.
+   * `filingRouteRuleId` names the route the window, status, fee and filing details were read off,
+   * and the api sets it from a route of the row's own list. Named as anything else, `PlanContextBody`
+   * resolves no route, drops the attribution sentence and leaves the alternate route's date, fee and
+   * portal rendered under the binding permit's heading — crossed values reading as a complete row.
+   */
+  it("refuses a filing-route id that is not one of the row's own routes", async () => {
+    const routes = mergedRoutes("true");
+    const rows = [
+      // A rule the row does not carry a route for.
+      { routes, headlineMode: "applies_together", filingRouteRuleId: "DOB-TENT-001" },
+      // No route list at all, so the id names nothing.
+      { filingRouteRuleId: "PARKS-EVENT-001" },
+    ];
+    for (const row of rows) {
+      stubFetch(async () =>
+        jsonResponse(200, checklistBody({ items: [trackedItem(STREET_MEDIUM, row)] })),
+      );
+
+      await expect(loadChecklist("https://api.example.com", "event-1")).resolves.toMatchObject({
+        ok: false,
+      });
+    }
+  });
+
+  /** The other half, so the check cannot be written as "a filing route id is never accepted". */
+  it("reads a row whose filing-route id names one of its own routes", async () => {
+    stubFetch(async () =>
+      jsonResponse(
+        200,
+        checklistBody({
+          items: [
+            trackedItem(STREET_MEDIUM, {
+              routes: mergedRoutes("true"),
+              headlineMode: "applies_together",
+              filingRouteRuleId: "SAPO-PERMIT-001",
+            }),
+          ],
+        }),
+      ),
+    );
+
+    await expect(loadChecklist("https://api.example.com", "event-1")).resolves.toMatchObject({
+      ok: true,
+    });
+  });
+
   it("refuses a context line carrying only one of the two route fields", async () => {
     for (const half of [
       { routes: mergedRoutes("true") },
