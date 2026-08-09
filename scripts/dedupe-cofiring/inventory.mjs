@@ -298,7 +298,12 @@ export function operatorSemantics(draft) {
       }
     }
   };
-  const { rules, advisories, engine_operators: operators, ...metadata } = draft;
+  const {
+    rules: _rules,
+    advisories: _advisories,
+    engine_operators: operators,
+    ...metadata
+  } = draft;
   walk(metadata);
 
   return operators.map((name) => {

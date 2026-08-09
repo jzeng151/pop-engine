@@ -1079,6 +1079,31 @@ describe("section 5, the co-firing sets", () => {
     expect(m.inventory.distinctOutputs(m.draft, "dob_assembly").size).toBe(1);
   });
 
+  test("5.9 the both-true intake the section quotes is the one the sweep reaches first", () => {
+    // The section quotes this intake to show why the pair cannot both be `true` on a complete one.
+    // Nothing read it, so widening the `event_end_date` domain moved it and left the quotation
+    // describing an intake the sweep no longer reaches first (#251 review).
+    const group = m.group("block_party_eligibility");
+    expect(setNamed(group, group.memberIds, ["true", "true"]).firstIntake).toEqual({
+      sapo_event_type: "block_party",
+      has_sales: true,
+      has_fundraising: true,
+      alcohol: true,
+      has_vendors: true,
+      branding_or_promotion: "yes",
+      commercial_sponsorship: true,
+      rain_date_requested: true,
+      open_to_all_block_neighbors: "yes",
+      neighbor_permission_received: "yes",
+      block_count: 0,
+      event_duration_hours: 0,
+      event_date: "2026-09-01",
+      event_end_date: "2026-08-31",
+      event_days: 0,
+      organizer_type: "unknown",
+    });
+  });
+
   test("5.9 `block_party_eligibility`: four sets, none complete", () => {
     const group = m.group("block_party_eligibility");
     expect(group.sets.map((set) => [set.count, set.complete])).toEqual([
@@ -1383,14 +1408,14 @@ describe("section 8, the harness footprint", () => {
       "vitest.config.mjs": lines("vitest.config.mjs"),
     };
     expect(counts).toEqual({
-      "harness.mjs": 970,
+      "harness.mjs": 972,
       "staging.mjs": 266,
-      "inventory.mjs": 376,
+      "inventory.mjs": 381,
       "report.mjs": 103,
-      "cofiring.test.mjs": 1410,
+      "cofiring.test.mjs": 1435,
       "vitest.config.mjs": 19,
     });
-    expect(Object.values(counts).reduce((total, count) => total + count, 0)).toBe(3_144);
+    expect(Object.values(counts).reduce((total, count) => total + count, 0)).toBe(3_176);
   });
 
   test("the published case count is the one Vitest collected", (context) => {
@@ -1405,6 +1430,6 @@ describe("section 8, the harness footprint", () => {
         (total, child) => total + (child.type === "test" ? 1 : collected(child)),
         0,
       );
-    expect(collected(context.task.file)).toBe(91);
+    expect(collected(context.task.file)).toBe(92);
   });
 });

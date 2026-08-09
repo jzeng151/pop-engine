@@ -3,7 +3,9 @@
 // It answers one question: over an intake sweep, how many members of a dedupe group co-fire on a
 // single event? It exists in the repository rather than as scratch code because every table in that
 // document is an assertion in `cofiring.test.mjs` against what this file computes, so the document
-// fails CI when the draft, the engine, or the harness moves under it.
+// fails `pnpm test:cofiring` when the draft, the engine, or the harness moves under it. That command
+// is run on demand rather than by CI, because its input is a PROPOSED artifact; section 8 of the
+// document says why, and `vitest.config.mjs` in this directory carries the same note.
 //
 // What is the engine's and what is this file's:
 //

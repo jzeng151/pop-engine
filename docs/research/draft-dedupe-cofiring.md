@@ -311,15 +311,23 @@ Value domains, applied uniformly by `domainFor` in the harness:
   rejects a headcount at or below zero (`packages/engine/src/intake/validate.ts:316-317`), so
   `headcount` sweeps `{19, 20, 21}` and not `{0, 19, 20, 21}`. It is the only numeric field the
   engine gives a minimum, so no other numeric domain is filtered.
-- **dates:** `event_date` is fixed at `2026-09-01`; `event_end_date` ranges over `{2026-09-01,
-2026-09-02}` plus `null`, which it takes because the draft marks it nullable, giving `event_days`
-  of 1, 2 and 1, which covers the only threshold (`event_days gt 1`) below, on and above. The
-  `null` is read off `nullable` like every other type's is, not hard-coded: the previous revision
-  gave every date but `event_date` the same fixed three values, so a draft that made the end date
-  required would have left every count below unchanged while the sweep went on enumerating a blank
-  end date `validateIntake` rejects. These two endpoints are chosen to bracket `event_days` and are
-  claimed for no other date, so a further date field a measured group reads fails the sweep instead
-  of borrowing them. The draft declares no such field today, and a test asserts that.
+- **dates:** `event_date` is fixed at `2026-09-01`; `event_end_date` ranges over `{2026-08-31,
+2026-09-01, 2026-09-02}` plus `null`, which it takes because the draft marks it nullable, giving
+  `event_days` of 0, 1, 2 and 1, which covers the only threshold (`event_days gt 1`) below, on and
+  above. The day before the start is there because AGENTS.md requires a below-threshold case and the
+  previous domain had none: it produced 1, 2 and 1, which is on and above and on again. The reversed
+  pair is an intake the contract admits rather than one this sweep invents. `validateIntake`
+  validates each date's ISO shape and rejects only an `event_date` before `today`; it publishes no
+  end-after-start ordering rule, so nothing refuses an end date one day early
+  (`packages/engine/src/intake/validate.ts:115-118` and `:319-320`). A test puts all three endpoints
+  to the real validator, so an approved ordering rule fails the sweep rather than leaving it
+  enumerating an intake the contract has started refusing. The `null` is read off `nullable` like
+  every other type's is, not hard-coded: an earlier revision gave every date but `event_date` the
+  same fixed three values, so a draft that made the end date required would have left every count
+  below unchanged while the sweep went on enumerating a blank end date `validateIntake` rejects.
+  These three endpoints are chosen to bracket `event_days` and are claimed for no other date, so a
+  further date field a measured group reads fails the sweep instead of borrowing them. The draft
+  declares no such field today, and a test asserts that.
 - **`structure_length_ft` and `structure_width_ft`** are the one hand-set domain, `{null, 0, 10, 12,
 20, 21}`, because their thresholds are on their product: those products straddle both published
   area thresholds (120 and 400) on all three sides. Only the four positive factors are hand-set. The
@@ -336,7 +344,7 @@ Value domains, applied uniformly by `domainFor` in the harness:
   every distribution identical while the at-threshold case AGENTS.md requires had quietly stopped
   being swept.
 
-Sweep sizes: from 36 to 24,330,240 intakes per group, **24,356,372** draft intakes in total, plus
+Sweep sizes: from 36 to 32,440,320 intakes per group, **32,466,452** draft intakes in total, plus
 **622** control intakes. Every one was evaluated; nothing was truncated.
 
 **What is still not a whole valid submission.** A sweep answers a group's own fields and holds the
@@ -363,8 +371,8 @@ values and say which sentences they change.
 An earlier revision's domain corrections still stand, with one narrowed, and are recorded here so
 the history is readable: `0` belongs in the domain of every numeric field **the contract admits it
 for**, and `structure_over_10ft_tall` is not nullable in `rules/nyc-rules.v2.11.json`. That is why
-`dob_temporary_structure` is 14,400 rather than 8,750 and `block_party_eligibility` is 24,330,240
-rather than 19,464,192. The narrowing is `headcount`, above: the earlier statement was made about
+`dob_temporary_structure` is 14,400 rather than 8,750 and `block_party_eligibility` is 32,440,320
+rather than 25,952,256. The narrowing is `headcount`, above: the earlier statement was made about
 numeric domains in general and was never checked against `validateIntake`'s per-field minimum.
 
 **`dob_temporary_structure` moved again in this revision, from 10,000 to 14,400**, and for the same
@@ -516,23 +524,23 @@ groups' sets and maxima in section 5, not only to the counts here.
 | `parks_special_event`     | 3       | 120        | 98         | 22      | 0         | 0   | 0   | 0   | 0   | **1**  | 0.0%       |
 | `fdny_generator`          | 3       | 4,800      | 2,686      | 1,706   | 344       | 64  | 0   | 0   | 0   | **3**  | 8.5%       |
 | `dob_assembly`            | 3       | 80         | 59         | 15      | 3         | 3   | 0   | 0   | 0   | **3**  | 7.5%       |
-| `block_party_eligibility` | 2       | 24,330,240 | 18,923,544 | 737,256 | 4,669,440 | 0   | 0   | 0   | 0   | **2**  | 19.2%      |
+| `block_party_eligibility` | 2       | 32,440,320 | 25,231,396 | 983,004 | 6,225,920 | 0   | 0   | 0   | 0   | **2**  | 19.2%      |
 
 The `sapo_permit` 6+ column expands to 6: 212, 7: 200, 8: 94, 9: 80, 10: 80, 11: 10, 12: 50, 14: 10.
 
 ### 4.2 Property B, the same sweeps counting only `true` triggers
 
-| group                     | 0          | 1       | 2         | max   | share >= 2 |
-| ------------------------- | ---------- | ------- | --------- | ----- | ---------- |
-| `sapo_permit`             | 2,268      | 4,212   | 0         | **1** | 0.0%       |
-| `dob_temporary_structure` | 10,476     | 3,468   | 456       | **2** | 3.2%       |
-| `sla_alcohol`             | 43         | 17      | 0         | **1** | 0.0%       |
-| `sapo_insurance`          | 9          | 27      | 0         | **1** | 0.0%       |
-| `nypd_sound`              | 90         | 58      | 8         | **2** | 5.1%       |
-| `parks_special_event`     | 109        | 11      | 0         | **1** | 0.0%       |
-| `fdny_generator`          | 3,913      | 852     | 35        | **2** | 0.7%       |
-| `dob_assembly`            | 68         | 12      | 0         | **1** | 0.0%       |
-| `block_party_eligibility` | 21,627,024 | 830,448 | 1,872,768 | **2** | 7.7%       |
+| group                     | 0          | 1         | 2         | max   | share >= 2 |
+| ------------------------- | ---------- | --------- | --------- | ----- | ---------- |
+| `sapo_permit`             | 2,268      | 4,212     | 0         | **1** | 0.0%       |
+| `dob_temporary_structure` | 10,476     | 3,468     | 456       | **2** | 3.2%       |
+| `sla_alcohol`             | 43         | 17        | 0         | **1** | 0.0%       |
+| `sapo_insurance`          | 9          | 27        | 0         | **1** | 0.0%       |
+| `nypd_sound`              | 90         | 58        | 8         | **2** | 5.1%       |
+| `parks_special_event`     | 109        | 11        | 0         | **1** | 0.0%       |
+| `fdny_generator`          | 3,913      | 852       | 35        | **2** | 0.7%       |
+| `dob_assembly`            | 68         | 12        | 0         | **1** | 0.0%       |
+| `block_party_eligibility` | 28,836,056 | 1,107,432 | 2,496,832 | **2** | 7.7%       |
 
 Five of the nine groups never reach 2 decisive triggers at all. Four do. **This table does not say
 that those four reach 2 with the facts settled**, which is what the previous revision read it as
@@ -553,7 +561,7 @@ computed from the intake and the scope resolver alone.
 | `parks_special_event`     | 120        | 108       | 90.0%          | **0**                      | **0**                  |
 | `fdny_generator`          | 4,800      | 2,016     | 42.0%          | **35**                     | **35**                 |
 | `dob_assembly`            | 80         | 63        | 78.8%          | **0**                      | **0**                  |
-| `block_party_eligibility` | 24,330,240 | 1,474,560 | 6.1%           | **0**                      | **0**                  |
+| `block_party_eligibility` | 32,440,320 | 1,966,080 | 6.1%           | **0**                      | **0**                  |
 
 **Three groups of the nine co-fire on a complete intake: `dob_temporary_structure` (444 of 6,300
 complete intakes, 7.0%), `nypd_sound` (8 of 84, 9.5%) and `fdny_generator` (35 of 2,016, 1.7%).
@@ -563,15 +571,15 @@ moved for the reasons in section 3.3 and section 2.
 
 **`block_party_eligibility` completeness moved and its conclusion did not.** Counting
 `event_end_date = null` as the declared one-day answer raises the group's complete intakes from
-983,040 to **1,474,560**, exactly half again, because that field's three-value domain holds two
-settled one-day forms rather than one. Its complete share rises from 4.0% to 6.1%. The
+1,474,560 to **1,966,080**, a third again, because it makes all four values of that field's domain
+settled answers rather than three of four. Its complete share rises from 4.5% to 6.1%. The
 complete-and-co-firing count is **0** either way, so the withdrawal below stands on the larger
 denominator too.
 
 Two things follow, and both are corrections.
 
 - **`block_party_eligibility` does not reach its conflict on answered facts.** It reaches two
-  `true` triggers on 1,872,768 intakes, and **zero** of them are complete. The reason is structural
+  `true` triggers on 2,496,832 intakes, and **zero** of them are complete. The reason is structural
   rather than a sampling artifact: every branch of `SAPO-BLOCK-PARTY-ELIGIBILITY-UNKNOWN-001`'s
   `any` block is either `eq "unknown"` or `is_null`, so the rule cannot fire `true` unless
   `organizer_type`, `open_to_all_block_neighbors`, `neighbor_permission_received`, `block_count` or
@@ -851,22 +859,22 @@ three-branch `paths` array. They differ only in trigger.
 ### 5.9 `block_party_eligibility`, 2 members, max 2, never 2 on a complete intake
 
 Full factorial over the 15 fields the two members read, one of which (`event_date`) is fixed:
-24,330,240 intakes. Four sets, none of them complete:
+32,440,320 intakes. Four sets, none of them complete:
 
 | members and results                                                                            | count     | share  | complete |
 | ---------------------------------------------------------------------------------------------- | --------- | ------ | -------- |
-| `SAPO-BLOCK-PARTY-INELIGIBLE-001` unknown + `SAPO-BLOCK-PARTY-ELIGIBILITY-UNKNOWN-001` unknown | 2,334,828 | 9.6%   | **0**    |
-| both **true**                                                                                  | 1,872,768 | 7.7%   | **0**    |
-| `INELIGIBLE` true + `ELIGIBILITY-UNKNOWN` unknown                                              | 460,692   | 1.9%   | **0**    |
-| `INELIGIBLE` unknown + `ELIGIBILITY-UNKNOWN` true                                              | 1,152     | 0.005% | **0**    |
+| `SAPO-BLOCK-PARTY-INELIGIBLE-001` unknown + `SAPO-BLOCK-PARTY-ELIGIBILITY-UNKNOWN-001` unknown | 3,113,122 | 9.6%   | **0**    |
+| both **true**                                                                                  | 2,496,832 | 7.7%   | **0**    |
+| `INELIGIBLE` true + `ELIGIBILITY-UNKNOWN` unknown                                              | 614,238   | 1.9%   | **0**    |
+| `INELIGIBLE` unknown + `ELIGIBILITY-UNKNOWN` true                                              | 1,728     | 0.005% | **0**    |
 
 The both-true case, first intake in enumeration order:
 
 > `sapo_event_type=block_party`, `has_sales=true`, `has_fundraising=true`, `alcohol=true`,
 > `has_vendors=true`, `branding_or_promotion=yes`, `commercial_sponsorship=true`,
 > `rain_date_requested=true`, `open_to_all_block_neighbors=yes`, `neighbor_permission_received=yes`,
-> `block_count=0`, `event_duration_hours=0`, `event_end_date=null`,
-> `organizer_type=unknown`
+> `block_count=0`, `event_duration_hours=0`, `event_date=2026-09-01`,
+> `event_end_date=2026-08-31` (`event_days=0`), `organizer_type=unknown`
 
 `has_sales=true` is a disqualifier, so the ineligibility rule fires `true`; `organizer_type` is the
 engine's explicit-unknown answer, which the advisory's `eq "unknown"` branch **accepts**, so it
@@ -874,7 +882,7 @@ fires `true` as well. Both are `true`, and the intake is **not** complete: the o
 exactly the fact nobody has supplied. That is the whole shape of this group. The advisory's `any`
 block holds five branches, three `eq "unknown"` and two `is_null`, so it cannot be decisive unless
 something is missing, and the pair therefore cannot both be `true` on a complete intake. Zero of
-1,474,560 complete intakes produce a co-firing event of any kind.
+1,966,080 complete intakes produce a co-firing event of any kind.
 
 **Do they disagree? Yes, and the current mapping now renders it.** The disagreement is real as
 published data. `SAPO-BLOCK-PARTY-INELIGIBLE-001` publishes `status: CLASSIFICATION_INELIGIBLE`,
@@ -1132,9 +1140,9 @@ green. It is now counted off the suite's own collected task tree, which is the n
 `pnpm test:cofiring` reports rather than a count of `test(` calls in the source: four blocks use
 `test.each` and expand at collection time, so those two quantities are not the same.
 
-It is four modules and one suite, 2,828 lines together: `harness.mjs` 938,
-`cofiring.test.mjs` 1,204, `inventory.mjs` 317, `staging.mjs` 266 and
-`report.mjs` 103, reporting 88 cases. Those seven figures are read off disk and off
+It is four modules, one suite and one config, 3,176 lines together: `harness.mjs` 972,
+`cofiring.test.mjs` 1,435, `inventory.mjs` 381, `staging.mjs` 266, `report.mjs` 103 and
+`vitest.config.mjs` 19, reporting 92 cases. Those eight figures are read off disk and off
 the task tree and asserted by `describe("section 8, the harness footprint")`, so a module, the suite
 or the case list growing moves them here rather than leaving the reproduction section understating
 the code behind the numbers.
@@ -1145,7 +1153,8 @@ the code behind the numbers.
 | `staging.mjs`       | the adaptations of section 3.1, applied to in-memory clones, each reporting what it touched                                                   |
 | `inventory.mjs`     | what the draft publishes, re-derived by parsing it: deadlines, permit names, output identity, blockers, mixed statuses, parser-visible output |
 | `report.mjs`        | one `measure()` call that produces every table, plus the printer                                                                              |
-| `cofiring.test.mjs` | the 88 cases `pnpm test:cofiring` reports, one or more per published figure                                                                   |
+| `cofiring.test.mjs` | the 92 cases `pnpm test:cofiring` reports, one or more per published figure                                                                   |
+| `vitest.config.mjs` | the include this suite runs under, which is why it is outside the root config and outside CI                                                  |
 
 Every table maps to a `describe` block with the same number:
 
@@ -1164,14 +1173,14 @@ Every table maps to a `describe` block with the same number:
 | section 6's blocker inventory and counts                        | `describe("section 6, the blocker-plus-window shape")`, whose four-shape case asserts each `unknown`-side shape's members, results and answered-`sound_purpose` rows rather than their sum, and whose merge case puts all four shapes to `evaluate` on a synthetic group and asserts which of them reads prohibited                                                                                                                                                                                                                                                                                                                               |
 | section 7                                                       | restates 4.1, 4.2, 4.3 and 4.4; it publishes no figure of its own                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
 
-The whole run takes about six seconds, of which five are the 24,330,240-intake
+The whole run takes about nine seconds, of which most is the 32,440,320-intake
 `block_party_eligibility` sweep. It is not gated behind a flag, but it is deliberately **not** run
 by CI and not part of `pnpm test`, and that is a governance constraint rather than a cost one.
 
 **Why this suite is on demand.** Its only input is `rules/proposals/nyc-rules.v2-full-draft.json`,
 which `docs/BASELINE.md` carries as "ARCHIVED / PROPOSED drafts" and which this document's own
 preamble names as PROPOSED. A required CI step reading it would make a proposed artifact an enforced
-main-branch input: any ordinary revision of the proposal would turn CI red until all 88 cases here
+main-branch input: any ordinary revision of the proposal would turn CI red until all 92 cases here
 were resynchronised with it, so the proposal could only move at this measurement's pace. That is the
 `AGENTS.md` rule to stop rather than build against a proposed input, applied backwards, and a
 research harness is not the thing that should force it. So `scripts/dedupe-cofiring/` sits outside
