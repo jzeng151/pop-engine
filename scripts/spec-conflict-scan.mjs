@@ -351,7 +351,7 @@ export const INDEPENDENCE_ASSERTIONS = [
     file: "apps/api/src/rsvps.test.ts",
     block: 'the "DOHMH findings do not move with headcount (#235)" regression test',
     anchor: 'describe("DOHMH findings do not move with headcount (#235)"',
-    sha256: "689afb8c31ef419e5170861f5fb4a2e34ab7f11ef74176ce875b050c8a584460",
+    sha256: "e00b42f31821a18e775ba69db82a43d8762d783e2da6a8a09e84b3d77f67efb8",
   },
 ];
 
@@ -648,17 +648,46 @@ export const pairsAgencyWithCount = (raw, { bounded = false } = {}) => {
  * dates and section numbers, and none of those is a stated attendee threshold: `$75` in one
  * sentence would otherwise excuse a claim of 75 guests in the next.
  *
- * An `ATTENDEE_COUNT` phrase ("the guest count") states the field and no number, so it contributes
- * nothing here and is supported by any rule that reads the field at all.
+ * BOTH DECLARED COUNT VOCABULARIES ARE READ, which is the sixteenth PR #247 round. This searched
+ * `COUNTED_PEOPLE` alone, on the reading that an `ATTENDEE_COUNT` phrase ("the guest count") states
+ * the field and no number. That is true of the phrase and false of the sentence it sits in: those
+ * phrasings take their numeral OUTSIDE the phrase, which is the one place the other vocabulary puts
+ * it inside. So "HEALTH-A's guest count is 500" is detected as a claim by `ATTENDEE_COUNT`, and
+ * this returned an EMPTY SET for it, and `countsSupportedBy`'s `every` over an empty set is true.
+ * On a rule published at 75 the unsupported 500 was therefore exempt in repository prose and in
+ * published output alike, which is the same hole the numeral vocabulary closed one round earlier.
+ * `attendance`, `crowd size`, `party size` and the `number of ...` phrasings all take a numeral the
+ * same way, so all of them are read.
+ *
+ * The `ATTENDEE_COUNT` half reaches to the numeral IN EITHER DIRECTION and no further than the
+ * SENTENCE, the same bound and the same class `COUNTED_PEOPLE`'s noun-first alternation uses: "the
+ * guest count is 500" and "500 is the expected attendance" are one claim each, and a numeral in the
+ * next sentence is a different statement. Its cost is the mirror of that alternation's and is
+ * stated rather than discovered: an unrelated numeral sharing a sentence with a count phrase is
+ * read as a stated threshold, so "apply 21 days ahead if the guest count is high" claims 21. What
+ * that costs is an offender reported against a rule that publishes no 21, not a claim missed.
+ *
+ * THE REACH IS LAZY, so a sentence stating two numerals beside one count phrase contributes the
+ * NEARER one only. That is `COUNTED_PEOPLE`'s existing behaviour and not a new limit, and it is
+ * declared here because it is now reachable from two vocabularies rather than one.
  *
  * The numeral is read out of the phrase with `NUMERAL_BODY`, the same token the phrase was matched
  * with, so a formatted count is parsed as the whole number an organizer reads: "1,075 guests" is
- * 1075 and not 75.
+ * 1075 and not 75. It carries the two LOOKBEHINDS `COUNT_NUMERAL` carries and not its lookahead:
+ * the hyphenated alternation matches "75-person", where the numeral is followed by a hyphen, so a
+ * trailing guard would drop the very count that alternation exists to read. The leading guards are
+ * what keep a rule id out of a phrase that spans one: an `ATTENDEE_COUNT` phrase reaches across
+ * "DOHMH-VENDOR-PERMIT-001" to its numeral, and `-001` is not a threshold of 1.
  */
-const CLAIMED_NUMERAL = new RegExp(NUMERAL_BODY, "g");
+const CLAIMED_NUMERAL = new RegExp(`(?<![\\w-])(?<!\\d,)${NUMERAL_BODY}`, "g");
+/** An attendee-count phrase and the numeral it states, in either order, within one sentence. */
+const ATTENDEE_COUNT_NUMERAL =
+  `(?:${ATTENDEE_COUNT_SOURCE})[^.!?\\n]*?${COUNT_NUMERAL}` +
+  `|${COUNT_NUMERAL}[^.!?\\n]*?(?:${ATTENDEE_COUNT_SOURCE})`;
+export const CLAIMED_COUNT_SOURCE = `${COUNTED_PEOPLE_SOURCE}|${ATTENDEE_COUNT_NUMERAL}`;
 export const claimedCounts = (raw) => {
   const found = new Set();
-  const phrases = normalizeForMatching(raw).match(new RegExp(COUNTED_PEOPLE_SOURCE, "gi")) ?? [];
+  const phrases = normalizeForMatching(raw).match(new RegExp(CLAIMED_COUNT_SOURCE, "gi")) ?? [];
   for (const phrase of phrases) {
     for (const numeral of phrase.match(CLAIMED_NUMERAL) ?? []) {
       found.add(Number(numeral.replaceAll(",", "")));

@@ -2874,3 +2874,101 @@ describe("round 15: the artifact's top-level prose is a unit too", () => {
     );
   });
 });
+
+/**
+ * ROUND 16, and the class the two rounds before it share: a claim was DETECTED by one count
+ * vocabulary and AUDITED against the other. `statesACount` reads `ATTENDEE_COUNT` or
+ * `COUNTED_PEOPLE`, so "HEALTH-A's guest count is 500" is a claim; `claimedCounts` searched
+ * `COUNTED_PEOPLE` alone, so it returned nothing for that claim, and `countsSupportedBy`'s `every`
+ * over an empty set exempted the invented 500. The two halves of one predicate disagreed about
+ * what a count is, which is what the set equality between the noun lists exists to prevent one
+ * level down.
+ */
+describe("round 16: a count claim is audited in the vocabulary that detected it", () => {
+  const attributed = new Map([["HEALTH-ASSEMBLY-001", new Set([75])]]);
+
+  /** THREAD 662, and the thread's own example. */
+  it("extracts the numeral a count-field phrase states", () => {
+    expect(claimedCounts("HEALTH-ASSEMBLY-001's guest count is 500.")).toEqual(new Set([500]));
+    expect(countsSupportedBy("HEALTH-ASSEMBLY-001's guest count is 500.", new Set([75]))).toBe(
+      false,
+    );
+    expect(countsAttributed("HEALTH-ASSEMBLY-001's guest count is 500.", attributed)).toBe(false);
+    // The rule's own published number, written the same way, is still a fact.
+    expect(countsAttributed("HEALTH-ASSEMBLY-001's guest count is 75.", attributed)).toBe(true);
+  });
+
+  /** Every declared `ATTENDEE_COUNT` phrasing, not the one the thread happened to write. */
+  it("extracts it from each declared count-field phrasing", () => {
+    const claims = [
+      "the guest count is 500",
+      "the headcount is 500",
+      "the attendee count is 500",
+      "the RSVP count is 500",
+      "the patron count is 500",
+      "expected attendance is 500",
+      "the crowd size is 500",
+      "the party size is 500",
+      "the number of confirmed guests is 500",
+    ];
+    for (const claim of claims) {
+      expect(claimedCounts(`HEALTH-ASSEMBLY-001: ${claim}.`), claim).toEqual(new Set([500]));
+    }
+  });
+
+  /** In either order, the way the agency and the count pair in either order. */
+  it("reads the numeral before the phrase as well as after it", () => {
+    expect(claimedCounts("500 is the expected attendance.")).toEqual(new Set([500]));
+  });
+
+  /** And no further than the sentence, which is the bound the other vocabulary already uses. */
+  it("does not read a numeral from the next sentence", () => {
+    expect(claimedCounts("HEALTH-ASSEMBLY-001 reads the guest count. Fees start at 500.")).toEqual(
+      new Set(),
+    );
+  });
+
+  /**
+   * A phrase with no numeral in its sentence still states the FIELD and nothing more, which is
+   * exactly what a rule reading that field licenses. This is the behaviour the round preserves.
+   */
+  it("still contributes nothing for a phrase that states no number", () => {
+    expect(claimedCounts("DOHMH-VENDOR-PERMIT-001 reads the guest count.")).toEqual(new Set());
+    expect(countsSupportedBy("The permit depends on the guest count.", new Set([75]))).toBe(true);
+  });
+
+  /**
+   * The reach crosses rule ids constantly, because this repository writes them beside the agency.
+   * The extraction carries `COUNT_NUMERAL`'s two lookbehinds, so `-001` is a rule id and not a
+   * published threshold of 1, and a grouped number's tail is not a number of its own.
+   */
+  it("does not read a rule id's digits as a stated threshold", () => {
+    expect(claimedCounts("DOHMH-VENDOR-PERMIT-001 is what the guest count triggers.")).toEqual(
+      new Set(),
+    );
+    expect(claimedCounts("The guest count of 1,075 applies.")).toEqual(new Set([1075]));
+  });
+
+  /**
+   * THE DECLARED COST, asserted rather than left to be found: the phrase reaches to the numeral
+   * anywhere in its sentence, so an unrelated numeral sharing that sentence is read as a stated
+   * threshold. What that costs is an offender reported against a rule that publishes no 21, which
+   * is a false positive an author can reword, not a claim that goes past.
+   */
+  it("declares an unrelated numeral in the same sentence as a cost", () => {
+    expect(claimedCounts("Apply 21 days ahead when the guest count is high.")).toEqual(
+      new Set([21]),
+    );
+  });
+
+  /**
+   * Measured over the artifact and over the repository scan rather than predicted: the widening
+   * reports no new offender on this tree. The tree's own suites are the other half of that
+   * measurement, and they are green with it.
+   */
+  it("reports no new offender on the published artifact", () => {
+    expect(countClaimsInPublishedOutput(JSON.parse(read("rules/nyc-rules.v2.11.json")))).toEqual(
+      [],
+    );
+  });
+});

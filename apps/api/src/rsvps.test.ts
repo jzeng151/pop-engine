@@ -10,6 +10,8 @@ import {
   SCENARIO_INTAKE_FIXTURES,
   fixtureSubmission,
 } from "@pop-engine/engine/fixtures";
+import { cityHealthRule } from "../../../scripts/spec-conflict-scan.mjs";
+import type { PublishedRuleShape } from "../../../scripts/spec-conflict-scan.mjs";
 import { createApp } from "./app";
 import { cancelRsvp, createRsvp, listRsvps, normalizeEmail, normalizeOptionalPhone } from "./rsvps";
 import { loadRuleset, publishedRulesFile } from "./ruleset";
@@ -363,19 +365,38 @@ describe.runIf(databaseUrl.length > 0)("F-302 RSVP endpoints (database)", () => 
 // in the intake type, so the "F-101 intake field" circumlocution the correction records use is not
 // available here. The marker carries an obligation rather than a licence: the block it marks must
 // assert the independence, which is what the assertions below do.
+//
+// WHICH FINDINGS ARE THE AGENCY'S IS THE ARTIFACT'S ANSWER AND NOT A PREFIX, which is the
+// sixteenth PR #247 round. This filtered on `DOHMH-`, while the structural guard next door
+// classifies the same rule by its id OR its published `output.agency` (`cityHealthRule` in
+// `scripts/spec-conflict-scan.mjs`), and `specs/F-201-permit-plan-generator.md:22` makes the
+// published agency authoritative. A future city-health rule published under `NYC Health` with an
+// id carrying no prefix was therefore invisible HERE and visible THERE, so its finding could move
+// with `headcount` and leave this regression green: it need not even read the count itself, since
+// deduplication against a count-sensitive rule is enough to move it. The classification is
+// imported rather than restated, so the two guards cannot disagree about whose rule it is.
 describe("DOHMH findings do not move with headcount (#235)", () => {
-  const ruleset = parseEngineRuleset(JSON.parse(readFileSync(publishedRulesFile(), "utf8")));
+  const published = JSON.parse(readFileSync(publishedRulesFile(), "utf8")) as {
+    rules?: PublishedRuleShape[];
+    advisories?: PublishedRuleShape[];
+  };
+  const ruleset = parseEngineRuleset(published);
   const calendar: HolidayCalendar = { id: ruleset.calendarId, holidays: [] };
   const scenario = SCENARIO_INTAKE_FIXTURES.find((candidate) => candidate.scenario === "A");
   if (scenario === undefined) throw new Error("no fixture A");
   const declared = new Set(ruleset.intakeFields.map((field) => field.field));
+  const cityHealthIds = new Set(
+    [...(published.rules ?? []), ...(published.advisories ?? [])]
+      .filter((rule) => cityHealthRule(rule))
+      .map((rule) => rule.id),
+  );
   const dohmhFindings = (headcount: number) => {
     const answers = { ...fixtureSubmission(scenario), headcount };
     const intake = Object.fromEntries(
       Object.entries(answers).filter(([field]) => declared.has(field)),
     ) as EventIntake;
     return evaluate(intake, ruleset, FIXTURE_TODAY, calendar).findings.filter((finding) =>
-      finding.ruleIds.some((ruleId) => ruleId.startsWith("DOHMH-")),
+      finding.ruleIds.some((ruleId) => cityHealthIds.has(ruleId)),
     );
   };
   it("returns the same findings at 20, at the 75 assembly threshold, and at 500", () => {
@@ -383,5 +404,14 @@ describe("DOHMH findings do not move with headcount (#235)", () => {
     expect(atTwenty.length, "scenario A carries DOHMH findings to compare").toBeGreaterThan(0);
     expect(dohmhFindings(75)).toEqual(atTwenty);
     expect(dohmhFindings(500)).toEqual(atTwenty);
+  });
+  // What drives the classification above, since the artifact cannot: all three of this ruleset's
+  // city health rules carry the prefix today, so the two readings agree on it and no assertion
+  // over the real rules can tell them apart. The case that separates them is asserted directly.
+  it("classifies a city health rule by its published agency, prefix or no prefix", () => {
+    const byAgencyAlone = { id: "ASSEMBLY-CAPACITY-001", output: { agency: "NYC Health" } };
+    expect(byAgencyAlone.id.startsWith("DOHMH-"), "the id alone would miss it").toBe(false);
+    expect(cityHealthRule(byAgencyAlone), "the published agency classifies it").toBe(true);
+    expect(cityHealthIds.has("DOHMH-EXEMPTION-001"), "and the id still classifies").toBe(true);
   });
 });
