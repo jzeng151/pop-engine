@@ -6,9 +6,10 @@
 // document's numbers are cited elsewhere, and a number nobody can re-run is a number nobody can
 // correct.
 
-import { mkdtempSync, writeFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { URL } from "node:url";
 
 import { beforeAll, describe, expect, test } from "vitest";
 
@@ -816,15 +817,79 @@ describe("section 6, the blocker-plus-window shape", () => {
     }
   });
 
-  test("the prohibition co-fires `unknown`-side on a further 28 intakes", () => {
+  test("the prohibition co-fires `unknown`-side on a further 28 intakes, in four shapes", () => {
+    // Section 6 describes the four separately because they have two different causes, and an
+    // earlier revision gave all 28 the cause that holds for 16. `sound_purpose` unanswered is the
+    // cause on the first two; on the other two the trigger's `any` is what is unknown, which is
+    // why they survive `sound_purpose` being answered.
     const group = m.group("nypd_sound");
     const unknownSide = setsWith(
       group,
       "NYPD-SOUND-COMMERCIAL-ADVERTISING-PROHIBITED-001",
       "unknown",
     );
-    expect(unknownSide.map((set) => set.count)).toEqual([10, 9, 6, 3]);
-    expect(unknownSide.every((set) => set.complete === 0)).toBe(true);
+    const shape = (set) => ({
+      count: set.count,
+      complete: set.complete,
+      firing: group.memberIds
+        .map((id, index) => `${id}:${set.results[index]}`)
+        .filter((entry) => !entry.endsWith(":false")),
+      // Rows where `sound_purpose` is answered: the prohibition is unknown on them for a reason
+      // other than that field.
+      soundPurposeAnswered: set.count - (set.unsettled.get("sound_purpose") ?? 0),
+    });
+    expect(unknownSide.map(shape)).toEqual([
+      {
+        count: 10,
+        complete: 0,
+        firing: [
+          "NYPD-SOUND-PUBLIC-001:true",
+          "NYPD-SOUND-COMMERCIAL-ADVERTISING-PROHIBITED-001:unknown",
+        ],
+        soundPurposeAnswered: 0,
+      },
+      {
+        count: 9,
+        complete: 0,
+        firing: [
+          "NYPD-SOUND-PRIVATE-AUDIBLE-001:unknown",
+          "NYPD-SOUND-PRIVATE-UNKNOWN-001:true",
+          "NYPD-SOUND-COMMERCIAL-ADVERTISING-PROHIBITED-001:unknown",
+        ],
+        soundPurposeAnswered: 3,
+      },
+      {
+        count: 6,
+        complete: 0,
+        firing: [
+          "NYPD-SOUND-PRIVATE-AUDIBLE-001:true",
+          "NYPD-SOUND-COMMERCIAL-ADVERTISING-PROHIBITED-001:unknown",
+        ],
+        soundPurposeAnswered: 0,
+      },
+      {
+        count: 3,
+        complete: 0,
+        firing: [
+          "NYPD-SOUND-PUBLIC-001:unknown",
+          "NYPD-SOUND-COMMERCIAL-ADVERTISING-PROHIBITED-001:unknown",
+        ],
+        soundPurposeAnswered: 1,
+      },
+    ]);
+  });
+
+  test("the advisory that fires `true` on the 9-row shape carries no deadline `parseRule` reads", () => {
+    // Section 6's blocker-plus-window reading needs a filing window on the merged line, and on that
+    // shape the only `true` beside the prohibition is this advisory. Its window is nested inside
+    // `candidate_requirement`, which the parser does not read, so none reaches the merge.
+    const parsed = m.inventory.parserVisibleOutput(m.draft, "NYPD-SOUND-PRIVATE-UNKNOWN-001");
+    expect(parsed.unreadFields).toContain("candidate_requirement");
+    const advisory = [...m.draft.rules, ...m.draft.advisories].find(
+      (rule) => rule.id === "NYPD-SOUND-PRIVATE-UNKNOWN-001",
+    );
+    expect(advisory.output.deadline).toBeUndefined();
+    expect(advisory.output.candidate_requirement.deadline.calendar_days).toBe(5);
   });
 
   test.each([
@@ -853,5 +918,32 @@ describe("section 6, the blocker-plus-window shape", () => {
     expect(
       m.inventory.parserVisibleOutput(m.draft, "SAPO-BLOCK-PARTY-ELIGIBILITY-UNKNOWN-001").name,
     ).not.toBeNull();
+  });
+});
+
+describe("section 8, the harness footprint", () => {
+  // Section 8 publishes these to scope the code behind the measurement, and they are the only
+  // figures in the document about the harness rather than about the draft. Nothing read them, and
+  // they went stale twice while every other number stayed green: once when `harness.mjs` and the
+  // suite grew, and again when `staging.mjs` and the suite did. Reading them off disk is the same
+  // arrangement `intakeFieldInventory` gave section 3.3.
+  test("the published line counts are the files' own", () => {
+    const lines = (name) =>
+      readFileSync(new URL(`./${name}`, import.meta.url), "utf8").split("\n").length - 1;
+    const counts = {
+      "harness.mjs": lines("harness.mjs"),
+      "staging.mjs": lines("staging.mjs"),
+      "inventory.mjs": lines("inventory.mjs"),
+      "report.mjs": lines("report.mjs"),
+      "cofiring.test.mjs": lines("cofiring.test.mjs"),
+    };
+    expect(counts).toEqual({
+      "harness.mjs": 908,
+      "staging.mjs": 241,
+      "inventory.mjs": 299,
+      "report.mjs": 103,
+      "cofiring.test.mjs": 949,
+    });
+    expect(Object.values(counts).reduce((total, count) => total + count, 0)).toBe(2_500);
   });
 });
