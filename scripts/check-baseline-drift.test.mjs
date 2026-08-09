@@ -877,6 +877,10 @@ describe.concurrent("round 10: the exemption is only for files vitest runs", () 
   it.each([
     ["a suffix vitest does not collect", "apps/web/app/reader.test.helper.ts"],
     ["a tree no include pattern covers", "tools/reader.test.ts"],
+    // The include over `scripts/` is recursive and one directory under it is excluded by name, so
+    // the exclude decides this one. A copy carrying only the include would hand the exemption to
+    // the one suite CI does not run (#251 review).
+    ["the tree the config excludes", "scripts/dedupe-cofiring/reader.test.mjs"],
   ])("refuses the marker in %s", async (_label, path) => {
     const { status, output } = await runOn({
       [path]: `// baseline-check: fixture ruleset names\n` + `export const p = "rules/${MISSING}";\n`,
@@ -893,6 +897,8 @@ describe.concurrent("round 10: the exemption is only for files vitest runs", () 
     ["apps/web/app/nested/deep/reader.test.tsx"],
     ["apps/api/src/reader.test.ts"],
     ["packages/engine/src/nested/reader.test.ts"],
+    ["scripts/reader.test.mjs"],
+    ["scripts/nested/deep/reader.test.mjs"],
   ])("still lets %s claim it", async (path) => {
     const { status } = await runOn({
       [path]: `// baseline-check: fixture ruleset names\n` + `export const p = "rules/${MISSING}";\n`,
@@ -901,11 +907,11 @@ describe.concurrent("round 10: the exemption is only for files vitest runs", () 
     expect(status).toBe(0);
   });
 
-  // The copy of vitest's include array is the thing that can drift, so the copies are compared
-  // directly. Reading the repo rather than a planted tree on purpose: divergence is a fact about
-  // the real files. Reading the config at RUNTIME was not an option for the same reason reading
-  // `ruleset.ts` was not in round 7 — the planted trees do not contain one.
-  it("keeps its copy of vitest's include patterns identical to the real config", async () => {
+  // The copies of vitest's include and exclude arrays are the thing that can drift, so the copies
+  // are compared directly. Reading the repo rather than a planted tree on purpose: divergence is a
+  // fact about the real files. Reading the config at RUNTIME was not an option for the same reason
+  // reading `ruleset.ts` was not in round 7 — the planted trees do not contain one.
+  it("keeps its copies of vitest's globs identical to the real config", async () => {
     const repo = resolve(dirname(fileURLToPath(import.meta.url)), "..");
     // Quoted entries between the brackets, NOT a comma split: `{apps,packages}` contains a comma
     // and splitting on it silently produced two half-patterns that happened to compare equal.
@@ -916,14 +922,18 @@ describe.concurrent("round 10: the exemption is only for files vitest runs", () 
       return [...body.slice(0, body.indexOf("]")).matchAll(/["'`]([^"'`]+)["'`]/g)].map((m) => m[1]);
     };
 
-    const fromConfig = arrayAfter(readFileSync(join(repo, "vitest.config.ts"), "utf8"), "include:");
-    const fromCheck = arrayAfter(
-      readFileSync(join(repo, "scripts/check-baseline-drift.mjs"), "utf8"),
-      "const VITEST_INCLUDE =",
-    );
+    const config = readFileSync(join(repo, "vitest.config.ts"), "utf8");
+    const check = readFileSync(join(repo, "scripts/check-baseline-drift.mjs"), "utf8");
 
-    expect(fromConfig.length).toBeGreaterThan(0);
-    expect(fromCheck).toEqual(fromConfig);
+    const include = arrayAfter(config, "include:");
+    expect(include.length).toBeGreaterThan(0);
+    expect(arrayAfter(check, "const VITEST_INCLUDE =")).toEqual(include);
+
+    // `configDefaults.exclude` is spread in ahead of these and carries no quoted entry, so what
+    // this reads is what the config spells out for itself, which is what the copy holds.
+    const exclude = arrayAfter(config, "exclude:");
+    expect(exclude.length).toBeGreaterThan(0);
+    expect(arrayAfter(check, "const VITEST_EXCLUDE =")).toEqual(exclude);
   });
 });
 
