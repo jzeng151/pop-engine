@@ -2700,6 +2700,43 @@ describe("a checklist row whose window comes from another route (#252)", () => {
     );
   });
 
+  /**
+   * #252 review: THE DECIDING QUESTION LEADS THE ROW, ahead of the scalars it qualifies.
+   *
+   * `PlanContextBody` rendered the named permit's apply-by date, its gate, its fee and the filing
+   * attribution first and reached this sentence only afterwards, so a row whose routes are not
+   * known to apply opened as one route's filing work and corrected itself below. The plan line
+   * already renders its routes block before the scalars it qualifies; this pins the same order
+   * here.
+   */
+  it("puts the deciding question ahead of the candidate route's scalars", async () => {
+    stubApi({
+      [GET_CHECKLIST]: checklistOf({
+        created: true,
+        items: [
+          trackedItem(STREET_MEDIUM, {
+            latestApplyDate: "2026-08-26",
+            routes: [TALL_ROUTE, TENT_ROUTE],
+            headlineMode: "candidate",
+            filingRouteRuleId: "DOB-TENT-001",
+          }),
+        ],
+      }),
+    });
+    await renderView();
+
+    const row = await expandedRowFor(STREET_MEDIUM);
+    const text = row.textContent ?? "";
+    const question = text.indexOf("The answers so far do not say");
+    const applyBy = text.indexOf("apply by 2026-08-26");
+    const attribution = text.indexOf("The published rules give this requirement");
+    expect(question).toBeGreaterThanOrEqual(0);
+    expect(applyBy).toBeGreaterThanOrEqual(0);
+    expect(attribution).toBeGreaterThanOrEqual(0);
+    expect(question).toBeLessThan(applyBy);
+    expect(question).toBeLessThan(attribution);
+  });
+
   it("says the requirement itself is unsettled when no route has resolved", async () => {
     stubApi({
       [GET_CHECKLIST]: checklistOf({

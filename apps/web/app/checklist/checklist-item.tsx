@@ -186,6 +186,28 @@ export function PlanContextBody({
 
   return (
     <>
+      {/* THE UNSETTLED STATEMENT COMES BEFORE THE SCALARS IT QUALIFIES, which is the order the plan
+          line already renders the routes block in and for the same reason. The apply-by date, the
+          gate, the fee and the filing attribution below are ONE route's, and on a candidate row no
+          route is known to be the one. Rendered after them, this sentence corrected filing work the
+          organizer had already read as theirs to do (#252 review).
+
+          See `decidingFields` above. Two routes or it is not a merged line, the same guard the plan
+          line makes. The leading sentence branches because a candidate group can already have a
+          triggered route: where one has, the requirement is reached and what is open is which
+          routes reach it, and a sentence saying the requirement itself may not apply would be
+          false. Neither branch repeats the filing-route sentence's opening words, so a reader (and
+          a test) can tell the two apart by their first clause. */}
+      {candidateRoutes.length >= 2 && (
+        <p className="check-item__text" data-testid="deciding-question">
+          {triggeredRoutes > 0
+            ? "The answers so far do not say which of the published routes to this requirement apply."
+            : "The answers so far do not say whether this requirement applies."}
+          {decidingFields.length > 0 &&
+            ` Answering ${decidingFields.map(humanize).join(", ")} would decide it.`}
+        </p>
+      )}
+
       <p className="check-item__meta">
         {/* F-206 AC 2: every line shows its verification status, on the line itself. Rendered here
             rather than in either head, so a trackable row and a read-only context row carry it
@@ -277,22 +299,6 @@ export function PlanContextBody({
           The published rules give this requirement {(context.routes ?? []).length} routes. The
           filing date, fee and filing details above are {filingRoute.name ?? filingRoute.ruleId}
           &apos;s.
-        </p>
-      )}
-
-      {/* See `decidingFields` above. Two routes or it is not a merged line, the same guard the plan
-          line makes. The leading sentence branches because a candidate group can already have a
-          triggered route: where one has, the requirement is reached and what is open is which
-          routes reach it, and a sentence saying the requirement itself may not apply would be
-          false. Neither branch repeats the filing-route sentence's opening words, so a reader (and
-          a test) can tell the two apart by their first clause. */}
-      {candidateRoutes.length >= 2 && (
-        <p className="check-item__text" data-testid="deciding-question">
-          {triggeredRoutes > 0
-            ? "The answers so far do not say which of the published routes to this requirement apply."
-            : "The answers so far do not say whether this requirement applies."}
-          {decidingFields.length > 0 &&
-            ` Answering ${decidingFields.map(humanize).join(", ")} would decide it.`}
         </p>
       )}
 
