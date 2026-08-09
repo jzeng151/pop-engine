@@ -267,6 +267,32 @@ describe("loadPlan", () => {
   });
 
   /**
+   * #252 review: the route list and `ruleIds` are built from one group, so they name the same rules
+   * and name each once. A list that repeats one rule, or names a rule the line does not, clears
+   * every per-field check and then renders the duplicate while the other rule's window, fee and
+   * portal are absent from a line that names it.
+   */
+  it("refuses a route list that does not match the finding's own rule ids", async () => {
+    const merged = mergedFinding("true");
+    const [first, second] = merged.routes;
+    const bodies = [
+      // Two routes, both the same rule: `ruleIds` still says two rules were merged.
+      { ...merged, routes: [first, { ...second, ruleId: "PARKS-EVENT-001" }] },
+      // A route for a rule the line does not name.
+      { ...merged, routes: [first, { ...second, ruleId: "DOB-TENT-001" }] },
+      // The ids match as a set but `ruleIds` repeats one, so the line names one rule twice.
+      { ...merged, ruleIds: ["PARKS-EVENT-001", "PARKS-EVENT-001"] },
+      // A third rule named with no route of its own.
+      { ...merged, ruleIds: [...merged.ruleIds, "DOB-TENT-001"] },
+    ];
+    for (const finding of bodies) {
+      stubFetch(async () => jsonResponse(200, { ...storedPlan, findings: [finding] }));
+      const result = await loadPlan("https://api.example.com", "event-1");
+      expect(result.ok).toBe(false);
+    }
+  });
+
+  /**
    * #252: the engine publishes `headlineMode` exactly when it publishes `routes`, so either without
    * the other is a shape no plan has. A list with no mode is the damaging half: it clears every
    * per-field check, and `Routes` then returns null for want of a mode, so the page renders the

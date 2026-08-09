@@ -332,6 +332,44 @@ describe("loadChecklist", () => {
     }
   });
 
+  /**
+   * #252 review: the same invariant the plan boundary applies, at the door the organizer works the
+   * item through. `routes` and `ruleIds` are built from one group, so a row repeating one rule's
+   * route, or carrying a route for a rule the row does not name, renders the duplicate while the
+   * other rule's window, fee and portal are absent from a row that names it.
+   */
+  it("refuses a row whose routes do not match its own rule ids", async () => {
+    const routes = mergedRoutes("true");
+    const rows = [
+      // Two routes, both the same rule.
+      { routes: [routes[0], { ...routes[1], ruleId: "PARKS-EVENT-001" }] },
+      // A route for a rule the row does not name.
+      { routes, ruleIds: ["PARKS-EVENT-001", "DOB-TENT-001"] },
+      // A third rule named with no route of its own.
+      { routes, ruleIds: ["PARKS-EVENT-001", "SAPO-PERMIT-001", "DOB-TENT-001"] },
+    ];
+    for (const row of rows) {
+      stubFetch(async () =>
+        jsonResponse(
+          200,
+          checklistBody({
+            items: [
+              trackedItem(STREET_MEDIUM, {
+                ...row,
+                headlineMode: "applies_together",
+                filingRouteRuleId: null,
+              }),
+            ],
+          }),
+        ),
+      );
+
+      await expect(loadChecklist("https://api.example.com", "event-1")).resolves.toMatchObject({
+        ok: false,
+      });
+    }
+  });
+
   it("refuses a context line carrying only one of the two route fields", async () => {
     for (const half of [
       { routes: mergedRoutes("true") },

@@ -97,8 +97,15 @@ export const planContext = (
   overrides: Record<string, unknown> = {},
 ): Record<string, unknown> => {
   const rule = ruleOf(ruleId);
+  // A merged row names every rule it merged, one per route: `mergeGroup()` builds `ruleIds` and
+  // `routes` from one group, and the boundary refuses a row where the two disagree. A fixture that
+  // overrides `routes` therefore gets the matching ids rather than the single rule's, unless it
+  // overrides `ruleIds` too, which is how a test asks for the mismatch on purpose.
+  const routes = overrides.routes;
   return {
-    ruleIds: [rule.id],
+    ruleIds: Array.isArray(routes)
+      ? routes.map((route) => (route as { readonly ruleId: string }).ruleId)
+      : [rule.id],
     permitName: rule.name,
     userSummary: rule.userSummary,
     agency: rule.agency,
@@ -138,7 +145,7 @@ export const trackedItem = (
   ruleId: string = STREET_MEDIUM,
   overrides: Record<string, unknown> = {},
 ): Record<string, unknown> => ({
-  ...planContext(ruleId),
+  ...planContext(ruleId, overrides),
   id: `item-${ruleId}`,
   planItemId: `plan-item-${ruleId}`,
   status: "not_started",

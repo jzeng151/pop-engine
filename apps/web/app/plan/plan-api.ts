@@ -450,16 +450,43 @@ const FINDING_CHECKS: FieldChecks<ConsumedFinding> = {
  * suppressed on the surface where the organizer works the item. One rule, both doors.
  */
 export const routeContractHolds = (carrier: {
+  readonly ruleIds: readonly string[];
   readonly routes?: readonly ConsumedRoute[] | null;
   readonly headlineMode?: HeadlineMode | null;
 }): boolean => {
   const routes = carrier.routes ?? null;
   const mode = carrier.headlineMode ?? null;
   if (routes === null || mode === null) return routes === null && mode === null;
+  if (!routesMatchRuleIds(routes, carrier.ruleIds)) return false;
   if (mode === "applies_together") {
     return routes.every((route) => route.triggerResult === "true");
   }
   return routes.some((route) => route.triggerResult === "unknown");
+};
+
+/**
+ * ONE ROUTE PER CONTRIBUTING RULE, AND THE SAME RULES THE LINE ALREADY NAMES. `mergeGroup()` builds
+ * `routes` and `ruleIds` from one group, so the two carry the same rule ids and each id once. Every
+ * check above reads the list's shape and its trigger results; none read it against the ids the
+ * carrier itself publishes, so a body declaring `ruleIds: ["A", "B"]` beside two routes both named
+ * `A`, or beside routes for unrelated rules, cleared the boundary. The page then renders the
+ * duplicate and B's window, fee and portal are absent from a line that names B: an incomplete
+ * merged plan presented as a complete one, which is the same failure the one-entry list produced
+ * (#252 review). Comparing sizes and membership refuses both the duplicate and the mismatch, and
+ * refuses a repeated `ruleIds` entry with them.
+ */
+const routesMatchRuleIds = (
+  routes: readonly ConsumedRoute[],
+  ruleIds: readonly string[],
+): boolean => {
+  const routeIds = new Set(routes.map((route) => route.ruleId));
+  const namedIds = new Set(ruleIds);
+  return (
+    routeIds.size === routes.length &&
+    namedIds.size === ruleIds.length &&
+    routeIds.size === namedIds.size &&
+    ruleIds.every((ruleId) => routeIds.has(ruleId))
+  );
 };
 
 const isConsumedFinding = (value: unknown): value is ConsumedFinding =>
