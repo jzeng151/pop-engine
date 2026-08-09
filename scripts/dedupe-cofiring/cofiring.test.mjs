@@ -13,6 +13,7 @@ import { URL } from "node:url";
 
 import { beforeAll, describe, expect, test } from "vitest";
 
+import { evaluate, parseEngineRuleset } from "../../packages/engine/src/index.ts";
 import { parseIntakeContract } from "../../packages/engine/src/intake/registry.ts";
 import { validateIntake } from "../../packages/engine/src/intake/validate.ts";
 
@@ -92,6 +93,10 @@ describe("section 3.1, the load-staging errors", () => {
     expect(m.staging[3].changed).toEqual({
       kindsMapped: { conditional_requirement: 4, approval: 1, certificate: 1 },
     });
+    // The row that publishes "the 7 `is_null` leaves and the 1 `lte` leaf". It rewrote them and
+    // reported nothing, so a draft that gained or dropped a leaf left that figure stale with the
+    // suite still green, exactly as the three counts above would have been (#251 review).
+    expect(m.staging[4].changed).toEqual({ operatorsRewritten: { is_null: 7, lte: 1 } });
   });
 
   test("the unsupported deadline types are the parser's verdict, not a list", () => {
@@ -892,6 +897,120 @@ describe("section 6, the blocker-plus-window shape", () => {
     expect(advisory.output.candidate_requirement.deadline.calendar_days).toBe(5);
   });
 
+  test("which shapes actually merge to a prohibited line, put to the engine", () => {
+    // Section 6 is about what the MERGED line reads, and co-firing alone does not settle that: an
+    // unresolved route cannot carry a group past `may_be_required` where the group already holds a
+    // resolved route at or above `required` (`unresolvedRouteCeilingApplies`, `findings.ts:191-220`,
+    // ARCHITECTURE-FUTURE §8.4). An earlier revision of this section gave the blocker-plus-window
+    // reading to the 16 `unknown`-side rows where a permit fires `true`, which is the one shape the
+    // ceiling bites on, and withheld it from the 12 where the permit is itself `unknown`, which is
+    // where it holds (#251 review).
+    //
+    // The draft does not load (section 3.1), so this is put to the engine on a synthetic group in
+    // the published shape rather than on the draft: three rules on one dedupe key, a `prohibition`
+    // publishing no window, a `permit` publishing a 5-day one, and an `advisory`. Each shape is
+    // reproduced by which gate is answered, so the assertion is the engine's merge, not a reading
+    // of it.
+    const gate = (field) => ({ all: [{ field, op: "eq", value: "yes" }] });
+    const member = (id, kind, output, field) => ({
+      id,
+      kind,
+      trigger: gate(field),
+      output: { ...output, dedupe_key: "nypd_sound" },
+      verification: { status: "SOURCE_CONFIRMED" },
+      source: { citation: `citation ${id}`, urls: [`https://example.test/${id}`] },
+    });
+    const enumField = (field) => ({ field, type: "enum", values: ["yes", "no"] });
+    const ruleset = parseEngineRuleset({
+      ruleset_version: "cofiring-section-6.v1",
+      jurisdiction: "US-NY-NYC",
+      snapshot_date: "2026-07-22",
+      config: {
+        slack_warning_days: { value: 7 },
+        business_day_math: { calendar: "cofiring-calendar@2026" },
+      },
+      intake_fields: [
+        { field: "event_date", type: "date" },
+        enumField("prohibition_gate"),
+        enumField("permit_gate"),
+        enumField("advisory_gate"),
+      ],
+      rules: [
+        // The prohibition's whole `output` is `status`, `message` and `dedupe_key`, as the draft's
+        // is, so it publishes no name and no window and takes its kind's default disposition.
+        member(
+          "PROHIBITION",
+          "prohibition",
+          { status: "PROHIBITED_USE", message: "section 10-108" },
+          "prohibition_gate",
+        ),
+        member(
+          "PERMIT",
+          "permit",
+          {
+            permit_name: "Sound Device Permit",
+            agency: "NYPD",
+            deadline: { type: "published_minimum", calendar_days: 5 },
+          },
+          "permit_gate",
+        ),
+        member(
+          "ADVISORY",
+          "advisory",
+          { advisory_text: "a permit may be required" },
+          "advisory_gate",
+        ),
+      ],
+      advisories: [],
+    });
+    const mergedLine = (gates) => {
+      // The harness's own event date, and a `today` far enough ahead of it that the permit's
+      // 5-day window is open: a closed one would decide the timeline on a different branch.
+      const plan = evaluate({ event_date: EVENT_DATE, ...gates }, ruleset, "2026-07-22", {
+        id: "cofiring-calendar@2026",
+        holidays: [],
+      });
+      expect(plan.findings).toHaveLength(1);
+      const [finding] = plan.findings;
+      return {
+        disposition: finding.disposition,
+        name: finding.name,
+        quotesTheWindow: finding.latestApplyDate !== null,
+      };
+    };
+    const blockerPlusWindow = {
+      disposition: "prohibited_or_ineligible",
+      name: null,
+      quotesTheWindow: true,
+    };
+    // The 8 `true`-with-`true` rows: nothing is capped, so the prohibition binds identity.
+    expect(
+      mergedLine({ prohibition_gate: "yes", permit_gate: "yes", advisory_gate: "no" }),
+    ).toEqual(blockerPlusWindow);
+    // The 16 rows where the prohibition is `unknown` and a permit fires `true`. The resolved
+    // `required` permit triggers the ceiling, the prohibition contributes `may_be_required`, and the
+    // merged line reads as the permit an organizer can file. These co-fire; they are not this
+    // section's shape.
+    expect(mergedLine({ prohibition_gate: null, permit_gate: "yes", advisory_gate: "no" })).toEqual(
+      {
+        disposition: "required",
+        name: "Sound Device Permit",
+        quotesTheWindow: true,
+      },
+    );
+    // The 9-row shape: the only route that resolved is the advisory, which is weaker than the
+    // ceiling, so it does not trigger the cap. The permit's own `unknown` finding still contributes
+    // the group's window.
+    expect(mergedLine({ prohibition_gate: null, permit_gate: null, advisory_gate: "yes" })).toEqual(
+      blockerPlusWindow,
+    );
+    // The 3-row shape: no route resolved at all, so there is nothing the prohibition is promoted
+    // past.
+    expect(mergedLine({ prohibition_gate: null, permit_gate: null, advisory_gate: "no" })).toEqual(
+      blockerPlusWindow,
+    );
+  });
+
   test.each([
     "SAPO-BLOCK-PARTY-INELIGIBLE-001",
     "NYPD-SOUND-COMMERCIAL-ADVERTISING-PROHIBITED-001",
@@ -939,11 +1058,26 @@ describe("section 8, the harness footprint", () => {
     };
     expect(counts).toEqual({
       "harness.mjs": 908,
-      "staging.mjs": 241,
+      "staging.mjs": 253,
       "inventory.mjs": 299,
       "report.mjs": 103,
-      "cofiring.test.mjs": 949,
+      "cofiring.test.mjs": 1083,
     });
-    expect(Object.values(counts).reduce((total, count) => total + count, 0)).toBe(2_500);
+    expect(Object.values(counts).reduce((total, count) => total + count, 0)).toBe(2_646);
+  });
+
+  test("the published case count is the one Vitest collected", (context) => {
+    // Section 8's file table publishes a case count beside the line counts, and it claimed the same
+    // regression protection while nothing derived it: a case added, removed or split moved the line
+    // counts above and left the case count stale with the suite green (#251 review). It is counted
+    // off this file's own collected task tree rather than off the source, because four blocks use
+    // `test.each` and expand at collection time, so a count of `test(` calls would be a different
+    // quantity from the one `pnpm test:cofiring` reports.
+    const collected = (task) =>
+      (task.tasks ?? []).reduce(
+        (total, child) => total + (child.type === "test" ? 1 : collected(child)),
+        0,
+      );
+    expect(collected(context.task.file)).toBe(84);
   });
 });

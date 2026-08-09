@@ -183,13 +183,24 @@ export const ADAPTATIONS = [
   {
     label: "DIAGNOSTIC ONLY, semantics-changing: rewrite the `is_null` and `lte` leaves",
     apply: (ruleset) => {
+      const operatorsRewritten = {};
+      const count = (op) => {
+        operatorsRewritten[op] = (operatorsRewritten[op] ?? 0) + 1;
+      };
       for (const rule of allRules(ruleset)) {
         rule.trigger = rewriteLeaves(rule.trigger, (leaf) => {
-          if (leaf.op === "is_null") return { field: leaf.field, op: "eq", value: "unknown" };
-          if (leaf.op === "lte") return { field: leaf.field, op: "gte", value: leaf.value };
+          if (leaf.op === "is_null") {
+            count("is_null");
+            return { field: leaf.field, op: "eq", value: "unknown" };
+          }
+          if (leaf.op === "lte") {
+            count("lte");
+            return { field: leaf.field, op: "gte", value: leaf.value };
+          }
           return leaf;
         });
       }
+      return { operatorsRewritten };
     },
   },
   {
@@ -221,10 +232,11 @@ export const ADAPTATIONS = [
  * Apply each adaptation in turn and record the parser's next complaint, plus what the adaptation
  * touched.
  *
- * `changed` is what section 3.1's left column counts: how many deadlines were dropped and why, and
- * how many rules carry a verification status or a kind the engine does not declare. It is returned
- * rather than written into the document by hand so that a draft that gains one more
- * `conditional_requirement` fails the suite instead of quietly making the published count stale.
+ * `changed` is what section 3.1's left column counts: how many deadlines were dropped and why, how
+ * many rules carry a verification status or a kind the engine does not declare, and how many leaves
+ * each undeclared operator was rewritten on. It is returned rather than written into the document by
+ * hand so that a draft that gains one more `conditional_requirement`, or one more `is_null` leaf,
+ * fails the suite instead of quietly making the published count stale.
  */
 export function stagingSequence(draft) {
   const staged = clone(draft);

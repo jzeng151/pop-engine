@@ -880,9 +880,33 @@ those 12 `sound_purpose` is answered `commercial_advertising` outright. **And th
 does not always fire `true`.** It does on 16; on the other 12 the permit is itself `unknown`, and on
 the 9-row shape what fires `true` beside it is the advisory `NYPD-SOUND-PRIVATE-UNKNOWN-001`, whose
 own `Sound Device Permit` deadline sits inside a `candidate_requirement` object that `parseRule`
-does not read, so no filing window reaches the merged line from it. The blocker-plus-window reading
-this section is about therefore belongs to the two `true`-with-`true` sets above and, on the
-`unknown` side, to the 16 where a permit fires `true`.
+does not read, so no filing window reaches the merged line from that rule.
+
+**Co-firing is not the same question as what the merged line reads, and on the `unknown` side the
+two answers come apart.** A route whose own trigger did not resolve cannot carry a group past
+`may_be_required` where the group already holds a resolved route at or above `required`
+(`unresolvedRouteCeilingApplies` and `contributedDisposition`, `findings.ts:191-220`, enforcing
+ARCHITECTURE-FUTURE §8.4's "candidate requirements produced by [...] unknown branches remain
+conditional; they are not promoted by deduplication"). So the 28 rows divide again, and not the way
+an earlier revision of this paragraph had it:
+
+- On the **16** where the prohibition is `unknown` and a permit fires `true`, the permit's resolved
+  `required` is exactly the route the ceiling protects. The prohibition contributes
+  `may_be_required`, the merged disposition is the permit's `required`, and the line reads as the
+  Sound Device Permit, by name, with its window. These rows co-fire, but the merged line is not a
+  blocker, so they are not this section's shape.
+- On the **12** where the permit is itself `unknown`, nothing in the group resolved at or above
+  `required`: on the 9-row shape the only `true` route is an advisory, which is weaker than the
+  ceiling and so does not trigger the cap. The prohibition keeps its published
+  `prohibited_or_ineligible`, and the permit's own `unknown` finding still contributes the group's
+  5-day window, so the merged line reads prohibited, unnamed, and quoting an apply-by date.
+
+The blocker-plus-window reading this section is about therefore belongs to the two
+`true`-with-`true` sets above and, on the `unknown` side, to those 12 rather than to the 16. The
+previous revision had this exactly backwards, and it did so by reading co-firing off the trigger
+results without putting the merge to the engine. It is put to the engine now: the draft does not
+load (section 3.1), so `describe("section 6, ...")` reproduces the group synthetically in the
+published shape and asserts the merged disposition of all four shapes.
 
 **This is the shape the brief describes, and PR #254 is what made it so.** `mergeGroup`
 (`findings.ts:402-470`, AD-19) reaches the merged line field by field, without consulting file
@@ -1010,13 +1034,21 @@ dropped would have left every published number green and that one stale; it is n
 on its own: the first assertion pinned an unconstrained Cartesian product, which is a different
 quantity from the one the section claims, so a second case now also fails if the gated fields stop
 being gated or if a gate starts reading a field the count does not range over. The line counts and
-case count in the next paragraph are about the harness rather than about the draft, and they have
-gone stale twice while every other figure stayed green, so they are asserted too.
+the case count below are about the harness rather than about the draft, and they have gone stale
+twice while every other figure stayed green, so they are asserted too. The case count was the third
+instance of the same defect: it sat in the same paragraph as the line counts, claiming the same
+protection, while `describe("section 8, the harness footprint")` read only the files' lengths, so a
+case added, removed or split moved the line counts and left the case count stale with the suite
+green. It is now counted off the suite's own collected task tree, which is the number
+`pnpm test:cofiring` reports rather than a count of `test(` calls in the source: four blocks use
+`test.each` and expand at collection time, so those two quantities are not the same.
 
-It is four modules and one suite, 2,500 lines together: `harness.mjs` 908, `cofiring.test.mjs` 949,
-`inventory.mjs` 299, `staging.mjs` 241 and `report.mjs` 103. Those six figures are read off disk and
-asserted by `describe("section 8, the harness footprint")`, so a module or the suite growing moves
-them here rather than leaving the reproduction section understating the code behind the numbers.
+It is four modules and one suite, 2,646 lines together: `harness.mjs` 908,
+`cofiring.test.mjs` 1,083, `inventory.mjs` 299, `staging.mjs` 253 and
+`report.mjs` 103, reporting 84 cases. Those seven figures are read off disk and off
+the task tree and asserted by `describe("section 8, the harness footprint")`, so a module, the suite
+or the case list growing moves them here rather than leaving the reproduction section understating
+the code behind the numbers.
 
 | file                | what it is                                                                                                                                    |
 | ------------------- | --------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -1024,13 +1056,13 @@ them here rather than leaving the reproduction section understating the code beh
 | `staging.mjs`       | the adaptations of section 3.1, applied to in-memory clones, each reporting what it touched                                                   |
 | `inventory.mjs`     | what the draft publishes, re-derived by parsing it: deadlines, permit names, output identity, blockers, mixed statuses, parser-visible output |
 | `report.mjs`        | one `measure()` call that produces every table, plus the printer                                                                              |
-| `cofiring.test.mjs` | the 82 cases `pnpm test:cofiring` reports, one or more per published figure                                                                   |
+| `cofiring.test.mjs` | the 84 cases `pnpm test:cofiring` reports, one or more per published figure                                                                   |
 
 Every table maps to a `describe` block with the same number:
 
 | table                                                           | assertion                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               |
 | --------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 3.1, the staging errors and inventories                         | `describe("section 3.1, the load-staging errors")`, whose second case asserts the dropped-deadline, mapped-status and mapped-kind counts                                                                                                                                                                                                                                                                                                                                                                |
+| 3.1, the staging errors and inventories                         | `describe("section 3.1, the load-staging errors")`, whose second case asserts the dropped-deadline, mapped-status, mapped-kind and rewritten-operator counts                                                                                                                                                                                                                                                                                                                                            |
 | 3.2, the agreement check                                        | `describe("section 3.2, what the harness supplies")`                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
 | 3.3, the intake inventory, the sweep sizes and the domain rules | `describe("section 3.3, the sweep")`, whose first case asserts the 63-field inventory, its per-type breakdown and the 4.12 x 10^27 count, whose `asked_when` case fails if that count stops applying the two gates or if a gate starts reading a field the count does not range over, whose headcount case runs `validateIntake` on the rejected value and the admitted one, and whose hand-set case fails when the swept structure factors stop bracketing a published `structure_area_sqft` threshold |
 | 3.4, limitations 3, 4, 5 and 9                                  | `describe("section 3.4, the limitations")`                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
@@ -1040,7 +1072,7 @@ Every table maps to a `describe` block with the same number:
 | 4.3, completeness                                               | `describe("section 4.3, completeness")`                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
 | 4.4, the control                                                | `describe("section 4.4, the published control")`                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
 | every table and count in section 5                              | `describe("section 5, the co-firing sets")`                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
-| section 6's blocker inventory and counts                        | `describe("section 6, the blocker-plus-window shape")`, whose four-shape case asserts each `unknown`-side shape's members, results and answered-`sound_purpose` rows rather than their sum                                                                                                                                                                                                                                                                                                              |
+| section 6's blocker inventory and counts                        | `describe("section 6, the blocker-plus-window shape")`, whose four-shape case asserts each `unknown`-side shape's members, results and answered-`sound_purpose` rows rather than their sum, and whose merge case puts all four shapes to `evaluate` on a synthetic group and asserts which of them reads prohibited                                                                                                                                                                                     |
 | section 7                                                       | restates 4.1, 4.2, 4.3 and 4.4; it publishes no figure of its own                                                                                                                                                                                                                                                                                                                                                                                                                                       |
 
 The whole run takes about six seconds, of which five are the 24,330,240-intake
