@@ -12,14 +12,17 @@ import {
   OPT_OUT_MARKER,
   PROSE_EXTENSIONS,
   SKIPPED_DIRS,
+  THRESHOLD_OPERATORS,
   blockDigest,
   blocksOf,
   cityHealthRule,
   countClaimsInPublishedOutput,
   countsAttributed,
+  dedupeGroups,
   isCapturedSourcePage,
   pinnedDigest,
   publishedClaimSubjects,
+  publishedThresholds,
   scanFile,
   scanOptionsFor,
 } from "./spec-conflict-scan.mjs";
@@ -1000,23 +1003,63 @@ describe("no DOHMH rule is attributed to headcount, removed 2026-08-05 (#235)", 
   }
 
   /**
-   * Every numeric value a trigger compares `field` against, at any nesting depth. These are the
-   * thresholds the rule really publishes, and the only numbers its own prose may state about the
-   * field. A non-numeric comparison contributes nothing, so a rule that reads the field without a
-   * threshold licenses no number at all.
+   * WHICH OPERATORS THE RULES SCHEMA ALLOWS, read out of the engine's own union rather than listed
+   * here. `publishedThresholds` in `spec-conflict-scan.mjs` classifies each one as publishing its
+   * value inclusively, exclusively or not at all, and this reads
+   * `packages/engine/src/types.ts`'s `ConditionOperator` and fails if the two stop naming the same
+   * set. That is the twenty-third PR #247 round's second half: the extraction discarded the
+   * operator entirely, so a table of operators added in its place is worth exactly as much as the
+   * thing that keeps it honest.
+   *
+   * An operator the engine adds arrives here as a failure naming it, and an operator the table
+   * names that the engine has dropped arrives the same way. Neither is silent.
    */
-  function triggerValues(node, field, into = new Set()) {
-    if (Array.isArray(node)) for (const child of node) triggerValues(child, field, into);
-    else if (node && typeof node === "object") {
-      if (node.field === field) {
-        for (const value of [node.value].flat()) {
-          if (typeof value === "number") into.add(value);
-        }
+  it("classifies every comparison operator the engine's condition union declares", () => {
+    const types = readFileSync(resolve(repoRoot, "packages/engine/src/types.ts"), "utf8");
+    const union = /export type ConditionOperator =([^;]+);/.exec(types);
+    expect(union, "packages/engine/src/types.ts declares ConditionOperator").not.toBeNull();
+    const declared = [...(union?.[1] ?? "").matchAll(/"([^"]+)"/g)].map((match) => match[1]);
+    expect(declared.length, "the union names its operators as string literals").toBeGreaterThan(0);
+    expect(
+      declared.sort(),
+      "every operator a published trigger may use has to be classified in THRESHOLD_OPERATORS," +
+        " which decides whether its value is a number the rule's prose may state. An operator" +
+        " missing there licenses nothing, which is safe but silent; say what it publishes.",
+    ).toEqual(Object.keys(THRESHOLD_OPERATORS).sort());
+  });
+
+  /**
+   * And the operators the published artifact actually writes are a subset of that union, so the
+   * classification is checked against the ruleset as well as against the type.
+   */
+  it("uses no trigger operator the classification does not name", () => {
+    const operators = new Set();
+    const walk = (node) => {
+      if (Array.isArray(node)) for (const child of node) walk(child);
+      else if (node && typeof node === "object") {
+        if (typeof node.op === "string") operators.add(node.op);
+        for (const value of Object.values(node)) walk(value);
       }
-      for (const value of Object.values(node)) triggerValues(value, field, into);
+    };
+    for (const [, artifact] of publishedRulesets()) {
+      for (const rule of [...(artifact.rules ?? []), ...(artifact.advisories ?? [])]) {
+        walk(rule.trigger);
+      }
     }
-    return into;
-  }
+    expect([...operators].sort(), "the published ruleset's operators, enumerated").toEqual([
+      "bool",
+      "contains",
+      "contains_any",
+      "eq",
+      "gt",
+      "gte",
+      "in",
+    ]);
+    expect(
+      [...operators].filter((op) => !(op in THRESHOLD_OPERATORS)),
+      "a published trigger compares with an operator THRESHOLD_OPERATORS does not classify",
+    ).toEqual([]);
+  });
 
   /** The published intake field the prose calls an attendee count. */
   const ATTENDEE_COUNT_FIELD = "headcount";
@@ -1086,13 +1129,20 @@ describe("no DOHMH rule is attributed to headcount, removed 2026-08-05 (#235)", 
    * eleventh carries the values too, because "this rule reads the count" licenses the FIELD and not
    * every number a string can state. A rule triggered at 75 does not make a note about 500 a
    * published fact.
+   *
+   * AND THE COMPARISON THE TRIGGER MAKES, which is the twenty-third round. The extraction kept the
+   * numeric operand and dropped the operator, so `headcount gt 75` published the same bare 75 as
+   * `headcount gte 75` and prose saying the rule applies AT 75 was licensed by a trigger that
+   * excludes it. `publishedThresholds` in `spec-conflict-scan.mjs` carries the operator and the
+   * boundary, and lives there rather than here so the fixture suite can drive it over a planted
+   * trigger, which is the same reason the block scan moved out of this file in the sixth round.
    */
   const attendeeCountThresholds = (artifacts) => {
     const thresholds = new Map();
     for (const artifact of artifacts) {
       for (const rule of cityHealthRules(artifact)) {
         if (!triggerFields(rule.trigger).has(ATTENDEE_COUNT_FIELD)) continue;
-        thresholds.set(rule.id, triggerValues(rule.trigger, ATTENDEE_COUNT_FIELD));
+        thresholds.set(rule.id, publishedThresholds(rule.trigger, ATTENDEE_COUNT_FIELD));
       }
     }
     return thresholds;
@@ -1164,6 +1214,9 @@ describe("no DOHMH rule is attributed to headcount, removed 2026-08-05 (#235)", 
    * every guard in this repository. The F-302 rollout spec this branch changed requires rewriting
    * `status` and `provenance`, which is what makes that reachable rather than theoretical. The
    * offender's `ruleId` is the rule id for a rule's string and `ruleset.<key>` for a top-level one.
+   *
+   * IT READS THE MERGED DEDUPE CARD TOO, which is the twenty-third round and which the assertion
+   * below runs over the tree's one real group.
    */
   it("no published ruleset states a count-based city health requirement to an organizer", () => {
     const attributed = attendeeCountThresholdsByRule();
@@ -1182,6 +1235,26 @@ describe("no DOHMH rule is attributed to headcount, removed 2026-08-05 (#235)", 
         " one (docs/DOCUMENTATION-GOVERNANCE.md §6):\n" +
         offenders.join("\n"),
     ).toEqual([]);
+  });
+
+  /**
+   * WHICH DEDUPE GROUPS THE PUBLISHED RULESET ACTUALLY CARRIES, named, so the group audit above is
+   * read against a real card rather than only against planted ones.
+   *
+   * There is exactly one multi-member group today and it is DOB's, so the audit's verdict on it is
+   * "nothing", which is a real run and not coverage of the defect. The defect itself needs a city
+   * health member and the published ruleset has no such group, so the fixture suite plants one and
+   * says so. A second real group added later shows up HERE first, which is the point of naming
+   * them: the group audit starts reading a card nobody has looked at, and this says which.
+   */
+  it("names every multi-member dedupe group the published ruleset renders as one card", () => {
+    for (const [path, artifact] of publishedRulesets()) {
+      const groups = dedupeGroups([...(artifact.rules ?? []), ...(artifact.advisories ?? [])]);
+      expect(
+        groups.map(([key, members]) => [key, members.map((rule) => rule.id)]),
+        `${path}: the merged cards this audit reads as units`,
+      ).toEqual([["dob-structure", ["DOB-TENT-001", "DOB-TALL-STRUCTURE-001"]]]);
+    }
   });
 
   /**

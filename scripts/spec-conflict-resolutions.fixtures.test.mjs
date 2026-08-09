@@ -18,6 +18,7 @@ import {
   PROSE_EXTENSIONS,
   PROXIMITY,
   SKIPPED_DIRS,
+  THRESHOLD_OPERATORS,
   UNBOUNDED_RECORD_FILES,
   blockDigest,
   blocksOf,
@@ -25,6 +26,7 @@ import {
   countClaimsInPublishedOutput,
   countsAttributed,
   countsSupportedBy,
+  dedupeGroups,
   isCapturedSourcePage,
   isParagraph,
   normalizeForMatching,
@@ -34,6 +36,7 @@ import {
   isHeading,
   publishedClaimSubjects,
   publishedInstrumentOwners,
+  publishedThresholds,
   rulesetProseStrings,
   scanFile,
   scanOptionsFor,
@@ -3150,11 +3153,15 @@ describe("round 17: a link destination is removed whole", () => {
 
   /**
    * A `](` that never balances on its line is NOT a link, and the text after it is prose the
-   * author wrote. It is left alone, which is what the expression this replaces did with it.
+   * author wrote. This function leaves it alone, which is what the expression it replaces did.
+   *
+   * The LOCATOR inside it is removed all the same as of round 23, by a later step and on its own
+   * grounds: a URL is not prose wherever it sits. What round 17 is about is unchanged, and the
+   * `(` the author wrote is still there to show that no destination was recognised here.
    */
   it("leaves an unbalanced destination alone", () => {
     expect(normalizeForMatching("DOHMH reads the [guest](https://example.test/x count")).toBe(
-      "DOHMH reads the guest(https://example.test/x count",
+      "DOHMH reads the guest( count",
     );
   });
 });
@@ -3819,12 +3826,13 @@ describe("round 22: rendered HTML is read as the prose it renders as", () => {
     expect(normalizeForMatching("75&thinsp;guests")).toBe("75&thinsp;guests");
   });
 
-  /** A comparison is not a tag: the name has to start immediately after the angle bracket. */
-  it("does not read a comparison or an autolink as markup", () => {
+  /**
+   * A comparison is not a tag: the name has to start immediately after the angle bracket. An
+   * autolink is not a tag either, for the same reason (a scheme's colon is no tag name), and as of
+   * round 23 it is removed one step later as the locator it is.
+   */
+  it("does not read a comparison as markup", () => {
     expect(normalizeForMatching("the count is < 75 and > 20")).toBe("the count is < 75 and > 20");
-    expect(normalizeForMatching("<https://example.test/a> is the page")).toBe(
-      "<https://example.test/a> is the page",
-    );
   });
 
   /**
@@ -3994,5 +4002,271 @@ describe("round 22: a URL field is a locator rather than prose, in every spellin
         sources: [{ citation: "DOHMH permit page, required at 75 guests", urls }],
       }),
     ).toHaveLength(1);
+  });
+});
+
+/**
+ * ROUND 23. A FALSE POSITIVE rather than a miss, and the highest-value of the round for that
+ * reason: `DOHMH source: <https://example.test/75-guests>` was reported as a fabricated regulatory
+ * claim on a document that states no threshold, so updating a source URL failed the
+ * repository-wide guard. The equivalent inline Markdown link was already clean, which is two
+ * spellings of one link disagreeing.
+ *
+ * It is the same reading as the `sources[].urls` fix one round earlier: a path is not a sentence.
+ * `isUrlField` answers that for a JSON contract field and reaches no prose, so prose gets its own
+ * answer.
+ */
+describe("round 23: a bare or autolinked URL is a locator rather than prose", () => {
+  const slug = "https://example.test/75-guests";
+
+  it("reports nothing for an agency label beside an autolinked source", () => {
+    expect(scanFile(`DOHMH source: <${slug}>`)).toEqual([]);
+  });
+
+  it("reports nothing for the same URL written bare", () => {
+    expect(scanFile(`DOHMH source: ${slug}`)).toEqual([]);
+  });
+
+  /** The spelling that was already clean, asserted beside them so the three cannot drift apart. */
+  it("still reports nothing for the inline Markdown link", () => {
+    expect(scanFile(`DOHMH [source](${slug})`)).toEqual([]);
+  });
+
+  /** A reference definition is the fourth spelling of the same locator. */
+  it("reports nothing for a reference definition", () => {
+    expect(scanFile(`DOHMH source, see [the page][ref].\n\n[ref]: ${slug}`)).toEqual([]);
+  });
+
+  /** The prose around a locator is still read: this removed a token, not the sentence. */
+  it("still flags a claim written beside the URL it cites", () => {
+    expect(scanFile(`DOHMH requires a permit at 75 guests, see ${slug}`)).toHaveLength(1);
+  });
+
+  /**
+   * It runs after the tags are removed, so an `href` goes with its tag rather than leaving the
+   * attribute text behind.
+   */
+  it("removes a link element whole", () => {
+    expect(normalizeForMatching(`<a href="${slug}">the DOHMH page</a>`)).toBe("the DOHMH page");
+  });
+
+  /** EXPECTED MISS, stated: a scheme-less locator is not one this recognises. */
+  it("EXPECTED MISS — a scheme-less locator still reads as prose", () => {
+    expect(scanFile("DOHMH source: www.example.test/75-guests")).toHaveLength(1);
+  });
+});
+
+/**
+ * ROUND 23. The threshold extraction kept a trigger's numeric operand and discarded its operator,
+ * so `headcount gt 75` and `headcount gte 75` published the same bare `75` and prose saying the
+ * rule applies AT 75, or below it, was licensed by a trigger that excludes 75. This is the guard
+ * being wrong about the thing it exists to check rather than a phrasing it cannot parse.
+ */
+describe("round 23: a trigger's comparison is carried into what it licenses", () => {
+  const thresholds = (op, extra = {}) =>
+    publishedThresholds({ field: "headcount", op, value: 75, ...extra }, "headcount");
+
+  /** The classification, stated as the table it is, over every operator the engine declares. */
+  it("classifies all seven of the engine's condition operators", () => {
+    expect(THRESHOLD_OPERATORS).toEqual({
+      eq: "inclusive",
+      in: "inclusive",
+      gte: "inclusive",
+      gt: "exclusive",
+      bool: "none",
+      contains: "none",
+      contains_any: "none",
+    });
+  });
+
+  it("reads an exclusive comparison as one", () => {
+    expect(thresholds("gt")).toEqual([{ value: 75, exclusive: true }]);
+    expect(thresholds("gte")).toEqual([{ value: 75, exclusive: false }]);
+    expect(thresholds("eq")).toEqual([{ value: 75, exclusive: false }]);
+  });
+
+  /** `in` publishes each of its numbers, and a non-numeric member contributes nothing. */
+  it("reads every number an `in` list publishes", () => {
+    expect(
+      publishedThresholds({ field: "headcount", op: "in", value: [50, 75, "many"] }, "headcount"),
+    ).toEqual([
+      { value: 50, exclusive: false },
+      { value: 75, exclusive: false },
+    ]);
+  });
+
+  it("refuses a claim stating an exclusive boundary as an inclusive one", () => {
+    const gt = thresholds("gt");
+    expect(
+      countsSupportedBy("HEALTH-A applies at 75 guests.", new Set([75])),
+      "the miss this round closes: the bare numeral licensed it",
+    ).toBe(true);
+    expect(countsSupportedBy("HEALTH-A applies at 75 guests.", gt)).toBe(false);
+    expect(countsSupportedBy("HEALTH-A applies at 75 or fewer guests.", gt)).toBe(false);
+  });
+
+  it("licenses a claim that states the boundary as the trigger publishes it", () => {
+    const gt = thresholds("gt");
+    for (const claim of [
+      "HEALTH-A applies to more than 75 guests.",
+      "HEALTH-A applies for over 75 confirmed guests.",
+      "HEALTH-A applies when the headcount exceeds 75.",
+      "HEALTH-A applies above 75 guests.",
+    ]) {
+      expect(countsSupportedBy(claim, gt), claim).toBe(true);
+    }
+  });
+
+  /** An inclusive comparison is unchanged, which is the declared limit this round did not widen. */
+  it("leaves an inclusive threshold's direction uncompared", () => {
+    expect(countsSupportedBy("HEALTH-A applies at 75 guests.", thresholds("gte"))).toBe(true);
+    expect(countsSupportedBy("HEALTH-A applies below 75 guests.", thresholds("gte"))).toBe(true);
+  });
+
+  /**
+   * A REAL BOUNDARY FROM THE PUBLISHED ARTIFACT: `DOB-TENT-001` publishes `tent_area_sqft gt 400`
+   * with `boundary: "conditional"`, and its own note says exactly 400 renders CONDITIONAL. The rule
+   * therefore publishes an outcome AT 400, so prose naming 400 names a fact the rule states.
+   */
+  it("reads the published conditional boundary as inclusive", () => {
+    const published = JSON.parse(read("rules/nyc-rules.v2.11.json"));
+    const tent = published.rules.find((rule) => rule.id === "DOB-TENT-001");
+    expect(publishedThresholds(tent.trigger, "tent_area_sqft")).toEqual([
+      { value: 400, exclusive: false },
+    ]);
+  });
+
+  /** An operator the table does not name licenses nothing, which is the fail-closed direction. */
+  it("licenses nothing for an operator it has never read", () => {
+    expect(thresholds("lte")).toEqual([]);
+    expect(countsSupportedBy("HEALTH-A applies at 75 guests.", thresholds("lte"))).toBe(false);
+  });
+
+  /** A bare number is the inclusive spelling, which is what every set of numbers here means. */
+  it("reads a bare number as an inclusive threshold", () => {
+    expect(countsSupportedBy("HEALTH-A applies at 75 guests.", new Set([75]))).toBe(true);
+  });
+
+  /** The relation is tied to the numeral it qualifies, in either spelling of a formatted count. */
+  it("holds the relation to the number it states", () => {
+    const gt = publishedThresholds({ field: "headcount", op: "gt", value: 1075 }, "headcount");
+    expect(countsSupportedBy("HEALTH-A applies above 1,075 guests.", gt)).toBe(true);
+    expect(countsSupportedBy("HEALTH-A applies above 500 guests at 1,075 guests.", gt)).toBe(false);
+  });
+
+  /** And the whole predicate, through the audit a rule's prose is really held to. */
+  it("reports the rule whose own prose states its exclusive boundary inclusively", () => {
+    const artifact = {
+      rules: [
+        {
+          id: "HEALTH-A",
+          trigger: { field: "headcount", op: "gt", value: 75 },
+          output: { agency: "DOHMH", note_text: "HEALTH-A applies at 75 guests." },
+        },
+      ],
+    };
+    const attributed = new Map([
+      ["HEALTH-A", publishedThresholds(artifact.rules[0].trigger, "headcount")],
+    ]);
+    expect(countClaimsInPublishedOutput(artifact, { attributed })).toEqual([
+      { ruleId: "HEALTH-A", string: "HEALTH-A applies at 75 guests." },
+    ]);
+    artifact.rules[0].output.note_text = "HEALTH-A applies to more than 75 guests.";
+    expect(countClaimsInPublishedOutput(artifact, { attributed })).toEqual([]);
+  });
+});
+
+/**
+ * ROUND 23. Rules sharing an `output.dedupe_key` render as ONE card: `packages/engine/src/
+ * findings.ts:437` and `:461` concatenate the group's `user_summary` points and notes under one
+ * heading. The audit read each rule alone, so one member could supply the agency heading and
+ * another the count, and neither rule carried both.
+ *
+ * WHICH OF THESE ARE REAL AND WHICH ARE PLANTED, stated rather than left to be assumed:
+ *
+ *   - REAL: the published ruleset carries exactly one multi-member group, `dob-structure`
+ *     (`DOB-TENT-001` and `DOB-TALL-STRUCTURE-001`). The audit runs over it and reports nothing,
+ *     because both routes are DOB's. `spec-conflict-resolutions.test.mjs` names that group against
+ *     the artifact, so a second one added later is noticed there.
+ *   - PLANTED: every case below that reports an offender. No published group has a city health
+ *     member today, so the defect has no real instance to reproduce, and a synthetic group is
+ *     what a test of it can be. That is a limit of this fixture, not coverage of the artifact.
+ */
+describe("round 23: a dedupe group is audited as the one card it renders as", () => {
+  const member = (id, agency, key, summary) => ({
+    id,
+    output: { agency, dedupe_key: key, user_summary: summary },
+  });
+  const planted = {
+    rules: [
+      member("HEALTH-A", "DOHMH", "assembly-card", { heading: "DOHMH requirements" }),
+      member("DOB-B", "DOB", "assembly-card", { points: [{ text: "Required at 75 guests." }] }),
+    ],
+  };
+
+  it("groups the members that share a key, and only those", () => {
+    expect(dedupeGroups(planted.rules).map(([key, members]) => [key, members.length])).toEqual([
+      ["assembly-card", 2],
+    ]);
+    expect(
+      dedupeGroups([planted.rules[0]]),
+      "a key with one member is the card it already was",
+    ).toEqual([]);
+  });
+
+  it("reports the claim the merged card publishes and neither rule carries", () => {
+    expect(
+      countClaimsInPublishedOutput({ rules: [planted.rules[0]] }),
+      "neither member states the claim alone, which is why per-rule auditing missed it",
+    ).toEqual([]);
+    expect(countClaimsInPublishedOutput({ rules: [planted.rules[1]] })).toEqual([]);
+    const found = countClaimsInPublishedOutput(planted);
+    expect(found).toHaveLength(1);
+    expect(found[0]?.ruleId).toBe("dedupe:assembly-card");
+    expect(found[0]?.string).toContain("Required at 75 guests.");
+  });
+
+  /** Members that share no key still render as separate cards, so no claim spans them. */
+  it("does not read two ungrouped rules as one card", () => {
+    const separate = {
+      rules: [
+        member("HEALTH-A", "DOHMH", undefined, { heading: "DOHMH requirements" }),
+        member("DOB-B", "DOB", undefined, { points: [{ text: "Required at 75 guests." }] }),
+      ],
+    };
+    expect(countClaimsInPublishedOutput(separate)).toEqual([]);
+  });
+
+  /** The group unit is the THIRD unit: a member that carries the whole claim is reported alone. */
+  it("stays at the offending string where one member carries the claim", () => {
+    const whole = {
+      rules: [
+        member("HEALTH-A", "DOHMH", "assembly-card", {
+          heading: "DOHMH requirements",
+          points: [{ text: "Required at 75 guests." }],
+        }),
+        member("DOB-B", "DOB", "assembly-card", { points: [{ text: "Confirm the layout." }] }),
+      ],
+    };
+    const found = countClaimsInPublishedOutput(whole);
+    expect(found.map((entry) => entry.ruleId)).toEqual(["HEALTH-A"]);
+  });
+
+  /** A route that really publishes the number licenses the card it is published on. */
+  it("licenses the merged card when one of its routes publishes the count", () => {
+    const attributed = new Map([["DOB-B", new Set([75])]]);
+    expect(countClaimsInPublishedOutput(planted, { attributed })).toEqual([]);
+  });
+
+  /** THE REAL GROUP, audited: the published ruleset's own `dob-structure` card reports nothing. */
+  it("reports nothing for the published ruleset's one real merged card", () => {
+    const published = JSON.parse(read("rules/nyc-rules.v2.11.json"));
+    const groups = dedupeGroups([...published.rules, ...published.advisories]);
+    expect(groups.map(([key, members]) => [key, members.map((rule) => rule.id)])).toEqual([
+      ["dob-structure", ["DOB-TENT-001", "DOB-TALL-STRUCTURE-001"]],
+    ]);
+    expect(
+      countClaimsInPublishedOutput(published).filter((entry) => entry.ruleId.startsWith("dedupe:")),
+    ).toEqual([]);
   });
 });

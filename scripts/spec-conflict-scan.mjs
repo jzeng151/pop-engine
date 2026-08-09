@@ -780,10 +780,40 @@ const decodeEntities = (text) =>
  */
 const asRenderedText = (text) => decodeEntities(text.replace(HTML_TAG, ""));
 
+/**
+ * EVERY REMAINING LOCATOR REMOVED: a bare or autolinked `http(s)` URL, with the angle brackets an
+ * autolink wraps it in. This is the twenty-third PR #247 round, and it is a FALSE POSITIVE fixed
+ * rather than a miss closed.
+ *
+ * `withoutLinkTargets` removes an inline destination, so `DOHMH [source](https://example.test/
+ * 75-guests)` was already clean while `DOHMH source: <https://example.test/75-guests>` and the same
+ * URL written bare were reported as fabricated regulatory claims. The path slug is what pairs: the
+ * hyphenated count alternation reads `75-guests` as a threshold. Two spellings of one link
+ * disagreeing is bad enough; what makes it worth fixing here is the consequence, which is that
+ * updating a source URL fails the repository-wide guard on a document that states no threshold.
+ * That is the same shape as the `sources[].urls` finding the twenty-second round fixed, one artifact
+ * kind over: `isUrlField` answers it for a JSON contract field and reaches no prose, so prose needs
+ * its own answer and this is it.
+ *
+ * A PATH IS NOT A SENTENCE, which is the reading both answers share. `outputStrings` has excluded a
+ * URL from the published-output audit since the tenth round for exactly this reason, and the note
+ * there names this very shape: "a path fragment like `.../guests-75` would read as a count".
+ *
+ * IT RUNS AFTER THE TAGS ARE REMOVED and not before, because an `href` inside a tag is part of the
+ * tag: removing the URL first would leave `<a href="` behind, which is no longer the tag shape, and
+ * the attribute text would survive into the prose.
+ *
+ * The cost is stated: a scheme-less locator (`www.example.test/75-guests`) is not matched and still
+ * reads as prose, and a count phrase an author writes INSIDE a URL is no longer read. Neither is a
+ * sentence an organizer acts on. Measured over every scanned root, the flag set is unchanged at the
+ * four pinned records and the six benign pairs.
+ */
+const withoutLocators = (text) => text.replace(/<?\bhttps?:\/\/[^\s>]+>?/gi, "");
+
 export const normalizeForMatching = (text) =>
   collapseSpaces(
     joinWrappedLines(
-      asRenderedText(withoutReferenceLabels(withoutLinkTargets(text)))
+      withoutLocators(asRenderedText(withoutReferenceLabels(withoutLinkTargets(text))))
         .replace(/[`*_~[\]"“”]/g, "")
         .replace(/(?<![A-Za-z0-9])'|'(?![A-Za-z0-9])/g, ""),
     ),
@@ -1222,14 +1252,129 @@ export const claimedCounts = (raw) => {
 };
 
 /**
- * Whether every threshold a text states is one the rule it belongs to really publishes.
+ * THE SEVEN OPERATORS a published trigger may compare a field with, and what each one publishes
+ * about a NUMBER. The union is `ConditionOperator` in `packages/engine/src/types.ts`, and
+ * `spec-conflict-resolutions.test.mjs` reads that line and fails if this table and that union stop
+ * naming the same seven, so this is the engine's enumeration rather than a remembered copy of it.
  *
- * `published` is that rule's own trigger values for the attendee-count field. A text stating no
- * number is supported by a rule that reads the field; a text stating a number the rule does not
- * publish is not, whatever field its trigger reads.
+ *   - `inclusive`: the rule applies AT the value, so prose may state it however it is worded.
+ *     `eq` and `in` name the values outright and `gte` includes its boundary.
+ *   - `exclusive`: the rule applies only STRICTLY BEYOND the value, so the value is a boundary the
+ *     rule publishes and NOT a count at which it applies. That is `gt`.
+ *   - `none`: the operator compares no number at all, so the rule licenses none. `bool`,
+ *     `contains` and `contains_any` are answered against a flag or a multi-select.
+ *
+ * An operator this table does not name licenses NOTHING, which is the fail-closed direction: a
+ * future `lt` or `lte` (the proposed draft already writes one) reports its rule's prose until
+ * somebody says here what it publishes, rather than licensing a number on a comparison this guard
+ * has never read.
  */
-export const countsSupportedBy = (raw, published) =>
-  [...claimedCounts(raw)].every((value) => published.has(value));
+export const THRESHOLD_OPERATORS = {
+  eq: "inclusive",
+  in: "inclusive",
+  gte: "inclusive",
+  gt: "exclusive",
+  bool: "none",
+  contains: "none",
+  contains_any: "none",
+};
+
+/**
+ * Every threshold one trigger publishes for one field, as `{ value, exclusive }`, at any nesting
+ * depth of `all` / `any`. This is the twenty-third PR #247 round.
+ *
+ * THE OPERATOR USED TO BE DISCARDED. The extraction collected every numeric `value` a condition on
+ * the field carried and handed the caller a set of bare numbers, so `headcount > 75` published the
+ * same `{75}` as `headcount >= 75`, and `countsSupportedBy` then licensed organizer-facing prose
+ * saying the rule applies AT 75 when the published trigger fires only above it. A guard whose whole
+ * subject is "prose may state only what the ruleset publishes" cannot treat two different published
+ * facts as the same number.
+ *
+ * `boundary: "conditional"` MAKES AN EXCLUSIVE COMPARISON INCLUSIVE, and the artifact is what says
+ * so rather than a preference here. `DOB-TENT-001` publishes `tent_area_sqft gt 400` with that
+ * boundary and its own note reads "Exactly 400 sq ft sits ON the published 'more than 400' boundary
+ * → engine renders CONDITIONAL": the rule publishes an outcome AT 400, so prose naming 400 is
+ * naming a fact the rule states. `packages/engine/src/conditions.ts:263-279` is where the engine
+ * reads the same field the same way.
+ */
+export const publishedThresholds = (node, field, into = []) => {
+  if (Array.isArray(node)) for (const child of node) publishedThresholds(child, field, into);
+  else if (node && typeof node === "object") {
+    if (node.field === field) {
+      const kind = THRESHOLD_OPERATORS[node.op] ?? "none";
+      if (kind !== "none") {
+        for (const value of [node.value].flat()) {
+          if (typeof value === "number") {
+            into.push({
+              value,
+              exclusive: kind === "exclusive" && node.boundary !== "conditional",
+            });
+          }
+        }
+      }
+    }
+    for (const value of Object.values(node)) publishedThresholds(value, field, into);
+  }
+  return into;
+};
+
+/** A count as a claim may spell it: bare, and with the thousands separators an author writes. */
+const numeralSpellings = (value) => {
+  const plain = String(value);
+  const grouped = plain.replace(/\B(?=(\d{3})+(?!\d))/g, ",");
+  return [...new Set([plain, grouped])].map(escapeForRegExp).join("|");
+};
+
+/**
+ * The relations that state a threshold as one the rule sits STRICTLY BEYOND. Two modifier words are
+ * allowed between the relation and the numeral, which is the window both count expressions already
+ * take for "75 or more confirmed guests".
+ */
+const STRICTLY_BEYOND =
+  "(?:more than|greater than|larger than|higher than|above|over|beyond|in excess of|exceeds?|exceeding)";
+const statedBeyond = (text, value) =>
+  new RegExp(
+    `${STRICTLY_BEYOND}(?: [a-z][a-z-]*){0,2} (?:${numeralSpellings(value)})\\b`,
+    "i",
+  ).test(text);
+
+/**
+ * Whether every threshold a text states is one the rule it belongs to really publishes, AS the rule
+ * publishes it.
+ *
+ * `published` is that rule's own thresholds for the attendee-count field: `publishedThresholds`'
+ * `{ value, exclusive }` entries, or a bare number, which is the INCLUSIVE spelling and is what a
+ * set of numbers has always meant here. A text stating no number is supported by a rule that reads
+ * the field; a text stating a number the rule does not publish is not, whatever field its trigger
+ * reads.
+ *
+ * AN EXCLUSIVE BOUNDARY HAS TO BE STATED AS ONE, which is the twenty-third PR #247 round. On
+ * `headcount gt 75` the rule applies above 75 and not at it, so "applies at 75 guests" and "applies
+ * to 75 guests or fewer" are both claims the published trigger contradicts, and both used to be
+ * licensed by the bare numeral. The claim now has to carry a relation that puts the rule beyond the
+ * boundary ("more than 75 guests", "over 75 guests"), and states the number the trigger really
+ * carries while doing it.
+ *
+ * READING A RELATION HERE IS NOT THE DENYLIST THIS GUARD REMOVED, and the difference is the
+ * direction it fails in. The verb list this branch took out decided whether a sentence WAS a claim,
+ * so a wording nobody thought of was a claim missed. This list decides whether a claim is EXEMPT, so
+ * a wording nobody thought of is a claim REPORTED: an author who writes "applies past 75 guests"
+ * gets an offender naming the sentence, not silence. `countClaimsInPublishedOutput` states the same
+ * declared limit about direction that this narrows: the direction of an INCLUSIVE threshold is still
+ * uncompared, because there the rule really does apply at the number the prose names.
+ */
+export const countsSupportedBy = (raw, published) => {
+  const licensed = new Map();
+  for (const threshold of published) {
+    const { value, exclusive } = typeof threshold === "number" ? { value: threshold } : threshold;
+    // A value published both ways is published inclusively: one route applies at it.
+    licensed.set(value, (licensed.get(value) ?? true) && Boolean(exclusive));
+  }
+  const text = normalizeForMatching(raw);
+  return [...claimedCounts(raw)].every(
+    (value) => licensed.has(value) && (!licensed.get(value) || statedBeyond(text, value)),
+  );
+};
 
 /**
  * Whether a text NAMES a rule, as a complete token rather than as a substring.
@@ -1328,6 +1473,10 @@ export const countsAttributed = (
     }
     return found;
   };
+  // One host or several: a merged dedupe card is published by every rule in its group, so the
+  // fallback is a list. For a single host the two quantifiers below coincide, which is why this
+  // changed no verdict anywhere else.
+  const hosts = host === undefined ? [] : [host].flat();
   const claims = sentencesOf(normalizeForMatching(raw)).filter(statesACount);
   return (
     claims.length > 0 &&
@@ -1335,8 +1484,11 @@ export const countsAttributed = (
       const named = [
         ...new Set([...universe.filter((id) => namesRule(claim, id)), ...ownersNamed(claim)]),
       ];
-      const subjects = named.length > 0 ? named : host === undefined ? [] : [host];
-      return subjects.length > 0 && subjects.every((id) => licenses(claim, id));
+      // EVERY named rule has to license the claim, because a claim naming two rules asserts the
+      // count of both. Where it names none, SOME host has to: location is all the audit has there,
+      // and a card's location is every route published on it.
+      if (named.length > 0) return named.every((id) => licenses(claim, id));
+      return hosts.length > 0 && hosts.some((id) => licenses(claim, id));
     })
   );
 };
@@ -1734,12 +1886,18 @@ const countClaimsInProse = (raw, subjects = []) => {
  * question the strings are held to instead: a claim may state a number the rule really publishes
  * and no other.
  *
- * THE VALUE IS COMPARED AND THE DIRECTION IS NOT, and that is a declared limit rather than an
- * oversight. A rule triggered at `gte` 75 whose note says the permit applies BELOW 75 guests states
- * a published number and passes here. Reading the direction out of the prose means matching a verb
- * against a list, which is the denylist shape `spec-conflict-resolutions.test.mjs` records this
- * branch removing from this guard once already, and it leaked then. The number is what an organizer
- * acts on and it is what is checked.
+ * THE DIRECTION OF AN INCLUSIVE THRESHOLD IS NOT COMPARED, and that is a declared limit rather than
+ * an oversight. A rule triggered at `gte` 75 whose note says the permit applies BELOW 75 guests
+ * states a number the rule really applies at, and passes here. Reading the direction out of every
+ * claim means matching a verb against a list, which is the denylist shape
+ * `spec-conflict-resolutions.test.mjs` records this branch removing from this guard once already,
+ * and it leaked then. The number is what an organizer acts on and it is what is checked.
+ *
+ * AN EXCLUSIVE THRESHOLD IS THE ONE CASE THAT NARROWS, which is the twenty-third PR #247 round. On
+ * `gt 75` the rule applies above 75 and NOT at it, so the numeral alone said nothing about whether
+ * the claim matched the published trigger, and "applies at 75 guests" was licensed by a rule that
+ * excludes 75. `countsSupportedBy` states why reading a relation there is the opposite of the
+ * denylist: it decides an EXEMPTION, so an unlisted wording is reported rather than missed.
  *
  * THE RULE IS READ AS ONE RENDERED UNIT AND NOT AS A LIST OF INDEPENDENT STRINGS, which is the
  * twelfth PR #247 round. Each string used to be scanned alone, so a claim whose two halves sat in
@@ -1793,10 +1951,55 @@ const countClaimsInProse = (raw, subjects = []) => {
  * mentions it. `subjects` is unioned with the artifact's own rather than replacing them, so a
  * superseded or proposed ruleset is still read against the instruments it publishes itself.
  *
+ * A DEDUPE GROUP RENDERS AS ONE CARD AND IS AUDITED AS ONE, which is the twenty-third PR #247
+ * round. Rules sharing an `output.dedupe_key` are alternative published routes to one requirement,
+ * and `packages/engine/src/findings.ts:437` and `:461` merge them into a single finding: the
+ * `user_summary` points and the `notes` of every member are concatenated onto one card under one
+ * heading. This audit read each rule alone, so the two halves of a claim could sit in two members
+ * and neither member carried both: a city health rule supplying the heading beside another route
+ * supplying "Required at 75 guests" produced no offender for either rule while the merged card
+ * published the unsupported threshold. The headcount-independence assertion stays green through it
+ * too, because both triggers can be count-independent and the claim is in the prose rather than in
+ * a trigger.
+ *
+ * THE GROUP IS THE THIRD UNIT AND NOT A REPLACEMENT FOR THE OTHER TWO, in the same order and for
+ * the same reason: string, then the rule's own card, then the group's card, each reported only
+ * where the narrower one is silent. That keeps the report on the offending sentence wherever one
+ * string carries the claim and widens it to the merged card only where the claim is the
+ * relationship between two routes.
+ *
+ * THE MERGE ORDER IS NOT REPRODUCED, and it does not need to be: what this asks is whether the two
+ * halves reach one card, which the concatenation settles whichever route binds the identity. The
+ * agency prefix is the group's own city health member's, because a merged card carries one agency
+ * and the routes are alternatives to one requirement.
+ *
+ * A GROUP CLAIM NAMING NO RULE IS LICENSED BY ANY ROUTE THAT PUBLISHES ITS NUMBER, which is the one
+ * place `countsAttributed`'s host fallback ranges over more than one id. Requiring every member to
+ * license it would report a legitimate count-reading route the moment it shared a card with a
+ * count-independent one, which is an ordinary publication rather than a claim.
+ *
  * Measured on this tree: zero strings and zero units, over 42 rules and 4 advisories, with the
  * verification qualifications and the source citations included, and zero top-level units. The
- * named-rule branch changes no verdict here, because no rule on this tree is attributed at all.
+ * published ruleset carries exactly ONE multi-member dedupe group, `dob-structure`
+ * (`DOB-TENT-001` and `DOB-TALL-STRUCTURE-001`), and it reports nothing: both routes are DOB's.
+ * The named-rule branch changes no verdict here, because no rule on this tree is attributed at all.
  */
+
+/**
+ * The published rules grouped by `output.dedupe_key`, keeping only the groups with more than one
+ * member. A key with one member renders as the card that rule already is, which the loop above
+ * has read since the twelfth round.
+ */
+export const dedupeGroups = (rules) => {
+  const groups = new Map();
+  for (const rule of rules) {
+    const key = rule.output?.dedupe_key;
+    if (typeof key !== "string" || key === "") continue;
+    groups.set(key, [...(groups.get(key) ?? []), rule]);
+  }
+  return [...groups].filter(([, members]) => members.length > 1);
+};
+
 export const countClaimsInPublishedOutput = (
   artifact,
   { attributed = new Map(), subjects: given = [] } = {},
@@ -1830,6 +2033,22 @@ export const countClaimsInPublishedOutput = (
     } else if (claims(unit)) {
       found.push({ ruleId: rule.id, string: unit });
     }
+  }
+  // The card a dedupe group renders as, read as one unit, on the same terms and in the same order
+  // as a single rule's card: a group unit is reported only where no member's own string or card is.
+  const reported = new Set(found.map((entry) => entry.string));
+  for (const [key, members] of dedupeGroups(publishedRules)) {
+    const strings = members.flatMap(organizerFacingStrings);
+    const unit = strings.join(RENDERED_SEPARATOR);
+    if (strings.some((string) => reported.has(string)) || reported.has(unit)) continue;
+    // The agency of the group's own city health member, where it has one. A merged card carries one
+    // agency and the group's routes are alternatives to one requirement, so the first is the card's.
+    const health = members.find(cityHealthRule);
+    const scanned = health ? `${health.output?.agency ?? "DOHMH"}. ${unit}` : unit;
+    if (!pairsAgencyWithCount(scanned, { subjects })) continue;
+    const hosts = members.map((rule) => rule.id).filter(Boolean);
+    if (countsAttributed(scanned, attributed, { publishedIds, host: hosts, instruments })) continue;
+    found.push({ ruleId: `dedupe:${key}`, string: unit });
   }
   // Top-level prose is read string by string and then as the unit its siblings make, in that
   // order and on the same terms as a rule's card: the unit is reported only where no single string
