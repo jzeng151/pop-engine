@@ -207,6 +207,7 @@ export const ADAPTATIONS = [
     label: "DIAGNOSTIC ONLY: declare the derived values the triggers read as intake fields",
     apply: (ruleset) => {
       const declared = new Set(ruleset.intake_fields.map((field) => field.field));
+      const publishedAsDerived = new Set(ruleset.derived_values.map((value) => value.name));
       const read = new Set();
       const collect = (node) => {
         if (node === null || typeof node !== "object") return;
@@ -216,8 +217,20 @@ export const ADAPTATIONS = [
       };
       for (const rule of allRules(ruleset)) collect(rule.trigger);
       for (const name of read) {
+        // Only a name the draft publishes under `derived_values` is a derived value. Anything else
+        // a trigger reads and no `intake_fields` entry declares is a raw-field typo, and declaring
+        // it here as a nullable number would adapt it away: the load would go on to fail on a later
+        // error, this step's row would still read "the 3 derived values", and the document would
+        // have counted a fabricated intake field among them (#251 review).
+        if (!publishedAsDerived.has(name)) {
+          throw new Error(
+            `rule triggers read "${name}", which the draft declares neither as an intake field nor ` +
+              `under derived_values; this adaptation declares derived values, not undeclared fields`,
+          );
+        }
         ruleset.intake_fields.push({ field: name, type: "number", nullable: true });
       }
+      return { derivedValuesDeclared: [...read].sort() };
     },
   },
   {

@@ -35,7 +35,12 @@ import {
   setsWith,
   unsettledAcrossCoFiring,
 } from "./report.mjs";
-import { engineDeclaresKind, engineDeclaresStatus, probeDeadline } from "./staging.mjs";
+import {
+  engineDeclaresKind,
+  engineDeclaresStatus,
+  probeDeadline,
+  stagingSequence,
+} from "./staging.mjs";
 
 let m;
 
@@ -97,6 +102,53 @@ describe("section 3.1, the load-staging errors", () => {
     // reported nothing, so a draft that gained or dropped a leaf left that figure stale with the
     // suite still green, exactly as the three counts above would have been (#251 review).
     expect(m.staging[4].changed).toEqual({ operatorsRewritten: { is_null: 7, lte: 1 } });
+    // The row that publishes "declare the 3 derived values as intake fields". Same failure again:
+    // it declared them and reported nothing, so the "3" was a hand-written count of a set nothing
+    // read back (#251 review).
+    expect(m.staging[5].changed).toEqual({
+      derivedValuesDeclared: ["effective_fuel_types", "event_days", "structure_area_sqft"],
+    });
+  });
+
+  test("the declared names are the draft's derived values, not whatever a trigger names", () => {
+    // This step declared every trigger field no `intake_fields` entry covered, as a nullable
+    // number. Only three such names exist today and all three are derived values, but the step did
+    // not check that: a raw-field typo in a future trigger would have been adapted away into a
+    // fabricated numeric intake field, the load would still have failed on the same later error,
+    // and the table's row would still have read "the 3 derived values" while declaring four
+    // (#251 review). The names are now validated against the draft's own `derived_values`.
+    for (const name of m.staging[5].changed.derivedValuesDeclared) {
+      expect(m.draft.derived_values.map((value) => value.name)).toContain(name);
+    }
+
+    // A whole published rule with one field swapped, because `stagingSequence` runs every
+    // adaptation and the later ones read `verification` and `output`.
+    const readingField = (id, field) => ({
+      ...m.draft,
+      rules: [
+        ...m.draft.rules,
+        { ...m.draft.rules[0], id, trigger: { all: [{ field, op: "gt", value: 1 }] } },
+      ],
+    });
+
+    // `event_dayz` is a raw-field typo: no `intake_fields` entry and no `derived_values` entry
+    // declares it. It sorts after `event_days`, the undeclared name the table's next error names,
+    // so that expected error is reached either way and only this step's own claim is at stake.
+    expect(() => stagingSequence(readingField("SYNTHETIC-TYPO-001", "event_dayz"))).toThrow(
+      /triggers read "event_dayz", which the draft declares neither as an intake field nor under derived_values/,
+    );
+
+    // And the same trigger naming a published derived value is still declared, so the check
+    // rejects undeclared names rather than every new name.
+    const withDerived = readingField("SYNTHETIC-DERIVED-001", "business_days_until_event");
+    expect(stagingSequence(withDerived)[5].changed).toEqual({
+      derivedValuesDeclared: [
+        "business_days_until_event",
+        "effective_fuel_types",
+        "event_days",
+        "structure_area_sqft",
+      ],
+    });
   });
 
   test("the unsupported deadline types are the parser's verdict, not a list", () => {
@@ -451,6 +503,35 @@ describe("section 3.3, the sweep", () => {
     expect(() => domainFor("structure_length_ft", factors, readingArea("gte", 0))).toThrow(
       /is below the "structure_area_sqft" threshold 0/,
     );
+  });
+
+  test("the date domain is the artifact's declared nullability, not a fixed three values", () => {
+    // Every date other than `event_date` used to receive the same hard-coded `[null, same day,
+    // next day]`, so a draft that made `event_end_date` required left every sweep count and every
+    // assertion in this file unchanged while the harness went on counting a `null` end date that
+    // `validateIntake` no longer admits, against section 3.3's guarantee that only answers the
+    // contract admits are enumerated (#251 review). The domain now reads `nullable` like every
+    // other type does.
+    const declared = m.draft.intake_fields.find((field) => field.field === "event_end_date");
+    expect(declared.nullable).toBe(true);
+    expect(domainFor("event_end_date", declared, [])).toEqual([EVENT_DATE, "2026-09-02", null]);
+    expect(domainFor("event_end_date", { type: "date" }, [])).toEqual([EVENT_DATE, "2026-09-02"]);
+
+    // `event_date` is fixed, which is what makes `event_days` vary only through the end date.
+    expect(domainFor("event_date", { type: "date" }, [])).toEqual([EVENT_DATE]);
+
+    // The two endpoints are chosen to bracket `event_days`, so they say nothing about some other
+    // date the draft might publish. A measured group reading one fails rather than borrowing them.
+    expect(() => domainFor("permit_filing_date", { type: "date", nullable: true }, [])).toThrow(
+      /no domain rule for date field "permit_filing_date"/,
+    );
+  });
+
+  test("the draft publishes no date field the sweep has no rule for", () => {
+    // The throw above is only reachable on a future draft. This is the check that the current one
+    // has not already grown such a field somewhere no measured group happens to read.
+    const dates = m.draft.intake_fields.filter((field) => field.type === "date");
+    expect(dates.map((field) => field.field).sort()).toEqual(["event_date", "event_end_date"]);
   });
 });
 
@@ -1097,13 +1178,13 @@ describe("section 8, the harness footprint", () => {
       "cofiring.test.mjs": lines("cofiring.test.mjs"),
     };
     expect(counts).toEqual({
-      "harness.mjs": 930,
-      "staging.mjs": 253,
+      "harness.mjs": 938,
+      "staging.mjs": 266,
       "inventory.mjs": 317,
       "report.mjs": 103,
-      "cofiring.test.mjs": 1123,
+      "cofiring.test.mjs": 1204,
     });
-    expect(Object.values(counts).reduce((total, count) => total + count, 0)).toBe(2_726);
+    expect(Object.values(counts).reduce((total, count) => total + count, 0)).toBe(2_828);
   });
 
   test("the published case count is the one Vitest collected", (context) => {
@@ -1118,6 +1199,6 @@ describe("section 8, the harness footprint", () => {
         (total, child) => total + (child.type === "test" ? 1 : collected(child)),
         0,
       );
-    expect(collected(context.task.file)).toBe(85);
+    expect(collected(context.task.file)).toBe(88);
   });
 });

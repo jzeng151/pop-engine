@@ -122,7 +122,7 @@ which applies each adaptation programmatically and reports what the parser says 
 | map `VERIFIED_WITH_QUALIFICATION` (33 rules) and `CONDITIONAL` (8 rules) onto statuses the engine knows                                                                                              | `ruleset.rules[8].trigger.all[1].any[3].op has unsupported value "is_null"`                                                                                                                                                        |
 | map the 3 kinds the engine does not declare (`conditional_requirement` x4, `approval`, `certificate`) and publish `config.business_day_math.calendar`                                                | same `is_null` error                                                                                                                                                                                                               |
 | DIAGNOSTIC ONLY, semantics-changing: rewrite the 7 `is_null` leaves and the 1 `lte` leaf                                                                                                             | `rule SAPO-BLOCK-PARTY-INELIGIBLE-001 references undeclared field "event_days"`                                                                                                                                                    |
-| DIAGNOSTIC ONLY: declare the 3 derived values as intake fields                                                                                                                                       | `dedupe key "block_party_eligibility" mixes verification statuses "VERIFIED" and "RESEARCH_REQUIRED"`                                                                                                                              |
+| DIAGNOSTIC ONLY: declare the 3 derived values the triggers read (`effective_fuel_types`, `event_days`, `structure_area_sqft`) as intake fields                                                       | `dedupe key "block_party_eligibility" mixes verification statuses "VERIFIED" and "RESEARCH_REQUIRED"`                                                                                                                              |
 | DIAGNOSTIC ONLY: collapse every verification status                                                                                                                                                  | `intake field "event_address" is declared but no rule trigger, deadline, or scoping condition reads it, so answering it changes nothing. Give a rule that consumes it, or record why it is collected in UNCONSUMED_INTAKE_FIELDS.` |
 
 **"The engine has no case for it" is the parser's verdict here, not a list this harness keeps.**
@@ -137,6 +137,18 @@ direction that matters: the first row's error is raised by an earlier `condition
 engine gaining a case for `fixed_annual_date` would leave every error in this table unchanged while
 the set kept deleting a deadline the engine could now read, and section 3.1 would claim a parser gap
 that had closed.
+
+**The sixth row declares derived values, and nothing else.** It collects every field a trigger reads
+that no `intake_fields` entry declares, and it used to declare each one as a nullable number without
+checking what it was. Only three such names exist in this draft and all three are derived values,
+but that was a property of the draft rather than of the step: a raw-field typo in a future trigger,
+landing after `event_days` in the collection order, would have been adapted away into an invented
+numeric intake field, the load would have gone on to fail on the same later `block_party_eligibility`
+error, and this row would still have read "the 3 derived values" while having declared four. Each
+collected name is now checked against the draft's own `derived_values`, and a name that is not
+published there fails the run. The three the row names are reported by the step and asserted against
+this table, so a draft that gains or drops a trigger-read derived value fails the suite rather than
+leaving the count stale, which is the arrangement the row above it already had for its leaf counts.
 
 Which dedupe key the sixth row names depends on which statuses the third row's mapping collapsed.
 **Six** of the nine multi-member groups mix statuses, so some key fails there under any such
@@ -240,11 +252,23 @@ any of them (3.4, limitation 9), so multiplying their declared enums in independ
 classification combinations that may be jointly unreachable. This is the same defect limitation 9
 records for three of the group sweeps, applied to the figure at the top of the section rather than
 to a table, and the two rules above do not repair it: no rule stated here constrains one derived
-classification against another. The product over the **38 fields an organizer actually answers** is
-508,611,519,987,056,640,000,000, **5.09 x 10^23**, and that one is a size of the intake contract.
-The five derived dimensions account for the factor of 8,100 between them. Neither figure changes
-anything measured below, because no sweep in this document enumerates all 43 fields; the sentence
-that needed the qualification is the "not enumerable" claim, which holds on either figure.
+classification against another. The product over the **38 of those fields an organizer actually
+answers** is 508,611,519,987,056,640,000,000, **5.09 x 10^23**. The five derived dimensions account
+for the factor of 8,100 between them.
+
+**Both figures are projections onto the discrete fields, not sizes of the intake contract**, and the
+previous revision called 5.09 x 10^23 "a size of the intake contract" while dropping the derived
+dimensions repaired only the other defect. Both products range over enum, boolean and multi_enum
+fields alone. As the count at the top of this section says, the contract also declares 17 numeric,
+2 date and 1 string fields, and no value of any of those 20 enters either product. So 5.09 x 10^23
+is the number of distinct **discrete-field answer combinations** an organizer can submit, and the
+intake space itself is larger by whatever the 20 remaining fields admit, which for the string and
+the unbounded numerics is not a finite factor at all. Neither figure is a total intake-space
+cardinality and neither should be quoted as one.
+
+Neither changes anything measured below, because no sweep in this document enumerates all 43 fields;
+the sentence that needed the qualification is the "not enumerable" claim, which holds on either
+figure, and holds a fortiori once the other 20 fields are counted.
 
 The 63 fields, the 43, the 38, the seven type counts, both counts and the list of derived dimensions
 are re-derived from the artifact by `intakeFieldInventory`, which runs `sweepSize` over the gated
@@ -285,9 +309,15 @@ Value domains, applied uniformly by `domainFor` in the harness:
   rejects a headcount at or below zero (`packages/engine/src/intake/validate.ts:316-317`), so
   `headcount` sweeps `{19, 20, 21}` and not `{0, 19, 20, 21}`. It is the only numeric field the
   engine gives a minimum, so no other numeric domain is filtered.
-- **dates:** `event_date` is fixed at `2026-09-01`; `event_end_date` ranges over `{null,
-2026-09-01, 2026-09-02}`, giving `event_days` of 1, 1 and 2, which covers the only threshold
-  (`event_days gt 1`) below, on and above.
+- **dates:** `event_date` is fixed at `2026-09-01`; `event_end_date` ranges over `{2026-09-01,
+2026-09-02}` plus `null`, which it takes because the draft marks it nullable, giving `event_days`
+  of 1, 2 and 1, which covers the only threshold (`event_days gt 1`) below, on and above. The
+  `null` is read off `nullable` like every other type's is, not hard-coded: the previous revision
+  gave every date but `event_date` the same fixed three values, so a draft that made the end date
+  required would have left every count below unchanged while the sweep went on enumerating a blank
+  end date `validateIntake` rejects. These two endpoints are chosen to bracket `event_days` and are
+  claimed for no other date, so a further date field a measured group reads fails the sweep instead
+  of borrowing them. The draft declares no such field today, and a test asserts that.
 - **`structure_length_ft` and `structure_width_ft`** are the one hand-set domain, `{null, 0, 10, 12,
 20, 21}`, because their thresholds are on their product: those products straddle both published
   area thresholds (120 and 400) on all three sides. Only the four positive factors are hand-set. The
@@ -1083,9 +1113,9 @@ green. It is now counted off the suite's own collected task tree, which is the n
 `pnpm test:cofiring` reports rather than a count of `test(` calls in the source: four blocks use
 `test.each` and expand at collection time, so those two quantities are not the same.
 
-It is four modules and one suite, 2,726 lines together: `harness.mjs` 930,
-`cofiring.test.mjs` 1,123, `inventory.mjs` 317, `staging.mjs` 253 and
-`report.mjs` 103, reporting 85 cases. Those seven figures are read off disk and off
+It is four modules and one suite, 2,828 lines together: `harness.mjs` 938,
+`cofiring.test.mjs` 1,204, `inventory.mjs` 317, `staging.mjs` 266 and
+`report.mjs` 103, reporting 88 cases. Those seven figures are read off disk and off
 the task tree and asserted by `describe("section 8, the harness footprint")`, so a module, the suite
 or the case list growing moves them here rather than leaving the reproduction section understating
 the code behind the numbers.
@@ -1096,7 +1126,7 @@ the code behind the numbers.
 | `staging.mjs`       | the adaptations of section 3.1, applied to in-memory clones, each reporting what it touched                                                   |
 | `inventory.mjs`     | what the draft publishes, re-derived by parsing it: deadlines, permit names, output identity, blockers, mixed statuses, parser-visible output |
 | `report.mjs`        | one `measure()` call that produces every table, plus the printer                                                                              |
-| `cofiring.test.mjs` | the 85 cases `pnpm test:cofiring` reports, one or more per published figure                                                                   |
+| `cofiring.test.mjs` | the 88 cases `pnpm test:cofiring` reports, one or more per published figure                                                                   |
 
 Every table maps to a `describe` block with the same number:
 

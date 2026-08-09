@@ -110,6 +110,9 @@ const EXCLUSIVE_OPTION = "none";
 /** The intake date every sweep fixes, so `event_days` varies only through `event_end_date`. */
 export const EVENT_DATE = "2026-09-01";
 
+/** The one end date above `EVENT_DATE`, which is what takes `event_days` above its threshold. */
+const EVENT_END_DATE_NEXT_DAY = "2026-09-02";
+
 /**
  * The draft publishes `asked_when` as a condition object; the engine's registry grammar is a
  * string, and `parseIntakeField` reads it with `optionalString`, so an object silently becomes
@@ -543,9 +546,11 @@ function thresholdsFor(field, members) {
  *   - multi_enum: every valid selection (see `validMultiEnumSelections`).
  *   - numeric: `0`, plus `t-1`, `t`, `t+1` for every threshold `t` any member compares the field
  *     against, plus `null` when nullable, less any value below the field's `NUMERIC_MINIMUMS` entry.
- *   - date: `event_date` is fixed; `event_end_date` ranges over null, the same day, the next day,
- *     giving `event_days` of 1, 1 and 2, which covers the only threshold (`event_days gt 1`) below,
- *     on and above.
+ *   - date: `event_date` is fixed; `event_end_date` ranges over the same day and the next day,
+ *     plus `null` when the artifact marks it nullable, giving `event_days` of 1, 1 and 2, which
+ *     covers the only threshold (`event_days gt 1`) below, on and above. Any other date field
+ *     throws rather than borrowing that domain: the two endpoints are chosen to bracket
+ *     `event_days`, and they say nothing about a date the draft has not yet published.
  */
 export function domainFor(field, definition, members) {
   if (HAND_SET_NUMERIC_DOMAINS[field] !== undefined) {
@@ -572,7 +577,10 @@ export function domainFor(field, definition, members) {
     }
     case "date":
       if (field === "event_date") return [EVENT_DATE];
-      return [null, EVENT_DATE, "2026-09-02"];
+      if (field !== "event_end_date") {
+        throw new Error(`no domain rule for date field "${field}"`);
+      }
+      return withNull([EVENT_DATE, EVENT_END_DATE_NEXT_DAY], definition);
     default:
       throw new Error(`no domain rule for field "${field}" of type "${definition.type}"`);
   }
