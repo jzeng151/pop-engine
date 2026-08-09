@@ -836,6 +836,65 @@ describe("AC 5 · deadline context lives where the work happens", () => {
     expect(within(row).queryByText(/earliest realistic filing 2026-07-20/)).toBeNull();
   });
 
+  /**
+   * #252 review: THE SAME AC 5 START DATE, LOST THE OTHER WAY ROUND. Where the binding route
+   * publishes a gate but no window of its own and a sibling publishes the window, the checklist
+   * response fills the row's whole timing block from that sibling, gate included, so the row reads
+   * `applyAfterDate: null`. Skipping `routes[0]` here on the assumption that the row's scalar is
+   * the binding route's then skipped the only route carrying a gate, and the date was on neither
+   * surface. The route skipped is the one the scalar came from, which is the filing route whenever
+   * there is one.
+   */
+  it("shows the binding route's gate when the row's dates come from a filing route", async () => {
+    const route = (
+      ruleId: string,
+      name: string,
+      applyAfterDate: string | null,
+      latestApplyDate: string | null,
+    ) => ({
+      ruleId,
+      triggerResult: "true",
+      disposition: "required",
+      unknownFields: [],
+      name,
+      agency: "NYC",
+      deadlineDisplay: null,
+      latestApplyDate,
+      applyAfterDate,
+      deadlineStatus: latestApplyDate === null ? "not_applicable" : "on_track",
+      feeDisplay: null,
+      portalName: null,
+      portalUrl: null,
+      portalInstructions: null,
+    });
+    stubApi({
+      [GET_CHECKLIST]: checklistOf({
+        created: true,
+        items: [
+          trackedItem(STREET_MEDIUM, {
+            // The binding route publishes no window, so the row's dates are the filing route's,
+            // and its gate is null.
+            latestApplyDate: "2026-08-01",
+            applyAfterDate: null,
+            deadlineStatus: "on_track",
+            headlineMode: "applies_together",
+            routes: [
+              route("STREET-MEDIUM-001", "Street Activity Permit", "2026-07-20", null),
+              route("NYPD-SOUND-001", "Sound device permit", null, "2026-08-01"),
+            ],
+            filingRouteRuleId: "NYPD-SOUND-001",
+          }),
+        ],
+      }),
+    });
+    await renderView();
+
+    const row = rowFor(STREET_MEDIUM);
+    expect(
+      within(row).getByText(/earliest realistic filing for Street Activity Permit 2026-07-20/),
+    ).toBeDefined();
+  });
+
   it("renders the deadline prose a rule publishes", async () => {
     stubApi({
       [GET_CHECKLIST]: checklistOf({ created: true, items: [trackedItem(PARKS_TUA)] }),
@@ -2662,6 +2721,36 @@ describe("a checklist row whose window comes from another route (#252)", () => {
     expect(within(row).getByTestId("deciding-question").textContent).toBe(
       "The answers so far do not say whether this requirement applies." +
         " Answering structure over 10ft tall, tent area sqft would decide it.",
+    );
+  });
+
+  /**
+   * #252 review: THE DECIDING QUESTION IS BOTH SETS OF UNKNOWNS, here for the same reason as on
+   * the plan line. A route's `unknownFields` are its trigger's, and a candidate row whose filing
+   * timeline also waits on an answer was told a shorter list of fields "would decide it" than
+   * actually does (design §5.3).
+   */
+  it("names the deadline unknowns alongside the trigger unknowns", async () => {
+    stubApi({
+      [GET_CHECKLIST]: checklistOf({
+        created: true,
+        items: [
+          trackedItem(STREET_MEDIUM, {
+            latestApplyDate: "2026-08-26",
+            routes: [TALL_ROUTE, TENT_ROUTE],
+            headlineMode: "candidate",
+            filingRouteRuleId: "DOB-TENT-001",
+            deadlineUnknownFields: ["structure_types"],
+          }),
+        ],
+      }),
+    });
+    await renderView();
+
+    const row = await expandedRowFor(STREET_MEDIUM);
+    expect(within(row).getByTestId("deciding-question").textContent).toBe(
+      "The answers so far do not say which of the published routes to this requirement apply." +
+        " Answering tent area sqft, structure types would decide it.",
     );
   });
 

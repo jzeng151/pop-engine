@@ -733,6 +733,53 @@ describe("dependency sequencing over a merged gated line (#252)", () => {
       true,
     );
   });
+
+  it("states the gated route's own window in the note, not the binding route's", () => {
+    const evaluated = plan([PARKS, DEPENDENCY, SOUND, SOUND_ALT]);
+    const sound = evaluated.findings.find((finding) => finding.ruleIds.includes("NYPD-SOUND-001"));
+    const note = sound?.notes.find((entry) => entry.includes("sequenced after PARKS-EVENT-001"));
+
+    // 109 days, from the 2026-08-12 gate to the GATED route's own 2026-11-29 deadline, which is
+    // the same figure the route entry carries. Built from the merged scalars the sentence read
+    // "leaving 54 days", which is the distance to the BINDING route's 2026-10-05 deadline: the
+    // slack of a route that is not gated, offered as the gated route's filing window (#252
+    // review).
+    expect(note).toContain("leaving 109 days to file");
+    expect(note).not.toContain("leaving 54 days");
+  });
+
+  /**
+   * The gated route's own deadline, 2026-07-01, has already passed, so its window is less
+   * available than the alternate's and the alternate binds. The 2026-08-12 gate falls after the
+   * gated route's deadline and well inside the binding route's, so the sequence closes a window
+   * the scalars say is open.
+   */
+  const SOUND_PAST = {
+    id: "NYPD-SOUND-001",
+    dedupeKey: "sound",
+    trigger: ALWAYS,
+    output: {
+      permit_name: "Sound Device Permit",
+      deadline: { type: "published_minimum", calendar_days: 156 },
+    },
+  } as const;
+
+  it("reports the closed sequence off the gated route, and its missed direct filing", () => {
+    const evaluated = plan([PARKS, DEPENDENCY, SOUND_PAST, SOUND_ALT]);
+    const sound = evaluated.findings.find((finding) => finding.ruleIds.includes("NYPD-SOUND-001"));
+    const note = sound?.notes.find((entry) => entry.includes("sequenced after PARKS-EVENT-001"));
+
+    // Both scalars belong to the alternate route, whose window is open and on track. Read off
+    // them, the sequence looked open and the note said "leaving 54 days to file"; it also offered
+    // "filing directly may still be open" for a route whose own published deadline had passed.
+    expect(sound?.routes?.[0]?.ruleId).toBe("NYPD-SOUND-ALT-001");
+    expect(sound?.latestApplyDate).toBe("2026-10-05");
+    expect(sound?.deadlineStatus).toBe("on_track");
+
+    expect(note).toContain("leaves no window to file in");
+    expect(note).toContain("this permit's own 2026-07-01 deadline");
+    expect(note).not.toContain("filing directly may still be open");
+  });
 });
 
 /**

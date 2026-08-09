@@ -962,6 +962,75 @@ describe("the routes of a merged dedupe line", () => {
     expect(line.getByText("May apply")).toBeDefined();
   });
 
+  /**
+   * #252 review: NO CANDIDATE ENTRY RENDERS AS AN ACTION (design §5.3), and the portal block was
+   * the entry's action. "apply at DOB NOW" under an entry labelled "May apply" tells an organizer
+   * to file a permit the recorded answers have not decided they need.
+   */
+  it("names a candidate route's portal instead of telling an organizer to apply at it", async () => {
+    const line = await lineWith({
+      ruleIds: ["DOB-STAGE-001", "DOB-TENT-001"],
+      headlineMode: "candidate",
+      routes: [
+        route({ ruleId: "DOB-STAGE-001", name: "Stage permit" }),
+        route({
+          ruleId: "DOB-TENT-001",
+          triggerResult: "unknown",
+          unknownFields: ["tent_area_sqft"],
+          portalName: "DOB NOW: Build",
+          portalUrl: "https://example.test/dob-now",
+          portalInstructions: "Select the temporary structure application.",
+        }),
+      ],
+    });
+
+    expect(line.queryByText(/apply at/)).toBeNull();
+    // The portal is a published value, so it is named and still linked, not dropped. The rule's
+    // own instructions are its words and are untouched.
+    expect(line.getByText(/portal:/)).toBeDefined();
+    expect(line.getByRole("link", { name: "DOB NOW: Build" })).toBeDefined();
+    expect(line.getByText("Select the temporary structure application.")).toBeDefined();
+  });
+
+  it("still says apply at a route's portal once the group applies together", async () => {
+    const line = await lineWith({
+      ruleIds: ["DOB-STAGE-001", "DOB-TENT-001"],
+      headlineMode: "applies_together",
+      routes: [
+        route({ ruleId: "DOB-STAGE-001", name: "Stage permit" }),
+        route({
+          ruleId: "DOB-TENT-001",
+          portalName: "DOB NOW: Build",
+          portalUrl: "https://example.test/dob-now",
+        }),
+      ],
+    });
+    expect(line.getByText(/apply at/)).toBeDefined();
+  });
+
+  /**
+   * #252 review: THE DECIDING QUESTION IS BOTH SETS OF UNKNOWNS. A route's `unknownFields` are its
+   * trigger's only. Listing them alone told the organizer that answering the trigger field "would
+   * decide it" while the line's filing timeline still waited on an unanswered deadline input the
+   * sentence never named (design §5.3).
+   */
+  it("names the deadline unknowns alongside the trigger unknowns in the question", async () => {
+    const line = await lineWith({
+      ruleIds: ["DOB-STAGE-001", "DOB-TENT-001"],
+      headlineMode: "candidate",
+      deadlineUnknownFields: ["load_in_date"],
+      routes: [
+        route({ ruleId: "DOB-STAGE-001", name: "Stage permit" }),
+        route({
+          ruleId: "DOB-TENT-001",
+          triggerResult: "unknown",
+          unknownFields: ["tent_area_sqft"],
+        }),
+      ],
+    });
+    expect(line.getByText(/Answering tent area sqft, load in date would decide it/)).toBeDefined();
+  });
+
   it("renders a line with no route list exactly as it did before the field existed", async () => {
     const line = await lineWith({});
     expect(line.queryByText(/of these applies/)).toBeNull();
