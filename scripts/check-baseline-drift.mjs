@@ -1011,7 +1011,7 @@ const FIXTURE_NAMES_MARKER = "baseline-check: fixture ruleset names";
 const VITEST_INCLUDE = [
   "{apps,packages}/*/src/**/*.test.{ts,tsx}",
   "apps/web/app/**/*.test.{ts,tsx}",
-  "scripts/**/*.test.mjs",
+  "scripts/*.test.mjs",
 ];
 
 /**

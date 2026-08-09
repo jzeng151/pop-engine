@@ -39,5 +39,11 @@ jobs:
       - run: pnpm typecheck
       - run: pnpm lint
       - run: pnpm test:coverage
-      - run: pnpm test:cofiring # runs uninstrumented; see the exclusion in package.json
+      # `pnpm test:cofiring` is deliberately NOT a step here. Its only input is the full-draft
+      # ruleset under `rules/proposals/`, which `docs/BASELINE.md` carries as
+      # "ARCHIVED / PROPOSED drafts". Running it here would make a PROPOSED artifact an enforced
+      # main-branch input, so an ordinary revision of the proposal would fail CI until the
+      # measurement suite was resynchronised with it, against AGENTS.md's rule to stop rather than
+      # build against a proposed input. The harness stays committed and stays runnable on demand
+      # (`pnpm test:cofiring`); it becomes a CI step when the draft's baseline row is APPROVED.
       - run: pnpm build # Next build catches route/render/config failures tsc --noEmit misses (matches the Railway web build)

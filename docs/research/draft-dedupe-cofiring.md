@@ -21,10 +21,11 @@ was supplied and on what basis, and section 3.5 re-checks each one against the d
 - This document **approves nothing** and decides nothing. It is not a proposal, not a decision, not
   a fix. No engine source, no ruleset and no app file is touched by the PR that carries it, and no
   existing test's expectations move. What the PR does add is the measurement itself:
-  `scripts/dedupe-cofiring/` (four modules and one suite), a `test:cofiring` script, and the
-  `vitest.config.ts` and CI wiring that runs them. That is tooling for this document, not a change
-  to the system it measures. An earlier revision of this paragraph said no test file was touched at
-  all, which stopped being true when the harness was committed.
+  `scripts/dedupe-cofiring/` (four modules, one suite and its own vitest config) and a
+  `test:cofiring` script. That is tooling for this document, not a change to the system it measures.
+  An earlier revision of this paragraph said no test file was touched at all, which stopped being
+  true when the harness was committed. A later one wired the suite into mandatory CI, which was the
+  stop-on-PROPOSED rule inverted, and section 8 records why it is now on demand instead.
 - The draft's status is unchanged by this measurement. `AGENTS.md` says to stop when a feature's
   inputs are PROPOSED, and that instruction stands: **nothing in this document licenses
   implementing the draft, and no figure here should be cited as evidence that the draft is safe to
@@ -38,8 +39,9 @@ was supplied and on what basis, and section 3.5 re-checks each one against the d
 
 **Status:** MEASUREMENT.
 **Measured by:** `scripts/dedupe-cofiring/`, on branch `measure/draft-dedupe-cofiring`. Every figure
-in sections 3 to 7 is asserted by `pnpm test:cofiring`, which runs in `pnpm test`, so the commit
-this was measured on is any commit that command passes on. That covers the inventories section 3.1
+in sections 3 to 7 is asserted by `pnpm test:cofiring`, so the commit this was measured on is any
+commit that command passes on. That command is run on demand and not by CI, for the reason section
+8 gives. That covers the inventories section 3.1
 counts as well as the tables: the adaptations report what they touched and the suite asserts it, so
 a draft that gains one more unsupported deadline or one more `conditional_requirement` fails rather
 than making a published count stale. Section 8 maps each table to its command, and describes the
@@ -1146,10 +1148,30 @@ Every table maps to a `describe` block with the same number:
 | section 7                                                       | restates 4.1, 4.2, 4.3 and 4.4; it publishes no figure of its own                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
 
 The whole run takes about six seconds, of which five are the 24,330,240-intake
-`block_party_eligibility` sweep. It is not gated behind a flag and it is in the include list
-`vitest.config.ts` already uses for `scripts/`, so `pnpm test` runs it. A change to the draft, to
-`packages/engine`, or to the harness that moves any number in this document fails CI with the
-number that moved.
+`block_party_eligibility` sweep. It is not gated behind a flag, but it is deliberately **not** run
+by CI and not part of `pnpm test`, and that is a governance constraint rather than a cost one.
+
+**Why this suite is on demand.** Its only input is `rules/proposals/nyc-rules.v2-full-draft.json`,
+which `docs/BASELINE.md` carries as "ARCHIVED / PROPOSED drafts" and which this document's own
+preamble names as PROPOSED. A required CI step reading it would make a proposed artifact an enforced
+main-branch input: any ordinary revision of the proposal would turn CI red until all 88 cases here
+were resynchronised with it, so the proposal could only move at this measurement's pace. That is the
+`AGENTS.md` rule to stop rather than build against a proposed input, applied backwards, and a
+research harness is not the thing that should force it. So `scripts/dedupe-cofiring/` sits outside
+the root `vitest.config.ts` include and carries its own config, `pnpm test:cofiring` points at that
+config, and `.github/workflows/ci.yml` runs neither. Folding it back into CI is a one-line change
+that becomes correct when the draft's baseline row is APPROVED, and the comments in both configs say
+so.
+
+**What that costs and what still holds the line.** Nothing on main watches these numbers, so a
+change to the draft, to `packages/engine`, or to the harness can leave a figure here stale without
+anything turning red. The mitigation is that the command is one line, takes six seconds, and fails
+with the number that moved, so the check is cheap for anyone revising the draft or this document.
+The regular suite is unaffected: `pnpm test:coverage` covers `packages/engine`, `apps/api` and
+`apps/web` exactly as before, `scripts/check-baseline-drift.test.mjs` and
+`scripts/spec-conflict-resolutions.test.mjs` still run in it, and CI still runs
+`pnpm check:baseline`, the migrations, `pnpm typecheck`, `pnpm lint`, `pnpm test:coverage` and
+`pnpm build`.
 
 Nothing above was read off by eye. Where an earlier revision of this document stated a count from
 reading the draft, that count has been re-derived by parsing it: the SAPO deadline and permit-name

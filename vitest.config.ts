@@ -27,10 +27,17 @@ export default defineConfig({
     // `scripts/` is listed because the baseline check is CI's own guard, and a guard with no test
     // proves only that it does not false-positive on a good tree. Nothing proved it still FAILS on
     // a bad one until its suite existed.
+    //
+    // The glob is one level deep on purpose. `scripts/dedupe-cofiring/` measures
+    // `rules/proposals/nyc-rules.v2-full-draft.json`, which `docs/BASELINE.md` carries as
+    // "ARCHIVED / PROPOSED drafts", so it must not sit inside the suite AGENTS.md requires before
+    // review: a revision of the proposal would fail that suite until the measurements were
+    // resynchronised, which is the stop-on-PROPOSED rule inverted. It runs on demand instead,
+    // through `pnpm test:cofiring`, which supplies its own include.
     include: [
       "{apps,packages}/*/src/**/*.test.{ts,tsx}",
       "apps/web/app/**/*.test.{ts,tsx}",
-      "scripts/**/*.test.mjs",
+      "scripts/*.test.mjs",
     ],
     // Only `scripts/check-baseline-drift.test.mjs` runs concurrent cases today, and each one spawns
     // a node process that loads the TypeScript compiler. The default of 5 saturated a two-core CI
@@ -56,10 +63,11 @@ export default defineConfig({
       // percentage would be worse still. What stands in for the gate here is the suite itself:
       // every rule has a planted tree that provably fails when the rule regresses.
       //
-      // `scripts/dedupe-cofiring/` is excluded from the coverage RUN rather than from this list,
-      // by `--exclude` in `test:coverage`, and CI runs it in a second uninstrumented step. Same
-      // reasoning, different cost. Its files are outside `include` already, so instrumenting them
-      // produces nothing this report keeps; what it does produce is a bill. Measured on this tree:
+      // `scripts/dedupe-cofiring/` is outside the root `include` above, for the governance reason
+      // recorded there, so no coverage exclusion is needed for it and CI never runs it. What
+      // follows is why it would still not belong in this list if it ever folds back in. Its files
+      // are outside `include` already, so instrumenting them produces nothing this report keeps;
+      // what it does produce is a bill. Measured on this tree:
       // that suite runs in 6.3s uninstrumented and 29.2s under the v8 provider, because the sweep
       // is a 24,330,240-intake loop and block coverage prices every iteration. On the runner that
       // is 17s against 78s. `check-baseline-drift.test.mjs` was measured the same way and is
