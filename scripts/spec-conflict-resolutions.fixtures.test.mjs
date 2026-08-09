@@ -3184,3 +3184,93 @@ describe("round 18: a published instrument identity is a claim subject", () => {
     ).toBe(false);
   });
 });
+
+/**
+ * ROUND 19, THREAD 817. Two independent clauses joined by a semicolon were one attribution unit, so
+ * a supported clause licensed its neighbour: the second clause borrowed the first clause's rule id
+ * and its threshold, and nothing reported the unsupported half.
+ *
+ * The boundary is the same question `sentencesOf` already answered for the period, asked of the
+ * other mark that joins two clauses that could each stand alone. What the fixtures below pin is
+ * both directions of it: the borrowed exemption is gone, and a claim whose every clause names its
+ * own rule is still exempt.
+ */
+describe("round 19: a semicolon separates two attribution units", () => {
+  const attributed = new Map([["HEALTH-ASSEMBLY-001", new Set([75])]]);
+  const publishedIds = ["HEALTH-ASSEMBLY-001", "DOHMH-VENDOR-PERMIT-001"];
+
+  /** The gap this closes, in the thread's own wording. */
+  it("does not let a supported clause license the clause after the semicolon", () => {
+    const claim =
+      "HEALTH-ASSEMBLY-001, published by DOHMH, applies at 75 guests;" +
+      " the vendor permit depends on the guest count.";
+    expect(pairsAgencyWithCount(claim)).toBe(true);
+    expect(countsAttributed(claim, attributed, { publishedIds })).toBe(false);
+    expect(scanFile(claim)).toHaveLength(1);
+  });
+
+  /** The same shape one clause over: an unsupported NUMBER cannot hide behind a supported one. */
+  it("does not let a supported clause license an invented threshold after the semicolon", () => {
+    const claim =
+      "HEALTH-ASSEMBLY-001 applies at 75 guests; DOHMH-VENDOR-PERMIT-001 applies at 500 guests.";
+    expect(countsAttributed(claim, attributed, { publishedIds })).toBe(false);
+  });
+
+  /** A claim whose every clause names its own rule and its own published number is still exempt. */
+  it("still exempts a claim each of whose clauses is attributed", () => {
+    const claim =
+      "HEALTH-ASSEMBLY-001 applies at 75 guests; HEALTH-ASSEMBLY-001 reads the guest count.";
+    expect(countsAttributed(claim, attributed, { publishedIds })).toBe(true);
+  });
+
+  /**
+   * The terminator needs whitespace after it, which the three sentence marks already required and
+   * this one inherits, so a semicolon inside a token is not a boundary.
+   */
+  it("splits only at a semicolon that whitespace follows", () => {
+    expect(countsAttributed("HEALTH-ASSEMBLY-001 applies at 75 guests;", attributed)).toBe(true);
+    // No whitespace after the mark, so this is one unit: the clause after it is attributed to the
+    // rule the clause before it names, which is what a split would take away.
+    expect(
+      countsAttributed(
+        "HEALTH-ASSEMBLY-001 applies at 75 guests;it reads the guest count.",
+        attributed,
+      ),
+    ).toBe(true);
+  });
+
+  /**
+   * The count expressions refuse the new boundary for the reason they already refused the period: a
+   * count noun in one clause and a numeral in the next are two things, not one threshold.
+   */
+  it("does not read a count noun against a numeral in the next clause", () => {
+    expect(COUNTED_PEOPLE.test("DOHMH lists the guests; the fee is 75 dollars.")).toBe(false);
+    expect(COUNTED_PEOPLE.test("DOHMH lists the guests, and the cap is 75.")).toBe(true);
+  });
+
+  /**
+   * The published-output audit reads the same boundary, so a rule cannot publish the borrowed
+   * exemption to an organizer either. The host supplies the subject where the string names no rule,
+   * which is what makes the second clause of the note a claim about the host and not about nothing.
+   */
+  it("names the offender when a published note borrows across a semicolon", () => {
+    const bad = {
+      rules: [
+        {
+          id: "HEALTH-ASSEMBLY-001",
+          trigger: { field: "headcount", op: "gte", value: 75 },
+          output: {
+            agency: "DOHMH",
+            note_text:
+              "HEALTH-ASSEMBLY-001 applies at 75 guests;" +
+              " DOHMH-VENDOR-PERMIT-001 depends on the guest count.",
+          },
+        },
+        { id: "DOHMH-VENDOR-PERMIT-001", output: { agency: "DOHMH" } },
+      ],
+    };
+    expect(countClaimsInPublishedOutput(bad, { attributed }).map((item) => item.ruleId)).toEqual([
+      "HEALTH-ASSEMBLY-001",
+    ]);
+  });
+});

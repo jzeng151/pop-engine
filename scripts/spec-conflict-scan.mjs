@@ -180,7 +180,9 @@ export const ATTENDEE_COUNT = new RegExp(ATTENDEE_COUNT_SOURCE, "i");
  * widened and declared, because removing it was measured over every scanned root and changed no
  * flag on this tree. The sentence remains the bound: the class excludes a period, so a count noun
  * in one sentence and a numeral in the next are still two things, and it excludes the other two
- * ordinary sentence terminators for the same reason `sentencesOf` splits at them.
+ * ordinary sentence terminators and the semicolon for the same reason `sentencesOf` splits at
+ * them. The semicolon joined that class in the nineteenth round, with the boundary itself: a noun
+ * in one independent clause and a numeral in the next are two things on the same reading.
  *
  * THE HYPHENATED ADJECTIVAL FORM IS A THIRD ALTERNATION, which is the fourteenth PR #247 round.
  * Both halves refuse a numeral touching a hyphen, which is what keeps "2026-08-07" a date and
@@ -213,7 +215,7 @@ const COUNT_NUMERAL = `(?<![\\w-])(?<!\\d,)${NUMERAL_BODY}(?![\\w-])`;
 export const COUNTED_PEOPLE_SOURCE =
   `${COUNT_NUMERAL} ?(?:or more |or fewer |\\+ ?)?(?:[a-z][a-z-]*,? ){0,2}?${COUNTED_PERSON_NOUN}\\b` +
   `|(?<![\\w-])(?<!\\d,)${NUMERAL_BODY}-${COUNTED_PERSON_NOUN}\\b` +
-  `|\\b(?:guests|attendees|people|persons|heads|RSVPs|patrons)\\b[^.!?\\n]*?${COUNT_NUMERAL}`;
+  `|\\b(?:guests|attendees|people|persons|heads|RSVPs|patrons)\\b[^.!?;\\n]*?${COUNT_NUMERAL}`;
 export const COUNTED_PEOPLE = new RegExp(COUNTED_PEOPLE_SOURCE, "i");
 
 /**
@@ -800,10 +802,29 @@ export const pairsAgencyWithCount = (raw, { bounded = false, subjects = [] } = {
 };
 
 /**
- * The sentences of a text already read as one line of prose. A sentence ends at one of the three
- * ordinary terminators followed by whitespace, which is the same boundary `COUNTED_PEOPLE`'s
- * noun-first alternation refuses to cross, so no phrase either count expression matches can
- * straddle one of these splits.
+ * The ATTRIBUTION UNITS of a text already read as one line of prose. A unit ends at one of the
+ * three ordinary sentence terminators or at a semicolon, followed by whitespace, which is the same
+ * boundary `COUNTED_PEOPLE`'s noun-first alternation refuses to cross, so no phrase either count
+ * expression matches can straddle one of these splits.
+ *
+ * THE SEMICOLON IS A UNIT BOUNDARY TOO, which is the nineteenth PR #247 round. The three sentence
+ * terminators were the whole list, so two INDEPENDENT CLAUSES joined by a semicolon stayed one
+ * attribution unit and the supported clause licensed the unsupported one. On a rule legitimately
+ * publishing 75, "HEALTH-A, published by DOHMH, applies at 75 guests; the vendor permit depends on
+ * the guest count." came out of this split as ONE claim that names HEALTH-A and states 75, so
+ * `countsAttributed` exempted it and the second clause, which names no rule at all, was reported by
+ * nobody in repository prose and in published output alike.
+ *
+ * A SEMICOLON JOINS TWO CLAUSES THAT COULD EACH STAND AS A SENTENCE, which is what makes this the
+ * same boundary rather than a fourth special case: what this function answers is "which span of
+ * text is one claim held to one rule", and an independent clause is one claim by the same reading
+ * that makes a sentence one. The cost is the mirror of the exemption it removes and is stated: a
+ * legitimate count claim written across a semicolon now has to name its rule in the clause that
+ * states the number, which is the same wording the period already required of it.
+ *
+ * MEASURED OVER EVERY SCANNED ROOT the flag set does not move: it stays at the four pinned
+ * historical records and the six benign adjacent pairs, and the published artifact reports zero
+ * offenders before and after.
  *
  * THE QUESTION AND EXCLAMATION MARKS ARE TERMINATORS TOO, which is the fourteenth PR #247 round.
  * Only the period was one, so an attributed sentence ending in `!` or `?` was joined to the next
@@ -814,7 +835,7 @@ export const pairsAgencyWithCount = (raw, { bounded = false, subjects = [] } = {
  * The terminator required whitespace after it before and still does, so "75.5" and "$1.2M" are
  * not two sentences.
  */
-const sentencesOf = (text) => text.split(/(?<=[.!?])\s+/);
+const sentencesOf = (text) => text.split(/(?<=[.!?;])\s+/);
 
 /** Whether a text states an attendee count at all, in either count vocabulary. */
 const statesACount = (text) => ATTENDEE_COUNT.test(text) || COUNTED_PEOPLE.test(text);
