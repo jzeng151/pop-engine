@@ -766,6 +766,72 @@ describe("the routes of a merged dedupe line", () => {
   });
 
   /**
+   * §4.3 amended 2026-08-09: where no resolved route contributes the merged disposition, the line
+   * publishes no scalars of its own and every route keeps its own beneath. This is the plan surface
+   * of that amendment, checked rather than assumed: the page renders such a line without a date, a
+   * fee or a portal of its own, and the routes block carries all three per route.
+   */
+  it("renders a candidate line that publishes no scalars of its own", async () => {
+    const line = await lineWith({
+      ruleIds: ["DOT-SIDEWALK-ADVISORY-001", "DOT-SIDEWALK-CAFE-001"],
+      name: null,
+      agency: null,
+      deadline: null,
+      deadlineDisplay: null,
+      latestApplyDate: null,
+      applyAfterDate: null,
+      deadlineStatus: "not_calculable",
+      feeDisplay: null,
+      portalName: null,
+      portalUrl: null,
+      portalInstructions: null,
+      headlineMode: "candidate",
+      routes: [
+        route({
+          ruleId: "DOT-SIDEWALK-ADVISORY-001",
+          name: "Sidewalk clearance advisory",
+          agency: "DOT",
+          disposition: "advisory",
+          latestApplyDate: "2026-08-26",
+          deadlineStatus: "on_track",
+          feeDisplay: "No fee",
+          portalName: "DOT sidewalk desk",
+          portalUrl: "https://example.test/dot",
+        }),
+        route({
+          ruleId: "DOT-SIDEWALK-CAFE-001",
+          name: "Sidewalk cafe licence",
+          agency: "DCWP",
+          disposition: "may_be_required",
+          triggerResult: "unknown",
+          unknownFields: ["sidewalk_use"],
+          latestApplyDate: "2026-10-15",
+          deadlineStatus: "on_track",
+          feeDisplay: "$1,050 licence fee",
+          portalName: "DCWP licence centre",
+          portalUrl: "https://example.test/dcwp",
+        }),
+      ],
+    });
+
+    // The heading is the question, and the line states no filing date, fee or portal of its own.
+    expect(line.getByText(/do not say which of these applies/)).toBeDefined();
+    const own = screen.getByRole("article");
+    // The line's own timing block, not the entries': both routes still print their own dates.
+    expect(own.querySelector(".line__deadline-date")).toBeNull();
+    expect(own.querySelector(".line__fee")).toBeNull();
+    expect(own.querySelector(".line__portal")).toBeNull();
+    // Both routes keep everything, which is where a reader can tell whose it is.
+    expect(own.querySelectorAll(".line__route")).toHaveLength(2);
+    expect(line.getByText("No fee")).toBeDefined();
+    expect(line.getByText("$1,050 licence fee")).toBeDefined();
+    expect(own.querySelector('a[href="https://example.test/dot"]')).not.toBeNull();
+    expect(own.querySelector('a[href="https://example.test/dcwp"]')).not.toBeNull();
+    // The one status it must publish says the window exists and this line cannot be dated.
+    expect(line.getByText(/not calculable/)).toBeDefined();
+  });
+
+  /**
    * #252 review: A TYPED-ONLY DEADLINE IS THE WHOLE TIMING REQUIREMENT, on a route as on a line.
    *
    * SAPO-INSURANCE-001 publishes `{type: "before_issuance"}` and nothing else, so a route carrying
@@ -816,7 +882,10 @@ describe("the routes of a merged dedupe line", () => {
       ],
     });
     expect(line.getByText(/do not say which of these applies/)).toBeDefined();
-    expect(line.getByText(/structure duration days/)).toBeDefined();
+    // Twice now, and deliberately: the introduction names the field that would decide the group,
+    // and the sentence beneath the settled entry names what the unsettled route itself turns on
+    // (design §5.3, amended 2026-08-09).
+    expect(line.getAllByText(/structure duration days/).length).toBeGreaterThan(0);
     expect(line.getByText("May apply")).toBeDefined();
   });
 
@@ -980,15 +1049,27 @@ describe("the routes of a merged dedupe line", () => {
       ],
     });
     expect(line.getByText(/The answers so far do not say which of these applies/)).toBeDefined();
-    expect(line.getByText(/one of them is triggered on the answers so far/)).toBeDefined();
+    expect(
+      line.getByText(/one of them has its conditions met on the answers so far/),
+    ).toBeDefined();
     expect(line.getByText(/Answering sound purpose would decide it/)).toBeDefined();
     // NOT "treat none of the routes below as settled", which contradicted the sentence before it
     // and the entry labelled below (#252 review): one route IS triggered, so the unsettled ones
     // are named instead of all of them.
     expect(line.getByText(/treat the routes marked .May apply. as unsettled/)).toBeDefined();
-    // Per entry, which routes the recorded answers trigger and which they do not.
-    expect(line.getByText("Triggered")).toBeDefined();
+    // Per entry, which routes' own conditions the recorded answers meet and which they do not.
+    // "Conditions met" rather than the approved section 5.3's "Applies", which overstates what a
+    // resolved trigger asserts, and rather than "Triggered", which is engine vocabulary in copy an
+    // organizer reads (product owner, 2026-08-09).
+    expect(line.getByText("Conditions met")).toBeDefined();
     expect(line.getByText("May apply")).toBeDefined();
+    // And what the organizer still faces, beneath the entry they can act on, naming the unsettled
+    // route and the field its own trigger left open. No threshold is named: none is published.
+    expect(
+      line.getByText(
+        "Commercial advertising by sound device would also be required, depending on sound purpose.",
+      ),
+    ).toBeDefined();
   });
 
   /**

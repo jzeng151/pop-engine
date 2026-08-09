@@ -1012,3 +1012,106 @@ describe("naming the at-risk route of a rescoped merged line (#252)", () => {
     expect(rescope?.atRiskFindingName).toBe("Plaza block closure approval");
   });
 });
+
+/**
+ * §4.3, amended 2026-08-09 by the product owner: where the group holds a resolved route and none of
+ * them contributes the merged disposition, the line publishes NO scalars. Picking either way is a
+ * claim the group does not support — the settled route's fee and portal under an unsettled route's
+ * disposition, or the unsettled route's under a group that holds a settled one — and one date field
+ * cannot hold two dates. Every route keeps its own beneath, which is where a reader can tell whose
+ * they are.
+ *
+ * The shape: a resolved route below `required`, so `unresolvedRouteCeilingApplies` does not bite and
+ * an unknown-triggered route carries the group to a disposition the resolved route does not
+ * contribute. Unreachable on `rules/nyc-rules.v2.11.json`, whose only multi-member group is two
+ * permits; reachable on the proposed draft.
+ */
+describe("a merged line no route can supply the scalars for (#252)", () => {
+  const FIELD = [{ field: "sidewalk_use", type: "enum", values: ["unknown", "cafe", "display"] }];
+  /** Resolved, and `advisory` is below the cap trigger, so the ceiling never bites on this group. */
+  const RESOLVED_ADVISORY = {
+    id: "DOT-SIDEWALK-ADVISORY-001",
+    kind: "advisory",
+    dedupeKey: "sidewalk",
+    trigger: ALWAYS,
+    output: {
+      permit_name: "Sidewalk clearance advisory",
+      agency: "DOT",
+      deadline: { type: "published_minimum", calendar_days: 60 },
+      fee: { display: "No fee" },
+      portal: { name: "DOT sidewalk desk", url: "https://example.test/dot" },
+    },
+  } as const;
+  /** Unresolved, and the only route contributing `may_be_required`. Its window is the tighter one. */
+  const UNRESOLVED_CANDIDATE = {
+    id: "DOT-SIDEWALK-CAFE-001",
+    kind: "eligibility",
+    dedupeKey: "sidewalk",
+    trigger: { all: [{ field: "sidewalk_use", op: "eq", value: "cafe" }] },
+    output: {
+      permit_name: "Sidewalk cafe licence",
+      agency: "DCWP",
+      deadline: { type: "published_minimum", calendar_days: 10 },
+      fee: { display: "$1,050 licence fee" },
+      portal: { name: "DCWP licence centre", url: "https://example.test/dcwp" },
+    },
+  } as const;
+
+  const merged = () =>
+    plan([RESOLVED_ADVISORY, UNRESOLVED_CANDIDATE], { sidewalk_use: null }, FIELD).findings[0];
+
+  it("publishes no name, timeline, fee or portal of its own", () => {
+    const line = merged();
+    // NOT VACUOUS: this is the shape, and both of the readings the two texts gave would have
+    // published one of these routes' values here.
+    expect(line?.disposition).toBe("may_be_required");
+    expect(line?.headlineMode).toBe("candidate");
+
+    expect(line?.name).toBeNull();
+    expect(line?.agency).toBeNull();
+    expect(line?.deadline).toBeNull();
+    expect(line?.deadlineDisplay).toBeNull();
+    expect(line?.latestApplyDate).toBeNull();
+    expect(line?.applyAfterDate).toBeNull();
+    expect(line?.slackDays).toBeNull();
+    expect(line?.feeDisplay).toBeNull();
+    expect(line?.portalName).toBeNull();
+    expect(line?.portalUrl).toBeNull();
+    expect(line?.portalInstructions).toBeNull();
+    // The one field that cannot be absent takes the value that is true of this line: the routes
+    // publish windows and this line cannot be dated. `not_applicable` would say neither.
+    expect(line?.deadlineStatus).toBe("not_calculable");
+  });
+
+  it("keeps every route's own name, window, fee and portal beneath", () => {
+    const routes = merged()?.routes ?? [];
+    expect(routes).toHaveLength(2);
+    const advisory = routes.find((route) => route.ruleId === "DOT-SIDEWALK-ADVISORY-001");
+    const candidate = routes.find((route) => route.ruleId === "DOT-SIDEWALK-CAFE-001");
+    expect(advisory?.name).toBe("Sidewalk clearance advisory");
+    expect(advisory?.feeDisplay).toBe("No fee");
+    expect(advisory?.portalUrl).toBe("https://example.test/dot");
+    expect(advisory?.latestApplyDate).not.toBeNull();
+    expect(candidate?.name).toBe("Sidewalk cafe licence");
+    expect(candidate?.feeDisplay).toBe("$1,050 licence fee");
+    expect(candidate?.portalUrl).toBe("https://example.test/dcwp");
+    expect(candidate?.latestApplyDate).not.toBeNull();
+    // Provenance is not a pick, so none of it is dropped.
+    expect(merged()?.ruleIds).toHaveLength(2);
+    expect(merged()?.sources.map((source) => source.ruleId)).toEqual([
+      "DOT-SIDEWALK-ADVISORY-001",
+      "DOT-SIDEWALK-CAFE-001",
+    ]);
+  });
+
+  it("still binds the scalars where a resolved route does contribute the disposition", () => {
+    // The other side of the amendment: answering the question settles the candidate, a resolved
+    // route contributes the merged disposition, and the line reads as that route as it always has.
+    const settled = plan([RESOLVED_ADVISORY, UNRESOLVED_CANDIDATE], { sidewalk_use: "cafe" }, FIELD)
+      .findings[0];
+    expect(settled?.headlineMode).toBe("applies_together");
+    expect(settled?.name).toBe("Sidewalk cafe licence");
+    expect(settled?.feeDisplay).toBe("$1,050 licence fee");
+    expect(settled?.deadlineStatus).not.toBe("not_calculable");
+  });
+});

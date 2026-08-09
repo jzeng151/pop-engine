@@ -1220,6 +1220,41 @@ describe("the route a stored plan item reads its window off (#252)", () => {
     expect(filing?.deadlineStatus).toBe("not_calculable");
   });
 
+  /**
+   * §4.3 amended 2026-08-09: a merged line whose scalars no route can supply publishes none of
+   * them, so its stored item reaches this function with every timing column null. Checked rather
+   * than assumed, because this is the surface the engine change hands the row to: the row does not
+   * go blank and nothing throws. It reads a route and NAMES it, which is the attributed filling
+   * this function exists for, so what an organizer sees is one route's window under a row that says
+   * whose it is — the same behaviour a merged line whose binding route publishes no window has had
+   * since #252. Nothing on the plan or in alerts picks a route on this shape; the checklist row is
+   * the one surface that does, and it says so.
+   */
+  it("still names a route for a line that publishes no scalars of its own", () => {
+    const routes = [
+      route({ ruleId: "A", latestApplyDate: null }),
+      route({
+        ruleId: "B",
+        name: "route B",
+        triggerResult: "unknown",
+        unknownFields: ["sidewalk_use"],
+        deadline: { type: "published_minimum", calendarDays: 30 },
+        latestApplyDate: "2026-08-26",
+        deadlineStatus: "on_track",
+        feeDisplay: "$1,050 licence fee",
+      }),
+    ];
+    const unattributable: StoredPlanItem = {
+      ...item,
+      permit_name: null,
+      agency: null,
+      deadline_status: "not_calculable",
+    };
+    const filing = filingRouteOf(unattributable, rendering(routes));
+    expect(filing?.ruleId).toBe("B");
+    expect(filing?.feeDisplay).toBe("$1,050 licence fee");
+  });
+
   it("leaves a line that publishes its own window alone", () => {
     const dated = { ...item, deadline: { type: "published_minimum" } as never };
     expect(filingRouteOf(dated, rendering([route({}), route({ ruleId: "B" })]))).toBeNull();

@@ -220,11 +220,20 @@ prohibition may or may not apply, because `sound_purpose` is unanswered.
 resolved subset. There is no third mode value.**
 
 `triggerResult` lives on each route. `headlineMode` is computed from those and stored only so a
-client does not have to recompute it; it carries no information the routes do not. When the resolved
-subset is non-empty, the binding route is chosen from it; when it is empty, from the whole group.
-The 54-intake set therefore renders as: the Sound Device Permit as the headline, with its own
-5-day window, its own fee, its own portal, and the prohibition listed beneath as a candidate route
-naming `sound_purpose` as the question that decides it.
+client does not have to recompute it; it carries no information the routes do not. When a resolved
+route contributes the merged disposition, the binding route is chosen from those; when NO route
+resolved at all, from the routes contributing the disposition; and where the group holds a resolved
+route but none of them contributes the merged disposition, the line publishes no scalars at all
+(§4.3, amended 2026-08-09). The 54-intake set therefore renders as: the Sound Device Permit as the
+headline, with its own 5-day window, its own fee, its own portal, and the prohibition listed beneath
+as a candidate route naming `sound_purpose` as the question that decides it.
+
+**This sentence was amended on 2026-08-09 by a product-owner decision recorded in
+`docs/BASELINE.md`.** As written it said "when the resolved subset is non-empty, the binding route is
+chosen from it; when it is empty, from the whole group", which pointed at a different route from §4.3
+step 2 on one shape: a group holding a resolved route none of whose resolved routes contributes the
+merged disposition. That contradiction is what `SPEC-CONFLICT` #257 recorded, and the amendment
+closes it by making both sections say the same thing. It moves no other part of this design.
 
 **Justified against the actual sets rather than against taste.** Three reasons, in order of weight.
 
@@ -292,6 +301,50 @@ The headline's identity AND its timeline both come from one route:
 Step 2's intersection is new and is the mechanical form of "the headline is derived from the
 resolved subset". It only ever moves the headline from a route that might apply to one that does.
 
+**Where the candidate set is empty, the line publishes no scalars. Amended 2026-08-09 by a
+product-owner decision recorded in `docs/BASELINE.md`.**
+
+Step 2's candidate set is empty on exactly one shape: the group holds a route whose trigger
+resolved, and none of the resolved routes contributes the merged disposition. It is reached when a
+resolved route sits below `required`, so `unresolvedRouteCeilingApplies` does not bite and an
+unknown-triggered route carries the group to a disposition no resolved route contributes — a
+resolved `advisory` beside an unknown-triggered `may_be_required` route is the case. As written,
+step 2 left step 3 with nothing to rank and §4.2 named a route step 2 excluded.
+
+**The line publishes none of the scalars there.** No `name`, no `agency`, no `deadline`,
+`deadlineDisplay`, `latestApplyDate`, `applyAfterDate` or `slackDays`, no `feeDisplay` and none of
+the three portal fields. Every route keeps its own beneath, in the route list, which is where a
+reader can tell whose they are. Nothing is picked, so nothing is claimed: picking the resolved route
+would put a settled route's fee and portal under a disposition an unsettled route published, and
+picking the unsettled one would put a candidate's name, window, fee and portal on a line whose group
+holds a route that does apply. One date field cannot hold two dates, and the honest answer where two
+routes disagree and neither can be preferred is to publish neither.
+
+`deadlineStatus` is the one field that cannot be absent, and it reads `not_calculable` there.
+`not_applicable` would state that no filing date applies to this requirement, which is false: the
+routes publish windows. `not_calculable` states that a published window exists and this line cannot
+be dated, which is the state exactly, and it is the value the engine already uses for a published
+window it could not turn into a date. `timelineUnresolvedReason` still carries whatever published
+text the routes supply, verbatim.
+
+**What is unchanged.** `disposition`, `ruleIds`, `notes`, `sources`, `triggeredBy`,
+`deadlineUnknownFields`, the summary, the single-valued published texts, `routes` and `headlineMode`.
+None of those is a pick: they concatenate over the group or fall back in binding order, so the line
+still retains every contributing rule and source. The route list's order is unchanged too, and so is
+every group where a resolved route does contribute the merged disposition, and every group where no
+route resolved at all.
+
+**What the three consumers do with it, verified rather than assumed.** The plan renders the line in
+`candidate` mode, where the heading is already the question rather than a permit, and each route
+carries its own name, window, fee and portal; with the scalars absent the line simply states no date,
+fee or portal of its own. Alerts already schedule per route (`alerts.ts` `alertSubjects`,
+`subjectFromRoute`), reading every value off the route rather than off the line, so nothing changes
+and nothing spurious is scheduled. The checklist row is the one surface that still resolves a single
+route: `filingRouteOf` fills the row's timing block from a route that publishes a window and names it
+in `filingRouteRuleId`, which is the attributed filling it has done since #252 for any merged line
+whose binding route publishes no window. The row therefore does not go blank, and what it shows it
+attributes.
+
 The four single-valued published texts (`noteText`, `conflictText`, the summary heading,
 `timelineUnresolvedReason`) still fall back through the remaining routes in binding order where the
 binding route publishes none, so no published caveat is dropped. They now all use one order, because
@@ -331,20 +384,42 @@ route:
 The heading is the question, not a permit. Above the routes:
 
 > **The answers so far do not say which of these applies.** {N} published routes are open on the
-> answers recorded in this plan{, and {M} of them applies on the answers so far}. Answering
-> {field list} would decide it. Until then, treat none of the routes below as settled.
+> answers recorded in this plan{, and {M} of them has its conditions met on the answers so far}.
+> Answering {field list} would decide it. Until then, treat none of the routes below as settled.
 
-The `{M} of them applies` clause is present only when the resolved subset is non-empty, and it
-names the resolved routes. `{field list}` is the `deadlineUnknownFields` and trigger fields the
-unresolved routes' triggers left open, humanized by the same `humanize()` the line already uses on
-`deadlineUnknownFields`.
+The `{M} of them has its conditions met` clause is present only when the resolved subset is
+non-empty, and it names the resolved routes. `{field list}` is the `deadlineUnknownFields` and
+trigger fields the unresolved routes' triggers left open, humanized by the same `humanize()` the
+line already uses on `deadlineUnknownFields`.
 
 Then one entry per route, in binding order, each labelled:
 
-> **Applies**: {route.name or route.ruleId} … (for a resolved route)
+> **Conditions met**: {route.name or route.ruleId} … (for a resolved route)
 > **May apply**: {route.name or route.ruleId} … (for an unresolved route)
 
-with the same body as 5.2.
+with the same body as 5.2. Beneath the entry an organizer can act on, one sentence naming what the
+unsettled routes turn on:
+
+> {unsettled route names} would also be required, depending on {their unknown fields}.
+
+built from the UNSETTLED routes' own `unknownFields` through the same `humanize()`, and their own
+published names. Two or more of either join naturally ("a, b and c"). It does not render where the
+group has no settled entry to sit beneath, and in `candidate` mode there is always at least one
+unsettled route.
+
+**The labels and that sentence were amended on 2026-08-09 by a product-owner decision recorded in
+`docs/BASELINE.md`.** The section as approved labelled a resolved entry `Applies` and counted
+`{M} of them applies`. `Applies` overstates what a resolved trigger asserts, because a route whose
+own trigger resolved can still publish `MAY_BE_REQUIRED` and DOB-TALL-STRUCTURE-001 does; `Triggered`,
+which an earlier revision of PR #252 substituted, is engine vocabulary in copy an organizer reads.
+`Conditions met` says what the trigger result means and no more. `May apply` is unchanged, and so is
+every other sentence in this section.
+
+**The sentence names fields, never thresholds.** "Depending on tent area and days in place", never
+"depending on whether the tent is over 400 square feet". `unknownFields` carries field names, the
+intake registry publishes no thresholds, and composing one would be inventing a regulatory fact no
+artifact carries. Issue #259 covers whether a published threshold could ever be named there; nothing
+in this amendment attempts it.
 
 **A candidate list must not read as a list of requirements**, and three things enforce that: the
 list is introduced by a sentence that says the answers do not decide it; every unresolved entry is

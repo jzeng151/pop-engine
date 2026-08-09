@@ -1146,7 +1146,15 @@ describe("an unknown trigger never blocks, however barred the finding (F-102 AC 
     );
     expect(plan.findings).toHaveLength(1);
     expect(plan.findings[0]?.disposition).toBe("prohibited_or_ineligible");
-    expect(plan.findings[0]?.deadlineStatus).toBe("published_deadline_missed");
+    // The line publishes no timeline of its own: the group holds a resolved route and none of them
+    // contributes the merged disposition, so no route can supply the scalars (§4.3, amended
+    // 2026-08-09). The missed window is on the route that published it, and the verdict reads
+    // routes, so what this test is about is unchanged.
+    expect(plan.findings[0]?.deadlineStatus).toBe("not_calculable");
+    expect(plan.findings[0]?.latestApplyDate).toBeNull();
+    expect(
+      plan.findings[0]?.routes?.map((route) => [route.ruleId, route.deadlineStatus]),
+    ).toContainEqual(["BAR-001", "published_deadline_missed"]);
     expect(plan.verdict).toBe("CONDITIONAL");
     expect(plan.verdictDetail.blockingFinding).toBeNull();
   });

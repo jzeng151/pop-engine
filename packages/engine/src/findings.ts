@@ -443,8 +443,17 @@ function mergeGroup(group: readonly Contribution[]): Finding {
   // any of them is. Skipped where that leaves nothing, i.e. where the headline disposition comes
   // only from routes whose triggers did not resolve.
   const contributing = group.filter((contribution) => contributed(contribution) === disposition);
-  const resolved = contributing.filter((contribution) => contribution.triggerResult !== "unknown");
+  const isResolved = (contribution: Contribution): boolean =>
+    contribution.triggerResult !== "unknown";
+  const resolved = contributing.filter(isResolved);
   const bindingPool = resolved.length > 0 ? resolved : contributing;
+  // THE GROUP HOLDS A SETTLED ROUTE AND NONE OF THEM CARRIES THE HEADLINE, which is the one case
+  // §4.2 and §4.3 step 2 pointed at different routes for, amended 2026-08-09 by the product owner
+  // so that the line picks neither. Every scalar below is one route's own published value, and on
+  // this shape choosing one publishes a settled route's fee and portal under an unsettled route's
+  // disposition, or an unsettled route's under a settled group. The line publishes none of them and
+  // every route keeps its own beneath (§4.3, `unattributableScalars`).
+  const unattributable = resolved.length === 0 && group.some(isResolved);
   const binding = bindingPool
     .map((contribution) => contribution.finding)
     .sort(compareBinding)[0] as Finding;
@@ -493,8 +502,40 @@ function mergeGroup(group: readonly Contribution[]): Finding {
     ...(verificationDates.some((date) => date !== undefined) ? { lastVerifiedDate } : {}),
     routes,
     headlineMode,
+    ...(unattributable ? UNATTRIBUTABLE_SCALARS : {}),
   };
 }
+
+/**
+ * What a merged line publishes where no route can supply its scalars: none of them.
+ *
+ * THE FIELDS ARE EVERY ONE A SINGLE ROUTE WOULD HAVE BEEN PICKED FOR: the identity a reader names
+ * the line by, the whole timeline, the fee and the three portal fields. They are on the route
+ * entries, which is where a reader can tell whose they are, and `ruleIds`, `notes`, `sources`,
+ * `triggeredBy`, the summary and the published texts are untouched, because none of those is a pick.
+ *
+ * `deadlineStatus` IS THE ONE FIELD THAT CANNOT BE ABSENT, so it takes the only value that is true
+ * of this line rather than the least visible one. `not_applicable` would say no filing date applies
+ * to this requirement, which is false: the routes publish windows. `not_calculable` says the window
+ * exists and this line cannot be dated, which is exactly the state, and it is the value the engine
+ * already uses for a published window it cannot turn into a date. Every consumer that branches on
+ * the status already handles it, and `timelineUnresolvedReason` still carries whatever published
+ * text the routes supply, verbatim.
+ */
+const UNATTRIBUTABLE_SCALARS = {
+  name: null,
+  agency: null,
+  deadline: null,
+  deadlineDisplay: null,
+  latestApplyDate: null,
+  applyAfterDate: null,
+  deadlineStatus: "not_calculable",
+  slackDays: null,
+  feeDisplay: null,
+  portalName: null,
+  portalUrl: null,
+  portalInstructions: null,
+} as const satisfies Partial<Finding>;
 
 /** Findings sharing a dedupe key merge deterministically, retaining every contributing rule and source. */
 function dedupe(

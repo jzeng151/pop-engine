@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { Fragment, useEffect, useState } from "react";
 import {
   CONFIRM_WITH_AGENCY,
   type FindingSource,
@@ -46,6 +46,12 @@ import type { HeadlineMode } from "@pop-engine/engine";
 // stated in full one interaction away.
 
 const humanize = (token: string): string => token.replace(/_/g, " ");
+
+/** A list as a sentence reads it: "a", "a and b", "a, b and c". No serial comma, no invented words. */
+const naturally = (items: readonly string[]): string =>
+  items.length < 2
+    ? (items[0] ?? "")
+    : `${items.slice(0, -1).join(", ")} and ${items[items.length - 1]}`;
 
 /**
  * Whether this line has anything to say about timing. `deadlineStatus` is always set, so
@@ -242,16 +248,23 @@ const routeSignature = (route: ConsumedRoute): string =>
 /**
  * One contributing route of a merged line, with its own name, window and fee.
  *
- * `Triggered` prefixes the entry rather than restating the disposition in a second voice: in a
- * candidate list an organizer has to be able to tell, per entry, which routes' conditions the
- * recorded answers meet. It says "triggered", not "applies", because those are different claims
- * and only the first is one this label can make: a route whose trigger resolved can still publish
- * `MAY_BE_REQUIRED`, and DOB-TALL-STRUCTURE-001 does. What the route then requires is the
- * disposition beside it, in the rule's own words (#252 review).
+ * `Conditions met` prefixes a resolved entry rather than restating the disposition in a second
+ * voice: in a candidate list an organizer has to be able to tell, per entry, which routes' own
+ * conditions the recorded answers meet. It does not say "Applies", because those are different
+ * claims and only the first is one this label can make: a route whose trigger resolved can still
+ * publish `MAY_BE_REQUIRED`, and DOB-TALL-STRUCTURE-001 does. What the route then requires is the
+ * disposition beside it, in the rule's own words. `May apply` is unchanged.
+ *
+ * THIS WORDING IS APPROVED COPY, amended into design §5.3 on 2026-08-09 by a product-owner decision
+ * recorded in `docs/BASELINE.md`. The section as approved said `Applies`, and an earlier revision of
+ * this branch substituted `Triggered` on the reasoning above, which was the right diagnosis and not
+ * this lane's decision to act on (#252 review). The amendment settles it in neither word: `Applies`
+ * overstates what a resolved trigger asserts, and `Triggered` is engine vocabulary in copy an
+ * organizer reads.
  */
 function Route({ route, mode }: { route: ConsumedRoute; mode: HeadlineMode }) {
   const label =
-    mode === "candidate" ? (route.triggerResult === "true" ? "Triggered" : "May apply") : null;
+    mode === "candidate" ? (route.triggerResult === "true" ? "Conditions met" : "May apply") : null;
   // F-201 AC 13 on the route that actually has the undatable window. A merged line's scalars are the
   // binding route's, so where a non-binding route is the `business_days_minimum` one the criterion's
   // sentence has nowhere else to go: the finding-level call reads the binding route's fields and
@@ -365,6 +378,23 @@ function Routes({ finding }: { finding: ConsumedFinding }) {
     ]),
   ];
   const applying = routes.filter((route) => route.triggerResult === "true").length;
+  // The last entry an organizer can act on, and what still hangs over it: the unsettled routes by
+  // their own published names, and the fields THEIR triggers left open, which are not the whole
+  // group's `deciding` list. Rendered only in candidate mode and only where there is a settled entry
+  // to sit beneath; in candidate mode there is always at least one unsettled route.
+  const unsettled = routes.filter((route) => route.triggerResult === "unknown");
+  const lastSettled = routes.reduce(
+    (last, route, index) => (route.triggerResult === "true" ? index : last),
+    -1,
+  );
+  const unsettledFields = [...new Set(unsettled.flatMap((route) => route.unknownFields))];
+  const unsettledSentence =
+    mode !== "candidate" || lastSettled === -1 || unsettled.length === 0
+      ? null
+      : `${naturally(unsettled.map((route) => route.name ?? route.ruleId))} would also be required` +
+        (unsettledFields.length === 0
+          ? "."
+          : `, depending on ${naturally(unsettledFields.map(humanize))}.`);
 
   return (
     <section className="line__routes">
@@ -386,7 +416,7 @@ function Routes({ finding }: { finding: ConsumedFinding }) {
                 the requirement and only then said the routes were unsettled (#252 review). */}
             {routes.length} published routes are open on the answers recorded in this plan
             {applying > 0 &&
-              `, and ${applying === 1 ? "one of them is triggered" : `${applying} of them are triggered`} on the answers so far`}
+              `, and ${applying === 1 ? "one" : applying} of them has its conditions met on the answers so far`}
             .
             {deciding.length > 0 &&
               ` Answering ${deciding.map(humanize).join(", ")} would decide it.`}{" "}
@@ -397,8 +427,24 @@ function Routes({ finding }: { finding: ConsumedFinding }) {
         )}
       </p>
       <ul className="line__route-list">
-        {routes.map((route) => (
-          <Route key={route.ruleId} route={route} mode={mode} />
+        {routes.map((route, index) => (
+          <Fragment key={route.ruleId}>
+            <Route route={route} mode={mode} />
+            {/* WHAT THE ORGANIZER STILL FACES, BENEATH THE ENTRY THEY CAN ACT ON. A candidate group
+                with one settled route reads as a filing they can start, and the routes that might
+                join it are further down the list under "May apply" with no statement of what they
+                turn on. Approved copy, amended into design §5.3 on 2026-08-09 by a product-owner
+                decision recorded in `docs/BASELINE.md`.
+
+                THE FIELD NAMES ARE THE UNSETTLED ROUTES' OWN and nothing else. Naming the threshold
+                an answer would be measured against — "over 400 square feet" — is a published fact no
+                artifact carries: `unknownFields` is field names, the registry publishes no
+                thresholds, and composing one would be inventing regulatory content. That is issue
+                #259 and is deliberately not attempted here. */}
+            {index === lastSettled && unsettledSentence !== null && (
+              <li className="line__route-unsettled">{unsettledSentence}</li>
+            )}
+          </Fragment>
         ))}
       </ul>
     </section>
