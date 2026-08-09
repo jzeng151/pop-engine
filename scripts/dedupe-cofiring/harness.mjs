@@ -114,6 +114,19 @@ export const EVENT_DATE = "2026-09-01";
 const EVENT_END_DATE_NEXT_DAY = "2026-09-02";
 
 /**
+ * The one end date below `EVENT_DATE`, which is what takes `event_days` below its threshold.
+ *
+ * `event_days gt 1` is a numeric threshold, and AGENTS.md requires below, at and above. Without
+ * this value the domain produced only 1, 2 and 1: at and above, with no below. `validateIntake`
+ * admits the reversed pair — it checks each date's ISO shape and rejects only an `event_date`
+ * before `today`, and publishes no end-after-start ordering rule (`intake/validate.ts:115-118`,
+ * `:319-320`) — so an intake with `event_days` of 0 is one the contract accepts and the sweep has
+ * to enumerate. `dateOrderingIsUnconstrained` in `cofiring.test.mjs` asserts that against the real
+ * validator, so an approved ordering rule would fail rather than leave this value swept.
+ */
+const EVENT_END_DATE_PRIOR_DAY = "2026-08-31";
+
+/**
  * The draft publishes `asked_when` as a condition object; the engine's registry grammar is a
  * string, and `parseIntakeField` reads it with `optionalString`, so an object silently becomes
  * `null` and the field would be unconditionally in scope. Both draft expressions are exactly
@@ -546,11 +559,13 @@ function thresholdsFor(field, members) {
  *   - multi_enum: every valid selection (see `validMultiEnumSelections`).
  *   - numeric: `0`, plus `t-1`, `t`, `t+1` for every threshold `t` any member compares the field
  *     against, plus `null` when nullable, less any value below the field's `NUMERIC_MINIMUMS` entry.
- *   - date: `event_date` is fixed; `event_end_date` ranges over the same day and the next day,
- *     plus `null` when the artifact marks it nullable, giving `event_days` of 1, 1 and 2, which
- *     covers the only threshold (`event_days gt 1`) below, on and above. Any other date field
- *     throws rather than borrowing that domain: the two endpoints are chosen to bracket
- *     `event_days`, and they say nothing about a date the draft has not yet published.
+ *   - date: `event_date` is fixed; `event_end_date` ranges over the previous day, the same day and
+ *     the next day, plus `null` when the artifact marks it nullable, giving `event_days` of 0, 1, 2
+ *     and 1, which covers the only threshold (`event_days gt 1`) below, on and above. The previous
+ *     day is swept because `validateIntake` publishes no end-after-start ordering rule, so the
+ *     reversed pair is an intake the contract admits. Any other date field throws rather than
+ *     borrowing that domain: the three endpoints are chosen to bracket `event_days`, and they say
+ *     nothing about a date the draft has not yet published.
  */
 export function domainFor(field, definition, members) {
   if (HAND_SET_NUMERIC_DOMAINS[field] !== undefined) {
@@ -580,7 +595,7 @@ export function domainFor(field, definition, members) {
       if (field !== "event_end_date") {
         throw new Error(`no domain rule for date field "${field}"`);
       }
-      return withNull([EVENT_DATE, EVENT_END_DATE_NEXT_DAY], definition);
+      return withNull([EVENT_END_DATE_PRIOR_DAY, EVENT_DATE, EVENT_END_DATE_NEXT_DAY], definition);
     default:
       throw new Error(`no domain rule for field "${field}" of type "${definition.type}"`);
   }
@@ -752,6 +767,15 @@ export function sweepGroup(group, definitions) {
 
   const findingsHistogram = new Array(members.length + 1).fill(0);
   const trueHistogram = new Array(members.length + 1).fill(0);
+  // The same two distributions restricted to complete intakes, kept whole rather than collapsed to
+  // their tails. Two counts above a cutoff can agree while the distributions beneath them differ,
+  // and a group whose members go `unknown` on a complete intake without reaching two findings moves
+  // neither cutoff at all (#251 review), so the tails cannot carry section 4.3's claim on their own.
+  const completeFindingsHistogram = new Array(members.length + 1).fill(0);
+  const completeTrueHistogram = new Array(members.length + 1).fill(0);
+  // Member trigger results that came back `unknown` on a complete intake, counted directly. This is
+  // section 4.3's claim stated as the thing it says, with no cutoff between it and the measurement.
+  let completeUnknownResults = 0;
   const sets = new Map();
   const results = new Array(members.length);
   let sweep = 0;
@@ -762,6 +786,7 @@ export function sweepGroup(group, definitions) {
   enumerateIntakes(fields, definitions, members, (intake, unsettledMask, ordinal, scope) => {
     let findings = 0;
     let decisive = 0;
+    let unknowns = 0;
     let key = 0;
     let setFieldMask = 0;
     for (let index = 0; index < members.length; index += 1) {
@@ -772,6 +797,7 @@ export function sweepGroup(group, definitions) {
         findings += 1;
         setFieldMask |= memberFieldMask[index];
         if (result === "true") decisive += 1;
+        else unknowns += 1;
       }
     }
     const isComplete = unsettledMask === 0;
@@ -781,6 +807,9 @@ export function sweepGroup(group, definitions) {
     trueHistogram[decisive] += 1;
     if (isComplete) {
       complete += 1;
+      completeFindingsHistogram[findings] += 1;
+      completeTrueHistogram[decisive] += 1;
+      completeUnknownResults += unknowns;
       if (findings >= 2) completeAndTwoFindings += 1;
       if (decisive >= 2) completeAndTwoTrue += 1;
     }
@@ -827,6 +856,9 @@ export function sweepGroup(group, definitions) {
     complete,
     completeAndTwoFindings,
     completeAndTwoTrue,
+    completeFindings: completeFindingsHistogram,
+    completeTrue: completeTrueHistogram,
+    completeUnknownResults,
     findings: findingsHistogram,
     true: trueHistogram,
     sets: [...sets.values()].sort((left, right) => right.count - left.count),

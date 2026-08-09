@@ -184,8 +184,17 @@ export function fuelFieldReaders(draft) {
     .map((rule) => ({ id: rule.id, dedupeKey: rule.output?.dedupe_key ?? null }));
 }
 
-/** Every operator any trigger applies to a numeric field, for limitation 3. */
-export function numericOperators(draft) {
+/**
+ * Every leaf any trigger applies to a numeric field, with the constant it names, for limitation 3.
+ *
+ * The operand is carried, not just the operator. `numericOperators` alone returns the same set of
+ * names whether or not a leaf still publishes a threshold, so a numeric leaf that dropped its
+ * `value` or changed it to a non-number left limitation 3 asserting that every numeric leaf names a
+ * constant while one no longer did, and left the threshold-local domains with no threshold to build
+ * from for that leaf. A leaf in a single-member group is not swept, so nothing else would have
+ * caught it either (#251 review).
+ */
+export function numericLeaves(draft) {
   const numericFields = new Set(
     draft.intake_fields
       .filter((field) => field.type === "integer" || field.type === "number")
@@ -195,14 +204,32 @@ export function numericOperators(draft) {
     if (/\*|inclusive_days|business_days_between/.test(derived.formula))
       numericFields.add(derived.name);
   }
-  const operators = new Set();
+  const leaves = [];
   for (const rule of published(draft)) {
     for (const leaf of triggerOperators(rule.trigger)) {
-      if (numericFields.has(leaf.field)) operators.add(leaf.op);
+      if (numericFields.has(leaf.field)) {
+        leaves.push({ rule: rule.id, field: leaf.field, op: leaf.op, value: leaf.value });
+      }
     }
   }
-  return [...operators].sort();
+  return leaves.sort(
+    (left, right) =>
+      left.rule.localeCompare(right.rule) ||
+      left.field.localeCompare(right.field) ||
+      left.op.localeCompare(right.op),
+  );
 }
+
+/** Every operator any trigger applies to a numeric field, for limitation 3. */
+export function numericOperators(draft) {
+  return [...new Set(numericLeaves(draft).map((leaf) => leaf.op))].sort();
+}
+
+/**
+ * The one numeric operator that takes no operand: `is_null` asks whether the fact was supplied.
+ * Every other numeric leaf has to name the constant it compares against.
+ */
+export const OPERAND_FREE_NUMERIC_OPERATORS = new Set(["is_null"]);
 
 /** Every derived value any trigger reads, for limitation 4. */
 export function derivedValuesRead(draft) {
@@ -244,14 +271,46 @@ export function mixedStatusGroups(draft) {
     .filter((group) => group.statuses.length > 1);
 }
 
-/** What the draft's own `engine_operators` array publishes, and what it publishes about each. */
+/**
+ * What the draft's own `engine_operators` array publishes, and what it publishes about each.
+ *
+ * The check is a textual one over every string and every property key in the draft's non-rule
+ * metadata, not a search for the operator as a complete JSON string. Splitting on `"is_null"` found
+ * the name only where it stood alone as a value or a key, so a draft that added a note reading
+ * `is_null returns true for absent answers` would define the semantics this harness supplies while
+ * this function went on reporting none, leaving section 3.2 green on a reading the draft had
+ * started contradicting (#251 review). Word boundaries are `[^a-z0-9_]` rather than `\b`, because
+ * `\b` does not fire around the underscore in `is_null`.
+ *
+ * `rules` and `advisories` are excluded because an operator name there is a trigger applying it,
+ * not a statement about it. `engine_operators` is excluded because it is the list itself: naming an
+ * operator in it is what makes it an operator, not what describes one.
+ */
 export function operatorSemantics(draft) {
-  const text = JSON.stringify({ ...draft, rules: null, advisories: null });
-  return draft.engine_operators.map((name) => ({
-    name,
-    // A published semantic would have to say something about the operator beyond listing its name.
-    describedOutsideTheList: text.split(`"${name}"`).length - 1 > 1,
-  }));
+  const strings = [];
+  const walk = (node) => {
+    if (typeof node === "string") strings.push(node);
+    else if (Array.isArray(node)) node.forEach(walk);
+    else if (node !== null && typeof node === "object") {
+      for (const [key, value] of Object.entries(node)) {
+        strings.push(key);
+        walk(value);
+      }
+    }
+  };
+  const { rules, advisories, engine_operators: operators, ...metadata } = draft;
+  walk(metadata);
+
+  return operators.map((name) => {
+    const occurrence = new RegExp(`(^|[^a-z0-9_])${name}([^a-z0-9_]|$)`, "i");
+    return {
+      name,
+      // A published semantic would have to say something about the operator beyond listing its
+      // name, and saying it anywhere counts: a note, a convention, a legend, a key of a defined
+      // semantics structure.
+      describedOutsideTheList: strings.some((text) => occurrence.test(text)),
+    };
+  });
 }
 
 /**

@@ -18,6 +18,7 @@ import { parseIntakeContract } from "../../packages/engine/src/intake/registry.t
 import { validateIntake } from "../../packages/engine/src/intake/validate.ts";
 
 import {
+  DERIVED_VALUES,
   EVENT_DATE,
   NUMERIC_MINIMUMS,
   askedWhenExpression,
@@ -258,6 +259,49 @@ describe("section 3.2, what the harness supplies", () => {
     );
   });
 
+  test("a semantics the draft states in prose is detected, not just one it states as a field", () => {
+    // The previous check split the serialised draft on `"is_null"`, so it saw the operator only
+    // where the name stood alone as a JSON string or key. A note defining the operator inside a
+    // longer sentence would have left this green while the draft defined the very semantics the
+    // harness supplies, invalidating every figure that rests on the supplied reading (#251 review).
+    const described = (draft) => m.inventory.operatorSemantics(draft);
+    const named = (draft, name) =>
+      described(draft).find((operator) => operator.name === name).describedOutsideTheList;
+
+    // Embedded in a sentence, in a note the draft does not have today.
+    const inProse = {
+      ...m.draft,
+      notes: ["is_null returns true for absent answers"],
+    };
+    expect(named(inProse, "is_null")).toBe(true);
+    expect(named(inProse, "lte")).toBe(false);
+
+    // As a key of a defined semantics structure.
+    const asStructure = { ...m.draft, operator_semantics: { lte: "at or below the value" } };
+    expect(named(asStructure, "lte")).toBe(true);
+
+    // Nested, rather than at the top level, since a real draft would not put it in the first place
+    // a walk happens to look.
+    const nested = {
+      ...m.draft,
+      engine_conventions: { operators: { notes: ["lte is inclusive"] } },
+    };
+    expect(named(nested, "lte")).toBe(true);
+
+    // Substrings are not matches, or every longer identifier containing an operator's name would
+    // read as a definition of it.
+    const substring = { ...m.draft, notes: ["deltec_lteq is not an operator"] };
+    expect(named(substring, "lte")).toBe(false);
+
+    // A trigger applying the operator is not a statement about it, so `rules` stays excluded.
+    const applied = {
+      ...m.draft,
+      notes: [],
+      rules: [{ id: "x", trigger: { field: "headcount", op: "lte", value: 1 } }],
+    };
+    expect(named(applied, "lte")).toBe(false);
+  });
+
   test("the harness agrees with the engine on every published rule and every control intake", () => {
     expect(m.control.agreement).toEqual({ comparisons: 28_612, mismatches: 0, rules: 46 });
   });
@@ -427,9 +471,9 @@ describe("section 3.3, the sweep", () => {
       parks_special_event: 120,
       fdny_generator: 4_800,
       dob_assembly: 80,
-      block_party_eligibility: 24_330_240,
+      block_party_eligibility: 32_440_320,
     });
-    expect(m.totalIntakes).toBe(24_356_372);
+    expect(m.totalIntakes).toBe(32_466_452);
     expect(m.control.sweep).toBe(622);
   });
 
@@ -514,8 +558,17 @@ describe("section 3.3, the sweep", () => {
     // other type does.
     const declared = m.draft.intake_fields.find((field) => field.field === "event_end_date");
     expect(declared.nullable).toBe(true);
-    expect(domainFor("event_end_date", declared, [])).toEqual([EVENT_DATE, "2026-09-02", null]);
-    expect(domainFor("event_end_date", { type: "date" }, [])).toEqual([EVENT_DATE, "2026-09-02"]);
+    expect(domainFor("event_end_date", declared, [])).toEqual([
+      "2026-08-31",
+      EVENT_DATE,
+      "2026-09-02",
+      null,
+    ]);
+    expect(domainFor("event_end_date", { type: "date" }, [])).toEqual([
+      "2026-08-31",
+      EVENT_DATE,
+      "2026-09-02",
+    ]);
 
     // `event_date` is fixed, which is what makes `event_days` vary only through the end date.
     expect(domainFor("event_date", { type: "date" }, [])).toEqual([EVENT_DATE]);
@@ -527,6 +580,42 @@ describe("section 3.3, the sweep", () => {
     );
   });
 
+  test("the end date sweeps below, at and above the one `event_days` threshold", () => {
+    // AGENTS.md requires a below case for every numeric threshold, and `event_days gt 1` had none:
+    // the domain produced 1, 2 and 1, which is at, above and at again (#251 review). It now sweeps
+    // an end date one day before the start, which the harness's declared inclusive-days
+    // computation makes 0.
+    const declared = m.draft.intake_fields.find((field) => field.field === "event_end_date");
+    const days = (end) =>
+      DERIVED_VALUES.event_days.compute({ event_date: EVENT_DATE, event_end_date: end });
+    expect(domainFor("event_end_date", declared, []).map(days).sort()).toEqual([0, 1, 1, 2]);
+
+    // What makes that a value the sweep OWES rather than one it invents: `validateIntake` accepts
+    // the reversed pair. It validates each date's ISO shape and rejects only a start before
+    // `today`, and the contract publishes no ordering rule between the two. If an approved
+    // ordering rule ever lands, this fails and the domain has to lose the value rather than go on
+    // enumerating an intake the contract has started refusing.
+    // The published control declares no end date, so the contract put to the validator is the
+    // engine's own registry carrying the draft's `event_end_date` declaration verbatim. What is
+    // under test is the engine's date rules, not the draft's field list.
+    const control = loadControl();
+    const datesContract = parseIntakeContract({
+      ...control,
+      intake_fields: [...control.intake_fields, declared],
+    });
+    const errorsFor = (answers) =>
+      validateIntake(datesContract, answers, EVENT_DATE)
+        .errors.filter((error) => error.field === "event_date" || error.field === "event_end_date")
+        .map((error) => error.code);
+    expect(errorsFor({ event_date: EVENT_DATE, event_end_date: "2026-08-31" })).toEqual([]);
+    expect(errorsFor({ event_date: EVENT_DATE, event_end_date: "2026-09-02" })).toEqual([]);
+    // The one date rule the contract does publish, so a validator that stopped checking anything
+    // at all would not read as agreement here.
+    expect(errorsFor({ event_date: "2026-08-31", event_end_date: EVENT_DATE })).toEqual([
+      "in_the_past",
+    ]);
+  });
+
   test("the draft publishes no date field the sweep has no rule for", () => {
     // The throw above is only reachable on a future draft. This is the check that the current one
     // has not already grown such a field somewhere no measured group happens to read.
@@ -535,9 +624,80 @@ describe("section 3.3, the sweep", () => {
   });
 });
 
+/**
+ * Every numeric leaf the draft publishes: rule, field, operator and the constant it names.
+ *
+ * Limitation 3 says every numeric leaf names its own constant, and section 3.4 says the
+ * threshold-local domains cover every discriminator. Neither survives on the operator names alone,
+ * which is what was asserted before (#251 review). `is_null` is a presence test, so its operand is
+ * the boolean answer it expects rather than a threshold.
+ */
+const NUMERIC_LEAVES = [
+  ["ADV-GENERATOR-SPECS-MISSING-001", "generator_aggregate_tank_gallons", "is_null", true],
+  ["ADV-STRUCTURE-SPECS-MISSING-001", "structure_duration_days", "is_null", true],
+  ["ADV-STRUCTURE-SPECS-MISSING-001", "structure_height_ft", "is_null", true],
+  ["ADV-STRUCTURE-SPECS-MISSING-001", "structure_length_ft", "is_null", true],
+  ["ADV-STRUCTURE-SPECS-MISSING-001", "structure_width_ft", "is_null", true],
+  ["DEP-GENERATOR-POWER-001", "generator_power_kw", "gt", 40],
+  ["DOB-ASSEMBLY-INDOOR-001", "peak_concurrent_attendance", "gte", 75],
+  ["DOB-ASSEMBLY-OUTDOOR-001", "peak_concurrent_attendance", "gte", 200],
+  ["DOB-ASSEMBLY-ROOFTOP-001", "peak_concurrent_attendance", "gte", 75],
+  ["DOB-STAGE-001", "structure_area_sqft", "gte", 120],
+  ["DOB-STAGE-001", "structure_height_ft", "gt", 2],
+  ["DOB-STRUCTURE-DURATION-001", "structure_duration_days", "gte", 30],
+  ["DOB-TENT-AREA-001", "structure_area_sqft", "gt", 400],
+  ["DOB-TENT-DURATION-001", "structure_duration_days", "gte", 30],
+  ["DOB-TRUSS-001", "structure_height_ft", "gt", 10],
+  ["FDNY-BATTERY-001", "outdoor_battery_kwh", "gt", 20],
+  ["FDNY-GENERATOR-DIESEL-001", "generator_aggregate_tank_gallons", "gt", 10],
+  ["FDNY-GENERATOR-GASOLINE-001", "generator_aggregate_tank_gallons", "gt", 2.5],
+  ["PARKS-EXACT-20-CONFLICT-001", "headcount", "eq", 20],
+  ["PARKS-SPECIAL-ELEMENT-001", "headcount", "lte", 20],
+  ["PARKS-SPECIAL-EVENT-001", "headcount", "gt", 20],
+  ["PARKS-TUA-001", "headcount", "gt", 500],
+  ["SAPO-BLOCK-PARTY-ELIGIBILITY-UNKNOWN-001", "block_count", "is_null", true],
+  ["SAPO-BLOCK-PARTY-ELIGIBILITY-UNKNOWN-001", "event_duration_hours", "is_null", true],
+  ["SAPO-BLOCK-PARTY-INELIGIBLE-001", "block_count", "gt", 1],
+  ["SAPO-BLOCK-PARTY-INELIGIBLE-001", "event_days", "gt", 1],
+  ["SAPO-BLOCK-PARTY-INELIGIBLE-001", "event_duration_hours", "gt", 9],
+  ["SAPO-PLAZA-A-MULTI-001", "plaza_block_count", "gt", 1],
+  ["SAPO-PLAZA-A-ONE-001", "plaza_block_count", "eq", 1],
+  ["SAPO-PLAZA-B-MULTI-001", "plaza_block_count", "gt", 1],
+  ["SAPO-PLAZA-B-ONE-001", "plaza_block_count", "eq", 1],
+];
+
 describe("section 3.4, the limitations", () => {
   test("limitation 3: every numeric leaf names its own constant", () => {
     expect(m.inventory.numericOperators(m.draft)).toEqual(["eq", "gt", "gte", "is_null", "lte"]);
+
+    // The operator names alone do not carry this claim. A leaf that dropped its `value`, or gave a
+    // non-numeric one, returns the same set of names and left this green while limitation 3 went on
+    // saying every numeric leaf names a constant and section 3.4 went on saying the threshold-local
+    // domains cover every discriminator, with no threshold derivable for that leaf. A leaf in a
+    // single-member group is never swept, so no count would have moved either (#251 review). So the
+    // operand is asserted, per leaf, alongside the operator.
+    const leaves = m.inventory.numericLeaves(m.draft);
+    for (const leaf of leaves) {
+      const where = `${leaf.rule}: ${leaf.field} ${leaf.op}`;
+      if (m.inventory.OPERAND_FREE_NUMERIC_OPERATORS.has(leaf.op)) {
+        // `is_null` asks whether the fact was supplied, so its operand is the boolean answer it
+        // expects and not a threshold. It is still asserted: a threshold there would mean the leaf
+        // is not the presence test limitation 3 excludes it as.
+        expect([where, typeof leaf.value]).toEqual([where, "boolean"]);
+      } else {
+        expect([where, typeof leaf.value, Number.isFinite(leaf.value)]).toEqual([
+          where,
+          "number",
+          true,
+        ]);
+      }
+    }
+
+    // And the leaves themselves, so a leaf that disappears fails here rather than leaving a loop
+    // over a shorter list quietly passing.
+    expect(leaves.map((leaf) => [leaf.rule, leaf.field, leaf.op, leaf.value])).toEqual(
+      NUMERIC_LEAVES,
+    );
   });
 
   test("limitation 4: `event_days` is the only date-derived value a trigger reads", () => {
@@ -598,7 +758,7 @@ describe("section 4.1, findings per event", () => {
     ["parks_special_event", [98, 22, 0, 0]],
     ["fdny_generator", [2_686, 1_706, 344, 64]],
     ["dob_assembly", [59, 15, 3, 3]],
-    ["block_party_eligibility", [18_923_544, 737_256, 4_669_440]],
+    ["block_party_eligibility", [25_231_396, 983_004, 6_225_920]],
   ])("%s", (key, distribution) => {
     expect(m.group(key).findings).toEqual(distribution);
   });
@@ -614,7 +774,7 @@ describe("section 4.2, the same sweeps counting only `true` triggers", () => {
     ["parks_special_event", [109, 11]],
     ["fdny_generator", [3_913, 852, 35]],
     ["dob_assembly", [68, 12]],
-    ["block_party_eligibility", [21_627_024, 830_448, 1_872_768]],
+    ["block_party_eligibility", [28_836_056, 1_107_432, 2_496_832]],
   ])("%s", (key, head) => {
     expect(m.group(key).true.slice(0, head.length)).toEqual(head);
     expect(
@@ -626,6 +786,25 @@ describe("section 4.2, the same sweeps counting only `true` triggers", () => {
   });
 });
 
+/**
+ * Findings per event on COMPLETE intakes, per group, whole rather than summed above a cutoff.
+ *
+ * Index `i` is the number of complete intakes on which `i` of the group's members produced a
+ * finding. Section 4.3 quotes the tails of these; they are pinned here so the tails cannot agree by
+ * both moving (#251 review).
+ */
+const COMPLETE_FINDINGS = {
+  sapo_permit: [312, 1_224, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+  dob_temporary_structure: [3_906, 1_950, 444, 0, 0, 0],
+  sla_alcohol: [17, 7, 0, 0, 0, 0],
+  sapo_insurance: [2, 14, 0, 0, 0],
+  nypd_sound: [52, 24, 8, 0, 0],
+  parks_special_event: [97, 11, 0, 0],
+  fdny_generator: [1_479, 502, 35, 0],
+  dob_assembly: [51, 12, 0, 0],
+  block_party_eligibility: [1_720_338, 245_742, 0],
+};
+
 describe("section 4.3, completeness", () => {
   test.each([
     ["sapo_permit", 1_536, 0, 0],
@@ -636,7 +815,7 @@ describe("section 4.3, completeness", () => {
     ["parks_special_event", 108, 0, 0],
     ["fdny_generator", 2_016, 35, 35],
     ["dob_assembly", 63, 0, 0],
-    ["block_party_eligibility", 1_474_560, 0, 0],
+    ["block_party_eligibility", 1_966_080, 0, 0],
   ])("%s", (key, complete, andTwoFindings, andTwoTrue) => {
     const group = m.group(key);
     expect(group.complete).toBe(complete);
@@ -645,9 +824,34 @@ describe("section 4.3, completeness", () => {
   });
 
   test("on a complete intake no draft member's trigger is ever `unknown`", () => {
+    // This used to compare `completeAndTwoFindings` with `completeAndTwoTrue`, which is not the
+    // claim. Both are counts above a two-member cutoff, so a complete intake carrying one `unknown`
+    // member and fewer than two findings left both at zero and the assertion passed while the
+    // sentence it defends was false; two differing complete distributions whose tails happened to
+    // sum alike passed it too (#251 review). What is asserted now is the sentence: the number of
+    // member results that came back `unknown` on a complete intake, per group, is zero.
+    expect(Object.fromEntries(m.groups.map((g) => [g.key, g.completeUnknownResults]))).toEqual(
+      Object.fromEntries(m.groups.map((g) => [g.key, 0])),
+    );
+
+    // And the whole complete distributions, not their tails, so a group whose complete findings
+    // move without crossing the cutoff fails here rather than going quietly stale. `findings`
+    // counts members whose trigger was `true` or `unknown` and `true` counts only `true`, so with
+    // no `unknown` anywhere on a complete intake the two are the same distribution.
     for (const group of m.groups) {
-      expect(group.completeAndTwoFindings).toBe(group.completeAndTwoTrue);
+      expect(group.completeFindings).toEqual(group.completeTrue);
+      expect(group.completeFindings.reduce((total, count) => total + count, 0)).toBe(
+        group.complete,
+      );
     }
+  });
+
+  test("the complete distributions are the published ones", () => {
+    // The distributions the assertion above compares, pinned to values, so that "they are equal to
+    // each other" cannot become true by both of them moving together.
+    expect(
+      Object.fromEntries(m.groups.map((group) => [group.key, group.completeFindings])),
+    ).toEqual(COMPLETE_FINDINGS);
   });
 
   test("three of the nine co-fire on a complete intake", () => {
@@ -661,7 +865,7 @@ describe("section 4.3, completeness", () => {
 
   test("`block_party_eligibility` reaches two `true` triggers, never on a complete intake", () => {
     const group = m.group("block_party_eligibility");
-    expect(group.true[2]).toBe(1_872_768);
+    expect(group.true[2]).toBe(2_496_832);
     expect(group.completeAndTwoTrue).toBe(0);
   });
 
@@ -878,10 +1082,10 @@ describe("section 5, the co-firing sets", () => {
   test("5.9 `block_party_eligibility`: four sets, none complete", () => {
     const group = m.group("block_party_eligibility");
     expect(group.sets.map((set) => [set.count, set.complete])).toEqual([
-      [2_334_828, 0],
-      [1_872_768, 0],
-      [460_692, 0],
-      [1_152, 0],
+      [3_113_122, 0],
+      [2_496_832, 0],
+      [614_238, 0],
+      [1_728, 0],
     ]);
   });
 });
@@ -1176,15 +1380,17 @@ describe("section 8, the harness footprint", () => {
       "inventory.mjs": lines("inventory.mjs"),
       "report.mjs": lines("report.mjs"),
       "cofiring.test.mjs": lines("cofiring.test.mjs"),
+      "vitest.config.mjs": lines("vitest.config.mjs"),
     };
     expect(counts).toEqual({
-      "harness.mjs": 938,
+      "harness.mjs": 970,
       "staging.mjs": 266,
-      "inventory.mjs": 317,
+      "inventory.mjs": 376,
       "report.mjs": 103,
-      "cofiring.test.mjs": 1204,
+      "cofiring.test.mjs": 1410,
+      "vitest.config.mjs": 19,
     });
-    expect(Object.values(counts).reduce((total, count) => total + count, 0)).toBe(2_828);
+    expect(Object.values(counts).reduce((total, count) => total + count, 0)).toBe(3_144);
   });
 
   test("the published case count is the one Vitest collected", (context) => {
@@ -1199,6 +1405,6 @@ describe("section 8, the harness footprint", () => {
         (total, child) => total + (child.type === "test" ? 1 : collected(child)),
         0,
       );
-    expect(collected(context.task.file)).toBe(88);
+    expect(collected(context.task.file)).toBe(91);
   });
 });

@@ -1079,9 +1079,26 @@ discriminator that design uses is each route's own trigger result, resolved vers
 here bears on that: sections 4.1 and 4.2 measure exactly that property, and a route whose trigger
 came back `unknown` is correctly treated as undecided whatever the intake looks like. The
 corrections in this revision are to how often each shape occurs, not to which shapes occur: no
-co-firing set appeared or disappeared in any of the nine draft groups or in the control, and the
-per-shape counts moved only in `nypd_sound`, where they fell because one event was previously
-counted three times. What changed alongside them is this document's characterisation of when the
+co-firing set appeared or disappeared in any of the nine draft groups or in the control. Per-shape
+counts moved in three groups, and an earlier revision of this paragraph said they moved only in
+`nypd_sound`, which was the narrower claim about sets read as if it were a claim about counts:
+
+- **`nypd_sound`:** counts fell, because one event was previously counted three times.
+- **`dob_temporary_structure`:** the same 18 co-firing sets, with the same members and the same
+  results, but 11 of their 18 counts rose, because adding zero to both structure dimensions widened
+  the group's sweep from 10,000 to 14,400. The largest movements are proportionally the two shapes
+  in which every structure dimension is missing or zero: the `DOB-TENT-DURATION-001` plus
+  `DOB-STRUCTURE-DURATION-001` pair moved from 126 to 288, and the same pair with `DOB-TRUSS-001`
+  from 6 to 60. Co-firing events in the group rose from 2,424 to 2,894. This is the same correction
+  section 3.3 describes as moving the group's distributions; it is recorded per shape here because
+  the aggregate denominators are not the only thing it moved.
+- **`block_party_eligibility`:** all four counts rose, by a third, because `event_end_date` now
+  sweeps a day before `event_date` as well as the day of and the day after. Section 3.3 says why:
+  `event_days gt 1` is a numeric threshold and the previous domain gave it no below-threshold case,
+  while `validateIntake` admits the reversed pair. No set appeared or disappeared and none of them
+  is ever complete, before or after.
+
+What changed alongside them is this document's characterisation of when the
 groups genuinely overlap. On the corrected measurement, a merged line with two decisive members and
 no missing facts happens in three of the nine draft groups, and in only one of them do the members
 disagree about anything. The one figure a reader of that design should re-read is the control's:
