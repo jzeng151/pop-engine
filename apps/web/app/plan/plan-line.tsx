@@ -388,13 +388,26 @@ function Routes({ finding }: { finding: ConsumedFinding }) {
     -1,
   );
   const unsettledFields = [...new Set(unsettled.flatMap((route) => route.unknownFields))];
+  // INTERROGATIVE, NOT PREDICTIVE, and that is the whole point of the sentence's shape. An
+  // unknown-triggered `required` rule is demoted to `may_be_required` by `resolveDisposition`, so
+  // the unsettled route's own entry one line below reads "May apply" beside `may be required`.
+  // "X would also be required" promoted it back to a definite requirement, contradicting its own
+  // entry one line apart and reinstating exactly the claim `Applies` was amended away for
+  // (product owner, 2026-08-09, correcting the same day's own amendment). "Whether X also applies"
+  // asserts nothing about X: it names the open question, which is what the routes already say.
+  //
+  // No fields, no sentence: there would be nothing to name as the thing it turns on, and
+  // `routeContractHolds` refuses an unresolved route that names no field, so in candidate mode
+  // there is always at least one.
   const unsettledSentence =
-    mode !== "candidate" || lastSettled === -1 || unsettled.length === 0
+    mode !== "candidate" ||
+    lastSettled === -1 ||
+    unsettled.length === 0 ||
+    unsettledFields.length === 0
       ? null
-      : `${naturally(unsettled.map((route) => route.name ?? route.ruleId))} would also be required` +
-        (unsettledFields.length === 0
-          ? "."
-          : `, depending on ${naturally(unsettledFields.map(humanize))}.`);
+      : `Whether ${naturally(unsettled.map((route) => route.name ?? route.ruleId))} also ` +
+        `${unsettled.length === 1 ? "applies" : "apply"} turns on ` +
+        `${naturally(unsettledFields.map(humanize))}.`;
 
   return (
     <section className="line__routes">

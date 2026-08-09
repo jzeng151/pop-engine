@@ -399,6 +399,44 @@ describe("loadChecklist", () => {
   });
 
   /**
+   * #252 review: the sibling of the plan boundary's widened-blocker group. The api writes `routes`,
+   * `headlineMode` and `filingRouteRuleId` in one object literal, so a row carrying some of them is
+   * one no deployment produces, and the missing field is not read as missing: `gatedRoutesOf` falls
+   * back to `routes[0]` when `filingRouteRuleId` is absent, so the row silently treats the first
+   * route as the one its scalars came from and skips that route's gate.
+   */
+  it("refuses a row carrying only part of the route group", async () => {
+    const routes = mergedRoutes("true");
+    const partials = [
+      { routes, headlineMode: "applies_together" },
+      { routes, filingRouteRuleId: null },
+      { headlineMode: "applies_together", filingRouteRuleId: null },
+    ];
+    for (const partial of partials) {
+      const item = trackedItem(STREET_MEDIUM, partial) as Record<string, unknown>;
+      for (const field of ["routes", "headlineMode", "filingRouteRuleId"]) {
+        if (!(field in partial)) delete item[field];
+      }
+      stubFetch(async () => jsonResponse(200, checklistBody({ items: [item] })));
+
+      await expect(loadChecklist("https://api.example.com", "event-1")).resolves.toMatchObject({
+        ok: false,
+      });
+    }
+  });
+
+  /** Absence of all three is the api deployed before the checklist served routes, and still reads. */
+  it("reads a row from an api that serves none of the route group", async () => {
+    const item = trackedItem() as Record<string, unknown>;
+    for (const field of ["routes", "headlineMode", "filingRouteRuleId"]) delete item[field];
+    stubFetch(async () => jsonResponse(200, checklistBody({ items: [item] })));
+
+    await expect(loadChecklist("https://api.example.com", "event-1")).resolves.toMatchObject({
+      ok: true,
+    });
+  });
+
+  /**
    * #252 review: NAMING THE RIGHT ROUTE IS NOT THE SAME AS CARRYING ITS VALUES. Membership alone
    * still accepted a row whose date, status, fee or portal came from a different route than the one
    * it names, and `PlanContextBody` states in as many words that the filing details above belong to

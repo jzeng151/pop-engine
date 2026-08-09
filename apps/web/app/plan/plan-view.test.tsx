@@ -1067,11 +1067,18 @@ describe("the routes of a merged dedupe line", () => {
     expect(line.getByText("May apply")).toBeDefined();
     // And what the organizer still faces, beneath the entry they can act on, naming the unsettled
     // route and the field its own trigger left open. No threshold is named: none is published.
+    //
+    // INTERROGATIVE, NOT PREDICTIVE. The unsettled route's own entry reads "May apply" beside
+    // `may be required`, because `resolveDisposition` demotes an unknown-triggered `required` rule;
+    // a sentence calling it required would contradict its own entry one line apart, which is the
+    // claim the labels were amended away from (product owner, 2026-08-09, correcting the same day's
+    // amendment).
     expect(
       line.getByText(
-        "Commercial advertising by sound device would also be required, depending on sound purpose.",
+        "Whether Commercial advertising by sound device also applies turns on sound purpose.",
       ),
     ).toBeDefined();
+    expect(line.queryByText(/would also be required/)).toBeNull();
   });
 
   /**
@@ -1735,13 +1742,20 @@ describe("F-102 · CONDITIONAL branch table and INFEASIBLE rescope ladder", () =
           // The blocker carries the blocking ROUTE's own published values. The panel reads them off
           // here rather than re-finding the finding by rule id, which on a merged line returned the
           // whole line and printed the headline route's name and date (#252 review).
+          // Every widened key or none: the panel reads their presence as a version, so a payload
+          // carrying some of them turns the legacy fallback off while leaving the section blank.
           blockingFinding: {
             ruleIds: ["SAPO-STREET-LARGE-001"],
             name: "Street Activity Permit — Large",
+            agency: "SAPO (CECM)",
+            disposition: "required",
             deadlineDisplay: "submit by December 31 of the prior year",
             latestApplyDate: "2025-12-31",
+            deadlineStatus: "published_deadline_missed",
+            feeDisplay: null,
             portalName: null,
             portalUrl: null,
+            portalInstructions: null,
             sources: [],
             userSummary: null,
           },

@@ -496,8 +496,35 @@ const filingRouteIsCarried = (context: PlanContext): boolean => {
  * review). Every read of a `PlanContext` body goes through this, including `ITEM_CHECKS`, which
  * spreads the same field checks.
  */
+/**
+ * THE THREE ROUTE FIELDS ARE ONE VERSIONED GROUP, served together or not at all.
+ *
+ * `apps/api/src/checklist.ts` writes `routes`, `headlineMode` and `filingRouteRuleId` in one object
+ * literal, so a row carrying some of them is a row no deployment of that api produces. Checked one
+ * at a time they were independent, and the missing one is not read as missing: `gatedRoutesOf` falls
+ * back to `routes[0]` when `filingRouteRuleId` is absent, so a body with routes and no filing id
+ * silently treats the FIRST route as the one the row's scalars came from and skips its gate — the
+ * same class of silent-version defect the widened blocker carries at the plan boundary (#252
+ * review). `routeContractHolds` already pairs `routes` with `headlineMode`, on their VALUES; this
+ * pairs all three on their PRESENCE, which is the axis the deploy window moves along.
+ *
+ * Absence of all three stays legal, and that is the whole point of the group: it is the api deployed
+ * before the checklist served routes, which is a real deploy window rather than a hypothesis.
+ */
+const ROUTE_GROUP_FIELDS: readonly (keyof PlanContext)[] = [
+  "routes",
+  "headlineMode",
+  "filingRouteRuleId",
+];
+
+const routeGroupIsWhole = (context: PlanContext): boolean => {
+  const present = ROUTE_GROUP_FIELDS.filter((field) => field in context).length;
+  return present === 0 || present === ROUTE_GROUP_FIELDS.length;
+};
+
 const isPlanContext = (value: unknown): value is PlanContext =>
   shapedLike(PLAN_CONTEXT_CHECKS)(value) &&
+  routeGroupIsWhole(value) &&
   routeContractHolds(value) &&
   filingRouteIsCarried(value);
 
@@ -574,7 +601,10 @@ const ITEM_CHECKS: FieldChecks<ChecklistItem> = {
 
 /** An item is a `PlanContext` with the row's own fields, so it carries the same route contract. */
 const isChecklistItem = (value: unknown): value is ChecklistItem =>
-  shapedLike(ITEM_CHECKS)(value) && routeContractHolds(value) && filingRouteIsCarried(value);
+  shapedLike(ITEM_CHECKS)(value) &&
+  routeGroupIsWhole(value) &&
+  routeContractHolds(value) &&
+  filingRouteIsCarried(value);
 
 /**
  * One count per status, keyed off the engine's own list, so a status added upstream stops this

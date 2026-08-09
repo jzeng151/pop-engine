@@ -428,12 +428,13 @@ Then one entry per route, in binding order, each labelled:
 with the same body as 5.2. Beneath the entry an organizer can act on, one sentence naming what the
 unsettled routes turn on:
 
-> {unsettled route names} would also be required, depending on {their unknown fields}.
+> Whether {unsettled route names} also {applies | apply} turns on {their unknown fields}.
 
 built from the UNSETTLED routes' own `unknownFields` through the same `humanize()`, and their own
-published names. Two or more of either join naturally ("a, b and c"). It does not render where the
-group has no settled entry to sit beneath, and in `candidate` mode there is always at least one
-unsettled route.
+published names. Two or more of either join naturally ("a, b and c"), and the verb agrees with the
+number of routes named. It does not render where the group has no settled entry to sit beneath, nor
+where the unsettled routes name no field, and in `candidate` mode there is always at least one
+unsettled route naming at least one field.
 
 **The labels and that sentence were amended on 2026-08-09 by a product-owner decision recorded in
 `docs/BASELINE.md`.** The section as approved labelled a resolved entry `Applies` and counted
@@ -442,6 +443,24 @@ own trigger resolved can still publish `MAY_BE_REQUIRED` and DOB-TALL-STRUCTURE-
 which an earlier revision of PR #252 substituted, is engine vocabulary in copy an organizer reads.
 `Conditions met` says what the trigger result means and no more. `May apply` is unchanged, and so is
 every other sentence in this section.
+
+**The sentence is interrogative, and that is what keeps it from reinstating `Applies`. Corrected
+2026-08-09 by the product owner, the same day and against the same amendment.** As first amended it
+read "{unsettled route names} would also be required, depending on {their unknown fields}", which
+reintroduced the exact claim the labels had just been amended to remove. `resolveDisposition()`
+demotes an unknown-triggered `required` rule to `may_be_required`, so an unsettled route's own
+published disposition IS `may_be_required` and its own entry one line below reads "May apply"; a
+sentence calling the same route "required" contradicted its own entry one line apart. The
+interrogative frame is not the same claim as the label: "Applies" was objected to because it
+ASSERTED applicability, and "whether X also applies" asserts nothing about X, it names the open
+question — which is what the route list already says and what `unknownFields` is for. Stated here so
+it is not re-argued: replacing an asserting label with an asserting sentence would have moved the
+defect rather than fixed it, and the fix is the frame, not the vocabulary.
+
+**§5.2 does not carry this sentence and needed no correction.** Its `applies_together` introduction
+was amended the same day and says "What each one then requires is beside its name", which attributes
+rather than predicts; a group where every trigger resolved has no unsettled route for this sentence
+to be about.
 
 **The sentence names fields, never thresholds.** "Depending on tent area and days in place", never
 "depending on whether the tent is over 400 square feet". `unknownFields` carries field names, the

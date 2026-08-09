@@ -230,6 +230,54 @@ describe("loadPlan", () => {
   });
 
   /**
+   * #252 review: THE WIDENED BLOCKER KEYS ARE A VERSION, SO A PARTIAL SET IS NOT A VERSION.
+   *
+   * `verdict-detail.tsx` turns the legacy fallback off as soon as ANY of them is present, on the
+   * reading that presence means the api wrote the narrowed blocker. Checked one at a time, a payload
+   * carrying `agency` alone passed and still turned the fallback off, so the INFEASIBLE panel
+   * rendered the citation, the portal and the apply-by date blank rather than refusing the payload
+   * or recovering them from the stored line.
+   */
+  it("refuses a blocking finding carrying only some of the widened keys", async () => {
+    const whole = {
+      ruleIds: ["SAPO-STREET-LARGE-001"],
+      name: "Street Activity Permit — Large",
+      agency: "SAPO (CECM)",
+      disposition: "required",
+      deadlineDisplay: "submit by December 31 of the prior year",
+      latestApplyDate: "2025-12-31",
+      deadlineStatus: "published_deadline_missed",
+      feeDisplay: null,
+      portalName: null,
+      portalUrl: null,
+      portalInstructions: null,
+      sources: [],
+      userSummary: null,
+    };
+    const detailWith = (blockingFinding: unknown) => ({
+      ...storedPlan,
+      verdict: "INFEASIBLE",
+      verdictDetail: { ...storedPlan.verdictDetail, blockingFinding },
+    });
+
+    for (const dropped of ["agency", "sources", "portalInstructions", "userSummary"]) {
+      const { [dropped]: _gone, ...partial } = whole as Record<string, unknown>;
+      stubFetch(async () => jsonResponse(200, detailWith(partial)));
+      await expect(loadPlan("https://api.example.com", "event-1")).resolves.toMatchObject({
+        ok: false,
+      });
+    }
+
+    // Both legal states still read: the whole set, and the stored plan that predates it.
+    for (const legal of [whole, { ruleIds: whole.ruleIds, name: whole.name }]) {
+      stubFetch(async () => jsonResponse(200, detailWith(legal)));
+      await expect(loadPlan("https://api.example.com", "event-1")).resolves.toMatchObject({
+        ok: true,
+      });
+    }
+  });
+
+  /**
    * #252 review: AN UNRESOLVED ROUTE MUST NAME WHAT WOULD SETTLE IT.
    *
    * The engine cannot produce either half of this wrong: `evaluateTrigger` returns `unknown` only

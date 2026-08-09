@@ -1,5 +1,6 @@
 import type { Verdict } from "@pop-engine/engine";
 import { PortalBlock, type PortalFields } from "../portal-block";
+import { WIDENED_BLOCKER_KEYS } from "./plan-api";
 import type { ConsumedFinding, ConsumedVerdictDetail } from "./plan-api";
 import { AT_RISK_BUFFER_NOTE, verdictCopy } from "./verdict-copy";
 
@@ -24,25 +25,6 @@ export type FindingReference = {
  */
 type ReferenceSource = Pick<ConsumedFinding, "ruleIds" | "name"> &
   Partial<Pick<ConsumedFinding, "userSummary" | "sources" | "portalName" | "portalUrl">>;
-
-/**
- * The keys `verdict.ts` added to `blockingFinding` when it started narrowing the blocker to its own
- * route. A stored plan carrying none of them was written before that, and is read the way it was
- * written. Listed here rather than checked one at a time so a later key is added in one place.
- */
-const WIDENED_BLOCKER_KEYS: readonly string[] = [
-  "agency",
-  "disposition",
-  "deadlineDisplay",
-  "latestApplyDate",
-  "deadlineStatus",
-  "feeDisplay",
-  "portalName",
-  "portalUrl",
-  "portalInstructions",
-  "sources",
-  "userSummary",
-];
 
 const referenceFromFinding = (finding: ReferenceSource): FindingReference => {
   const summarySource = finding.userSummary?.points.flatMap((point) => point.sources)[0];

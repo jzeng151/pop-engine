@@ -564,6 +564,58 @@ const RESCOPE_CHECKS: FieldChecks<ConsumedRescopeSuggestion> = {
   atRiskFindingName: optionalNullString,
 };
 
+/**
+ * The keys `verdict.ts` added to `blockingFinding` when it started narrowing the blocker to its own
+ * route. A stored plan carrying none of them was written before that, and is read the way it was
+ * written; a stored plan carrying all of them was written after. There is no third state, and
+ * `blockerWideningIsComplete` is what makes that true rather than assumed.
+ *
+ * Exported so the panel reads the same list this boundary enforces. Two copies of it would drift,
+ * and the drift would be invisible: the panel decides whether to consult the plan's own line by
+ * asking whether ANY of these is present, so a key it knew and the boundary did not is a key that
+ * turns the fallback off without being validated.
+ */
+export const WIDENED_BLOCKER_KEYS: readonly (keyof ConsumedBlockingFinding)[] = [
+  "agency",
+  "disposition",
+  "deadlineDisplay",
+  "latestApplyDate",
+  "deadlineStatus",
+  "feeDisplay",
+  "portalName",
+  "portalUrl",
+  "portalInstructions",
+  "sources",
+  "userSummary",
+];
+
+/**
+ * ALL OF THE WIDENED KEYS OR NONE OF THEM, because the consumer reads their presence as a version.
+ *
+ * `verdict-detail.tsx` turns the legacy fallback off as soon as ANY widened key is present, on the
+ * reading that presence means the api wrote the narrowed blocker. Validated one at a time, a payload
+ * carrying `agency` alone satisfied every check and still turned the fallback off, so the INFEASIBLE
+ * panel rendered the citation, the portal and the apply-by date blank instead of either refusing the
+ * payload or recovering them from the stored line — on the one section that tells an organizer why
+ * their event is infeasible (#252 review).
+ *
+ * PRESENCE, NOT VALUE, which is the same rule the panel applies: a blocker that genuinely publishes
+ * no portal writes `portalName: null`, and null is a value the panel must honour rather than re-find.
+ *
+ * TWO STATES AND NOT THREE. The widening landed whole on this branch and `main` still carries
+ * `{ruleIds, name}`, so no stored plan holds a partial set, and the intermediate generation this
+ * branch passed through never reached a database. If a later widening adds a key, it adds a third
+ * state and this predicate has to learn it; that is a smaller problem than the silent blank, and it
+ * is stated here so the next widening does not discover it.
+ */
+const blockerWideningIsComplete = (blocker: ConsumedBlockingFinding): boolean => {
+  const present = WIDENED_BLOCKER_KEYS.filter((key) => key in blocker).length;
+  return present === 0 || present === WIDENED_BLOCKER_KEYS.length;
+};
+
+const isConsumedBlockingFinding = (value: unknown): value is ConsumedBlockingFinding =>
+  shapedLike(BLOCKING_FINDING_CHECKS)(value) && blockerWideningIsComplete(value);
+
 // Everything below `name` is absent on plans stored before the blocker carried its own published
 // values, so each accepts `undefined`. A consumer renders what is there and nothing where it is not.
 const BLOCKING_FINDING_CHECKS: FieldChecks<ConsumedBlockingFinding> = {
@@ -592,7 +644,7 @@ const UNRESOLVED_TIMELINE_CHECKS: FieldChecks<ConsumedUnresolvedTimeline> = {
 const VERDICT_DETAIL_CHECKS: FieldChecks<ConsumedVerdictDetail> = {
   minSlackDays: nullOr(isNumber),
   missingFacts: arrayOf(shapedLike(MISSING_FACT_CHECKS)),
-  blockingFinding: nullOr(shapedLike(BLOCKING_FINDING_CHECKS)),
+  blockingFinding: nullOr(isConsumedBlockingFinding),
   missedRuleIds: arrayOf(isString),
   // Older stored plans may omit this array; treat absence as empty.
   unresolvedTimelines: (value: unknown): value is readonly ConsumedUnresolvedTimeline[] =>
