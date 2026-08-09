@@ -620,13 +620,20 @@ export function PlanLine({ finding }: { finding: ConsumedFinding }) {
           </p>
         )}
 
-        {/* F-204: application path from the rules data only. AC 2 — "apply at [portal]", new tab. */}
+        {/* F-204: application path from the rules data only. AC 2 — "apply at [portal]", new tab.
+            THE SAME SUPPRESSION AS THE ROUTE ENTRIES, because this is the same route's action.
+            `mergeGroup` builds the merged finding by spreading the binding route
+            (`packages/engine/src/findings.ts:481`), so on a candidate line these scalars are one
+            route's portal and no route is known to be the one. Neutralizing the entries alone left
+            the binding route's duplicate action here, still saying "apply at" for the entry that
+            had just stopped saying it (#252 review). */}
         <PortalBlock
           portalName={finding.portalName}
           portalUrl={finding.portalUrl}
           portalInstructions={finding.portalInstructions}
           className="line__portal"
           instructionsClassName="line__portal-instructions"
+          lead={isCandidate ? "portal" : "apply at"}
         />
 
         {finding.notes.map((note) => (

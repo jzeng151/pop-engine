@@ -2760,6 +2760,60 @@ describe("a checklist row whose window comes from another route (#252)", () => {
     );
   });
 
+  /**
+   * #252 review: A CANDIDATE ROW MUST NOT OFFER A FILING ACTION, the same rule the plan line's
+   * route entries already carry (design §5.3), on the independent checklist path. The row states
+   * that the answers do not decide which route applies and then its details said "apply at" the
+   * filing route's portal, so the working surface presented the requirement as unresolved and
+   * offered the filing in the same disclosure.
+   */
+  it("names the portal on a candidate row rather than telling an organizer to apply at it", async () => {
+    stubApi({
+      [GET_CHECKLIST]: checklistOf({
+        created: true,
+        items: [
+          trackedItem(STREET_MEDIUM, {
+            latestApplyDate: "2026-08-26",
+            routes: [TALL_ROUTE, TENT_ROUTE],
+            headlineMode: "candidate",
+            filingRouteRuleId: "DOB-TENT-001",
+          }),
+        ],
+      }),
+    });
+    await renderView();
+
+    const row = await expandedRowFor(STREET_MEDIUM);
+    expect(within(row).getByTestId("deciding-question")).toBeDefined();
+    expect(within(row).queryByText(/apply at/)).toBeNull();
+    // Published, so still named and still linked. Only the instruction to file is withheld.
+    expect(within(row).getByText(/portal:/)).toBeDefined();
+    expect(
+      within(row)
+        .getByRole("link", { name: portalNameOf(STREET_MEDIUM) as string })
+        .getAttribute("href"),
+    ).toBe(portalUrlOf(STREET_MEDIUM));
+  });
+
+  it("still says apply at the portal once the row's routes apply together", async () => {
+    stubApi({
+      [GET_CHECKLIST]: checklistOf({
+        created: true,
+        items: [
+          trackedItem(STREET_MEDIUM, {
+            routes: [TALL_ROUTE, { ...TENT_ROUTE, triggerResult: "true", unknownFields: [] }],
+            headlineMode: "applies_together",
+            filingRouteRuleId: "DOB-TENT-001",
+          }),
+        ],
+      }),
+    });
+    await renderView();
+
+    const row = await expandedRowFor(STREET_MEDIUM);
+    expect(within(row).getByText(/apply at/)).toBeDefined();
+  });
+
   it("renders no deciding question when every route resolved", async () => {
     // `applies_together`: the routes are triggered, so there is nothing left to decide and a
     // sentence saying otherwise would be false.

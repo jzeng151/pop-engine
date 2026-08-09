@@ -992,10 +992,49 @@ describe("the routes of a merged dedupe line", () => {
     expect(line.getByText("Select the temporary structure application.")).toBeDefined();
   });
 
-  it("still says apply at a route's portal once the group applies together", async () => {
+  /**
+   * #252 review: THE SAME RULE ON THE SCALAR PORTAL, which is a second copy of the binding route's
+   * action rather than a second kind of action. `mergeGroup` builds the merged finding by spreading
+   * the binding route's fields (`packages/engine/src/findings.ts:481`), so the binding route's
+   * portal is also the finding's portal, and neutralizing the route entries left the disclosure
+   * still saying "apply at DOB NOW" for the very route the entry above had stopped saying it for.
+   * This is the published DOB candidate shape: the tent route binds.
+   */
+  it("names the binding route's portal in the disclosure rather than telling an organizer to apply at it", async () => {
+    const line = await lineWith({
+      ruleIds: ["DOB-STAGE-001", "DOB-TENT-001"],
+      headlineMode: "candidate",
+      // The scalars `mergeGroup` copies off the binding tent route.
+      portalName: "DOB NOW: Build",
+      portalUrl: "https://example.test/dob-now",
+      portalInstructions: "Select the temporary structure application.",
+      routes: [
+        route({
+          ruleId: "DOB-TENT-001",
+          triggerResult: "unknown",
+          unknownFields: ["tent_area_sqft"],
+          portalName: "DOB NOW: Build",
+          portalUrl: "https://example.test/dob-now",
+          portalInstructions: "Select the temporary structure application.",
+        }),
+        route({ ruleId: "DOB-STAGE-001", name: "Stage permit" }),
+      ],
+    });
+
+    await userEvent.click(line.getByRole("button", { name: /^Details for/ }));
+
+    // Neither the entry nor the disclosure offers the action, and the entry alone is not enough.
+    expect(line.queryByText(/apply at/)).toBeNull();
+    expect(line.getAllByText(/portal:/)).toHaveLength(2);
+    expect(line.getAllByRole("link", { name: "DOB NOW: Build" })).toHaveLength(2);
+  });
+
+  it("still says apply at the finding's portal once the group applies together", async () => {
     const line = await lineWith({
       ruleIds: ["DOB-STAGE-001", "DOB-TENT-001"],
       headlineMode: "applies_together",
+      portalName: "DOB NOW: Build",
+      portalUrl: "https://example.test/dob-now",
       routes: [
         route({ ruleId: "DOB-STAGE-001", name: "Stage permit" }),
         route({
@@ -1005,7 +1044,8 @@ describe("the routes of a merged dedupe line", () => {
         }),
       ],
     });
-    expect(line.getByText(/apply at/)).toBeDefined();
+    await userEvent.click(line.getByRole("button", { name: /^Details for/ }));
+    expect(line.getAllByText(/apply at/).length).toBeGreaterThan(0);
   });
 
   /**

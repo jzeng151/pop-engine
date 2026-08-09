@@ -333,13 +333,20 @@ export function PlanContextBody({
             </p>
           )}
 
-          {/* F-204: application path from the rules data only. AC 2 — "apply at [portal]", new tab. */}
+          {/* F-204: application path from the rules data only. AC 2 — "apply at [portal]", new tab.
+              NO CANDIDATE ROW OFFERS A FILING ACTION, the rule the plan line's route entries
+              already carry (design §5.3), on the surface the organizer actually works the item on.
+              The row states above that the answers do not decide which route applies, and these
+              scalars are one route's; saying "apply at" under that sentence tells an organizer to
+              file the permit the same row just said was undecided (#252 review). The portal is a
+              published value, so it is named rather than dropped. */}
           <PortalBlock
             portalName={context.portalName}
             portalUrl={context.portalUrl}
             portalInstructions={context.portalInstructions}
             className="check-item__text"
             instructionsClassName="check-item__text"
+            lead={candidateRoutes.length > 0 ? "portal" : "apply at"}
           />
 
           {context.publishedNotes.map((note) => (
