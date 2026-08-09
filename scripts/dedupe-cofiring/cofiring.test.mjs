@@ -908,6 +908,82 @@ describe("section 4.4, the published control", () => {
   });
 });
 
+/**
+ * The `sapo_permit` fee displays, in rule order, as the draft publishes them.
+ *
+ * Section 5.1's fee paragraph is entirely a reading of these, and only their count was checked
+ * (#251 review), so a changed fee could leave that paragraph quoting a figure the draft no longer
+ * publishes.
+ */
+const SAPO_FEES = [
+  [
+    "SAPO-STREET-SMALL-001",
+    3_100,
+    "$3,100 per location per day, plus $25 nonrefundable processing fee",
+  ],
+  [
+    "SAPO-STREET-MEDIUM-001",
+    11_000,
+    "$11,000 per location per day, plus $25 nonrefundable processing fee",
+  ],
+  [
+    "SAPO-STREET-LARGE-001",
+    25_000,
+    "$25,000 per location per day, plus $25 nonrefundable processing fee",
+  ],
+  [
+    "SAPO-STREET-EXTRA-LARGE-001",
+    null,
+    "Up to $66,000 per location per day, plus $25 processing fee",
+  ],
+  [
+    "SAPO-PRODUCTION-001",
+    null,
+    "$290/day for curb lane or sidewalk only; $700/day for curb lane and sidewalk; plus $25 processing fee",
+  ],
+  ["SAPO-BLOCK-PARTY-001", null, "$25 nonrefundable processing fee; no additional SAPO event fee"],
+  [
+    "SAPO-SINGLE-BLOCK-FESTIVAL-001",
+    null,
+    "20% of total fees paid by vendors, plus $25 processing fee",
+  ],
+  [
+    "SAPO-STREET-FESTIVAL-001",
+    null,
+    "20% of total vendor participation fees, plus $25 processing fee",
+  ],
+  [
+    "SAPO-PLAZA-A-ONE-001",
+    null,
+    "Event fee depends on plaza level, size, borough, and plaza-partner charges; see the verified fee matrix.",
+  ],
+  [
+    "SAPO-PLAZA-B-ONE-001",
+    null,
+    "Event fee depends on plaza level, size, borough, and plaza-partner charges; see the verified fee matrix.",
+  ],
+  [
+    "SAPO-PLAZA-B-MULTI-001",
+    null,
+    "Event fee depends on plaza level, size, borough, and plaza-partner charges; see the verified fee matrix.",
+  ],
+  [
+    "SAPO-PLAZA-C-001",
+    null,
+    "Event fee depends on plaza level, size, borough, and plaza-partner charges; see the verified fee matrix.",
+  ],
+  [
+    "SAPO-PLAZA-D-001",
+    null,
+    "Event fee depends on plaza level, size, borough, and plaza-partner charges; see the verified fee matrix.",
+  ],
+  [
+    "SAPO-PLAZA-A-MULTI-001",
+    null,
+    "Event fee depends on plaza size; current Level A listed fees are $15,500 or $31,000, plus processing and possible partner fees.",
+  ],
+];
+
 describe("section 5, the co-firing sets", () => {
   test("5.1 `sapo_permit`: 72 sets, the widest 14 of 14, ten times", () => {
     const group = m.group("sapo_permit");
@@ -975,8 +1051,40 @@ describe("section 5, the co-firing sets", () => {
       official_conflict: 1,
       fixed_annual_date: 1,
     });
-    expect(sapo.permitNames).toHaveLength(7);
+    // Which seven, not just how many: the cardinality check alone let a renamed instrument leave
+    // the section's list stale with the suite green (#251 review).
+    expect(sapo.permitNames).toEqual([
+      "Street Event Permit",
+      "Extra Large Street/Plaza Event Permit",
+      "Production Event Permit",
+      "Block Party Permit",
+      "Single Block Festival Permit",
+      "Street Festival Permit",
+      "Plaza Event Permit",
+    ]);
     expect(sapo.sharedFields).toEqual(["agency", "portal"]);
+  });
+
+  test("5.1 the fee inventory the section publishes is the draft's own", () => {
+    // Every fee sentence in 5.1 is a reading of these fourteen displays, and nothing read them:
+    // a changed fee left `pnpm test:cofiring` green while the section quoted the old one
+    // (#251 review). The displays are asserted verbatim, and the readings built on top of them.
+    const fees = m.inventory.sapoPermitInventory(m.draft).fees;
+    expect(fees.map((fee) => [fee.id, fee.eventFeeUsd, fee.display])).toEqual(SAPO_FEES);
+
+    // "All 14 publish a `$25` processing fee".
+    expect(fees.every((fee) => fee.processingFeeUsd === 25)).toBe(true);
+
+    // The categories the section counts, each read off the displays above rather than restated.
+    const displays = fees.map((fee) => fee.display);
+    expect(displays.filter((text) => /^\$[\d,]+ per location per day/.test(text))).toHaveLength(3);
+    expect(displays.filter((text) => text.includes("20%"))).toHaveLength(2);
+    expect(displays.filter((text) => text.includes("see the verified fee matrix"))).toHaveLength(5);
+    expect(displays.filter((text) => text.includes("$15,500 or $31,000"))).toHaveLength(1);
+
+    // The two endpoints the section names.
+    expect(displays).toContain("Up to $66,000 per location per day, plus $25 processing fee");
+    expect(displays).toContain("$25 nonrefundable processing fee; no additional SAPO event fee");
   });
 
   test("5.2 `dob_temporary_structure`: 18 sets, two of them all-`true`", () => {
@@ -1410,12 +1518,12 @@ describe("section 8, the harness footprint", () => {
     expect(counts).toEqual({
       "harness.mjs": 972,
       "staging.mjs": 266,
-      "inventory.mjs": 381,
+      "inventory.mjs": 390,
       "report.mjs": 103,
-      "cofiring.test.mjs": 1435,
+      "cofiring.test.mjs": 1543,
       "vitest.config.mjs": 19,
     });
-    expect(Object.values(counts).reduce((total, count) => total + count, 0)).toBe(3_176);
+    expect(Object.values(counts).reduce((total, count) => total + count, 0)).toBe(3293);
   });
 
   test("the published case count is the one Vitest collected", (context) => {
@@ -1430,6 +1538,6 @@ describe("section 8, the harness footprint", () => {
         (total, child) => total + (child.type === "test" ? 1 : collected(child)),
         0,
       );
-    expect(collected(context.task.file)).toBe(92);
+    expect(collected(context.task.file)).toBe(93);
   });
 });

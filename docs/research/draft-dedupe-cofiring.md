@@ -41,11 +41,14 @@ was supplied and on what basis, and section 3.5 re-checks each one against the d
 **Measured by:** `scripts/dedupe-cofiring/`, on branch `measure/draft-dedupe-cofiring`. Every figure
 in sections 3 to 7 is asserted by `pnpm test:cofiring`, so the commit this was measured on is any
 commit that command passes on. That command is run on demand and not by CI, for the reason section
-8 gives. That covers the inventories section 3.1
-counts as well as the tables: the adaptations report what they touched and the suite asserts it, so
-a draft that gains one more unsupported deadline or one more `conditional_requirement` fails rather
-than making a published count stale. Section 8 maps each table to its command, and describes the
-harness; its own file and line counts are the one part of this document the suite does not check.
+8 gives. That covers the inventories section 3.1 counts as well as the tables: the adaptations
+report what they touched and the suite asserts it, so a draft that gains one more unsupported
+deadline or one more `conditional_requirement` fails rather than making a published count stale. It
+also covers section 5.1's output inventories, which used to be checked only for cardinality: the
+seven permit names and the fourteen fee displays are asserted verbatim, so a renamed instrument or a
+changed fee fails rather than leaving the section quoting a figure the draft no longer publishes.
+Section 8 maps each table to its command and describes the harness, and its own file, line and case
+counts are asserted too, read off disk and off the collected task tree.
 **Artifacts measured:** `rules/proposals/nyc-rules.v2-full-draft.json` (PROPOSED, 59 rules plus 4
 advisories) and `rules/nyc-rules.v2.11.json` (published, 46 rules) as the control.
 
@@ -1140,9 +1143,9 @@ green. It is now counted off the suite's own collected task tree, which is the n
 `pnpm test:cofiring` reports rather than a count of `test(` calls in the source: four blocks use
 `test.each` and expand at collection time, so those two quantities are not the same.
 
-It is four modules, one suite and one config, 3,176 lines together: `harness.mjs` 972,
-`cofiring.test.mjs` 1,435, `inventory.mjs` 381, `staging.mjs` 266, `report.mjs` 103 and
-`vitest.config.mjs` 19, reporting 92 cases. Those eight figures are read off disk and off
+It is four modules, one suite and one config, 3,293 lines together: `harness.mjs` 972,
+`cofiring.test.mjs` 1,543, `inventory.mjs` 390, `staging.mjs` 266, `report.mjs` 103 and
+`vitest.config.mjs` 19, reporting 93 cases. Those eight figures are read off disk and off
 the task tree and asserted by `describe("section 8, the harness footprint")`, so a module, the suite
 or the case list growing moves them here rather than leaving the reproduction section understating
 the code behind the numbers.
@@ -1153,7 +1156,7 @@ the code behind the numbers.
 | `staging.mjs`       | the adaptations of section 3.1, applied to in-memory clones, each reporting what it touched                                                   |
 | `inventory.mjs`     | what the draft publishes, re-derived by parsing it: deadlines, permit names, output identity, blockers, mixed statuses, parser-visible output |
 | `report.mjs`        | one `measure()` call that produces every table, plus the printer                                                                              |
-| `cofiring.test.mjs` | the 92 cases `pnpm test:cofiring` reports, one or more per published figure                                                                   |
+| `cofiring.test.mjs` | the 93 cases `pnpm test:cofiring` reports, one or more per published figure                                                                   |
 | `vitest.config.mjs` | the include this suite runs under, which is why it is outside the root config and outside CI                                                  |
 
 Every table maps to a `describe` block with the same number:
@@ -1169,7 +1172,7 @@ Every table maps to a `describe` block with the same number:
 | 4.2, `true`-only                                                | `describe("section 4.2, ...")`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
 | 4.3, completeness                                               | `describe("section 4.3, completeness")`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
 | 4.4, the control                                                | `describe("section 4.4, the published control")`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
-| every table and count in section 5                              | `describe("section 5, the co-firing sets")`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
+| every table and count in section 5                              | `describe("section 5, the co-firing sets")`, whose 5.1 cases assert the seven permit names and the fourteen fee displays verbatim rather than their counts, and whose 5.9 case asserts the both-true intake the section quotes                                                                                                                                                                                                                                                                                                                                                                                                                    |
 | section 6's blocker inventory and counts                        | `describe("section 6, the blocker-plus-window shape")`, whose four-shape case asserts each `unknown`-side shape's members, results and answered-`sound_purpose` rows rather than their sum, and whose merge case puts all four shapes to `evaluate` on a synthetic group and asserts which of them reads prohibited                                                                                                                                                                                                                                                                                                                               |
 | section 7                                                       | restates 4.1, 4.2, 4.3 and 4.4; it publishes no figure of its own                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
 
@@ -1180,7 +1183,7 @@ by CI and not part of `pnpm test`, and that is a governance constraint rather th
 **Why this suite is on demand.** Its only input is `rules/proposals/nyc-rules.v2-full-draft.json`,
 which `docs/BASELINE.md` carries as "ARCHIVED / PROPOSED drafts" and which this document's own
 preamble names as PROPOSED. A required CI step reading it would make a proposed artifact an enforced
-main-branch input: any ordinary revision of the proposal would turn CI red until all 92 cases here
+main-branch input: any ordinary revision of the proposal would turn CI red until all 93 cases here
 were resynchronised with it, so the proposal could only move at this measurement's pace. That is the
 `AGENTS.md` rule to stop rather than build against a proposed input, applied backwards, and a
 research harness is not the thing that should force it. So `scripts/dedupe-cofiring/` sits outside

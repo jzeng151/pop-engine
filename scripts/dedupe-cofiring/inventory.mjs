@@ -167,6 +167,15 @@ export function sapoPermitInventory(draft) {
       .map((rule) => ({ id: rule.id, calendarDays: rule.output.deadline.calendar_days })),
     deadlineTypes,
     permitNames: [...new Set(members.map((rule) => rule.output.permit_name))],
+    // The fee displays, per member, in rule order. Every fee claim section 5.1 publishes is a
+    // reading of these strings, and only their cardinality was ever checked, so a renamed
+    // instrument or a changed fee left the suite green while the section went stale (#251 review).
+    fees: members.map((rule) => ({
+      id: rule.id,
+      eventFeeUsd: rule.output.fee?.event_fee_usd ?? null,
+      processingFeeUsd: rule.output.fee?.processing_fee_usd ?? null,
+      display: rule.output.fee?.display ?? null,
+    })),
     sharedFields: sharedOutputFields(draft, "sapo_permit"),
   };
 }
