@@ -277,7 +277,12 @@ export function assertDerivedValuesMatchDraft(artifact) {
 }
 
 /**
- * Dimensions whose thresholds are on their product, so the domain is set on the product's behalf.
+ * Dimensions whose thresholds are on their product, so the extra factors are set on the product's
+ * behalf. Only the extra factors are hand-set. The zero anchor, the minimum filter and the nullable
+ * `null` are section 3.3's generic numeric rules and are applied by `numericDomain` here exactly as
+ * they are for every other numeric field, so a hand-set dimension cannot quietly sweep a narrower
+ * domain than the rule the document publishes. Both of these fields are `nullable: true` numeric
+ * intake fields that `validateIntake` accepts a zero for, so both range over zero.
  *
  * `brackets` names the derived value the factors were chosen for, and the factors themselves are a
  * choice about how to sweep rather than a reading of the artifact. What is read off the artifact is
@@ -288,9 +293,13 @@ export function assertDerivedValuesMatchDraft(artifact) {
  * promises had silently stopped being swept.
  */
 const HAND_SET_NUMERIC_DOMAINS = {
-  structure_length_ft: { values: [10, 12, 20, 21, null], brackets: "structure_area_sqft" },
-  structure_width_ft: { values: [10, 12, 20, 21, null], brackets: "structure_area_sqft" },
+  structure_length_ft: { factors: [10, 12, 20, 21], brackets: "structure_area_sqft" },
+  structure_width_ft: { factors: [10, 12, 20, 21], brackets: "structure_area_sqft" },
 };
+
+/** The numeric points a hand-set dimension sweeps: its factors under the generic numeric rules. */
+const handSetNumericPoints = (field) =>
+  numericPoints(field, HAND_SET_NUMERIC_DOMAINS[field].factors);
 
 /** Every value the hand-set factors of a derived value can compute, through its own formula. */
 function handSetProducts(derivedName) {
@@ -302,11 +311,12 @@ function handSetProducts(derivedName) {
       if (typeof value === "number") products.add(value);
       return;
     }
-    const factor = HAND_SET_NUMERIC_DOMAINS[inputs[index]];
-    if (factor === undefined) {
+    if (HAND_SET_NUMERIC_DOMAINS[inputs[index]] === undefined) {
       throw new Error(`"${inputs[index]}" feeds "${derivedName}" but has no hand-set domain`);
     }
-    for (const value of factor.values) build(index + 1, { ...intake, [inputs[index]]: value });
+    for (const value of handSetNumericPoints(inputs[index])) {
+      build(index + 1, { ...intake, [inputs[index]]: value });
+    }
   };
   build(0, {});
   return [...products];
@@ -348,6 +358,26 @@ function assertHandSetDomainBrackets(field, members) {
  * field takes zero, so nothing else is filtered.
  */
 const NUMERIC_MINIMUMS = { headcount: 1 };
+
+/**
+ * Section 3.3's numeric domain rule, applied in one place so every numeric field obeys it: the
+ * `0` anchor, plus the points the caller chose for the field, less anything below the field's
+ * `NUMERIC_MINIMUMS` entry. Hand-set dimensions and threshold-local fields differ only in which
+ * points they supply.
+ */
+function numericPoints(field, points) {
+  const minimum = NUMERIC_MINIMUMS[field] ?? 0;
+  const sorted = [...new Set([0, ...points])]
+    .filter((point) => point >= minimum)
+    .sort((a, b) => a - b);
+  if (sorted.length === 0) {
+    throw new Error(`no value of "${field}" at or above ${minimum} is in the swept domain`);
+  }
+  return sorted;
+}
+
+/** A domain plus the `null` answer, where the field is nullable. */
+const withNull = (values, definition) => (definition.nullable ? [...values, null] : values);
 
 // ---------------------------------------------------------------------------------------------
 // Field definitions
@@ -518,10 +548,9 @@ function thresholdsFor(field, members) {
  *     on and above.
  */
 export function domainFor(field, definition, members) {
-  const handSet = HAND_SET_NUMERIC_DOMAINS[field];
-  if (handSet !== undefined) {
+  if (HAND_SET_NUMERIC_DOMAINS[field] !== undefined) {
     assertHandSetDomainBrackets(field, members);
-    return handSet.values;
+    return withNull(handSetNumericPoints(field), definition);
   }
 
   switch (definition.type) {
@@ -535,18 +564,11 @@ export function domainFor(field, definition, members) {
       return definition.nullable ? [true, false, null] : [true, false];
     case "integer":
     case "number": {
-      const minimum = NUMERIC_MINIMUMS[field] ?? 0;
-      const points = new Set([0]);
+      const points = [];
       for (const threshold of thresholdsFor(field, members)) {
-        for (const point of [threshold - 1, threshold, threshold + 1]) {
-          points.add(point);
-        }
+        points.push(threshold - 1, threshold, threshold + 1);
       }
-      const sorted = [...points].filter((point) => point >= minimum).sort((a, b) => a - b);
-      if (sorted.length === 0) {
-        throw new Error(`no value of "${field}" at or above ${minimum} is in the swept domain`);
-      }
-      return definition.nullable ? [...sorted, null] : sorted;
+      return withNull(numericPoints(field, points), definition);
     }
     case "date":
       if (field === "event_date") return [EVENT_DATE];

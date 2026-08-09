@@ -220,8 +220,8 @@ sound rather than assuming it.
 Built from the **draft's own** 63 declared `intake_fields`, not the published ruleset's 33.
 
 The full 63-field factorial is not enumerable: the 43 enum, boolean and multi_enum fields alone
-admit 4,119,753,311,895,158,784,000,000,000 valid intakes, 4.12 x 10^27, before any of the
-17 numeric, 2 date or 1 string fields. That count is built by the same two rules the sweeps below
+admit at most 4,119,753,311,895,158,784,000,000,000 combinations, 4.12 x 10^27, before any of the
+17 numeric, 2 date or 1 string fields. That figure is built by the same two rules the sweeps below
 use, and by calling the same code. A multi_enum contributes its valid selections rather than its
 power set; the previous revision printed 1.90 x 10^28, which was the power-set count and so
 contradicted the rule stated two paragraphs down. And a field the event is not asked is omitted and
@@ -229,13 +229,28 @@ contributes one value rather than its whole domain, which is the rule the revisi
 still broke: it printed 1.77 x 10^28, the unconstrained Cartesian product over all 43 full domains,
 while `public_space_interference` and `sound_audible_in_public_space` are both scoped by an
 `asked_when`. Those two fields and the two that gate them, `location_type` and `amplified_sound`,
-have 180 combinations between them, of which 42 are valid intakes; every other field is independent
-of the gates and factors out, so the two figures differ by 180/42 and the second is the size of the
-intake contract rather than of a product. The 63 fields, the 43, the seven type counts and the count
+have 180 combinations between them, of which 42 are admissible; every other field is independent of
+the gates and factors out, so the two figures differ by 180/42.
+
+**4.12 x 10^27 is an upper bound, not the size of the valid intake contract**, and the previous
+revision called it "valid intakes" without qualification. Five of the 43 are marked `derived: true`:
+`governing_authority`, `sapo_event_type`, `street_event_size`, `plaza_level` and `plaza_size`. A
+derived value is not an organizer's answer, and the draft publishes no deterministic derivation for
+any of them (3.4, limitation 9), so multiplying their declared enums in independently admits
+classification combinations that may be jointly unreachable. This is the same defect limitation 9
+records for three of the group sweeps, applied to the figure at the top of the section rather than
+to a table, and the two rules above do not repair it: no rule stated here constrains one derived
+classification against another. The product over the **38 fields an organizer actually answers** is
+508,611,519,987,056,640,000,000, **5.09 x 10^23**, and that one is a size of the intake contract.
+The five derived dimensions account for the factor of 8,100 between them. Neither figure changes
+anything measured below, because no sweep in this document enumerates all 43 fields; the sentence
+that needed the qualification is the "not enumerable" claim, which holds on either figure.
+
+The 63 fields, the 43, the 38, the seven type counts, both counts and the list of derived dimensions
 are re-derived from the artifact by `intakeFieldInventory`, which runs `sweepSize` over the gated
 fields and their gates, so an unused intake field the draft adds or drops moves them here rather
-than leaving them stale, and so does an `asked_when` the draft adds, widens or withdraws. It was not
-sampled either. Instead each group was swept **exhaustively over the fields its own
+than leaving them stale, and so does an `asked_when` the draft adds, widens or withdraws, and so
+does a `derived` flag the draft lands or withdraws. It was not sampled either. Instead each group was swept **exhaustively over the fields its own
 members read**, expanded through derived-value inputs. This is exact rather than a sample, because
 no draft rule reads a field outside its own trigger, no field read by any of these groups carries
 an `asked_when` clause naming a field outside the swept set (the one exception,
@@ -273,17 +288,23 @@ Value domains, applied uniformly by `domainFor` in the harness:
 - **dates:** `event_date` is fixed at `2026-09-01`; `event_end_date` ranges over `{null,
 2026-09-01, 2026-09-02}`, giving `event_days` of 1, 1 and 2, which covers the only threshold
   (`event_days gt 1`) below, on and above.
-- **`structure_length_ft` and `structure_width_ft`** are the one hand-set domain, `{null, 10, 12,
+- **`structure_length_ft` and `structure_width_ft`** are the one hand-set domain, `{null, 0, 10, 12,
 20, 21}`, because their thresholds are on their product: those products straddle both published
-  area thresholds (120 and 400) on all three sides. The factors are a choice about how to sweep, but
-  whether they still do that job is read off the artifact rather than asserted here. `domainFor`
-  recomputes the ten products through the draft's own `structure_area_sqft` formula and fails when
-  any published threshold on that value no longer has a product below it, on it and above it, so an
-  area threshold that moved without crossing a product, `gt 400` becoming `gt 401`, stops the
-  measurement instead of leaving every distribution identical while the at-threshold case AGENTS.md
-  requires had quietly stopped being swept.
+  area thresholds (120 and 400) on all three sides. Only the four positive factors are hand-set. The
+  `0` and the `null` are the generic numeric rule two bullets up, applied by the same code, because
+  both fields are nullable numeric intake fields that `validateIntake` accepts a zero for and
+  neither carries a minimum. The previous revision hand-listed the whole domain and so dropped the
+  zero from both, which understated this group's sweep by 4,400 intakes; the domains are now
+  composed rather than listed, so a hand-set dimension cannot sweep a narrower domain than the rule
+  published here. The factors are a choice about how to sweep, but whether they still do that job is
+  read off the artifact rather than asserted here. `domainFor` recomputes the eleven products
+  through the draft's own `structure_area_sqft` formula and fails when any published threshold on
+  that value no longer has a product below it, on it and above it, so an area threshold that moved
+  without crossing a product, `gt 400` becoming `gt 401`, stops the measurement instead of leaving
+  every distribution identical while the at-threshold case AGENTS.md requires had quietly stopped
+  being swept.
 
-Sweep sizes: from 36 to 24,330,240 intakes per group, **24,351,972** draft intakes in total, plus
+Sweep sizes: from 36 to 24,330,240 intakes per group, **24,356,372** draft intakes in total, plus
 **622** control intakes. Every one was evaluated; nothing was truncated.
 
 **What is still not a whole valid submission.** A sweep answers a group's own fields and holds the
@@ -310,9 +331,18 @@ values and say which sentences they change.
 An earlier revision's domain corrections still stand, with one narrowed, and are recorded here so
 the history is readable: `0` belongs in the domain of every numeric field **the contract admits it
 for**, and `structure_over_10ft_tall` is not nullable in `rules/nyc-rules.v2.11.json`. That is why
-`dob_temporary_structure` is 10,000 rather than 8,750 and `block_party_eligibility` is 24,330,240
+`dob_temporary_structure` is 14,400 rather than 8,750 and `block_party_eligibility` is 24,330,240
 rather than 19,464,192. The narrowing is `headcount`, above: the earlier statement was made about
 numeric domains in general and was never checked against `validateIntake`'s per-field minimum.
+
+**`dob_temporary_structure` moved again in this revision, from 10,000 to 14,400**, and for the same
+rule rather than a new one: the hand-set `structure_length_ft` and `structure_width_ft` domains were
+written out by hand and so had never carried the `0` the rule gives every numeric field the contract
+admits a zero for. Six values per dimension rather than five. Its distributions, its completeness
+count and every percentage over them moved with it; sections 4.1, 4.2, 4.3, 5.2 and 7 carry the new
+values. What did not move is what the group merges to: the same 18 co-firing sets, the same two
+all-`true` sets at the same counts, the same 444 complete co-firing intakes, and the same
+byte-identical outputs.
 
 ### 3.4 Limitations, stated plainly
 
@@ -356,9 +386,10 @@ and are stated as the enumeration found them.
    any member reads is settled, so an intake can be incomplete for the group while every field the
    two actually-co-firing members read is settled. Section 5 reports both counts wherever they
    differ.
-9. **Three sweeps are unconstrained products over classifications the draft derives, not counts of
-   reachable events.** The draft marks `sapo_event_type`, `street_event_size`, `plaza_level`,
-   `plaza_size` and `plaza_block_count` `derived: true`. They are not answers an organizer gives;
+9. **Three sweeps, and section 3.3's opening factorial, are unconstrained products over
+   classifications the draft derives, not counts of reachable events.** The draft marks six intake
+   fields `derived: true`: `sapo_event_type`, `street_event_size`, `plaza_level`, `plaza_size`,
+   `plaza_block_count` and `governing_authority`. They are not answers an organizer gives;
    they are produced from raw public-space facts by `classify_sapo_event`, which the draft
    publishes as prose rather than as an algorithm, and which
    `docs/proposals/documentation-audit-2026-07-22.md:56` records as having no complete
@@ -380,6 +411,15 @@ and are stated as the enumeration found them.
    draft that lands a real derivation and drops a flag moves the qualification with it. The other
    six groups sweep no derived field and carry no such qualification, and neither does the control:
    `rules/nyc-rules.v2.11.json` derives no intake field.
+
+   **`governing_authority` reaches no group sweep and section 3.3's factorial anyway.** No draft
+   trigger in a multi-member group reads it, which is why it is in none of the three rows above and
+   why an earlier round of this qualification left it out entirely. Section 3.3's opening figure
+   does multiply it, because that figure ranges over all 43 enum, boolean and multi_enum fields
+   rather than over any group's own set, so the same defect applies there: 4.12 x 10^27 is an upper
+   bound over five derived dimensions multiplied independently, and 5.09 x 10^23 is the product over
+   the 38 an organizer answers. `intakeFieldInventory` returns both and names the five, off the same
+   flags.
 
    It reaches the sweep sizes, the distributions, the completeness counts, every percentage over
    them, **and the co-firing sets and maxima in 5.1, 5.4 and 5.9**. A set is produced by some
@@ -437,7 +477,7 @@ groups' sets and maxima in section 5, not only to the counts here.
 | group                     | members | sweep      | 0          | 1       | 2         | 3   | 4   | 5   | 6+  | max    | share >= 2 |
 | ------------------------- | ------- | ---------- | ---------- | ------- | --------- | --- | --- | --- | --- | ------ | ---------- |
 | `sapo_permit`             | 14      | 6,480      | 1,034      | 4,332   | 100       | 144 | 100 | 34  | 736 | **14** | 17.2%      |
-| `dob_temporary_structure` | 5       | 10,000     | 4,480      | 3,096   | 1,902     | 270 | 180 | 72  | 0   | **5**  | 24.2%      |
+| `dob_temporary_structure` | 5       | 14,400     | 6,884      | 4,622   | 2,262     | 350 | 198 | 84  | 0   | **5**  | 20.1%      |
 | `sla_alcohol`             | 5       | 60         | 37         | 11      | 2         | 4   | 2   | 4   | 0   | **5**  | 20.0%      |
 | `sapo_insurance`          | 4       | 36         | 4          | 26      | 2         | 2   | 2   | 0   | 0   | **4**  | 16.7%      |
 | `nypd_sound`              | 4       | 156        | 84         | 27      | 36        | 9   | 0   | 0   | 0   | **3**  | 28.8%      |
@@ -453,7 +493,7 @@ The `sapo_permit` 6+ column expands to 6: 212, 7: 200, 8: 94, 9: 80, 10: 80, 11:
 | group                     | 0          | 1       | 2         | max   | share >= 2 |
 | ------------------------- | ---------- | ------- | --------- | ----- | ---------- |
 | `sapo_permit`             | 2,268      | 4,212   | 0         | **1** | 0.0%       |
-| `dob_temporary_structure` | 7,066      | 2,478   | 456       | **2** | 4.6%       |
+| `dob_temporary_structure` | 10,476     | 3,468   | 456       | **2** | 3.2%       |
 | `sla_alcohol`             | 43         | 17      | 0         | **1** | 0.0%       |
 | `sapo_insurance`          | 9          | 27      | 0         | **1** | 0.0%       |
 | `nypd_sound`              | 90         | 58      | 8         | **2** | 5.1%       |
@@ -474,7 +514,7 @@ computed from the intake and the scope resolver alone.
 | group                     | sweep      | complete  | complete share | complete AND >= 2 findings | complete AND >= 2 true |
 | ------------------------- | ---------- | --------- | -------------- | -------------------------- | ---------------------- |
 | `sapo_permit`             | 6,480      | 1,536     | 23.7%          | **0**                      | **0**                  |
-| `dob_temporary_structure` | 10,000     | 4,032     | 40.3%          | **444**                    | **444**                |
+| `dob_temporary_structure` | 14,400     | 6,300     | 43.8%          | **444**                    | **444**                |
 | `sla_alcohol`             | 60         | 24        | 40.0%          | **0**                      | **0**                  |
 | `sapo_insurance`          | 36         | 16        | 44.4%          | **0**                      | **0**                  |
 | `nypd_sound`              | 156        | 84        | 53.8%          | **8**                      | **8**                  |
@@ -483,8 +523,8 @@ computed from the intake and the scope resolver alone.
 | `dob_assembly`            | 80         | 63        | 78.8%          | **0**                      | **0**                  |
 | `block_party_eligibility` | 24,330,240 | 1,474,560 | 6.1%           | **0**                      | **0**                  |
 
-**Three groups of the nine co-fire on a complete intake: `dob_temporary_structure` (444 of 4,032
-complete intakes, 11.0%), `nypd_sound` (8 of 84, 9.5%) and `fdny_generator` (35 of 2,016, 1.7%).
+**Three groups of the nine co-fire on a complete intake: `dob_temporary_structure` (444 of 6,300
+complete intakes, 7.0%), `nypd_sound` (8 of 84, 9.5%) and `fdny_generator` (35 of 2,016, 1.7%).
 The other six never do.** Which three, and the fact that the other six never do, is unchanged from
 the previous revision; the two `nypd_sound` counts and the `block_party_eligibility` complete count
 moved for the reasons in section 3.3 and section 2.
@@ -661,7 +701,7 @@ on 12 of the 96 the height is unanswered, which leaves the group incomplete whil
 fact the two firing members depend on settled.
 
 Both are the obvious real case: a stage that is both large enough and long-lived enough, a tent
-that is both over 400 sq ft and up for 30 days. The all-5 set (72 events) needs
+that is both over 400 sq ft and up for 30 days. The all-5 set (84 events) needs
 `structure_type=null`, which makes every member `unknown` and the intake incomplete.
 
 **Do they disagree? No.** All five members' `output` objects are byte-identical, checked by
@@ -974,7 +1014,7 @@ aggregate as a settled fact, and is withdrawn.
 
 **Merges with nothing to resolve, three groups:**
 
-- `dob_temporary_structure` (5 members, merges on 24.2% of its sweep and on 11.0% of its complete
+- `dob_temporary_structure` (5 members, merges on 20.1% of its sweep and on 7.0% of its complete
   intakes, outputs byte-identical)
 - `fdny_generator` (3 members, 8.5% and 1.7%, outputs byte-identical)
 - `dob_assembly` (3 members, 7.5% of its sweep and 0% of its complete intakes, outputs
@@ -1043,9 +1083,9 @@ green. It is now counted off the suite's own collected task tree, which is the n
 `pnpm test:cofiring` reports rather than a count of `test(` calls in the source: four blocks use
 `test.each` and expand at collection time, so those two quantities are not the same.
 
-It is four modules and one suite, 2,646 lines together: `harness.mjs` 908,
-`cofiring.test.mjs` 1,083, `inventory.mjs` 299, `staging.mjs` 253 and
-`report.mjs` 103, reporting 84 cases. Those seven figures are read off disk and off
+It is four modules and one suite, 2,726 lines together: `harness.mjs` 930,
+`cofiring.test.mjs` 1,123, `inventory.mjs` 317, `staging.mjs` 253 and
+`report.mjs` 103, reporting 85 cases. Those seven figures are read off disk and off
 the task tree and asserted by `describe("section 8, the harness footprint")`, so a module, the suite
 or the case list growing moves them here rather than leaving the reproduction section understating
 the code behind the numbers.
@@ -1056,24 +1096,24 @@ the code behind the numbers.
 | `staging.mjs`       | the adaptations of section 3.1, applied to in-memory clones, each reporting what it touched                                                   |
 | `inventory.mjs`     | what the draft publishes, re-derived by parsing it: deadlines, permit names, output identity, blockers, mixed statuses, parser-visible output |
 | `report.mjs`        | one `measure()` call that produces every table, plus the printer                                                                              |
-| `cofiring.test.mjs` | the 84 cases `pnpm test:cofiring` reports, one or more per published figure                                                                   |
+| `cofiring.test.mjs` | the 85 cases `pnpm test:cofiring` reports, one or more per published figure                                                                   |
 
 Every table maps to a `describe` block with the same number:
 
-| table                                                           | assertion                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               |
-| --------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 3.1, the staging errors and inventories                         | `describe("section 3.1, the load-staging errors")`, whose second case asserts the dropped-deadline, mapped-status, mapped-kind and rewritten-operator counts                                                                                                                                                                                                                                                                                                                                            |
-| 3.2, the agreement check                                        | `describe("section 3.2, what the harness supplies")`                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
-| 3.3, the intake inventory, the sweep sizes and the domain rules | `describe("section 3.3, the sweep")`, whose first case asserts the 63-field inventory, its per-type breakdown and the 4.12 x 10^27 count, whose `asked_when` case fails if that count stops applying the two gates or if a gate starts reading a field the count does not range over, whose headcount case runs `validateIntake` on the rejected value and the admitted one, and whose hand-set case fails when the swept structure factors stop bracketing a published `structure_area_sqft` threshold |
-| 3.4, limitations 3, 4, 5 and 9                                  | `describe("section 3.4, the limitations")`                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
-| 3.5, the supplied semantics                                     | `jq '.engine_operators, .derived_values' rules/proposals/nyc-rules.v2-full-draft.json`, and the `is_null`/`lte` half of `describe("section 3.2")`                                                                                                                                                                                                                                                                                                                                                       |
-| 4.1, findings per event                                         | `describe("section 4.1, findings per event")`                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
-| 4.2, `true`-only                                                | `describe("section 4.2, ...")`                                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
-| 4.3, completeness                                               | `describe("section 4.3, completeness")`                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
-| 4.4, the control                                                | `describe("section 4.4, the published control")`                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
-| every table and count in section 5                              | `describe("section 5, the co-firing sets")`                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
-| section 6's blocker inventory and counts                        | `describe("section 6, the blocker-plus-window shape")`, whose four-shape case asserts each `unknown`-side shape's members, results and answered-`sound_purpose` rows rather than their sum, and whose merge case puts all four shapes to `evaluate` on a synthetic group and asserts which of them reads prohibited                                                                                                                                                                                     |
-| section 7                                                       | restates 4.1, 4.2, 4.3 and 4.4; it publishes no figure of its own                                                                                                                                                                                                                                                                                                                                                                                                                                       |
+| table                                                           | assertion                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
+| --------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 3.1, the staging errors and inventories                         | `describe("section 3.1, the load-staging errors")`, whose second case asserts the dropped-deadline, mapped-status, mapped-kind and rewritten-operator counts                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
+| 3.2, the agreement check                                        | `describe("section 3.2, what the harness supplies")`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
+| 3.3, the intake inventory, the sweep sizes and the domain rules | `describe("section 3.3, the sweep")`, whose first case asserts the 63-field inventory, its per-type breakdown and the 4.12 x 10^27 upper bound, whose upper-bound case asserts the five derived dimensions, the 5.09 x 10^23 answered product and the factor of 8,100 between them, whose `asked_when` case fails if that count stops applying the two gates or if a gate starts reading a field the count does not range over, whose headcount case runs `validateIntake` on the rejected value and the admitted one, and whose hand-set case fails when the swept structure factors stop bracketing a published `structure_area_sqft` threshold |
+| 3.4, limitations 3, 4, 5 and 9                                  | `describe("section 3.4, the limitations")`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
+| 3.5, the supplied semantics                                     | `jq '.engine_operators, .derived_values' rules/proposals/nyc-rules.v2-full-draft.json`, and the `is_null`/`lte` half of `describe("section 3.2")`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
+| 4.1, findings per event                                         | `describe("section 4.1, findings per event")`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     |
+| 4.2, `true`-only                                                | `describe("section 4.2, ...")`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
+| 4.3, completeness                                               | `describe("section 4.3, completeness")`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
+| 4.4, the control                                                | `describe("section 4.4, the published control")`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
+| every table and count in section 5                              | `describe("section 5, the co-firing sets")`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
+| section 6's blocker inventory and counts                        | `describe("section 6, the blocker-plus-window shape")`, whose four-shape case asserts each `unknown`-side shape's members, results and answered-`sound_purpose` rows rather than their sum, and whose merge case puts all four shapes to `evaluate` on a synthetic group and asserts which of them reads prohibited                                                                                                                                                                                                                                                                                                                               |
+| section 7                                                       | restates 4.1, 4.2, 4.3 and 4.4; it publishes no figure of its own                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
 
 The whole run takes about six seconds, of which five are the 24,330,240-intake
 `block_party_eligibility` sweep. It is not gated behind a flag and it is in the include list

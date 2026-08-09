@@ -309,6 +309,31 @@ describe("section 3.3, the sweep", () => {
     expect(m.inventory.intakeFieldInventory(loadControl()).fields).toBe(33);
   });
 
+  test("the opening factorial is an upper bound, and the answered product is not", () => {
+    // Five of the 43 are classifications the draft derives and publishes no derivation for, so the
+    // opening figure multiplies them in independently and is an upper bound rather than a size of
+    // the intake contract (3.4, limitation 9). The document publishes both figures and the reason;
+    // without this the qualification could be edited out while every number stayed green.
+    const draft = m.inventory.intakeFieldInventory(m.draft);
+    expect(draft.derivedFactorialFields).toEqual([
+      "governing_authority",
+      "sapo_event_type",
+      "street_event_size",
+      "plaza_level",
+      "plaza_size",
+    ]);
+    expect(draft.combinationsAnswered).toBe(508_611_519_987_056_640_000_000n);
+    expect(Number(draft.combinationsAnswered) / 1e23).toBeCloseTo(5.09, 2);
+    // 38 answered fields, and the derived five account for the whole factor between the two.
+    expect(draft.factorialFields - draft.derivedFactorialFields.length).toBe(38);
+    expect(draft.combinations / draft.combinationsAnswered).toBe(8_100n);
+    expect(draft.combinations % draft.combinationsAnswered).toBe(0n);
+    // The control derives no intake field, so its two figures are the same one.
+    const control = m.inventory.intakeFieldInventory(loadControl());
+    expect(control.derivedFactorialFields).toEqual([]);
+    expect(control.combinationsAnswered).toBe(control.combinations);
+  });
+
   test("the factorial applies `asked_when`, and rests on no field held outside itself", () => {
     // The count is over valid intakes, not over full domains, so a field the event is not asked
     // carries one value. Without this the unconstrained product, 1.77 x 10^28, passed the case
@@ -343,7 +368,7 @@ describe("section 3.3, the sweep", () => {
   test("the sweep sizes are the published ones", () => {
     expect(Object.fromEntries(m.groups.map((group) => [group.key, group.sweep]))).toEqual({
       sapo_permit: 6_480,
-      dob_temporary_structure: 10_000,
+      dob_temporary_structure: 14_400,
       sla_alcohol: 60,
       sapo_insurance: 36,
       nypd_sound: 156,
@@ -352,7 +377,7 @@ describe("section 3.3, the sweep", () => {
       dob_assembly: 80,
       block_party_eligibility: 24_330_240,
     });
-    expect(m.totalIntakes).toBe(24_351_972);
+    expect(m.totalIntakes).toBe(24_356_372);
     expect(m.control.sweep).toBe(622);
   });
 
@@ -384,7 +409,11 @@ describe("section 3.3, the sweep", () => {
     const factors = { type: "number", nullable: true };
     const readingArea = (op, value) => [{ trigger: { field: "structure_area_sqft", op, value } }];
 
+    // The hand-set part is the four positive factors. The `0` and the `null` are the generic
+    // numeric rule, which both of these nullable fields are subject to because `validateIntake`
+    // gives neither a minimum, so the domain is six values wide and not five.
     expect(domainFor("structure_length_ft", factors, readingArea("gt", 400))).toEqual([
+      0,
       10,
       12,
       20,
@@ -392,12 +421,23 @@ describe("section 3.3, the sweep", () => {
       null,
     ]);
     expect(domainFor("structure_width_ft", factors, readingArea("gte", 120))).toEqual([
+      0,
       10,
       12,
       20,
       21,
       null,
     ]);
+    // Every hand-set dimension obeys the generic rule rather than restating it, so a domain written
+    // out by hand cannot drop an answer the contract admits.
+    for (const field of ["structure_length_ft", "structure_width_ft"]) {
+      const domain = domainFor(field, factors, readingArea("gt", 400));
+      expect(domain).toContain(0);
+      expect(domain).toContain(null);
+      expect(domain.filter((value) => value !== null)).toEqual(
+        domainFor(field, { type: "number", nullable: false }, readingArea("gt", 400)),
+      );
+    }
 
     // 401 is between the products 400 and 420, so nothing in the sweep sits on it.
     expect(() => domainFor("structure_length_ft", factors, readingArea("gt", 401))).toThrow(
@@ -407,9 +447,9 @@ describe("section 3.3, the sweep", () => {
     expect(() => domainFor("structure_length_ft", factors, readingArea("gt", 441))).toThrow(
       /is above the "structure_area_sqft" threshold 441/,
     );
-    // 100 is the smallest product, so no swept structure is below it.
-    expect(() => domainFor("structure_length_ft", factors, readingArea("gte", 100))).toThrow(
-      /is below the "structure_area_sqft" threshold 100/,
+    // 0 is the smallest product, so no swept structure is below it.
+    expect(() => domainFor("structure_length_ft", factors, readingArea("gte", 0))).toThrow(
+      /is below the "structure_area_sqft" threshold 0/,
     );
   });
 });
@@ -470,7 +510,7 @@ describe("section 3.4, the limitations", () => {
 describe("section 4.1, findings per event", () => {
   test.each([
     ["sapo_permit", [1_034, 4_332, 100, 144, 100, 34, 212, 200, 94, 80, 80, 10, 50, 0, 10]],
-    ["dob_temporary_structure", [4_480, 3_096, 1_902, 270, 180, 72]],
+    ["dob_temporary_structure", [6_884, 4_622, 2_262, 350, 198, 84]],
     ["sla_alcohol", [37, 11, 2, 4, 2, 4]],
     ["sapo_insurance", [4, 26, 2, 2, 2]],
     ["nypd_sound", [84, 27, 36, 9, 0]],
@@ -486,7 +526,7 @@ describe("section 4.1, findings per event", () => {
 describe("section 4.2, the same sweeps counting only `true` triggers", () => {
   test.each([
     ["sapo_permit", [2_268, 4_212]],
-    ["dob_temporary_structure", [7_066, 2_478, 456]],
+    ["dob_temporary_structure", [10_476, 3_468, 456]],
     ["sla_alcohol", [43, 17]],
     ["sapo_insurance", [9, 27]],
     ["nypd_sound", [90, 58, 8]],
@@ -508,7 +548,7 @@ describe("section 4.2, the same sweeps counting only `true` triggers", () => {
 describe("section 4.3, completeness", () => {
   test.each([
     ["sapo_permit", 1_536, 0, 0],
-    ["dob_temporary_structure", 4_032, 444, 444],
+    ["dob_temporary_structure", 6_300, 444, 444],
     ["sla_alcohol", 24, 0, 0],
     ["sapo_insurance", 16, 0, 0],
     ["nypd_sound", 84, 8, 8],
@@ -1057,13 +1097,13 @@ describe("section 8, the harness footprint", () => {
       "cofiring.test.mjs": lines("cofiring.test.mjs"),
     };
     expect(counts).toEqual({
-      "harness.mjs": 908,
+      "harness.mjs": 930,
       "staging.mjs": 253,
-      "inventory.mjs": 299,
+      "inventory.mjs": 317,
       "report.mjs": 103,
-      "cofiring.test.mjs": 1083,
+      "cofiring.test.mjs": 1123,
     });
-    expect(Object.values(counts).reduce((total, count) => total + count, 0)).toBe(2_646);
+    expect(Object.values(counts).reduce((total, count) => total + count, 0)).toBe(2_726);
   });
 
   test("the published case count is the one Vitest collected", (context) => {
@@ -1078,6 +1118,6 @@ describe("section 8, the harness footprint", () => {
         (total, child) => total + (child.type === "test" ? 1 : collected(child)),
         0,
       );
-    expect(collected(context.task.file)).toBe(84);
+    expect(collected(context.task.file)).toBe(85);
   });
 });

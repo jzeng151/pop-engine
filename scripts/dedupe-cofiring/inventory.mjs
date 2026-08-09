@@ -62,13 +62,21 @@ const FACTORIAL_TYPES = new Set(["enum", "boolean", "multi_enum"]);
  * gate it, so the gated fields and every field their `asked_when` clauses read are counted together
  * by running `sweepSize` over exactly that set, which is `enumerateIntakes` and therefore the same
  * scope resolution the group sweeps use. The remaining fields are independent of the gates and
- * multiply in as constant factors. The result is the size of the valid intake contract over these
- * 43 fields, not an unconstrained Cartesian product over their full domains. It is a `BigInt`
- * because the value exceeds an exact double.
+ * multiply in as constant factors. It is a `BigInt` because the value exceeds an exact double.
  *
- * An unused intake field the draft adds or drops moves `fields`, `byType` and `combinations`, and so
- * does an `asked_when` the draft adds, widens or withdraws, so the section's inventory cannot go
- * stale while the suite stays green.
+ * Neither rule makes the count a count of reachable events, and `combinations` is not one. Some of
+ * these fields are marked `derived: true`, which means their values are produced from raw answers
+ * by a classifier the draft publishes as prose rather than as an algorithm, so multiplying their
+ * declared enums in independently admits classification combinations that may be jointly
+ * unreachable. That is limitation 9's defect, and it applies to this figure exactly as it applies
+ * to the three group sweeps there. Both figures are therefore returned: `combinations`, an upper
+ * bound over every one of these fields, and `combinationsAnswered`, the product over only the
+ * fields an organizer answers, which is the one that is a size of the intake contract.
+ * `derivedFactorialFields` names the difference, read off the artifact's flags.
+ *
+ * An unused intake field the draft adds or drops moves `fields`, `byType` and both counts, and so
+ * does an `asked_when` the draft adds, widens or withdraws, and so does a `derived` flag the draft
+ * lands or withdraws, so the section's inventory cannot go stale while the suite stays green.
  */
 export function intakeFieldInventory(artifact) {
   const byType = {};
@@ -85,7 +93,23 @@ export function intakeFieldInventory(artifact) {
   const factorial = artifact.intake_fields
     .filter((field) => FACTORIAL_TYPES.has(field.type))
     .map((field) => field.field);
+  const derived = factorial.filter((field) => definitions.get(field).derived);
 
+  return {
+    fields: artifact.intake_fields.length,
+    byType,
+    factorialFields: factorial.length,
+    derivedFactorialFields: derived,
+    combinations: factorialCombinations(factorial, definitions),
+    combinationsAnswered: factorialCombinations(
+      factorial.filter((field) => !derived.includes(field)),
+      definitions,
+    ),
+  };
+}
+
+/** The combinations a set of enum, boolean and multi_enum fields admits, under both 3.3 rules. */
+function factorialCombinations(factorial, definitions) {
   const conditional = new Set();
   const pending = factorial.filter((field) => definitions.get(field).askedWhenClauses !== null);
   while (pending.length > 0) {
@@ -107,13 +131,7 @@ export function intakeFieldInventory(artifact) {
     if (conditional.has(field)) continue;
     combinations *= BigInt(domainFor(field, definitions.get(field), []).length);
   }
-
-  return {
-    fields: artifact.intake_fields.length,
-    byType,
-    factorialFields: factorial.length,
-    combinations,
-  };
+  return combinations;
 }
 
 /**
