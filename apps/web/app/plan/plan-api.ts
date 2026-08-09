@@ -134,9 +134,7 @@ export type ConsumedFinding = Omit<
   readonly userSummary?: RuleUserSummary | null;
   /**
    * Every contributing route of a merged line. Null on an unmerged line and on plans stored before
-   * the field existed; never an empty array. `deadline` is not consumed here: the routes block
-   * renders the published display, the date and the status, and the deadline TYPE label is a
-   * fallback for a line that has none of those, which a route entry never is on its own.
+   * the field existed; never an empty array.
    */
   readonly routes?: readonly ConsumedRoute[] | null;
   /** Present exactly when `routes` is non-null. */
@@ -144,23 +142,35 @@ export type ConsumedFinding = Omit<
 };
 
 /** One contributing rule of a merged line, with its own published values. */
-export type ConsumedRoute = Pick<
-  FindingRoute,
-  | "ruleId"
-  | "triggerResult"
-  | "disposition"
-  | "unknownFields"
-  | "name"
-  | "agency"
-  | "deadlineDisplay"
-  | "latestApplyDate"
-  | "applyAfterDate"
-  | "deadlineStatus"
-  | "feeDisplay"
-  | "portalName"
-  | "portalUrl"
-  | "portalInstructions"
->;
+export type ConsumedRoute = Omit<
+  Pick<
+    FindingRoute,
+    | "ruleId"
+    | "triggerResult"
+    | "disposition"
+    | "unknownFields"
+    | "name"
+    | "agency"
+    | "deadline"
+    | "deadlineDisplay"
+    | "latestApplyDate"
+    | "applyAfterDate"
+    | "deadlineStatus"
+    | "feeDisplay"
+    | "portalName"
+    | "portalUrl"
+    | "portalInstructions"
+  >,
+  "deadline"
+> & {
+  /**
+   * Read for the same one reason the finding's is: `businessDayNotice` discriminates on the
+   * published deadline TYPE, and a route whose window is `not_calculable` has no other way to say
+   * what its exact date turns on (F-201 AC 13). Widened to `ConsumedDeadline` for the reason given
+   * there, so a new engine deadline kind does not make the validator refuse the whole plan.
+   */
+  readonly deadline: ConsumedDeadline | null;
+};
 
 /**
  * The only part of a `Deadline` this feature reads: the published type, rendered when a rule states a
@@ -362,6 +372,8 @@ export const ROUTE_CHECKS: FieldChecks<ConsumedRoute> = {
   unknownFields: arrayOf(isString),
   name: nullOr(isString),
   agency: nullOr(isString),
+  // Read for its null-ness and its published `type`, the same two things the finding's is read for.
+  deadline: nullOr(shapedLike(DEADLINE_CHECKS)),
   deadlineDisplay: nullOr(isString),
   latestApplyDate: nullOr(isString),
   applyAfterDate: nullOr(isString),

@@ -226,6 +226,12 @@ const routeSignature = (route: ConsumedRoute): string =>
 function Route({ route, mode }: { route: ConsumedRoute; mode: HeadlineMode }) {
   const label =
     mode === "candidate" ? (route.triggerResult === "true" ? "Triggered" : "May apply") : null;
+  // F-201 AC 13 on the route that actually has the undatable window. A merged line's scalars are the
+  // binding route's, so where a non-binding route is the `business_days_minimum` one the criterion's
+  // sentence has nowhere else to go: the finding-level call reads the binding route's fields and
+  // returns null, and this entry would say "not calculable" and stop (#252 review). Same sentence,
+  // same approved copy, read off this route's own agency and published deadline type.
+  const businessDayWindow = businessDayNotice(route);
   return (
     <li className="line__route">
       <p className="line__route-head">
@@ -250,6 +256,14 @@ function Route({ route, mode }: { route: ConsumedRoute; mode: HeadlineMode }) {
               {humanize(route.deadlineStatus)}
             </span>
           )}
+        </p>
+      )}
+      {/* Beside the status token rather than in place of it, which is how the pre-summary line above
+          renders the same pair: the entry still reports `not_calculable`, and this says what the
+          date turns on. No citation follows it, for the reason `business-day-notice.ts` gives. */}
+      {businessDayWindow !== null && (
+        <p className="line__route-deadline-notice">
+          <strong>Apply by:</strong> {businessDayWindow}
         </p>
       )}
       {route.feeDisplay !== null && <p className="line__route-fee">{route.feeDisplay}</p>}

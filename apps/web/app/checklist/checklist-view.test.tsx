@@ -798,6 +798,7 @@ describe("AC 5 · deadline context lives where the work happens", () => {
       unknownFields: [],
       name,
       agency: "NYC",
+      deadline: null,
       deadlineDisplay: null,
       latestApplyDate: "2026-08-01",
       applyAfterDate,
@@ -858,6 +859,7 @@ describe("AC 5 · deadline context lives where the work happens", () => {
       unknownFields: [],
       name,
       agency: "NYC",
+      deadline: null,
       deadlineDisplay: null,
       latestApplyDate,
       applyAfterDate,
@@ -2596,6 +2598,7 @@ describe("a checklist row whose window comes from another route (#252)", () => {
     unknownFields: ["tent_area_sqft"],
     name: "DOB permit — tent/canopy over 400 gross sq ft or in place 30+ days",
     agency: "DOB",
+    deadline: { type: "business_days_minimum" },
     deadlineDisplay: null,
     latestApplyDate: "2026-08-26",
     applyAfterDate: null,
@@ -2612,6 +2615,9 @@ describe("a checklist row whose window comes from another route (#252)", () => {
     disposition: "may_be_required",
     unknownFields: [],
     name: "DOB permit — structure over 10 feet tall",
+    // The published rule states no deadline of any kind, which is why the tent route's window is
+    // what the row ends up reading.
+    deadline: null,
     latestApplyDate: null,
     deadlineStatus: "not_applicable",
     feeDisplay: null,

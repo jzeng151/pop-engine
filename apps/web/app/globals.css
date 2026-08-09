@@ -999,6 +999,7 @@ a.pe-link:hover,
 
 .line__route-head,
 .line__route-deadline,
+.line__route-deadline-notice,
 .line__route-fee,
 .line__route-portal {
   margin: 0.3rem 0 0;
