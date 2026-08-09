@@ -199,9 +199,11 @@ through the full pipeline.** The draft file was never modified.
 draft with a formula and a null behaviour, quoted verbatim in section 3.5, and the harness
 implements what they say. `is_null` and `lte` are **not** published with semantics: the draft's
 `engine_operators` array lists ten operator names and nothing else, and no other part of the draft
-defines them. "No other part" is the whole file: `operatorSemantics` walks the draft's metadata and
-its rules and advisories alike, skipping only operator applications, so a definition in a rule's own
-output note reads as a definition rather than as nothing. What the harness does with them is
+defines them. "No other part" is the whole file, and it is meant literally: `operatorSemantics`
+walks every string and every property key in the draft and skips exactly one slot, the `op` of a
+condition leaf, which is the only place a name is applied rather than talked about. So a definition
+counts wherever the draft puts it, in metadata or in a rule, as prose, as a legend, or structurally
+under a key called `op` in an object that applies nothing. What the harness does with them is
 therefore its own reading:
 
 - `lte`: numeric `<=`; `unknown` when the answer is absent or explicitly unknown. The comparison
@@ -1152,9 +1154,9 @@ green. It is now counted off the suite's own collected task tree, which is the n
 `pnpm test:cofiring` reports rather than a count of `test(` calls in the source: four blocks use
 `test.each` and expand at collection time, so those two quantities are not the same.
 
-It is four modules, one suite and one config, 3,651 lines together: `harness.mjs` 1,009,
-`cofiring.test.mjs` 1,740, `inventory.mjs` 514, `staging.mjs` 266, `report.mjs` 103 and
-`vitest.config.mjs` 19, reporting 102 cases. Those eight figures are read off disk and off
+It is four modules, one suite and one config, 3,735 lines together: `harness.mjs` 1,009,
+`cofiring.test.mjs` 1,804, `inventory.mjs` 534, `staging.mjs` 266, `report.mjs` 103 and
+`vitest.config.mjs` 19, reporting 107 cases. Those eight figures are read off disk and off
 the task tree and asserted by `describe("section 8, the harness footprint")`, so a module, the suite
 or the case list growing moves them here rather than leaving the reproduction section understating
 the code behind the numbers.
@@ -1165,7 +1167,7 @@ the code behind the numbers.
 | `staging.mjs`       | the adaptations of section 3.1, applied to in-memory clones, each reporting what it touched                                                   |
 | `inventory.mjs`     | what the draft publishes, re-derived by parsing it: deadlines, permit names, output identity, blockers, mixed statuses, parser-visible output |
 | `report.mjs`        | one `measure()` call that produces every table, plus the printer                                                                              |
-| `cofiring.test.mjs` | the 102 cases `pnpm test:cofiring` reports, one or more per published figure                                                                  |
+| `cofiring.test.mjs` | the 107 cases `pnpm test:cofiring` reports, one or more per published figure                                                                  |
 | `vitest.config.mjs` | the include this suite runs under, which is why it is excluded from the root config and outside CI                                            |
 
 Every table maps to a `describe` block with the same number:
@@ -1174,7 +1176,7 @@ Every table maps to a `describe` block with the same number:
 | --------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | 1, the dedupe-group inventory                                   | `describe("section 1, the dedupe-group inventory")`, which asserts the 25 declared groups alongside the nine multi-member ones, because `multiMemberGroups` returns the same nine whatever a new single-member key does                                                                                                                                                                                                                                                                                                                                                                                                                           |
 | 3.1, the staging errors and inventories                         | `describe("section 3.1, the load-staging errors")`, whose second case asserts the dropped-deadline, mapped-status, mapped-kind and rewritten-operator counts                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
-| 3.2, the agreement check                                        | `describe("section 3.2, what the harness supplies")`, whose operator-semantics cases put a definition in a rule note and in an advisory note as well as in the metadata, since only applications are excluded, and whose conditional-field case asserts the two `asked_when` fields and both their gates over every declared field rather than over the discrete factorial                                                                                                                                                                                                                                                                        |
+| 3.2, the agreement check                                        | `describe("section 3.2, what the harness supplies")`, whose operator-semantics cases publish a definition as prose, as a legend and structurally under an `op` key, in the metadata and on a rule and on an advisory, and assert the opposite half on a condition leaf in a trigger, in an `output.paths[].when` and in an `asked_when`, and whose conditional-field case asserts the two `asked_when` fields and both their gates over every declared field rather than over the discrete factorial                                                                                                                                              |
 | 3.3, the intake inventory, the sweep sizes and the domain rules | `describe("section 3.3, the sweep")`, whose first case asserts the 63-field inventory, its per-type breakdown and the 4.12 x 10^27 upper bound, whose upper-bound case asserts the five derived dimensions, the 5.09 x 10^23 answered product and the factor of 8,100 between them, whose `asked_when` case fails if that count stops applying the two gates or if a gate starts reading a field the count does not range over, whose headcount case runs `validateIntake` on the rejected value and the admitted one, and whose hand-set case fails when the swept structure factors stop bracketing a published `structure_area_sqft` threshold |
 | 3.4, limitations 3, 4, 5 and 9                                  | `describe("section 3.4, the limitations")`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
 | 3.5, the supplied semantics                                     | `jq '.engine_operators, .derived_values' rules/proposals/nyc-rules.v2-full-draft.json`, and the `is_null`/`lte` half of `describe("section 3.2")`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
@@ -1193,7 +1195,7 @@ by CI and not part of `pnpm test`, and that is a governance constraint rather th
 **Why this suite is on demand.** Its only input is `rules/proposals/nyc-rules.v2-full-draft.json`,
 which `docs/BASELINE.md` carries as "ARCHIVED / PROPOSED drafts" and which this document's own
 preamble names as PROPOSED. A required CI step reading it would make a proposed artifact an enforced
-main-branch input: any ordinary revision of the proposal would turn CI red until all 102 cases here
+main-branch input: any ordinary revision of the proposal would turn CI red until all 107 cases here
 were resynchronised with it, so the proposal could only move at this measurement's pace. That is the
 `AGENTS.md` rule to stop rather than build against a proposed input, applied backwards, and a
 research harness is not the thing that should force it. So `scripts/dedupe-cofiring/` is named in

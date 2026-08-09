@@ -382,6 +382,70 @@ describe("section 3.2, what the harness supplies", () => {
     expect(named(m.draft, "lte")).toBe(false);
   });
 
+  test.each([
+    // Every place the draft could define an operator that is not a condition leaf. The two fixes
+    // before this one drew the exclusion around a container that happened to hold applications, the
+    // `rules` array and then the `trigger` subtree plus every `op` key, so each closed its own case
+    // and left the class: a definition written under a key called `op`, in an object that applies
+    // nothing, was still skipped (#251 review). The line is on the application now, so the shape of
+    // the surrounding object is what decides, and every one of these reads as a definition.
+    ["a structural entry keyed `op`", { operator_semantics: { op: "lte", meaning: "inclusive" } }],
+    [
+      "a structure nested in a rule's output",
+      { output_semantics: { operators: [{ op: "lte" }] }, id: "X" },
+    ],
+    ["a legend keyed by the name", { operator_legend: { lte: "at or below" } }],
+    ["prose in a note", { notes: ["lte compares at or below the value"] }],
+  ])("a semantics published as %s is detected wherever it sits", (_label, published) => {
+    const named = (draft) =>
+      draft === null
+        ? null
+        : m.inventory.operatorSemantics(draft).find((operator) => operator.name === "lte")
+            .describedOutsideTheList;
+
+    // In the draft's metadata, on a rule, and on an advisory: the same answer in all three, because
+    // no region of the file is excluded any more.
+    const [rule, ...otherRules] = m.draft.rules;
+    const [advisory, ...otherAdvisories] = m.draft.advisories;
+    expect(named({ ...m.draft, engine_conventions: published })).toBe(true);
+    expect(named({ ...m.draft, rules: [{ ...rule, ...published }, ...otherRules] })).toBe(true);
+    expect(
+      named({ ...m.draft, advisories: [{ ...advisory, ...published }, ...otherAdvisories] }),
+    ).toBe(true);
+  });
+
+  test("an operator applied in a condition leaf is not a statement, wherever the leaf sits", () => {
+    // The other half, and the reason the exclusion exists at all. A condition leaf is the draft's
+    // only `op`-bearing shape, in trigger trees, in `asked_when` clauses and in the
+    // `output.paths[].when` blocks alike, and applying an operator says nothing about it.
+    const named = (draft, name) =>
+      m.inventory.operatorSemantics(draft).find((operator) => operator.name === name)
+        .describedOutsideTheList;
+    const leaf = { field: "headcount", op: "lte", value: 1 };
+
+    const [rule, ...otherRules] = m.draft.rules;
+    expect(named({ ...m.draft, rules: [{ ...rule, trigger: leaf }, ...otherRules] }, "lte")).toBe(
+      false,
+    );
+    expect(
+      named(
+        { ...m.draft, rules: [{ ...rule, output: { ...rule.output, when: leaf } }, ...otherRules] },
+        "lte",
+      ),
+    ).toBe(false);
+    expect(
+      named(
+        {
+          ...m.draft,
+          intake_fields: m.draft.intake_fields.map((field) =>
+            field.field === "event_address" ? { ...field, asked_when: leaf } : field,
+          ),
+        },
+        "lte",
+      ),
+    ).toBe(false);
+  });
+
   test("the two fields that carry an `asked_when` are the only two, whatever their type", () => {
     // Section 3.2's "only two of the draft's 63 intake fields carry an `asked_when` at all", and
     // section 3.3's promise that any added, widened or withdrawn `asked_when` moves the inventory.
@@ -1715,12 +1779,12 @@ describe("section 8, the harness footprint", () => {
     expect(counts).toEqual({
       "harness.mjs": 1009,
       "staging.mjs": 266,
-      "inventory.mjs": 514,
+      "inventory.mjs": 534,
       "report.mjs": 103,
-      "cofiring.test.mjs": 1740,
+      "cofiring.test.mjs": 1804,
       "vitest.config.mjs": 19,
     });
-    expect(Object.values(counts).reduce((total, count) => total + count, 0)).toBe(3_651);
+    expect(Object.values(counts).reduce((total, count) => total + count, 0)).toBe(3_735);
   });
 
   test("the published case count is the one Vitest collected", (context) => {
@@ -1735,6 +1799,6 @@ describe("section 8, the harness footprint", () => {
         (total, child) => total + (child.type === "test" ? 1 : collected(child)),
         0,
       );
-    expect(collected(context.task.file)).toBe(102);
+    expect(collected(context.task.file)).toBe(107);
   });
 });

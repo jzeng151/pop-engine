@@ -320,42 +320,62 @@ export function mixedStatusGroups(draft) {
 }
 
 /**
+ * A condition leaf: an object naming a field, an operator and a value. The draft has 173 of them
+ * and no other shape carries an `op` at all, in trigger trees, in `asked_when` clauses and in the
+ * `output.paths[].when` blocks alike.
+ *
+ * This is the one place an operator name is APPLIED rather than talked about, which is the only
+ * thing `operatorSemantics` needs to exclude.
+ */
+const isConditionLeaf = (node) =>
+  node !== null &&
+  typeof node === "object" &&
+  !Array.isArray(node) &&
+  typeof node.op === "string" &&
+  typeof node.field === "string";
+
+/**
  * What the draft's own `engine_operators` array publishes, and what it publishes about each.
  *
- * The check is a textual one over every string and every property key in the draft's non-rule
- * metadata, not a search for the operator as a complete JSON string. Splitting on `"is_null"` found
- * the name only where it stood alone as a value or a key, so a draft that added a note reading
- * `is_null returns true for absent answers` would define the semantics this harness supplies while
- * this function went on reporting none, leaving section 3.2 green on a reading the draft had
- * started contradicting (#251 review). Word boundaries are `[^a-z0-9_]` rather than `\b`, because
- * `\b` does not fire around the underscore in `is_null`.
+ * The check is a textual one over every string and every property key in the draft, not a search
+ * for the operator as a complete JSON string. Splitting on `"is_null"` found the name only where it
+ * stood alone as a value or a key, so a draft that added a note reading `is_null returns true for
+ * absent answers` would define the semantics this harness supplies while this function went on
+ * reporting none, leaving section 3.2 green on a reading the draft had started contradicting
+ * (#251 review). Word boundaries are `[^a-z0-9_]` rather than `\b`, because `\b` does not fire
+ * around the underscore in `is_null`.
  *
- * What is skipped is operator APPLICATIONS, and nothing wider. The earlier fix skipped the whole
- * `rules` and `advisories` arrays on the grounds that an operator name in a rule is a trigger
- * applying it, which closed the instance and left the class: a rule's own prose, an output note
- * reading `is_null matches an answer the organizer never gave`, defines the operator as squarely as
- * a legend does and went on reporting none (#251 review). So a rule is walked like any other part of
- * the draft except for its `trigger` tree, which is applications and nothing else, and except for
- * the value of any `op` key, which is one application wherever it sits (`output.paths[].when` is
- * the draft's other place for them). `engine_operators` is excluded because it is the list itself:
- * naming an operator in it is what makes it an operator, not what describes one.
+ * THE EXCLUSION IS ONE APPLICATION, NOT A REGION OF THE FILE, and that took three rounds of review
+ * to get right because each earlier attempt drew the line around a container that happened to hold
+ * applications rather than around the applications themselves. First the whole `rules` and
+ * `advisories` arrays, which lost a definition written in a rule's own output note. Then the
+ * `trigger` subtree plus the value of every `op` key inside a rule, which lost a definition written
+ * structurally, as `operator_semantics: { op: "lte", meaning: "inclusive upper bound" }`, because
+ * the name sat under a key called `op` in an object that applies nothing. Each fix closed its case
+ * and left the class.
+ *
+ * So the walk covers the entire draft and skips exactly one slot: the `op` of a condition leaf. A
+ * container never decides it, a key name never decides it on its own, and anything the draft says
+ * anywhere else counts, whether it is a note, a legend, a convention or a key of a defined
+ * semantics structure. `engine_operators` is the single standing exception, and it is not a region
+ * heuristic: naming an operator in that list is what makes it an operator, not what describes one.
  */
 export function operatorSemantics(draft) {
   const strings = [];
-  const walk = (node, insideRule) => {
+  const walk = (node) => {
     if (typeof node === "string") strings.push(node);
-    else if (Array.isArray(node)) node.forEach((child) => walk(child, insideRule));
+    else if (Array.isArray(node)) node.forEach(walk);
     else if (node !== null && typeof node === "object") {
+      const applies = isConditionLeaf(node);
       for (const [key, value] of Object.entries(node)) {
-        if (insideRule && (key === "trigger" || key === "op")) continue;
+        if (applies && key === "op") continue;
         strings.push(key);
-        walk(value, insideRule);
+        walk(value);
       }
     }
   };
-  const { rules, advisories, engine_operators: operators, ...metadata } = draft;
-  walk(metadata, false);
-  for (const rule of [...rules, ...advisories]) walk(rule, true);
+  const { engine_operators: operators, ...draftBesideTheList } = draft;
+  walk(draftBesideTheList);
 
   return operators.map((name) => {
     const occurrence = new RegExp(`(^|[^a-z0-9_])${name}([^a-z0-9_]|$)`, "i");
