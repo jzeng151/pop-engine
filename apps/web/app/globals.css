@@ -1145,6 +1145,8 @@ a.pe-link:hover,
 .verdict-detail__lede,
 .verdict-detail__thresholds,
 .verdict-detail__empty-branches,
+.verdict-detail__blocker-portal,
+.verdict-detail__blocker-instructions,
 .verdict-detail__missed,
 .verdict-detail__rescope-verdict,
 .verdict-detail__rescope-dropped {

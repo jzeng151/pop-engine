@@ -543,15 +543,20 @@ const RESCOPE_CHECKS: FieldChecks<ConsumedRescopeSuggestion> = {
   atRiskFindingName: optionalNullString,
 };
 
-// The last five are absent on plans stored before the blocker carried its own published values,
-// so each accepts `undefined`. A consumer renders what is there and nothing where it is not.
+// Everything below `name` is absent on plans stored before the blocker carried its own published
+// values, so each accepts `undefined`. A consumer renders what is there and nothing where it is not.
 const BLOCKING_FINDING_CHECKS: FieldChecks<ConsumedBlockingFinding> = {
   ruleIds: arrayOf(isString),
   name: nullOr(isString),
+  agency: absentOr(nullOr(isString)),
+  disposition: absentOr(isToken(DISPOSITIONS)),
   deadlineDisplay: absentOr(nullOr(isString)),
   latestApplyDate: absentOr(nullOr(isString)),
+  deadlineStatus: absentOr(isToken(DEADLINE_STATUSES)),
+  feeDisplay: absentOr(nullOr(isString)),
   portalName: absentOr(nullOr(isString)),
   portalUrl: absentOr(nullOr(isString)),
+  portalInstructions: absentOr(nullOr(isString)),
   sources: (value: unknown): value is readonly FindingSource[] | undefined =>
     value === undefined || arrayOf(shapedLike(SOURCE_CHECKS))(value),
   userSummary: (value: unknown): value is RuleUserSummary | null | undefined =>

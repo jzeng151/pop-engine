@@ -1776,6 +1776,55 @@ describe("F-102 · CONDITIONAL branch table and INFEASIBLE rescope ladder", () =
     expect(blocker.textContent).toContain("latest published apply-by date was 2026-07-12");
   });
 
+  /**
+   * #252 review: A ROUTE CAN PUBLISH ITS FILING PATH AS INSTRUCTIONS AND NO URL. The `nypd_sound`
+   * precinct route is that shape, and this section renders a citation link and a portal url, so
+   * the one statement of where to file it had nowhere to render. The blocker payload carried
+   * neither the instructions nor the fee to render, and the widening is itself what stops the panel
+   * consulting the whole finding for them, so both halves are the fix: `VerdictDetail` carries the
+   * narrowed values and the section renders the published filing path beneath the reason.
+   */
+  it("renders an instructions-only blocker's published filing path", async () => {
+    stubApi(
+      plan({
+        verdict: "INFEASIBLE",
+        findings: [
+          finding({
+            ruleIds: ["NYPD-SOUND-001"],
+            name: "Sound Device Permit",
+            deadlineStatus: "published_deadline_missed",
+            latestApplyDate: "2026-07-12",
+          }),
+        ],
+        verdictDetail: {
+          ...emptyVerdictDetail,
+          blockingFinding: {
+            ruleIds: ["NYPD-SOUND-001"],
+            name: "Sound Device Permit",
+            agency: "NYPD",
+            disposition: "required",
+            deadlineDisplay: "File at the precinct no fewer than five days before use",
+            latestApplyDate: "2026-07-12",
+            deadlineStatus: "published_deadline_missed",
+            feeDisplay: "$45 per sound device for the first day",
+            portalName: "NYPD precinct",
+            portalUrl: null,
+            portalInstructions: "File in person at the precinct",
+            sources: [],
+            userSummary: null,
+          },
+          missedRuleIds: ["NYPD-SOUND-001"],
+        },
+      }),
+    );
+    renderPlan();
+    await screen.findByTestId("verdict-detail");
+
+    const blocker = screen.getByTestId("blocking-finding");
+    expect(blocker.textContent).toContain("File in person at the precinct");
+    expect(blocker.textContent).toContain("NYPD precinct");
+  });
+
   it("humanizes a code-only rescope from a matching stored rules snapshot", async () => {
     stubApi(
       plan({

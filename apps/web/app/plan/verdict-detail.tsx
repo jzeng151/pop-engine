@@ -1,4 +1,5 @@
 import type { Verdict } from "@pop-engine/engine";
+import { PortalBlock, type PortalFields } from "../portal-block";
 import type { ConsumedFinding, ConsumedVerdictDetail } from "./plan-api";
 import { AT_RISK_BUFFER_NOTE, verdictCopy } from "./verdict-copy";
 
@@ -30,10 +31,15 @@ type ReferenceSource = Pick<ConsumedFinding, "ruleIds" | "name"> &
  * written. Listed here rather than checked one at a time so a later key is added in one place.
  */
 const WIDENED_BLOCKER_KEYS: readonly string[] = [
+  "agency",
+  "disposition",
   "deadlineDisplay",
   "latestApplyDate",
+  "deadlineStatus",
+  "feeDisplay",
   "portalName",
   "portalUrl",
+  "portalInstructions",
   "sources",
   "userSummary",
 ];
@@ -643,6 +649,18 @@ export function VerdictDetailPanel({
     // three provenance ids, which is the F-102 edge case the finding count existed for. The shared
     // resolution above is neither: it is the routes, and a line with no route list is one of them.
     const missedRoutes = missedRouteEntries(detail.missedRuleIds, findings, references);
+    // A ROUTE CAN PUBLISH ITS FILING PATH AS INSTRUCTIONS AND NO URL, and a reference renders a url
+    // or nothing. The `nypd_sound` precinct route is that shape — null portal url, "File in person
+    // at the precinct" — so it reached this panel with nowhere to file stated at all, and the
+    // widening had already turned the legacy fallback off, so consulting the whole finding could not
+    // supply it either (#252 review). What the reference already rendered is not rendered twice:
+    // where it printed the apply link, only the instructions are added beneath it.
+    const referenceShowsPortal = blockerReference?.portalUrl != null;
+    const blockerPortal: PortalFields = {
+      portalName: referenceShowsPortal ? null : (blockerFacts?.portalName ?? null),
+      portalUrl: referenceShowsPortal ? null : (blockerFacts?.portalUrl ?? null),
+      portalInstructions: blockerFacts?.portalInstructions ?? null,
+    };
     return (
       <div className="verdict-detail" data-testid="verdict-detail">
         {blocker !== null && (
@@ -660,6 +678,11 @@ export function VerdictDetailPanel({
               {blockerFacts?.latestApplyDate != null &&
                 ` The latest published apply-by date was ${blockerFacts.latestApplyDate}.`}
             </p>
+            <PortalBlock
+              {...blockerPortal}
+              className="verdict-detail__blocker-portal"
+              instructionsClassName="verdict-detail__blocker-instructions"
+            />
             {missedRoutes.length > 1 && (
               <p className="verdict-detail__missed">
                 All published deadlines missed as scoped:{" "}

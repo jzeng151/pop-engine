@@ -516,6 +516,35 @@ describe("the blocking route of a merged line (#252)", () => {
     },
   } as const;
 
+  /**
+   * #252 review: `blockerView` narrows the fee, the agency, the disposition, the status and the
+   * portal instructions, and the `VerdictDetail` serialization carried six fields of the ten the
+   * F-102 amendment names. A route filing through instructions rather than a url — the `nypd_sound`
+   * precinct route publishes a null portal url and files in person — then reached the panel with
+   * nothing on it that says where to file, and the widening itself is what stops the panel falling
+   * back to the whole finding for them.
+   */
+  it("serializes every published value the blocking route was narrowed to", () => {
+    const inPerson = {
+      ...MISSED,
+      output: {
+        ...MISSED.output,
+        agency: "NYPD",
+        portal: { name: "NYPD precinct", instructions: "File in person at the precinct" },
+      },
+    };
+    const blocker = plan([OPEN, inPerson]).verdictDetail.blockingFinding;
+    expect(blocker?.ruleIds).toEqual(["MISSED-001"]);
+    expect(blocker?.agency).toBe("NYPD");
+    expect(blocker?.disposition).toBe("required");
+    expect(blocker?.deadlineStatus).toBe("published_deadline_missed");
+    expect(blocker?.feeDisplay).toBe("$900");
+    // The only statement of where to file this route: it publishes no url for the panel to link.
+    expect(blocker?.portalUrl).toBeNull();
+    expect(blocker?.portalName).toBe("NYPD precinct");
+    expect(blocker?.portalInstructions).toBe("File in person at the precinct");
+  });
+
   it("names the missed route and quotes ITS window, fee and portal", () => {
     const evaluated = plan([OPEN, MISSED]);
     // The line reads as the open route: it is the tightest AVAILABLE window, and the closed one

@@ -436,16 +436,29 @@ export type VerdictDetail = {
    * window the date it printed was in the future of the plan's own clock (#252 review). Every field
    * here is the blocking route's own, as `blockerView` narrowed it.
    *
+   * ALL OF WHAT F-102 NAMES, NOT THE SUBSET THE PANEL HAPPENED TO READ. The amended edge case lists
+   * the blocking route's "rule id, name, agency, disposition, window, status, fee, portal,
+   * instructions and citations", and `blockerView` narrows every one of them; this serialization
+   * carried six. A route filing through instructions rather than a URL — the `nypd_sound` precinct
+   * route publishes a null portal url and files in person — then reached the panel with nothing
+   * that says where to file, and the widening had already turned the legacy fallback off, so
+   * consulting the whole finding could not supply it either (#252 review).
+   *
    * Optional because plans stored before this widening carry only `ruleIds` and `name`; a replayed
    * detail is read as it was written, and a consumer treats absence as "not recorded".
    */
   readonly blockingFinding: {
     readonly ruleIds: readonly string[];
     readonly name: string | null;
+    readonly agency?: string | null;
+    readonly disposition?: Disposition;
     readonly deadlineDisplay?: string | null;
     readonly latestApplyDate?: string | null;
+    readonly deadlineStatus?: DeadlineStatus;
+    readonly feeDisplay?: string | null;
     readonly portalName?: string | null;
     readonly portalUrl?: string | null;
+    readonly portalInstructions?: string | null;
     readonly sources?: readonly FindingSource[];
     /**
      * Null where the blocking route is not the route the merged line reads: the heading is written
