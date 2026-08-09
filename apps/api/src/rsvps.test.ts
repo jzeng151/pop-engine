@@ -11,8 +11,6 @@ import {
   fixtureSubmission,
 } from "@pop-engine/engine/fixtures";
 import type { ScenarioIntakeFixture } from "@pop-engine/engine/fixtures";
-import { cityHealthRule } from "../../../scripts/spec-conflict-scan.mjs";
-import type { PublishedRuleShape } from "../../../scripts/spec-conflict-scan.mjs";
 import { createApp } from "./app";
 import { cancelRsvp, createRsvp, listRsvps, normalizeEmail, normalizeOptionalPhone } from "./rsvps";
 import { loadRuleset, publishedRulesFile } from "./ruleset";
@@ -350,45 +348,48 @@ describe.runIf(databaseUrl.length > 0)("F-302 RSVP endpoints (database)", () => 
   });
 });
 
-// The regression test for the fact issue #235 corrected. No published DOHMH rule's trigger reads
-// `headcount` (all three key on `food_present` and `event_open_to_public`, and
-// `DOHMH-ORGANIZER-NOTIFY-001` also reads `food_vendor_count`), so the DOHMH findings a plan
-// carries cannot move when the count does. That was asserted only against the artifact until now,
-// by `scripts/spec-conflict-resolutions.test.mjs`; this asserts it against evaluated output, which
-// is what an organizer actually sees.
+// THE REGRESSION TEST FOR THE FACT ISSUE #235 CORRECTED, and nothing wider.
 //
-// guard: asserts-independence
+// #235 removed an invented DOHMH headcount trigger. What must not come back is that: no published
+// city health rule may key on the attendee count, and the DOHMH findings an organizer sees must
+// not move when the count does. Both halves are read out of the published ruleset rather than
+// written down here, so a publication that moves a threshold moves this test with it.
 //
-// The marker above is the opt-out `scripts/spec-conflict-scan.mjs` honours in every scanned code
-// extension (`.ts`, `.tsx`, `.mjs` and `.js`; it said `.ts` and `.tsx` until the fifth PR #247
-// review round widened it, and this sentence was left behind). This block has to name the agency and vary the count, which is exactly the co-occurrence
-// that scan flags; it reads co-occurrence and not stance, and `headcount` is the literal field name
-// in the intake type, so the "F-101 intake field" circumlocution the correction records use is not
-// available here. The marker carries an obligation rather than a licence: the block it marks must
-// assert the independence, which is what the assertions below do.
-//
-// WHICH FINDINGS ARE THE AGENCY'S IS THE ARTIFACT'S ANSWER AND NOT A PREFIX, which is the
-// sixteenth PR #247 round. This filtered on `DOHMH-`, while the structural guard next door
-// classifies the same rule by its id OR its published `output.agency` (`cityHealthRule` in
-// `scripts/spec-conflict-scan.mjs`), and `specs/F-201-permit-plan-generator.md:22` makes the
-// published agency authoritative. A future city-health rule published under `NYC Health` with an
-// id carrying no prefix was therefore invisible HERE and visible THERE, so its finding could move
-// with `headcount` and leave this regression green: it need not even read the count itself, since
-// deduplication against a count-sensitive rule is enough to move it. The classification is
-// imported rather than restated, so the two guards cannot disagree about whose rule it is.
+// The general question, whether any prose anywhere in the repository states an unsupported
+// regulatory claim, is issue #256's. It was built on this branch and split out on 2026-08-09.
 describe("DOHMH findings do not move with headcount (#235)", () => {
+  type PublishedRule = { id?: string; trigger?: unknown; output?: { agency?: string | null } };
   const published = JSON.parse(readFileSync(publishedRulesFile(), "utf8")) as {
-    rules?: PublishedRuleShape[];
-    advisories?: PublishedRuleShape[];
+    rules?: PublishedRule[];
+    advisories?: PublishedRule[];
   };
   const ruleset = parseEngineRuleset(published);
   const calendar: HolidayCalendar = { id: ruleset.calendarId, holidays: [] };
   const declared = new Set(ruleset.intakeFields.map((field) => field.field));
-  const cityHealthIds = new Set(
-    [...(published.rules ?? []), ...(published.advisories ?? [])]
-      .filter((rule) => cityHealthRule(rule))
-      .map((rule) => rule.id),
+  const COUNT_FIELD = "headcount";
+
+  // By the published agency as well as by the id: `specs/F-201-permit-plan-generator.md:22` makes
+  // the agency authoritative, so a rule published under `NYC Health` with no `DOHMH-` prefix is
+  // this agency's rule too.
+  const CITY_HEALTH = /DOHMH|NYC Health|Health and Mental Hygiene/i;
+  const cityHealth = [...(published.rules ?? []), ...(published.advisories ?? [])].filter(
+    (rule) => CITY_HEALTH.test(rule.id ?? "") || CITY_HEALTH.test(rule.output?.agency ?? ""),
   );
+  const cityHealthIds = new Set(cityHealth.map((rule) => rule.id));
+
+  /** Every value a trigger compares `field` against, at any nesting depth of `all` / `any`. */
+  const comparedValues = (node: unknown, field: string, into = new Set<number>()) => {
+    if (Array.isArray(node)) for (const child of node) comparedValues(child, field, into);
+    else if (node !== null && typeof node === "object") {
+      const record = node as Record<string, unknown>;
+      if (record.field === field) {
+        for (const value of [record.value].flat()) if (typeof value === "number") into.add(value);
+      }
+      for (const value of Object.values(record)) comparedValues(value, field, into);
+    }
+    return into;
+  };
+
   const cityHealthFindings = (fixture: ScenarioIntakeFixture, headcount: number) => {
     const answers = { ...fixtureSubmission(fixture), headcount };
     const intake = Object.fromEntries(
@@ -398,69 +399,43 @@ describe("DOHMH findings do not move with headcount (#235)", () => {
       finding.ruleIds.some((ruleId) => cityHealthIds.has(ruleId)),
     );
   };
-  // EVERY PUBLISHED BOUNDARY, BELOW AND AT AND ABOVE, which is the eighteenth PR #247 round. The
-  // comparison ran at 20, 75 and 500, so every value it compared was AT OR ABOVE the lowest
-  // published headcount boundary and the below-20 state was never evaluated: at 19 neither
-  // `PARKS-EVENT-001` (`gt` 20) nor `PARKS-EXACTLY-20-001` (`eq` 20) contributes, and those two
-  // routes are mutually exclusive, so a city health finding sharing a dedupe key with both of them
-  // can produce byte-identical output at 20, 75 and 500 and different output at 19. The reachability
-  // assertion below says nothing about it either: it evaluates one headcount and asks which rules
-  // were reached, not which thresholds were crossed. `AGENTS.md` lines 59-60 already required this
-  // shape ("numeric rule thresholds require below/at/above boundary tests") and
-  // `specs/F-201-permit-plan-generator.md` criterion 8 names `park headcount 19/20/21` as a fixture.
-  //
-  // THE BOUNDARIES ARE READ OUT OF THE PUBLISHED TRIGGERS rather than written here, so a
-  // publication that moves a threshold moves this comparison with it instead of leaving it testing
-  // last year's numbers. 500 stays as the far-above value the earlier rounds compared at, above
-  // every published boundary rather than beside one.
-  const COUNT_FIELD = "headcount";
-  const publishedCountThresholds = (node: unknown, into = new Set<number>()): Set<number> => {
-    if (Array.isArray(node)) for (const child of node) publishedCountThresholds(child, into);
-    else if (node !== null && typeof node === "object") {
-      const record = node as Record<string, unknown>;
-      if (record.field === COUNT_FIELD && typeof record.value === "number") into.add(record.value);
-      for (const value of Object.values(record)) publishedCountThresholds(value, into);
+
+  it("publishes no city health trigger that reads the attendee count", () => {
+    expect(cityHealthIds.size, "the ruleset publishes city health rules").toBeGreaterThan(0);
+    for (const rule of cityHealth) {
+      expect(
+        [...comparedValues(rule.trigger, COUNT_FIELD)],
+        `${rule.id} keys on no attendee count (#235)`,
+      ).toEqual([]);
     }
-    return into;
-  };
+  });
+
+  // Below, at and above every published boundary, per AGENTS.md lines 59-60. The boundaries come
+  // out of the artifact, and 500 is the far-above value.
   const ascending = (a: number, b: number) => a - b;
-  const publishedBoundaries = [...publishedCountThresholds(published)].sort(ascending);
-  const COMPARED_HEADCOUNTS = [
-    ...new Set([...publishedBoundaries.flatMap((at) => [at - 1, at, at + 1]), 500]),
-  ].sort(ascending);
-  // EVERY SCENARIO AND NOT SCENARIO A ALONE, which is the seventeenth PR #247 round. Comparing one
-  // intake compares only the branches that intake reaches, and A is `event_open_to_public: "yes"`,
-  // so `DOHMH-EXEMPTION-001`, whose published trigger reads `no` or `unknown`, contributed no
-  // finding at any of the three headcounts. All three assertions were green on a rule the
-  // comparison never evaluated, and a future count-sensitive rule that deduplicates with that
-  // advisory for private events only would have moved city health output with all three still
-  // green. That is the same defect this file's own comment names one level down: a rule need not
-  // read the count itself for deduplication to move its finding.
-  //
-  // The scenarios are the approved fixtures rather than intakes written here, so the comparison
-  // rests on the answer key instead of on hand-built inputs, and the assertion under it is what
-  // makes the coverage a fact rather than a hope.
+  const boundaries = [...comparedValues(published, COUNT_FIELD)].sort(ascending);
+  const COMPARED = [...new Set([...boundaries.flatMap((at) => [at - 1, at, at + 1]), 500])].sort(
+    ascending,
+  );
+
   it("returns the same findings below, at and above every published headcount boundary", () => {
-    // The derivation is pinned, so a comparison that quietly stopped reading the artifact's
-    // thresholds fails here rather than running over a shorter list. 20 is the Parks special event
-    // threshold (`gt` and `eq`), 75 the place-of-assembly one (`gte`).
-    expect(publishedBoundaries, "the published headcount thresholds").toEqual([20, 75]);
-    expect(COMPARED_HEADCOUNTS).toEqual([19, 20, 21, 74, 75, 76, 500]);
+    // Pinned, so a derivation that stopped reading the artifact fails here rather than running
+    // over a shorter list. 20 is the Parks special-event threshold, 75 the place-of-assembly one.
+    expect(boundaries, "the published headcount thresholds").toEqual([20, 75]);
+    expect(COMPARED).toEqual([19, 20, 21, 74, 75, 76, 500]);
     for (const fixture of SCENARIO_INTAKE_FIXTURES) {
-      const lowest = Math.min(...COMPARED_HEADCOUNTS);
-      const baseline = cityHealthFindings(fixture, lowest);
-      for (const headcount of COMPARED_HEADCOUNTS) {
+      const baseline = cityHealthFindings(fixture, COMPARED[0] as number);
+      for (const headcount of COMPARED) {
         expect(
           cityHealthFindings(fixture, headcount),
-          `scenario ${fixture.scenario} at ${headcount} against ${lowest}`,
+          `scenario ${fixture.scenario} at ${headcount} against ${COMPARED[0]}`,
         ).toEqual(baseline);
       }
     }
   });
-  // What makes the comparison above worth running: a published city health rule no scenario reaches
-  // is a rule this regression cannot say anything about, and it would go on saying nothing while
-  // looking green. Asserted by id rather than by count, so a rule added to the artifact fails here
-  // until a fixture reaches it.
+
+  // What makes the comparison above worth running: a published city health rule no scenario
+  // reaches is one this regression says nothing about, while looking green.
   it("reaches every published city health rule across the compared scenarios", () => {
     const reached = new Set(
       SCENARIO_INTAKE_FIXTURES.flatMap((fixture) =>
@@ -469,17 +444,6 @@ describe("DOHMH findings do not move with headcount (#235)", () => {
         ),
       ),
     );
-    expect([...reached].sort(), "every published city health rule is compared").toEqual(
-      [...cityHealthIds].sort(),
-    );
-  });
-  // What drives the classification above, since the artifact cannot: all three of this ruleset's
-  // city health rules carry the prefix today, so the two readings agree on it and no assertion
-  // over the real rules can tell them apart. The case that separates them is asserted directly.
-  it("classifies a city health rule by its published agency, prefix or no prefix", () => {
-    const byAgencyAlone = { id: "ASSEMBLY-CAPACITY-001", output: { agency: "NYC Health" } };
-    expect(byAgencyAlone.id.startsWith("DOHMH-"), "the id alone would miss it").toBe(false);
-    expect(cityHealthRule(byAgencyAlone), "the published agency classifies it").toBe(true);
-    expect(cityHealthIds.has("DOHMH-EXEMPTION-001"), "and the id still classifies").toBe(true);
+    expect([...reached].sort()).toEqual([...cityHealthIds].sort());
   });
 });
