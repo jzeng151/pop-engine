@@ -1006,13 +1006,21 @@ const FIXTURE_NAMES_MARKER = "baseline-check: fixture ruleset names";
  * by planting a minimal tree and pointing the real script at it. That is precisely what was tried
  * with `apps/api/src/ruleset.ts` in round 7 and reverted after twenty-seven of thirty-one tests
  * went red. `vitestIncludeMatches` in the suite is what stops this drifting: it reads the real
- * config's include array and fails if it is not this list.
+ * config's include and exclude arrays and fails if they are not these lists.
+ *
+ * The exclude copy is here for the same reason the include one is. `scripts/` is covered
+ * recursively and one directory under it is exempted by name, so a copy carrying only the include
+ * would hand the fixture exemption to the one suite CI does not run, which is the exemption's whole
+ * point inverted (#251 review). Only the entries the config spells out are copied;
+ * `configDefaults.exclude` covers `node_modules` and build output, which this scan never reaches.
  */
 const VITEST_INCLUDE = [
   "{apps,packages}/*/src/**/*.test.{ts,tsx}",
   "apps/web/app/**/*.test.{ts,tsx}",
-  "scripts/*.test.mjs",
+  "scripts/**/*.test.mjs",
 ];
+
+const VITEST_EXCLUDE = ["scripts/dedupe-cofiring/**"];
 
 /**
  * One include glob as a regular expression, supporting exactly the three constructs vitest's
@@ -1049,10 +1057,12 @@ function globToRegExp(glob) {
 }
 
 const VITEST_COLLECTS = VITEST_INCLUDE.map(globToRegExp);
+const VITEST_SKIPS = VITEST_EXCLUDE.map(globToRegExp);
 
 /** Whether `file` may claim the exemption at all, and whether `line` claims it. */
 function claimsFixtureExemption(relative, sourceLines, line) {
   if (!VITEST_COLLECTS.some((pattern) => pattern.test(relative))) return false;
+  if (VITEST_SKIPS.some((pattern) => pattern.test(relative))) return false;
   const own = sourceLines[line - 1] ?? "";
   const above = sourceLines[line - 2] ?? "";
   return own.includes(FIXTURE_NAMES_MARKER) || above.includes(FIXTURE_NAMES_MARKER);
