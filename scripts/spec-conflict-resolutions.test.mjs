@@ -829,8 +829,27 @@ describe("no DOHMH rule is attributed to headcount, removed 2026-08-05 (#235)", 
     [".gitignore", "git configuration."],
     [".nvmrc", "the pinned node version."],
     [".prettierrc", "formatter configuration."],
-    ["", "LICENSE and NOTICE, which are third-party legal text this repository does not author."],
   ]);
+
+  /**
+   * THE THIRD-PARTY LEGAL TEXTS, by exact path, and the reason they are not this repository's
+   * prose: `LICENSE` and `NOTICE` carry text this repository did not author and may not reword.
+   *
+   * IT IS A PATH RULE AND NOT AN EXTENSION, which is the twenty-second PR #247 round and is the
+   * same correction the twenty-first round made for `.html`. The empty string was an entry in the
+   * map above, so EVERY extensionless file was classified as third-party legal text: an
+   * extensionless `SECURITY` or `OPERATIONS` document could state an unsupported city health count
+   * claim, and the tracked-file partition would pass it on its missing dot alone. An exemption may
+   * be no wider than the files that justify it, and these two files are the whole justification.
+   *
+   * A third extensionless file added to this repository fails the partition below until somebody
+   * says which side of the line it is on, which is exactly the question that partition exists to
+   * force. Adding a name here means asserting that its text is somebody else's publication.
+   */
+  const THIRD_PARTY_LEGAL_TEXT = [
+    ["LICENSE", "the repository's licence, which is a published licence's own wording."],
+    ["NOTICE", "the attribution notice that licence requires, which is third-party text too."],
+  ];
 
   /** A tracked path's extension, or the empty string where its basename carries no dot. */
   const extensionOf = (relative) => {
@@ -892,9 +911,13 @@ describe("no DOHMH rule is attributed to headcount, removed 2026-08-05 (#235)", 
     const tracked = execFileSync("git", ["ls-files", "-z"], { cwd: repoRoot, encoding: "utf8" })
       .split("\0")
       .filter(Boolean);
+    // The two third-party legal texts are answered by PATH, so they are taken out of the extension
+    // question rather than answering it for every file that shares their missing dot.
+    const legal = new Set(THIRD_PARTY_LEGAL_TEXT.map(([path]) => path));
     const unclassified = [
       ...new Set(
         tracked
+          .filter((relative) => !legal.has(relative))
           .map(extensionOf)
           .filter(
             (extension) =>
@@ -909,7 +932,27 @@ describe("no DOHMH rule is attributed to headcount, removed 2026-08-05 (#235)", 
       "every tracked file kind is either read as prose (PROSE_EXTENSIONS in" +
         " scripts/spec-conflict-scan.mjs) or named in NON_PROSE_EXTENSIONS with the reason it is" +
         " not. A file kind listed here is audited by nobody and nothing else says so: add it to" +
-        " the prose list, or say here why its files carry no regulatory claim.",
+        " the prose list, or say here why its files carry no regulatory claim. An extensionless" +
+        " file is this repository's own prose unless THIRD_PARTY_LEGAL_TEXT names its path.",
+    ).toEqual([]);
+  });
+
+  /**
+   * The legal-text exemption held to the two questions every path-scoped exemption here is held
+   * to: each entry matches a tracked file, and everything it does not match is classified. The
+   * second half is what the empty-string extension entry could not ask.
+   */
+  it("the third-party legal exemption names tracked files, and no other extensionless file", () => {
+    const tracked = trackedFiles();
+    for (const [path, why] of THIRD_PARTY_LEGAL_TEXT) {
+      expect(tracked, why).toContain(path);
+    }
+    const named = new Set(THIRD_PARTY_LEGAL_TEXT.map(([path]) => path));
+    expect(
+      tracked.filter((relative) => extensionOf(relative) === "" && !named.has(relative)),
+      "an extensionless tracked file is not named as third-party legal text, so nothing says" +
+        " whether its prose is audited. It is this repository's own document unless somebody says" +
+        " otherwise: give it an audited extension, or name it in THIRD_PARTY_LEGAL_TEXT.",
     ).toEqual([]);
   });
 

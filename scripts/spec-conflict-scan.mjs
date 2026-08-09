@@ -714,10 +714,76 @@ const withoutReferenceLabels = (text) => text.replace(/\]\[[^\]\n]*\]/g, "]");
  */
 const collapseSpaces = (text) => text.replace(/[^\S\n]+/g, " ");
 
+/**
+ * ONE HTML TAG, opening, closing or self-closing, and nothing that merely looks like one.
+ *
+ * The name has to start the tag immediately, so `a < b` and `<= 75` are the comparisons they are,
+ * and an autolink (`<https://example.test/75-guests>`) is left alone because a scheme's colon is
+ * not part of a tag name. An attribute list may carry anything but the angle brackets themselves.
+ */
+const HTML_TAG = /<\/?[A-Za-z][A-Za-z0-9-]*(?:\s[^<>]*)?\/?>/g;
+
+/**
+ * The named character references this decodes. Six, and not the WHATWG table's 2,231: these are
+ * the five predefined XML entities every HTML author writes plus the non-breaking space, which is
+ * the one a count phrase is actually broken by. An unrecognised name is LEFT AS WRITTEN, so a page
+ * using a wider entity is read no worse than it is today rather than being silently half-decoded.
+ */
+const NAMED_ENTITIES = new Map([
+  ["amp", "&"],
+  ["lt", "<"],
+  ["gt", ">"],
+  ["quot", '"'],
+  ["apos", "'"],
+  ["nbsp", " "],
+]);
+
+const decodeEntities = (text) =>
+  text.replace(
+    /&(?:#(\d{1,7})|#[xX]([0-9A-Fa-f]{1,6})|([A-Za-z][A-Za-z0-9]{1,31}));/g,
+    (whole, decimal, hex, name) => {
+      if (name !== undefined) return NAMED_ENTITIES.get(name.toLowerCase()) ?? whole;
+      const code = Number.parseInt(decimal ?? hex, decimal === undefined ? 16 : 10);
+      return code > 0 && code <= 0x10ffff ? String.fromCodePoint(code) : whole;
+    },
+  );
+
+/**
+ * THE RENDERED TEXT OF A PAGE, rather than the markup an organizer never sees. This is the
+ * twenty-second PR #247 round, and it is what the twenty-first round's `.html` addition still
+ * needed: adding the extension put the FILE inside the walk and left the SCAN reading raw markup,
+ * so a claim written in ordinary markup was in the guard's reach and out of its vocabulary.
+ *
+ * Both spellings are ordinary rather than adversarial. `DOHMH requires a permit for 75&nbsp;guests`
+ * is how a page keeps a number and its noun on one line, and `75 <strong>guests</strong>` is how it
+ * emphasises the threshold; each renders as the count phrase an organizer reads, and neither was
+ * the literal "75 guests" that `COUNTED_PEOPLE` joins with a single space. That is the same defect
+ * the emphasis markers had in markdown in the eighth round, in the markup language the twenty-first
+ * round brought into the walk.
+ *
+ * THE TAGS GO FIRST AND THE ENTITIES SECOND, which is the order a parser reads them in and is not
+ * interchangeable: `&lt;strong&gt;` is text an author escaped ON PURPOSE, and decoding first would
+ * turn it into a tag and delete the words it wraps.
+ *
+ * A TAG IS REMOVED RATHER THAN REPLACED BY A SPACE, because inline markup wraps a word rather than
+ * separating two: `75<strong>guests</strong>` reads as the phrase and `guest<br>count` does not,
+ * which is what a line break between them means. The cost is the mirror of that and is stated: a
+ * word an author split across a tag boundary is rejoined, exactly as the emphasis markers already
+ * rejoin one.
+ *
+ * IT IS NOT SCOPED TO `.html`, for the reason the emphasis markers are not scoped to `.md`.
+ * Markdown carries inline HTML by specification and this tree's `.tsx` files carry it as JSX, so a
+ * claim wrapped in a tag is the same claim wherever the tag is written. Its cost in code is stated
+ * too: a TypeScript generic (`Array<string>`) matches the tag shape and is removed before matching,
+ * which joins its neighbours and states no count. Measured over every scanned root, the flag set is
+ * unchanged at the four pinned records and the six benign pairs with this in place.
+ */
+const asRenderedText = (text) => decodeEntities(text.replace(HTML_TAG, ""));
+
 export const normalizeForMatching = (text) =>
   collapseSpaces(
     joinWrappedLines(
-      withoutReferenceLabels(withoutLinkTargets(text))
+      asRenderedText(withoutReferenceLabels(withoutLinkTargets(text)))
         .replace(/[`*_~[\]"“”]/g, "")
         .replace(/(?<![A-Za-z0-9])'|'(?![A-Za-z0-9])/g, ""),
     ),
@@ -783,9 +849,37 @@ export const isParagraph = (block) => !LIST_OR_ROW.test(openingLine(block));
 const HEADING = /^[\s/*]*#{1,6}\s/;
 const LIST_ITEM = /^[\s/*]*(?:[-*+]\s|\d+\.\s)/;
 
-/** Whether a block is a markdown heading. Headings are paragraphs by `isParagraph`, which is what
- * `LIST_OR_ROW` says they are; this is the narrower question the heading scoping asks. */
-export const isHeading = (block) => HEADING.test(openingLine(block));
+/**
+ * A SETEXT HEADING'S UNDERLINE: the row of `=` or `-` that makes the line above it a heading. The
+ * comment leader is allowed before it for the reason `HEADING` allows one, and nothing but
+ * whitespace may follow it.
+ */
+const SETEXT_UNDERLINE = /^[\s/*]*(?:=+|-+)[ \t]*$/;
+
+/**
+ * Whether a block is a markdown heading. Headings are paragraphs by `isParagraph`, which is what
+ * `LIST_OR_ROW` says they are; this is the narrower question the heading scoping asks.
+ *
+ * BOTH OF MARKDOWN'S HEADING FORMS, which is the twenty-second PR #247 round. Only the ATX form
+ * (`## DOHMH requirements`) was recognised, so the twentieth round's list scoping never fired under
+ * the other one: `DOHMH requirements\n-------------------` over `- Required for 75 guests` renders
+ * as exactly the heading-and-list relationship that round exists to read, and the ordinary-English
+ * tier refused it because the heading was, to this predicate, a paragraph. The underline sits in
+ * the SAME BLOCK as the text it underlines, because `blocksOf` starts a new block only at a list
+ * item or a table row and a row of dashes is neither, so the question is about the block's second
+ * line rather than about its neighbour.
+ *
+ * A LIST ITEM UNDER A ROW OF DASHES IS STILL A LIST ITEM: markdown reads a Setext underline against
+ * a PARAGRAPH, so a block whose opening line is a bullet or a table row is excluded here the way it
+ * is excluded from `isParagraph`.
+ */
+export const isHeading = (block) => {
+  const lines = block.trim().split("\n");
+  if (HEADING.test(lines[0] ?? "")) return true;
+  return (
+    lines.length > 1 && !LIST_OR_ROW.test(lines[0] ?? "") && SETEXT_UNDERLINE.test(lines[1] ?? "")
+  );
+};
 
 /** Whether a block is a list item, ordered or not. */
 export const isListItem = (block) => LIST_ITEM.test(openingLine(block));
@@ -841,9 +935,22 @@ export const isListItem = (block) => LIST_ITEM.test(openingLine(block));
  * prose, and escaped so that a published `(`, `/` or `.` is the character it is rather than regular
  * expression syntax. An empty or whitespace-only identity is dropped: as an alternative it would
  * match every string in the tree.
+ *
+ * AN IDENTITY IS RETURNED WITH THE RULES THAT PUBLISH IT, which is the twenty-second PR #247 round
+ * and is what `countsAttributed` needs to hold a claim to the instrument's OWNER. The set of
+ * identities alone made a named instrument a claim SUBJECT without making it an ATTRIBUTION, so a
+ * claim naming another rule's instrument fell through to the host: with `HEALTH-A` legitimately
+ * published at 75 and the `Temporary Food Service Establishment permit` belonging to
+ * count-independent `HEALTH-B`, "Temporary Food Service Establishment permit applies at 75 guests"
+ * written into `HEALTH-A` was licensed by `HEALTH-A`'s own threshold and produced no offender. The
+ * instrument's name is what an organizer reads the claim as being about, exactly as a rule id is.
+ *
+ * `publishedClaimSubjects` is the keys of this map, so the two answers cannot drift apart. An
+ * identity two rules publish carries both, and both then have to license the claim, which is the
+ * quantifier `countsAttributed` already applies to a sentence naming two rule ids.
  */
-export const publishedClaimSubjects = (artifact) => {
-  const identities = new Set();
+export const publishedInstrumentOwners = (artifact) => {
+  const owners = new Map();
   for (const rule of [...(artifact?.rules ?? []), ...(artifact?.advisories ?? [])]) {
     if (!cityHealthRule(rule)) continue;
     const output = rule.output ?? {};
@@ -852,11 +959,17 @@ export const publishedClaimSubjects = (artifact) => {
     for (const identity of named) {
       if (typeof identity !== "string") continue;
       const normalized = normalizeForMatching(identity).trim();
-      if (normalized !== "") identities.add(normalized);
+      if (normalized === "") continue;
+      const already = owners.get(normalized) ?? [];
+      if (rule.id && !already.includes(rule.id)) already.push(rule.id);
+      owners.set(normalized, already);
     }
   }
-  return [...identities].sort();
+  return owners;
 };
+
+export const publishedClaimSubjects = (artifact) =>
+  [...publishedInstrumentOwners(artifact).keys()].sort();
 
 /** The nouns this jurisdiction's regulatory instruments are called by. */
 const INSTRUMENT_NOUN =
@@ -1182,22 +1295,46 @@ const namesRule = (text, id) => {
  * so searching only its keys would never see the second name and `every` would range over one
  * subject again. `publishedIds` is the caller's list of every id the artifact publishes.
  *
+ * A NAMED INSTRUMENT IS A NAMED RULE, which is the twenty-second PR #247 round. A published
+ * instrument title is a claim SUBJECT everywhere else in this module, and it was no subject here:
+ * `named` read rule IDS alone, so a claim naming another rule's instrument found nothing and fell
+ * through to the host, which then licensed it on its own threshold. `instruments` is
+ * `publishedInstrumentOwners`' map from an identity to the rules that publish it, and a rule named
+ * that way is held to its own trigger exactly as one named by id is: an instrument whose owner
+ * reads no count licenses no count, wherever the sentence sits.
+ *
  * `host` is the rule whose own output the text is, where there is one. A string that names no rule
  * is about the rule it sits in, which is the only place LOCATION is read as the subject; a string
  * that names rules is about the rules it names, the host included when the host is one of them.
  * Repository prose has no host, so a count sentence naming no rule stays unattributed there.
  */
-export const countsAttributed = (raw, attributed, { publishedIds = [], host } = {}) => {
+export const countsAttributed = (
+  raw,
+  attributed,
+  { publishedIds = [], host, instruments = new Map() } = {},
+) => {
   const universe = [...new Set([...publishedIds, ...attributed.keys()])];
   const licenses = (claim, id) => {
     const thresholds = attributed.get(id);
     return thresholds !== undefined && countsSupportedBy(claim, thresholds);
   };
+  // The rules a claim names by INSTRUMENT TITLE. The titles are normalized the way the claim is,
+  // so this is the plain substring question `publishedClaimSubjects` already matches them by.
+  const ownersNamed = (claim) => {
+    const text = claim.toLowerCase();
+    const found = [];
+    for (const [title, ids] of instruments) {
+      if (text.includes(title.toLowerCase())) found.push(...ids);
+    }
+    return found;
+  };
   const claims = sentencesOf(normalizeForMatching(raw)).filter(statesACount);
   return (
     claims.length > 0 &&
     claims.every((claim) => {
-      const named = universe.filter((id) => namesRule(claim, id));
+      const named = [
+        ...new Set([...universe.filter((id) => namesRule(claim, id)), ...ownersNamed(claim)]),
+      ];
       const subjects = named.length > 0 ? named : host === undefined ? [] : [host];
       return subjects.length > 0 && subjects.every((id) => licenses(claim, id));
     })
@@ -1358,11 +1495,32 @@ export const cityHealthRule = ({ id = "", output }) =>
   CITY_HEALTH_AGENCY.test(id) || CITY_HEALTH_AGENCY.test(output?.agency ?? "");
 
 /**
+ * Whether a contract field holds a LOCATOR rather than prose: a key whose name ends in `url` or
+ * `urls`, however it is spelled. This is the twenty-second PR #247 round.
+ *
+ * The exclusion was the exact key `url` and no other, so the ARRAY form the repository actually
+ * writes was read as prose: `sources[].urls` is this tree's normal shape, it sits beside the
+ * citation in one object, and `siblingUnits` therefore joins a real URL to a real citation into one
+ * unit. `{ citation: "DOHMH permit page", urls: ["https://example.test/75-guests"] }` came out of
+ * that as a fabricated count claim, so adding a legitimate source locator to a rule broke the
+ * regulatory-artifact audit on an edit that published nothing. A false report on ordinary work
+ * costs this guard more than the claim it cannot make: a path is not a sentence, and no organizer
+ * reads one as a threshold.
+ *
+ * The question is the KEY and not the value, on the same terms the exact-key check asked it: a
+ * string that merely looks like a URL may still be prose an author wrote, and a contract field
+ * named for a locator holds a locator. `portalUrl` and `source_urls` are the other two spellings
+ * this tree's artifacts carry, and both are now answered by the same rule rather than by two more
+ * entries somebody has to remember.
+ */
+const isUrlField = (key) => /urls?$/i.test(key);
+
+/**
  * Every organizer-facing string a published rule or advisory carries, at any nesting depth of its
  * `output`: `permit_name`, `requirement_name`, `note_text`, `advisory_text`, `disposition`, the
  * `notes` array, the `deadline` and `fee` displays, and every `user_summary` heading and point.
  *
- * A `url` is not prose and is excluded: it carries no claim, and a path fragment like
+ * A URL is not prose and is excluded: it carries no claim, and a path fragment like
  * `.../guests-75` would read as a count. Everything else under `output` is read, rather than the
  * dozen keys that exist today, so a key a future publication adds is scanned the day it lands.
  */
@@ -1371,7 +1529,7 @@ export const outputStrings = (node, into = []) => {
   else if (Array.isArray(node)) for (const child of node) outputStrings(child, into);
   else if (node && typeof node === "object") {
     for (const [key, value] of Object.entries(node)) {
-      if (key !== "url") outputStrings(value, into);
+      if (!isUrlField(key)) outputStrings(value, into);
     }
   }
   return into;
@@ -1431,7 +1589,7 @@ const PUBLISHED_RULE_ARRAYS = ["rules", "advisories"];
 /**
  * The strings one object of the artifact carries DIRECTLY, its arrays of strings included: the
  * siblings a reader sees as one labelled thing. A child object is a unit of its own, so nesting
- * groups rather than flattens, and `url` is excluded for the reason `outputStrings` gives.
+ * groups rather than flattens, and a URL field is excluded for the reason `isUrlField` gives.
  */
 const siblingUnits = (node, into = []) => {
   if (typeof node === "string") into.push([node]);
@@ -1443,7 +1601,7 @@ const siblingUnits = (node, into = []) => {
       else if (value && typeof value === "object") siblingUnits(value, into);
     };
     for (const [key, value] of Object.entries(node)) {
-      if (key !== "url") collect(value);
+      if (!isUrlField(key)) collect(value);
     }
     if (siblings.length > 0) into.push(siblings);
   }
@@ -1651,12 +1809,18 @@ export const countClaimsInPublishedOutput = (
   // is what a LOWER-AUTHORITY artifact needs, and it is the caller's answer because only the
   // caller knows which artifact in the tree is the publication.
   const subjects = [...new Set([...publishedClaimSubjects(artifact), ...given])].sort();
+  // Which rule of THIS artifact publishes each instrument title, so a claim naming another rule's
+  // instrument is audited against that rule rather than against the one it happens to sit in. The
+  // map is the artifact's own and is not widened by `given`: a title the caller supplies belongs to
+  // a rule of some other artifact, whose id this artifact's claim cannot be held to, and a claim
+  // naming one is already reported here because it names no rule of this artifact at all.
+  const instruments = publishedInstrumentOwners(artifact);
   for (const rule of publishedRules) {
     const ownRequirement = cityHealthRule(rule);
     const claims = (string) => {
       const scanned = ownRequirement ? `${rule.output?.agency ?? "DOHMH"}. ${string}` : string;
       if (!pairsAgencyWithCount(scanned, { subjects })) return false;
-      return !countsAttributed(scanned, attributed, { publishedIds, host: rule.id });
+      return !countsAttributed(scanned, attributed, { publishedIds, host: rule.id, instruments });
     };
     const strings = organizerFacingStrings(rule);
     const offending = strings.filter(claims);
@@ -1673,7 +1837,7 @@ export const countClaimsInPublishedOutput = (
   for (const { where, strings } of rulesetProseStrings(artifact)) {
     const unreported = (text) =>
       countClaimsInProse(text, subjects).filter(
-        (claim) => !countsAttributed(claim, attributed, { publishedIds }),
+        (claim) => !countsAttributed(claim, attributed, { publishedIds, instruments }),
       );
     const offending = strings.flatMap(unreported);
     const reported =

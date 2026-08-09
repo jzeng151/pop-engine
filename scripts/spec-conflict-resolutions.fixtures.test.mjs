@@ -31,7 +31,9 @@ import {
   organizerFacingStrings,
   pairsAgencyWithCount,
   pinnedDigest,
+  isHeading,
   publishedClaimSubjects,
+  publishedInstrumentOwners,
   rulesetProseStrings,
   scanFile,
   scanOptionsFor,
@@ -3762,5 +3764,235 @@ describe("round 20: a list item is read against the heading it sits under", () =
   /** The paragraph-to-bullet negative the eighth round measured is unchanged: no heading, no pair. */
   it("still does not pair a plain paragraph with the bullet under it", () => {
     expect(texts("DOHMH publishes the temporary food-service permit.", COUNT)).toEqual([]);
+  });
+});
+
+/**
+ * ROUND 22. The twenty-first round added `.html` to the walk and scoped the capture exemption by
+ * path, which put the FILE inside the guard's reach. The SCAN still read raw markup, so a claim an
+ * organizer reads off the rendered page was outside its vocabulary: `normalizeForMatching` neither
+ * decoded character references nor removed tags.
+ *
+ * Both spellings are how a page is ordinarily written rather than how one is hidden. `&nbsp;` is
+ * what keeps a number beside its noun across a line break, and `<strong>` is what emphasises a
+ * threshold. Each renders as the count phrase, and neither was the literal "75 guests" the count
+ * expressions join with a single space.
+ */
+describe("round 22: rendered HTML is read as the prose it renders as", () => {
+  it("flags a count phrase broken by a non-breaking space entity", () => {
+    const claim = "DOHMH requires a permit for 75&nbsp;guests";
+    expect(normalizeForMatching(claim)).toBe("DOHMH requires a permit for 75 guests");
+    expect(scanFile(claim)).toHaveLength(1);
+  });
+
+  it("flags a count phrase whose noun is wrapped in a tag", () => {
+    const claim = "DOHMH requires a permit for 75 <strong>guests</strong>";
+    expect(normalizeForMatching(claim)).toBe("DOHMH requires a permit for 75 guests");
+    expect(scanFile(claim)).toHaveLength(1);
+  });
+
+  /** A tag with attributes is a tag, and the agency half may be the wrapped one. */
+  it("flags a claim whose agency sits inside an attributed tag", () => {
+    const claim = '<p class="rule">The <a href="/dohmh">DOHMH</a> permit</p> opens at 75 guests';
+    expect(scanFile(claim)).toHaveLength(1);
+  });
+
+  /** The numeric forms of the same reference, decimal and hexadecimal. */
+  it("decodes numeric character references", () => {
+    expect(normalizeForMatching("75&#160;guests")).toBe("75 guests");
+    expect(normalizeForMatching("75&#xA0;guests")).toBe("75 guests");
+  });
+
+  /**
+   * THE TAGS ARE REMOVED BEFORE THE REFERENCES ARE DECODED, which is the order a parser reads them
+   * in. Decoding first would turn text an author escaped on purpose into markup and delete the
+   * words it wraps, so an escaped tag stays the text it renders as.
+   */
+  it("keeps text an author escaped, rather than reading it as markup", () => {
+    expect(
+      normalizeForMatching("write &lt;strong&gt;75 guests&lt;/strong&gt; to emphasise it"),
+    ).toBe("write <strong>75 guests</strong> to emphasise it");
+  });
+
+  /** An unrecognised name is left as written rather than half-decoded into something else. */
+  it("leaves an entity it does not know alone", () => {
+    expect(normalizeForMatching("75&thinsp;guests")).toBe("75&thinsp;guests");
+  });
+
+  /** A comparison is not a tag: the name has to start immediately after the angle bracket. */
+  it("does not read a comparison or an autolink as markup", () => {
+    expect(normalizeForMatching("the count is < 75 and > 20")).toBe("the count is < 75 and > 20");
+    expect(normalizeForMatching("<https://example.test/a> is the page")).toBe(
+      "<https://example.test/a> is the page",
+    );
+  });
+
+  /**
+   * EXPECTED COST, stated the way the emphasis markers state theirs: a TypeScript generic matches
+   * the tag shape and is removed before matching, which joins the tokens around it. It states no
+   * count, and the flag set over every scanned root is unchanged with this in place.
+   */
+  it("EXPECTED COST — a generic parameter is removed like a tag", () => {
+    expect(normalizeForMatching("Array<string> of guests")).toBe("Array of guests");
+    // A comma is neither whitespace nor a closing bracket, so a two-parameter generic is not the
+    // tag shape at all. The cost is the single-parameter form and is no wider than that.
+    expect(normalizeForMatching("Map<string, number> of guests")).toBe(
+      "Map<string, number> of guests",
+    );
+  });
+});
+
+/**
+ * ROUND 22. `isHeading` read markdown's ATX form and nothing else, so the twentieth round's list
+ * scoping never fired under the other form the language has. A Setext heading renders the same
+ * heading-and-list relationship, and the ordinary-English tier refused it because the heading was,
+ * to that predicate, an ordinary paragraph.
+ */
+describe("round 22: a Setext heading scopes the list under it", () => {
+  const document = (...blocks) => blocks.join("\n\n");
+  const UNDERLINED = "DOHMH requirements\n-------------------";
+  const COUNT = "- Required for 75 guests";
+
+  it("reads both of markdown's heading forms as headings", () => {
+    expect(isHeading("## DOHMH requirements")).toBe(true);
+    expect(isHeading(UNDERLINED)).toBe(true);
+    expect(isHeading("DOHMH requirements\n===================")).toBe(true);
+  });
+
+  it("flags the underlined heading and the bullet under it", () => {
+    expect(scanFile(document(UNDERLINED, COUNT))).toHaveLength(1);
+  });
+
+  /** The ATX form is unchanged, so this widened the predicate rather than replacing it. */
+  it("still flags the ATX form of the same pair", () => {
+    expect(scanFile(document("## DOHMH requirements", COUNT))).toHaveLength(1);
+  });
+
+  /** Neither half is a claim alone, so the pair is what every result above is. */
+  it("pairs neither half on its own", () => {
+    expect(pairsAgencyWithCount(UNDERLINED)).toBe(false);
+    expect(pairsAgencyWithCount(COUNT)).toBe(false);
+  });
+
+  /** A row of dashes under a BULLET is not a heading: markdown underlines a paragraph. */
+  it("does not read a list item over a row of dashes as a heading", () => {
+    expect(isHeading("- DOHMH requirements\n---")).toBe(false);
+    expect(scanFile(document("- The DOHMH permit is the gate\n---", COUNT))).toEqual([]);
+  });
+
+  /** And a row of dashes carrying anything else is not an underline. */
+  it("does not read a dashed line with trailing text as an underline", () => {
+    expect(isHeading("DOHMH requirements\n--- and then some")).toBe(false);
+  });
+});
+
+/**
+ * ROUND 22. A published instrument title was a claim SUBJECT everywhere in this module and was no
+ * ATTRIBUTION anywhere in it, so a claim naming another rule's instrument fell through to the host
+ * and was licensed by the host's own threshold.
+ */
+describe("round 22: a named instrument is audited against the rule that publishes it", () => {
+  const INSTRUMENT = "Temporary Food Service Establishment permit";
+  const artifact = {
+    rules: [
+      {
+        id: "HEALTH-A",
+        output: { agency: "DOHMH", note_text: `${INSTRUMENT} applies at 75 guests` },
+      },
+      { id: "HEALTH-B", output: { agency: "DOHMH", permit_name: INSTRUMENT } },
+    ],
+  };
+  // HEALTH-A legitimately reads the count at 75; HEALTH-B, which owns the instrument, reads none.
+  const attributed = new Map([["HEALTH-A", new Set([75])]]);
+
+  it("names the rules that publish each identity", () => {
+    expect(publishedInstrumentOwners(artifact).get(INSTRUMENT)).toEqual(["HEALTH-A", "HEALTH-B"]);
+  });
+
+  /**
+   * The map above carries HEALTH-A too, because its note names the instrument in organizer-facing
+   * text, and that is what makes this fixture the real question: the claim is held to BOTH rules
+   * and the owner that publishes no count is the one that refuses it.
+   */
+  it("reports the claim the host's own threshold used to license", () => {
+    const owners = publishedInstrumentOwners(artifact);
+    const claim = `${INSTRUMENT} applies at 75 guests`;
+    expect(
+      countsAttributed(claim, attributed, {
+        publishedIds: ["HEALTH-A", "HEALTH-B"],
+        host: "HEALTH-A",
+      }),
+      "the miss this round closes: the host licensed a claim about another rule's instrument",
+    ).toBe(true);
+    expect(
+      countsAttributed(claim, attributed, {
+        publishedIds: ["HEALTH-A", "HEALTH-B"],
+        host: "HEALTH-A",
+        instruments: owners,
+      }),
+    ).toBe(false);
+    expect(countClaimsInPublishedOutput(artifact, { attributed })).toEqual([
+      { ruleId: "HEALTH-A", string: `${INSTRUMENT} applies at 75 guests` },
+    ]);
+  });
+
+  /** A claim about an instrument its own rule publishes at that number is still licensed. */
+  it("licenses a claim the owning rule really publishes", () => {
+    const licensed = {
+      rules: [
+        {
+          id: "HEALTH-A",
+          output: {
+            agency: "DOHMH",
+            permit_name: INSTRUMENT,
+            note_text: `${INSTRUMENT} applies at 75 guests`,
+          },
+        },
+      ],
+    };
+    expect(countClaimsInPublishedOutput(licensed, { attributed })).toEqual([]);
+  });
+});
+
+/**
+ * ROUND 22. The URL exclusion was the exact key `url`, and the shape this repository actually
+ * writes is the array `sources[].urls`. A source object groups the citation and its locators into
+ * one unit, so adding a legitimate source made the audit report a fabricated count claim assembled
+ * from a citation and a URL path: a false report on ordinary work, on prose nobody wrote.
+ */
+describe("round 22: a URL field is a locator rather than prose, in every spelling", () => {
+  const urls = ["https://example.test/75-guests"];
+
+  it("reports no claim for a citation beside its source URLs", () => {
+    expect(
+      countClaimsInPublishedOutput({ sources: [{ citation: "DOHMH permit page", urls }] }),
+    ).toEqual([]);
+  });
+
+  it("reports no claim for a URL array inside a rule's output", () => {
+    const artifact = {
+      rules: [
+        { id: "HEALTH-A", output: { agency: "DOHMH", note_text: "DOHMH permit page", urls } },
+      ],
+    };
+    expect(countClaimsInPublishedOutput(artifact)).toEqual([]);
+  });
+
+  /** The other two spellings this tree's artifacts carry, answered by the same rule. */
+  it("excludes the other URL-valued contract fields", () => {
+    expect(
+      countClaimsInPublishedOutput({
+        sources: [{ citation: "DOHMH permit page", portalUrl: urls[0], source_urls: urls }],
+      }),
+    ).toEqual([]);
+  });
+
+  /** The prose beside them is still read: this excluded a field, not the object it sits in. */
+  it("still reports a count claim written in the citation itself", () => {
+    expect(
+      countClaimsInPublishedOutput({
+        sources: [{ citation: "DOHMH permit page, required at 75 guests", urls }],
+      }),
+    ).toHaveLength(1);
   });
 });
