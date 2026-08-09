@@ -1547,6 +1547,58 @@ describe("section 6, the blocker-plus-window shape", () => {
       m.inventory.parserVisibleOutput(m.draft, "SAPO-BLOCK-PARTY-ELIGIBILITY-UNKNOWN-001").name,
     ).not.toBeNull();
   });
+
+  test("which of the draft's output fields `parseRule` reads, put to `parseRule`", () => {
+    // The cases above claim that a prohibition's `status`, and a nested `candidate_requirement`
+    // deadline, never reach a merged line. They used to take that from a set of read fields this
+    // harness kept by hand, which made them their own oracle: the parser gaining a reader for
+    // either field would have left them green and the document wrong (#251 review). The set is now
+    // the parser's answer, and this case is what makes a change in that answer loud.
+    const keys = [
+      ...new Set(
+        [...m.draft.rules, ...m.draft.advisories].flatMap((rule) => Object.keys(rule.output)),
+      ),
+    ];
+    expect(keys.filter((key) => m.inventory.parserReadsOutputField(key)).sort()).toEqual([
+      "advisory_text",
+      "agency",
+      "deadline",
+      "dedupe_key",
+      "fee",
+      "note_text",
+      "permit_name",
+      "portal",
+      "requirement_name",
+    ]);
+    // The probe answers for keys the draft does not publish, which is what makes it a question
+    // about `parseRule` and not about the draft. `conflict_text` is the one the document calls out:
+    // no ruleset field feeds a finding's `conflictText`.
+    for (const key of ["disposition", "notes", "user_summary"]) {
+      expect(m.inventory.parserReadsOutputField(key)).toBe(true);
+    }
+    for (const key of ["conflict_text", "message", "candidate_requirement", "status"]) {
+      expect(m.inventory.parserReadsOutputField(key)).toBe(false);
+    }
+  });
+
+  test("the name and the disposition are the parser's too, and not a fallback chain restated", () => {
+    // The name candidates of an output are published together and the parser names the winner, so
+    // the precedence is `parseRule`'s rather than a chain written out here. Put to it on outputs
+    // the draft does not carry: a permit name outranks a note text, an unread field never becomes a
+    // name, and a published disposition arrives in the lowercase form a finding carries.
+    const asDraft = (output) => ({
+      rules: [{ id: "PROBE-001", kind: "permit", output }],
+      advisories: [],
+    });
+    const visible = (output) => m.inventory.parserVisibleOutput(asDraft(output), "PROBE-001");
+    expect(visible({ note_text: "note", permit_name: "permit" }).name).toBe("permit");
+    expect(visible({ status: "PROHIBITED" }).name).toBeNull();
+    expect(visible({ disposition: "PROHIBITED_OR_INELIGIBLE" })).toMatchObject({
+      publishedDisposition: "prohibited_or_ineligible",
+      effectiveDisposition: "prohibited_or_ineligible",
+    });
+    expect(visible({ status: "PROHIBITED" }).effectiveDisposition).toBe("required");
+  });
 });
 
 describe("section 7, the summary restatements", () => {
@@ -1581,14 +1633,14 @@ describe("section 8, the harness footprint", () => {
       "vitest.config.mjs": lines("vitest.config.mjs"),
     };
     expect(counts).toEqual({
-      "harness.mjs": 996,
+      "harness.mjs": 1009,
       "staging.mjs": 266,
-      "inventory.mjs": 390,
+      "inventory.mjs": 474,
       "report.mjs": 103,
-      "cofiring.test.mjs": 1587,
+      "cofiring.test.mjs": 1660,
       "vitest.config.mjs": 19,
     });
-    expect(Object.values(counts).reduce((total, count) => total + count, 0)).toBe(3_361);
+    expect(Object.values(counts).reduce((total, count) => total + count, 0)).toBe(3_531);
   });
 
   test("the published case count is the one Vitest collected", (context) => {
@@ -1603,6 +1655,6 @@ describe("section 8, the harness footprint", () => {
         (total, child) => total + (child.type === "test" ? 1 : collected(child)),
         0,
       );
-    expect(collected(context.task.file)).toBe(96);
+    expect(collected(context.task.file)).toBe(99);
   });
 });

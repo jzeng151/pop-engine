@@ -1143,9 +1143,9 @@ green. It is now counted off the suite's own collected task tree, which is the n
 `pnpm test:cofiring` reports rather than a count of `test(` calls in the source: four blocks use
 `test.each` and expand at collection time, so those two quantities are not the same.
 
-It is four modules, one suite and one config, 3,361 lines together: `harness.mjs` 996,
-`cofiring.test.mjs` 1,587, `inventory.mjs` 390, `staging.mjs` 266, `report.mjs` 103 and
-`vitest.config.mjs` 19, reporting 96 cases. Those eight figures are read off disk and off
+It is four modules, one suite and one config, 3,531 lines together: `harness.mjs` 1,009,
+`cofiring.test.mjs` 1,660, `inventory.mjs` 474, `staging.mjs` 266, `report.mjs` 103 and
+`vitest.config.mjs` 19, reporting 99 cases. Those eight figures are read off disk and off
 the task tree and asserted by `describe("section 8, the harness footprint")`, so a module, the suite
 or the case list growing moves them here rather than leaving the reproduction section understating
 the code behind the numbers.
@@ -1156,8 +1156,8 @@ the code behind the numbers.
 | `staging.mjs`       | the adaptations of section 3.1, applied to in-memory clones, each reporting what it touched                                                   |
 | `inventory.mjs`     | what the draft publishes, re-derived by parsing it: deadlines, permit names, output identity, blockers, mixed statuses, parser-visible output |
 | `report.mjs`        | one `measure()` call that produces every table, plus the printer                                                                              |
-| `cofiring.test.mjs` | the 96 cases `pnpm test:cofiring` reports, one or more per published figure                                                                   |
-| `vitest.config.mjs` | the include this suite runs under, which is why it is outside the root config and outside CI                                                  |
+| `cofiring.test.mjs` | the 99 cases `pnpm test:cofiring` reports, one or more per published figure                                                                   |
+| `vitest.config.mjs` | the include this suite runs under, which is why it is excluded from the root config and outside CI                                            |
 
 Every table maps to a `describe` block with the same number:
 
@@ -1183,14 +1183,15 @@ by CI and not part of `pnpm test`, and that is a governance constraint rather th
 **Why this suite is on demand.** Its only input is `rules/proposals/nyc-rules.v2-full-draft.json`,
 which `docs/BASELINE.md` carries as "ARCHIVED / PROPOSED drafts" and which this document's own
 preamble names as PROPOSED. A required CI step reading it would make a proposed artifact an enforced
-main-branch input: any ordinary revision of the proposal would turn CI red until all 96 cases here
+main-branch input: any ordinary revision of the proposal would turn CI red until all 99 cases here
 were resynchronised with it, so the proposal could only move at this measurement's pace. That is the
 `AGENTS.md` rule to stop rather than build against a proposed input, applied backwards, and a
-research harness is not the thing that should force it. So `scripts/dedupe-cofiring/` sits outside
-the root `vitest.config.ts` include and carries its own config, `pnpm test:cofiring` points at that
-config, and `.github/workflows/ci.yml` runs neither. Folding it back into CI is a one-line change
-that becomes correct when the draft's baseline row is APPROVED, and the comments in both configs say
-so.
+research harness is not the thing that should force it. So `scripts/dedupe-cofiring/` is named in
+the root `vitest.config.ts` `exclude` and carries its own config, `pnpm test:cofiring` points at
+that config, and `.github/workflows/ci.yml` runs neither. The root include over `scripts/` stays
+recursive, so the exemption is this one directory and not every script test that happens to sit in a
+subdirectory. Folding it back into CI is a one-line change that becomes correct when the draft's
+baseline row is APPROVED, and the comments in both configs say so.
 
 **What that costs and what still holds the line.** Nothing on main watches these numbers, so a
 change to the draft, to `packages/engine`, or to the harness can leave a figure here stale without

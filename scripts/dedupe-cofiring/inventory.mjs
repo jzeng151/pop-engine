@@ -6,10 +6,12 @@
 
 import { DISPOSITION_STRENGTH } from "../../packages/engine/src/findings.ts";
 import { DEFAULT_DISPOSITION_BY_RULE_KIND } from "../../packages/engine/src/proposals.ts";
+import { parseEngineRuleset } from "../../packages/engine/src/ruleset.ts";
 
 import {
   buildFieldDefinitions,
   domainFor,
+  loadControl,
   multiMemberGroups,
   sweepSize,
   triggerOperators,
@@ -330,26 +332,25 @@ export function operatorSemantics(draft) {
 /**
  * What `parseRule` would make of a rule's output: the name it derives and whether it publishes a
  * disposition. A draft field the parser does not read cannot reach a merged plan item.
+ *
+ * Every part of this is the parser's own answer, asked through `probeOutput` below. None of it is a
+ * reading of `packages/engine/src/ruleset.ts`.
  */
 export function parserVisibleOutput(draft, ruleId) {
   const rule = published(draft).find((entry) => entry.id === ruleId);
   const output = rule.output;
+  const publishedDisposition = probedDisposition(output);
   return {
     id: rule.id,
     kind: rule.kind,
-    name:
-      output.permit_name ??
-      output.requirement_name ??
-      output.advisory_text ??
-      output.note_text ??
-      null,
-    publishedDisposition: output.disposition ?? null,
+    name: probedName(output),
+    publishedDisposition,
     // What the finding actually carries: the published disposition where there is one, and
     // otherwise the engine's own default for the rule's kind. Read from the engine's table rather
     // than restated, so a rule kind the draft moves, or a default the engine changes, moves the
     // document's account of which route binds a merged line instead of leaving it stale.
-    effectiveDisposition: output.disposition ?? DEFAULT_DISPOSITION_BY_RULE_KIND[rule.kind],
-    unreadFields: Object.keys(output).filter((key) => !PARSER_READ_OUTPUT_FIELDS.has(key)),
+    effectiveDisposition: publishedDisposition ?? DEFAULT_DISPOSITION_BY_RULE_KIND[rule.kind],
+    unreadFields: Object.keys(output).filter((key) => !parserReadsOutputField(key)),
   };
 }
 
@@ -367,24 +368,107 @@ export function triggerFieldsByMember(draft, dedupeKey) {
 }
 
 /**
- * The `output` keys `parseRule` (`packages/engine/src/ruleset.ts:484-545`) reads.
+ * Put one `output` object to `parseRule` and return the rule it produced, or `null` where the
+ * parser rejected the artifact.
  *
- * Every entry is one `optionalString(output, ...)`, `output.<key>` or `optionalStringArray` call in
- * that range, checked against the parser rather than recalled. `conflict_text` is not among them:
- * a finding's `conflictText` is derived from `noteText` at an `OFFICIAL_CONFLICT` status
+ * The object is published on the first rule of the PUBLISHED control, which loads cleanly, and the
+ * clone is parsed. `rules/` is never written, and the draft is not the base here on purpose: the
+ * draft does not load at all (section 3.1), so a question about the parser cannot be asked through
+ * it.
+ */
+const probeCache = new Map();
+
+function probeOutput(output) {
+  const key = JSON.stringify(output);
+  if (probeCache.has(key)) return probeCache.get(key);
+
+  const probe = JSON.parse(JSON.stringify(loadControl()));
+  probe.rules[0].output = output;
+  let parsed = null;
+  try {
+    parsed = parseEngineRuleset(probe).rules[0];
+  } catch {
+    parsed = null;
+  }
+  probeCache.set(key, parsed);
+  return parsed;
+}
+
+const PROBE_STRING = "__probe__";
+
+/**
+ * Values covering the shapes `parseRule`'s own readers accept: a string for `optionalString`, an
+ * array for `optionalStringArray`, an object for `asObject`, and a number, a boolean and `null` for
+ * anything that reads a value without narrowing it first.
+ */
+const PROBE_VALUES = [PROBE_STRING, [PROBE_STRING], { probe: PROBE_STRING }, 1, true, null];
+
+const readFieldCache = new Map();
+
+/**
+ * Whether `parseRule` reads an `output` key, asked by putting the key to the parser.
+ *
+ * This used to be a hand-maintained set of the reads at `ruleset.ts:484-545`, which is a set no
+ * test can falsify: the cases asserting which draft fields are dropped took that set as their own
+ * oracle, so they would have stayed green after `parseRule` started reading `output.message` or
+ * `candidate_requirement`, with sections 5.9 to 7 still claiming the prohibition text and the
+ * nested deadline never reach a merged line (#251 review).
+ *
+ * The key is instead published on the control under each of `PROBE_VALUES`, and counts as READ when
+ * any of them moves the parsed rule or makes the parser reject the artifact. A key the parser never
+ * touches can do neither, whatever is published under it, so an unread verdict here is the parser's
+ * answer and not this file's. `conflict_text` comes back unread for the reason it always was: a
+ * finding's `conflictText` is derived from `noteText` at an `OFFICIAL_CONFLICT` status
  * (`apps/web/app/checklist/checklist-fixtures.ts:121`), and no ruleset field feeds it.
  */
-const PARSER_READ_OUTPUT_FIELDS = new Set([
-  "agency",
-  "disposition",
-  "deadline",
-  "portal",
-  "fee",
-  "permit_name",
-  "requirement_name",
-  "advisory_text",
-  "note_text",
-  "notes",
-  "dedupe_key",
-  "user_summary",
-]);
+export function parserReadsOutputField(key) {
+  if (readFieldCache.has(key)) return readFieldCache.get(key);
+
+  const baseline = JSON.stringify(probeOutput({}));
+  const read = PROBE_VALUES.some((value) => {
+    const parsed = probeOutput({ [key]: value });
+    return parsed === null || JSON.stringify(parsed) !== baseline;
+  });
+  readFieldCache.set(key, read);
+  return read;
+}
+
+/**
+ * The name `parseRule` would derive from an output, and nothing about which keys it derives it from.
+ *
+ * The candidates are the output's own keys that produce the probe string as the parsed rule's name
+ * when published alone; where an output carries more than one, all of them are published together
+ * and the parser names the winner, so the precedence among them is read off the parser rather than
+ * restated as a fallback chain. A key whose published value is null is not a candidate, matching the
+ * `??` the parser falls through on.
+ */
+function probedName(output) {
+  const candidates = Object.keys(output).filter(
+    (key) =>
+      (output[key] ?? null) !== null && probeOutput({ [key]: PROBE_STRING })?.name === PROBE_STRING,
+  );
+  if (candidates.length === 0) return null;
+  const winner = probeOutput(Object.fromEntries(candidates.map((key) => [key, key]))).name;
+  return output[winner];
+}
+
+/**
+ * The disposition `parseRule` would take from an output, in the lowercase form a finding carries.
+ *
+ * The key is found by publishing the dispositions the engine itself ranks in `DISPOSITION_STRENGTH`
+ * and seeing which key turns one of them into a parsed `publishedDisposition`. It is `some` rather
+ * than `every` because the published token for a disposition is not always its name in upper case:
+ * `no_new_requirement` is published as `NO_NEW_REQUIREMENT_IDENTIFIED`. The rule's own token is then
+ * put to the parser in turn, so a token the parser does not accept publishes no disposition here.
+ */
+const PROBE_DISPOSITIONS = DISPOSITION_STRENGTH.map((disposition) => disposition.toUpperCase());
+
+function probedDisposition(output) {
+  const key = Object.keys(output).find((candidate) =>
+    PROBE_DISPOSITIONS.some(
+      (token) => probeOutput({ [candidate]: token })?.publishedDisposition === token.toLowerCase(),
+    ),
+  );
+  if (key === undefined) return null;
+  return probeOutput({ [key]: output[key] })?.publishedDisposition ?? null;
+}
