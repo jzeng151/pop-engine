@@ -55,11 +55,21 @@ const hasDeadlineData = (context: PlanContext): boolean =>
  *
  * So the gate is read off the route that carries it, and rendered NAMING that route. Attributing it
  * to the row would tell an organizer the binding filing cannot realistically begin until a date that
- * belongs to a different rule. `routes[0]` is the binding route, whose gate the scalar already
- * carries, so it is skipped rather than shown twice.
+ * belongs to a different rule. The one route skipped is the one whose gate the scalar above already
+ * carries, so no gate is shown twice.
+ *
+ * WHICH ROUTE THAT IS, is not always `routes[0]`. Where the binding route publishes no window of its
+ * own the checklist response fills the whole timing block from the filing route instead, gate
+ * included, and `filingRouteRuleId` names it. Skipping index 0 there dropped the case the other way
+ * round: a binding route carrying a gate but no deadline, beside a sibling publishing a deadline but
+ * no gate, rendered the sibling's null gate on the row and skipped the binding route here, so the
+ * F-202 AC 5 start date was on neither surface (#252 review).
  */
-const gatedRoutesOf = (context: PlanContext): readonly ConsumedRoute[] =>
-  (context.routes ?? []).filter((route, index) => index > 0 && route.applyAfterDate !== null);
+const gatedRoutesOf = (context: PlanContext): readonly ConsumedRoute[] => {
+  const routes = context.routes ?? [];
+  const onTheRow = context.filingRouteRuleId ?? routes[0]?.ruleId ?? null;
+  return routes.filter((route) => route.applyAfterDate !== null && route.ruleId !== onTheRow);
+};
 
 /**
  * The published deadline's own type, for a rule that states a kind of deadline but no prose and
@@ -150,7 +160,16 @@ export function PlanContextBody({
   // are each route's own `unknownFields`, deduplicated. Nothing is composed: the sentence is fixed
   // and the field names are the intake registry's.
   const candidateRoutes = context.headlineMode === "candidate" ? (context.routes ?? []) : [];
-  const decidingFields = [...new Set(candidateRoutes.flatMap((route) => route.unknownFields))];
+  // The trigger unknowns AND the deadline unknowns, the same union the plan line makes, for the
+  // reason written there: a route's `unknownFields` are its trigger's only, and a candidate group
+  // whose filing timeline also waits on an answer would otherwise be told a shorter list of
+  // fields "would decide it" than actually does (design §5.3, #252 review).
+  const decidingFields = [
+    ...new Set([
+      ...candidateRoutes.flatMap((route) => route.unknownFields),
+      ...(candidateRoutes.length > 0 ? context.deadlineUnknownFields : []),
+    ]),
+  ];
   const triggeredRoutes = candidateRoutes.filter((route) => route.triggerResult === "true").length;
   const summaryShowsResearchTreatment =
     context.verificationStatus === "RESEARCH_REQUIRED" &&

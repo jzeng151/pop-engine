@@ -410,16 +410,24 @@ export function routesOf(finding: Finding): readonly FindingRoute[] {
  * slot would read as two payments or two filings. They are on the route entries instead, which is
  * where a reader can tell whose they are.
  *
- * NO APPROVED ARTIFACT STATES THESE MERGED VALUES. `ARCHITECTURE.md` says only that a group merges
- * deterministically, retaining every contributing rule and source; the precedence table
- * `ARCHITECTURE-FUTURE.md` §8.4 calls for is Phase 2+ direction and does not exist yet. What is
+ * THE APPROVED ARTIFACT FOR THESE MERGED VALUES IS `docs/proposals/dedupe-route-list.md`, APPROVED
+ * by the product owner on 2026-08-08 under `docs/DOCUMENTATION-GOVERNANCE.md` §6 and recorded in
+ * `docs/BASELINE.md` and on AD-19's own row. The approval covers the design in its sections 3 to 8:
+ * §3.3 names the scalars that move back to the identity binding, §4 the two headline modes and how
+ * they are computed, §4.3 the binding route including the intersection with the resolved subset and
+ * the single-valued texts falling back in binding order. It supersedes exactly the one sentence of
+ * AD-19 its §9 names, and AD-19 remains the approved record of everything else it decided. The
+ * engine implemented this while the proposal was still PROPOSED; `SPEC-CONFLICT` #253 records that
+ * divergence and the approval closes it.
+ *
+ * `ARCHITECTURE.md` supplies the rest: a group merges deterministically, retaining every
+ * contributing rule and source, which is rule 4 above. The precedence table
+ * `ARCHITECTURE-FUTURE.md` §8.4 calls for is Phase 2+ direction and still does not exist. What is
  * taken from §8.4 is the three things it settles now, that a blocking finding is never erased on a
  * shared key, an unknown or official-conflict branch's candidate is not promoted by deduplication,
- * and merge order is deterministic rather than incidental array order. The rest is the safe
- * direction for a regulatory product. AD-19 is the approved record of the rule this replaces;
- * `docs/proposals/dedupe-route-list.md` is PROPOSED and NOT APPROVED, and states exactly which
- * sentence of AD-19 it supersedes. Nothing here asserts a new regulatory fact: every value on the
- * line and on every route is some contributing rule's own published value.
+ * and merge order is deterministic rather than incidental array order. Nothing here asserts a new
+ * regulatory fact: every value on the line and on every route is some contributing rule's own
+ * published value.
  */
 function mergeGroup(group: readonly Contribution[]): Finding {
   const first = group[0] as Contribution;
@@ -564,12 +572,26 @@ function applyDependencySequencing(
 
     const [earliestDecisionDays, latestDecisionDays] = upstream.deadline.processingRangeDays;
     const applyAfterDate = addCalendarDays(context.today, earliestDecisionDays);
+    // WHOSE WINDOW IS BEING SEQUENCED: the gated RULE's, which on a merged line is its route
+    // entry rather than the line's scalars. The scalars are the binding route's, and where the
+    // gated rule is a non-binding member they are a different rule's published window entirely.
+    // Every value below is read off this route, so the squeeze test, the closed-window test, the
+    // direct-filing test and the organizer-facing note all describe the route the gate is about.
+    // On an unmerged finding, and on a merged one whose gated rule binds, the route's values are
+    // the scalars, so nothing moves for either.
+    // `??` is not usable here: a route publishing no date is not a route with no values, and
+    // reading its null as "missing" would put the binding route's date back.
+    const gatedRoute =
+      gated.routes?.find((route) => route.ruleId === binding.gatedRuleId) ?? gated;
+    const gatedLatestApplyDate = gatedRoute.latestApplyDate;
+    const gatedDeadlineStatus = gatedRoute.deadlineStatus;
+
     // Window width: between the earliest upstream decision and the gated item's own deadline
     // (F-102 AC 5). Narrow or negative means the sequence is a squeeze.
     const gatedWindowDays =
-      gated.latestApplyDate === null
+      gatedLatestApplyDate === null
         ? null
-        : differenceInCalendarDays(applyAfterDate, gated.latestApplyDate);
+        : differenceInCalendarDays(applyAfterDate, gatedLatestApplyDate);
 
     // The sequencing may tighten the rendering but may never close a window on its own: the
     // dependency rule's verification block says a strict issued-before-filed order is NOT
@@ -588,7 +610,7 @@ function applyDependencySequencing(
     // Strict issued-before-filed sequencing is not confirmed, so the direct route stays open —
     // but only while this finding's own published deadline is. Past it, saying so would assert a
     // window the rule itself closed.
-    const directFilingOpen = gated.deadlineStatus !== "published_deadline_missed";
+    const directFilingOpen = gatedDeadlineStatus !== "published_deadline_missed";
 
     // WHOSE WINDOW THE HEADLINE SEQUENCING IS ABOUT. The merged line's scalars are the BINDING
     // route's, entirely, so that a line can never name one route and date another; `routes[0]` is
@@ -650,7 +672,7 @@ function applyDependencySequencing(
           (gatedWindowDays === null
             ? ""
             : sequenceClosedWindow
-              ? `, which is after this permit's own ${gated.latestApplyDate ?? ""} deadline, so ` +
+              ? `, which is after this permit's own ${gatedLatestApplyDate ?? ""} deadline, so ` +
                 `the sequence leaves no window to file in. Strict issued-before-filed sequencing ` +
                 `is not confirmed by located primary text` +
                 (directFilingOpen

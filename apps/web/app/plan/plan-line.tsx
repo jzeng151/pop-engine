@@ -253,12 +253,21 @@ function Route({ route, mode }: { route: ConsumedRoute; mode: HeadlineMode }) {
         </p>
       )}
       {route.feeDisplay !== null && <p className="line__route-fee">{route.feeDisplay}</p>}
+      {/* NO CANDIDATE ENTRY RENDERS AS AN ACTION (design §5.3), and this is the entry's only
+          action. "apply at <portal>" under an entry labelled "May apply" tells an organizer to
+          file a permit the recorded answers have not decided they need, which is the one thing a
+          candidate list must not do. It is suppressed for every entry while the group is in
+          candidate mode, including a triggered one: what is unresolved there is which of the
+          routes apply, so no entry in the group is a settled filing yet. The portal is still
+          published, so it is named rather than dropped, and the rule's own instructions are
+          untouched (#252 review). */}
       <PortalBlock
         portalName={route.portalName}
         portalUrl={route.portalUrl}
         portalInstructions={route.portalInstructions}
         className="line__route-portal"
         instructionsClassName="line__portal-instructions"
+        lead={mode === "candidate" ? "portal" : "apply at"}
       />
     </li>
   );
@@ -298,7 +307,19 @@ function Routes({ finding }: { finding: ConsumedFinding }) {
   if (routes === null || mode === null || routes.length < 2) return null;
   if (mode === "applies_together" && new Set(routes.map(routeSignature)).size === 1) return null;
 
-  const deciding = [...new Set(routes.flatMap((route) => route.unknownFields))];
+  // BOTH SETS OF UNKNOWNS, which is what the approved copy asks for: "the `deadlineUnknownFields`
+  // and trigger fields the unresolved routes' triggers left open" (design §5.3). A route's
+  // `unknownFields` are only its trigger's. A candidate group can also have an unanswered field
+  // that its filing timeline depends on, and listing only the trigger fields told the organizer
+  // that answering those "would decide it" while the dates stayed unresolved on an answer the
+  // sentence never named (#252 review). `deadlineUnknownFields` is the finding's, concatenated
+  // over every route, because a deadline unknown is not per route on the merged line.
+  const deciding = [
+    ...new Set([
+      ...routes.flatMap((route) => route.unknownFields),
+      ...finding.deadlineUnknownFields,
+    ]),
+  ];
   const applying = routes.filter((route) => route.triggerResult === "true").length;
 
   return (
