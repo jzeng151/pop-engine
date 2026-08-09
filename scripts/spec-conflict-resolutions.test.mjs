@@ -18,6 +18,7 @@ import {
   countClaimsInPublishedOutput,
   countsAttributed,
   pinnedDigest,
+  publishedClaimSubjects,
   scanFile,
   scanOptionsFor,
 } from "./spec-conflict-scan.mjs";
@@ -1007,6 +1008,25 @@ describe("no DOHMH rule is attributed to headcount, removed 2026-08-05 (#235)", 
    * beside a legitimately count-reading rule would have found only the legitimate one and been
    * exempted on its account. That is the fifteenth PR #247 round's thread 734.
    */
+  /**
+   * EVERY PUBLISHED INSTRUMENT IDENTITY the city health agency's rules carry, across the tree's
+   * published rulesets. This is the eighteenth PR #247 round.
+   *
+   * The prose scan recognised the agency's NAME and nothing else, so a document that names the
+   * instrument and omits the label was outside it: "A Temporary Food Service Establishment permit
+   * is required for 75 guests" states a count-based city health requirement and produced no
+   * offender. `publishedClaimSubjects` in `spec-conflict-scan.mjs` says which strings are an
+   * identity and why; this is the tree's answer to it, read out of the same artifacts every other
+   * question here is read out of rather than written down a second time.
+   */
+  function publishedSubjects() {
+    const subjects = new Set();
+    for (const [, artifact] of publishedRulesets()) {
+      for (const subject of publishedClaimSubjects(artifact)) subjects.add(subject);
+    }
+    return [...subjects].sort();
+  }
+
   function publishedRuleIds() {
     const ids = [];
     for (const [, artifact] of publishedRulesets()) {
@@ -1085,6 +1105,9 @@ describe("no DOHMH rule is attributed to headcount, removed 2026-08-05 (#235)", 
     // question asked as a yes/no, which one rule change would have used to silence the whole scan.
     const attributed = attendeeCountThresholdsByRule();
     const publishedIds = publishedRuleIds();
+    // Which strings name a city health requirement is the ARTIFACT's answer, not a path's, so it is
+    // passed beside the options `scanOptionsFor` derives from the path rather than folded into them.
+    const subjects = publishedSubjects();
 
     const flagged = [];
     for (const path of filesUnder(PROSE_EXTENSIONS)) {
@@ -1092,7 +1115,10 @@ describe("no DOHMH rule is attributed to headcount, removed 2026-08-05 (#235)", 
       // Two independent questions, answered by two lists since the fifth PR #247 round, and
       // answered in `scanOptionsFor` rather than here since the sixth: both of those answers were
       // one clause of this function, and reverting either left the whole suite green.
-      const found = scanFile(readFileSync(path, "utf8"), scanOptionsFor(relative));
+      const found = scanFile(readFileSync(path, "utf8"), {
+        ...scanOptionsFor(relative),
+        subjects,
+      });
       for (const item of found) {
         if (countsAttributed(item.text, attributed, { publishedIds })) continue;
         flagged.push({ relative, ...item });

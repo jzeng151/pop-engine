@@ -44,7 +44,7 @@ import { createHash } from "node:crypto";
  * IT ALSO TOOK "Department of" AS AN OPTIONAL PREFIX, and the eighth round's item 3 removed it as
  * dead. The alternation is unanchored, so any string containing "Department of Health and Mental
  * Hygiene" also contains "Health and Mental Hygiene" and matched without it. The one thing an
- * optional prefix can still do is start the match EARLIER, which matters inside `agencyNear`'s
+ * optional prefix can still do is start the match EARLIER, which matters inside `claimSubject`'s
  * window in `BOUNDED_EXTENSIONS` files, and it could not do that either: the generic form below
  * matches the bare "Department of Health" at that same position. The one input where the two
  * differ is "New York State's Department of Health and Mental Hygiene", where the lookbehind blocks
@@ -233,19 +233,6 @@ export const COUNTED_PEOPLE = new RegExp(COUNTED_PEOPLE_SOURCE, "i");
  * stood for, two hand-written register rows about 110 characters long.
  */
 export const PROXIMITY = 120;
-
-/** The agency and `source` within `PROXIMITY` characters of each other, in either order. */
-const agencyNear = (source) =>
-  new RegExp(
-    `(?:${CITY_HEALTH_AGENCY_SOURCE})[\\s\\S]{0,${PROXIMITY}}?(?:${source})` +
-      `|(?:${source})[\\s\\S]{0,${PROXIMITY}}?(?:${CITY_HEALTH_AGENCY_SOURCE})`,
-    "i",
-  );
-export const AGENCY_NEAR_COUNTED_PEOPLE = agencyNear(COUNTED_PEOPLE_SOURCE);
-export const AGENCY_NEAR_ATTENDEE_COUNT = agencyNear(ATTENDEE_COUNT_SOURCE);
-export const AGENCY_NEAR_ANY_COUNT = agencyNear(
-  `${ATTENDEE_COUNT_SOURCE}|${COUNTED_PEOPLE_SOURCE}`,
-);
 
 /**
  * The file kinds where the distance bound also applies INSIDE a block, and the only kinds where
@@ -685,6 +672,101 @@ export const blocksOf = (text) => {
 export const isParagraph = (block) => !LIST_OR_ROW.test(block.trim().split("\n")[0] ?? "");
 
 /**
+ * THE SUBJECTS A CLAIM MAY NAME: the city health agency, and every INSTRUMENT IDENTITY the
+ * published ruleset gives that agency's own rules. This is the eighteenth PR #247 round.
+ *
+ * The agency name was the only subject this scan recognised, so a claim that names the instrument
+ * and omits the label was dropped whole. "A Temporary Food Service Establishment permit is required
+ * for 75 guests" carries no recognised agency alias, so `scanFile` and
+ * `countClaimsInPublishedOutput` returned no offender for it, in a tracked document and in another
+ * agency's published note alike. An organizer reads the permit's name as the claim's subject; so
+ * does this scan now.
+ *
+ * WHICH STRINGS ARE AN IDENTITY IS THE ARTIFACT'S ANSWER AND NOT A LIST HERE. They are the three
+ * fields the code already treats as the name of a requirement: `output.permit_name` and
+ * `output.requirement_name`, which `packages/engine/src/ruleset.ts:513-515` reads in that order as
+ * a rule's `name`, and `output.user_summary.heading`, which `packages/engine/src/findings.ts:305`
+ * makes the title of the rendered plan line. A rule published tomorrow brings its own identity into
+ * this set the day it lands.
+ *
+ * `advisory_text` and `note_text` are the other two fallbacks `ruleset.ts` reads and they are NOT
+ * here: they are sentences rather than titles, and a whole sentence as a subject makes the audit's
+ * subject the entire claim, which matches only a verbatim quotation and reports nothing new.
+ *
+ * WHOSE IDENTITIES: `cityHealthRule`'s answer, the same classification the rest of this module and
+ * `apps/api/src/rsvps.test.ts` use, so a rule published under `NYC Health` with no `DOHMH-` prefix
+ * contributes its permit name here too.
+ *
+ * THE COST IS REAL AND IS STATED. These strings are matched as literal text, so a document that
+ * quotes a published permit name beside an unrelated numeral is flagged with no claim in it, the
+ * same way an adjacent pair of true statements is. That is the ordinary false-positive cost of
+ * reading co-occurrence rather than stance, and the remedy is the one this guard already has: an
+ * entry in `BENIGN_ADJACENT_PAIRS`, or wording that does not put the two together. Measured on this
+ * tree the flag set does not move: the five identities the published ruleset carries today are
+ * `Acceptable DOHMH permit per participating food vendor (TFSE / FSE / MFV)`, `NYC Health
+ * Department food-vendor permits`, `Organizer notification to DOHMH`, `Organizer notice to the NYC
+ * Health Department` and `Possible private-event food exemption`, and only the last of the five
+ * carries no agency alias of its own.
+ *
+ * They are NORMALIZED the way the text they are matched against is, so a name carrying a character
+ * `normalizeForMatching` strips is still the name after both sides have been read as one line of
+ * prose, and escaped so that a published `(`, `/` or `.` is the character it is rather than regular
+ * expression syntax. An empty or whitespace-only identity is dropped: as an alternative it would
+ * match every string in the tree.
+ */
+export const publishedClaimSubjects = (artifact) => {
+  const identities = new Set();
+  for (const rule of [...(artifact?.rules ?? []), ...(artifact?.advisories ?? [])]) {
+    if (!cityHealthRule(rule)) continue;
+    const output = rule.output ?? {};
+    for (const identity of [
+      output.permit_name,
+      output.requirement_name,
+      output.user_summary?.heading,
+    ]) {
+      if (typeof identity !== "string") continue;
+      const normalized = normalizeForMatching(identity).trim();
+      if (normalized !== "") identities.add(normalized);
+    }
+  }
+  return [...identities].sort();
+};
+
+const escapeForRegExp = (text) => text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+
+/**
+ * The four expressions every pairing question is asked through, for one set of extra subjects: the
+ * subject itself, and its three proximity windows.
+ *
+ * Built once per subject set rather than per block. `scanFile` asks these questions of every block
+ * of every file in the tree, and a `RegExp` compiled from a published permit name on each of them
+ * would be the walk's cost rather than a rounding error.
+ */
+const subjectCache = new Map();
+export const claimSubject = (subjects = []) => {
+  const usable = subjects.filter((subject) => typeof subject === "string" && subject.trim() !== "");
+  const key = JSON.stringify(usable);
+  const cached = subjectCache.get(key);
+  if (cached !== undefined) return cached;
+  const source = [CITY_HEALTH_AGENCY_SOURCE, ...usable.map(escapeForRegExp)].join("|");
+  const near = (count) =>
+    new RegExp(
+      `(?:${source})[\\s\\S]{0,${PROXIMITY}}?(?:${count})` +
+        `|(?:${count})[\\s\\S]{0,${PROXIMITY}}?(?:${source})`,
+      "i",
+    );
+  const built = {
+    source,
+    pattern: new RegExp(source, "i"),
+    nearCountedPeople: near(COUNTED_PEOPLE_SOURCE),
+    nearAttendeeCount: near(ATTENDEE_COUNT_SOURCE),
+    nearAnyCount: near(`${ATTENDEE_COUNT_SOURCE}|${COUNTED_PEOPLE_SOURCE}`),
+  };
+  subjectCache.set(key, built);
+  return built;
+};
+
+/**
  * Whether one block supplies the agency and the other supplies a `count` match, in either
  * direction. THIS IS WHAT MAKES A PAIR A CROSS-BOUNDARY FINDING, and it is a stricter question
  * than "does the concatenation pair", which was the sixth PR #247 review round's item 3.
@@ -697,9 +779,8 @@ export const isParagraph = (block) => !LIST_OR_ROW.test(block.trim().split("\n")
  * agency the pin names. Asking instead for one half on each side needs no suppression: a pair
  * beside a self-pairing block is silent unless the neighbour really contributes the other half.
  */
-const splitAcrossBoundary = (first, second, count) =>
-  (CITY_HEALTH_AGENCY.test(first) && count.test(second)) ||
-  (count.test(first) && CITY_HEALTH_AGENCY.test(second));
+const splitAcrossBoundary = (first, second, count, subject = CITY_HEALTH_AGENCY) =>
+  (subject.test(first) && count.test(second)) || (count.test(first) && subject.test(second));
 
 /**
  * Whether one block pairs the city health agency with an attendee count, the block read as one
@@ -709,12 +790,12 @@ const splitAcrossBoundary = (first, second, count) =>
  * way: those phrases name a count outright, so a block carrying one and the agency is putting the
  * two in the same authored unit wherever they sit in it.
  */
-export const pairsAgencyWithCount = (raw, { bounded = false } = {}) => {
+export const pairsAgencyWithCount = (raw, { bounded = false, subjects = [] } = {}) => {
   const text = normalizeForMatching(raw);
+  const subject = claimSubject(subjects);
   return (
-    CITY_HEALTH_AGENCY.test(text) &&
-    (ATTENDEE_COUNT.test(text) ||
-      (bounded ? AGENCY_NEAR_COUNTED_PEOPLE : COUNTED_PEOPLE).test(text))
+    subject.pattern.test(text) &&
+    (ATTENDEE_COUNT.test(text) || (bounded ? subject.nearCountedPeople : COUNTED_PEOPLE).test(text))
   );
 };
 
@@ -966,7 +1047,11 @@ export const countsAttributed = (raw, attributed, { publishedIds = [], host } = 
  *     literal with nothing but test scaffolding between them. So the bound stays in code, minus
  *     the files `UNBOUNDED_RECORD_FILES` names.
  */
-export function scanFile(text, { bounded = false, allowOptOut = false, optOutDigests = [] } = {}) {
+export function scanFile(
+  text,
+  { bounded = false, allowOptOut = false, optOutDigests = [], subjects = [] } = {},
+) {
+  const subject = claimSubject(subjects);
   // The marker says the author took the obligation on; the digest says this is the block that was
   // read against it. Both, or the block is scanned like any other.
   const optedOut = (block) =>
@@ -984,7 +1069,7 @@ export function scanFile(text, { bounded = false, allowOptOut = false, optOutDig
   for (let index = 0; index < blocks.length; index += 1) {
     const block = matchable[index];
     const next = matchable[index + 1];
-    if (!optedOut(blocks[index]) && pairsAgencyWithCount(block, { bounded })) {
+    if (!optedOut(blocks[index]) && pairsAgencyWithCount(block, { bounded, subjects })) {
       flagged.push({ kind: "block", text: blocks[index] });
     }
     if (next === undefined) continue;
@@ -995,14 +1080,15 @@ export function scanFile(text, { bounded = false, allowOptOut = false, optOutDig
     // enough together to be read as one claim.
     const withinBound = (near) => !bounded || near.test(pair);
     const acrossAnyBlocks =
-      splitAcrossBoundary(block, next, ATTENDEE_COUNT) && withinBound(AGENCY_NEAR_ATTENDEE_COUNT);
+      splitAcrossBoundary(block, next, ATTENDEE_COUNT, subject.pattern) &&
+      withinBound(subject.nearAttendeeCount);
     const acrossParagraphs =
       // Read off the RAW blocks: normalizing strips the emphasis markers, and a `* bullet` would
       // read as a paragraph without them.
       isParagraph(blocks[index]) &&
       isParagraph(blocks[index + 1]) &&
-      splitAcrossBoundary(block, next, COUNTED_PEOPLE) &&
-      withinBound(AGENCY_NEAR_ANY_COUNT);
+      splitAcrossBoundary(block, next, COUNTED_PEOPLE, subject.pattern) &&
+      withinBound(subject.nearAnyCount);
     if (acrossAnyBlocks || acrossParagraphs) {
       flagged.push({ kind: "pair", text: `${blocks[index]}\n${blocks[index + 1]}` });
     }
@@ -1181,17 +1267,18 @@ export const rulesetProseStrings = (artifact) => {
  * Sentences are split RAW and matched normalized, which is what `flaggedBlocks` does with blocks:
  * the reported text is the text a reader will search the artifact for.
  */
-const countClaimsInProse = (raw) => {
+const countClaimsInProse = (raw, subjects = []) => {
   const sentences = sentencesOf(raw);
   const matchable = sentences.map(normalizeForMatching);
+  const subject = claimSubject(subjects);
   const flagged = [];
   for (let index = 0; index < sentences.length; index += 1) {
-    if (pairsAgencyWithCount(sentences[index])) flagged.push(sentences[index]);
+    if (pairsAgencyWithCount(sentences[index], { subjects })) flagged.push(sentences[index]);
     const next = matchable[index + 1];
     if (next === undefined) continue;
     const acrossBoundary =
-      splitAcrossBoundary(matchable[index], next, ATTENDEE_COUNT) ||
-      splitAcrossBoundary(matchable[index], next, COUNTED_PEOPLE);
+      splitAcrossBoundary(matchable[index], next, ATTENDEE_COUNT, subject.pattern) ||
+      splitAcrossBoundary(matchable[index], next, COUNTED_PEOPLE, subject.pattern);
     if (acrossBoundary) flagged.push(`${sentences[index]} ${sentences[index + 1]}`);
   }
   return flagged;
@@ -1289,11 +1376,14 @@ export const countClaimsInPublishedOutput = (artifact, { attributed = new Map() 
   const found = [];
   const publishedRules = [...(artifact.rules ?? []), ...(artifact.advisories ?? [])];
   const publishedIds = publishedRules.map((rule) => rule.id).filter(Boolean);
+  // The subjects are the artifact's own: this audit reads the ruleset, so it knows which permit and
+  // requirement identities the city health agency publishes without being told.
+  const subjects = publishedClaimSubjects(artifact);
   for (const rule of publishedRules) {
     const ownRequirement = cityHealthRule(rule);
     const claims = (string) => {
       const scanned = ownRequirement ? `${rule.output?.agency ?? "DOHMH"}. ${string}` : string;
-      if (!pairsAgencyWithCount(scanned)) return false;
+      if (!pairsAgencyWithCount(scanned, { subjects })) return false;
       return !countsAttributed(scanned, attributed, { publishedIds, host: rule.id });
     };
     const strings = organizerFacingStrings(rule);
@@ -1310,7 +1400,7 @@ export const countClaimsInPublishedOutput = (artifact, { attributed = new Map() 
   // of it is, so the report stays at the offending sentence wherever one string carries the claim.
   for (const { where, strings } of rulesetProseStrings(artifact)) {
     const unreported = (text) =>
-      countClaimsInProse(text).filter(
+      countClaimsInProse(text, subjects).filter(
         (claim) => !countsAttributed(claim, attributed, { publishedIds }),
       );
     const offending = strings.flatMap(unreported);

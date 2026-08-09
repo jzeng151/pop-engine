@@ -29,6 +29,7 @@ import {
   organizerFacingStrings,
   pairsAgencyWithCount,
   pinnedDigest,
+  publishedClaimSubjects,
   rulesetProseStrings,
   scanFile,
   scanOptionsFor,
@@ -3085,5 +3086,101 @@ describe("round 17: a link destination is removed whole", () => {
     expect(normalizeForMatching("DOHMH reads the [guest](https://example.test/x count")).toBe(
       "DOHMH reads the guest(https://example.test/x count",
     );
+  });
+});
+
+/**
+ * ROUND 18, THREAD 677. The agency's NAME was the only subject this scan recognised, so a claim
+ * that names the published INSTRUMENT and omits the label was dropped whole, in repository prose
+ * and in another agency's published note alike.
+ *
+ * The subjects are the artifact's own identity fields, which is what makes them checkable rather
+ * than remembered: `publishedClaimSubjects` reads `output.permit_name`, `output.requirement_name`
+ * and `output.user_summary.heading` off every rule `cityHealthRule` classifies, the same three
+ * fields `packages/engine/src/ruleset.ts:513-515` and `packages/engine/src/findings.ts:305` already
+ * treat as the name of a requirement.
+ *
+ * ONE OF THE FIVE IDENTITIES THIS RULESET PUBLISHES CARRIES NO AGENCY ALIAS, and it is the one
+ * these fixtures are built on: `Possible private-event food exemption`, the heading of
+ * `DOHMH-EXEMPTION-001`. The other four spell `DOHMH` or `NYC Health` out, so they were already
+ * subjects by the agency expression alone and prove nothing about this round.
+ */
+describe("round 18: a published instrument identity is a claim subject", () => {
+  const published = JSON.parse(read("rules/nyc-rules.v2.11.json"));
+  const subjects = publishedClaimSubjects(published);
+  const AGENCY_FREE_IDENTITY = "Possible private-event food exemption";
+
+  it("reads the identity fields of the city health rules and nothing else", () => {
+    expect(subjects).toEqual([
+      "Acceptable DOHMH permit per participating food vendor (TFSE / FSE / MFV)",
+      "NYC Health Department food-vendor permits",
+      "Organizer notice to the NYC Health Department",
+      "Organizer notification to DOHMH",
+      AGENCY_FREE_IDENTITY,
+    ]);
+  });
+
+  /** The gap this closes, stated as the pair of results that used to be one. */
+  it("flags a count claim that names the instrument and omits the agency", () => {
+    const claim = `The ${AGENCY_FREE_IDENTITY} applies at 75 or more guests.`;
+    expect(pairsAgencyWithCount(claim), "the miss this round closes").toBe(false);
+    expect(pairsAgencyWithCount(claim, { subjects })).toBe(true);
+    expect(scanFile(claim, { subjects })).toHaveLength(1);
+    expect(scanFile(claim)).toEqual([]);
+  });
+
+  /** The identity is a subject across a block boundary on the same terms the agency name is. */
+  it("pairs an instrument identity with a count in the next block", () => {
+    const split = `The ${AGENCY_FREE_IDENTITY} is published.\n\nIt applies at 75 or more guests.`;
+    expect(scanFile(split, { subjects })).toHaveLength(1);
+    expect(scanFile(split)).toEqual([]);
+  });
+
+  /**
+   * The published-output audit derives its own subjects from the artifact it is handed, so a rule
+   * belonging to ANOTHER agency cannot publish a count-based city health requirement by naming the
+   * instrument instead of the agency.
+   */
+  it("names the offender when another agency's rule states the instrument's trigger", () => {
+    const bad = {
+      rules: [
+        ...published.rules,
+        {
+          id: "PARKS-NOTE-999",
+          output: {
+            agency: "NYC Parks",
+            note_text: `The ${AGENCY_FREE_IDENTITY} is required at 75 or more guests.`,
+          },
+        },
+      ],
+      advisories: published.advisories,
+    };
+    expect(countClaimsInPublishedOutput(bad).map((item) => item.ruleId)).toEqual([
+      "PARKS-NOTE-999",
+    ]);
+  });
+
+  /** A sentence rather than a title is not an identity: it would match only a verbatim quotation. */
+  it("takes no subject from an advisory_text or a note_text", () => {
+    const wordy = {
+      rules: [
+        {
+          id: "DOHMH-WORDY-001",
+          output: { agency: "DOHMH", note_text: "Confirm the exemption with the department." },
+        },
+      ],
+    };
+    expect(publishedClaimSubjects(wordy)).toEqual([]);
+  });
+
+  /** An empty identity would match every string in the tree, so it is dropped rather than joined. */
+  it("drops an empty identity", () => {
+    const blank = { rules: [{ id: "DOHMH-BLANK-001", output: { permit_name: "   " } }] };
+    expect(publishedClaimSubjects(blank)).toEqual([]);
+    expect(
+      pairsAgencyWithCount("Parks publishes a threshold at 75 or more guests.", {
+        subjects: publishedClaimSubjects(blank),
+      }),
+    ).toBe(false);
   });
 });
