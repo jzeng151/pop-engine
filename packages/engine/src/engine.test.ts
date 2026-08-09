@@ -1248,33 +1248,53 @@ describe("a merged line's window has to resolve too, not just its bar (F-102 AC 
    * (`proposals.ts` §2) so it still RENDERS, and would therefore clear the floor while hanging off
    * an unanswered question. Nothing but the resolved-trigger set stops it (#254).
    */
-  it("does not block on a barred route whose own trigger never resolved", () => {
-    const plan = evaluate(
+  /** `datedRoute`'s window and trigger, declared as a prohibition rather than a permit. */
+  const barredDatedRoute = {
+    ...datedRoute,
+    id: "BAR-DATED-001",
+    kind: "prohibition",
+    output: { ...datedRoute.output, permit_name: "barred dated route" },
+  };
+
+  const barredDatedPlan = (structureHeightFt: number | string) =>
+    evaluate(
       {
         event_date: "2026-08-02",
         headcount: 50,
-        structure_height_ft: "unknown",
+        structure_height_ft: structureHeightFt,
       } as unknown as EventIntake,
-      syntheticRuleset(
-        [
-          {
-            ...datedRoute,
-            id: "BAR-DATED-001",
-            kind: "prohibition",
-            output: { ...datedRoute.output, permit_name: "barred dated route" },
-          },
-        ],
-        [{ field: "structure_height_ft", type: "integer" }],
-      ),
+      syntheticRuleset([barredDatedRoute], [{ field: "structure_height_ft", type: "integer" }]),
       TODAY,
       { id: "test-calendar@2026", holidays: [] },
     );
+
+  it("does not block on a barred route whose own trigger never resolved", () => {
+    const plan = barredDatedPlan("unknown");
     // It renders exactly what it publishes, bar and closed window both.
     expect(plan.findings[0]?.disposition).toBe("prohibited_or_ineligible");
     expect(plan.findings[0]?.deadlineStatus).toBe("published_deadline_missed");
     // The verdict waits for the height instead of declaring the event over.
     expect(plan.verdict).toBe("CONDITIONAL");
     expect(plan.verdictDetail.blockingFinding).toBeNull();
+  });
+
+  /**
+   * THE POSITIVE HALF OF AC 10's WIDER BAR, which nothing pinned until now (#252 review). The test
+   * above pins that an UNRESOLVED barred route waits; this pins that a resolved one blocks, which
+   * is the half F-102's Amendment section used to record as an open residual on the reasoning that
+   * `computeWindowVerdict()` selected on exactly `required`. It selects at or above `required`
+   * (`blocksWhenMissed`, `verdict.ts`), so the route's own `prohibited_or_ineligible` clears the
+   * floor and the missed window closes the plan.
+   */
+  it("blocks on a barred route whose own trigger resolved and whose window has closed", () => {
+    const plan = barredDatedPlan(30);
+    expect(plan.findings[0]?.disposition).toBe("prohibited_or_ineligible");
+    expect(plan.findings[0]?.deadlineStatus).toBe("published_deadline_missed");
+    expect(plan.findings[0]?.latestApplyDate).toBe("2026-06-18");
+    expect(plan.verdict).toBe("INFEASIBLE");
+    // Narrowed to the barred route itself, which is the one the panel names.
+    expect(plan.verdictDetail.blockingFinding?.ruleIds).toEqual(["BAR-DATED-001"]);
+    expect(plan.verdictDetail.blockingFinding?.latestApplyDate).toBe("2026-06-18");
   });
 });
 

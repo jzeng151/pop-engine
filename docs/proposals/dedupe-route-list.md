@@ -366,10 +366,10 @@ reads the ROUTE LIST instead:
 - a finding is missed when ANY of its routes is `published_deadline_missed`;
 - `missedRuleIds` are the rule ids of the missed ROUTES, not of the whole group;
 - `minSlackDays` is the minimum over routes that are not missed;
-- the blocking finding is selected over routes whose OWN disposition is exactly `required` and whose
-  own window is missed, earliest `latestApplyDate` first, and it is returned as the merged finding
-  narrowed to that route's `ruleIds`, `name`, `disposition` and `latestApplyDate`, so the copy names
-  the route that blocks rather than the line that holds it.
+- the blocking finding is selected over routes whose OWN disposition is at or above `required` in
+  `DISPOSITION_STRENGTH` and whose own window is missed, earliest `latestApplyDate` first, and it is
+  returned as the merged finding narrowed to that route's `ruleIds`, `name`, `disposition` and
+  `latestApplyDate`, so the copy names the route that blocks rather than the line that holds it.
 
 **What this does NOT change: what a verdict MEANS.** The four verdicts, their ranks, the branch
 expansion, the unknown handling, the rescope ladder, the `MISSED_MAY_BE_REQUIRED_IS_CONDITIONAL`
@@ -382,11 +382,17 @@ latestApplyDate) tuples whether the rules share a key or not. That is the whole 
 earlier rounds called "the bigger fix", and it falls out of the data shape rather than being a
 separate rule.
 
-**KNOWN RESIDUAL, not fixed here.** `computeWindowVerdict` blocks only on a disposition of exactly
-`required` (`verdict.ts:55`), so a route whose disposition is `prohibited_or_ineligible` with a
-missed window reads CONDITIONAL rather than INFEASIBLE. That is pre-existing, it applies to a lone
-unmerged finding of that shape too, it is filed, and it is F-102's to decide. Widening the filter
-would be a change to what a verdict means, which this proposal explicitly does not make.
+**THE RESIDUAL THIS SECTION RECORDED IS CLOSED, and section 6 no longer owns one.** It said
+`computeWindowVerdict` blocks only on a disposition of exactly `required`, so a route whose
+disposition is `prohibited_or_ineligible` with a missed window reads CONDITIONAL rather than
+INFEASIBLE, and that widening the filter was F-102's to decide. F-102 decided it. Its AC 10, amended
+by the product owner on 2026-08-08 and shipped as PR #254 (merged as `91a1894b`), blocks at or above
+`required` in `DISPOSITION_STRENGTH` rather than exactly at it, and `blocksWhenMissed()`
+(`verdict.ts`) implements that with `>=`. So a route whose own disposition is
+`prohibited_or_ineligible`, whose own trigger resolved, and whose own window has closed reads
+INFEASIBLE, per route, which `packages/engine/src/engine.test.ts` pins as "blocks on a barred route
+whose own trigger resolved and whose window has closed". This proposal still makes no change to what
+a verdict means; it now records that the residual it filed was answered elsewhere.
 
 ## 7. API and clients
 
@@ -440,7 +446,8 @@ which findings they read. AC 5's slack definition (`latest_apply − apply_after
 meaning but is now computed per route; AC 6's missed-window reporting now names missed routes rather
 than the merged line. F-102's acceptance criteria have to be re-stated in terms of routes before
 this is implementable as F-102 work. **That is a change to an approved spec's acceptance criteria
-and is the product owner's under governance §6.** F-102 also owns the residual in section 6.
+and is the product owner's under governance §6.** The residual section 6 used to file with F-102 is
+closed: F-102's AC 10, amended 2026-08-08, blocks at or above `required` rather than exactly at it.
 
 **`specs/F-201-permit-plan-generator.md` (APPROVED).** F-201 AC 1 requires every finding to reference
 its rule ID, and the merged finding still does. What changes is that a merged line now carries
@@ -512,9 +519,11 @@ the disposition.
 `prohibited_or_ineligible` and the group's tightest window has closed, the merged line carries
 `published_deadline_missed` … but the plan reads CONDITIONAL where the same two rules read INFEASIBLE
 without a shared key." Under section 6 the verdict reads the closed route's own `required`
-disposition, so that case reads INFEASIBLE, the same as unmerged. What is NOT recovered is the case
-where the closed route's own disposition is `prohibited_or_ineligible`; that is the residual in
-section 6 and it is unmerged behaviour too.
+disposition, so that case reads INFEASIBLE, the same as unmerged. The case where the closed route's
+own disposition is `prohibited_or_ineligible` is recovered too, and it is unmerged behaviour there
+as well: F-102's AC 10, amended 2026-08-08, blocks at or above `required` rather than exactly at it,
+so that route also reads INFEASIBLE once its own trigger has resolved. Section 6 no longer files a
+residual against it.
 
 ### 9.1 What moves on the published ruleset
 
