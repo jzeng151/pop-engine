@@ -34,6 +34,7 @@ import {
   scanFile,
   scanOptionsFor,
   stableRegisterRow,
+  titledInstruments,
 } from "./spec-conflict-scan.mjs";
 
 /**
@@ -3110,13 +3111,17 @@ describe("round 18: a published instrument identity is a claim subject", () => {
   const subjects = publishedClaimSubjects(published);
   const AGENCY_FREE_IDENTITY = "Possible private-event food exemption";
 
-  it("reads the identity fields of the city health rules and nothing else", () => {
+  // The three identity FIELDS, plus the two titles the nineteenth round reads out of the summary
+  // text those rules publish. That round's own describe below says which is which and why.
+  it("reads the identities of the city health rules and nothing else", () => {
     expect(subjects).toEqual([
+      "Acceptable DOHMH permit",
       "Acceptable DOHMH permit per participating food vendor (TFSE / FSE / MFV)",
       "NYC Health Department food-vendor permits",
       "Organizer notice to the NYC Health Department",
       "Organizer notification to DOHMH",
       AGENCY_FREE_IDENTITY,
+      "Temporary Food Service Establishment permit",
     ]);
   });
 
@@ -3271,6 +3276,111 @@ describe("round 19: a semicolon separates two attribution units", () => {
     };
     expect(countClaimsInPublishedOutput(bad, { attributed }).map((item) => item.ruleId)).toEqual([
       "HEALTH-ASSEMBLY-001",
+    ]);
+  });
+});
+
+/**
+ * ROUND 19, THREAD 726. The three identity FIELDS were the whole subject set, so an instrument the
+ * ruleset publishes only inside a sentence was recognised by nobody: `rules/nyc-rules.v2.11.json`
+ * names the "Temporary Food Service Establishment permit" in a `user_summary` point and in no
+ * identity field anywhere, so the claim below carried no subject the scan could see.
+ *
+ * `titledInstruments` in `spec-conflict-scan.mjs` states where the line between a title and a
+ * description is and what it was measured against. These fixtures pin both sides of that line, and
+ * the artifact the measurement was taken on.
+ */
+describe("round 19: a titled instrument named in summary text is a claim subject", () => {
+  const published = JSON.parse(read("rules/nyc-rules.v2.11.json"));
+  const subjects = publishedClaimSubjects(published);
+  const SUMMARY_TITLE = "Temporary Food Service Establishment permit";
+
+  /** The publication this rests on: the title really is in the artifact, and only in a sentence. */
+  it("is a title the published artifact carries in summary text and in no identity field", () => {
+    const identities = [...published.rules, ...published.advisories].flatMap((rule) => [
+      rule.output?.permit_name,
+      rule.output?.requirement_name,
+      rule.output?.user_summary?.heading,
+    ]);
+    expect(identities).not.toContain(SUMMARY_TITLE);
+    expect(read("rules/nyc-rules.v2.11.json")).toContain(
+      `A ${SUMMARY_TITLE} is published at $70 per year.`,
+    );
+    expect(subjects).toContain(SUMMARY_TITLE);
+  });
+
+  /** The gap this closes, in the thread's own wording. */
+  it("flags a count claim that names the summary title and omits the agency", () => {
+    const claim = `A ${SUMMARY_TITLE} is required for 75 guests.`;
+    expect(pairsAgencyWithCount(claim), "the miss this round closes").toBe(false);
+    expect(pairsAgencyWithCount(claim, { subjects })).toBe(true);
+    expect(scanFile(claim, { subjects })).toHaveLength(1);
+  });
+
+  /** A title is two capitalized words and a declared noun; a description is not a subject. */
+  it("takes a title and leaves a bare noun or a one-word description", () => {
+    expect(
+      titledInstruments("A Temporary Food Service Establishment permit is published."),
+    ).toEqual([SUMMARY_TITLE]);
+    expect(titledInstruments("Send the notice by mail.")).toEqual([]);
+    expect(titledInstruments("Organizer notice is due.")).toEqual([]);
+    expect(titledInstruments("A TFSE permit is published.")).toEqual([]);
+    expect(titledInstruments("the permit is published")).toEqual([]);
+    expect(titledInstruments(undefined)).toEqual([]);
+  });
+
+  /**
+   * The determiner is grammar and not part of the name, so the subject is the same title whichever
+   * position the sentence puts it in.
+   */
+  it("drops a leading determiner rather than reading it as part of the title", () => {
+    for (const determiner of ["A", "An", "The"]) {
+      expect(
+        titledInstruments(`${determiner} Temporary Food Service Establishment permit is.`),
+        determiner,
+      ).toEqual([SUMMARY_TITLE]);
+    }
+    expect(titledInstruments(`Renew the Temporary Food Service Establishment permit.`)).toEqual([
+      SUMMARY_TITLE,
+    ]);
+  });
+
+  /**
+   * Only the city health agency's own rules contribute, which is what keeps the subject set about
+   * this agency: another agency's published instrument is that agency's name for its own thing.
+   */
+  it("takes no title from another agency's rule", () => {
+    const parks = {
+      rules: [
+        {
+          id: "PARKS-SPECIAL-EVENT-001",
+          output: { agency: "NYC Parks", note_text: "A Parks Special Event permit is required." },
+        },
+      ],
+    };
+    expect(publishedClaimSubjects(parks)).toEqual([]);
+  });
+
+  /**
+   * The published-output audit derives its subjects from the artifact, so another agency's rule
+   * cannot state this instrument's trigger without being named as the offender.
+   */
+  it("names the offender when another agency's rule states the summary title's trigger", () => {
+    const bad = {
+      rules: [
+        ...published.rules,
+        {
+          id: "PARKS-NOTE-998",
+          output: {
+            agency: "NYC Parks",
+            note_text: `A ${SUMMARY_TITLE} is required at 75 or more guests.`,
+          },
+        },
+      ],
+      advisories: published.advisories,
+    };
+    expect(countClaimsInPublishedOutput(bad).map((item) => item.ruleId)).toEqual([
+      "PARKS-NOTE-998",
     ]);
   });
 });

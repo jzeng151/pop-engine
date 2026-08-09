@@ -692,8 +692,17 @@ export const isParagraph = (block) => !LIST_OR_ROW.test(block.trim().split("\n")
  * this set the day it lands.
  *
  * `advisory_text` and `note_text` are the other two fallbacks `ruleset.ts` reads and they are NOT
- * here: they are sentences rather than titles, and a whole sentence as a subject makes the audit's
- * subject the entire claim, which matches only a verbatim quotation and reports nothing new.
+ * here WHOLE: they are sentences rather than titles, and a whole sentence as a subject makes the
+ * audit's subject the entire claim, which matches only a verbatim quotation and reports nothing new.
+ * The TITLE INSIDE such a sentence is a different thing and `titledInstruments` below takes it.
+ *
+ * A TITLED INSTRUMENT NAMED IN ORGANIZER-FACING SUMMARY TEXT IS AN IDENTITY TOO, which is the
+ * nineteenth PR #247 round. The three fields above were the whole set, so an instrument the ruleset
+ * publishes only inside a sentence was no subject: `rules/nyc-rules.v2.11.json:1721` names the
+ * "Temporary Food Service Establishment permit" in a `user_summary` point, and that name appears in
+ * no identity FIELD anywhere in the artifact, so "A Temporary Food Service Establishment permit is
+ * required for 75 guests" carried no recognised subject and produced no offender in tracked prose
+ * or in another agency's published output.
  *
  * WHOSE IDENTITIES: `cityHealthRule`'s answer, the same classification the rest of this module and
  * `apps/api/src/rsvps.test.ts` use, so a rule published under `NYC Health` with no `DOHMH-` prefix
@@ -704,11 +713,11 @@ export const isParagraph = (block) => !LIST_OR_ROW.test(block.trim().split("\n")
  * same way an adjacent pair of true statements is. That is the ordinary false-positive cost of
  * reading co-occurrence rather than stance, and the remedy is the one this guard already has: an
  * entry in `BENIGN_ADJACENT_PAIRS`, or wording that does not put the two together. Measured on this
- * tree the flag set does not move: the five identities the published ruleset carries today are
- * `Acceptable DOHMH permit per participating food vendor (TFSE / FSE / MFV)`, `NYC Health
- * Department food-vendor permits`, `Organizer notification to DOHMH`, `Organizer notice to the NYC
- * Health Department` and `Possible private-event food exemption`, and only the last of the five
- * carries no agency alias of its own.
+ * tree the flag set does not move: the seven identities the published ruleset carries today are
+ * `Acceptable DOHMH permit`, `Acceptable DOHMH permit per participating food vendor (TFSE / FSE /
+ * MFV)`, `NYC Health Department food-vendor permits`, `Organizer notification to DOHMH`, `Organizer
+ * notice to the NYC Health Department`, `Possible private-event food exemption` and `Temporary Food
+ * Service Establishment permit`, and only the last two carry no agency alias of their own.
  *
  * They are NORMALIZED the way the text they are matched against is, so a name carrying a character
  * `normalizeForMatching` strips is still the name after both sides have been read as one line of
@@ -721,17 +730,60 @@ export const publishedClaimSubjects = (artifact) => {
   for (const rule of [...(artifact?.rules ?? []), ...(artifact?.advisories ?? [])]) {
     if (!cityHealthRule(rule)) continue;
     const output = rule.output ?? {};
-    for (const identity of [
-      output.permit_name,
-      output.requirement_name,
-      output.user_summary?.heading,
-    ]) {
+    const named = [output.permit_name, output.requirement_name, output.user_summary?.heading];
+    for (const string of organizerFacingStrings(rule)) named.push(...titledInstruments(string));
+    for (const identity of named) {
       if (typeof identity !== "string") continue;
       const normalized = normalizeForMatching(identity).trim();
       if (normalized !== "") identities.add(normalized);
     }
   }
   return [...identities].sort();
+};
+
+/** The nouns this jurisdiction's regulatory instruments are called by. */
+const INSTRUMENT_NOUN =
+  "(?:[Pp]ermit|[Ll]icen[cs]e|[Rr]egistration|[Cc]ertificate|[Nn]otification|[Nn]otice)s?";
+
+/**
+ * The instrument TITLES one organizer-facing string names: a run of capitalized words ending in one
+ * of the nouns above, with a leading English determiner removed and at least two capitalized words
+ * left after it.
+ *
+ * THE TITLE AND NOT THE SENTENCE, which is what makes this a subject rather than a quotation. An
+ * identity field is a title already; a summary point is a sentence with a title inside it, and
+ * "A Temporary Food Service Establishment permit is published at $70 per year." publishes the
+ * instrument's name exactly as a `permit_name` would.
+ *
+ * TWO CAPITALIZED WORDS IS THE LINE BETWEEN A TITLE AND A DESCRIPTION, and it is where it is
+ * because it was measured rather than chosen. Over the three ruleset artifacts this tree carries,
+ * the runs of one capitalized word are `TFSE permit`, `Organizer notice` and `Organizer
+ * notification`: a bare acronym and two generic descriptions, and a generic description as a
+ * subject makes any sentence about any organizer's notice a city health claim. The runs of two or
+ * more are `Temporary Food Service Establishment permit`, `Acceptable DOHMH permit`, `Health
+ * Department permit` and `NYC Health permit`, every one of which is an instrument this agency
+ * publishes, and three of the four already carry an agency alias of their own.
+ *
+ * THE DETERMINER IS REMOVED because a sentence-initial `A`, `An` or `The` is capitalized by
+ * grammar rather than by title, and keeping it would leave the subject matching only the wording
+ * that happens to begin a sentence. It is the three English determiners and nothing else: any
+ * longer list would be this function guessing at grammar, which is the failure the next paragraph
+ * bounds.
+ *
+ * WHAT THIS IS NOT is a general reading of prose. It recognizes a name that is CAPITALIZED and ends
+ * in a declared noun, so an instrument written in lower case, or called something this noun list
+ * does not carry, is still no subject. The general version of the question is to key on the
+ * instrument noun itself rather than on the agency, and it is not built here for a measured reason:
+ * over every scanned root, blocks pairing any of these nouns with a count run 59 against the ten
+ * this guard flags today, and nearly all of the extra 49 are true published facts about OTHER
+ * agencies ("park headcount 19/20/21"). A bare instrument noun does not say whose instrument it is,
+ * and whose it is has been the whole question since the first round.
+ */
+export const titledInstruments = (text) => {
+  const titles = new RegExp(`(?:[A-Z][A-Za-z-]*\\s+)+${INSTRUMENT_NOUN}\\b`, "g");
+  return (typeof text === "string" ? (text.match(titles) ?? []) : [])
+    .map((title) => title.replace(/^(?:A|An|The)\s+/, ""))
+    .filter((title) => title.split(/\s+/).length > 2);
 };
 
 const escapeForRegExp = (text) => text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
