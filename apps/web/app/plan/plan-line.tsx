@@ -206,7 +206,7 @@ function SummarySources({ sources }: { sources: readonly SummarySourceLink[] }) 
  * same sentence the routes block used to lead with, moved to where the design puts it and rendered
  * once.
  */
-const CANDIDATE_HEADING = "The answers so far do not say which of these applies.";
+export const CANDIDATE_HEADING = "The answers so far do not say which of these applies.";
 
 /**
  * The routes of a line whose headline mode says the answers do not decide it. Two or more, which is
@@ -316,9 +316,15 @@ function Route({ route, mode }: { route: ConsumedRoute; mode: HeadlineMode }) {
       {/* Beside the status token rather than in place of it, which is how the pre-summary line above
           renders the same pair: the entry still reports `not_calculable`, and this says what the
           date turns on. No citation follows it, for the reason `business-day-notice.ts` gives. */}
+      {/* THE LABEL GOES ON A CANDIDATE ENTRY, NOT THE SENTENCE. "Apply by:" frames the note as this
+          route's filing instruction, which is the claim a candidate entry may not make; the note
+          itself says the exact date depends on which days the agency counts and to confirm with
+          them, which is not a filing action and is approved copy that must not be dropped. So the
+          frame is withheld and the sentence is not — the fourth surface the candidate-action rule
+          reached, found by enumerating them rather than by a fifth review (#252 review). */}
       {businessDayWindow !== null && (
         <p className="line__route-deadline-notice">
-          <strong>Apply by:</strong> {businessDayWindow}
+          {mode === "candidate" ? null : <strong>Apply by:</strong>} {businessDayWindow}
         </p>
       )}
       {route.feeDisplay !== null && <p className="line__route-fee">{route.feeDisplay}</p>}

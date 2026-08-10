@@ -386,8 +386,12 @@ describe("a merged dedupe line, and the routes whose windows it did not take", (
       item.textContent?.includes("tent/canopy"),
     );
     if (entry === undefined) throw new Error("the routes block rendered no DOB-TENT-001 entry");
-    expect(entry.querySelector(".line__route-deadline-notice")?.textContent).toBe(
-      "Apply by: the exact date depends on which days DOB counts as business days. " +
+    // The sentence, without the "Apply by:" frame: this group is `candidate` — DOB-TENT-001's own
+    // trigger is unanswered — and a candidate entry may not render as a filing instruction (design
+    // §5.3). The note itself is approved copy about confirming a date, not an action, so it stays.
+    expect(merged.headlineMode).toBe("candidate");
+    expect(entry.querySelector(".line__route-deadline-notice")?.textContent?.trim()).toBe(
+      "the exact date depends on which days DOB counts as business days. " +
         "Allow more if it closes for holidays. Confirm with DOB.",
     );
     // The state the entry reports is unchanged: this is still `not_calculable`, said beside the

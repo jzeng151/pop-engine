@@ -5,6 +5,7 @@ import { CHECKLIST_STATUSES, CONFIRM_WITH_AGENCY, type ChecklistStatus } from "@
 import { Disclosure } from "../disclosure";
 import { PortalBlock } from "../portal-block";
 import { formatSnapshotDate } from "../plan/snapshot-banner";
+import { CANDIDATE_HEADING } from "../plan/plan-line";
 import { includesAgencyConfirmation, NOT_COVERED_BY_RULESET } from "../verification-copy";
 import type { ConsumedRoute } from "../plan/plan-api";
 import { MovedDeadlineNoticeBlock } from "./moved-deadline-notice";
@@ -27,8 +28,43 @@ import {
 
 const humanize = (token: string): string => token.replace(/_/g, " ");
 
+/** Two or more, the same guard both surfaces make: one route is not a choice between routes. */
+const isCandidateRow = (context: PlanContext): boolean =>
+  context.headlineMode === "candidate" && (context.routes?.length ?? 0) >= 2;
+
+/**
+ * THE HEADING IS THE QUESTION, NOT A PERMIT, on this surface as on the plan line.
+ *
+ * Design §5.3 settles it: a candidate group has not decided which of its routes applies, so a
+ * heading taken from the summary or the binding route's name states one unresolved candidate as the
+ * requirement. The plan line has done this since the heading moved; the checklist inherited the
+ * MERGED `userSummary.heading` through this function instead, and `mergeUserSummary` takes that
+ * heading from the first route in binding order that publishes one — so the row an organizer works
+ * was titled with one candidate's permit name (#252 review).
+ *
+ * `CANDIDATE_HEADING` is imported rather than restated, so the two surfaces cannot drift into two
+ * sentences for one question.
+ */
 const displayName = (context: PlanContext): string =>
-  context.userSummary?.heading ?? context.permitName ?? "Additional plan context";
+  isCandidateRow(context)
+    ? CANDIDATE_HEADING
+    : (context.userSummary?.heading ?? context.permitName ?? "Additional plan context");
+
+/**
+ * What the row's CONTROLS are labelled with, which is a different question from what it is headed
+ * with: a status select, a notes box and an upload need a NOUN, and the deciding question is not
+ * one. "Status for The answers so far do not say which of these applies." names nothing.
+ *
+ * On a candidate row they may not take the merged summary heading either, for the reason above — it
+ * is one contributing rule's — so they fall back the way every other surface here falls back when a
+ * route publishes no name of its own: the rule ids. That composes no new copy. What it does NOT do
+ * is give the row a settled name, and it cannot: the whole point is that the answers have not
+ * decided which permit this task is. Naming it would be a copy decision this lane does not hold.
+ */
+const trackingLabel = (context: PlanContext): string =>
+  isCandidateRow(context)
+    ? (context.permitName ?? context.ruleIds.join(", "))
+    : displayName(context);
 
 /**
  * Whether this row has anything to say about timing. `deadlineStatus` is always set, so
@@ -316,7 +352,7 @@ export function PlanContextBody({
 
       {hasContextDetail(context) && (
         <Disclosure
-          label={`Details for ${displayName(context)}`}
+          label={`Details for ${trackingLabel(context)}`}
           className="check-item__detail"
           onOpenChange={setDetailsOpen}
         >
@@ -430,6 +466,8 @@ export function ChecklistItemCard({
   onDownload,
 }: ChecklistItemCardProps) {
   const name = displayName(item);
+  // The controls name a thing to act on; the heading answers what the row is about.
+  const label = trackingLabel(item);
   const [notesDraft, setNotesDraft] = useState(item.notes ?? "");
   const [busy, setBusy] = useState(false);
   const [failure, setFailure] = useState<string | null>(null);
@@ -515,7 +553,7 @@ export function ChecklistItemCard({
               status from every status rather than a next-step ladder. */}
           <select
             className="check-item__select"
-            aria-label={`Status for ${name}`}
+            aria-label={`Status for ${label}`}
             value={item.status}
             disabled={busy}
             onChange={(event) => {
@@ -535,7 +573,7 @@ export function ChecklistItemCard({
           <span className="check-item__field-label">Notes</span>
           <textarea
             className="check-item__notes"
-            aria-label={`Notes for ${name}`}
+            aria-label={`Notes for ${label}`}
             rows={2}
             value={notesDraft}
             disabled={busy}
@@ -578,7 +616,7 @@ export function ChecklistItemCard({
           <input
             ref={fileInput}
             type="file"
-            aria-label={`Add a document to ${name}`}
+            aria-label={`Add a document to ${label}`}
             accept={ACCEPTED_DOCUMENT_TYPES.join(",")}
             disabled={busy}
             onChange={(event) => chooseFile(event.target.files?.[0] ?? null)}

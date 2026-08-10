@@ -406,6 +406,7 @@ function routeFrom(
     portalUrl: finding.portalUrl,
     portalInstructions: finding.portalInstructions,
     notes: finding.notes,
+    conflictText: finding.conflictText,
   };
 }
 

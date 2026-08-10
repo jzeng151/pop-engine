@@ -1263,6 +1263,13 @@ const subjectFromRoute = (
           // block exists to prevent. Those rows keep the crossing until they are regenerated, and
           // that residue is stated rather than closed here.
           ...(route.notes === undefined ? {} : { notes: route.notes }),
+          // THE SAME NARROWING, ON THE LAST PUBLISHED STRING THAT WAS STILL THE LINE'S. The merged
+          // `conflict_text` is not a concatenation: `mergeGroup` falls back through the routes in
+          // binding order and takes the first that publishes any, so it is one route's text with
+          // nothing recording whose. `reminderCopy` quotes both readings verbatim under a heading
+          // carrying THIS route's name and date, so a route that publishes no conflict at all
+          // carried another rule's (#252 review). Absent means not recorded, as with the notes.
+          ...(route.conflictText === undefined ? {} : { conflict_text: route.conflictText }),
         },
   routeRuleId: route.ruleId,
   groupRouteRuleIds,

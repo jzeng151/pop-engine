@@ -8,6 +8,7 @@ import PlanPage from "../events/[id]/plan/page";
 import { publishedRulesFileIn } from "../rules-file";
 import { ChecklistView } from "./checklist-view";
 import { NOT_COVERED_BY_RULESET } from "../verification-copy";
+import { CANDIDATE_HEADING } from "../plan/plan-line";
 import { CONFIRM_WITH_AGENCY } from "@pop-engine/engine";
 import {
   ALCOHOL_ADVISORY,
@@ -108,6 +109,13 @@ const renderView = async () => {
 const rowFor = (ruleId: string) => screen.getByRole("article", { name: nameOf(ruleId) });
 
 /**
+ * A CANDIDATE row is not headed by a permit name, so it cannot be found by one. Design §5.3 makes
+ * the heading the deciding question on this surface as on the plan line, so that is what names the
+ * card (#252 review).
+ */
+const candidateRow = () => screen.getByRole("article", { name: CANDIDATE_HEADING });
+
+/**
  * One row with its detail expanded when it has any.
  *
  * The row is progressively disclosed: the summary carries the status badge, agency, disposition,
@@ -116,6 +124,15 @@ const rowFor = (ruleId: string) => screen.getByRole("article", { name: nameOf(ru
  * cases assert a field renders with the right content, which the split does not change, so the
  * helper opens the panel first.
  */
+const expandRow = async (row: HTMLElement): Promise<HTMLElement> => {
+  const toggle = within(row).queryByRole("button", { name: /^Details for/ });
+  if (toggle !== null) await userEvent.click(toggle);
+  return row;
+};
+
+/** A candidate row expanded, found by the question that heads it rather than by a permit name. */
+const expandedCandidateRow = async (): Promise<HTMLElement> => expandRow(candidateRow());
+
 const expandedRowFor = async (ruleId: string): Promise<HTMLElement> => {
   const row = rowFor(ruleId);
   const toggle = within(row).queryByRole("button", { name: /^Details for/ });
@@ -2654,7 +2671,7 @@ describe("a checklist row whose window comes from another route (#252)", () => {
     });
     await renderView();
 
-    const row = await expandedRowFor(STREET_MEDIUM);
+    const row = await expandedCandidateRow();
     expect(within(row).getByText(/apply by 2026-08-26/)).toBeDefined();
     expect(within(row).getByText("TUP: $100 initial 30 days")).toBeDefined();
     expect(
@@ -2688,6 +2705,40 @@ describe("a checklist row whose window comes from another route (#252)", () => {
    * item, said only "may be required". The conditionality survived to it; the question that would
    * settle it did not, and all 56 affected plans are `candidate`.
    */
+  /**
+   * #252 review: THE HEADING IS THE QUESTION ON THIS SURFACE TOO (design §5.3). The checklist
+   * inherited the MERGED `userSummary.heading`, which `mergeUserSummary` takes from the first route
+   * in binding order that publishes one, so the row an organizer works was titled with one
+   * candidate's permit name while the plan line asked the question.
+   */
+  it("heads a candidate row with the deciding question, not with a candidate's name", async () => {
+    stubApi({
+      [GET_CHECKLIST]: checklistOf({
+        created: true,
+        items: [
+          trackedItem(STREET_MEDIUM, {
+            routes: [TALL_ROUTE, TENT_ROUTE],
+            headlineMode: "candidate",
+            filingRouteRuleId: null,
+          }),
+        ],
+      }),
+    });
+    await renderView();
+
+    const row = candidateRow();
+    expect(within(row).getByRole("heading").textContent).toBe(CANDIDATE_HEADING);
+    expect(within(row).queryByText(nameOf(STREET_MEDIUM))).toBeNull();
+    // The CONTROLS take a noun rather than the question, and not the merged heading either: they
+    // fall back the way every other surface does when no name is settled.
+    expect(within(row).getByRole("combobox").getAttribute("aria-label")).not.toContain(
+      CANDIDATE_HEADING,
+    );
+    expect(within(row).getByRole("combobox").getAttribute("aria-label")).not.toContain(
+      nameOf(STREET_MEDIUM),
+    );
+  });
+
   it("names the question that would decide a candidate row", async () => {
     stubApi({
       [GET_CHECKLIST]: checklistOf({
@@ -2704,7 +2755,7 @@ describe("a checklist row whose window comes from another route (#252)", () => {
     });
     await renderView();
 
-    const row = await expandedRowFor(STREET_MEDIUM);
+    const row = await expandedCandidateRow();
     // TALL_ROUTE's trigger resolved, so the requirement IS reached and what is open is which of
     // its routes reach it. The sentence must not say the requirement itself may not apply.
     expect(within(row).getByTestId("deciding-question").textContent).toBe(
@@ -2738,7 +2789,7 @@ describe("a checklist row whose window comes from another route (#252)", () => {
     });
     await renderView();
 
-    const row = await expandedRowFor(STREET_MEDIUM);
+    const row = await expandedCandidateRow();
     const text = row.textContent ?? "";
     const question = text.indexOf("The answers so far do not say");
     const applyBy = text.indexOf("apply by 2026-08-26");
@@ -2773,7 +2824,7 @@ describe("a checklist row whose window comes from another route (#252)", () => {
     });
     await renderView();
 
-    const row = await expandedRowFor(STREET_MEDIUM);
+    const row = await expandedCandidateRow();
     expect(within(row).getByTestId("deciding-question").textContent).toBe(
       "The answers so far do not say whether this requirement applies." +
         " Answering structure over 10ft tall, tent area sqft would decide it.",
@@ -2803,7 +2854,7 @@ describe("a checklist row whose window comes from another route (#252)", () => {
     });
     await renderView();
 
-    const row = await expandedRowFor(STREET_MEDIUM);
+    const row = await expandedCandidateRow();
     expect(within(row).getByTestId("deciding-question").textContent).toBe(
       "The answers so far do not say which of the published routes to this requirement apply." +
         " Answering tent area sqft, structure types would decide it.",
@@ -2838,7 +2889,7 @@ describe("a checklist row whose window comes from another route (#252)", () => {
     });
     await renderView();
 
-    const row = await expandedRowFor(STREET_MEDIUM);
+    const row = await expandedCandidateRow();
     expect(within(row).getByTestId("deciding-question")).toBeDefined();
     expect(within(row).queryByText(/apply at/)).toBeNull();
     // Published, so still named and still linked. Only the instruction to file is withheld.

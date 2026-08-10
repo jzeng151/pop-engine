@@ -1183,7 +1183,10 @@ describe("the routes of a merged dedupe line", () => {
     // own instructions are its words and are untouched.
     expect(line.getByText(/portal:/)).toBeDefined();
     expect(line.getByRole("link", { name: "DOB NOW: Build" })).toBeDefined();
-    expect(line.getByText("Select the temporary structure application.")).toBeDefined();
+    // AND THE INSTRUCTION IS WITHHELD WITH THE LEAD. "Select the temporary structure application."
+    // is this route's filing instruction, which is the action a candidate entry may not render;
+    // the portal is still named and still linked above it (#252 review).
+    expect(line.queryByText("Select the temporary structure application.")).toBeNull();
   });
 
   /**

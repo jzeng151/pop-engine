@@ -313,6 +313,22 @@ export type FindingRoute = {
    * absence is not a value.
    */
   readonly notes?: readonly string[];
+  /**
+   * This route's own `conflictText`: both readings of an OFFICIAL_CONFLICT rule, verbatim, or null
+   * where its own rule publishes none.
+   *
+   * SINGLE-VALUED ON THE MERGED LINE, WHICH IS WHY IT NEEDED CARRYING TOO. `mergeGroup` does not
+   * concatenate this one — it falls back through the routes in binding order and takes the first
+   * that publishes any — so the line's value is exactly ONE route's text with nothing recording
+   * whose. A consumer that narrows the rest of a message to one route and leaves this quoted both
+   * readings of another rule's conflict under this route's name and date (#252 review). The same
+   * shape as `notes`, one field over, and the same fix.
+   *
+   * Optional for the same reason `notes` is: a plan stored before this field carries no per-route
+   * value, and a consumer treats absence as "not recorded" rather than as "this route publishes
+   * none", which `null` is.
+   */
+  readonly conflictText?: string | null;
 };
 
 /**

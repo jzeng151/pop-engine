@@ -113,6 +113,8 @@ export type FindingRoute = {
   readonly portalInstructions: string | null;
   /** This route's own published notes. Absent on a plan stored before this field. */
   readonly notes?: readonly string[];
+  /** This route's own `conflictText`. Absent on a plan stored before this field. */
+  readonly conflictText?: string | null;
 };
 
 export type HeadlineMode = "applies_together" | "candidate";
@@ -157,6 +159,17 @@ field carries no per-route notes and there is no way to tell "this route publish
 plan does not record it", so a consumer treats absence as not recorded and falls back to the line's
 notes rather than dropping a published qualification off a filing date. Those stored rows keep the
 crossing until they are regenerated.
+
+**`route.conflictText` was added on 2026-08-10** by a product-owner decision recorded in
+`docs/BASELINE.md`, for the same defect one field over from `route.notes` and with the same remedy.
+`mergeGroup()` does NOT concatenate this one: `conflictText` falls back through the routes in
+binding order and the line takes the first that publishes any, so the merged value is exactly one
+route's text with nothing recording whose. `alerts.ts` narrows a reminder's name, dates, fee, portal
+and notes to the scheduled route and quoted this verbatim beneath them, so both readings of one
+rule's OFFICIAL_CONFLICT arrived under another route's name and date — and under a route that
+publishes no conflict at all. Optional, and absence means not recorded rather than "this route
+publishes none", which `null` is; a plan stored before the field keeps the line's value, which is
+the same residue `notes` records.
 
 **`verificationStatus` is deliberately not on a route.** `rejectMixedDedupeVerificationStatuses()`
 (`packages/engine/src/ruleset.ts:665`) refuses at load any ruleset whose dedupe key mixes
