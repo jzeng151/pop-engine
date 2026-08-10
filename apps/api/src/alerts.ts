@@ -24,7 +24,6 @@ import type { PoolClient, QueryResult, QueryResultRow } from "pg";
 import {
   CONFIRM_WITH_AGENCY,
   DEPENDENCY_SEQUENCING_BINDINGS,
-  FILING_DISPOSITIONS,
   offersAFilingAction,
 } from "@pop-engine/engine";
 import type {
@@ -1295,10 +1294,11 @@ const subjectFromRoute = (
  * the checklist row's route list, which is where a reader learns what it says. What it does not get
  * is a notification telling them to file it.
  *
- * THE SET ITSELF IS THE ENGINE'S NOW, imported rather than declared here for the third time. It is
- * one classification — which dispositions denote something an organizer files — read by nine
- * surfaces across both apps, and it was written out locally in this file and in `plan.ts` while the
- * web renderers asked the question a third way (#252 review).
+ * THE RULE ITSELF IS THE ENGINE'S NOW, and this file names none of its parts. The classification of
+ * which dispositions denote something an organizer files was written out locally here and in
+ * `plan.ts` while the web renderers asked the question a third way; it is `FILING_DISPOSITIONS`,
+ * and this file no longer reads even that, because the whole question is `offersAFilingAction`
+ * (#252 review).
  *
  * AND THE DISPOSITION IS ONLY HALF THE QUESTION. `offersAFilingAction` has two clauses and this
  * read one of them: the group must also be SETTLED. A candidate group holding a resolved, dated,
@@ -1337,7 +1337,7 @@ const isFilingSubject = (subject: AlertSubject): boolean =>
  * against.
  *
  * EVERY DATED ROUTE, WHATEVER IT PUBLISHES, because this expansion answers two different questions
- * and only one of them is about filing. Its callers are enumerated above `FILING_DISPOSITIONS`: the
+ * and only one of them is about filing. Its callers are enumerated above `offersAFilingAction`: the
  * two that write a message to an organizer filter it, and the one that MEASURES the plan's slack
  * must not, because `computeWindowVerdict` takes `minSlackDays` over every route regardless of
  * disposition. Filtering here made the plan and the alerts disagree about the same number: a dated
