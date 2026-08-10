@@ -25,7 +25,11 @@ import type {
   VerdictDetail,
   VerificationStatus,
 } from "@pop-engine/engine";
-import { mergedDispositionOf, noRouteSuppliesScalars } from "@pop-engine/engine";
+import {
+  canBlockWhenMissed,
+  mergedDispositionOf,
+  noRouteSuppliesScalars,
+} from "@pop-engine/engine";
 import { CREDENTIALED } from "../intake/events-api";
 import {
   absentOr,
@@ -927,13 +931,34 @@ const BLOCKER_ROUTE_FIELDS = [
  *    heading from the first route in binding order that publishes one and concatenates the points
  *    over the group, so a merged summary is never the blocking route's own. An unmerged blocker
  *    keeps its own, which is why the test is on the finding's route list rather than on the blocker.
+ * 7. IT IS A ROUTE A MISSED WINDOW MAY CLOSE A PLAN ON. Conditions 3 and 4 say the named route is
+ *    missed and that the values are its own; neither says the ENGINE would have blocked on it. A
+ *    resolved advisory route and an unresolved barred route both satisfy every condition above and
+ *    neither can produce a blocker, so the panel would state INFEASIBLE off a route the engine
+ *    reads as CONDITIONAL. Recomputed through the engine's own `canBlockWhenMissed` rather than
+ *    restated here, for the reason this file recomputes the merged disposition through
+ *    `mergedDispositionOf` instead of restating the ceiling rule (#252 review).
  *
  * WHAT IS STILL NOT CHECKED AFTER THIS, named rather than left implicit:
  *
- * - THAT THIS ROUTE IS THE ONE THAT BLOCKS, where several are missed. `computeWindowVerdict` picks
- *   the missed route with the longest published lead and only a route that `blocksWhenMissed`
- *   admits, which needs each route's own trigger result — `DefiniteRoutes` — and that is not on the
- *   wire at all. A payload naming a different missed route of the same plan is accepted here.
+ * - THE TRIGGER RESULT OF AN UNMERGED BLOCKER, which is one clause of condition 7 and not the
+ *   condition. `triggerResult` is on `ConsumedRoute` and a merged blocker is checked on all three
+ *   clauses; an unmerged finding serves `routes: null`, and `ConsumedFinding` carries no trigger
+ *   result, so only the disposition and conflict clauses are evaluable there. The gap is narrow by
+ *   construction: `resolveDisposition` demotes an unknown-triggered `required` to
+ *   `may_be_required`, which condition 7's floor already refuses, so the disposition clause proves
+ *   the trigger resolved for every value except `prohibited_or_ineligible`, which `proposals.ts` §2
+ *   deliberately leaves undemoted. Closing it needs the finding's own trigger result on the wire.
+ *   THE EARLIER NOTE HERE WAS WRONG and is corrected rather than deleted: it said this whole
+ *   selection needed `DefiniteRoutes` and that nothing of it was on the wire. `plan.ts` serves
+ *   `routes: finding.routes ?? null`, whole, and `FindingRoute` has carried `triggerResult` and
+ *   `disposition` since the field landed. `verificationStatus` is the finding's and is every
+ *   route's, since `parseEngineRuleset` refuses a `dedupe_key` mixing statuses.
+ * - WHICH OF SEVERAL BLOCKING ROUTES IS THE ONE PICKED. Where two routes both satisfy condition 7,
+ *   `computeWindowVerdict` takes the earlier `latestApplyDate`. That is checkable — the dates are
+ *   on the wire — and it is deliberately not checked, because it is a rule about which of two
+ *   valid blockers was chosen rather than about whether this payload describes a blocker at all. A
+ *   payload naming the later of two blocking routes states a real miss of a real blocking route.
  * - THAT THE VERDICT IS INFEASIBLE. The engine only sets a blocker on that verdict, but the field
  *   is optional and stored plans replay as written, so refusing on it would be a cross-field rule
  *   about verdicts rather than about the blocker.
@@ -994,12 +1019,26 @@ const blockerIsANarrowedMissedRoute = (plan: PlanResponse): boolean => {
   //    that does not carry the named route is a route list disagreeing with its own blocker.
   const route = (finding.routes ?? []).find((entry) => entry.ruleId === ruleId);
   if (route === undefined) {
-    return finding.routes == null
-      ? BLOCKER_ROUTE_FIELDS.every(
-          (field) => (blocker[field] as unknown) === (finding[field] as unknown),
-        )
-      : false;
+    if (finding.routes != null) return false;
+    // 7 on an unmerged finding, which carries no trigger result. `triggerResult: "true"` is what
+    // `routesOf` synthesizes for exactly this line, and it is the one clause this shape cannot
+    // corroborate; the floor and the conflict exclusion are checked on the finding's own values.
+    if (
+      !canBlockWhenMissed(
+        { disposition: finding.disposition, triggerResult: "true" },
+        finding.verificationStatus,
+      )
+    ) {
+      return false;
+    }
+    return BLOCKER_ROUTE_FIELDS.every(
+      (field) => (blocker[field] as unknown) === (finding[field] as unknown),
+    );
   }
+
+  // 7. It is a route a missed window may close a plan on.
+  if (!canBlockWhenMissed(route, finding.verificationStatus)) return false;
+
   return agreesWithRoute(blocker, route, BLOCKER_ROUTE_FIELDS);
 };
 

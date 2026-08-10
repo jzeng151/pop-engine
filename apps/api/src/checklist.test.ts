@@ -2559,6 +2559,127 @@ describe.runIf(databaseUrl.length > 0)("F-202 compliance checklist", () => {
       expect(item.portalInstructions).toBeNull();
     });
 
+    /**
+     * #252 review: THE PROVENANCE OF A NARROWED DEADLINE IS THAT ROUTE'S PROVENANCE.
+     *
+     * `noticeItemFrom` narrows the deadline, the date and the status to the filing route and left
+     * `sources` and `source_url` as the merged item's. `sources` concatenates over the group in
+     * CONTRIBUTING order and `source_url` is `sources[0].urls[0]`, so the notice labelled whichever
+     * rule the published file lists first as the Primary source for another route's deadline
+     * change. `conflict_text` is the same defect one field over: `mergeGroup` falls back through
+     * binding order and takes the first route that publishes any, so the two readings quoted beside
+     * the moved date were the binding route's.
+     *
+     * SYNTHETIC for the reason the fee-and-portal test above is: the one published group runs the
+     * other way round. Every value below is this fixture's.
+     */
+    it("cites the filing route's own source beside a deadline it narrowed", async () => {
+      const eventId = await createEvent(TALL_TENT);
+      const planId = randomUUID();
+      const itemId = randomUUID();
+      const route = (overrides: Record<string, unknown>) => ({
+        triggerResult: "true",
+        unknownFields: [],
+        agency: "DOB",
+        deadline: null,
+        deadlineDisplay: null,
+        latestApplyDate: null,
+        applyAfterDate: null,
+        deadlineStatus: "not_applicable",
+        slackDays: null,
+        feeDisplay: null,
+        portalName: null,
+        portalUrl: null,
+        portalInstructions: null,
+        ...overrides,
+      });
+      const bindingSource = {
+        ruleId: "DOB-TALL-STRUCTURE-001",
+        citation: "the binding route's page",
+        urls: ["https://example.test/binding"],
+      };
+      const filingSource = {
+        ruleId: "DOB-TENT-001",
+        citation: "the filing route's page",
+        urls: ["https://example.test/filing"],
+      };
+      await pool.query(
+        `INSERT INTO permit_plans
+           (id, event_id, event_revision, ruleset_version, snapshot_date, verdict, verdict_detail,
+            intake_snapshot, generated_at)
+         VALUES ($1, $2, 1, $3, $4, 'conditional', $5::jsonb, '{}'::jsonb, clock_timestamp())`,
+        [
+          planId,
+          eventId,
+          ruleset.rulesetVersion,
+          ruleset.snapshotDate,
+          JSON.stringify({
+            finding_renderings: [
+              {
+                rule_ids: ["DOB-TALL-STRUCTURE-001", "DOB-TENT-001"],
+                notes: [],
+                note_text: null,
+                // The binding route's, which is what a merged line carries.
+                conflict_text: "the binding route's two readings",
+                deadline_display: null,
+                slack_days: null,
+                deadline_unknown_fields: [],
+                timeline_unresolved_reason: null,
+                portal_instructions: null,
+                headline_mode: "applies_together",
+                routes: [
+                  route({
+                    ruleId: "DOB-TALL-STRUCTURE-001",
+                    disposition: "may_be_required",
+                    name: "DOB permit — structure over 10 feet tall",
+                    conflictText: "the binding route's two readings",
+                  }),
+                  // The filing route: the window, its own page, and no conflict of its own.
+                  route({
+                    ruleId: "DOB-TENT-001",
+                    disposition: "required",
+                    name: "DOB permit — tent/canopy",
+                    latestApplyDate: "2026-07-01",
+                    deadlineStatus: "on_track",
+                    conflictText: null,
+                  }),
+                ],
+              },
+            ],
+          }),
+        ],
+      );
+      await pool.query(
+        `INSERT INTO permit_plan_items
+           (id, plan_id, rule_ids, triggered_by, sources, source_url, kind, disposition,
+            deadline_status, verification_status, permit_name, agency, latest_apply_date)
+         VALUES ($1, $2, ARRAY['DOB-TALL-STRUCTURE-001','DOB-TENT-001'], '[]'::jsonb, $3::jsonb, $4,
+                 'permit', 'may_be_required', 'not_applicable', 'SOURCE_CONFIRMED',
+                 'DOB permit — structure over 10 feet tall', 'DOB', NULL)`,
+        [itemId, planId, JSON.stringify([bindingSource, filingSource]), bindingSource.urls[0]],
+      );
+
+      const api = appWith(fakeStorage());
+      expect((await review(api, eventId, planId)).status).toBe(201);
+      await generatePlan(eventId);
+
+      const read = await request(api).get(`/api/events/${eventId}/checklist`);
+      const item = (read.body.items as ChecklistItemView[]).find((candidate) =>
+        candidate.ruleIds.includes("DOB-TENT-001"),
+      );
+      // The date that moved is the filing route's, which is what makes the rest attribution.
+      expect(item?.deadlineNotice?.dateChange).toMatchObject({
+        kind: "both",
+        previous: "2026-07-01",
+      });
+      // NOT VACUOUS, each on its own: before the narrowing these read both sources, the binding
+      // route's url, and the binding route's two readings.
+      const provenance = item?.deadlineNotice?.previousProvenance;
+      expect(provenance?.sources).toEqual([filingSource]);
+      expect(provenance?.sourceUrl).toBe("https://example.test/filing");
+      expect(provenance?.conflictText).toBeNull();
+    });
+
     it("schedules the reminders that route's window earns, naming that route", async () => {
       const eventId = await createEvent(TALL_TENT);
       await generatePlan(eventId);

@@ -552,6 +552,104 @@ describe("loadPlan", () => {
   });
 
   /**
+   * #252 review: A BLOCKER MUST BE A ROUTE THE ENGINE WOULD HAVE BLOCKED ON.
+   *
+   * Six conditions said the named route is on this plan, is missed, and carries these values. None
+   * said the engine reads it as blocking, and `computeWindowVerdict` blocks on a much narrower set:
+   * `canBlockWhenMissed` wants a disposition at or above `required`, a trigger that RESOLVED, and a
+   * rule that is not OFFICIAL_CONFLICT. A resolved advisory route and an unresolved barred route
+   * both satisfy every earlier condition, and either would put INFEASIBLE on the panel for a plan
+   * the engine reads as CONDITIONAL.
+   */
+  it("refuses a widened blocker on a route the engine would not block on", async () => {
+    const blockingRoute = {
+      ruleId: "SAPO-PERMIT-001",
+      triggerResult: "true",
+      disposition: "required",
+      unknownFields: [] as string[],
+      name: "SAPO permit",
+      agency: "SAPO (CECM)",
+      deadline: null,
+      deadlineDisplay: null,
+      latestApplyDate: "2026-03-01",
+      applyAfterDate: null,
+      deadlineStatus: "published_deadline_missed",
+      feeDisplay: null,
+      portalName: null,
+      portalUrl: null,
+      portalInstructions: null,
+    };
+    const planWith = (route: Record<string, unknown>, verificationStatus: string) => {
+      const binding = { ...blockingRoute, ruleId: "PARKS-EVENT-001", name: "Special Event Permit" };
+      const finding = {
+        ...storedFinding,
+        ruleIds: ["PARKS-EVENT-001", route.ruleId as string],
+        headlineMode: "applies_together",
+        verificationStatus,
+        // The headline is the binding route's, which the boundary checks on its own.
+        name: binding.name,
+        agency: binding.agency,
+        disposition: binding.disposition,
+        latestApplyDate: binding.latestApplyDate,
+        deadlineStatus: binding.deadlineStatus,
+        routes: [binding, route],
+      };
+      return {
+        ...storedPlan,
+        verdict: "INFEASIBLE",
+        findings: [finding],
+        verdictDetail: {
+          ...storedPlan.verdictDetail,
+          // Every earlier condition is satisfied: one rule, on this plan, missed, values agreeing,
+          // its own citations, no merged summary. Only the seventh can refuse these.
+          blockingFinding: {
+            ruleIds: [route.ruleId as string],
+            name: route.name as string,
+            agency: route.agency as string,
+            disposition: route.disposition as string,
+            deadlineDisplay: route.deadlineDisplay as string | null,
+            latestApplyDate: route.latestApplyDate as string | null,
+            deadlineStatus: route.deadlineStatus as string,
+            feeDisplay: route.feeDisplay as string | null,
+            portalName: route.portalName as string | null,
+            portalUrl: route.portalUrl as string | null,
+            portalInstructions: route.portalInstructions as string | null,
+            sources: [],
+            userSummary: null,
+          },
+          missedRuleIds: [route.ruleId as string],
+        },
+      };
+    };
+
+    const refused: [Record<string, unknown>, string][] = [
+      // Resolved, missed, and far below the floor. F-102 AC 10.
+      [{ ...blockingRoute, disposition: "advisory" }, "SOURCE_CONFIRMED"],
+      // A bar whose own trigger never resolved. `resolveDisposition` leaves this one undemoted so
+      // it still RENDERS, which is exactly why the verdict has to check the trigger itself (#254).
+      [
+        { ...blockingRoute, disposition: "prohibited_or_ineligible", triggerResult: "unknown" },
+        "SOURCE_CONFIRMED",
+      ],
+      // A rule whose own reading of its window may be one of the two that disagree.
+      [blockingRoute, "OFFICIAL_CONFLICT"],
+    ];
+    for (const [route, verificationStatus] of refused) {
+      stubFetch(async () => jsonResponse(200, planWith(route, verificationStatus)));
+      await expect(loadPlan("https://api.example.com", "event-1")).resolves.toMatchObject({
+        ok: false,
+      });
+    }
+
+    // NOT VACUOUS: the same payload with a resolved `required` route on a non-conflict rule reads,
+    // so the three refusals are the seventh condition and not some other field of these fixtures.
+    stubFetch(async () => jsonResponse(200, planWith(blockingRoute, "SOURCE_CONFIRMED")));
+    await expect(loadPlan("https://api.example.com", "event-1")).resolves.toMatchObject({
+      ok: true,
+    });
+  });
+
+  /**
    * #252 review: THE TWO FIELDS THE TUPLE CHECK CANNOT REACH.
    *
    * `blockerView` FILTERS the sources to the blocking rule and NULLS a merged summary rather than

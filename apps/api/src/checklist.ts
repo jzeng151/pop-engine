@@ -360,6 +360,21 @@ const planContext = (item: PlanItemRow, rendering: FindingRendering) => {
 const noticeItemFrom = (item: PlanItemRow, rendering: FindingRendering): NoticePlanItem => {
   const filing = filingRouteOf(item, rendering);
   const filed = fromFilingRoute(filing);
+  // THE PROVENANCE OF THE DEADLINE ABOVE IT, WHICH IS THE SAME ROUTE OR IT IS NOT PROVENANCE.
+  // The notice states a previous filing date and cites the source it rests on. The date is the
+  // filing route's, and `sources` concatenates over the group in CONTRIBUTING order while
+  // `source_url` is `sources[0].urls[0]` (`plan.ts`), so the Primary source beside a narrowed date
+  // was whichever rule the published file happens to list first. It labelled one route's official
+  // page as the source for another route's deadline change (#252 review). The same narrowing
+  // `blockerView` and `insuranceView` do, and by the same means: `FindingSource.ruleId`.
+  //
+  // A ROUTE WITH NO SOURCE OF ITS OWN CITES NONE. `ruleSources` returns `[]` where a rule publishes
+  // no `source` block, so the filtered set can legitimately be empty; falling back to the group's
+  // there would put back exactly the misattribution this removes.
+  const ownSources =
+    filing === null
+      ? item.sources
+      : item.sources.filter((source) => source.ruleId === filing.ruleId);
   return {
     deadline: filed((route) => route.deadline, item.deadline),
     latest_apply_date: filed((route) => route.latestApplyDate, isoDate(item.latest_apply_date)),
@@ -367,8 +382,8 @@ const noticeItemFrom = (item: PlanItemRow, rendering: FindingRendering): NoticeP
     deadline_status: filed((route) => route.deadlineStatus, item.deadline_status),
     verification_status: item.verification_status,
     last_verified_date: isoDate(item.last_verified_date),
-    sources: item.sources,
-    source_url: item.source_url,
+    sources: ownSources,
+    source_url: filing === null ? item.source_url : (ownSources[0]?.urls[0] ?? null),
     source_ruleset_version: item.source_ruleset_version,
     source_snapshot_date: isoDate(item.source_snapshot_date),
   };
@@ -385,7 +400,17 @@ const noticeItemFrom = (item: PlanItemRow, rendering: FindingRendering): NoticeP
  * changed, and the checklist showed the unchanged date under a notice saying it had moved
  * (#252 review).
  *
- * ONLY `deadline_display` IS ADJUSTED, and the other two fields `stateSide` reads are deliberately
+ * `conflict_text` IS ADJUSTED TOO, and it is provenance rather than state: `movedDeadlineNotice`
+ * puts it on `previousProvenance` beside the sources, where it stands as the two readings that
+ * qualify the date that moved. The merged value is not a concatenation — `mergeGroup` falls back
+ * through the routes in binding order and takes the first that publishes any — so beside a narrowed
+ * date it quoted another rule's two readings as the qualification on this one. `FindingRoute`
+ * gained a per-route form this round, so unlike the two fields below there is something to narrow
+ * to. Absence means the plan predates the field and the merged value stands, which is the reading
+ * `insurance-panel.tsx` gives the same optional field.
+ *
+ * ONLY `deadline_display` IS ADJUSTED OF THE STATE FIELDS, and the other two `stateSide` reads are
+ * deliberately
  * left merged. `FindingRoute` publishes no `timelineUnresolvedReason` and no
  * `deadlineUnknownFields`: the first is single-valued text the merge falls back through binding
  * order for, and the second concatenates over the whole group. Neither has a per-route form to
@@ -396,7 +421,15 @@ const noticeItemFrom = (item: PlanItemRow, rendering: FindingRendering): NoticeP
  */
 const noticeRenderingFrom = (item: PlanItemRow, rendering: FindingRendering): FindingRendering => {
   const filing = filingRouteOf(item, rendering);
-  return filing === null ? rendering : { ...rendering, deadline_display: filing.deadlineDisplay };
+  if (filing === null) return rendering;
+  return {
+    ...rendering,
+    deadline_display: filing.deadlineDisplay,
+    // `undefined` is the pre-field plan and falls back; `null` is this route publishing no
+    // conflict and must NOT, for the reason `fromFilingRoute` refuses `??` on the fee and portal.
+    conflict_text:
+      filing.conflictText === undefined ? rendering.conflict_text : filing.conflictText,
+  };
 };
 
 type LatestPlan = {

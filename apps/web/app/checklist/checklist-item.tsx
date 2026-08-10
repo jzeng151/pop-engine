@@ -109,7 +109,16 @@ const hasDeadlineData = (context: PlanContext): boolean =>
  */
 const gatedRoutesOf = (context: PlanContext): readonly ConsumedRoute[] => {
   const routes = context.routes ?? [];
-  const onTheRow = context.filingRouteRuleId ?? routes[0]?.ruleId ?? null;
+  // NOTHING IS SKIPPED WHERE THE ROW SHOWS NO GATE. The skip exists so a gate the scalar above
+  // already carries is not repeated, and a row publishing no `applyAfterDate` carries none to
+  // repeat. Reaching for `routes[0]` regardless treated the binding route's gate as already
+  // rendered on a scalar-free row, where by construction the row publishes no scalars at all, so
+  // the F-202 AC 5 start date appeared on neither surface (#252 review). This is `routes[0]`-as-
+  // binding once more, in a place the #263 enumeration missed; the row is now in that table.
+  const onTheRow =
+    context.applyAfterDate === null
+      ? null
+      : (context.filingRouteRuleId ?? routes[0]?.ruleId ?? null);
   return routes.filter((route) => route.applyAfterDate !== null && route.ruleId !== onTheRow);
 };
 

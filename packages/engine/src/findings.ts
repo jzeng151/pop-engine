@@ -25,6 +25,7 @@ import type {
   TriggeredBy,
   RuleUserSummary,
   Tristate,
+  VerificationStatus,
 } from "./types";
 
 /**
@@ -163,6 +164,41 @@ export const BLOCKING_DISPOSITION_FLOOR: Disposition = "required";
 
 /** The weakest RESOLVED contribution a group can hold for that ceiling to bite (see below). */
 const UNRESOLVED_ROUTE_CAP_TRIGGER: Disposition = "required";
+
+/**
+ * Whether a route is one a MISSED window may close a plan on, which is membership in
+ * `blockingRuleIds` stated as the predicate it always was.
+ *
+ * ONE IMPLEMENTATION, FOR THE REASON `mergedDispositionOf` HAS ONE. This is the third rule a
+ * boundary would otherwise restate from prose, after the ceiling and the scalar-free test, and a
+ * restated rule drifts: each of the three clauses below was argued out separately (F-102 AC 10 for
+ * the floor, #254 for the trigger, `evaluate` for the conflict exclusion) and none of them reads
+ * as an obvious consequence of the other two. `evaluate` builds the set from this, and
+ * `plan-api.ts` checks a stored blocker against it, so neither can drift from the other.
+ *
+ * THE THREE CLAUSES, and what each is doing:
+ *
+ *   • The disposition is at or above `required`. F-102 AC 10, amended 2026-08-08.
+ *   • The trigger RESOLVED. `resolveDisposition` demotes an unknown-triggered `required`, so this
+ *     clause only ever bites on `prohibited_or_ineligible`, which is deliberately left undemoted so
+ *     a barred finding still RENDERS its bar (`proposals.ts` §2). Telling an organizer their event
+ *     is barred AND past its deadline, in a payload that also says the engine does not know the
+ *     fact the bar hangs off, is the failure this repository forbids everywhere else (#254).
+ *   • The rule is not OFFICIAL_CONFLICT. Its own reading of its window may be one of the two that
+ *     disagree, so closing a plan on it resolves the conflict in the harsher direction (F-102).
+ *
+ * `verificationStatus` is passed separately because `FindingRoute` does not carry one and does not
+ * need to: `parseEngineRuleset` refuses a `dedupe_key` whose rules disagree on it, so a group's
+ * status is every route's status.
+ */
+export const canBlockWhenMissed = (
+  route: Pick<FindingRoute, "disposition" | "triggerResult">,
+  verificationStatus: VerificationStatus,
+): boolean =>
+  route.triggerResult === "true" &&
+  verificationStatus !== "OFFICIAL_CONFLICT" &&
+  DISPOSITION_STRENGTH.indexOf(route.disposition) >=
+    DISPOSITION_STRENGTH.indexOf(BLOCKING_DISPOSITION_FLOOR);
 
 /**
  * One contributing route to a group's requirement: its finding, and whether its own trigger
@@ -859,10 +895,10 @@ export function resolveFindings(
     // dedupe key that mixes verification statuses, so an official-conflict route only ever merges
     // with other official-conflict routes (#254 review).
     if (
-      evaluation.result === "true" &&
-      rule.verificationStatus !== "OFFICIAL_CONFLICT" &&
-      DISPOSITION_STRENGTH.indexOf(finding.disposition) >=
-        DISPOSITION_STRENGTH.indexOf(BLOCKING_DISPOSITION_FLOOR)
+      canBlockWhenMissed(
+        { disposition: finding.disposition, triggerResult: evaluation.result },
+        rule.verificationStatus,
+      )
     ) {
       blockingRuleIds.add(rule.id);
     }

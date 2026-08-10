@@ -46,7 +46,14 @@ export { CONFIRM_WITH_AGENCY } from "./deadlines";
 export { computeWindowVerdict } from "./verdict";
 // The one correct fallback for a finding that carries no route list: an unmerged finding, or a
 // replayed artifact stored before the field existed, is its own single route.
-export { mergedDispositionOf, noRouteSuppliesScalars, routesOf } from "./findings";
+// `canBlockWhenMissed` is the third rule exported so a boundary can RECOMPUTE it rather than
+// restate it in prose, after the merged disposition and the scalar-free test.
+export {
+  canBlockWhenMissed,
+  mergedDispositionOf,
+  noRouteSuppliesScalars,
+  routesOf,
+} from "./findings";
 export { UNKNOWN_ANSWER } from "./conditions";
 export {
   DEFAULT_DISPOSITION_BY_RULE_KIND,

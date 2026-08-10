@@ -2753,6 +2753,53 @@ describe("a checklist row whose window comes from another route (#252)", () => {
   };
 
   /**
+   * #252 review: THE GATE VANISHED ON A ROW THAT PUBLISHES NOTHING TO HANG IT ON.
+   *
+   * `gatedRoutesOf` skips one route so a gate the row's own scalar already shows is not repeated,
+   * and it found that route at `routes[0]` whenever `filingRouteRuleId` was null. On a scalar-free
+   * row that is exactly wrong: the line publishes NO headline scalars by construction, so there is
+   * no gate on the row and `filingRouteRuleId` is null because nothing was selected rather than
+   * because the binding route was. The binding route's own start date was skipped as already
+   * rendered and appeared nowhere, which is F-202 AC 5 lost on the one row shape that can only ever
+   * show it here. `routes[0]`-as-binding again, in a place the #263 enumeration did not list.
+   */
+  it("shows a scalar-free row's gate, which no scalar above it carries", async () => {
+    stubApi({
+      [GET_CHECKLIST]: checklistOf({
+        created: true,
+        items: [
+          trackedItem(STREET_MEDIUM, {
+            // Scalar-free: `TALL_ROUTE` resolved and `TENT_ROUTE` did not, and the resolved one
+            // does not contribute the merged `required`, so the line publishes nothing of its own.
+            permitName: null,
+            agency: null,
+            deadline: null,
+            deadlineDisplay: null,
+            latestApplyDate: null,
+            applyAfterDate: null,
+            deadlineStatus: "not_calculable",
+            feeDisplay: null,
+            portalName: null,
+            portalUrl: null,
+            portalInstructions: null,
+            routes: [{ ...TALL_ROUTE, applyAfterDate: "2026-07-20" }, TENT_ROUTE],
+            headlineMode: "candidate",
+            filingRouteRuleId: null,
+          }),
+        ],
+      }),
+    });
+    await renderView();
+
+    const row = candidateRow();
+    expect(
+      within(row).getByText(
+        new RegExp(`earliest realistic filing for ${TALL_ROUTE.name} 2026-07-20`),
+      ),
+    ).toBeDefined();
+  });
+
+  /**
    * #252 review: THE HEADING FIX CHANGED WHAT SIGHTED USERS SEE AND LEFT THE ACCESSIBLE NAME SAYING
    * THE OLD THING. On a candidate row that is not scalar-free, `permitName` is the BINDING route's
    * name, so labelling the controls with it named the row after one candidate while the heading
