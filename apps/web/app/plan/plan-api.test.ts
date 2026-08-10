@@ -429,6 +429,69 @@ describe("loadPlan", () => {
   });
 
   /**
+   * #252 review: THE TWO FIELDS THE TUPLE CHECK CANNOT REACH.
+   *
+   * `blockerView` FILTERS the sources to the blocking rule and NULLS a merged summary rather than
+   * reattributing it, so neither is comparable field-by-field and both were left out. But
+   * `referenceFromFinding` prefers the summary heading and the summary's first source over the
+   * finding's own, so a blocker carrying a sibling's sources or a non-null merged summary makes the
+   * INFEASIBLE panel name the right route and link to another route's regulatory material.
+   */
+  it("refuses a widened blocker carrying another route's sources or a merged summary", async () => {
+    const finding = mergedFinding("true");
+    const routes = finding.routes as Record<string, unknown>[];
+    const blocking = routes[1] as Record<string, unknown>;
+    const whole = {
+      ruleIds: [blocking.ruleId as string],
+      name: blocking.name as string,
+      agency: blocking.agency as string,
+      disposition: blocking.disposition as string,
+      deadlineDisplay: blocking.deadlineDisplay as string | null,
+      latestApplyDate: blocking.latestApplyDate as string | null,
+      deadlineStatus: blocking.deadlineStatus as string,
+      feeDisplay: blocking.feeDisplay as string | null,
+      portalName: blocking.portalName as string | null,
+      portalUrl: blocking.portalUrl as string | null,
+      portalInstructions: blocking.portalInstructions as string | null,
+      sources: [],
+      userSummary: null,
+    };
+    const planWith = (blockingFinding: unknown) => ({
+      ...storedPlan,
+      verdict: "INFEASIBLE",
+      findings: [finding],
+      verdictDetail: { ...storedPlan.verdictDetail, blockingFinding },
+    });
+
+    for (const crossed of [
+      // A sibling's citation, which the panel would link from.
+      {
+        sources: [
+          { ruleId: "PARKS-EVENT-001", citation: "Parks FAQ", urls: ["https://example.gov/parks"] },
+        ],
+      },
+      // A merged summary, which the panel prefers over the narrowed name.
+      {
+        userSummary: {
+          heading: "Do you need a special event permit?",
+          points: [{ kind: "overview", text: "A merged heading.", sources: [] }],
+        },
+      },
+    ]) {
+      stubFetch(async () => jsonResponse(200, planWith({ ...whole, ...crossed })));
+      await expect(loadPlan("https://api.example.com", "event-1")).resolves.toMatchObject({
+        ok: false,
+      });
+    }
+
+    // Not vacuous: the narrowed shape the engine serves reads.
+    stubFetch(async () => jsonResponse(200, planWith(whole)));
+    await expect(loadPlan("https://api.example.com", "event-1")).resolves.toMatchObject({
+      ok: true,
+    });
+  });
+
+  /**
    * #252 review: THE WIDENED BLOCKER KEYS ARE A VERSION, SO A PARTIAL SET IS NOT A VERSION.
    *
    * `verdict-detail.tsx` turns the legacy fallback off as soon as ANY of them is present, on the

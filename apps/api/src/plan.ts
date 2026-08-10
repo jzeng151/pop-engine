@@ -270,6 +270,23 @@ export function storedRoutes(
  * one route, which is what keeps this from re-creating the crossover the route list exists to
  * remove: the values a reader sees are all one rule's, and `routes` says which rule.
  */
+/**
+ * A FILING ROUTE, NOT MERELY A DATED ONE. The row labels whatever this returns as its filing date,
+ * fee and filing details, and `PortalBlock` renders that route's portal as "apply at" on a row
+ * whose routes apply together. A dated `advisory` or `no_new_requirement` route selected purely
+ * because it carries a date therefore became an instruction to file something the ruleset does not
+ * say is required — the same conversion the alert scheduler makes at its own boundary, one door
+ * over (#252 review). The rules schema permits those kinds to publish a deadline, so the date test
+ * alone was never sufficient.
+ *
+ * Mirrored in `FILING_ORDER_JOIN` below, which orders rows by the same choice. A predicate fixed in
+ * TypeScript and left in SQL is a guard that disagrees with itself.
+ */
+const FILING_DISPOSITIONS: ReadonlySet<Disposition> = new Set<Disposition>([
+  "required",
+  "may_be_required",
+]);
+
 export function filingRouteOf(
   item: StoredPlanItem,
   rendering: FindingRendering | undefined,
@@ -277,7 +294,13 @@ export function filingRouteOf(
   if (item.deadline !== null || storedDate(item.latest_apply_date) !== null) return null;
   const routes = storedRoutes(item, rendering);
   if (routes.length < 2) return null;
-  return routes.find((route) => route.deadline !== null || route.latestApplyDate !== null) ?? null;
+  return (
+    routes.find(
+      (route) =>
+        FILING_DISPOSITIONS.has(route.disposition) &&
+        (route.deadline !== null || route.latestApplyDate !== null),
+    ) ?? null
+  );
 }
 
 /**
@@ -330,6 +353,10 @@ export const FILING_ORDER_JOIN = `LEFT JOIN LATERAL (
             -- and for the same reason: a business-day count with no published holiday list is a
             -- window the engine cannot date, and it is still the route this line files under.
             AND (route->'deadline' <> 'null'::jsonb OR route->'latestApplyDate' <> 'null'::jsonb)
+            -- A FILING ROUTE, the same test filingRouteOf makes and for the same reason: the row
+            -- labels this route's date as its filing date, so a dated advisory selected here would
+            -- order the row by a window nobody files against.
+            AND route->>'disposition' IN ('required', 'may_be_required')
           -- Binding order, so this is the same route the row reads its date and fee off.
           ORDER BY route_position
           LIMIT 1

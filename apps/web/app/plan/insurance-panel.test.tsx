@@ -162,6 +162,68 @@ describe("AC 2: Parks events render PARKS-INSURANCE-NOTE-001 as informational", 
   });
 });
 
+/**
+ * #252 review: THE CARD IS SELECTED BY RULE AND WAS RENDERED FROM THE LINE.
+ *
+ * The panel picks a finding because ANY of its rule ids is an insurance id, and a merged group can
+ * hold an insurance rule beside a permit that BINDS — in which case every scalar on the line is the
+ * permit's. The card then showed the permit's name, agency, disposition and deadline as the
+ * insurance card, with the insurance checklist link beside it.
+ */
+describe("an insurance rule merged onto a line another route binds (#252)", () => {
+  const insuranceRoute = {
+    ruleId: "SAPO-INSURANCE-001",
+    triggerResult: "true" as const,
+    disposition: "required" as const,
+    unknownFields: [],
+    name: "Street event insurance",
+    agency: "SAPO (CECM)",
+    deadline: { type: "before_issuance" },
+    deadlineDisplay: null,
+    latestApplyDate: null,
+    applyAfterDate: null,
+    deadlineStatus: "not_applicable" as const,
+    feeDisplay: null,
+    portalName: null,
+    portalUrl: null,
+    portalInstructions: null,
+  };
+  const bindingRoute = {
+    ...insuranceRoute,
+    ruleId: "SAPO-STREET-MEDIUM-001",
+    name: "Street Activity Permit — Medium",
+    agency: "NYC DOT",
+    disposition: "may_be_required" as const,
+    deadline: null,
+  };
+
+  it("renders the insurance rule's own name, agency and disposition, not the binding route's", () => {
+    const merged: ConsumedFinding = {
+      ...findingFor(STREET_INSURANCE),
+      ruleIds: ["SAPO-STREET-MEDIUM-001", "SAPO-INSURANCE-001"],
+      // The line reads as its binding route, which is the permit.
+      name: bindingRoute.name,
+      agency: bindingRoute.agency,
+      disposition: bindingRoute.disposition,
+      deadline: null,
+      noteText: "the permit's own published note",
+      headlineMode: "applies_together",
+      routes: [bindingRoute, insuranceRoute],
+    };
+
+    render(<InsurancePanel findings={[merged]} eventId="event-1" />);
+
+    const card = screen.getByRole("article");
+    expect(within(card).getByRole("heading").textContent).toBe("Street event insurance");
+    expect(card.textContent).toContain("SAPO (CECM)");
+    expect(card.textContent).toContain("required");
+    // The binding route's values are not on the insurance card at all.
+    expect(card.textContent).not.toContain("Street Activity Permit");
+    expect(card.textContent).not.toContain("NYC DOT");
+    expect(card.textContent).not.toContain("the permit's own published note");
+  });
+});
+
 describe("AC 3: private-venue events render no insurance card", () => {
   it("renders nothing when no insurance rule triggered, even alongside other findings", () => {
     const { container } = render(

@@ -864,6 +864,24 @@ const blockerAgreesWithItsRoute = (plan: PlanResponse): boolean => {
   // An unmerged finding is its own route and the narrowing read its own values, so it is compared
   // as the route it is. A merged one is compared against the entry the blocker names.
   const route = (finding.routes ?? []).find((entry) => entry.ruleId === ruleId);
+  // THE TWO FIELDS THE TUPLE CHECK CANNOT REACH, checked here instead of left out. `blockerView`
+  // does not copy a route value into either, so neither is comparable field-by-field — but both are
+  // narrowed, and a payload that widens them again reaches `referenceFromFinding`, which PREFERS
+  // the summary heading and the summary's first source over the finding's own. So the panel names
+  // the right blocking route and links to another route's regulatory material (#252 review).
+  //
+  // `sources` must be exactly the blocking rule's, which `FindingSource.ruleId` makes checkable.
+  // `userSummary` must be null on a MERGED blocker: `mergeUserSummary` takes the heading from the
+  // first route in binding order that publishes one and concatenates the points over the group, so
+  // a merged summary is never the blocking route's own, and the engine nulls it for that reason.
+  // An unmerged blocker keeps its own, which is why the test is on the finding's route list.
+  if (blocker.sources !== undefined) {
+    const own = (finding.sources ?? []).filter((source) => source.ruleId === ruleId);
+    if (JSON.stringify(blocker.sources) !== JSON.stringify(own)) return false;
+  }
+  if ((finding.routes?.length ?? 0) > 1 && blocker.userSummary !== undefined) {
+    if (blocker.userSummary !== null) return false;
+  }
   if (route === undefined) {
     return finding.routes == null
       ? BLOCKER_ROUTE_FIELDS.every(

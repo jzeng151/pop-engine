@@ -1255,6 +1255,52 @@ describe("the route a stored plan item reads its window off (#252)", () => {
     expect(filing?.feeDisplay).toBe("$1,050 licence fee");
   });
 
+  /**
+   * #252 review: A FILING ROUTE, NOT MERELY A DATED ONE. The row labels whatever this returns as its
+   * filing date, fee and filing details, and `PortalBlock` renders that route's portal as "apply
+   * at" on an applies-together row. The rules schema permits `advisory` and `no_new_requirement`
+   * kinds to publish a deadline, so selecting on the date alone converted an advisory into a filing
+   * action — the same conversion the alert scheduler makes at its own boundary.
+   */
+  it("skips a dated route that publishes no filing, and takes the next that does", () => {
+    const routes = [
+      route({}),
+      route({
+        ruleId: "ADVISORY-001",
+        name: "advisory route",
+        disposition: "advisory",
+        deadline: { type: "published_minimum", calendarDays: 10 },
+        latestApplyDate: "2026-08-01",
+        deadlineStatus: "on_track",
+      }),
+      route({
+        ruleId: "B",
+        name: "route B",
+        deadline: { type: "published_minimum", calendarDays: 30 },
+        latestApplyDate: "2026-08-26",
+        deadlineStatus: "on_track",
+        feeDisplay: "$100",
+      }),
+    ];
+    const filing = filingRouteOf(item, rendering(routes));
+    expect(filing?.ruleId).toBe("B");
+    expect(filing?.feeDisplay).toBe("$100");
+  });
+
+  it("selects nothing where the only dated routes publish no filing", () => {
+    const routes = [
+      route({}),
+      route({
+        ruleId: "NOTE-001",
+        name: "note route",
+        disposition: "no_new_requirement",
+        latestApplyDate: "2026-08-01",
+        deadlineStatus: "on_track",
+      }),
+    ];
+    expect(filingRouteOf(item, rendering(routes))).toBeNull();
+  });
+
   it("leaves a line that publishes its own window alone", () => {
     const dated = { ...item, deadline: { type: "published_minimum" } as never };
     expect(filingRouteOf(dated, rendering([route({}), route({ ruleId: "B" })]))).toBeNull();
