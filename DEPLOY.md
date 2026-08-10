@@ -79,18 +79,37 @@ this command out of this file and signals it, so the two cannot drift apart.
 ### Release order
 
 The two services deploy separately and the api runs `pnpm migrate up` as it starts, so a rollout is
-a window in which two builds and one schema are all live at once. Two F-203 guarantees hold only if
-that window is opened in this order. Both are one-off constraints for the release that introduces
-the alert attempt record; the conditions for dropping each are stated with it.
+a window in which two builds and one schema are all live at once. The F-302 capacity rename and two
+F-203 guarantees hold only if that window is opened in this order. All are one-off constraints for
+their contract transition; the conditions for dropping each are stated with it.
 
-1. **Deploy the web service first, then the api.** The api stops counting an alert it has
-   permanently stopped on among the failures it says are being retried, and reports it under
+1. **Deploy the web service first, verify it is live, remove older web rollback targets, then deploy
+   the api.** Two contract changes require this order.
+
+   **F-302 capacity rename (issue #236).** Before deploying the api that admits RSVPs against
+   `capacity`, deploy the web build that reads a present `capacity` and falls back to `headcount`
+   only when that field is absent. Verify that build can load and cancel from a synthetic guest list
+   against the still-running old api. Then confirm no web build or selectable rollback target
+   predating the rename remains in service. Only then deploy the api.
+
+   The response shape alone does not make api-first safe. The compatibility response carries both
+   fields, but a pre-rename page treats `headcount` as the enforced limit while the new api enforces
+   `capacity`. With different numeric values it displays the wrong limit; with `capacity = null` it
+   displays a finite limit enforced nowhere. Web-first removes that semantic window: the new web
+   reads the old api's `headcount`, which that api enforces, then reads `capacity` after the api
+   deploys. `apps/api/src/deployment-order.test.ts` fails if this instruction disappears while the
+   shape-only response remains. Drop this F-302 constraint only after the rename is the oldest web
+   build in service and no older rollback target is selectable.
+
+   **F-203 reconciliation notice.** The api stops counting an alert it has permanently stopped on
+   among the failures it says are being retried, and reports it under
    `alertsHeldForReconciliation` instead. A web build older than that field renders neither, so an
    alert nobody will send again would have no organizer-facing warning at all until the web service
    catches up. Deployed web-first the window is empty: this web build reads an absent
    `alertsHeldForReconciliation` as none and renders the rest of the checklist normally, which is
-   what makes it safe against an api that does not send the field yet. Drop this step once the web
-   deployment carrying the field is the oldest one in service.
+   what makes it safe against an api that does not send the field yet. Drop this F-203 constraint
+   once the web deployment carrying the field is the oldest one in service.
+
 2. **Empty the api's alert queue, then stop the running api, before the new one applies migration
    014**, rather than letting the new deployment start beside it.
 
