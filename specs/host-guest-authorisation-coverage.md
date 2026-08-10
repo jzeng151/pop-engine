@@ -563,13 +563,6 @@ trigger reads, so it adds the field to `missingFacts` and evaluates its branches
 assembly-approval PORTION OF THE DATA F-102 Acceptance Criterion 6 would render. This spec produces
 it; it does not render it, does not test its rendering, and states no criterion about it.
 
-**The cost of the alternative, reported rather than used to decide.** Rendering the branch data here
-would mean widening `ConsumedVerdictDetail` and `MISSING_FACT_CHECKS` in
-`apps/web/app/plan/plan-api.ts` and adding a component, with no API or persistence change. It is
-declined for two reasons that are not about size: the rendering is a different feature's approved
-criterion, so doing it inside this one puts F-102's acceptance under this spec's approval; and it
-would widen the footprint to the web lane, which this feature otherwise does not touch at all.
-
 **This document states no implementation status for F-102's criteria.** Two sentences here did, both
 sourced to PR #170: that Acceptance Criterion 6 is an approved criterion never implemented, and that
 the branch data would not be shown to an operator until it was. Approval Blocker 4 below already
