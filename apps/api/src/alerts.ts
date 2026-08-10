@@ -1786,9 +1786,22 @@ const slackWarningCopy = (
     // width, so the body disagreed with itself in exactly the case the qualification exists to
     // describe. A width is not measured from a date at all, so the gated sentence says what the
     // number is once rather than stating it wrongly and then correcting it.
+    // TWO INDEPENDENT FLAGS, FOUR SENTENCES, and no combination borrows another's. `gated` decides
+    // whether N is a countdown or a WIDTH; `publishesFiling` decides whether an organizer has
+    // anything to file. Neither answers the other's question, so neither takes precedence and the
+    // four cases are enumerated rather than layered. The first non-filing sentence covered both
+    // gated states with one countdown, which called a width a countdown for the gated half — the
+    // defect the two filing branches exist to avoid — and dropped the evaluation-date anchor its
+    // ungated half needs, so a plan emailed a week after it was evaluated stated a stored number as
+    // though it were current (product owner, 2026-08-10, correcting the same day's approval).
     !controllingPublishesFiling
-      ? `Your plan is at risk. The closest date on it is ${minSlackDays} days away. Nothing needs ` +
-        `to be filed for that one: it is a date the rule publishes, not a deadline to apply by.`
+      ? controllingIsGated
+        ? `Your plan is at risk. The requirement with the least room publishes a window ` +
+          `${minSlackDays} days wide. Nothing needs to be filed for it: the window is a range the ` +
+          `rule publishes, not time to apply.`
+        : `Your plan is at risk. Counting from ${evaluatedOn}, the requirement with the least ` +
+          `room leaves ${minSlackDays} days. Nothing needs to be filed for it: that is a date the ` +
+          `rule publishes, not a deadline to apply by.`
       : controllingIsGated
         ? `Your plan is at risk. The requirement with the least room can only be applied for ` +
           `during a window ${minSlackDays} days wide.`

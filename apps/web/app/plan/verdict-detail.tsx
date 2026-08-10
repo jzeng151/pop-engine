@@ -515,7 +515,14 @@ function MissedMayBeRequiredSection({
               : unrecorded.length === missed.length
                 ? "The findings below have published windows that are past. This plan does not record what each of them publishes, so nothing here states it."
                 : "The findings below differ in what they publish, and a passed published date settles none of them: it keeps the verdict conditional rather than treating the window as a definitive miss. Each keeps the disposition its own rule publishes, printed beside it."}{" "}
-        Each finding below states its own published date and qualification on the plan line.
+        {/* NOT ON THE BRANCH WHOSE FINDINGS ARE NOT ON THE PAGE. This sentence sends the organizer
+            to a plan line for the published date and qualification, and the unrecorded branch is
+            reached precisely because the missed rules are absent from `findings` — a replayed or
+            rescoped plan. Pointing at regulatory detail the page cannot show is worse than saying
+            nothing, which is what the branch above already says (#252 review). */}
+        {unrecorded.length === missed.length
+          ? null
+          : "Each finding below states its own published date and qualification on the plan line."}
       </p>
       <ul>
         {missed.map((entry) => (

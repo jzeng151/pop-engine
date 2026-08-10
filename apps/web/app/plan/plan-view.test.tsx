@@ -952,6 +952,31 @@ describe("the routes of a merged dedupe line", () => {
   });
 
   /**
+   * #252 review: AND THE SAME SIGNATURE MUST NOT COMPARE WHAT THE ENTRY DOES NOT SHOW.
+   *
+   * Deriving it from the whole route fixed the missing values and admitted two the entry never
+   * renders: `notes`, which the merged disclosure carries, and `unknownFields`, which the candidate
+   * introduction reads. Two entries displaying the same twelve values then signed differently and
+   * the block listed one permit twice under a heading saying both routes were triggered, which is
+   * what design §5.1 forbids. Rendering and comparing read one list now, so neither direction is
+   * expressible.
+   */
+  it("collapses a group whose routes differ only in a value the entry does not render", async () => {
+    await lineWith({
+      ruleIds: ["DOB-STAGE-001", "DOB-STRUCTURE-DURATION-001"],
+      headlineMode: "applies_together",
+      routes: [
+        route({ ruleId: "DOB-STAGE-001", notes: ["the stage rule's own qualification"] }),
+        route({ ruleId: "DOB-STRUCTURE-DURATION-001", notes: ["the duration rule's own note"] }),
+      ],
+    });
+    // NOT VACUOUS: the notes differ and are published, and the entries are identical in every
+    // value the entry displays, so this is exactly the byte-identical group §5.1 collapses.
+    expect(screen.getByRole("article").querySelectorAll(".line__route")).toHaveLength(0);
+    expect(screen.queryByText(/Both of these have their conditions met/)).toBeNull();
+  });
+
+  /**
    * #252 review: THE SIGNATURE DECIDES WHETHER THE ENTRIES RENDER AT ALL, so a value it ignores can
    * be collapsed away before the code that renders it ever runs.
    *
@@ -2380,6 +2405,11 @@ describe("F-102 · CONDITIONAL branch table and INFEASIBLE rescope ladder", () =
       // NOT VACUOUS: the mixed sentence is what both of these rendered before, and neither list
       // disagrees with itself.
       expect(section.textContent).not.toContain("differ in what they publish");
+      // AND THE CLOSING SENTENCE POINTS AT A PLAN LINE THAT EXISTS. The unrecorded branch is
+      // reached because the missed rules are absent from `findings`, so there is no line to state
+      // the date and qualification on (#252 review).
+      const pointsAtTheLine = section.textContent?.includes("on the plan line") ?? false;
+      expect(pointsAtTheLine).toBe(findings.length > 0);
     }
   });
 

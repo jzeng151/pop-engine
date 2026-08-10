@@ -219,57 +219,62 @@ const candidateRoutesOf = (finding: ConsumedFinding): readonly ConsumedRoute[] |
 };
 
 /**
- * What an entry renders, so two routes rendering the same thing are the same entry.
+ * EXACTLY WHAT THE ENTRY DISPLAYS, as the values it displays, so that rendering and comparing read
+ * one list instead of two.
  *
- * THE PUBLISHED DEADLINE TYPE IS PART OF IT, because the entry renders it (`deadlineTypeLabel`).
- * Left out, two routes whose ONLY timing difference is a typed-only deadline signed identically and
- * suppressed the whole routes block as "these publish the same thing", which is the block dropping
- * published timing rather than declining to repeat it (#252 review). Design §5.1 names ten fields
- * for that comparison and this is an eleventh, for the same reason `triggerResult` is already a
- * twelfth: the rule is that identical ENTRIES are not listed twice, and a field the entry shows
- * cannot be missing from the test of whether two entries are identical.
+ * THREE ROUNDS OF THE SAME DEFECT, AND THE THIRD POINTED THE OTHER WAY. A hand-listed signature
+ * missed the typed deadline when entries started rendering it, then `conflictText` the round it was
+ * added: both collapsed a group whose entries differ and dropped a sibling's published value. So
+ * the signature was derived from the whole route instead — and that admitted `notes` and
+ * `unknownFields`, which the entry does NOT render, so two entries displaying the same twelve
+ * values signed differently and the block listed one permit twice under a heading saying two routes
+ * were triggered. Design §5.1 forbids exactly that (#252 review).
+ *
+ * I ARGUED THE SECOND DIRECTION WAS SAFE AND IT IS NOT. The reasoning was that showing two
+ * identical-looking entries is a rendering fault while dropping a published value is a regulatory
+ * one, so failing towards the first was the cheap trade. It is not a trade §5.1 permits: three of
+ * the draft's nine multi-member groups publish byte-identical outputs and are the ones that merge
+ * most often, so the "rendering fault" is the common case for the very groups the collapse exists
+ * for, and a block listing one permit twice under "both of these have their conditions met" is a
+ * rendering fault presented as regulatory content.
+ *
+ * NEITHER LIST CAN DRIFT NOW, BECAUSE THERE IS ONE. `Route` renders from this object, field by
+ * field, and `routeSignature` stringifies the same object. A value the entry stops displaying
+ * leaves the signature by deletion; a value it starts displaying has to be added here to render at
+ * all. That is what makes this different from widening or narrowing the old list again: the two
+ * were separate maintenance tasks, and every round one of them was forgotten.
+ *
+ * WHAT IS DELIBERATELY ABSENT, and why each is not a value this entry displays:
+ *
+ *   • `ruleId` on its own. It appears only as the name's fallback, which `name` below carries.
+ *     Comparing the id itself would collapse nothing at all, since it differs on every pair.
+ *   • `notes` and `unknownFields`. The merged disclosure renders the first and the candidate
+ *     introduction reads the second; neither is on the entry, and both are still on the page.
+ *   • `slackDays`, `triggerResult` beyond the label, and the deadline beyond its published type.
+ *     None reaches the entry as a value a reader sees.
  */
-/**
- * What an entry renders, so two routes rendering the same thing are the same entry.
- *
- * DERIVED FROM THE ROUTE RATHER THAN HAND-LISTED, and that is the correction. A list of fields has
- * to be extended every time a route gains one, and it was not: the typed deadline was missed when
- * route entries started rendering it, and `conflictText` was missed the round it was added, each
- * time collapsing a group whose entries differ into one entry and dropping the sibling's published
- * value silently. Same defect class as a validator that compares the fields someone thought of
- * (#252 review).
- *
- * EVERY FIELD BY DEFAULT, so a new one is compared without anyone remembering to add it, and
- * excluding a field becomes the deliberate act rather than including one. Two are treated
- * specially and both are stated where they happen: `deadline` reduces to its published TYPE,
- * because that is the only part the entry renders; and `ruleId` is replaced by the name the entry
- * actually shows, since the id differs on every pair and comparing it would collapse nothing at
- * all. Keys are sorted so two routes built by different producers cannot differ by insertion order.
- *
- * IT FAILS IN THE SAFE DIRECTION. A field the wire carries and the entry does NOT render — today
- * `unknownFields`, which the introduction reads rather than the entry — makes two otherwise
- * identical routes sign differently, so the block renders both instead of collapsing them. Showing
- * an organizer two identical-looking entries is a rendering fault; dropping a route's published
- * conflict or window is a regulatory one, and this trades the first for the second.
- */
-const routeSignature = (route: ConsumedRoute): string => {
-  const { ruleId, ...rest } = route;
-  const compared: Record<string, unknown> = {
-    ...rest,
-    // The NAME AS RENDERED, not the id. `ruleId` differs on every pair by definition, so comparing
-    // it would collapse nothing and §5.1's byte-identical groups — three of the draft's nine, and
-    // the ones that merge most often — would list one permit twice. But the entry falls back to the
-    // id where a route publishes no name, so two unnamed routes DO render differently and this is
-    // what carries that: the expression the entry renders, rather than either field alone.
-    renderedName: route.name ?? ruleId,
-    deadline: route.deadline?.type ?? null,
-  };
-  return JSON.stringify(
-    Object.keys(compared)
-      .sort()
-      .map((key) => [key, compared[key]]),
-  );
-};
+const entryValues = (route: ConsumedRoute, mode: HeadlineMode) => ({
+  label:
+    mode === "candidate" ? (route.triggerResult === "true" ? "Conditions met" : "May apply") : null,
+  name: route.name ?? route.ruleId,
+  disposition: humanize(route.disposition),
+  agency: route.agency,
+  deadlineDisplay: route.deadlineDisplay,
+  deadlineType: deadlineTypeLabel(route),
+  latestApplyDate: route.latestApplyDate,
+  deadlineStatus: route.deadlineStatus === "not_applicable" ? null : humanize(route.deadlineStatus),
+  applyAfterDate: route.applyAfterDate,
+  businessDayWindow: businessDayNotice(route),
+  feeDisplay: route.feeDisplay,
+  conflictText: route.conflictText ?? null,
+  portalName: route.portalName,
+  portalUrl: route.portalUrl,
+  portalInstructions: route.portalInstructions,
+});
+
+/** Two entries displaying the same values are one entry. */
+const routeSignature = (route: ConsumedRoute, mode: HeadlineMode): string =>
+  JSON.stringify(entryValues(route, mode));
 
 /**
  * One contributing route of a merged line, with its own name, window and fee.
@@ -289,40 +294,35 @@ const routeSignature = (route: ConsumedRoute): string => {
  * organizer reads.
  */
 function Route({ route, mode }: { route: ConsumedRoute; mode: HeadlineMode }) {
-  const label =
-    mode === "candidate" ? (route.triggerResult === "true" ? "Conditions met" : "May apply") : null;
-  // F-201 AC 13 on the route that actually has the undatable window. A merged line's scalars are the
-  // binding route's, so where a non-binding route is the `business_days_minimum` one the criterion's
-  // sentence has nowhere else to go: the finding-level call reads the binding route's fields and
-  // returns null, and this entry would say "not calculable" and stop (#252 review). Same sentence,
-  // same approved copy, read off this route's own agency and published deadline type.
-  const businessDayWindow = businessDayNotice(route);
+  // EVERY VALUE THIS ENTRY DISPLAYS, read once. `routeSignature` stringifies the same object, so
+  // the collapse test cannot compare a field this does not render or miss one it does.
+  const shown = entryValues(route, mode);
   return (
     <li className="line__route">
       <p className="line__route-head">
-        {label !== null && <span className="line__route-label">{label}</span>}
-        <span className="line__route-name">{route.name ?? route.ruleId}</span>
-        <span className="line__route-disposition">{humanize(route.disposition)}</span>
-        {route.agency !== null && <span className="line__route-agency">{route.agency}</span>}
+        {shown.label !== null && <span className="line__route-label">{shown.label}</span>}
+        <span className="line__route-name">{shown.name}</span>
+        <span className="line__route-disposition">{shown.disposition}</span>
+        {shown.agency !== null && <span className="line__route-agency">{shown.agency}</span>}
       </p>
-      {(route.deadlineDisplay !== null ||
-        route.latestApplyDate !== null ||
-        route.deadlineStatus !== "not_applicable" ||
-        route.deadline !== null) && (
+      {(shown.deadlineDisplay !== null ||
+        shown.latestApplyDate !== null ||
+        shown.deadlineStatus !== null ||
+        shown.deadlineType !== null) && (
         <p className="line__route-deadline">
-          {route.deadlineDisplay !== null && route.deadlineDisplay}
-          {deadlineTypeLabel(route) !== null && (
-            <span className="line__route-deadline-type">{deadlineTypeLabel(route)}</span>
+          {shown.deadlineDisplay !== null && shown.deadlineDisplay}
+          {shown.deadlineType !== null && (
+            <span className="line__route-deadline-type">{shown.deadlineType}</span>
           )}
-          {route.latestApplyDate !== null && (
+          {shown.latestApplyDate !== null && (
             <span>
-              {route.deadlineDisplay !== null && " · "}apply by {route.latestApplyDate}
+              {shown.deadlineDisplay !== null && " · "}apply by {shown.latestApplyDate}
             </span>
           )}
-          {route.deadlineStatus !== "not_applicable" && (
+          {shown.deadlineStatus !== null && (
             <span>
               {" · "}
-              {humanize(route.deadlineStatus)}
+              {shown.deadlineStatus}
             </span>
           )}
         </p>
@@ -333,9 +333,9 @@ function Route({ route, mode }: { route: ConsumedRoute; mode: HeadlineMode }) {
           read the field, so the checklist and the reminders had the earliest realistic filing date
           and the plan did not (#252 review). Named as this route's, never attributed to the line,
           which is the same rule `gatedRoutesOf` follows on the checklist. */}
-      {route.applyAfterDate !== null && (
+      {shown.applyAfterDate !== null && (
         <p className="line__route-deadline-notice">
-          <strong>Earliest realistic filing:</strong> {route.applyAfterDate}
+          <strong>Earliest realistic filing:</strong> {shown.applyAfterDate}
         </p>
       )}
       {/* Beside the status token rather than in place of it, which is how the pre-summary line above
@@ -347,18 +347,18 @@ function Route({ route, mode }: { route: ConsumedRoute; mode: HeadlineMode }) {
           them, which is not a filing action and is approved copy that must not be dropped. So the
           frame is withheld and the sentence is not — the fourth surface the candidate-action rule
           reached, found by enumerating them rather than by a fifth review (#252 review). */}
-      {businessDayWindow !== null && (
+      {shown.businessDayWindow !== null && (
         <p className="line__route-deadline-notice">
-          {mode === "candidate" ? null : <strong>Apply by:</strong>} {businessDayWindow}
+          {mode === "candidate" ? null : <strong>Apply by:</strong>} {shown.businessDayWindow}
         </p>
       )}
-      {route.feeDisplay !== null && <p className="line__route-fee">{route.feeDisplay}</p>}
+      {shown.feeDisplay !== null && <p className="line__route-fee">{shown.feeDisplay}</p>}
       {/* BOTH READINGS, ON THE ROUTE THAT PUBLISHES THEM. The merged line's `conflictText` is not a
           concatenation: it falls back through the routes in binding order and takes the first that
           publishes any, so the line carries one route's text and the entry beside it rendered
           nothing at all. An OFFICIAL_CONFLICT route's two readings belong on its own entry, verbatim
           and unsummarised, for the reason the line renders them (#252 review). */}
-      {route.conflictText != null && <p className="line__route-conflict">{route.conflictText}</p>}
+      {shown.conflictText !== null && <p className="line__route-conflict">{shown.conflictText}</p>}
       {/* NO CANDIDATE ENTRY RENDERS AS AN ACTION (design §5.3), and this is the entry's only
           action. "apply at <portal>" under an entry labelled "May apply" tells an organizer to
           file a permit the recorded answers have not decided they need, which is the one thing a
@@ -368,9 +368,9 @@ function Route({ route, mode }: { route: ConsumedRoute; mode: HeadlineMode }) {
           published, so it is named rather than dropped, and the rule's own instructions are
           untouched (#252 review). */}
       <PortalBlock
-        portalName={route.portalName}
-        portalUrl={route.portalUrl}
-        portalInstructions={route.portalInstructions}
+        portalName={shown.portalName}
+        portalUrl={shown.portalUrl}
+        portalInstructions={shown.portalInstructions}
         className="line__route-portal"
         instructionsClassName="line__portal-instructions"
         lead={mode === "candidate" ? "portal" : "apply at"}
@@ -411,7 +411,12 @@ function Routes({ finding }: { finding: ConsumedFinding }) {
   const routes = finding.routes ?? null;
   const mode = finding.headlineMode ?? null;
   if (routes === null || mode === null || routes.length < 2) return null;
-  if (mode === "applies_together" && new Set(routes.map(routeSignature)).size === 1) return null;
+  if (
+    mode === "applies_together" &&
+    new Set(routes.map((route) => routeSignature(route, mode))).size === 1
+  ) {
+    return null;
+  }
 
   // BOTH SETS OF UNKNOWNS, which is what the approved copy asks for: "the `deadlineUnknownFields`
   // and trigger fields the unresolved routes' triggers left open" (design §5.3). A route's

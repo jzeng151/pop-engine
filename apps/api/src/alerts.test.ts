@@ -741,9 +741,12 @@ describe.skipIf(databaseUrl === "")("F-203 deadline alerts", () => {
 
       const warning = (await alertsOf(eventId)).find((row) => row.alert_type === "slack_warning");
       expect(warning?.payload.subject).toBe("At risk — the narrowest published window is 9 days");
+      // UNGATED and non-filing: a countdown, anchored to the date it was measured from, because a
+      // stored number read a week later is not current.
       expect(String(warning?.payload.body)).toContain(
-        "The closest date on it is 9 days away. Nothing needs to be filed for that one: it is a " +
-          "date the rule publishes, not a deadline to apply by.",
+        `Counting from ${todayInJurisdiction("US-NY-NYC")}, the requirement with the least room ` +
+          `leaves 9 days. Nothing needs to be filed for it: that is a date the rule publishes, ` +
+          `not a deadline to apply by.`,
       );
       // NOT VACUOUS in the direction that matters: the filing sentences are the ones this replaces,
       // and neither may appear beside a route that publishes no filing.
@@ -755,6 +758,49 @@ describe.skipIf(databaseUrl === "")("F-203 deadline alerts", () => {
       expect(String(warning?.payload.body)).toContain(
         "internal planning buffer, not an official threshold",
       );
+    });
+
+    /**
+     * #252 review: THE FOURTH COMBINATION, which the first non-filing sentence covered with a
+     * countdown written for the third.
+     *
+     * Two independent flags — whether the controlling route publishes a filing, and whether it is
+     * gated — make four cases, and `gated` is what decides whether N is a countdown or a WIDTH.
+     * One non-filing sentence for both gated states called a width a countdown, which is precisely
+     * the defect the two filing branches were split to avoid, and anchored it to a date a width is
+     * not measured from (product owner, 2026-08-10, correcting the same day's approval).
+     */
+    it("describes a gated non-filing window as a width rather than a countdown", async () => {
+      const eventId = await createEvent(scenario("C"));
+      const { planId } = await insertDuePlan(eventId, {
+        verdict: "feasible_at_risk",
+        minSlackDays: 9,
+        latestApplyDate: dayFromToday(30),
+        applyAfterDate: dayFromToday(21),
+        disposition: "advisory",
+      });
+      const client = await pool.connect();
+      try {
+        await schedulerWith()(client, eventId, planId, {
+          email: "organizer@example.test",
+          phone: null,
+        });
+      } finally {
+        client.release();
+      }
+
+      const warning = (await alertsOf(eventId)).find((row) => row.alert_type === "slack_warning");
+      expect(String(warning?.payload.body)).toContain(
+        "The requirement with the least room publishes a window 9 days wide. Nothing needs to be " +
+          "filed for it: the window is a range the rule publishes, not time to apply.",
+      );
+      // NOT VACUOUS in both directions at once: it is neither the ungated non-filing sentence,
+      // which anchors a countdown to a date, nor the gated FILING one, which tells the organizer
+      // when the window can be applied for.
+      expect(String(warning?.payload.body)).not.toContain("Counting from");
+      expect(String(warning?.payload.body)).not.toContain("can only be applied for");
+      expect(String(warning?.payload.body)).not.toContain("slack");
+      expect(String(warning?.payload.body)).not.toContain("FEASIBLE");
     });
 
     it("does not warn twice when an identical plan is regenerated", async () => {
