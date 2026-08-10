@@ -18,6 +18,31 @@
 // published lead time, and past the event, which is what reaches `published_deadline_missed`,
 // INFEASIBLE and the branch promotion.
 //
+// WHAT THIS DOES NOT PROVE, AND THE LIMIT IS THE RULESET'S RATHER THAN THIS FILE'S. The sweep
+// covers every shape the PUBLISHED ruleset can emit, and that is a smaller set than the boundary
+// can be handed. `nyc-rules.v2.11.json` has one multi-member dedupe group, `dob-structure`, and
+// exactly one of its two routes publishes a window; publishing a window is what makes a route BIND,
+// since availability orders the pool before the date or the rule id are read. So on this file the
+// missed route of a merged group is ALWAYS the headline route, and a whole family of shapes is
+// unreachable here rather than merely absent:
+//
+//   • a blocker naming a non-headline route of a merged group, and any route-versus-route
+//     comparison that needs two dated routes in one group
+//   • a dated `advisory` or `no_new_requirement` route, so the non-filing copy branches
+//   • a `prohibited_or_ineligible` rule with a published deadline, so a barred blocker
+//   • a scalar-free merged line, which needs a resolved route that does not contribute the merged
+//     disposition
+//   • a replayed plan whose blocking rule is no longer among its findings, since this evaluates
+//     fresh plans only
+//
+// Those are covered by hand-built tests, which is the honest arrangement and not a substitute: a
+// hand-built test proves the boundary does what its author expected, and this file proves the
+// boundary and the engine agree. `rules/proposals/nyc-rules.v2-full-draft.json` would reach most of
+// them — six of its nine multi-member groups have two or more routes publishing deadlines — and
+// `parseEngineRuleset` cannot read it yet (`deadline.type: "conditional"`). Recorded as #269
+// rather than worked around here. This file resolves the ruleset by PATTERN, so the day
+// those shapes land in a published file they are swept with no edit.
+//
 // THE CALENDAR IS TOO. Production publishes NO holiday list (`apps/api/src/calendar.ts`), so
 // `business_days_minimum` windows evaluate `not_calculable` there and datable in tests. Both are
 // real deployments of this engine and both are swept.
