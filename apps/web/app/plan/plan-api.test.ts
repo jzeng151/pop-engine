@@ -435,6 +435,67 @@ describe("loadPlan", () => {
   });
 
   /**
+   * #252 review: THE PATH AROUND THE PREDICATE, NOT A MISSING CONDITION.
+   *
+   * A widened blocker whose rule is on no finding of the plan returned early, before any condition
+   * ran — and it is exactly the shape that must not be trusted, because carrying the widened keys
+   * makes `verdict-detail.tsx` turn its legacy fallback OFF and render the payload's own name,
+   * deadline, portal and citations with nothing on the plan to corroborate them. A widened blocker
+   * always has its finding: `computeVerdict` narrows it from the same findings it returns, and a
+   * stored plan serves its own generation's findings beside its own `verdict_detail`.
+   */
+  it("refuses a widened blocker whose rule is on no finding of the plan", async () => {
+    const orphan = {
+      ruleIds: ["SAPO-STREET-LARGE-001"],
+      name: "Street Activity Permit — Large",
+      agency: "SAPO (CECM)",
+      disposition: "required",
+      deadlineDisplay: "submit by December 31 of the prior year",
+      latestApplyDate: "2025-12-31",
+      deadlineStatus: "published_deadline_missed",
+      feeDisplay: null,
+      portalName: null,
+      portalUrl: null,
+      portalInstructions: null,
+      sources: [],
+      userSummary: null,
+    };
+    stubFetch(async () =>
+      jsonResponse(200, {
+        ...storedPlan,
+        verdict: "INFEASIBLE",
+        findings: [],
+        verdictDetail: {
+          ...storedPlan.verdictDetail,
+          blockingFinding: orphan,
+          missedRuleIds: ["SAPO-STREET-LARGE-001"],
+        },
+      }),
+    );
+    await expect(loadPlan("https://api.example.com", "event-1")).resolves.toMatchObject({
+      ok: false,
+    });
+
+    // The pre-narrowing shape is still accepted on the same plan: it carries no values to check and
+    // the panel keeps its fallback on, so it is not trusted.
+    stubFetch(async () =>
+      jsonResponse(200, {
+        ...storedPlan,
+        verdict: "INFEASIBLE",
+        findings: [],
+        verdictDetail: {
+          ...storedPlan.verdictDetail,
+          blockingFinding: { ruleIds: orphan.ruleIds, name: orphan.name },
+          missedRuleIds: ["SAPO-STREET-LARGE-001"],
+        },
+      }),
+    );
+    await expect(loadPlan("https://api.example.com", "event-1")).resolves.toMatchObject({
+      ok: true,
+    });
+  });
+
+  /**
    * #252 review: A BLOCKER MUST NAME A ROUTE WHOSE WINDOW CLOSED.
    *
    * The panel's whole sentence is that this route's deadline was missed. Comparing only the tuple,
@@ -584,10 +645,33 @@ describe("loadPlan", () => {
       sources: [],
       userSummary: null,
     };
+    // The line the blocker is narrowed FROM. A widened blocker whose rule is on no finding of the
+    // plan is refused on its own now, so a fixture without one would prove nothing about the
+    // partial-key rule this test is about.
+    const line = {
+      ...storedFinding,
+      ruleIds: ["SAPO-STREET-LARGE-001"],
+      name: whole.name,
+      agency: whole.agency,
+      disposition: whole.disposition,
+      deadlineDisplay: whole.deadlineDisplay,
+      latestApplyDate: whole.latestApplyDate,
+      deadlineStatus: whole.deadlineStatus,
+      feeDisplay: whole.feeDisplay,
+      portalName: whole.portalName,
+      portalUrl: whole.portalUrl,
+      portalInstructions: whole.portalInstructions,
+      sources: [],
+    };
     const detailWith = (blockingFinding: unknown) => ({
       ...storedPlan,
       verdict: "INFEASIBLE",
-      verdictDetail: { ...storedPlan.verdictDetail, blockingFinding },
+      findings: [line],
+      verdictDetail: {
+        ...storedPlan.verdictDetail,
+        blockingFinding,
+        missedRuleIds: ["SAPO-STREET-LARGE-001"],
+      },
     });
 
     for (const dropped of ["agency", "sources", "portalInstructions", "userSummary"]) {

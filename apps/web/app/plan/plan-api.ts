@@ -184,7 +184,35 @@ export type ConsumedRoute = Omit<
    * recorded" rather than "this route publishes none", which is `[]`.
    */
   readonly notes?: readonly string[];
+  /**
+   * This route's own `conflictText`: both readings of an OFFICIAL_CONFLICT rule, verbatim.
+   *
+   * The merged line's value is NOT a concatenation — `mergeGroup` falls back through the routes in
+   * binding order and takes the first that publishes any — so the line carries one route's text with
+   * nothing recording whose, and an entry rendering the line's showed one rule's conflict under
+   * another's name. `alerts.ts` had the same defect one round earlier and on a different surface
+   * (#252 review).
+   *
+   * Optional for the same reason `notes` is: absent on a plan stored before the engine carried it,
+   * and `null` is the value meaning this route publishes no conflict.
+   */
+  readonly conflictText?: string | null;
 };
+
+/**
+ * WHAT THIS TYPE PROJECTS, STATED IN FULL so the next dropped field is a decision rather than an
+ * omission. `FindingRoute` carries 18 fields. This projects 17: `ruleId`, `triggerResult`,
+ * `disposition`, `unknownFields`, `name`, `agency`, `deadline` (widened to its published type),
+ * `deadlineDisplay`, `latestApplyDate`, `applyAfterDate`, `deadlineStatus`, `feeDisplay`,
+ * `portalName`, `portalUrl`, `portalInstructions`, `notes` and `conflictText`.
+ *
+ * ONE IS DELIBERATELY ABSENT: `slackDays`. No web surface renders a route's slack — the verdict
+ * computes the minimum over routes in the engine, and the rescope ladder names the route holding it
+ * through `atRiskFindingName`, which the api resolves before serving. Adding it would put a value on
+ * the wire that nothing reads. Three fields have now been found missing from this projection one
+ * round at a time (`notes`, then `conflictText` on the alerts side, then `conflictText` here); this
+ * paragraph is what ends that, because the audit is written down rather than repeated.
+ */
 
 /**
  * The only part of a `Deadline` this feature reads: the published type, rendered when a rule states a
@@ -382,6 +410,8 @@ const TRIGGER_RESULTS = tokensOf<Exclude<Tristate, "false">>({ true: true, unkno
 export const ROUTE_CHECKS: FieldChecks<ConsumedRoute> = {
   notes: (value: unknown): value is readonly string[] | undefined =>
     value === undefined || arrayOf(isString)(value),
+  conflictText: (value: unknown): value is string | null | undefined =>
+    value === undefined || value === null || isString(value),
   ruleId: isString,
   triggerResult: isToken(TRIGGER_RESULTS),
   disposition: isToken(DISPOSITIONS),
@@ -916,32 +946,52 @@ const BLOCKER_ROUTE_FIELDS = [
  */
 const blockerIsANarrowedMissedRoute = (plan: PlanResponse): boolean => {
   const blocker = plan.verdictDetail.blockingFinding;
+
+  // TWO SHAPES MAKE NO CLAIM, and they are the only two accepted without evaluating the conditions.
+  // Neither is a bypass: there is nothing to verify, and neither is TRUSTED downstream.
+  //
+  //   • No blocker at all. Nothing is asserted and the panel renders no blocker section.
+  //   • A blocker carrying none of the widened keys, which is `{ruleIds, name}` from a plan stored
+  //     before the narrowing. It has no published values to check, and `verdict-detail.tsx` reads
+  //     exactly that absence to keep its legacy fallback ON, so the name it shows comes from the
+  //     plan's own line rather than from this payload.
+  //
+  // EVERYTHING ELSE GOES THROUGH THE CONDITIONS, with no early acceptance in front of them. That is
+  // the correction this round: the predicate was right and the PATH around it was not. A blocker
+  // whose rule is absent from the findings returned `true` before reaching any condition — and it
+  // is precisely the shape that must not be trusted, because it carries the widened keys, so the
+  // panel turns the fallback OFF and renders a name, deadline, portal and citations nothing on the
+  // plan can corroborate. Three rounds found three ways past this validator and each was a path
+  // rather than a missing field (#252 review).
   if (blocker === null) return true;
-  // Pre-narrowing plans carry no values to check.
   if (!WIDENED_BLOCKER_KEYS.some((key) => key in blocker)) return true;
 
   // 1. It names one rule.
   if (blocker.ruleIds.length !== 1) return false;
   const ruleId = blocker.ruleIds[0] as string;
 
-  // 2. That rule is on this plan, or the plan no longer holds the line and nothing can be checked.
+  // 2. That rule is on this plan. A WIDENED blocker always is: `computeVerdict` narrows it from the
+  //    same findings it returns, and a stored plan serves its own generation's findings beside its
+  //    own `verdict_detail`. So absence is not a replayed plan, it is a payload nothing corroborates.
   const finding = plan.findings.find((entry) => entry.ruleIds.includes(ruleId));
-  if (finding === undefined) return true;
+  if (finding === undefined) return false;
 
   // 3. That rule's window is missed.
   if (!plan.verdictDetail.missedRuleIds.includes(ruleId)) return false;
 
-  // 5. Its citations are that rule's.
+  // 4. Its citations are that rule's. `blockerView` filters rather than copies, so this is set
+  //    equality against the finding's own sources for that rule.
   if (blocker.sources !== undefined) {
     const own = (finding.sources ?? []).filter((source) => source.ruleId === ruleId);
     if (JSON.stringify(blocker.sources) !== JSON.stringify(own)) return false;
   }
 
-  // 6. Its summary is the null the engine writes, on a merged finding.
+  // 5. Its summary is the null the engine writes, on a merged finding.
   const merged = (finding.routes?.length ?? 0) > 1;
   if (merged && blocker.userSummary !== undefined && blocker.userSummary !== null) return false;
 
-  // 4. Its published values are that route's. An unmerged finding is its own route.
+  // 6. Its published values are that route's. An unmerged finding is its own route; a merged one
+  //    that does not carry the named route is a route list disagreeing with its own blocker.
   const route = (finding.routes ?? []).find((entry) => entry.ruleId === ruleId);
   if (route === undefined) {
     return finding.routes == null

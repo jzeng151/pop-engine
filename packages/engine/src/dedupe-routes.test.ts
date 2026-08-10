@@ -1305,3 +1305,57 @@ describe("every merged line the engine emits reads as its binding route, or as n
     );
   });
 });
+
+/**
+ * #252 review: THE BRANCH TABLE NAMED EVERY SIBLING AS HAVING MISSED ITS DEADLINE.
+ *
+ * `describeDifference` compares the routes whose own windows closed — that set is what decides
+ * whether a branch tightened — and then substituted the PARENT finding's whole `ruleIds` into the
+ * sentence. On a merged line that told the organizer every contributing rule had missed its
+ * published date, when one had.
+ */
+describe("the branch reason names the route that missed, not its line (#252)", () => {
+  const FIELDS = [
+    { field: "plaza_level", type: "enum", values: ["unknown", "a", "b"] },
+    { field: "plaza_multiple_blocks", type: "boolean" },
+  ];
+  /** Resolved, required, and open on every branch: it must not appear in the missed sentence. */
+  const OPEN = {
+    id: "SAPO-EVENT-001",
+    dedupeKey: "plaza",
+    trigger: ALWAYS,
+    output: {
+      permit_name: "Plaza event permit",
+      deadline: { type: "published_minimum", calendar_days: 60 },
+    },
+  } as const;
+  /** Dated by the level: on branch `b` its window closed before today. */
+  const BY_LEVEL = {
+    id: "SAPO-PLAZA-001",
+    dedupeKey: "plaza",
+    trigger: ALWAYS,
+    output: {
+      permit_name: "Plaza permit by level",
+      deadline: {
+        type: "published_minimum_by_level",
+        level_field: "plaza_level",
+        multi_block_field: "plaza_multiple_blocks",
+        levels: { a: { calendar_days: 30 }, b: { calendar_days: 200 } },
+      },
+    },
+  } as const;
+
+  it("states the missed route alone in the branch reason", () => {
+    const level = plan(
+      [OPEN, BY_LEVEL],
+      { plaza_level: "unknown", plaza_multiple_blocks: false },
+      FIELDS,
+    ).verdictDetail.missingFacts.find((fact) => fact.field === "plaza_level");
+    const branchB = level?.branches.find((branch) => branch.value === "b");
+
+    expect(branchB?.reason).toContain("SAPO-PLAZA-001 (published deadline missed as scoped)");
+    // NOT VACUOUS: both rules are on the merged line, and the open one must not be named as missed.
+    expect(branchB?.reason).not.toContain("SAPO-EVENT-001 (published deadline missed");
+    expect(branchB?.reason).not.toContain("SAPO-EVENT-001, SAPO-PLAZA-001 (published");
+  });
+});

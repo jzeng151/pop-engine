@@ -297,12 +297,13 @@ function describeDifference(base: readonly Finding[], candidate: readonly Findin
   // WHICH ROUTES OF THE LINE ARE MISSED, standing in for the merged `deadlineStatus` for the reason
   // `describeMissed` gives. Substituting it changes no outcome the scalar already got right: a
   // status change that is not a miss produced no sentence before and produces none now.
-  const missedRoutes = (finding: Finding): string =>
+  /** The routes whose own windows are missed, which is a different set from the line's rule ids. */
+  const missedRouteIds = (finding: Finding): string[] =>
     routesOf(finding)
       .filter((route) => route.deadlineStatus === "published_deadline_missed")
       .map((route) => route.ruleId)
-      .sort()
-      .join(",");
+      .sort();
+  const missedRoutes = (finding: Finding): string => missedRouteIds(finding).join(",");
 
   const tightened: string[] = [];
   for (const finding of candidate) {
@@ -315,10 +316,17 @@ function describeDifference(base: readonly Finding[], candidate: readonly Findin
       continue;
     }
     if (nowMissed !== "") {
-      tightened.push(`${finding.ruleIds.join(", ")} (published deadline missed as scoped)`);
+      // THE ROUTES THAT MISSED, NOT THE LINE THEY SIT ON. `missedRouteIds` already holds exactly
+      // the routes whose own windows closed — it is what the comparison above is made of — and the
+      // message substituted the parent's whole `ruleIds` instead, telling the organizer that every
+      // sibling route on a merged line had missed its deadline. Wrong values in the branch table,
+      // on the branches F-102 AC 6 requires the reason to be stated on (#252 review).
+      tightened.push(`${missedRouteIds(finding).join(", ")} (published deadline missed as scoped)`);
       continue;
     }
     if (prior.disposition !== finding.disposition) {
+      // THE LINE'S ids here, and correctly: the merged disposition is the group's, the strongest
+      // any route contributes, so the sentence is about the whole finding rather than about a route.
       tightened.push(`${finding.ruleIds.join(", ")} becomes ${finding.disposition}`);
     }
   }

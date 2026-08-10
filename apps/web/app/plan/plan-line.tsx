@@ -328,6 +328,12 @@ function Route({ route, mode }: { route: ConsumedRoute; mode: HeadlineMode }) {
         </p>
       )}
       {route.feeDisplay !== null && <p className="line__route-fee">{route.feeDisplay}</p>}
+      {/* BOTH READINGS, ON THE ROUTE THAT PUBLISHES THEM. The merged line's `conflictText` is not a
+          concatenation: it falls back through the routes in binding order and takes the first that
+          publishes any, so the line carries one route's text and the entry beside it rendered
+          nothing at all. An OFFICIAL_CONFLICT route's two readings belong on its own entry, verbatim
+          and unsummarised, for the reason the line renders them (#252 review). */}
+      {route.conflictText != null && <p className="line__route-conflict">{route.conflictText}</p>}
       {/* NO CANDIDATE ENTRY RENDERS AS AN ACTION (design §5.3), and this is the entry's only
           action. "apply at <portal>" under an entry labelled "May apply" tells an organizer to
           file a permit the recorded answers have not decided they need, which is the one thing a

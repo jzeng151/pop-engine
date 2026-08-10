@@ -88,12 +88,21 @@ function expandGlob(token) {
   } catch (error) {
     return { error: error.message };
   }
-  return entries
-    .filter((entry) => !entry.isDirectory())
-    .map((entry) => entry.name)
-    .filter((name) => name.startsWith(prefix) && name.endsWith(suffix))
-    .map((name) => (directory === "" ? name : `${directory}/${name}`))
-    .sort();
+  return (
+    entries
+      // isFile, NOT not-isDirectory. A broken symlink is neither a directory nor a file, so the
+      // negative test admitted one whose name carries the expected suffix; the later `existsSync`
+      // then FOLLOWS the missing target, finds nothing, and skips the entry silently. The run exits
+      // 0 having verified nothing for a path a manifest row calls APPROVED, which is the same
+      // outcome as the unreadable-name defect this filter was added for (#252 review). Sockets,
+      // FIFOs and devices go the same way and for the same reason: a status can only be read from a
+      // file.
+      .filter((entry) => entry.isFile())
+      .map((entry) => entry.name)
+      .filter((name) => name.startsWith(prefix) && name.endsWith(suffix))
+      .map((name) => (directory === "" ? name : `${directory}/${name}`))
+      .sort()
+  );
 }
 
 /** Pull backticked local .md/.json paths out of a manifest table row, expanding globs. */
@@ -414,7 +423,12 @@ const SKIPPED_DIRECTORIES = skippedDirectories();
  * scope. The template is the one that goes stale and it is still checked.
  */
 const asBasenamePattern = (pattern) =>
-  new RegExp(`^${pattern.split("*").map((part) => part.replace(/[.+^${}()|[\]\\?]/g, "\\$&")).join("[^/]*")}$`);
+  new RegExp(
+    `^${pattern
+      .split("*")
+      .map((part) => part.replace(/[.+^${}()|[\]\\?]/g, "\\$&"))
+      .join("[^/]*")}$`,
+  );
 const ignoredFiles = () => {
   const lines = gitignoreLines().filter((line) => !line.endsWith("/"));
   const patterns = (prefixed) =>
@@ -488,7 +502,7 @@ const publishedRulesets = () => {
   // resolved references to a path nothing can read and tripped the exactly-one invariant with a
   // second "ruleset" that is not one. Same rule as the glob expansion: entry type decides.
   publishedCache ??= readdirSync(join(repoRoot, "rules"), { withFileTypes: true })
-    .filter((entry) => !entry.isDirectory() && PUBLISHED_RULESET.test(entry.name))
+    .filter((entry) => entry.isFile() && PUBLISHED_RULESET.test(entry.name))
     .map((entry) => entry.name);
   return publishedCache;
 };
@@ -1014,7 +1028,10 @@ function danglingInLiterals(sourceFile, literals) {
         if (resolves(token[0], value, token.index)) continue;
         if (literal.continues && token.index + token[0].length === value.length) continue;
         const at = valueAt === -1 ? literal.index : literal.index + valueAt + token.index;
-        found.push({ line: sourceFile.getLineAndCharacterOfPosition(at).line + 1, named: token[0] });
+        found.push({
+          line: sourceFile.getLineAndCharacterOfPosition(at).line + 1,
+          named: token[0],
+        });
       }
     }
   }
@@ -1251,7 +1268,10 @@ function shellWords(command) {
     // inside a double-quoted string.
     const substitutes = character === "`" && quote !== "'";
     if (substitutes) backquoted = !backquoted;
-    if (substitutes || (quote === null && (/\s/.test(character) || SHELL_OPERATORS.has(character)))) {
+    if (
+      substitutes ||
+      (quote === null && (/\s/.test(character) || SHELL_OPERATORS.has(character)))
+    ) {
       if (word !== null) words.push(word);
       word = null;
       continue;
