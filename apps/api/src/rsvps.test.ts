@@ -351,16 +351,14 @@ describe.runIf(databaseUrl.length > 0)("F-302 RSVP endpoints (database)", () => 
 // THE REGRESSION TEST FOR THE FACT ISSUE #235 CORRECTED, and nothing wider. #235 removed an
 // invented DOHMH headcount trigger, so what must not come back is that: no published city health
 // rule may READ the attendee count, and the DOHMH findings an organizer sees must not move when
-// the count does, unknown included. Both halves are read out of the published ruleset, so a
-// publication that moves a threshold moves this test with it. Whether any PROSE here states an
-// unsupported claim is issue #256's question, split out of this branch on 2026-08-09.
+// the count does, unknown included. Both are read out of the published ruleset. Whether any PROSE
+// here states an unsupported claim is issue #256's, split out of this branch on 2026-08-09.
 //
-// IT DECIDES BY WHAT THE ARTIFACT SAYS, NOT BY A SHAPE IT EXPECTS. Three findings in two rounds
-// were one defect: an operand type the reader did not enumerate, an agency spelling the regex did
-// not carry, and a field reference in the intake registry rather than in a trigger. Each was a
-// shape this test chose to look at, so each new shape reopened it. Detection now reads a rule's
-// whole published declaration plus the scoping of every field it names; the agency labels are
-// pinned rather than matched. Both fail closed.
+// IT DECIDES BY WHAT THE ARTIFACT SAYS, NOT BY A SHAPE IT EXPECTS. Three findings were one defect:
+// an unenumerated operand type, an agency spelling the regex lacked, and a field reference in the
+// intake registry rather than a trigger. Each was a shape this test chose to look at. Detection
+// now reads a rule's whole declaration plus the scoping of every field it names, and the agency
+// labels are pinned rather than matched. Both fail closed.
 describe("DOHMH findings do not move with headcount (#235)", () => {
   type PublishedRule = { id?: string; trigger?: unknown; output?: { agency?: string | null } };
   const published = JSON.parse(readFileSync(publishedRulesFile(), "utf8")) as {
@@ -375,10 +373,9 @@ describe("DOHMH findings do not move with headcount (#235)", () => {
   const COUNT_FIELD = "headcount";
   const names = (text: string, token: string) => new RegExp(`\\b${token}\\b`).test(text);
 
-  // `output.agency` is free-form rather than an enum, so the labels are PARTITIONED: every one the
-  // ruleset publishes is city health or is named below as another agency, and a label nobody has
-  // classified fails the assertion. A regex over the spellings that exist today silently excludes
-  // the next one, and "Health Department", which `docs/PRD.md` already writes, was one of them.
+  // `output.agency` is free text, not an enum, so the labels are PARTITIONED below rather than
+  // matched: a regex over today's spellings silently excludes the next one, and "Health
+  // Department", which `docs/PRD.md` writes, was one of them.
   const CITY_HEALTH =
     /DOHMH|Health and Mental Hygiene|(?:NYC |City )?Health Department|NYC Health/i;
   const cityHealth = publishedRules.filter(
@@ -387,14 +384,12 @@ describe("DOHMH findings do not move with headcount (#235)", () => {
   const cityHealthIds = new Set(cityHealth.map((rule) => rule.id));
 
   /**
-   * EVERYTHING THAT DECIDES WHETHER A RULE FIRES: its own published declaration, plus the
-   * `asked_when` scoping of every intake field that declaration names, followed to a fixed point
-   * because one field's scoping may name another's. A rule triggered on a field the registry only
-   * asks when `headcount gte 600` fires on the count as surely as a trigger comparing it does.
-   *
-   * The declaration is read as TEXT, so no operator, operand or node shape can hide a reference.
-   * Stated cost: a city health rule that merely mentions the field in prose is reported, which is
-   * the right direction here, and none names it anywhere today.
+   * EVERYTHING THAT DECIDES WHETHER A RULE FIRES: its published declaration, plus the `asked_when`
+   * scoping of every intake field that declaration names, to a fixed point because one field's
+   * scoping may name another's. A rule triggered on a field the registry only asks when `headcount
+   * gte 600` fires on the count as surely as a trigger comparing it does. Read as TEXT, so no
+   * operator, operand or node shape hides a reference. Stated cost: a city health rule that merely
+   * mentions the field in prose is reported, which is the right direction, and none does today.
    */
   const askedWhen = new Map(
     (published.intake_fields ?? []).map((field) => [field.field ?? "", field.asked_when ?? ""]),
@@ -413,8 +408,14 @@ describe("DOHMH findings do not move with headcount (#235)", () => {
     return text;
   };
 
-  /** Every number the artifact compares the count against, in a trigger or in a scoping
-   *  expression. This widens the sweep and answers nothing about whether the field is read. */
+  /**
+   * WHAT A BOUNDARY IS, stated because it has been drawn around the wrong thing three times: a
+   * value the artifact compares THE COUNT against, which is the operand PAIRED WITH a headcount
+   * field reference and never a numeral in its vicinity. `headcount gte 75 AND tent_area_sqft gte
+   * 400` publishes one count boundary, 75. A trigger condition pairs its own `field` and `value`;
+   * an `asked_when` pairs by position, since `packages/engine/src/conditions.ts:52` splits on
+   * " AND " and `:94`/`:113` read a clause as `field in a/b` or `field op operand`.
+   */
   const boundariesIn = (node: unknown, into: number[] = []) => {
     if (Array.isArray(node)) for (const child of node) boundariesIn(child, into);
     else if (node !== null && typeof node === "object") {
@@ -426,9 +427,15 @@ describe("DOHMH findings do not move with headcount (#235)", () => {
     }
     return into;
   };
-  const scopingBoundaries = [...askedWhen.values()]
-    .filter((when) => names(when, COUNT_FIELD))
-    .flatMap((when) => [...when.matchAll(/\d+/g)].map((match) => Number(match[0])));
+  const CLAUSE = /^(\S+) (?:in (\S+)|\S+ (\S+))$/;
+  const clauses = [...askedWhen.values()].flatMap((when) =>
+    when.split(" AND ").map((clause) => clause.trim()),
+  );
+  const scopingBoundaries = clauses
+    .map((clause) => CLAUSE.exec(clause))
+    .filter((parsed) => parsed?.[1] === COUNT_FIELD)
+    .flatMap((parsed) => (parsed?.[2] ?? parsed?.[3] ?? "").split("/").map(Number))
+    .filter(Number.isFinite);
 
   // `null` is the unknown answer: an absent or null key is "asked, not answered"
   // (`packages/engine/src/types.ts:8-11`), and a numeric field has no other way to be unknown.
@@ -475,9 +482,8 @@ describe("DOHMH findings do not move with headcount (#235)", () => {
     }
   });
 
-  // The three shapes that got past a reader keyed on shape, asserted together so the next one is a
-  // failure here rather than a finding: a non-numeric operand, a scoping expression, and an agency
-  // label outside the spellings the tree happens to publish today.
+  // The three shapes that got past a reader keyed on shape, asserted together: a non-numeric
+  // operand, a scoping expression, and an agency label outside today's spellings.
   it("detects a count read whatever names it, and classifies a label it has not seen", () => {
     const reads = (rule: PublishedRule) => names(firingBasis(rule), COUNT_FIELD);
     for (const value of [75, "unknown", true, [20, 21], null, { at: 75 }]) {
@@ -493,8 +499,8 @@ describe("DOHMH findings do not move with headcount (#235)", () => {
     expect(CITY_HEALTH.test("Health Department"), "the label docs/PRD.md writes").toBe(true);
   });
 
-  // Below, at and above every boundary the artifact compares the count against, per AGENTS.md
-  // lines 59-60, with 500 as the far-above value and `null` as the unknown answer.
+  // Below, at and above every boundary, per AGENTS.md 59-60, with 500 far above and `null`
+  // unknown.
   const ascending = (a: number, b: number) => a - b;
   const boundaries = [...new Set([...boundariesIn(published), ...scopingBoundaries])].sort(
     ascending,
@@ -505,8 +511,10 @@ describe("DOHMH findings do not move with headcount (#235)", () => {
 
   it("returns the same findings below, at, above and without a published headcount", () => {
     // Pinned, so a derivation that stopped reading the artifact fails here rather than running
-    // over a shorter list. 20 is the Parks threshold, 75 the place-of-assembly one, which the
-    // intake registry also scopes two private-venue questions on.
+    // over a shorter list. 20 is the Parks threshold, 75 the place-of-assembly one.
+    // A clause that names the count and does not parse would contribute no boundary and narrow
+    // the sweep in silence, so it fails here instead.
+    expect(clauses.filter((c) => names(c, COUNT_FIELD) && !CLAUSE.test(c))).toEqual([]);
     expect(boundaries, "the published headcount boundaries").toEqual([20, 75]);
     expect(COMPARED).toEqual([19, 20, 21, 74, 75, 76, 500]);
     for (const fixture of SCENARIO_INTAKE_FIXTURES) {
@@ -520,8 +528,8 @@ describe("DOHMH findings do not move with headcount (#235)", () => {
     }
   });
 
-  // What makes the comparison above worth running: a published city health rule no scenario
-  // reaches is one this regression says nothing about, while looking green.
+  // What makes the comparison worth running: a rule no scenario reaches is one it says nothing
+  // about, while looking green.
   it("reaches every published city health rule across the compared scenarios", () => {
     const reached = new Set(
       SCENARIO_INTAKE_FIXTURES.flatMap((fixture) =>
