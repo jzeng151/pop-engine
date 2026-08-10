@@ -2753,6 +2753,49 @@ describe("a checklist row whose window comes from another route (#252)", () => {
   };
 
   /**
+   * #252 review: THE FOURTH SURFACE FOR THE SAME FIELD.
+   *
+   * `mergeGroup` does not concatenate `conflictText`: it falls back through the routes in binding
+   * order and takes the first that publishes any. So a merged row rendered exactly one rule's two
+   * readings and dropped the sibling's official reading entirely, on the disclosure whose whole
+   * purpose is that a conflict is never resolved to one reading silently.
+   */
+  it("renders every route's official reading on a merged row, each named", async () => {
+    const withConflict = (route: Record<string, unknown>, text: string) => ({
+      ...route,
+      conflictText: text,
+    });
+    stubApi({
+      [GET_CHECKLIST]: checklistOf({
+        created: true,
+        items: [
+          trackedItem(STREET_MEDIUM, {
+            verificationStatus: "OFFICIAL_CONFLICT",
+            // What the merge leaves on the line: the first publisher in binding order.
+            conflictText: "the tall route reads the threshold as 10 feet",
+            routes: [
+              withConflict(DATED_BINDING, "the tall route reads the threshold as 10 feet"),
+              withConflict(TENT_ROUTE, "the tent route reads the same threshold as 400 sq ft"),
+            ],
+            headlineMode: "candidate",
+            filingRouteRuleId: null,
+          }),
+        ],
+      }),
+    });
+    await renderView();
+
+    const details = await expandedCandidateRow();
+    // NOT VACUOUS: the second is the one the merged scalar dropped, and the first proves the row
+    // did not simply stop rendering conflicts.
+    expect(details.textContent).toContain("the tall route reads the threshold as 10 feet");
+    expect(details.textContent).toContain("the tent route reads the same threshold as 400 sq ft");
+    // Each is attributed, because two rules' readings run together read as four readings of one.
+    expect(details.textContent).toContain(DATED_BINDING.name);
+    expect(details.textContent).toContain(TENT_ROUTE.name);
+  });
+
+  /**
    * #252 review: THE GATE VANISHED ON A ROW THAT PUBLISHES NOTHING TO HANG IT ON.
    *
    * `gatedRoutesOf` skips one route so a gate the row's own scalar already shows is not repeated,

@@ -137,6 +137,33 @@ const deadlineTypeLabel = (context: PlanContext): string | null =>
     ? humanize(context.deadline.type)
     : null;
 
+/**
+ * Every official-conflict reading this row carries, with the rule that published each.
+ *
+ * An unmerged row is its own route and keeps the single unnamed paragraph it always rendered. A
+ * merged row lists one per contributing route that publishes any, in the order the routes arrive,
+ * which is binding order. A route with no per-route value recorded — a plan stored before
+ * `FindingRoute.conflictText` — contributes nothing rather than being read as publishing none, and
+ * the row falls back to the merged text so such a plan loses nothing it had.
+ */
+const conflictReadings = (
+  context: PlanContext,
+): readonly { ruleId: string; name: string | null; text: string }[] => {
+  const routes = context.routes ?? [];
+  const perRoute = routes.filter((route) => route.conflictText != null);
+  if (perRoute.length === 0) {
+    return context.conflictText === null
+      ? []
+      : [{ ruleId: context.ruleIds.join("+"), name: null, text: context.conflictText }];
+  }
+  return perRoute.map((route) => ({
+    ruleId: route.ruleId,
+    // The same fallback the gate beside it uses, so a route publishing no name is still named.
+    name: routes.length > 1 ? (route.name ?? route.ruleId) : null,
+    text: route.conflictText as string,
+  }));
+};
+
 /** Two snapshot pairs are the same pair, so the row has nothing the banner has not already said. */
 const samePlan = (left: SourcePlan, right: SourcePlan): boolean =>
   left.rulesetVersion === right.rulesetVersion && left.snapshotDate === right.snapshotDate;
@@ -168,7 +195,7 @@ function ContextCitation({ source }: { source: PlanContext["sources"][number] })
  */
 const hasContextDetail = (context: PlanContext): boolean =>
   context.sources.length > 1 ||
-  context.conflictText !== null ||
+  conflictReadings(context).length > 0 ||
   (context.noteText !== null && context.noteText !== context.conflictText) ||
   context.publishedNotes.length > 0 ||
   context.portalName !== null ||
@@ -393,10 +420,25 @@ export function PlanContextBody({
         >
           {/* No last-verified date here: the summary above already states it. */}
           {/* Both readings of an official conflict, verbatim; never resolved to one silently. The
-              badge in the summary already says OFFICIAL CONFLICT. */}
-          {context.conflictText !== null && (
-            <p className="check-item__caveat">{context.conflictText}</p>
-          )}
+              badge in the summary already says OFFICIAL CONFLICT.
+
+              EVERY ROUTE THAT PUBLISHES A CONFLICT, NOT THE ONE THE MERGE KEPT. `mergeGroup` does
+              not concatenate this field: it falls back through the routes in binding order and
+              takes the first that publishes any, so `context.conflictText` is exactly one rule's
+              text and a sibling's official reading was dropped from the row entirely. The plan
+              line's route entries render this per route already; this is the same field on the
+              fourth surface (#252 review).
+
+              NAMED, NOT MERGED INTO ONE PARAGRAPH. Two rules' readings run together under one
+              caveat would read as four readings of one requirement. Each is its own paragraph led
+              by that route's published name, which is the attribution the plan line's entry gets
+              from its heading, and no sentence is composed around either value. */}
+          {conflictReadings(context).map(({ ruleId, name, text }) => (
+            <p className="check-item__caveat" key={ruleId}>
+              {name !== null && <strong>{name} </strong>}
+              {text}
+            </p>
+          ))}
           {context.noteText !== null && context.noteText !== context.conflictText && (
             <p className="check-item__text">{context.noteText}</p>
           )}

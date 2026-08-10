@@ -202,9 +202,13 @@ describe("loadPlan", () => {
         agency: "SAPO (CECM)",
         deadline: null,
         deadlineDisplay: null,
-        latestApplyDate: null,
+        // GENUINELY MISSED, because the blocker tests below name this route as the blocking one and
+        // the boundary now reads the route's own status rather than taking the plan's
+        // `missedRuleIds` for it. The binding route above stays `not_applicable`, which is what
+        // makes it the on-track sibling those tests contrast against.
+        latestApplyDate: "2026-03-01",
         applyAfterDate: null,
-        deadlineStatus: "not_applicable",
+        deadlineStatus: "published_deadline_missed",
         feeDisplay: null,
         portalName: null,
         portalUrl: null,
@@ -650,6 +654,83 @@ describe("loadPlan", () => {
   });
 
   /**
+   * #252 review: THE EXCEPTION WAS THE CASE THE ARGUMENT WAS PROTECTING.
+   *
+   * The previous round left the unmerged trigger result unchecked and argued the gap was narrow,
+   * because `resolveDisposition` demotes an unknown-triggered `required` below the blocking floor.
+   * True of `required`, and false of the one disposition that matters: `prohibited_or_ineligible`
+   * is deliberately left undemoted so a lone barred finding still RENDERS its bar (`proposals.ts`
+   * §2, #254). So an unmerged bar whose trigger never resolved clears the floor, and synthesizing
+   * `triggerResult: "true"` for it accepted a blocker the engine could not have produced — the
+   * panel stating INFEASIBLE off a bar hanging on an unanswered question, which is the exact
+   * outcome #254 exists to prevent.
+   *
+   * The trigger result is read off `verdictDetail.trace` now, which carries one entry per rule.
+   */
+  it("reads an unmerged blocker's trigger result rather than assuming it resolved", async () => {
+    const line = {
+      ...storedFinding,
+      ruleIds: ["PARKS-PROPANE-001"],
+      name: "Propane prohibited in this park",
+      disposition: "prohibited_or_ineligible",
+      latestApplyDate: "2026-03-01",
+      deadlineStatus: "published_deadline_missed",
+      // Its own citation, so condition 5 cannot be what refuses these payloads.
+      sources: [
+        { ruleId: "PARKS-PROPANE-001", citation: "Parks rules", urls: ["https://example.gov/p"] },
+      ],
+    };
+    const detailWith = (trace: unknown) => ({
+      ...storedPlan,
+      verdict: "INFEASIBLE",
+      findings: [line],
+      verdictDetail: {
+        ...storedPlan.verdictDetail,
+        blockingFinding: {
+          ruleIds: line.ruleIds,
+          name: line.name,
+          agency: line.agency,
+          disposition: line.disposition,
+          deadlineDisplay: line.deadlineDisplay,
+          latestApplyDate: line.latestApplyDate,
+          deadlineStatus: line.deadlineStatus,
+          feeDisplay: line.feeDisplay,
+          portalName: line.portalName,
+          portalUrl: line.portalUrl,
+          portalInstructions: line.portalInstructions,
+          sources: line.sources,
+          userSummary: null,
+        },
+        missedRuleIds: line.ruleIds,
+        ...(trace === undefined ? {} : { trace }),
+      },
+    });
+
+    // The bar hangs off a question nobody answered. Every other condition is satisfied.
+    for (const trace of [
+      [{ ruleId: "PARKS-PROPANE-001", result: "unknown" }],
+      // And a payload recording no result for it at all: `trace` has been written since plans were
+      // first generated, so absence is a payload nothing corroborates rather than a legacy shape.
+      [{ ruleId: "SOME-OTHER-RULE-001", result: "true" }],
+      undefined,
+    ]) {
+      stubFetch(async () => jsonResponse(200, detailWith(trace)));
+      await expect(loadPlan("https://api.example.com", "event-1")).resolves.toMatchObject({
+        ok: false,
+      });
+    }
+
+    // NOT VACUOUS: the same barred blocker whose trigger DID resolve is exactly what the engine
+    // produces for a lone prohibition past its window, and it reads.
+    stubFetch(async () =>
+      jsonResponse(200, detailWith([{ ruleId: "PARKS-PROPANE-001", result: "true" }])),
+    );
+    await expect(loadPlan("https://api.example.com", "event-1")).resolves.toMatchObject({
+      ok: true,
+    });
+  });
+
+  /**
    * #252 review: THE TWO FIELDS THE TUPLE CHECK CANNOT REACH.
    *
    * `blockerView` FILTERS the sources to the blocking rule and NULLS a merged summary rather than
@@ -769,6 +850,9 @@ describe("loadPlan", () => {
         ...storedPlan.verdictDetail,
         blockingFinding,
         missedRuleIds: ["SAPO-STREET-LARGE-001"],
+        // The line is UNMERGED, so its own trigger result is recorded nowhere but here, and the
+        // boundary refuses a blocker it cannot establish rather than reading absence as resolved.
+        trace: [{ ruleId: "SAPO-STREET-LARGE-001", result: "true" }],
       },
     });
 

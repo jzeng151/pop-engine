@@ -1888,6 +1888,8 @@ describe("F-102 · CONDITIONAL branch table and INFEASIBLE rescope ladder", () =
             userSummary: null,
           },
           missedRuleIds: ["SAPO-STREET-LARGE-001"],
+          // An unmerged blocker's own trigger result is recorded nowhere but the trace.
+          trace: [{ ruleId: "SAPO-STREET-LARGE-001", result: "true" }],
           rescopeSuggestions: [
             {
               change: { field: "location_type", value: "private_venue" },
@@ -2075,6 +2077,8 @@ describe("F-102 · CONDITIONAL branch table and INFEASIBLE rescope ladder", () =
             userSummary: null,
           },
           missedRuleIds: ["NYPD-SOUND-001"],
+          // An unmerged blocker's own trigger result is recorded nowhere but the trace.
+          trace: [{ ruleId: "NYPD-SOUND-001", result: "true" }],
         },
       }),
     );

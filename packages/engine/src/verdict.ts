@@ -43,7 +43,16 @@ export type WindowVerdict = {
   readonly minSlackDays: number | null;
 };
 
-const isMissed = (route: FindingRoute): boolean =>
+/**
+ * Whether a route's own published window has closed, which is the other half of what closes a plan.
+ *
+ * EXPORTED FOR THE REASON `canBlockWhenMissed` IS. `plan-api.ts` took the miss from
+ * `verdictDetail.missedRuleIds`, which is this predicate's OUTPUT rather than the fact: a payload
+ * whose list and whose route status disagree passed, and the list is the easier of the two for a
+ * wrong payload to satisfy (#252 review). Both must hold, so both are checked, and the status token
+ * is compared here rather than restated at the boundary.
+ */
+export const windowIsMissed = (route: Pick<FindingRoute, "deadlineStatus">): boolean =>
   route.deadlineStatus === "published_deadline_missed";
 
 /**
@@ -191,10 +200,10 @@ export function computeWindowVerdict(
   definite: DefiniteRoutes,
 ): WindowVerdict {
   const entries = routeEntries(findings);
-  const missed = entries.filter(({ route }) => isMissed(route));
+  const missed = entries.filter(({ route }) => windowIsMissed(route));
   const missedRuleIds = missed.map(({ route }) => route.ruleId);
   const slacks = entries
-    .filter(({ route }) => route.slackDays !== null && !isMissed(route))
+    .filter(({ route }) => route.slackDays !== null && !windowIsMissed(route))
     .map(({ route }) => route.slackDays as number);
   const minSlackDays = slacks.length === 0 ? null : Math.min(...slacks);
 

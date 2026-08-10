@@ -29,6 +29,7 @@ import {
   canBlockWhenMissed,
   mergedDispositionOf,
   noRouteSuppliesScalars,
+  windowIsMissed,
 } from "@pop-engine/engine";
 import { CREDENTIALED } from "../intake/events-api";
 import {
@@ -274,7 +275,17 @@ export type ConsumedVerdictDetail = {
   readonly missedRuleIds: VerdictDetail["missedRuleIds"];
   readonly unresolvedTimelines: readonly ConsumedUnresolvedTimeline[];
   readonly rescopeSuggestions: readonly ConsumedRescopeSuggestion[];
+  /**
+   * One `{ruleId, result}` per evaluated rule, read for one reason: an UNMERGED finding carries no
+   * route list, so this is the only place its own trigger result is recorded. Optional in the type
+   * because absence has to be distinguishable from a recorded `unknown`, and the blocker validator
+   * refuses on absence rather than reading it as resolved.
+   */
+  readonly trace?: readonly ConsumedTraceEntry[];
 };
+
+/** The engine's own trace entry. `false` is included: every rule is traced, not only the triggered. */
+export type ConsumedTraceEntry = { readonly ruleId: string; readonly result: Tristate };
 
 /**
  * What the loaded rules file says about itself, as `GET /api/rules/meta` serves it.
@@ -410,6 +421,13 @@ export const HEADLINE_MODES = tokensOf<HeadlineMode>({ applies_together: true, c
  * meaning for.
  */
 const TRIGGER_RESULTS = tokensOf<Exclude<Tristate, "false">>({ true: true, unknown: true });
+
+/**
+ * The trace's tokens, which are the WHOLE tristate rather than the two a route can publish:
+ * `evaluate` traces every rule it reads, including the ones whose triggers came back `false` and
+ * produced no finding at all.
+ */
+const TRACE_RESULTS = tokensOf<Tristate>({ true: true, unknown: true, false: true });
 
 export const ROUTE_CHECKS: FieldChecks<ConsumedRoute> = {
   notes: (value: unknown): value is readonly string[] | undefined =>
@@ -812,6 +830,13 @@ const VERDICT_DETAIL_CHECKS: FieldChecks<ConsumedVerdictDetail> = {
   unresolvedTimelines: (value: unknown): value is readonly ConsumedUnresolvedTimeline[] =>
     value === undefined || arrayOf(shapedLike(UNRESOLVED_TIMELINE_CHECKS))(value),
   rescopeSuggestions: arrayOf(shapedLike(RESCOPE_CHECKS)),
+  trace: (value: unknown): value is readonly ConsumedTraceEntry[] | undefined =>
+    value === undefined || arrayOf(shapedLike(TRACE_CHECKS))(value),
+};
+
+const TRACE_CHECKS: FieldChecks<ConsumedTraceEntry> = {
+  ruleId: isString,
+  result: isToken(TRACE_RESULTS),
 };
 
 const PLAN_CHECKS: FieldChecks<PlanResponse> = {
@@ -969,6 +994,18 @@ const BLOCKER_ROUTE_FIELDS = [
  *   findings — a rescoped or replayed plan — there is nothing to compare against, and the panel has
  *   its own last-resort reference for exactly that state.
  */
+/**
+ * The trigger result the plan recorded for one rule, or null where it recorded none.
+ *
+ * `verdictDetail.trace` is one `{ruleId, result}` per evaluated rule, written by `evaluate` and
+ * stored whole: `plan.ts` spreads `plan.verdictDetail` into the row and spreads it back out on
+ * read, so this has been on the wire since plans were first generated on 2026-07-24, well before
+ * the 2026-08-08 amendment that let a bar close a plan at all. Absence therefore means a payload
+ * nothing corroborates rather than a legacy plan, and the caller refuses on null.
+ */
+const triggerResultOf = (plan: PlanResponse, ruleId: string): Tristate | null =>
+  (plan.verdictDetail.trace ?? []).find((entry) => entry.ruleId === ruleId)?.result ?? null;
+
 const blockerIsANarrowedMissedRoute = (plan: PlanResponse): boolean => {
   const blocker = plan.verdictDetail.blockingFinding;
 
@@ -1001,7 +1038,10 @@ const blockerIsANarrowedMissedRoute = (plan: PlanResponse): boolean => {
   const finding = plan.findings.find((entry) => entry.ruleIds.includes(ruleId));
   if (finding === undefined) return false;
 
-  // 3. That rule's window is missed.
+  // 3. That rule's window is missed. BOTH the plan's list and the route's own status, because the
+  //    list is `windowIsMissed`'s output and the status is the fact: a payload whose two disagree
+  //    satisfied the easier of them. The status is checked with the rest of the tuple below, where
+  //    the route to read it off has been selected.
   if (!plan.verdictDetail.missedRuleIds.includes(ruleId)) return false;
 
   // 4. Its citations are that rule's. `blockerView` filters rather than copies, so this is set
@@ -1020,12 +1060,15 @@ const blockerIsANarrowedMissedRoute = (plan: PlanResponse): boolean => {
   const route = (finding.routes ?? []).find((entry) => entry.ruleId === ruleId);
   if (route === undefined) {
     if (finding.routes != null) return false;
-    // 7 on an unmerged finding, which carries no trigger result. `triggerResult: "true"` is what
-    // `routesOf` synthesizes for exactly this line, and it is the one clause this shape cannot
-    // corroborate; the floor and the conflict exclusion are checked on the finding's own values.
+    // 7 on an unmerged finding, whose trigger result is READ rather than assumed. The line carries
+    // no route list, so the result comes off `verdictDetail.trace`, which holds one entry per
+    // evaluated rule and has since plans were first generated.
+    const traced = triggerResultOf(plan, ruleId);
+    if (traced === null) return false;
     if (
+      !windowIsMissed(finding) ||
       !canBlockWhenMissed(
-        { disposition: finding.disposition, triggerResult: "true" },
+        { disposition: finding.disposition, triggerResult: traced },
         finding.verificationStatus,
       )
     ) {
@@ -1037,7 +1080,8 @@ const blockerIsANarrowedMissedRoute = (plan: PlanResponse): boolean => {
   }
 
   // 7. It is a route a missed window may close a plan on.
-  if (!canBlockWhenMissed(route, finding.verificationStatus)) return false;
+  if (!windowIsMissed(route) || !canBlockWhenMissed(route, finding.verificationStatus))
+    return false;
 
   return agreesWithRoute(blocker, route, BLOCKER_ROUTE_FIELDS);
 };
