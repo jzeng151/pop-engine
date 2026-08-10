@@ -80,6 +80,7 @@ registry, per the section above. The first draft claimed two fields; see non-goa
    rather than adopted: its "narrows the question" is itself stronger than DOB-ASSEMBLY-001's
    verification block licenses. Nothing carries it forward, because the entry containing it is the one
    this feature deletes.
+
 2. **Not alcohol.** Already solved and out of scope. `SLA-VENUE-LICENSE-001`, `SLA-ONEDAY-001` and
    `SLA-CATERING-001` each read `venue_license_covers_event_area` in their published triggers, so
    the venue-approval question for alcohol is answered by the shipped ruleset. This spec must not
@@ -97,6 +98,7 @@ registry, per the section above. The first draft claimed two fields; see non-goa
    exists to make impossible, produced by this spec. Specifying its distinct exception semantics would need
    regulatory research this repository has not done, so it is removed from the feature rather than
    carried with the wrong semantics.
+
 4. **Not multi-city.** An operator that travels between jurisdictions is F-207 · Multi-Jurisdiction
    Rules Architecture. This spec is single-jurisdiction and assumes the published NYC ruleset.
 5. **Not new regulatory research.** This spec asserts no permit fact. Everything regulatory below is
@@ -109,21 +111,21 @@ registry, per the section above. The first draft claimed two fields; see non-goa
 
 Baseline artifacts this builds on, all APPROVED per `docs/BASELINE.md`:
 
-| Artifact | What this depends on it for |
-| --- | --- |
-| `rules/nyc-rules.v2.8.json` | `venue_has_assembly_approval` and its gate, plus the three SLA rules that already consume `venue_license_covers_event_area` |
-| `specs/F-101-event-intake.md` | the intake registry and `asked_when` scoping |
-| `specs/F-201-permit-plan-generator.md` | plan generation and AC 4's named-confirmation model |
-| `specs/F-102-feasibility-verdict.md` | verdict states and the branch table |
+| Artifact                               | What this depends on it for                                                                                                 |
+| -------------------------------------- | --------------------------------------------------------------------------------------------------------------------------- |
+| `rules/nyc-rules.v2.8.json`            | `venue_has_assembly_approval` and its gate, plus the three SLA rules that already consume `venue_license_covers_event_area` |
+| `specs/F-101-event-intake.md`          | the intake registry and `asked_when` scoping                                                                                |
+| `specs/F-201-permit-plan-generator.md` | plan generation and AC 4's named-confirmation model                                                                         |
+| `specs/F-102-feasibility-verdict.md`   | verdict states and the branch table                                                                                         |
 
 Published fields this uses, quoted from `rules/nyc-rules.v2.8.json` as declared:
 
-| Field | Type and values | `asked_when` | Consumed today |
-| --- | --- | --- | --- |
-| `location_type` | enum, includes `private_venue` | always asked | yes, by many triggers |
-| `venue_license_covers_event_area` | enum `yes`/`no`/`unknown` | `alcohol AND location_type = private_venue` | **yes**, by the three SLA rules |
-| `venue_has_assembly_approval` | enum `yes`/`no`/`unknown` | `location_type = private_venue AND headcount gte 75` | **no** |
-| `food_affinity_private_exception_claimed` | enum `yes`/`no`/`unknown` | `food_present AND event_open_to_public != yes` | **no** |
+| Field                                     | Type and values                | `asked_when`                                         | Consumed today                  |
+| ----------------------------------------- | ------------------------------ | ---------------------------------------------------- | ------------------------------- |
+| `location_type`                           | enum, includes `private_venue` | always asked                                         | yes, by many triggers           |
+| `venue_license_covers_event_area`         | enum `yes`/`no`/`unknown`      | `alcohol AND location_type = private_venue`          | **yes**, by the three SLA rules |
+| `venue_has_assembly_approval`             | enum `yes`/`no`/`unknown`      | `location_type = private_venue AND headcount gte 75` | **no**                          |
+| `food_affinity_private_exception_claimed` | enum `yes`/`no`/`unknown`      | `food_present AND event_open_to_public != yes`       | **no**                          |
 
 **`venue_has_assembly_approval` alone is the subject of this spec.** The row above it is already
 consumed; the row below it is not an authorisation the venue reports and is out of the feature per
@@ -156,13 +158,13 @@ ruleset-only implementation could not have emitted, persisted or rendered either
 
 So the feature emits an ordinary finding, and the answer decides whether it is emitted at all:
 
-| `venue_has_assembly_approval` | Finding | `disposition` | Note text must |
-| --- | --- | --- | --- |
-| not in scope (gate false) | none FROM THIS FEATURE | n/a | the plan still carries `ADV-VENUE-OCCUPANCY-001`; see Edge Cases |
-| **`yes`** | emitted | **`may_be_required`** | state that this answer does not settle the filing; **make no claim about the approval's effect, in either direction**; **carry no confirmation instruction**, see below |
-| **`no`** | emitted | **`may_be_required`** | state that the operator's own filing is unresolved |
-| **`unknown`** (explicit) | emitted, **both rules** | **`may_be_required`** | both texts; measured, see below |
-| **in scope, NO answer** | emitted, **both rules**, on the rescope path | **`may_be_required`** | a submission cannot be in this state; a rescope variant can and Scenario A's is |
+| `venue_has_assembly_approval` | Finding                                      | `disposition`         | Note text must                                                                                                                                                          |
+| ----------------------------- | -------------------------------------------- | --------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| not in scope (gate false)     | none FROM THIS FEATURE                       | n/a                   | the plan still carries `ADV-VENUE-OCCUPANCY-001`; see Edge Cases                                                                                                        |
+| **`yes`**                     | emitted                                      | **`may_be_required`** | state that this answer does not settle the filing; **make no claim about the approval's effect, in either direction**; **carry no confirmation instruction**, see below |
+| **`no`**                      | emitted                                      | **`may_be_required`** | state that the operator's own filing is unresolved                                                                                                                      |
+| **`unknown`** (explicit)      | emitted, **both rules**                      | **`may_be_required`** | both texts; measured, see below                                                                                                                                         |
+| **in scope, NO answer**       | emitted, **both rules**, on the rescope path | **`may_be_required`** | a submission cannot be in this state; a rescope variant can and Scenario A's is                                                                                         |
 
 **Why `may_be_required` and not something else.** It is the disposition
 `DOB-ASSEMBLY-001` already publishes, and it means exactly what the sources support: the requirement
@@ -205,10 +207,10 @@ disappear. There is no rendering path on which a rule id is private.
 
 **The axis is what the rule CHECKS, never what it found:**
 
-| Was | Is | Why |
-| --- | --- | --- |
-| `DOB-ASSEMBLY-HOST-HELD-001`, or `...-VENUE-APPROVED-001` | **`DOB-ASSEMBLY-VENUE-APPROVAL-001`** | names the question the rule reads, the venue's place-of-assembly approval answer, and no value of it |
-| `DOB-ASSEMBLY-HOST-UNRESOLVED-001`, or `...-VENUE-UNRESOLVED-001` | **`DOB-ASSEMBLY-VENUE-APPROVAL-002`** | same subject, and the branch is carried by the numeric suffix, which asserts nothing |
+| Was                                                               | Is                                    | Why                                                                                                  |
+| ----------------------------------------------------------------- | ------------------------------------- | ---------------------------------------------------------------------------------------------------- |
+| `DOB-ASSEMBLY-HOST-HELD-001`, or `...-VENUE-APPROVED-001`         | **`DOB-ASSEMBLY-VENUE-APPROVAL-001`** | names the question the rule reads, the venue's place-of-assembly approval answer, and no value of it |
+| `DOB-ASSEMBLY-HOST-UNRESOLVED-001`, or `...-VENUE-UNRESOLVED-001` | **`DOB-ASSEMBLY-VENUE-APPROVAL-002`** | same subject, and the branch is carried by the numeric suffix, which asserts nothing                 |
 
 The numeric suffix is the one new convention: no published id uses `-002` today, and every id ends
 `-001`. It is chosen for the property that makes it unattractive, that it is empty of meaning, since
@@ -221,17 +223,17 @@ either rule fires on, but it reads as a finding about the venue when it sits bes
 The test is the one the rename came from: **does this string state a fact about the answer, when the
 rule fires on more answers than one?** Applied to all of them, not only the ids:
 
-| String | Fires on | Verdict |
-| --- | --- | --- |
-| both rule ids | 001 on `yes`, explicit `unknown`, absent; 002 on `no`, explicit `unknown`, absent | FIXED above |
-| `output.requirement_name`, the `<h3>` and the disclosure label derived from it | both rules publish the SAME heading | PASSES, and the constraint is now explicit: it names the question and no answer, e.g. the venue's place-of-assembly approval and this event's own filing |
-| 001's `note_text` | `yes`, explicit `unknown`, absent | CONSTRAINED: it may not say the venue reports an approval, because on two of its three answers that is unknown, and it carries no confirmation instruction. It says the answer does not settle this event's filing, which is true on all three |
-| 002's `note_text` | `no`, explicit `unknown`, absent | CONSTRAINED the same way: it may not say the venue has no approval. It says this event's own filing is unresolved |
-| `output.agency`, `permit_name`, `deadline`, `fee`, `portal` | n/a | PASS by absence, pinned below |
-| the `aria-labelledby` DOM id | every render | PASSES as an attribute, but it points at the `<h3>`, so assistive technology reads whatever `name` resolves to, which is why the heading carries the same constraint |
-| this document's title | n/a | FAILED on the relationship axis rather than the answer axis; renamed to "Venue Assembly-Approval Coverage" with the route 1 decision |
-| this document's FILENAME | n/a | still says `host-guest`. Not renamed here: the path carries this PR's review history, and the file's name is already an open question under Approval Blocker 7, which the naming decision resolves in one move |
-| Scenario G's answer-key section title, if that fixture lands | one fixture, one answer | PASSES, and the distinction is worth stating: a fixture's answer IS known, so its title may name it. A rule fires on more answers than one, so its id may not |
+| String                                                                         | Fires on                                                                          | Verdict                                                                                                                                                                                                                                        |
+| ------------------------------------------------------------------------------ | --------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| both rule ids                                                                  | 001 on `yes`, explicit `unknown`, absent; 002 on `no`, explicit `unknown`, absent | FIXED above                                                                                                                                                                                                                                    |
+| `output.requirement_name`, the `<h3>` and the disclosure label derived from it | both rules publish the SAME heading                                               | PASSES, and the constraint is now explicit: it names the question and no answer, e.g. the venue's place-of-assembly approval and this event's own filing                                                                                       |
+| 001's `note_text`                                                              | `yes`, explicit `unknown`, absent                                                 | CONSTRAINED: it may not say the venue reports an approval, because on two of its three answers that is unknown, and it carries no confirmation instruction. It says the answer does not settle this event's filing, which is true on all three |
+| 002's `note_text`                                                              | `no`, explicit `unknown`, absent                                                  | CONSTRAINED the same way: it may not say the venue has no approval. It says this event's own filing is unresolved                                                                                                                              |
+| `output.agency`, `permit_name`, `deadline`, `fee`, `portal`                    | n/a                                                                               | PASS by absence, pinned below                                                                                                                                                                                                                  |
+| the `aria-labelledby` DOM id                                                   | every render                                                                      | PASSES as an attribute, but it points at the `<h3>`, so assistive technology reads whatever `name` resolves to, which is why the heading carries the same constraint                                                                           |
+| this document's title                                                          | n/a                                                                               | FAILED on the relationship axis rather than the answer axis; renamed to "Venue Assembly-Approval Coverage" with the route 1 decision                                                                                                           |
+| this document's FILENAME                                                       | n/a                                                                               | still says `host-guest`. Not renamed here: the path carries this PR's review history, and the file's name is already an open question under Approval Blocker 7, which the naming decision resolves in one move                                 |
+| Scenario G's answer-key section title, if that fixture lands                   | one fixture, one answer                                                           | PASSES, and the distinction is worth stating: a fixture's answer IS known, so its title may name it. A rule fires on more answers than one, so its id may not                                                                                  |
 
 **Round 8 observed that this rename made route 1 read better, and route 1 is now the decision.** With
 the ids on a subject-and-check axis, nothing in the rules names a relationship, so applying the decision
@@ -270,23 +272,23 @@ literally, so an implementer choosing them alone would fork the artifact and its
 are engine identifiers and assert no regulatory fact; the product owner may rename them provided
 both artifacts move in the same commit.
 
-| Field | `DOB-ASSEMBLY-VENUE-APPROVAL-001` | `DOB-ASSEMBLY-VENUE-APPROVAL-002` | Status |
-| --- | --- | --- | --- |
-| `kind` | `note` | `note` | PINNED, derived below |
-| `trigger.all` | the published gate verbatim (`location_type eq private_venue`, `headcount gte 75`) plus `venue_has_assembly_approval eq yes` | the same gate plus `venue_has_assembly_approval in ["no", "unknown"]` | PINNED |
-| `output.disposition` | `MAY_BE_REQUIRED` | `MAY_BE_REQUIRED` | PINNED, and it must be written explicitly; see the default trap |
-| `output.requirement_name` | a short non-regulatory heading naming the question | the same heading | PINNED as PRESENT; see the double-render below |
-| `output.note_text` | states that the answer does not settle the filing, makes NO claim about the approval's effect in either direction, and carries NO confirmation instruction (F-1NN-AC-01) | states the filing is unresolved, same two prohibitions (F-1NN-AC-02) | PINNED in constraint, wording is the feature's |
-| `output.permit_name`, `agency`, `deadline`, `fee` | ABSENT | ABSENT | PINNED as absent |
-| `output.portal` | ABSENT | ABSENT | PINNED as absent; it renders "apply at" and a note is not an application |
-| `output.notes` | ABSENT | ABSENT | PINNED as absent; every entry renders as regulatory prose needing its own source |
-| `output.dedupe_key` | ABSENT | ABSENT | PINNED as absent, decided below |
-| `source.citation`, `source.urls` | cannot be settled inside this spec | same | **BLOCKED**: contract conflict, see below |
-| `verification.status` | cannot be settled inside this spec | same | **BLOCKED**: contract conflict, see below |
-| `verification.qualification` | records the silence, and is USER-VISIBLE, not metadata | same | **BLOCKED** on the product owner, as published prose |
-| `verification.evidence` | points at the existing record of the silence; not rendered | same | **BLOCKED** on the product owner |
-| `verification.last_verified_date` | ABSENT | ABSENT | PINNED as absent; adding one is the product owner's, per §6 as amended 2026-08-04 |
-| `exercised_by_scenarios` | `["F", "A-rescope"]` | `["F", "A-rescope", <the new explicit-no fixture>]` | PINNED per rule, derived against each trigger |
+| Field                                             | `DOB-ASSEMBLY-VENUE-APPROVAL-001`                                                                                                                                        | `DOB-ASSEMBLY-VENUE-APPROVAL-002`                                     | Status                                                                            |
+| ------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | --------------------------------------------------------------------- | --------------------------------------------------------------------------------- |
+| `kind`                                            | `note`                                                                                                                                                                   | `note`                                                                | PINNED, derived below                                                             |
+| `trigger.all`                                     | the published gate verbatim (`location_type eq private_venue`, `headcount gte 75`) plus `venue_has_assembly_approval eq yes`                                             | the same gate plus `venue_has_assembly_approval in ["no", "unknown"]` | PINNED                                                                            |
+| `output.disposition`                              | `MAY_BE_REQUIRED`                                                                                                                                                        | `MAY_BE_REQUIRED`                                                     | PINNED, and it must be written explicitly; see the default trap                   |
+| `output.requirement_name`                         | a short non-regulatory heading naming the question                                                                                                                       | the same heading                                                      | PINNED as PRESENT; see the double-render below                                    |
+| `output.note_text`                                | states that the answer does not settle the filing, makes NO claim about the approval's effect in either direction, and carries NO confirmation instruction (F-1NN-AC-01) | states the filing is unresolved, same two prohibitions (F-1NN-AC-02)  | PINNED in constraint, wording is the feature's                                    |
+| `output.permit_name`, `agency`, `deadline`, `fee` | ABSENT                                                                                                                                                                   | ABSENT                                                                | PINNED as absent                                                                  |
+| `output.portal`                                   | ABSENT                                                                                                                                                                   | ABSENT                                                                | PINNED as absent; it renders "apply at" and a note is not an application          |
+| `output.notes`                                    | ABSENT                                                                                                                                                                   | ABSENT                                                                | PINNED as absent; every entry renders as regulatory prose needing its own source  |
+| `output.dedupe_key`                               | ABSENT                                                                                                                                                                   | ABSENT                                                                | PINNED as absent, decided below                                                   |
+| `source.citation`, `source.urls`                  | cannot be settled inside this spec                                                                                                                                       | same                                                                  | **BLOCKED**: contract conflict, see below                                         |
+| `verification.status`                             | cannot be settled inside this spec                                                                                                                                       | same                                                                  | **BLOCKED**: contract conflict, see below                                         |
+| `verification.qualification`                      | records the silence, and is USER-VISIBLE, not metadata                                                                                                                   | same                                                                  | **BLOCKED** on the product owner, as published prose                              |
+| `verification.evidence`                           | points at the existing record of the silence; not rendered                                                                                                               | same                                                                  | **BLOCKED** on the product owner                                                  |
+| `verification.last_verified_date`                 | ABSENT                                                                                                                                                                   | ABSENT                                                                | PINNED as absent; adding one is the product owner's, per §6 as amended 2026-08-04 |
+| `exercised_by_scenarios`                          | `["F", "A-rescope"]`                                                                                                                                                     | `["F", "A-rescope", <the new explicit-no fixture>]`                   | PINNED per rule, derived against each trigger                                     |
 
 **The three that had slipped the table, each read in `parseRule` and in the renderer rather than
 assumed.** Round 5 wrote that an unmentioned field is an invitation, and then left three unmentioned,
@@ -378,13 +380,13 @@ the reason is in the loader rather than in the prose.**
 **Whether any other legend value is defensible: none is.** Each is refused on the published legend
 rather than on preference:
 
-| Status | Legend text | Why it is not this rule |
-| --- | --- | --- |
-| `SOURCE_CONFIRMED` | "fetch-confirmed primary-source quote on file" | there is no quote on file for this proposition; this is the laundering round 5 already refused |
-| `VERIFIED` | "verification owner confirmed ... (none at publication; only the verification owner assigns this)" | nothing is confirmed, and the legend reserves the value. The quoted wording is `nyc.v2.11`'s as published; the capacity that assigns it is the product owner's per §6 (2026-08-04), and that approval is the whole requirement even where the product owner authored the publication |
-| `OFFICIAL_CONFLICT` | "live official pages disagree; both readings encoded" | this is silence in the sources, not disagreement between them |
-| `COVERAGE_GAP` | "combination not modeled by this ruleset version; advisory asserts nothing" | the combination IS modelled once these rules exist, and three further consequences below |
-| `RESEARCH_REQUIRED` | "no primary source located in two research passes" | the only value whose meaning is close, and the loader will not let it stand without a source |
+| Status              | Legend text                                                                                        | Why it is not this rule                                                                                                                                                                                                                                                              |
+| ------------------- | -------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `SOURCE_CONFIRMED`  | "fetch-confirmed primary-source quote on file"                                                     | there is no quote on file for this proposition; this is the laundering round 5 already refused                                                                                                                                                                                       |
+| `VERIFIED`          | "verification owner confirmed ... (none at publication; only the verification owner assigns this)" | nothing is confirmed, and the legend reserves the value. The quoted wording is `nyc.v2.11`'s as published; the capacity that assigns it is the product owner's per §6 (2026-08-04), and that approval is the whole requirement even where the product owner authored the publication |
+| `OFFICIAL_CONFLICT` | "live official pages disagree; both readings encoded"                                              | this is silence in the sources, not disagreement between them                                                                                                                                                                                                                        |
+| `COVERAGE_GAP`      | "combination not modeled by this ruleset version; advisory asserts nothing"                        | the combination IS modelled once these rules exist, and three further consequences below                                                                                                                                                                                             |
+| `RESEARCH_REQUIRED` | "no primary source located in two research passes"                                                 | the only value whose meaning is close, and the loader will not let it stand without a source                                                                                                                                                                                         |
 
 `COVERAGE_GAP` is the one that parses without a source, so it deserves its refusal in full. It states
 that this ruleset version does not model the combination, which is false the moment these rules fire
@@ -467,12 +469,12 @@ type, values and unknown-capability are identical, because the real field cannot
 `UNCONSUMED_INTAKE_FIELDS` entry is removed (the coupling under System Impact, confirmed by the
 guard firing):
 
-| Answer | Emits | Note |
-| --- | --- | --- |
-| `yes` | `-001` only | the `in ["no", "unknown"]` term resolves false |
-| `no` | `-002` only | the `eq yes` term resolves false |
-| explicit `unknown` | **BOTH** | a rule that does not list `unknown` among its accepted values gets tri-state `unknown` for an explicit `unknown`, and `findings.ts` continues only on `false` |
-| in scope, no answer | **BOTH**, and only on the rescope path | the terms read an absent answer as tri-state `unknown`; the submission path never gets there because `validateIntake` refuses the omission |
+| Answer              | Emits                                  | Note                                                                                                                                                          |
+| ------------------- | -------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `yes`               | `-001` only                            | the `in ["no", "unknown"]` term resolves false                                                                                                                |
+| `no`                | `-002` only                            | the `eq yes` term resolves false                                                                                                                              |
+| explicit `unknown`  | **BOTH**                               | a rule that does not list `unknown` among its accepted values gets tri-state `unknown` for an explicit `unknown`, and `findings.ts` continues only on `false` |
+| in scope, no answer | **BOTH**, and only on the rescope path | the terms read an absent answer as tri-state `unknown`; the submission path never gets there because `validateIntake` refuses the omission                    |
 
 An explicit `unknown` emits BOTH notes, so the two note texts must be jointly true rather than
 alternatives, and F-1NN-AC-02 expects two findings.
@@ -485,13 +487,13 @@ reading the renderer, and round 5 also retired the no-answer case on a validator
 paths reaching it does not run. So the paths are named, and every output above states which of them it
 was checked against.
 
-| Path | What runs | Checked how |
-| --- | --- | --- |
-| Submission | `parseIntakeContract` then `validateIntake`, then `evaluate` (F-101, `POST /api/events`) | measured: the omission returns `{field: "venue_has_assembly_approval", code: "required"}` |
-| Rescope | `buildRescopeSuggestions` then `evaluateConditional`; the suite's `rescopeReachedIn` and `rescopePlan` then call `evaluate`. **No validator on either** | read in `packages/engine/src/verdict.ts` and `fixture-ruleset-agreement.test.ts:432` and `:462` |
-| Fixture and metadata | the agreement suite's bidirectional `exercised_by_scenarios` checks, plus `acceptance.test.ts` finding sets | read, and the entries below derived against each trigger |
-| Loader | `validateRuleset` at boot, `parseEngineRuleset` at load | read, and the unconsumed-field guard confirmed by firing |
-| Render | `PlanLine`, `verification-copy.ts`, F-206's per-line rules | read at `plan-line.tsx:98`, `:117`, `:126`, `:196`, `:199` |
+| Path                 | What runs                                                                                                                                               | Checked how                                                                                     |
+| -------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------- |
+| Submission           | `parseIntakeContract` then `validateIntake`, then `evaluate` (F-101, `POST /api/events`)                                                                | measured: the omission returns `{field: "venue_has_assembly_approval", code: "required"}`       |
+| Rescope              | `buildRescopeSuggestions` then `evaluateConditional`; the suite's `rescopeReachedIn` and `rescopePlan` then call `evaluate`. **No validator on either** | read in `packages/engine/src/verdict.ts` and `fixture-ruleset-agreement.test.ts:432` and `:462` |
+| Fixture and metadata | the agreement suite's bidirectional `exercised_by_scenarios` checks, plus `acceptance.test.ts` finding sets                                             | read, and the entries below derived against each trigger                                        |
+| Loader               | `validateRuleset` at boot, `parseEngineRuleset` at load                                                                                                 | read, and the unconsumed-field guard confirmed by firing                                        |
+| Render               | `PlanLine`, `verification-copy.ts`, F-206's per-line rules                                                                                              | read at `plan-line.tsx:98`, `:117`, `:126`, `:196`, `:199`                                      |
 
 **The rescope path produces the no-answer case, so the spec specifies it rather than calling it
 invalid.** Round 5 was right that a submission cannot be in scope with no answer, and wrong to
@@ -530,12 +532,12 @@ is unreachable for the `eq yes` rule, which resolves false on it. With the `A-re
 removed last round, that makes two entries wrong in the same table, so every entry is now derived
 against the trigger rather than copied:
 
-| Scenario | `-001` (`eq yes`) | `-002` (`in ["no", "unknown"]`) | Why |
-| --- | --- | --- | --- |
-| F (explicit `unknown`) | listed | listed | measured: an explicit `unknown` resolves tri-state `unknown` for `-001` and TRUE for `-002`, and both emit |
-| the new explicit-`no` fixture | **NOT listed** | listed | `eq yes` resolves false on `no`, so `-001` is not reached, fired or conditional |
-| `A-rescope` (absent) | listed | listed | both terms read an absent in-scope answer as `unknown`, and the rescope path runs no validator |
-| A, B, C, D, E base | neither | neither | the gate needs `private_venue` and `headcount gte 75`; B is a private venue at 60 |
+| Scenario                      | `-001` (`eq yes`) | `-002` (`in ["no", "unknown"]`) | Why                                                                                                        |
+| ----------------------------- | ----------------- | ------------------------------- | ---------------------------------------------------------------------------------------------------------- |
+| F (explicit `unknown`)        | listed            | listed                          | measured: an explicit `unknown` resolves tri-state `unknown` for `-001` and TRUE for `-002`, and both emit |
+| the new explicit-`no` fixture | **NOT listed**    | listed                          | `eq yes` resolves false on `no`, so `-001` is not reached, fired or conditional                            |
+| `A-rescope` (absent)          | listed            | listed                          | both terms read an absent in-scope answer as `unknown`, and the rescope path runs no validator             |
+| A, B, C, D, E base            | neither           | neither                         | the gate needs `private_venue` and `headcount gte 75`; B is a private venue at 60                          |
 
 Scenario B is the one worth stating explicitly, because it is a private venue and therefore looks like
 a candidate: its `headcount` is 60, so the published gate never opens and the field is never asked.
@@ -581,15 +583,15 @@ distinguishable without colour alone, matching the treatment F-206 uses for veri
 
 ## System Impact
 
-| Area | Impact | Note |
-| --- | --- | --- |
-| Intake registry | none | fields already published |
-| `validateIntake` | none | already accepts all three |
-| Ruleset | **two new rules** | the pair pinned under Outputs, so a version bump |
-| `packages/engine/src/ruleset.ts` | **required change** | `UNCONSUMED_INTAKE_FIELDS` entries must be removed in the same change as the trigger |
-| `apps/api/src/ruleset.ts` | **required change** | `EXPECTED_RULESET_VERSION` and `EXPECTED_RULE_COUNT` both compared at boot; see the enumeration below |
-| Answer key | **moves** | new plan output for the scenarios that reach these gates |
-| Web | none of this spec's | F-102 owns the rendering |
+| Area                             | Impact              | Note                                                                                                  |
+| -------------------------------- | ------------------- | ----------------------------------------------------------------------------------------------------- |
+| Intake registry                  | none                | fields already published                                                                              |
+| `validateIntake`                 | none                | already accepts all three                                                                             |
+| Ruleset                          | **two new rules**   | the pair pinned under Outputs, so a version bump                                                      |
+| `packages/engine/src/ruleset.ts` | **required change** | `UNCONSUMED_INTAKE_FIELDS` entries must be removed in the same change as the trigger                  |
+| `apps/api/src/ruleset.ts`        | **required change** | `EXPECTED_RULESET_VERSION` and `EXPECTED_RULE_COUNT` both compared at boot; see the enumeration below |
+| Answer key                       | **moves**           | new plan output for the scenarios that reach these gates                                              |
+| Web                              | none of this spec's | F-102 owns the rendering                                                                              |
 
 ### Every constant coupled to the published artifact, enumerated once
 
@@ -598,15 +600,15 @@ version mismatch before a single new rule loaded. Four such dependencies had bee
 time, so they are enumerated here rather than discovered a fifth time. **All seven, swept rather
 than recalled:**
 
-| # | Constant | Location | Compared where | Moves for this feature |
-| --- | --- | --- | --- | --- |
-| 1 | `EXPECTED_SCHEMA` | `apps/api/src/ruleset.ts:31` | `:495` | no, schema family unchanged |
-| 2 | **`EXPECTED_RULESET_VERSION`** | `apps/api/src/ruleset.ts:32` | `:500` | **YES**, and the first draft omitted it |
-| 3 | **`EXPECTED_RULE_COUNT`** | `apps/api/src/ruleset.ts:33` | `:531` | **YES**, one per new rule |
-| 4 | `EXPECTED_ADVISORY_COUNT` | `apps/api/src/ruleset.ts:34` | `:536` | only if an advisory is added |
-| 5 | **`UNCONSUMED_INTAKE_FIELDS`** | `packages/engine/src/ruleset.ts:617` | `parseEngineRuleset` | **YES**, the entry must go in the same change |
-| 6 | `BLOCK_PARTY_ELIGIBILITY_RULE_ID` | `packages/engine/src/intake/registry.ts:56` | `parseIntakeContract` | no, unless that rule id changes |
-| 7 | `ALCOHOL_IN_PUBLIC_SPACE_ADVISORY_ID` | `packages/engine/src/intake/registry.ts:57` | `parseIntakeContract` | no, unless that advisory id changes |
+| #   | Constant                              | Location                                    | Compared where        | Moves for this feature                        |
+| --- | ------------------------------------- | ------------------------------------------- | --------------------- | --------------------------------------------- |
+| 1   | `EXPECTED_SCHEMA`                     | `apps/api/src/ruleset.ts:31`                | `:495`                | no, schema family unchanged                   |
+| 2   | **`EXPECTED_RULESET_VERSION`**        | `apps/api/src/ruleset.ts:32`                | `:500`                | **YES**, and the first draft omitted it       |
+| 3   | **`EXPECTED_RULE_COUNT`**             | `apps/api/src/ruleset.ts:33`                | `:531`                | **YES**, one per new rule                     |
+| 4   | `EXPECTED_ADVISORY_COUNT`             | `apps/api/src/ruleset.ts:34`                | `:536`                | only if an advisory is added                  |
+| 5   | **`UNCONSUMED_INTAKE_FIELDS`**        | `packages/engine/src/ruleset.ts:617`        | `parseEngineRuleset`  | **YES**, the entry must go in the same change |
+| 6   | `BLOCK_PARTY_ELIGIBILITY_RULE_ID`     | `packages/engine/src/intake/registry.ts:56` | `parseIntakeContract` | no, unless that rule id changes               |
+| 7   | `ALCOHOL_IN_PUBLIC_SPACE_ADVISORY_ID` | `packages/engine/src/intake/registry.ts:57` | `parseIntakeContract` | no, unless that advisory id changes           |
 
 `DEPENDENCY_SEQUENCING_BINDINGS` (`packages/engine/src/proposals.ts:128`) is an eighth artifact
 coupling of the same family, keyed by three rule ids, but it is not compared at boot and does not
@@ -651,7 +653,7 @@ until the entry is removed. Nos. 2, 3 and 5 must land in one commit or the API d
    states both.** On the SUBMISSION path it cannot arise: measured through `parseIntakeContract` and
    `validateIntake`, a private-venue intake at `headcount` 75 or more with
    `venue_has_assembly_approval` omitted returns `{field: "venue_has_assembly_approval", code:
-   "required", message: "venue_has_assembly_approval is required for this event"}`, and F-101
+"required", message: "venue_has_assembly_approval is required for this event"}`, and F-101
    validates on submission, so no stored event is in this state. On the RESCOPE path it does arise and
    is the normal case: `buildRescopeSuggestions` changes one field and evaluates through
    `evaluateConditional` with no validator, so Scenario A's private-venue variant leaves the field
@@ -717,14 +719,14 @@ claim is now checked against a measured plan. Each shape below was built as a va
 `parseIntakeContract` and `validateIntake`, and evaluated against the published ruleset, with the
 published findings read off the result:
 
-| Intake, private venue | Published findings TODAY | Verdict | What this feature adds |
-| --- | --- | --- | --- |
-| `headcount: 60` | `ADV-VENUE-OCCUPANCY-001` | FEASIBLE | nothing; the gate is closed |
-| `headcount: 74` | `ADV-VENUE-OCCUPANCY-001` | FEASIBLE | nothing; the gate is closed |
-| `headcount: 75`, answer `yes` | `DOB-ASSEMBLY-001`, `ADV-VENUE-OCCUPANCY-001` | FEASIBLE_AT_RISK | `-001`'s note |
-| `headcount: 80`, answer `no` | the same two | FEASIBLE_AT_RISK | `-002`'s note |
-| `headcount: 80`, answer explicit `unknown` | the same two | FEASIBLE_AT_RISK | BOTH notes |
-| `headcount: 80`, answer ABSENT | the same two, and `validateIntake` reports `venue_has_assembly_approval: required` | FEASIBLE_AT_RISK | both notes, on the rescope path only |
+| Intake, private venue                      | Published findings TODAY                                                           | Verdict          | What this feature adds               |
+| ------------------------------------------ | ---------------------------------------------------------------------------------- | ---------------- | ------------------------------------ |
+| `headcount: 60`                            | `ADV-VENUE-OCCUPANCY-001`                                                          | FEASIBLE         | nothing; the gate is closed          |
+| `headcount: 74`                            | `ADV-VENUE-OCCUPANCY-001`                                                          | FEASIBLE         | nothing; the gate is closed          |
+| `headcount: 75`, answer `yes`              | `DOB-ASSEMBLY-001`, `ADV-VENUE-OCCUPANCY-001`                                      | FEASIBLE_AT_RISK | `-001`'s note                        |
+| `headcount: 80`, answer `no`               | the same two                                                                       | FEASIBLE_AT_RISK | `-002`'s note                        |
+| `headcount: 80`, answer explicit `unknown` | the same two                                                                       | FEASIBLE_AT_RISK | BOTH notes                           |
+| `headcount: 80`, answer ABSENT             | the same two, and `validateIntake` reports `venue_has_assembly_approval: required` | FEASIBLE_AT_RISK | both notes, on the rescope path only |
 
 **Three consequences the table forced, beyond the edge case itself.**
 
@@ -792,20 +794,20 @@ published findings read off the result:
 
 Files this feature may touch, and who must be in the room:
 
-| Path | Change | Owner |
-| --- | --- | --- |
-| `rules/nyc-rules.v<next>.json` | new rules, new version, advanced `snapshot_date` | product owner |
-| **`rules/nyc-rules.v2.8.json`** | **deleted** | product owner |
-| `packages/engine/src/ruleset.ts` | remove **only** the `venue_has_assembly_approval` entry from `UNCONSUMED_INTAKE_FIELDS` | product owner |
-| `apps/api/src/ruleset.ts` | move `EXPECTED_RULESET_VERSION` and `EXPECTED_RULE_COUNT` | product owner |
-| `docs/test-scenario-answer-key.md` | expectations | product owner |
-| `docs/BASELINE.md` | current row, new digest, superseded-lineage record | product owner |
-| **`packages/engine/src/intake/scenario-intake-fixtures.ts`** | **the new explicit-`no` scenario's intake** | product owner |
-| the test files below | version, count and expectation pins | product owner |
-| the documents below, **including `AGENTS.md` and `CONTRIBUTING.md`** | current-version references | product owner |
-| `apps/api/src/ruleset.ts` | the version literal in the offset diagnostic at `:324`, and the `EXPECTED_RULESET_VERSION` explanation at `:55-60` | product owner |
-| `packages/engine/src/intake/registry.ts`, `packages/engine/src/proposals.ts` | the two engine authority comments, text only | product owner |
-| `apps/web/app/verification-copy.ts`, `plan/plan-line.tsx`, `verification-copy.test.ts`, `verification-copy-prose.test.ts` | the four web authority comments, text only | product owner |
+| Path                                                                                                                      | Change                                                                                                             | Owner         |
+| ------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------ | ------------- |
+| `rules/nyc-rules.v<next>.json`                                                                                            | new rules, new version, advanced `snapshot_date`                                                                   | product owner |
+| **`rules/nyc-rules.v2.8.json`**                                                                                           | **deleted**                                                                                                        | product owner |
+| `packages/engine/src/ruleset.ts`                                                                                          | remove **only** the `venue_has_assembly_approval` entry from `UNCONSUMED_INTAKE_FIELDS`                            | product owner |
+| `apps/api/src/ruleset.ts`                                                                                                 | move `EXPECTED_RULESET_VERSION` and `EXPECTED_RULE_COUNT`                                                          | product owner |
+| `docs/test-scenario-answer-key.md`                                                                                        | expectations                                                                                                       | product owner |
+| `docs/BASELINE.md`                                                                                                        | current row, new digest, superseded-lineage record                                                                 | product owner |
+| **`packages/engine/src/intake/scenario-intake-fixtures.ts`**                                                              | **the new explicit-`no` scenario's intake**                                                                        | product owner |
+| the test files below                                                                                                      | version, count and expectation pins                                                                                | product owner |
+| the documents below, **including `AGENTS.md` and `CONTRIBUTING.md`**                                                      | current-version references                                                                                         | product owner |
+| `apps/api/src/ruleset.ts`                                                                                                 | the version literal in the offset diagnostic at `:324`, and the `EXPECTED_RULESET_VERSION` explanation at `:55-60` | product owner |
+| `packages/engine/src/intake/registry.ts`, `packages/engine/src/proposals.ts`                                              | the two engine authority comments, text only                                                                       | product owner |
+| `apps/web/app/verification-copy.ts`, `plan/plan-line.tsx`, `verification-copy.test.ts`, `verification-copy-prose.test.ts` | the four web authority comments, text only                                                                         | product owner |
 
 The Owner column names the capacity §6 requires, not the number of signatures. The rows the audit
 below classes as regulatory (the new ruleset, the v2.8 deletion, the `UNCONSUMED_INTAKE_FIELDS`
@@ -854,12 +856,12 @@ decide how much existing metadata moves, and that is a design choice rather than
 `private_venue`, `headcount: 80`, `venue_has_assembly_approval: "no"`, no alcohol, no food, no
 amplified sound, no structures, no flame, no generator, no battery, not open to the public.
 
-| Rule G reaches | Result | `exercised_by_scenarios` today | Action |
-| --- | --- | --- | --- |
-| `DOB-ASSEMBLY-001` | `true` | `["F", "A-rescope"]` | **add `G`** |
-| `ADV-VENUE-OCCUPANCY-001` | `true` | `["B", "F", "A-rescope"]` | **add `G`** |
-| `DOB-ASSEMBLY-VENUE-APPROVAL-002` | `true` | new rule | lists `G` |
-| `DOB-ASSEMBLY-VENUE-APPROVAL-001` | not reached | new rule | must NOT list `G` |
+| Rule G reaches                    | Result      | `exercised_by_scenarios` today | Action            |
+| --------------------------------- | ----------- | ------------------------------ | ----------------- |
+| `DOB-ASSEMBLY-001`                | `true`      | `["F", "A-rescope"]`           | **add `G`**       |
+| `ADV-VENUE-OCCUPANCY-001`         | `true`      | `["B", "F", "A-rescope"]`      | **add `G`**       |
+| `DOB-ASSEMBLY-VENUE-APPROVAL-002` | `true`      | new rule                       | lists `G`         |
+| `DOB-ASSEMBLY-VENUE-APPROVAL-001` | not reached | new rule                       | must NOT list `G` |
 
 Exactly the two the reviewer named, and no others. **G's expected findings in the answer key must
 therefore list `DOB-ASSEMBLY-001` and `ADV-VENUE-OCCUPANCY-001` as well as the new note**, or the
@@ -913,16 +915,16 @@ It no longer needs two signatories either: every row below marked as a regulator
 regulatory publication, and the product owner's approval under §6 is the whole requirement on each,
 including where they authored it. The class column below is the part that still carries information.
 
-| Row | Class per §6 | Why, and what changed here |
-| --- | --- | --- |
-| new ruleset file | both | it publishes regulatory content AND two new triggers reading a field no trigger reads today, which is trigger semantics |
-| v2.8 deleted | both | the deletion is not separable from the publication: `publishedRulesFile` throws unless exactly one ruleset is present, so the pair is one act, and the deletion removes every published trigger |
-| `UNCONSUMED_INTAKE_FIELDS` entry | engine plus regulatory content | it is engine code, and its entry text is this repository's record of AC 28-117.1.3's amendment requirement, so deleting it deletes regulatory prose |
-| `apps/api/src/ruleset.ts` constants | neither §6 regulatory row | boot constants asserting nothing regulatory |
-| answer key | both | its expectations move BECAUSE trigger semantics moved, and `fixture-ruleset-agreement.test.ts` checks published rules against this key, so the key is where a trigger change is verified. The Fixtures section already said this feature crosses both rows; the row did not carry it |
-| `docs/BASELINE.md` | approval record | §4 defines the manifest and §6 has no row for it; amending approval status and digests is the product owner's, unchanged |
-| test pins | neither §6 regulatory row | assertions over constants and expectations |
-| current-version documents | product scope | the product owner, unchanged |
+| Row                                 | Class per §6                   | Why, and what changed here                                                                                                                                                                                                                                                           |
+| ----------------------------------- | ------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| new ruleset file                    | both                           | it publishes regulatory content AND two new triggers reading a field no trigger reads today, which is trigger semantics                                                                                                                                                              |
+| v2.8 deleted                        | both                           | the deletion is not separable from the publication: `publishedRulesFile` throws unless exactly one ruleset is present, so the pair is one act, and the deletion removes every published trigger                                                                                      |
+| `UNCONSUMED_INTAKE_FIELDS` entry    | engine plus regulatory content | it is engine code, and its entry text is this repository's record of AC 28-117.1.3's amendment requirement, so deleting it deletes regulatory prose                                                                                                                                  |
+| `apps/api/src/ruleset.ts` constants | neither §6 regulatory row      | boot constants asserting nothing regulatory                                                                                                                                                                                                                                          |
+| answer key                          | both                           | its expectations move BECAUSE trigger semantics moved, and `fixture-ruleset-agreement.test.ts` checks published rules against this key, so the key is where a trigger change is verified. The Fixtures section already said this feature crosses both rows; the row did not carry it |
+| `docs/BASELINE.md`                  | approval record                | §4 defines the manifest and §6 has no row for it; amending approval status and digests is the product owner's, unchanged                                                                                                                                                             |
+| test pins                           | neither §6 regulatory row      | assertions over constants and expectations                                                                                                                                                                                                                                           |
+| current-version documents           | product scope                  | the product owner, unchanged                                                                                                                                                                                                                                                         |
 
 **One row this table does NOT yet grant.** If the verification-status conflict under Outputs is
 resolved by widening the loader's source exemption, that is a change to `apps/api/src/ruleset.ts`
@@ -958,19 +960,19 @@ because "assertion or lineage" was also too coarse to place them:
 
 **Thirty-five tracked files match.** Category 1, the documents that move:
 
-| File | What asserts the current version |
-| --- | --- |
-| **`AGENTS.md`** | **line 13 directs every contributor to open `rules/nyc-rules.v2.8.json`; line 27 names it as the sole source of regulatory output. MISSED by the old two-directory method** |
-| **`CONTRIBUTING.md`** | **line 17 states every lead time, fee, agency and requirement comes from that path; line 22 puts it in the authority chain. MISSED the same way** |
-| `docs/ARCHITECTURE.md` | AD-2 names the authoritative file; the component diagram names it |
-| `docs/DESIGN.md` | the lane definition owning engine fidelity to the file; the ratification line |
-| `docs/PRD.md` | current-ruleset references |
-| `specs/F-101-event-intake.md` | `Depends on: ruleset nyc.v2.8 ratified`; the registry-authority line |
-| `specs/F-201-permit-plan-generator.md` | `Depends on:` and the authoritative-inputs line |
-| `specs/F-206-rules-snapshot-banner.md` | the banner example, version AND published date |
-| `specs/F-204-portal-deep-links.md` | its published-on-nyc.v2.8 scope line |
-| `docs/test-scenario-answer-key.md` | the ruleset the key is derived from |
-| `docs/ROADMAP.md` | the current-ruleset pointer |
+| File                                   | What asserts the current version                                                                                                                                            |
+| -------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **`AGENTS.md`**                        | **line 13 directs every contributor to open `rules/nyc-rules.v2.8.json`; line 27 names it as the sole source of regulatory output. MISSED by the old two-directory method** |
+| **`CONTRIBUTING.md`**                  | **line 17 states every lead time, fee, agency and requirement comes from that path; line 22 puts it in the authority chain. MISSED the same way**                           |
+| `docs/ARCHITECTURE.md`                 | AD-2 names the authoritative file; the component diagram names it                                                                                                           |
+| `docs/DESIGN.md`                       | the lane definition owning engine fidelity to the file; the ratification line                                                                                               |
+| `docs/PRD.md`                          | current-ruleset references                                                                                                                                                  |
+| `specs/F-101-event-intake.md`          | `Depends on: ruleset nyc.v2.8 ratified`; the registry-authority line                                                                                                        |
+| `specs/F-201-permit-plan-generator.md` | `Depends on:` and the authoritative-inputs line                                                                                                                             |
+| `specs/F-206-rules-snapshot-banner.md` | the banner example, version AND published date                                                                                                                              |
+| `specs/F-204-portal-deep-links.md`     | its published-on-nyc.v2.8 scope line                                                                                                                                        |
+| `docs/test-scenario-answer-key.md`     | the ruleset the key is derived from                                                                                                                                         |
+| `docs/ROADMAP.md`                      | the current-ruleset pointer                                                                                                                                                 |
 
 **The root documents are the reason this is not a tidiness item.** `AGENTS.md` line 5 of its own
 numbered list is mandatory pre-work: a worker is told to read the ruleset before touching rules, plans
@@ -1007,22 +1009,22 @@ sweep AND in the rule-count table below, which is what made it feel already read
 **Scenario counts, which move only if Scenario G lands** (see the alternative above; if the `no` path
 is covered as a unit case, none of these moves and that is most of the cost difference):
 
-| File | What it states | Why it moves |
-| --- | --- | --- |
-| `specs/F-201-permit-plan-generator.md:35` | "six scenarios (A-F)" | names the suite's contents |
-| `specs/F-201-permit-plan-generator.md:37` | **Acceptance Criterion 7, "All six scenarios pass"** | an APPROVED acceptance criterion of another feature |
-| `specs/F-201-permit-plan-generator.md:51` | "All six + the boundary list" | its Scenarios Exercised line |
-| `specs/F-101-event-intake.md:32` | **Acceptance Criterion 1, "All six fixture scenarios"** | an APPROVED acceptance criterion of another feature |
-| `specs/F-101-event-intake.md:55` | "All six (A-F) as input fixtures" | its Scenarios Exercised line |
-| `specs/F-206-rules-snapshot-banner.md:55` | "All six indirectly" | its Scenarios Exercised line |
-| `CONTRIBUTING.md:60` | "the full fixture suite (6 scenarios + boundary fixtures)" | defines the engine gate |
-| `CONTRIBUTING.md:84` | "Engine scenario suite still green (all six)" | the done checklist a contributor ticks |
-| `docs/DESIGN.md:50` | the green-gate criterion, "6 scenarios" | the lane gate |
-| `docs/DESIGN.md:57` | "all 6 scenarios pass end-to-end" | the same gate, end to end |
-| `docs/PRD.md:114` | the plan-generation metric, "6 scenarios + boundary fixtures" | the success metric |
-| **`docs/ROADMAP.md:17`** | **the Phase 1 gate, "Must pass all 6 answer-key scenarios"** | **the planning spine's own gate, and live rather than history** |
-| **`docs/ARCHITECTURE.md:262`** | **"The fixture suite in `test-scenario-answer-key.md` (6 scenarios + boundary fixtures) is the engine's unit-test suite"** | **states what the suite IS** |
-| **`docs/ARCHITECTURE.md:14`** | **AD-6's rationale, "testable against the 6 scenarios as plain unit tests from day 3"** | **a decision record's rationale rather than a gate, and stale the same way** |
+| File                                      | What it states                                                                                                             | Why it moves                                                                 |
+| ----------------------------------------- | -------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------- |
+| `specs/F-201-permit-plan-generator.md:35` | "six scenarios (A-F)"                                                                                                      | names the suite's contents                                                   |
+| `specs/F-201-permit-plan-generator.md:37` | **Acceptance Criterion 7, "All six scenarios pass"**                                                                       | an APPROVED acceptance criterion of another feature                          |
+| `specs/F-201-permit-plan-generator.md:51` | "All six + the boundary list"                                                                                              | its Scenarios Exercised line                                                 |
+| `specs/F-101-event-intake.md:32`          | **Acceptance Criterion 1, "All six fixture scenarios"**                                                                    | an APPROVED acceptance criterion of another feature                          |
+| `specs/F-101-event-intake.md:55`          | "All six (A-F) as input fixtures"                                                                                          | its Scenarios Exercised line                                                 |
+| `specs/F-206-rules-snapshot-banner.md:55` | "All six indirectly"                                                                                                       | its Scenarios Exercised line                                                 |
+| `CONTRIBUTING.md:60`                      | "the full fixture suite (6 scenarios + boundary fixtures)"                                                                 | defines the engine gate                                                      |
+| `CONTRIBUTING.md:84`                      | "Engine scenario suite still green (all six)"                                                                              | the done checklist a contributor ticks                                       |
+| `docs/DESIGN.md:50`                       | the green-gate criterion, "6 scenarios"                                                                                    | the lane gate                                                                |
+| `docs/DESIGN.md:57`                       | "all 6 scenarios pass end-to-end"                                                                                          | the same gate, end to end                                                    |
+| `docs/PRD.md:114`                         | the plan-generation metric, "6 scenarios + boundary fixtures"                                                              | the success metric                                                           |
+| **`docs/ROADMAP.md:17`**                  | **the Phase 1 gate, "Must pass all 6 answer-key scenarios"**                                                               | **the planning spine's own gate, and live rather than history**              |
+| **`docs/ARCHITECTURE.md:262`**            | **"The fixture suite in `test-scenario-answer-key.md` (6 scenarios + boundary fixtures) is the engine's unit-test suite"** | **states what the suite IS**                                                 |
+| **`docs/ARCHITECTURE.md:14`**             | **AD-6's rationale, "testable against the 6 scenarios as plain unit tests from day 3"**                                    | **a decision record's rationale rather than a gate, and stale the same way** |
 
 **Rule counts, advisory counts and DERIVED TOTALS, which move whenever a rule is published, so they
 move regardless of the fixture decision.** Round 8 swept scenario counts and stopped there; re-run for
@@ -1030,16 +1032,16 @@ rules, advisories, fields and any total derived from them, four more turned up, 
 dangerous ones because the footprint restricts those files to enumerated constants and comments, so an
 implementer can follow it exactly and leave a live contract stale:
 
-| File | What it states | New value |
-| --- | --- | --- |
-| `docs/ARCHITECTURE.md:312` | boot validation, "33 rules + 4 advisories present" | 35 + 4 |
-| `docs/PRD.md:143` | "`rules/nyc-rules.v2.8.json`: 33 rules + 4 advisories" | 35 + 4 |
-| **`docs/PRD.md:244`** | **a SECOND occurrence, in the Rules Engine bullet: "(33 rules + 4 advisories)"** | 35 + 4 |
-| `docs/ROADMAP.md:12` | the ratification line, "33 rules + 4 advisories" | 35 + 4 |
-| `specs/F-201-permit-plan-generator.md:31` | Acceptance Criterion 6, boot validation, "33 rules + 4 advisories" | 35 + 4 |
-| **`apps/api/src/ruleset.ts:617`** | **"37 boot-time rows", the sizing statement behind the per-row insert decision** | 39 |
-| **`apps/api/src/ruleset.test.ts:973`** | **the test NAME, "syncs all 37 rules". Its assertions at 980, 1022 and 1038 were already pinned; its title was not** | 39 |
-| **`packages/engine/src/proposals.ts:34`** | **a DERIVED total: "24 of the 37 published rules omit `output.disposition`", which is the justification for the default-disposition table** | 24 of 39 |
+| File                                      | What it states                                                                                                                              | New value |
+| ----------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------- | --------- |
+| `docs/ARCHITECTURE.md:312`                | boot validation, "33 rules + 4 advisories present"                                                                                          | 35 + 4    |
+| `docs/PRD.md:143`                         | "`rules/nyc-rules.v2.8.json`: 33 rules + 4 advisories"                                                                                      | 35 + 4    |
+| **`docs/PRD.md:244`**                     | **a SECOND occurrence, in the Rules Engine bullet: "(33 rules + 4 advisories)"**                                                            | 35 + 4    |
+| `docs/ROADMAP.md:12`                      | the ratification line, "33 rules + 4 advisories"                                                                                            | 35 + 4    |
+| `specs/F-201-permit-plan-generator.md:31` | Acceptance Criterion 6, boot validation, "33 rules + 4 advisories"                                                                          | 35 + 4    |
+| **`apps/api/src/ruleset.ts:617`**         | **"37 boot-time rows", the sizing statement behind the per-row insert decision**                                                            | 39        |
+| **`apps/api/src/ruleset.test.ts:973`**    | **the test NAME, "syncs all 37 rules". Its assertions at 980, 1022 and 1038 were already pinned; its title was not**                        | 39        |
+| **`packages/engine/src/proposals.ts:34`** | **a DERIVED total: "24 of the 37 published rules omit `output.disposition`", which is the justification for the default-disposition table** | 24 of 39  |
 
 **`docs/DESIGN.md:7` states the same "33 rules + 4 advisories" and MUST NOT MOVE**, which is the
 distinction this table got wrong until round 12. It attributes that count to **`nyc.v2.1`**, the
@@ -1132,15 +1134,15 @@ version retarget.** The seventh was found by re-running the test over comments n
 Acceptance Criterion 8 moves rather than only those naming the file path, which is the same widening the
 count sweep needed:
 
-| File | What it states | Why it moves |
-| --- | --- | --- |
-| `packages/engine/src/intake/registry.ts:3` | the file "owns the field list, the enums, and the asked-when conditions" | the engine's contract documentation naming its authority |
-| `packages/engine/src/proposals.ts:17` | the file "is published and immutable", which is why that module exists | asserts which artifact is currently published |
-| `apps/web/app/verification-copy.ts:3` | the string is "mandated, not chosen", by the legend in that file | the live mandate for a shipped string |
-| `apps/web/app/plan/plan-line.tsx:201` | the rendering rule, cited to "(published legend, `rules/nyc-rules.v2.8.json`)" | the live authority for a rendering decision |
-| `apps/web/app/verification-copy-prose.test.ts:95` | "the formulation the published legend uses, in" that file | the citation behind the pattern the guard enforces |
-| `apps/web/app/verification-copy.test.ts:12` | that file "calls it" the quoted legend text | the citation behind a live assertion about the current legend |
-| **`apps/api/src/ruleset.ts:55-60`** | **`EXPECTED_RULESET_VERSION` "deliberately still names nyc.v2.8", and illustrates the guard with "a bump that publishes v2.9 without updating that constant"** | **Acceptance Criterion 8 moves that constant, so the sentence is false the moment the commit lands, and its illustration becomes the current version** |
+| File                                              | What it states                                                                                                                                                 | Why it moves                                                                                                                                           |
+| ------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `packages/engine/src/intake/registry.ts:3`        | the file "owns the field list, the enums, and the asked-when conditions"                                                                                       | the engine's contract documentation naming its authority                                                                                               |
+| `packages/engine/src/proposals.ts:17`             | the file "is published and immutable", which is why that module exists                                                                                         | asserts which artifact is currently published                                                                                                          |
+| `apps/web/app/verification-copy.ts:3`             | the string is "mandated, not chosen", by the legend in that file                                                                                               | the live mandate for a shipped string                                                                                                                  |
+| `apps/web/app/plan/plan-line.tsx:201`             | the rendering rule, cited to "(published legend, `rules/nyc-rules.v2.8.json`)"                                                                                 | the live authority for a rendering decision                                                                                                            |
+| `apps/web/app/verification-copy-prose.test.ts:95` | "the formulation the published legend uses, in" that file                                                                                                      | the citation behind the pattern the guard enforces                                                                                                     |
+| `apps/web/app/verification-copy.test.ts:12`       | that file "calls it" the quoted legend text                                                                                                                    | the citation behind a live assertion about the current legend                                                                                          |
+| **`apps/api/src/ruleset.ts:55-60`**               | **`EXPECTED_RULESET_VERSION` "deliberately still names nyc.v2.8", and illustrates the guard with "a bump that publishes v2.9 without updating that constant"** | **Acceptance Criterion 8 moves that constant, so the sentence is false the moment the commit lands, and its illustration becomes the current version** |
 
 **The footprint consequence, named rather than absorbed:** four of the seven are in `apps/web`, a lane
 this feature otherwise does not touch, two are in `packages/engine`, and the seventh is in
@@ -1199,33 +1201,33 @@ advisory count assertions, and for assertions over a complete set of published i
 
 **Moves whenever the ruleset VERSION changes:**
 
-| File | Line | Pin |
-| --- | --- | --- |
-| `apps/api/src/ruleset.ts` | 32 | `EXPECTED_RULESET_VERSION` |
-| `apps/api/src/ruleset.test.ts` | 75, 112 | asserted version, and a fixture carrying it |
-| `apps/api/src/ruleset.test.ts` | 76 | **`snapshotDate`. UNCONDITIONAL: rollout item 1 advances the date, so this pin always moves** |
-| `apps/api/src/plan.test.ts` | 127 | `rulesetVersion` on the plan response |
-| `packages/engine/src/engine.test.ts` | 972 | asserted version |
-| `apps/api/src/ruleset.ts` | 324 | the version inside the offset diagnostic message, per the sweep below |
+| File                                 | Line    | Pin                                                                                           |
+| ------------------------------------ | ------- | --------------------------------------------------------------------------------------------- |
+| `apps/api/src/ruleset.ts`            | 32      | `EXPECTED_RULESET_VERSION`                                                                    |
+| `apps/api/src/ruleset.test.ts`       | 75, 112 | asserted version, and a fixture carrying it                                                   |
+| `apps/api/src/ruleset.test.ts`       | 76      | **`snapshotDate`. UNCONDITIONAL: rollout item 1 advances the date, so this pin always moves** |
+| `apps/api/src/plan.test.ts`          | 127     | `rulesetVersion` on the plan response                                                         |
+| `packages/engine/src/engine.test.ts` | 972     | asserted version                                                                              |
+| `apps/api/src/ruleset.ts`            | 324     | the version inside the offset diagnostic message, per the sweep below                         |
 
 **Moves whenever a RULE is added:**
 
-| File | Line | Pin |
-| --- | --- | --- |
-| `apps/api/src/ruleset.ts` | 33 | `EXPECTED_RULE_COUNT` (33) |
-| `apps/api/src/ruleset.test.ts` | 78 | `rules` length (33) |
-| `apps/api/src/ruleset.test.ts` | 368 to 370 | the `/expected 33 rules/` error expectation |
-| `apps/api/src/ruleset.test.ts` | 980, 1022, 1038 | `permit_rules` row count (37, rules plus advisories) |
-| `packages/engine/src/engine.test.ts` | 974 | merged `rules` length (37) |
+| File                                 | Line            | Pin                                                  |
+| ------------------------------------ | --------------- | ---------------------------------------------------- |
+| `apps/api/src/ruleset.ts`            | 33              | `EXPECTED_RULE_COUNT` (33)                           |
+| `apps/api/src/ruleset.test.ts`       | 78              | `rules` length (33)                                  |
+| `apps/api/src/ruleset.test.ts`       | 368 to 370      | the `/expected 33 rules/` error expectation          |
+| `apps/api/src/ruleset.test.ts`       | 980, 1022, 1038 | `permit_rules` row count (37, rules plus advisories) |
+| `packages/engine/src/engine.test.ts` | 974             | merged `rules` length (37)                           |
 
 **Moves whenever a scenario's FINDINGS change:**
 
-| File | Pin |
-| --- | --- |
-| `packages/engine/src/acceptance.test.ts` | hard-coded finding sets per scenario |
-| `packages/engine/src/fixture-ruleset-agreement.test.ts` | published rules against the answer key |
-| `apps/api/src/plan.test.ts`, `apps/api/src/rules-snapshot.test.ts` | fixture expectations pinning plan output |
-| `apps/api/src/checklist.test.ts` | complete per-scenario `ruleIds` lists, e.g. Scenario A at line 392 |
+| File                                                               | Pin                                                                |
+| ------------------------------------------------------------------ | ------------------------------------------------------------------ |
+| `packages/engine/src/acceptance.test.ts`                           | hard-coded finding sets per scenario                               |
+| `packages/engine/src/fixture-ruleset-agreement.test.ts`            | published rules against the answer key                             |
+| `apps/api/src/plan.test.ts`, `apps/api/src/rules-snapshot.test.ts` | fixture expectations pinning plan output                           |
+| `apps/api/src/checklist.test.ts`                                   | complete per-scenario `ruleIds` lists, e.g. Scenario A at line 392 |
 
 **Every conditional row audited, because the `snapshotDate` one had gone stale against Acceptance
 Criterion 8 and a condition nobody re-reads is how that happens.** The `snapshotDate` row said it moves
@@ -1234,13 +1236,13 @@ date and false the moment rollout item 1 advanced it. An implementer following t
 published the next ruleset with the test and the F-206 banner still pinned to July 26. It is now in the
 unconditional table above. The rest:
 
-| Row | Condition it carried | Resolved |
-| --- | --- | --- |
-| `ruleset.test.ts:76` `snapshotDate` | "only if the publication re-fetches a source" | **WRONG, removed.** Rollout item 1 advances `snapshot_date`, so it always moves |
-| `ruleset.test.ts:77` `intakeFields` at 33 | "this feature adds no field" | **SETTLED by the route 1 decision: it does not move.** It was live for one round, because route 2 would have added a field and moved this pin, an `events` column and the registry. Route 1 adds none, so the count stays 33. **This is the ONLY number in this document that the decision changes** |
-| `EXPECTED_ADVISORY_COUNT` | "only for a new advisory" | **settled false.** Both rules are `kind: note` and live in `rules`, not in `advisories` |
-| `EXPECTED_SCHEMA` | "only for a schema change" | settled false; the feature publishes rules, not a schema change |
-| `apps/api/src/checklist.test.ts` | "depends on which scenarios the new rule reaches" | **settled: it does not move.** Only Scenarios A and C are materialized into checklists in that suite, 40 cases on A and one on C, and neither reaches the gate. It stays in the footprint so a new fixture's checklist case is not blocked |
+| Row                                       | Condition it carried                              | Resolved                                                                                                                                                                                                                                                                                             |
+| ----------------------------------------- | ------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `ruleset.test.ts:76` `snapshotDate`       | "only if the publication re-fetches a source"     | **WRONG, removed.** Rollout item 1 advances `snapshot_date`, so it always moves                                                                                                                                                                                                                      |
+| `ruleset.test.ts:77` `intakeFields` at 33 | "this feature adds no field"                      | **SETTLED by the route 1 decision: it does not move.** It was live for one round, because route 2 would have added a field and moved this pin, an `events` column and the registry. Route 1 adds none, so the count stays 33. **This is the ONLY number in this document that the decision changes** |
+| `EXPECTED_ADVISORY_COUNT`                 | "only for a new advisory"                         | **settled false.** Both rules are `kind: note` and live in `rules`, not in `advisories`                                                                                                                                                                                                              |
+| `EXPECTED_SCHEMA`                         | "only for a schema change"                        | settled false; the feature publishes rules, not a schema change                                                                                                                                                                                                                                      |
+| `apps/api/src/checklist.test.ts`          | "depends on which scenarios the new rule reaches" | **settled: it does not move.** Only Scenarios A and C are materialized into checklists in that suite, 40 cases on A and one on C, and neither reaches the gate. It stays in the footprint so a new fixture's checklist case is not blocked                                                           |
 
 The `checklist.test.ts` resolution needed one more fact than round 3 had, and it is worth stating
 because it cuts the other way from the obvious reading: `contextItems` pins complete rule-id lists too,
@@ -1306,6 +1308,7 @@ Rollout is one change or none. In it:
    `check-baseline-drift.mjs` nor `schema-contract.test.ts` asserts them. So all three ship stale in
    silence, which is this document's own recurring class: a claim in a published artifact that reads
    as verified and is not.
+
 2. `EXPECTED_RULESET_VERSION` and `EXPECTED_RULE_COUNT` moved.
 3. The `venue_has_assembly_approval` entry removed from `UNCONSUMED_INTAKE_FIELDS`, and **only**
    that entry: `food_affinity_private_exception_claimed` stays, because no rule in this feature
@@ -1409,6 +1412,7 @@ of work are already promised the next ruleset version, and a fourth wants a publ
    named confirmation for it is regulatory publication, so it is the product owner's approval under
    `docs/DOCUMENTATION-GOVERNANCE.md` §6, and that is the whole requirement even where the product
    owner authored it.
+
 4. **DEPENDENCY. DOB-ASSEMBLY-001's coverage confirmation is unimplemented**, and its note records that
    it blocks F-102 Acceptance Criterion 6. That criterion is another feature's and this footprint
    excludes it, per the UI section: this feature produces the data it would render and does not render
@@ -1451,27 +1455,27 @@ of work are already promised the next ruleset version, and a fourth wants a publ
     below.
 15. ~~Round 8's rule-id defect.~~ **RESOLVED, record.** Review history below.
 16. ~~Round 10's two measured-against-scope claims.~~ **RESOLVED, record.** Review history below.
-19. ~~Round 11's four applied findings.~~ **RESOLVED, record.** Review history below. The fifth,
+17. ~~Round 11's four applied findings.~~ **RESOLVED, record.** Review history below. The fifth,
     the collision on the next ruleset version, is blocker 18 above and is open.
 
-17. **PREREQUISITE, product owner. Section structure diverges from the house shape,
+18. **PREREQUISITE, product owner. Section structure diverges from the house shape,
     deliberately.** No PROPOSED spec exists in
-   this repository to match: all twelve specs under `specs/` are APPROVED and use a shorter
-   structure (User Story, Inputs, Outputs, Acceptance Criteria, Edge Cases, Scenarios Exercised).
-   This spec follows the fuller structure it was briefed with and keys its criteria `F-1NN-AC-0N`,
-   a format no existing spec uses; existing specs number criteria plainly and cross-reference them
-   as "Acceptance Criterion N". Whether new specs adopt this structure, or this one is reshaped to
-   match the twelve, is the product owner's call.
+    this repository to match: all twelve specs under `specs/` are APPROVED and use a shorter
+    structure (User Story, Inputs, Outputs, Acceptance Criteria, Edge Cases, Scenarios Exercised).
+    This spec follows the fuller structure it was briefed with and keys its criteria `F-1NN-AC-0N`,
+    a format no existing spec uses; existing specs number criteria plainly and cross-reference them
+    as "Acceptance Criterion N". Whether new specs adopt this structure, or this one is reshaped to
+    match the twelve, is the product owner's call.
 
-18. **PREREQUISITE, and it is a SCHEDULING DECISION ACROSS LANES rather than this spec's to take. THE
+19. **PREREQUISITE, and it is a SCHEDULING DECISION ACROSS LANES rather than this spec's to take. THE
     NEXT RULESET VERSION IS ALREADY PROMISED TO OTHER WORK.** This rollout publishes `v<next>`, which by
     convention is nyc.v2.9, and includes none of the following:
 
-    | Claim on v2.9 | Where it is recorded | What it changes |
-    | --- | --- | --- |
-    | the engine-conventions move for `proposals.ts` §7 | `packages/engine/src/proposals.ts:16-18`: the move "lands in a v2.9 publication, because `rules/nyc-rules.v2.8.json` is published and immutable" | moves engine-side contracts into the ruleset's `engine_conventions` |
-    | `DOB-ASSEMBLY-001`'s source re-attribution | `docs/VERIFICATION-SOURCES.md:339`, the "v2.9 follow-up flag", and F-202's APPROVED status, which records that the planned publication "edits `deadline.qualification`" | corrects an attribution the repository already records as sitting on the wrong Table 28-112.8 row |
-    | this feature's two rules | the rollout above | consumes the version, and would retain that attribution |
+    | Claim on v2.9                                     | Where it is recorded                                                                                                                                                    | What it changes                                                                                   |
+    | ------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------- |
+    | the engine-conventions move for `proposals.ts` §7 | `packages/engine/src/proposals.ts:16-18`: the move "lands in a v2.9 publication, because `rules/nyc-rules.v2.8.json` is published and immutable"                        | moves engine-side contracts into the ruleset's `engine_conventions`                               |
+    | `DOB-ASSEMBLY-001`'s source re-attribution        | `docs/VERIFICATION-SOURCES.md:339`, the "v2.9 follow-up flag", and F-202's APPROVED status, which records that the planned publication "edits `deadline.qualification`" | corrects an attribution the repository already records as sitting on the wrong Table 28-112.8 row |
+    | this feature's two rules                          | the rollout above                                                                                                                                                       | consumes the version, and would retain that attribution                                           |
 
     **A fourth wants a publication too, and I have not seen it stated beside the other three.** The
     advisory reconciliation says in as many words that "Both outcomes require a publication. These are
@@ -1630,51 +1634,51 @@ approval.**
     the deleted file owns the field list, the enums and the `asked_when` conditions.
 
 **Round 11.** **Applied four findings and opened one blocker.** The blocker is the collision on the next
-    ruleset version, which is entry 18 and is not this spec's to resolve. The four: the count sweep was
-    re-run for rules, advisories, fields and derived totals rather than scenarios alone, which found four
-    more live contracts including `proposals.ts`'s "24 of the 37", where only the denominator moves; the
-    category 4a test was re-run over comments naming a CONSTANT that Acceptance Criterion 8 moves rather
-    than only the file path, which found a seventh; the blocker list was gating approval on this
-    document's own corrections and on work it excludes, so entries are tagged PREREQUISITE, DEPENDENCY or
-    RESOLVED and the numbering is frozen because the body and the review threads cite it; and the primary
-    `yes` output would have shipped three copies of one confirmation instruction, of which the one inside
-    this footprint is removed and the underlying double-render is reported and left.
+ruleset version, which is entry 18 and is not this spec's to resolve. The four: the count sweep was
+re-run for rules, advisories, fields and derived totals rather than scenarios alone, which found four
+more live contracts including `proposals.ts`'s "24 of the 37", where only the denominator moves; the
+category 4a test was re-run over comments naming a CONSTANT that Acceptance Criterion 8 moves rather
+than only the file path, which found a seventh; the blocker list was gating approval on this
+document's own corrections and on work it excludes, so entries are tagged PREREQUISITE, DEPENDENCY or
+RESOLVED and the numbering is frozen because the body and the review threads cite it; and the primary
+`yes` output would have shipped three copies of one confirmation instruction, of which the one inside
+this footprint is removed and the underlying double-render is reported and left.
 
 **Round 12.** **Applied five findings, two of which put a gate on approval that the body had only
-    described.** Round 11 made approval gating explicit and precise, and precision exposed two things
-    that should gate approval and were not tagged: the choice of route for covering the explicit-`no`
-    path, which left BOTH routes specified in an approvable document and two implementers reading the
-    same approved text doing materially different work, and the assignment of an owner and an approver,
-    which left the lane unowned at APPROVED. Both are now PREREQUISITE entries, 20 and 21, and neither
-    decides the question it gates: the route preference is still a preference with its condition
-    attached, and both options stay specified. The third finding is the same class as rounds 2, 4 and 9
-    and is the reason the sweep unit changed again: the affirmative reduction claim those rounds removed
-    from rendered output had survived in the ruleset's `provenance` string, which is published
-    regulatory prose that nothing renders, so the sweep now runs over what the change PUBLISHES and each
-    of the six such strings is recorded with its verdict. Two ambiguous restatements of the same
-    prohibition, one in the emission table and one in the field-by-field pin, are rewritten as
-    prohibitions rather than as claims. The last two are sweep-scope failures of the same shape: the
-    scenario-count sweep had been run over directory lists rather than the repository root and missed
-    three live requirements, `docs/ROADMAP.md:17`'s Phase 1 gate and two statements in
-    `docs/ARCHITECTURE.md`, taking that list from eleven to fourteen; and the count sweep had been
-    replacing numbers without asking whether each describes the CURRENT artifact or a named past version,
-    which would have rewritten `docs/DESIGN.md:7`'s record of what `nyc.v2.1` contained. Eight of the
-    nine count statements move and that one does not.
+described.** Round 11 made approval gating explicit and precise, and precision exposed two things
+that should gate approval and were not tagged: the choice of route for covering the explicit-`no`
+path, which left BOTH routes specified in an approvable document and two implementers reading the
+same approved text doing materially different work, and the assignment of an owner and an approver,
+which left the lane unowned at APPROVED. Both are now PREREQUISITE entries, 20 and 21, and neither
+decides the question it gates: the route preference is still a preference with its condition
+attached, and both options stay specified. The third finding is the same class as rounds 2, 4 and 9
+and is the reason the sweep unit changed again: the affirmative reduction claim those rounds removed
+from rendered output had survived in the ruleset's `provenance` string, which is published
+regulatory prose that nothing renders, so the sweep now runs over what the change PUBLISHES and each
+of the six such strings is recorded with its verdict. Two ambiguous restatements of the same
+prohibition, one in the emission table and one in the field-by-field pin, are rewritten as
+prohibitions rather than as claims. The last two are sweep-scope failures of the same shape: the
+scenario-count sweep had been run over directory lists rather than the repository root and missed
+three live requirements, `docs/ROADMAP.md:17`'s Phase 1 gate and two statements in
+`docs/ARCHITECTURE.md`, taking that list from eleven to fourteen; and the count sweep had been
+replacing numbers without asking whether each describes the CURRENT artifact or a named past version,
+which would have rewritten `docs/DESIGN.md:7`'s record of what `nyc.v2.1` contained. Eight of the
+nine count statements move and that one does not.
 
 **Round 13.** **No review findings; a challenge to one of this document's own claims, and a rebase.**
-    Round 12 reported two stale version pointers in `docs/DESIGN.md` and cited them by line number. The
-    citation was challenged on the ground that those lines say something else, which is the right
-    challenge to make of a document whose subject is stale references. Re-checked against `origin/main`
-    rather than against a worktree: **both sentences are present and both name `nyc.v2.5`**, and the
-    reason a line-number check missed them is that each sits at the END of a long line whose beginning
-    says something else and correct. The finding stands and its citation does not, so it is restated by
-    content, which is what this document already required of every other citation and had not applied to
-    its own. The same current-versus-historical test was then run over that file's version pointers
-    rather than only its counts: seven pointers, six naming the current artifact and one a past version
-    as history, and the two stale ones are a partial retarget rather than an old document. The branch
-    also rebased twenty-six commits onto main, which landed PRs #170, #177, #182 and #183 underneath it
-    and moved three numbers this document states: the version mentions in `check-baseline-drift.mjs`, the
-    count of files under `docs/proposals/` naming a version, and the number of v2.9 hypotheticals, whose
-    line-number citations had all shifted within a day of being written. All three are re-derived against
-    the rebased tree, and the reconciliation that wanted the next ruleset version is now a merged
-    document on main rather than a pending PR.
+Round 12 reported two stale version pointers in `docs/DESIGN.md` and cited them by line number. The
+citation was challenged on the ground that those lines say something else, which is the right
+challenge to make of a document whose subject is stale references. Re-checked against `origin/main`
+rather than against a worktree: **both sentences are present and both name `nyc.v2.5`**, and the
+reason a line-number check missed them is that each sits at the END of a long line whose beginning
+says something else and correct. The finding stands and its citation does not, so it is restated by
+content, which is what this document already required of every other citation and had not applied to
+its own. The same current-versus-historical test was then run over that file's version pointers
+rather than only its counts: seven pointers, six naming the current artifact and one a past version
+as history, and the two stale ones are a partial retarget rather than an old document. The branch
+also rebased twenty-six commits onto main, which landed PRs #170, #177, #182 and #183 underneath it
+and moved three numbers this document states: the version mentions in `check-baseline-drift.mjs`, the
+count of files under `docs/proposals/` naming a version, and the number of v2.9 hypotheticals, whose
+line-number citations had all shifted within a day of being written. All three are re-derived against
+the rebased tree, and the reconciliation that wanted the next ruleset version is now a merged
+document on main rather than a pending PR.

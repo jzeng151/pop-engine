@@ -2284,6 +2284,67 @@ describe("F-102 · CONDITIONAL branch table and INFEASIBLE rescope ladder", () =
     expect(blocker.textContent).toContain("Tall structure permit");
   });
 
+  /**
+   * #252 review: THE TWO SHAPES THE EARLIER BRANCHES CALLED DISAGREEMENT.
+   *
+   * `barred` counts `prohibited_or_ineligible` exactly and `hedged` counts `may_be_required`
+   * exactly, so a list holding neither fell to the mixed sentence and asserted that the findings
+   * "differ in what they publish". A list of resolved advisory routes does not differ, and a list
+   * whose dispositions the plan does not record is not a claim the page can make at all.
+   *
+   * Copy approved by the product owner on 2026-08-10 and recorded in `docs/BASELINE.md`; the
+   * section is stated in `specs/F-102-feasibility-verdict.md`.
+   */
+  it("describes a missed list that publishes no filing, and one it cannot read", async () => {
+    const cases = [
+      {
+        findings: [
+          finding({
+            ruleIds: ["ADV-VENUE-OCCUPANCY-001"],
+            name: "Venue occupancy advisory",
+            disposition: "advisory",
+            deadlineStatus: "published_deadline_missed",
+            latestApplyDate: "2026-07-13",
+          }),
+          finding({
+            ruleIds: ["PARKS-INSURANCE-NOTE-001"],
+            name: "Parks insurance note",
+            disposition: "no_new_requirement",
+            deadlineStatus: "published_deadline_missed",
+            latestApplyDate: "2026-07-13",
+          }),
+        ],
+        missedRuleIds: ["ADV-VENUE-OCCUPANCY-001", "PARKS-INSURANCE-NOTE-001"],
+        says: "publish no filing of their own",
+      },
+      {
+        // A replayed or rescoped plan: the missed rule is no longer among the findings, so the
+        // page holds no disposition for it.
+        findings: [],
+        missedRuleIds: ["SAPO-STREET-LARGE-001"],
+        says: "does not record what each of them publishes",
+      },
+    ];
+    for (const { findings, missedRuleIds, says } of cases) {
+      cleanup();
+      stubApi(
+        plan({
+          verdict: "CONDITIONAL",
+          findings,
+          verdictDetail: { ...emptyVerdictDetail, missedRuleIds },
+        }),
+      );
+      renderPlan();
+      await screen.findByTestId("verdict-detail");
+
+      const section = screen.getByTestId("missed-may-be-required");
+      expect(section.textContent).toContain(says);
+      // NOT VACUOUS: the mixed sentence is what both of these rendered before, and neither list
+      // disagrees with itself.
+      expect(section.textContent).not.toContain("differ in what they publish");
+    }
+  });
+
   it("explains a conditional miss on may-be-required published windows", async () => {
     stubApi(
       plan({
@@ -2307,7 +2368,9 @@ describe("F-102 · CONDITIONAL branch table and INFEASIBLE rescope ladder", () =
     await screen.findByTestId("verdict-detail");
 
     const section = screen.getByTestId("missed-may-be-required");
-    expect(section.textContent).toContain("past only if the requirement applies");
+    // The heading states the section's subject and the lede carries the conditionality, which is
+    // where it is branched (product owner, 2026-08-10).
+    expect(section.textContent).toContain("Published windows that are past");
     expect(section.textContent).toContain("may-be-required");
     expect(section.textContent).toContain("keeps the verdict conditional");
     expect(section.textContent).toContain("Organizer notification to DOHMH");

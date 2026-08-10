@@ -86,3 +86,38 @@ The design is `docs/proposals/dedupe-route-list.md` (APPROVED 2026-08-08). What 
 - **Edge Case "Only NOT_APPLICABLE/NOT_CALCULABLE deadlines → CONDITIONAL if material unknowns exist, else FEASIBLE with an explicit 'no dated deadlines identified' note".** Amended: "every deadline" is asked of every route, not of every merged line. A line whose binding route publishes no window reads `not_applicable` while another route on the same line publishes a dated one, so read off the line alone this note printed over a plan that shows a date.
 - **The check stays CONJUNCTIVE while the disposition merge is disjunctive, and that is deliberate.** A group blocks if ANY route's published window is missed, so a group can read INFEASIBLE while one of its routes is still open. Nothing published says that filing under one route cures another's missed date: a `dedupe_key` says two rules describe one requirement, not that the agency accepts either filing interchangeably. Reading it disjunctively would assert that equivalence, which is inventing an exception, and would make a verdict depend on whether two rules share a key.
 - **The residual this amendment recorded is closed, and this says so rather than leaving it standing.** It said a closed route whose OWN disposition is `prohibited_or_ineligible` reads CONDITIONAL rather than INFEASIBLE, because `computeWindowVerdict()` selected its blocking finding from missed routes whose disposition is exactly `required`. That was true when the amendment was written and is not true now: the 2026-08-08 amendment to AC 10 above, shipped as PR #254 and merged as `91a1894b`, widened the filter from that equality to the at-or-above bar AC 10 states, and `blocksWhenMissed()` (`packages/engine/src/verdict.ts`) compares `DISPOSITION_STRENGTH.indexOf(route.disposition)` against `BLOCKING_DISPOSITION_FLOOR` with `>=`. A route whose own disposition is `prohibited_or_ineligible`, whose own trigger resolved, and whose published window has closed therefore reads INFEASIBLE, which `packages/engine/src/engine.test.ts` pins as "blocks on a barred route whose own trigger resolved and whose window has closed" beside the unresolved-trigger case that still waits. This amendment adds no residual of its own.
+
+## Amendment (SIGNED 2026-08-10): the conditional missed-window panel, stated whole
+
+**Status: APPROVED 2026-08-10 by the product owner, and part of this spec's approved baseline.** It amends the Outputs table's CONDITIONAL detail on the "Product scope, feature meaning, phase" row of `docs/DOCUMENTATION-GOVERNANCE.md` §6, and the copy it states is regulatory content under the first row of that table. It asserts no regulatory fact: no rule, trigger, threshold, deadline, fee, agency, portal, exception or verification status changes, no verdict changes rank or meaning, and every disposition the panel prints is some contributing rule's own published value. The decision record is in `docs/BASELINE.md`.
+
+**Why the whole section and not only the new branches.** Three of the five sentences below were already shipping with no section of any artifact owning them. They went in under a product-owner instruction to branch the lede on the dispositions actually listed rather than assert one over them, and were never written down. That is the same gap that let a route-entry label ship unowned, so this amendment states all five. The three existing sentences are recorded EXACTLY as they render and are unchanged by this amendment; they are written down here, not decided here.
+
+**The section.** Under CONDITIONAL, where `verdictDetail.missedRuleIds` is non-empty, the panel renders one section listing every route whose own published window has closed, each with the disposition its own rule publishes printed beside it. `required` is unreachable in this list and that is a property of the engine rather than a copy decision: a `required` rule whose trigger resolved and whose window closed makes the verdict INFEASIBLE, and one whose trigger came back `unknown` is demoted to `may_be_required`.
+
+**The heading (AMENDED).**
+
+> Published windows that are past
+
+It previously read "Published windows that are past only if the requirement applies". That is false of a route whose own trigger resolved and whose rule publishes no requirement to apply, which is exactly the fourth branch below. The conditionality is the lede's, where it is branched per shape.
+
+**The lede, branched on what the list actually holds.** Every branch is exhaustive over the list; the fifth is the fallback.
+
+1. **Every listed route is `may_be_required` (EXISTING COPY, recorded unchanged).**
+   > These findings carry a may-be-required disposition, so a passed published date keeps the verdict conditional rather than treating the window as a definitive miss.
+2. **Every listed route is `prohibited_or_ineligible` (EXISTING COPY, recorded unchanged).**
+   > The findings below publish a prohibition or an ineligibility, and their own triggers are unresolved, so a passed published date keeps the verdict conditional rather than closing the plan. The bar stands as each rule publishes it.
+3. **Every listed route is `advisory` or `no_new_requirement` (NEW).**
+   > The findings below publish no filing of their own, and their published windows are past. Each keeps the disposition its own rule publishes, printed beside it.
+4. **The plan records no disposition for any listed route (NEW).** Reachable on a replayed or rescoped plan whose line is no longer among the plan's own findings.
+   > The findings below have published windows that are past. This plan does not record what each of them publishes, so nothing here states it.
+5. **Anything else, which is a genuinely mixed list (EXISTING COPY, recorded unchanged).**
+   > The findings below differ in what they publish, and a passed published date settles none of them: it keeps the verdict conditional rather than treating the window as a definitive miss. Each keeps the disposition its own rule publishes, printed beside it.
+
+Each branch is followed by the unchanged sentence "Each finding below states its own published date and qualification on the plan line."
+
+**The shared phrase.** "Publishes no filing of its own" is the vocabulary for a dated route outside the filing dispositions, chosen so that this surface and any other saying the same thing say it in the same words. It names no disposition the ruleset does not use, and the humanized disposition token still renders beside each entry.
+
+**Reachability, measured rather than assumed.** On `rules/nyc-rules.v2.11.json` no `advisory` or `no_new_requirement` rule publishes a deadline, so branch 3 is unreachable on the published ruleset and arises on the proposed draft and in fixtures. Branch 4 is reachable today. That bounds the harm of the sentences the three earlier branches produced for those shapes; it does not make them true, which is why they are amended rather than left.
+
+**This amendment adds no residual.**

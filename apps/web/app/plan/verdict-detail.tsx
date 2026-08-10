@@ -477,11 +477,22 @@ function MissedMayBeRequiredSection({
   // advisory (#252 review). Anything that is neither takes the mixed sentence, which names no
   // disposition and says each keeps its own.
   const hedged = missed.filter((entry) => entry.disposition === "may_be_required");
+  // The two shapes the three earlier branches described as disagreement. `nonFiling` is a list
+  // whose every member publishes no filing of its own, and `unrecorded` one whose members'
+  // dispositions this plan does not hold at all — a replayed or rescoped plan whose line is no
+  // longer among the findings. Neither is a disagreement, and one of them is not even a claim.
+  const nonFiling = missed.filter(
+    (entry) => entry.disposition === "advisory" || entry.disposition === "no_new_requirement",
+  );
+  const unrecorded = missed.filter((entry) => entry.disposition === null);
   return (
     <section className="verdict-detail__missed-conditional" data-testid="missed-may-be-required">
-      <h2 className="verdict-detail__section-title">
-        Published windows that are past only if the requirement applies
-      </h2>
+      {/* THE HEADING STATES THE SECTION'S SUBJECT, and the conditionality is the lede's, where it is
+          already branched. "past only if the requirement applies" is false of a route whose own
+          trigger resolved and whose rule publishes no requirement to apply, which is the whole of
+          the fourth branch below (product owner, 2026-08-10; `specs/F-102-feasibility-verdict.md`
+          Amendment section, and `docs/BASELINE.md`). */}
+      <h2 className="verdict-detail__section-title">Published windows that are past</h2>
       <p className="verdict-detail__lede">
         {/* BRANCHED ON THE DISPOSITIONS ACTUALLY LISTED, not asserted over them. The sentence said
             every finding below carries a may-be-required disposition, and the list two lines down
@@ -499,7 +510,11 @@ function MissedMayBeRequiredSection({
           ? "These findings carry a may-be-required disposition, so a passed published date keeps the verdict conditional rather than treating the window as a definitive miss."
           : hedged.length === 0 && barred.length === missed.length
             ? "The findings below publish a prohibition or an ineligibility, and their own triggers are unresolved, so a passed published date keeps the verdict conditional rather than closing the plan. The bar stands as each rule publishes it."
-            : "The findings below differ in what they publish, and a passed published date settles none of them: it keeps the verdict conditional rather than treating the window as a definitive miss. Each keeps the disposition its own rule publishes, printed beside it."}{" "}
+            : nonFiling.length === missed.length
+              ? "The findings below publish no filing of their own, and their published windows are past. Each keeps the disposition its own rule publishes, printed beside it."
+              : unrecorded.length === missed.length
+                ? "The findings below have published windows that are past. This plan does not record what each of them publishes, so nothing here states it."
+                : "The findings below differ in what they publish, and a passed published date settles none of them: it keeps the verdict conditional rather than treating the window as a definitive miss. Each keeps the disposition its own rule publishes, printed beside it."}{" "}
         Each finding below states its own published date and qualification on the plan line.
       </p>
       <ul>

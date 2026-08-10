@@ -8,24 +8,24 @@ This file is the entry point for humans and coding agents. An artifact is implem
 
 ## Current reconciliation baseline
 
-| Concern | Artifact | Version/status | Approval | Checksum/commit |
-|---|---|---|---|---|
-| Product requirements | `docs/PRD.md` | Existing file: `SUPERSEDED_PENDING_REWRITE` because it describes `nyc.v1` | — | — |
-| Feature registry/phasing | `docs/ROADMAP.md` | `PROPOSED_PENDING_V2_RECONCILIATION` | — | — |
-| Delivery lanes/gates/demo | `docs/DESIGN.md` | `SUPERSEDED_PENDING_REWRITE` | — | — |
-| Technical architecture | `docs/ARCHITECTURE.md` | Use reconciled proposal for review; not yet implementable | — | — |
-| Documentation governance | `docs/DOCUMENTATION-GOVERNANCE.md` | `PROPOSED` | — | — |
-| Agent instructions | `/AGENTS.md` | `PROPOSED` | — | — |
-| Open questions | `docs/OPEN-QUESTIONS.md` | Existing v1 register: `ARCHIVED_PENDING_V2_REGISTER` | — | — |
-| Regulatory research dossier | `docs/archive/v1/VERIFICATION-SOURCES.md` | `ARCHIVED_MIGRATION_EVIDENCE` | — | — |
-| Rules schema | `rules/schemas/ruleset.v2.schema.json` | `MISSING_BLOCKER` | — | — |
-| Event Input schema | `contracts/event-input.v2.schema.json` | `MISSING_BLOCKER` | — | — |
-| NYC rules content | `rules/published/nyc.v2.json` | Supplied content: `PROPOSED_PENDING_SCHEMA_AND_REVIEW` | — | — |
-| Regulatory scenarios | `docs/regulatory-scenarios.v2.md` | Supplied suite explicitly says `Draft` | — | — |
-| Executable fixtures | `rules/fixtures/v2/*.json` | `MISSING_BLOCKER` | — | — |
-| HTTP contract | `contracts/openapi.yaml` | `MISSING_BLOCKER` | — | — |
-| Database contract | migration head | `MISSING_BLOCKER` | — | — |
-| Phase 1 feature specs | `specs/F-101` through scheduled Phase 1 IDs | `MISSING_BLOCKER` | — | — |
+| Concern                     | Artifact                                    | Version/status                                                            | Approval | Checksum/commit |
+| --------------------------- | ------------------------------------------- | ------------------------------------------------------------------------- | -------- | --------------- |
+| Product requirements        | `docs/PRD.md`                               | Existing file: `SUPERSEDED_PENDING_REWRITE` because it describes `nyc.v1` | —        | —               |
+| Feature registry/phasing    | `docs/ROADMAP.md`                           | `PROPOSED_PENDING_V2_RECONCILIATION`                                      | —        | —               |
+| Delivery lanes/gates/demo   | `docs/DESIGN.md`                            | `SUPERSEDED_PENDING_REWRITE`                                              | —        | —               |
+| Technical architecture      | `docs/ARCHITECTURE.md`                      | Use reconciled proposal for review; not yet implementable                 | —        | —               |
+| Documentation governance    | `docs/DOCUMENTATION-GOVERNANCE.md`          | `PROPOSED`                                                                | —        | —               |
+| Agent instructions          | `/AGENTS.md`                                | `PROPOSED`                                                                | —        | —               |
+| Open questions              | `docs/OPEN-QUESTIONS.md`                    | Existing v1 register: `ARCHIVED_PENDING_V2_REGISTER`                      | —        | —               |
+| Regulatory research dossier | `docs/archive/v1/VERIFICATION-SOURCES.md`   | `ARCHIVED_MIGRATION_EVIDENCE`                                             | —        | —               |
+| Rules schema                | `rules/schemas/ruleset.v2.schema.json`      | `MISSING_BLOCKER`                                                         | —        | —               |
+| Event Input schema          | `contracts/event-input.v2.schema.json`      | `MISSING_BLOCKER`                                                         | —        | —               |
+| NYC rules content           | `rules/published/nyc.v2.json`               | Supplied content: `PROPOSED_PENDING_SCHEMA_AND_REVIEW`                    | —        | —               |
+| Regulatory scenarios        | `docs/regulatory-scenarios.v2.md`           | Supplied suite explicitly says `Draft`                                    | —        | —               |
+| Executable fixtures         | `rules/fixtures/v2/*.json`                  | `MISSING_BLOCKER`                                                         | —        | —               |
+| HTTP contract               | `contracts/openapi.yaml`                    | `MISSING_BLOCKER`                                                         | —        | —               |
+| Database contract           | migration head                              | `MISSING_BLOCKER`                                                         | —        | —               |
+| Phase 1 feature specs       | `specs/F-101` through scheduled Phase 1 IDs | `MISSING_BLOCKER`                                                         | —        | —               |
 
 ## Proposed version conventions
 
