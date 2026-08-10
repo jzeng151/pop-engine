@@ -1693,6 +1693,21 @@ function dependencyCopy(
  * answer key's verdict model and `specs/F-102`, and `apps/web/app/plan/verdict-copy.ts` already
  * renders it. Restating it differently here would put two vocabularies on one verdict.
  *
+ * THE BODY SENTENCES SAY NEITHER "SLACK" NOR "FEASIBLE-AT-RISK", and all three branches were
+ * rewritten together (product owner, 2026-08-10; recorded in `docs/BASELINE.md`). "Slack" is our
+ * internal word for the room left before a deadline and an organizer does not know it, and
+ * FEASIBLE-AT-RISK is a verdict CODE — `apps/web/app/plan/verdict-copy.ts` maps it to "At risk" and
+ * every other surface reads through that map, so this file was the one place the enum reached an
+ * organizer. Only the third branch was new; changing that one alone would have left one email
+ * speaking two ways, which is why the two already shipping changed with it. No artifact stated any
+ * of the three sentences, so none was amended: the only artifact-fixed string in this function is
+ * the ungated subject above, and it carries neither term.
+ *
+ * THE NUMBER STILL MEANS TWO DIFFERENT THINGS AND THE SENTENCES STILL SAY WHICH. The ungated one
+ * counts days to apply and names the date it counts from; the gated one describes a WIDTH and
+ * deliberately does not say "you have N days"; the third says the date needs no filing at all.
+ * Collapsing them into one sentence would restate the defect the paragraph above documents.
+ *
  * AND IT IS ANCHORED TO THE DATE IT WAS MEASURED FROM, which is the whole of the :851 fix. `N` is
  * frozen at plan generation, so a plan made with nine days of slack and converted eight days later
  * sent "apply within 9 days" while the filing date was tomorrow, contradicting the reminder
@@ -1720,6 +1735,15 @@ const slackWarningCopy = (
   evaluatedOn: string,
   /** Whether the requirement that PRODUCED this number waits on another agency's decision. */
   controllingIsGated: boolean,
+  /**
+   * Whether the requirement that produced this number publishes a filing at all.
+   *
+   * TIED THE SAME WAY `controllingIsGated` IS TIED, and in the same direction: true if ANY tied
+   * controller publishes a filing. The harm to avoid is withholding a filing instruction that is
+   * genuinely due, so a tie between a required route and an advisory one takes the filing copy;
+   * only a tie where NOTHING publishes a filing takes the third branch.
+   */
+  controllingPublishesFiling: boolean,
   /**
    * Every requirement whose slack IS this number, with what the ruleset says about each.
    *
@@ -1751,22 +1775,25 @@ const slackWarningCopy = (
   // ordinary filing deadline has a gated row AND an ungated controlling minimum, and the proxy
   // then called an ungated countdown a window width. The caller identifies the requirement that
   // produced the number and passes that, so one value decides every sentence here.
-  subject: controllingIsGated
-    ? `At risk — the narrowest filing window is ${minSlackDays} days wide`
-    : `At risk — apply within ${minSlackDays} days of ${evaluatedOn}`,
+  subject: !controllingPublishesFiling
+    ? `At risk — the narrowest published window is ${minSlackDays} days`
+    : controllingIsGated
+      ? `At risk — the narrowest filing window is ${minSlackDays} days wide`
+      : `At risk — apply within ${minSlackDays} days of ${evaluatedOn}`,
   body: [
     // THE FIRST LINE BRANCHES TOO, because it was contradicting the qualification below it. It
     // said the number was measured from the evaluation date while the next line said it was a
     // width, so the body disagreed with itself in exactly the case the qualification exists to
     // describe. A width is not measured from a date at all, so the gated sentence says what the
     // number is once rather than stating it wrongly and then correcting it.
-    controllingIsGated
-      ? `Your plan is FEASIBLE-AT-RISK: the narrowest slack across its dated requirements is ` +
-        `${minSlackDays} days. That requirement waits on another agency's decision, so the number ` +
-        `is the WIDTH of the window it can be filed in, not time remaining and not measured from ` +
-        `any date. Its own start and filing dates are on your checklist.`
-      : `Your plan is FEASIBLE-AT-RISK: the narrowest slack across its dated requirements is ` +
-        `${minSlackDays} days, measured from the plan's evaluation date ${evaluatedOn}.`,
+    !controllingPublishesFiling
+      ? `Your plan is at risk. The closest date on it is ${minSlackDays} days away. Nothing needs ` +
+        `to be filed for that one: it is a date the rule publishes, not a deadline to apply by.`
+      : controllingIsGated
+        ? `Your plan is at risk. The requirement with the least room can only be applied for ` +
+          `during a window ${minSlackDays} days wide.`
+        : `Your plan is at risk. Counting from ${evaluatedOn}, the requirement with the least ` +
+          `room leaves ${minSlackDays} days to apply.`,
     // THE THIRD BUILDER TO NEED THIS. AGENTS.md keeps the published verification states visible END
     // TO END and a notification is an end; reminders got it in round 7, dependency alerts in round
     // 10, and this one published a risk and a number while saying nothing about the status of the
@@ -2159,6 +2186,7 @@ async function plannedAlerts(
       settings.slackWarningDays,
       plan.today,
       controllingIsGated,
+      controlling.some((dated) => isFilingSubject(dated.subject)),
       controlling.map((dated) => ({
         // The route's own name, so the copy names the rule whose window produced the number.
         subject: withAgency(dated.subject.row),

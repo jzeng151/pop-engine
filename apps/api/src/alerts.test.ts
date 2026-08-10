@@ -660,12 +660,16 @@ describe.skipIf(databaseUrl === "")("F-203 deadline alerts", () => {
       // The number is a minimum across findings, measured from the plan's evaluation date — not
       // the distance from today, and for a gated finding not a distance at all.
       expect(warning?.payload.body).toContain(
-        "the narrowest slack across its dated requirements is 10 days, measured from the plan's " +
-          "evaluation date 2026-07-22",
+        "Counting from 2026-07-22, the requirement with the least room leaves 10 days to apply.",
       );
       expect(warning?.payload.body).not.toContain("days away");
       // Scenario D has no gated filing, so the window-width qualifier would be noise.
-      expect(warning?.payload.body).not.toContain("width of the window");
+      expect(warning?.payload.body).not.toContain("window 10 days wide");
+      // NEITHER INTERNAL TERM REACHES THE ORGANIZER (product owner, 2026-08-10). "slack" is our
+      // word for the room left before a deadline, and FEASIBLE-AT-RISK is a verdict code that
+      // `verdict-copy.ts` renders as "At risk" everywhere else.
+      expect(warning?.payload.body).not.toContain("slack");
+      expect(warning?.payload.body).not.toContain("FEASIBLE");
     });
 
     it("does not describe gated slack as time until filing", async () => {
@@ -690,15 +694,67 @@ describe.skipIf(databaseUrl === "")("F-203 deadline alerts", () => {
       }
 
       const warning = (await alertsOf(eventId)).find((row) => row.alert_type === "slack_warning");
+      // A WIDTH, AND THE SENTENCE DOES NOT SAY "YOU HAVE N DAYS". The number means something
+      // different here from the ungated branch, so the two sentences differ rather than sharing
+      // one that would be false of this case.
       expect(warning?.payload.body).toContain(
-        "the number is the WIDTH of the window it can be filed in, not time remaining and not " +
-          "measured from any date",
+        "The requirement with the least room can only be applied for during a window 9 days wide.",
       );
       expect(warning?.payload.body).not.toContain("days away");
-      // AND THE FIRST LINE NO LONGER CONTRADICTS IT. It used to say the number was measured from
-      // the plan's evaluation date and then correct itself two lines later, so the body disagreed
-      // with itself in exactly the case the qualification exists to describe.
-      expect(warning?.payload.body).not.toContain("measured from the plan's evaluation date");
+      // AND IT DOES NOT ALSO CLAIM A COUNTDOWN. The first line used to say the number was measured
+      // from the plan's evaluation date and then correct itself two lines later.
+      expect(warning?.payload.body).not.toContain("Counting from");
+      expect(warning?.payload.body).not.toContain("slack");
+      expect(warning?.payload.body).not.toContain("FEASIBLE");
+    });
+
+    /**
+     * #252 review: THE CONTROLLING ROUTE NEED NOT PUBLISH A FILING AT ALL.
+     *
+     * The plan-level slack selection reads EVERY dated route, without a disposition filter, and it
+     * must: `computeWindowVerdict` takes `minSlackDays` the same way, so filtering here would make
+     * the alert disagree with the verdict about which windows the plan has. But the copy then sent
+     * "apply within N days" for a route that publishes no filing, turning an advisory or a
+     * no-new-requirement result into a filing instruction. The route stays in the selection and the
+     * SENTENCE changes.
+     *
+     * Copy approved by the product owner on 2026-08-10 and recorded in `docs/BASELINE.md`.
+     */
+    it("does not turn a non-filing controlling window into an instruction to file", async () => {
+      const eventId = await createEvent(scenario("C"));
+      const { planId } = await insertDuePlan(eventId, {
+        verdict: "feasible_at_risk",
+        minSlackDays: 9,
+        latestApplyDate: dayFromToday(9),
+        // The controlling route publishes a dated window and no filing.
+        disposition: "advisory",
+      });
+      const client = await pool.connect();
+      try {
+        await schedulerWith()(client, eventId, planId, {
+          email: "organizer@example.test",
+          phone: null,
+        });
+      } finally {
+        client.release();
+      }
+
+      const warning = (await alertsOf(eventId)).find((row) => row.alert_type === "slack_warning");
+      expect(warning?.payload.subject).toBe("At risk — the narrowest published window is 9 days");
+      expect(String(warning?.payload.body)).toContain(
+        "The closest date on it is 9 days away. Nothing needs to be filed for that one: it is a " +
+          "date the rule publishes, not a deadline to apply by.",
+      );
+      // NOT VACUOUS in the direction that matters: the filing sentences are the ones this replaces,
+      // and neither may appear beside a route that publishes no filing.
+      expect(String(warning?.payload.subject)).not.toContain("apply within");
+      expect(String(warning?.payload.body)).not.toContain("to apply.");
+      expect(String(warning?.payload.body)).not.toContain("applied for during a window");
+      // The buffer sentence stays on every branch: `specs/F-102` requires it and so does the
+      // ruleset's own `config.slack_warning_days.note`.
+      expect(String(warning?.payload.body)).toContain(
+        "internal planning buffer, not an official threshold",
+      );
     });
 
     it("does not warn twice when an identical plan is regenerated", async () => {
@@ -9197,8 +9253,8 @@ describe.skipIf(databaseUrl === "")("F-203 deadline alerts", () => {
       expect(warning?.payload.subject).toBe(
         `At risk — apply within 5 days of ${todayInJurisdiction("US-NY-NYC")}`,
       );
-      expect(String(warning?.payload.body)).toContain("measured from the plan's evaluation date");
-      expect(String(warning?.payload.body)).not.toContain("WIDTH of the window");
+      expect(String(warning?.payload.body)).toContain("Counting from");
+      expect(String(warning?.payload.body)).not.toContain("window 5 days wide");
     });
 
     it("cancels a slack warning whose controlling window shut during an outage", async () => {
