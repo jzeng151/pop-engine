@@ -28,6 +28,24 @@ const runbook = read("DEPLOY.md");
 /** The runbook's own release-order section, so a mention somewhere else does not satisfy this. */
 const releaseOrder = runbook.slice(runbook.indexOf("### Release order"));
 
+describe("F-302 rollout constraint the runbook has to carry", () => {
+  it("keeps the capacity rename web-first while the compatibility response is shape-only", () => {
+    const api = read("apps/api/src/rsvps.ts");
+    expect(api).toContain("SELECT id, name, capacity, headcount");
+    expect(api).toContain("headcount: event.headcount");
+
+    const web = read("apps/web/app/events/[id]/guests/guests-api.ts");
+    expect(web).toContain('if ("capacity" in event)');
+    expect(web).toContain('typeof event.headcount === "number"');
+
+    const prose = releaseOrder.replace(/\s+/g, " ");
+    expect(prose).toMatch(/F-302 capacity rename \(issue #236\)/i);
+    expect(prose).toMatch(/verify it is live[\s\S]*no web build or selectable rollback target/i);
+    expect(prose).toMatch(/different numeric values[\s\S]*wrong limit/i);
+    expect(prose).toMatch(/capacity = null[\s\S]*finite limit enforced nowhere/i);
+  });
+});
+
 describe("F-203 rollout constraints the runbook has to carry", () => {
   it("tells a deployer to stop the running api before migration 014's backfill lands", () => {
     // WHY THE CODE NEEDS THIS. Migration 014 seeds one attempt row per already-failed email alert
