@@ -26,6 +26,7 @@ import type {
   Deadline,
   DeadlineStatus,
   Disposition,
+  FindingKind,
   FindingRoute,
   VerificationStatus,
 } from "@pop-engine/engine";
@@ -857,6 +858,8 @@ export type AlertSchedulerSettings = {
 type PlanAlertRow = {
   checklist_item_id: string | null;
   rule_ids: string[];
+  /** Read to find a requirement's predecessor task; see `priorTaskIds`. */
+  kind: FindingKind;
   permit_name: string | null;
   agency: string | null;
   deadline: Deadline | null;
@@ -898,6 +901,16 @@ type PlannedAlert = {
    * inserting a second one beside it. See `ScheduledAlert.supersededIdentities`.
    */
   readonly groupRouteRuleIds: readonly string[];
+  /**
+   * The identity bases this same alert may already be stored under because its TASK moved.
+   *
+   * A requirement whose route membership changes becomes a new `checklist_items` row, so every
+   * identity built off `checklist_item_id` moved with it while the alert stayed the same alert.
+   * These are the same bases rebuilt on the predecessor rows, and `assignIdentities` expands them
+   * exactly as it expands the current one, so adoption re-keys the delivered row instead of
+   * inserting a second one beside it. Empty where the task has no predecessor (`priorTaskIds`).
+   */
+  readonly priorIdentityBases: readonly string[];
   /**
    * The event revision this alert's plan was evaluated at, for the one row the staleness JOIN
    * cannot reach. Only the plan-level slack warning sets it; everything else finds its plan
@@ -990,6 +1003,11 @@ type ScheduledAlert = PlannedAlert & {
    */
   readonly supersededIdentities: readonly string[];
   /**
+   * The keys this alert may be stored under because its TASK moved, matched only against a row that
+   * was DELIVERED. See the adoption query for why the status test belongs to this set alone.
+   */
+  readonly priorTaskIdentities: readonly string[];
+  /**
    * The identities this reminder may already be stored under WHATEVER WORDS those rows carry,
    * because no other reminder of this generation can claim them.
    *
@@ -1071,7 +1089,7 @@ async function planVerdict(database: Queryable, planId: string): Promise<PlanVer
  */
 async function planAlertRows(database: Queryable, planId: string): Promise<PlanAlertRow[]> {
   const { rows } = await database.query<PlanAlertRow>(
-    `SELECT checklist.id AS checklist_item_id, item.rule_ids, item.permit_name, item.agency,
+    `SELECT checklist.id AS checklist_item_id, item.rule_ids, item.kind, item.permit_name, item.agency,
             item.deadline, item.latest_apply_date, item.apply_after_date, item.deadline_status,
             item.fee_display, item.portal_name,
             item.portal_url, item.disposition, item.verification_status
@@ -1084,6 +1102,86 @@ async function planAlertRows(database: Queryable, planId: string): Promise<PlanA
   );
   return rows;
 }
+
+/**
+ * The checklist rows this event's requirements USED TO BE, keyed by the row each is now.
+ *
+ * WHY A REQUIREMENT CHANGES TASK AT ALL. `requirementKey()` in `checklist.ts` is `kind` plus the
+ * sorted rule ids, so a regeneration that adds or removes a contributing ROUTE produces a different
+ * key for the same requirement: `materialize()` finds no tracked row, creates a new `checklist_items`
+ * row, and the previous row is struck. Every alert identity is built off `checklist_item_id`, so
+ * each one moved with it, `assignIdentities` built even its superseded keys off the NEW id, and a
+ * reminder already delivered under the old id was unfindable — inserted again and delivered a second
+ * time to the same destination, which F-203 AC 7 forbids (#252 review).
+ *
+ * Nothing an organizer can see changed in that regeneration: the requirement is the same, the date
+ * is the same. Only the group's membership moved, and the identity was keyed on the membership.
+ *
+ * WHY THE PREDECESSOR IS FINDABLE WITHOUT A MIGRATION. `materialize()` never deletes a superseded
+ * row: it stops pointing the new plan item at it and `struckChecklistItemIds` marks it. So the old
+ * row is still in the table with its own id and its own plan item, and a requirement that changed
+ * membership overlaps its predecessor on at least one rule id — a route joined or left, the rest
+ * stayed. That overlap, within one event and one finding kind, is what identifies the predecessor,
+ * and it is the same relation for rows written before this change as after: no column is added and
+ * no stored key is rewritten, so reminders already sent keep working.
+ *
+ * MEMBERSHIP OVERLAP, NOT EQUALITY, and deliberately not `requirementKey` itself: equality is what
+ * the checklist already tested and found nothing, since the whole defect is that the key moved.
+ */
+type PriorTask = { readonly id: string; readonly ruleIds: readonly string[] };
+
+async function priorTaskIds(
+  database: Queryable,
+  planId: string,
+): Promise<Map<string, PriorTask[]>> {
+  const { rows } = await database.query<{
+    checklist_item_id: string;
+    rule_ids: string[];
+    kind: FindingKind;
+  }>(
+    `SELECT checklist.id AS checklist_item_id, item.rule_ids, item.kind
+       FROM checklist_items AS checklist
+       JOIN permit_plan_items AS item ON item.id = checklist.plan_item_id
+       JOIN permit_plans AS plan ON plan.id = item.plan_id
+      WHERE plan.event_id = (SELECT event_id FROM permit_plans WHERE id = $1)`,
+    [planId],
+  );
+  const byTask = new Map<string, PriorTask[]>();
+  for (const row of rows) {
+    const priors = rows
+      .filter(
+        (other) =>
+          other.checklist_item_id !== row.checklist_item_id &&
+          other.kind === row.kind &&
+          other.rule_ids.some((ruleId) => row.rule_ids.includes(ruleId)),
+      )
+      .map((other) => ({ id: other.checklist_item_id, ruleIds: other.rule_ids }))
+      .sort((left, right) => left.id.localeCompare(right.id));
+    if (priors.length > 0) byTask.set(row.checklist_item_id, priors);
+  }
+  return byTask;
+}
+
+/**
+ * Every key a predecessor task could have stored this alert under.
+ *
+ * THE ROUTE SUFFIX HAS TO BE REBUILT TOO, and the bare base is not enough. `assignIdentities` joins
+ * the canonical route to the base on every merged row, so a reminder delivered while the
+ * requirement was merged is stored under `${task}:${type}:${offset}:${ruleId}` — and the generation
+ * that drops a route may be unmerged, with no route of its own to join. The suffixes are therefore
+ * taken from the PRIOR task's rule ids as well as this one's: the requirement's alert may be filed
+ * under any rule the requirement contained, then or now.
+ */
+const priorIdentitiesFor = (
+  priors: readonly PriorTask[],
+  ruleIds: readonly string[],
+  base: (taskId: string) => string,
+): string[] =>
+  priors.flatMap((prior) => {
+    const key = base(prior.id);
+    const suffixes = [...new Set([...prior.ruleIds, ...ruleIds])].sort();
+    return [key, ...suffixes.map((ruleId) => `${key}:${ruleId}`)];
+  });
 
 /**
  * One scheduling subject: a plan row read through ONE of its published routes.
@@ -1171,6 +1269,26 @@ const subjectFromRoute = (
 });
 
 /**
+ * The dispositions that describe a filing an organizer can be reminded to make.
+ *
+ * EVERY REMINDER THIS FILE WRITES IS AN INSTRUCTION TO FILE, so the set is an allow-list of the two
+ * dispositions that state one, not a deny-list of the one that obviously does not. Excluding only
+ * `prohibited_or_ineligible` left `advisory` and `no_new_requirement` in, and the rules schema
+ * permits those kinds to publish a deadline: `reminderCopy` reads anything that is not `required`
+ * through `isSettledRequirement` and says "may be required for your event. If it applies, file by
+ * <date>", so a dated advisory route became an instruction to file a permit the ruleset does not
+ * say is required at all — a filing path invented in an email (#252 review).
+ *
+ * A route outside this set keeps its disposition, its notes and its sources on the plan line and in
+ * the checklist row's route list, which is where a reader learns what it says. What it does not get
+ * is a notification telling them to file it.
+ */
+const FILING_DISPOSITIONS: ReadonlySet<Disposition> = new Set<Disposition>([
+  "required",
+  "may_be_required",
+]);
+
+/**
  * The routes a row schedules from. An unmerged row is itself, so nothing about its alerts moves;
  * only a row that stored a route list expands, and only into routes that publish a date to schedule
  * against.
@@ -1202,7 +1320,7 @@ function alertSubjects(row: PlanAlertRow, rendering: FindingRendering | undefine
   }
   const groupRouteRuleIds = routes.map((route) => route.ruleId);
   return routes
-    .filter((route) => route.disposition !== "prohibited_or_ineligible")
+    .filter((route) => FILING_DISPOSITIONS.has(route.disposition))
     .filter((route) => route.latestApplyDate !== null || route.applyAfterDate !== null)
     .map((route) => subjectFromRoute(row, rendering, route, groupRouteRuleIds));
 }
@@ -1623,6 +1741,7 @@ async function plannedAlerts(
   const plan = await planVerdict(client, planId);
   if (plan === null) return [];
   const rows = await planAlertRows(client, planId);
+  const priors = await priorTaskIds(client, planId);
   const renderings = await renderingsForPlan(client, planId);
   // KEYED BY EVERY CONTRIBUTING RULE ID, AND BY EVERY ROUTE, not by `rule_ids[0]`. After a merge
   // `rule_ids` concatenates in contributing order, so the first entry is whichever member sits
@@ -1766,6 +1885,11 @@ async function plannedAlerts(
             // WHICH ROUTE joins it on every merged row, in `assignIdentities`. An unmerged row adds
             // nothing and keeps the key it had.
             identityBase: `${row.checklist_item_id}:deadline_reminder:${daysBefore}`,
+            priorIdentityBases: priorIdentitiesFor(
+              priors.get(row.checklist_item_id ?? "") ?? [],
+              row.rule_ids,
+              (taskId) => `${taskId}:deadline_reminder:${daysBefore}`,
+            ),
             routeRuleId,
             groupRouteRuleIds,
           });
@@ -1819,6 +1943,14 @@ async function plannedAlerts(
           // organizer was told a second time that they may now pursue something they had already
           // been told was open.
           identityBase: `${row.checklist_item_id}:dependency_unlocked`,
+          // THE SIBLING, and it has the same defect for the same reason: keyed off the task, so a
+          // membership change moved it and told the organizer a second time that they may now
+          // pursue something they had already been told was open.
+          priorIdentityBases: priorIdentitiesFor(
+            priors.get(row.checklist_item_id ?? "") ?? [],
+            row.rule_ids,
+            (taskId) => `${taskId}:dependency_unlocked`,
+          ),
           routeRuleId,
           groupRouteRuleIds,
         });
@@ -2022,6 +2154,9 @@ async function plannedAlerts(
       // The evaluation date rides the payload, so a pending warning is rewritten with the current
       // date and a sent one is left alone.
       identityBase: "slack_warning",
+      // The one identity with no task in it: the plan-level warning hangs off no checklist row, so
+      // nothing about it moves when a requirement's membership does.
+      priorIdentityBases: [],
       routeRuleId: null,
       groupRouteRuleIds: [],
     });
@@ -2172,17 +2307,31 @@ function assignIdentities(planned: readonly PlannedAlert[]): ScheduledAlert[] {
     // anything on this generation. Both are keys another reminder of the same line also lists, so
     // the copy match below is what tells them apart, and a route publishing different copy cannot
     // be adopted by mistake.
-    const superseded =
+    // EVERY BASE THIS ALERT MAY ALREADY BE STORED UNDER, not only the current one. A requirement
+    // whose route membership changes becomes a NEW checklist row, so the identity moved with the
+    // task while the alert stayed the same alert; the predecessor bases are the same keys rebuilt on
+    // the rows it used to be, and they expand over the routes exactly as the current base does,
+    // because a delivered row could be stored under any route of the old task as easily as the new
+    // one (#252 review). Unmerged rows have no route component, so the base alone is the key there,
+    // which is why the prior bases are listed whether or not this alert has a canonical route.
+    // Already whole keys: `priorIdentitiesFor` expanded each predecessor base over the rule ids the
+    // requirement held then and now, because the generation that drops a route may have no route of
+    // its own to join and the delivered row's key has one.
+    const priorBases = [...new Set(group.flatMap((alert) => alert.priorIdentityBases))].sort();
+    const routeSuffixes =
       canonical === null
         ? []
-        : [
-            first.identityBase,
-            ...[...new Set(group.flatMap((alert) => alert.groupRouteRuleIds))]
-              .filter((ruleId) => ruleId !== canonical && !coalescedRuleIds.has(ruleId))
-              .sort()
-              .map(keyFor),
-          ];
-    return { ...first, identity, supersededIdentities: superseded, coalescedIdentities: coalesced };
+        : [...new Set(group.flatMap((alert) => alert.groupRouteRuleIds))]
+            .filter((ruleId) => ruleId !== canonical && !coalescedRuleIds.has(ruleId))
+            .sort();
+    const superseded = canonical === null ? [] : [first.identityBase, ...routeSuffixes.map(keyFor)];
+    return {
+      ...first,
+      identity,
+      supersededIdentities: superseded,
+      coalescedIdentities: coalesced,
+      priorTaskIdentities: priorBases,
+    };
   });
 }
 
@@ -2427,7 +2576,11 @@ export function createAlertScheduler(settings: AlertSchedulerSettings): AlertSch
     // the rows a PRIOR generation left, and the upsert is a statement about the row this one owns,
     // so nothing is being ordered here that was not already two separate things.
     for (const alert of planned) {
-      if (alert.supersededIdentities.length === 0 && alert.coalescedIdentities.length === 0) {
+      if (
+        alert.supersededIdentities.length === 0 &&
+        alert.coalescedIdentities.length === 0 &&
+        alert.priorTaskIdentities.length === 0
+      ) {
         continue;
       }
       for (const channel of channels) {
@@ -2468,6 +2621,16 @@ export function createAlertScheduler(settings: AlertSchedulerSettings): AlertSch
         // then deliver it again. The rest are superseded and the reconciler cancels them, which is
         // what rule 1 says they are. `NOT EXISTS` because the current key may already be taken, and
         // a row that already holds it is this alert.
+        // A PREDECESSOR TASK'S ROW IS ADOPTED ONLY IF IT WAS DELIVERED, which the other two key
+        // sets do not require and must not.
+        //
+        // The harm a moved task causes is a SENT reminder becoming unfindable and going out a
+        // second time; a pending row that is not adopted is cancelled and rescheduled, which no
+        // organizer sees. And the wider rule would be wrong: a task can end deliberately — a kind
+        // change strikes it, its reminders are cancelled, and a task with the same rule ids may be
+        // appended later as a NEW task — and resurrecting those cancelled rows onto it would undo
+        // the ending the checklist just recorded. `sent` is exactly the boundary between the two
+        // (#252 review).
         await client.query(
           `UPDATE alerts SET idempotency_key = $2
               WHERE id = (SELECT prior.id FROM alerts prior
@@ -2475,6 +2638,8 @@ export function createAlertScheduler(settings: AlertSchedulerSettings): AlertSch
                               OR (prior.idempotency_key = ANY($1::text[])
                                   AND prior.payload->>'subject' = $3
                                   AND prior.payload->>'body' = $4)
+                              OR (prior.idempotency_key = ANY($6::text[])
+                                  AND prior.status = 'sent')
                            ORDER BY (prior.status = 'sent') DESC, prior.idempotency_key
                            LIMIT 1)
                 AND NOT EXISTS (SELECT 1 FROM alerts held WHERE held.idempotency_key = $2)`,
@@ -2486,6 +2651,9 @@ export function createAlertScheduler(settings: AlertSchedulerSettings): AlertSch
             alert.subject,
             alert.body,
             alert.coalescedIdentities.map((identity) =>
+              idempotencyKey(eventId, identity, channel, recipient),
+            ),
+            alert.priorTaskIdentities.map((identity) =>
               idempotencyKey(eventId, identity, channel, recipient),
             ),
           ],

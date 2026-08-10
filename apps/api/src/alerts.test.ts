@@ -4301,6 +4301,76 @@ describe.skipIf(databaseUrl === "")("F-203 deadline alerts", () => {
       expect(response.body.alerts).toMatchObject({ scheduled: 0, cancelled: 0 });
     });
 
+    /**
+     * #252 review: A REQUIREMENT THAT CHANGES ROUTE MEMBERSHIP CHANGES TASK, AND EVERY IDENTITY
+     * MOVED WITH IT.
+     *
+     * `requirementKey()` is `kind` plus the sorted rule ids, so a regeneration that drops a
+     * contributing route produces a different key for the same requirement: `materialize()` creates
+     * a new `checklist_items` row and strikes the old one. Every alert identity is built off
+     * `checklist_item_id`, and `assignIdentities` built even the superseded keys off the NEW id, so
+     * a reminder already delivered under the old id was unfindable and was inserted and delivered a
+     * second time to the same destination. F-203 AC 7 forbids exactly that.
+     *
+     * Nothing an organizer can see changes in this regeneration: the requirement is the same and
+     * its filing date is the same. `structure_over_10ft_tall` is the whole difference, and it drops
+     * DOB-TALL-STRUCTURE-001, which publishes no deadline of its own, from the dedupe group.
+     */
+    it("does not remind twice when a route joins or leaves the group", async () => {
+      const merged = {
+        ...scenario("A"),
+        structure_types: ["tent_canopy"],
+        structure_over_10ft_tall: "yes",
+        tent_area_sqft: 500,
+        tent_days_in_place: 40,
+      };
+      const eventId = await createEvent(merged);
+      await materialize(eventId);
+
+      const before = await alertsOf(eventId);
+      const dobReminders = before.filter(
+        (row) =>
+          row.alert_type === "deadline_reminder" && String(row.payload.body).includes("DOB permit"),
+      );
+      expect(dobReminders.length).toBeGreaterThan(0);
+      const sentAlready = dobReminders[0] as AlertRow;
+      await pool.query(
+        "UPDATE alerts SET status = 'sent', sent_at = current_timestamp WHERE id = $1",
+        [sentAlready.id],
+      );
+
+      // The route leaves the group. The tent route's own window, fee and portal are unchanged.
+      const patch = await request(appWith(fakeProvider()))
+        .patch(`/api/events/${eventId}`)
+        .send({ structure_over_10ft_tall: "no" });
+      expect(patch.status).toBe(200);
+      // 200 or 201: the requirement's task is REPLACED by this regeneration, which is the whole
+      // shape, so whether the review reports a creation is not what this test is about.
+      expect([200, 201]).toContain((await materialize(eventId)).status);
+
+      const after = await alertsOf(eventId);
+      // The task really did move, which is what makes this the shape rather than a no-op.
+      const taskIds = new Set(
+        after
+          .filter((row) => row.alert_type === "deadline_reminder" && row.checklist_item_id !== null)
+          .map((row) => row.checklist_item_id),
+      );
+      expect(taskIds.has(sentAlready.checklist_item_id)).toBe(true);
+
+      // The delivered reminder is still the only row carrying its words to that destination: it was
+      // re-keyed onto the new task rather than left behind and duplicated beside it.
+      const sameWords = after.filter(
+        (row) =>
+          row.alert_type === "deadline_reminder" &&
+          row.recipient === sentAlready.recipient &&
+          row.payload.subject === sentAlready.payload.subject &&
+          row.payload.body === sentAlready.payload.body,
+      );
+      expect(sameWords).toHaveLength(1);
+      expect(sameWords[0]?.id).toBe(sentAlready.id);
+      expect(sameWords[0]?.status).toBe("sent");
+    });
+
     it("does not remind twice when the filing date moves", async () => {
       // AC 7 as this PR amended it and the product owner approved it: a re-send is legitimate when
       // the DESTINATION differs, not when the attempt does. A moved filing date is not a different
@@ -7012,6 +7082,119 @@ describe.skipIf(databaseUrl === "")("F-203 deadline alerts", () => {
       for (const row of parks) {
         expect(row.payload.body).toContain("parks: over 400 sq ft only");
         expect(row.payload.body).not.toContain("confirm the precinct form number");
+      }
+    });
+
+    /**
+     * #252 review: AN ADVISORY ROUTE WAS REMINDED AS A FILING TOO.
+     *
+     * The expansion excluded prohibitions and nothing else, and the rules schema permits `advisory`
+     * and `no_new_requirement` kinds to publish a deadline. `reminderCopy` reads anything that is
+     * not `required` through `isSettledRequirement` and says "may be required for your event. If it
+     * applies, file by <date>", so a dated advisory route became an instruction to file a permit the
+     * ruleset does not say is required at all.
+     */
+    it("schedules no filing reminder for an advisory route of a merged line (#252)", async () => {
+      const eventId = await createEvent(scenario("C"));
+      const planId = randomUUID();
+      const itemId = randomUUID();
+      const applyBy = dayFromToday(9);
+      const advisoryApplyBy = dayFromToday(12);
+      const route = (overrides: Record<string, unknown>) => ({
+        triggerResult: "true",
+        unknownFields: [],
+        agency: "NYPD",
+        deadline: null,
+        deadlineDisplay: null,
+        latestApplyDate: null,
+        applyAfterDate: null,
+        deadlineStatus: "not_applicable",
+        slackDays: null,
+        feeDisplay: null,
+        portalName: null,
+        portalUrl: null,
+        portalInstructions: null,
+        notes: [],
+        ...overrides,
+      });
+      await pool.query(
+        `INSERT INTO permit_plans (id, event_id, event_revision, ruleset_version, snapshot_date,
+                                   verdict, verdict_detail, intake_snapshot, generated_at)
+         VALUES ($1, $2, 1, $3, $4, 'conditional', $5::jsonb, '{}'::jsonb, current_timestamp)`,
+        [
+          planId,
+          eventId,
+          ruleset.rulesetVersion,
+          ruleset.snapshotDate,
+          JSON.stringify({
+            today: todayInJurisdiction("US-NY-NYC"),
+            minSlackDays: null,
+            finding_renderings: [
+              {
+                rule_ids: ["NYPD-SOUND-001", "PARKS-EVENT-001"],
+                notes: [],
+                note_text: null,
+                conflict_text: null,
+                deadline_display: null,
+                slack_days: null,
+                deadline_unknown_fields: [],
+                timeline_unresolved_reason: null,
+                portal_instructions: null,
+                headline_mode: "applies_together",
+                routes: [
+                  route({
+                    ruleId: "NYPD-SOUND-001",
+                    disposition: "required",
+                    name: "Sound Device Permit",
+                    latestApplyDate: applyBy,
+                    deadlineStatus: "deadline_approaching",
+                  }),
+                  route({
+                    ruleId: "PARKS-EVENT-001",
+                    disposition: "advisory",
+                    name: "Amplified sound advisory",
+                    latestApplyDate: advisoryApplyBy,
+                    deadlineStatus: "deadline_approaching",
+                  }),
+                ],
+              },
+            ],
+          }),
+        ],
+      );
+      await pool.query(
+        `INSERT INTO permit_plan_items (id, plan_id, rule_ids, triggered_by, permit_name, agency,
+                                        latest_apply_date, sources, kind, disposition,
+                                        deadline_status, verification_status)
+         VALUES ($1, $2, ARRAY['NYPD-SOUND-001','PARKS-EVENT-001'], '[]'::jsonb,
+                 'Sound Device Permit', 'NYPD', $3, '[]'::jsonb, 'permit', 'required',
+                 'deadline_approaching', 'SOURCE_CONFIRMED')`,
+        [itemId, planId, applyBy],
+      );
+      await pool.query(
+        "INSERT INTO checklist_items (id, plan_item_id, cohort_position) VALUES ($1, $2, 0)",
+        [randomUUID(), itemId],
+      );
+
+      const client = await pool.connect();
+      try {
+        await schedulerWith()(client, eventId, planId, {
+          email: "organizer@example.test",
+          phone: null,
+        });
+      } finally {
+        client.release();
+      }
+
+      const reminders = (await alertsOf(eventId)).filter(
+        (row) => row.alert_type === "deadline_reminder",
+      );
+      // NOT VACUOUS: the required sibling on the same line still schedules on its own date.
+      expect(reminders.length).toBeGreaterThan(0);
+      for (const row of reminders) {
+        expect(row.payload.body).toContain("Sound Device Permit");
+        expect(row.payload.body).not.toContain("Amplified sound advisory");
+        expect(row.payload.body).not.toContain(advisoryApplyBy);
       }
     });
 

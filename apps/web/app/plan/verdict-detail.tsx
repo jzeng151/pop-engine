@@ -470,9 +470,13 @@ function MissedMayBeRequiredSection({
   // disposition recorded (a stored plan whose line is no longer among the findings) counts as
   // neither: nothing is known about it to describe.
   const barred = missed.filter((entry) => entry.disposition === "prohibited_or_ineligible");
-  const hedged = missed.filter(
-    (entry) => entry.disposition !== null && entry.disposition !== "prohibited_or_ineligible",
-  );
+  // `may_be_required` EXACTLY, not "everything that is not barred". The list can hold an advisory
+  // route whose own window has closed — `isMissed` reads a route's status and says nothing about
+  // its disposition — and calling that may-be-required is the same overstatement one disposition
+  // further down: the sentence would claim a conditional requirement for a rule that publishes an
+  // advisory (#252 review). Anything that is neither takes the mixed sentence, which names no
+  // disposition and says each keeps its own.
+  const hedged = missed.filter((entry) => entry.disposition === "may_be_required");
   return (
     <section className="verdict-detail__missed-conditional" data-testid="missed-may-be-required">
       <h2 className="verdict-detail__section-title">
@@ -491,11 +495,11 @@ function MissedMayBeRequiredSection({
             is a defect this repository has shipped once already. What keeps the verdict conditional
             is different in the two cases and the copy now says which: a hedged disposition for one,
             an unanswered trigger for the other. */}
-        {barred.length === 0
+        {barred.length === 0 && hedged.length === missed.length
           ? "These findings carry a may-be-required disposition, so a passed published date keeps the verdict conditional rather than treating the window as a definitive miss."
-          : hedged.length === 0
+          : hedged.length === 0 && barred.length === missed.length
             ? "The findings below publish a prohibition or an ineligibility, and their own triggers are unresolved, so a passed published date keeps the verdict conditional rather than closing the plan. The bar stands as each rule publishes it."
-            : "The findings below differ in what they publish: some carry a may-be-required disposition, and some publish a prohibition or an ineligibility whose own trigger is unresolved. In both cases a passed published date keeps the verdict conditional rather than settling it, and each keeps the disposition its own rule publishes."}{" "}
+            : "The findings below differ in what they publish, and a passed published date settles none of them: it keeps the verdict conditional rather than treating the window as a definitive miss. Each keeps the disposition its own rule publishes, printed beside it."}{" "}
         Each finding below states its own published date and qualification on the plan line.
       </p>
       <ul>
