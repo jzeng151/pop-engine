@@ -1289,11 +1289,39 @@ const FILING_DISPOSITIONS: ReadonlySet<Disposition> = new Set<Disposition>([
 ]);
 
 /**
+ * Whether this scheduling subject is one an organizer can be told to act on.
+ *
+ * THE THREE READERS OF `alertSubjects` AND WHAT EACH WANTS, because one filter read by two callers
+ * with different questions is how this went wrong twice:
+ *
+ *   • the deadline-reminder loop — FILING ROUTES ONLY. Its copy is "file by <date>".
+ *   • the dependency-unlock loop — FILING ROUTES ONLY, for the same reason: it announces that the
+ *     window an organizer was waiting on to file is open, which is an instruction to act on a
+ *     filing and says nothing an advisory or a bar has a filing for.
+ *   • the plan-level slack-warning selection — EVERY DATED ROUTE. It is a measurement rather than a
+ *     message: it has to find the route that produced `minSlackDays`, and the engine computes that
+ *     over every route whatever its disposition, so narrowing it here makes the alerts disagree
+ *     with the verdict they are scheduled against.
+ */
+const isFilingSubject = (subject: AlertSubject): boolean =>
+  FILING_DISPOSITIONS.has(subject.row.disposition);
+
+/**
  * The routes a row schedules from. An unmerged row is itself, so nothing about its alerts moves;
  * only a row that stored a route list expands, and only into routes that publish a date to schedule
  * against.
  *
- * A BARRED ROUTE SCHEDULES NOTHING, because every reminder this file writes is a filing instruction
+ * EVERY DATED ROUTE, WHATEVER IT PUBLISHES, because this expansion answers two different questions
+ * and only one of them is about filing. Its callers are enumerated above `FILING_DISPOSITIONS`: the
+ * two that write a message to an organizer filter it, and the one that MEASURES the plan's slack
+ * must not, because `computeWindowVerdict` takes `minSlackDays` over every route regardless of
+ * disposition. Filtering here made the plan and the alerts disagree about the same number: a dated
+ * advisory route could hold the minimum and put the plan at FEASIBLE_AT_RISK while
+ * `controllingFilingStillOpen` could not find the route that produced it, so no warning was
+ * scheduled on a plan the verdict had already called at risk (#252 review).
+ *
+ * A BARRED OR ADVISORY ROUTE STILL SCHEDULES NO MESSAGE, because every reminder this file writes is
+ * a filing instruction
  * and a prohibition has no filing to instruct. `reminderCopy` chooses between "file by <date>" and
  * "may be required ... if it applies, file by <date>" on `isSettledRequirement`, which tests for
  * `required`, so a `prohibited_or_ineligible` route took the second branch: the reminder read the
@@ -1320,7 +1348,6 @@ function alertSubjects(row: PlanAlertRow, rendering: FindingRendering | undefine
   }
   const groupRouteRuleIds = routes.map((route) => route.ruleId);
   return routes
-    .filter((route) => FILING_DISPOSITIONS.has(route.disposition))
     .filter((route) => route.latestApplyDate !== null || route.applyAfterDate !== null)
     .map((route) => subjectFromRoute(row, rendering, route, groupRouteRuleIds));
 }
@@ -1752,6 +1779,9 @@ async function plannedAlerts(
   const byRuleId = new Map<string, PlanAlertRow>();
   for (const row of rows) {
     const rendering = renderings.get(renderingKey(row.rule_ids));
+    // UNFILTERED, because this map is a LOOKUP rather than a message. Dependency sequencing finds
+    // its upstream and gated rows through it, and a route hidden here degrades that lookup to the
+    // merged row, which is the scalar read the route expansion exists to avoid.
     for (const subject of alertSubjects(row, rendering)) {
       for (const ruleId of subject.row.rule_ids) byRuleId.set(ruleId, subject.row);
     }
@@ -1799,7 +1829,7 @@ async function plannedAlerts(
   for (const planRow of rows) {
     if (planRow.checklist_item_id === null) continue;
     const planRendering = renderings.get(renderingKey(planRow.rule_ids));
-    const subjects = alertSubjects(planRow, planRendering);
+    const subjects = alertSubjects(planRow, planRendering).filter(isFilingSubject);
     // NO IDENTITY IS MINTED IN THIS LOOP. Each scheduling records what it is about and which route
     // it came from, and `assignIdentities` turns that into a key once every scheduling is known —
     // because which route NAMES a reminder depends on the other schedulings beside it, and a
@@ -2621,16 +2651,35 @@ export function createAlertScheduler(settings: AlertSchedulerSettings): AlertSch
         // then deliver it again. The rest are superseded and the reconciler cancels them, which is
         // what rule 1 says they are. `NOT EXISTS` because the current key may already be taken, and
         // a row that already holds it is this alert.
-        // A PREDECESSOR TASK'S ROW IS ADOPTED ONLY IF IT WAS DELIVERED, which the other two key
-        // sets do not require and must not.
+        // WHAT PREDECESSOR ADOPTION MATCHES: THESE WORDS, DELIVERED, UNDER A KEY THIS REQUIREMENT
+        // USED TO HOLD. All three parts, and the first is the one the previous round left out.
         //
-        // The harm a moved task causes is a SENT reminder becoming unfindable and going out a
-        // second time; a pending row that is not adopted is cancelled and rescheduled, which no
-        // organizer sees. And the wider rule would be wrong: a task can end deliberately — a kind
-        // change strikes it, its reminders are cancelled, and a task with the same rule ids may be
-        // appended later as a NEW task — and resurrecting those cancelled rows onto it would undo
-        // the ending the checklist just recorded. `sent` is exactly the boundary between the two
-        // (#252 review).
+        // Keyed on the task alone it matched the wrong thing one level down from the defect it
+        // fixed. Every alert of the new generation lists the same predecessor keys, because the
+        // predecessor is a property of the TASK while the row being adopted belongs to a ROUTE, so
+        // with only a status test whichever alert was processed first took the sent row. A
+        // regeneration that adds a route with different copy which binds first then had the NEW
+        // route adopt the OLD route's delivered reminder, its own distinct reminder suppressed as
+        // already sent, and the old route's unchanged reminder inserted under another key and
+        // delivered again: one email the organizer already had, and one filing instruction they
+        // never got. Worse than the duplicate it replaced (#252 review).
+        //
+        // MATCHED ON THE COPY, NOT ON THE ROUTE ID, and that is not a weaker test here. The route
+        // the delivered row was keyed under may not exist in this generation at all — it is the
+        // route that just left the group — so a route-id match would fail exactly where adoption is
+        // needed. The words identify the alert instead, and they identify it UNIQUELY:
+        // `assignIdentities` groups schedulings by `[alertType, checklistItemId, subject, body]`, so
+        // two routes of one group publishing identical copy are already ONE alert rather than two
+        // competing for the same row. There is no case where a copy match has to choose between two
+        // routes, because a generation never mints two alerts with the same words for one task and
+        // type. That is the property the previous round assumed and this one relies on explicitly.
+        //
+        // AND DELIVERED, which the other two key sets do not require and must not. The harm is a
+        // SENT reminder going out twice; a pending row that is not adopted is cancelled and
+        // rescheduled, which no organizer sees. The wider rule would also be wrong: a task can end
+        // deliberately — a kind change strikes it and cancels its reminders, and a task with the
+        // same rule ids may be appended later as a NEW task — and resurrecting those cancelled rows
+        // onto it would undo the ending the checklist just recorded.
         await client.query(
           `UPDATE alerts SET idempotency_key = $2
               WHERE id = (SELECT prior.id FROM alerts prior
@@ -2639,7 +2688,9 @@ export function createAlertScheduler(settings: AlertSchedulerSettings): AlertSch
                                   AND prior.payload->>'subject' = $3
                                   AND prior.payload->>'body' = $4)
                               OR (prior.idempotency_key = ANY($6::text[])
-                                  AND prior.status = 'sent')
+                                  AND prior.status = 'sent'
+                                  AND prior.payload->>'subject' = $3
+                                  AND prior.payload->>'body' = $4)
                            ORDER BY (prior.status = 'sent') DESC, prior.idempotency_key
                            LIMIT 1)
                 AND NOT EXISTS (SELECT 1 FROM alerts held WHERE held.idempotency_key = $2)`,

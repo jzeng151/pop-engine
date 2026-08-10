@@ -4371,6 +4371,191 @@ describe.skipIf(databaseUrl === "")("F-203 deadline alerts", () => {
       expect(sameWords[0]?.status).toBe("sent");
     });
 
+    /**
+     * #252 review: THE OTHER HALF OF THE SAME MOVE, and worse than the duplicate it replaced.
+     *
+     * Predecessor adoption is a property of the TASK, so every alert of the new generation lists the
+     * same predecessor keys while the row being adopted belongs to a ROUTE. Matched on status alone,
+     * whichever alert was processed first took the delivered row: a route ADDED with different copy
+     * that binds first adopted the OLD route's sent reminder, its own distinct reminder was
+     * suppressed as already sent, and the old route's unchanged reminder was inserted under another
+     * key and delivered again. One email the organizer already had, and one filing instruction they
+     * never got.
+     *
+     * The copy test is what stops it, and it is exact rather than approximate: `assignIdentities`
+     * groups schedulings by `[alertType, checklistItemId, subject, body]`, so two routes publishing
+     * identical copy are ONE alert, and no generation ever mints two alerts with the same words for
+     * one task and type. A copy match therefore never has to choose between two routes.
+     *
+     * Built directly, because the published ruleset cannot produce it: its only dedupe group's
+     * second route publishes no deadline, so joining the group schedules nothing and no swap is
+     * possible. The two plans and the two checklist rows are what `materialize()` does when a
+     * requirement's route membership changes.
+     */
+    it("does not swap reminders between routes when a route joins the group", async () => {
+      const eventId = await createEvent(scenario("C"));
+      const firstTask = randomUUID();
+      const secondTask = randomUUID();
+      const tentApplyBy = dayFromToday(9);
+      const tallApplyBy = dayFromToday(6);
+      const route = (overrides: Record<string, unknown>) => ({
+        triggerResult: "true",
+        unknownFields: [],
+        disposition: "required",
+        agency: "DOB",
+        deadline: null,
+        deadlineDisplay: null,
+        latestApplyDate: null,
+        applyAfterDate: null,
+        deadlineStatus: "deadline_approaching",
+        slackDays: null,
+        feeDisplay: null,
+        portalName: null,
+        portalUrl: null,
+        portalInstructions: null,
+        notes: [],
+        ...overrides,
+      });
+      const insertGeneration = async (
+        taskId: string,
+        ruleIds: string[],
+        routes: Record<string, unknown>[] | null,
+      ): Promise<string> => {
+        const planId = randomUUID();
+        const itemId = randomUUID();
+        await pool.query(
+          `INSERT INTO permit_plans (id, event_id, event_revision, ruleset_version, snapshot_date,
+                                     verdict, verdict_detail, intake_snapshot, generated_at)
+           VALUES ($1, $2, 1, $3, $4, 'conditional', $5::jsonb, '{}'::jsonb, current_timestamp)`,
+          [
+            planId,
+            eventId,
+            ruleset.rulesetVersion,
+            ruleset.snapshotDate,
+            JSON.stringify({
+              today: todayInJurisdiction("US-NY-NYC"),
+              minSlackDays: null,
+              finding_renderings: [
+                {
+                  rule_ids: ruleIds,
+                  notes: [],
+                  note_text: null,
+                  conflict_text: null,
+                  deadline_display: null,
+                  slack_days: null,
+                  deadline_unknown_fields: [],
+                  timeline_unresolved_reason: null,
+                  portal_instructions: null,
+                  ...(routes === null ? {} : { headline_mode: "applies_together", routes }),
+                },
+              ],
+            }),
+          ],
+        );
+        await pool.query(
+          `INSERT INTO permit_plan_items (id, plan_id, rule_ids, triggered_by, permit_name, agency,
+                                          latest_apply_date, sources, kind, disposition,
+                                          deadline_status, verification_status)
+           VALUES ($1, $2, $3, '[]'::jsonb, 'Tent permit', 'DOB', $4, '[]'::jsonb, 'permit',
+                   'required', 'deadline_approaching', 'SOURCE_CONFIRMED')`,
+          [itemId, planId, ruleIds, tentApplyBy],
+        );
+        await pool.query(
+          "INSERT INTO checklist_items (id, plan_item_id, cohort_position) VALUES ($1, $2, 0)",
+          [taskId, itemId],
+        );
+        return planId;
+      };
+      const schedule = async (planId: string) => {
+        const client = await pool.connect();
+        try {
+          await schedulerWith()(client, eventId, planId, {
+            email: "organizer@example.test",
+            phone: null,
+          });
+        } finally {
+          client.release();
+        }
+      };
+
+      // One route, its reminders scheduled and one of them delivered.
+      await schedule(await insertGeneration(firstTask, ["DOB-TENT-001"], null));
+      const before = await alertsOf(eventId);
+      const sentAlready = before.find((row) => row.alert_type === "deadline_reminder") as AlertRow;
+      expect(sentAlready).toBeDefined();
+      await pool.query(
+        "UPDATE alerts SET status = 'sent', sent_at = current_timestamp WHERE id = $1",
+        [sentAlready.id],
+      );
+
+      // A second route joins, with its own earlier window and its own copy, and the requirement
+      // becomes a different task because its rule-id set changed.
+      await schedule(
+        await insertGeneration(
+          secondTask,
+          ["DOB-TENT-001", "DOB-TALL-STRUCTURE-001"],
+          [
+            route({
+              ruleId: "DOB-TALL-STRUCTURE-001",
+              name: "Tall structure permit",
+              latestApplyDate: tallApplyBy,
+            }),
+            route({
+              ruleId: "DOB-TENT-001",
+              name: "Tent permit",
+              latestApplyDate: tentApplyBy,
+            }),
+          ],
+        ),
+      );
+
+      const after = await alertsOf(eventId);
+      const reminders = after.filter((row) => row.alert_type === "deadline_reminder");
+      // The delivered reminder keeps its own words and its own row: it was not adopted by the route
+      // that joined, and it was not duplicated either.
+      const delivered = reminders.filter(
+        (row) =>
+          row.payload.subject === sentAlready.payload.subject &&
+          row.payload.body === sentAlready.payload.body,
+      );
+      expect(delivered).toHaveLength(1);
+      expect(delivered[0]?.id).toBe(sentAlready.id);
+      expect(delivered[0]?.status).toBe("sent");
+      // AND THE JOINING ROUTE'S OWN REMINDER EXISTS, which is the half the swap suppressed.
+      expect(
+        reminders.some((row) => String(row.payload.body).includes("Tall structure permit")),
+      ).toBe(true);
+      // The DELIVERED words are unique, which is the claim this test can make. A global uniqueness
+      // assertion would not hold here and should not: only a sent predecessor is adopted, so the
+      // first generation's still-pending reminder stays under its old key. In the real flow the
+      // reconciler cancels it, and the end-to-end test above ("does not remind twice when a route
+      // joins or leaves the group") is where that half is proved.
+      expect(
+        reminders.filter(
+          (row) =>
+            row.status === "sent" &&
+            row.payload.subject === sentAlready.payload.subject &&
+            row.payload.body === sentAlready.payload.body,
+        ),
+      ).toHaveLength(1);
+      // The delivered row is still keyed to the route whose words it carries, never re-keyed onto
+      // the route that joined. This is what the copy test guarantees and what the status-only
+      // branch left to the order the alerts happened to be processed in.
+      expect(delivered[0]?.idempotency_key).toContain("DOB-TENT-001");
+      expect(delivered[0]?.idempotency_key).not.toContain("DOB-TALL-STRUCTURE-001");
+      // AND NO PENDING ROW REPEATS THEM, which is the shape of the swap: the joining route adopts
+      // the sent row, and the words the organizer already received are then re-inserted as a fresh
+      // pending reminder under the key the adoption vacated.
+      expect(
+        reminders.filter(
+          (row) =>
+            row.status === "pending" &&
+            row.payload.subject === sentAlready.payload.subject &&
+            row.payload.body === sentAlready.payload.body,
+        ),
+      ).toHaveLength(0);
+    });
+
     it("does not remind twice when the filing date moves", async () => {
       // AC 7 as this PR amended it and the product owner approved it: a re-send is legitimate when
       // the DESTINATION differs, not when the attempt does. A moved filing date is not a different
@@ -6824,6 +7009,121 @@ describe.skipIf(databaseUrl === "")("F-203 deadline alerts", () => {
       expect(rows.filter((row) => row.alert_type === "deadline_reminder").length).toBeGreaterThan(
         0,
       );
+    });
+
+    /**
+     * #252 review: THE PLAN AND THE ALERTS HAVE TO AGREE ABOUT THE SAME NUMBER.
+     *
+     * `computeWindowVerdict` takes `minSlackDays` over EVERY route whatever its disposition, so a
+     * dated advisory route can hold the minimum and put the plan at FEASIBLE_AT_RISK. Filtering the
+     * expansion to filing dispositions removed that route from the selection the slack warning
+     * reuses, so `controllingFilingStillOpen` could not find the route that produced the number and
+     * no warning was scheduled on a plan the verdict had already called at risk.
+     *
+     * The filter belongs to the two loops that write a message, not to the expansion that measures.
+     */
+    it("warns off a dated advisory route that holds the minimum slack (#252)", async () => {
+      const eventId = await createEvent(scenario("C"));
+      const planId = randomUUID();
+      const itemId = randomUUID();
+      const applyBy = dayFromToday(9);
+      const route = (overrides: Record<string, unknown>) => ({
+        triggerResult: "true",
+        unknownFields: [],
+        agency: "NYPD",
+        deadline: null,
+        deadlineDisplay: null,
+        latestApplyDate: null,
+        applyAfterDate: null,
+        deadlineStatus: "not_applicable",
+        slackDays: null,
+        feeDisplay: null,
+        portalName: null,
+        portalUrl: null,
+        portalInstructions: null,
+        notes: [],
+        ...overrides,
+      });
+      await pool.query(
+        `INSERT INTO permit_plans (id, event_id, event_revision, ruleset_version, snapshot_date,
+                                   verdict, verdict_detail, intake_snapshot, generated_at)
+         VALUES ($1, $2, 1, $3, $4, 'feasible_at_risk', $5::jsonb, '{}'::jsonb, current_timestamp)`,
+        [
+          planId,
+          eventId,
+          ruleset.rulesetVersion,
+          ruleset.snapshotDate,
+          JSON.stringify({
+            today: todayInJurisdiction("US-NY-NYC"),
+            minSlackDays: 9,
+            finding_renderings: [
+              {
+                rule_ids: ["NYPD-SOUND-001", "PARKS-EVENT-001"],
+                notes: [],
+                note_text: null,
+                conflict_text: null,
+                deadline_display: null,
+                // The merged line's own slack is the binding route's: none.
+                slack_days: null,
+                deadline_unknown_fields: [],
+                timeline_unresolved_reason: null,
+                portal_instructions: null,
+                headline_mode: "applies_together",
+                routes: [
+                  route({
+                    ruleId: "NYPD-SOUND-001",
+                    disposition: "required",
+                    name: "Sound Device Permit",
+                  }),
+                  // The route that holds the minimum, and it is not a filing route.
+                  route({
+                    ruleId: "PARKS-EVENT-001",
+                    disposition: "advisory",
+                    name: "Amplified sound advisory",
+                    latestApplyDate: applyBy,
+                    deadlineStatus: "deadline_approaching",
+                    slackDays: 9,
+                  }),
+                ],
+              },
+            ],
+          }),
+        ],
+      );
+      await pool.query(
+        `INSERT INTO permit_plan_items (id, plan_id, rule_ids, triggered_by, permit_name, agency,
+                                        sources, kind, disposition, deadline_status,
+                                        verification_status)
+         VALUES ($1, $2, ARRAY['NYPD-SOUND-001','PARKS-EVENT-001'], '[]'::jsonb,
+                 'Sound Device Permit', 'NYPD', '[]'::jsonb, 'permit', 'required',
+                 'not_applicable', 'SOURCE_CONFIRMED')`,
+        [itemId, planId],
+      );
+      await pool.query(
+        "INSERT INTO checklist_items (id, plan_item_id, cohort_position) VALUES ($1, $2, 0)",
+        [randomUUID(), itemId],
+      );
+
+      const client = await pool.connect();
+      try {
+        await schedulerWith()(client, eventId, planId, {
+          email: "organizer@example.test",
+          phone: null,
+        });
+      } finally {
+        client.release();
+      }
+
+      const rows = await alertsOf(eventId);
+      const warning = rows.find((row) => row.alert_type === "slack_warning");
+      expect(warning).toBeDefined();
+      expect(warning?.payload.subject).toContain("9 days");
+      expect(warning?.payload.controlling_apply_by).toBe(applyBy);
+      // And the advisory still schedules no filing reminder of its own, which is the other half.
+      const reminders = rows.filter((row) => row.alert_type === "deadline_reminder");
+      for (const row of reminders) {
+        expect(row.payload.body).not.toContain("Amplified sound advisory");
+      }
     });
 
     /**
