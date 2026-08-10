@@ -1142,14 +1142,76 @@ async function priorTaskIds(
     checklist_item_id: string;
     rule_ids: string[];
     kind: FindingKind;
+    plan_id: string;
   }>(
-    `SELECT checklist.id AS checklist_item_id, item.rule_ids, item.kind
+    `SELECT checklist.id AS checklist_item_id, item.rule_ids, item.kind, plan.id AS plan_id
        FROM checklist_items AS checklist
        JOIN permit_plan_items AS item ON item.id = checklist.plan_item_id
        JOIN permit_plans AS plan ON plan.id = item.plan_id
       WHERE plan.event_id = (SELECT event_id FROM permit_plans WHERE id = $1)`,
     [planId],
   );
+  // EVERY GENERATION OF THE EVENT, IN ORDER, AND WHAT EACH ONE HELD. The requirement's presence in
+  // the plans BETWEEN a predecessor and its successor is what tells a membership change from a
+  // restoration, and it is stored: `materialize` never deletes a plan or its items.
+  const { rows: history } = await database.query<{
+    plan_id: string;
+    rule_ids: string[] | null;
+    kind: FindingKind | null;
+  }>(
+    `SELECT plan.id AS plan_id, item.rule_ids, item.kind
+       FROM permit_plans AS plan
+       LEFT JOIN permit_plan_items AS item ON item.plan_id = plan.id
+      WHERE plan.event_id = (SELECT event_id FROM permit_plans WHERE id = $1)
+      ORDER BY plan.generated_at, plan.id`,
+    [planId],
+  );
+  const planOrder: string[] = [];
+  const heldBy = new Map<string, { ruleIds: string[]; kind: FindingKind }[]>();
+  for (const row of history) {
+    if (!heldBy.has(row.plan_id)) {
+      planOrder.push(row.plan_id);
+      heldBy.set(row.plan_id, []);
+    }
+    if (row.rule_ids !== null && row.kind !== null) {
+      (heldBy.get(row.plan_id) as { ruleIds: string[]; kind: FindingKind }[]).push({
+        ruleIds: row.rule_ids,
+        kind: row.kind,
+      });
+    }
+  }
+  /**
+   * Whether the requirement was present in EVERY generation between the two, so that the later task
+   * continues the earlier one rather than restoring it after a gap.
+   *
+   * THE HARM THIS REFUSES IS THE ONE HARM THIS MECHANISM HAD NOT PRODUCED YET. A requirement dropped
+   * from an intervening plan and restored later gets a NEW task, because F-202 makes the original
+   * terminal. Adopting across that gap re-keys the old task's already-DELIVERED alert onto the new
+   * one and the upsert preserves its sent status, so the restored requirement's reminder never
+   * goes out and the organizer is never told to file something the plan says they must. The three
+   * earlier rounds on this mechanism produced a duplicate, a swap and another duplicate; this
+   * produces silence (#252 review).
+   *
+   * PRESENCE IS THE SAME RELATION THE PREDECESSOR TEST USES — same kind, overlapping rule ids —
+   * because it is the same question asked of a plan rather than of a task. A membership change
+   * keeps the requirement present in every generation, since a merge retains every contributing
+   * rule id and an unmerge keeps the rest; only a DROP makes it absent, and absence is exactly what
+   * `checklist.ts` reads to strike a row.
+   */
+  const presentThroughout = (from: string, to: string, prior: PriorTask, kind: FindingKind) => {
+    const start = planOrder.indexOf(from);
+    const end = planOrder.indexOf(to);
+    if (start < 0 || end < 0) return false;
+    for (let index = Math.min(start, end) + 1; index < Math.max(start, end); index += 1) {
+      const held = heldBy.get(planOrder[index] as string) ?? [];
+      const carried = held.some(
+        (entry) =>
+          entry.kind === kind && entry.ruleIds.some((ruleId) => prior.ruleIds.includes(ruleId)),
+      );
+      if (!carried) return false;
+    }
+    return true;
+  };
   const byTask = new Map<string, PriorTask[]>();
   for (const row of rows) {
     const priors = rows
@@ -1157,7 +1219,13 @@ async function priorTaskIds(
         (other) =>
           other.checklist_item_id !== row.checklist_item_id &&
           other.kind === row.kind &&
-          other.rule_ids.some((ruleId) => row.rule_ids.includes(ruleId)),
+          other.rule_ids.some((ruleId) => row.rule_ids.includes(ruleId)) &&
+          presentThroughout(
+            other.plan_id,
+            row.plan_id,
+            { id: other.checklist_item_id, ruleIds: other.rule_ids },
+            row.kind,
+          ),
       )
       .map((other) => ({ id: other.checklist_item_id, ruleIds: other.rule_ids }))
       .sort((left, right) => left.id.localeCompare(right.id));

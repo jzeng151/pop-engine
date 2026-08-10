@@ -4545,6 +4545,121 @@ describe.skipIf(databaseUrl === "")("F-203 deadline alerts", () => {
      * possible. The two plans and the two checklist rows are what `materialize()` does when a
      * requirement's route membership changes.
      */
+    /**
+     * #252 review: THE HARM DIRECTION THIS MECHANISM HAD NOT PRODUCED YET — SILENCE.
+     *
+     * A requirement dropped from an intervening plan and restored later gets a NEW checklist task,
+     * because F-202 makes the original terminal once its identity is absent from a later plan.
+     * Predecessor adoption still saw the struck row as a predecessor, re-keyed its already
+     * DELIVERED reminder onto the new task, and the upsert preserved the sent status — so the
+     * restored requirement's reminder never went out and the organizer was never told to file
+     * something the plan says they must. The three earlier rounds on this mechanism produced a
+     * duplicate delivery, a swapped delivery and another duplicate; this one produces none.
+     *
+     * FIXED WITHOUT A SCHEMA CHANGE, because the gap is stored. `materialize` never deletes a plan
+     * or its items, so the generations between a predecessor and its successor are on disk, and a
+     * membership change keeps the requirement present in every one of them while a drop does not.
+     * That is the same relation `checklist.ts` reads to strike the row in the first place.
+     */
+    it("does not adopt a terminal task's delivered reminder onto a restored requirement", async () => {
+      const eventId = await createEvent(scenario("C"));
+      const firstTask = randomUUID();
+      const restoredTask = randomUUID();
+      const applyBy = dayFromToday(9);
+      const generation = async (taskId: string | null): Promise<string> => {
+        const planId = randomUUID();
+        const itemId = randomUUID();
+        await pool.query(
+          `INSERT INTO permit_plans (id, event_id, event_revision, ruleset_version, snapshot_date,
+                                     verdict, verdict_detail, intake_snapshot, generated_at)
+           VALUES ($1, $2, 1, $3, $4, 'conditional', $5::jsonb, '{}'::jsonb, clock_timestamp())`,
+          [
+            planId,
+            eventId,
+            ruleset.rulesetVersion,
+            ruleset.snapshotDate,
+            JSON.stringify({
+              today: todayInJurisdiction("US-NY-NYC"),
+              minSlackDays: null,
+              finding_renderings: [
+                {
+                  // The intervening generation holds a DIFFERENT requirement, which is what makes
+                  // it a gap rather than an empty plan: the event kept generating, and this
+                  // requirement was not on it.
+                  rule_ids: taskId === null ? ["PARKS-EVENT-001"] : ["DOB-TENT-001"],
+                  notes: [],
+                  note_text: null,
+                  conflict_text: null,
+                  deadline_display: null,
+                  slack_days: null,
+                  deadline_unknown_fields: [],
+                  timeline_unresolved_reason: null,
+                  portal_instructions: null,
+                },
+              ],
+            }),
+          ],
+        );
+        await pool.query(
+          `INSERT INTO permit_plan_items (id, plan_id, rule_ids, triggered_by, permit_name, agency,
+                                          latest_apply_date, sources, kind, disposition,
+                                          deadline_status, verification_status)
+           VALUES ($1, $2, $3, '[]'::jsonb, $4, 'DOB', $5, '[]'::jsonb, 'permit',
+                   'required', 'deadline_approaching', 'SOURCE_CONFIRMED')`,
+          [
+            itemId,
+            planId,
+            taskId === null ? ["PARKS-EVENT-001"] : ["DOB-TENT-001"],
+            taskId === null ? "Special Event Permit" : "Tent permit",
+            applyBy,
+          ],
+        );
+        await pool.query(
+          "INSERT INTO checklist_items (id, plan_item_id, cohort_position) VALUES ($1, $2, 0)",
+          [taskId ?? randomUUID(), itemId],
+        );
+        const client = await pool.connect();
+        try {
+          await schedulerWith()(client, eventId, planId, {
+            email: "organizer@example.test",
+            phone: null,
+          });
+        } finally {
+          client.release();
+        }
+        return planId;
+      };
+
+      await generation(firstTask);
+      const first = (await alertsOf(eventId)).find(
+        (row) => row.alert_type === "deadline_reminder",
+      ) as AlertRow;
+      expect(first).toBeDefined();
+      await pool.query(
+        "UPDATE alerts SET status = 'sent', sent_at = current_timestamp WHERE id = $1",
+        [first.id],
+      );
+
+      await generation(null);
+      await generation(restoredTask);
+
+      const reminders = (await alertsOf(eventId)).filter(
+        (row) => row.alert_type === "deadline_reminder",
+      );
+      // The restored requirement has a reminder of its own, keyed to its own task, still to send.
+      const restored = reminders.filter(
+        (row) => row.idempotency_key.includes(restoredTask) && row.status === "pending",
+      );
+      expect(restored.length).toBeGreaterThan(0);
+      // NOT VACUOUS: before this the delivered row was re-keyed onto the restored task and kept its
+      // sent status, so no pending reminder for it existed at all and the organizer got silence.
+      expect(first.id).not.toBe(restored[0]?.id);
+      const delivered = reminders.find((row) => row.id === first.id) as AlertRow;
+      expect(delivered.status).toBe("sent");
+      expect(delivered.idempotency_key).toContain(firstTask);
+      expect(delivered.idempotency_key).not.toContain(restoredTask);
+    });
+
     it("does not swap reminders between routes when a route joins the group", async () => {
       const eventId = await createEvent(scenario("C"));
       const firstTask = randomUUID();
