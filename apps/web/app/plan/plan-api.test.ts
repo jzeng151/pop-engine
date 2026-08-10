@@ -855,6 +855,46 @@ describe("loadPlan", () => {
         ok: false,
       });
     }
+
+    // AND ON EVERY VALUE A BRANCH CANNOT MOVE. The compared list is derived from
+    // `ROUTE_FIELD_ORIGIN`'s published half rather than typed out, so this asserts the derivation
+    // reaches each of them — `portalInstructions` above all, which the hand-typed version omitted
+    // and which renders as a filing instruction under the blocking route's name.
+    const crossed: Record<string, unknown>[] = [
+      { name: "Some other permit" },
+      { agency: "Some other agency" },
+      { feeDisplay: "$1,000,000" },
+      { portalName: "Another portal" },
+      { portalUrl: "https://example.test/elsewhere" },
+      { portalInstructions: "Bring cash to the side door" },
+      // A fabricated citation, which rule-id membership on the parent used to admit.
+      {
+        sources: [
+          { ruleId: closed.ruleId, citation: "Invented page", urls: ["https://example.test/no"] },
+        ],
+      },
+      // And a sibling's real one, which it also admitted.
+      {
+        sources: [
+          { ruleId: binding.ruleId, citation: "Parks FAQ", urls: ["https://example.gov/faq"] },
+        ],
+      },
+    ];
+    for (const override of crossed) {
+      const body = planWith(["INFEASIBLE", "INFEASIBLE"]);
+      stubFetch(async () =>
+        jsonResponse(200, {
+          ...body,
+          verdictDetail: {
+            ...body.verdictDetail,
+            blockingFinding: { ...body.verdictDetail.blockingFinding, ...override },
+          },
+        }),
+      );
+      await expect(loadPlan("https://api.example.com", "event-1")).resolves.toMatchObject({
+        ok: false,
+      });
+    }
   });
 
   /**

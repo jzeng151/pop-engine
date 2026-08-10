@@ -167,6 +167,73 @@ export const BLOCKING_DISPOSITION_FLOOR: Disposition = "required";
 const UNRESOLVED_ROUTE_CAP_TRIGGER: Disposition = "required";
 
 /**
+ * Where each of a route's values COMES FROM: the published rule, or the intake this plan was
+ * evaluated against.
+ *
+ * WHY A TOTAL MAPPING RATHER THAN A LIST. `buildFinding` copies most of a finding straight off the
+ * rule and computes the rest from the intake, and a consumer comparing a finding evaluated under
+ * one set of answers against the same rule evaluated under another needs to know which is which.
+ * `plan-api.ts` needs exactly that: a blocker promoted out of a BRANCH was evaluated with one
+ * intake field answered differently, so its intake-derived values legitimately differ from the base
+ * line's and its published ones cannot.
+ *
+ * IT IS A RECORD, NOT AN ARRAY, AND THAT IS THE WHOLE POINT. `Record<keyof Required<FindingRoute>,
+ * ...>` requires every key: a field added to `FindingRoute` fails to COMPILE until it is
+ * classified. Five hand-maintained lists on this branch were each correct when written and wrong
+ * the moment the thing they described grew — the collapse signature twice, the `ConsumedRoute`
+ * projection, the blocker validator's conditions, and the promoted blocker's immutable set, where
+ * `portalInstructions` was simply missing and let a crossed payload put arbitrary filing
+ * instructions under a blocking route (#252 review). "Someone will remember" is what failed five
+ * times; this is the compiler refusing instead.
+ *
+ * THE CLASSIFICATION IS `buildFinding` READ OFF, not a judgement:
+ *
+ *   • `intake` — everything `computeDeadline` produces, plus the disposition, which
+ *     `resolveDisposition` demotes when the rule's own trigger came back `unknown`. Answering a
+ *     field can move any of these.
+ *   • `published` — copied from the `EngineRule`. No answer changes what a rule says about itself.
+ *
+ * `triggerResult` and `unknownFields` are `intake`: they ARE the answer state.
+ */
+export type RouteFieldOrigin = "intake" | "published";
+
+export const ROUTE_FIELD_ORIGIN: {
+  readonly [Field in keyof Required<FindingRoute>]: RouteFieldOrigin;
+} = {
+  ruleId: "published",
+  triggerResult: "intake",
+  disposition: "intake",
+  unknownFields: "intake",
+  name: "published",
+  agency: "published",
+  deadline: "published",
+  deadlineDisplay: "intake",
+  latestApplyDate: "intake",
+  applyAfterDate: "intake",
+  deadlineStatus: "intake",
+  slackDays: "intake",
+  feeDisplay: "published",
+  portalName: "published",
+  portalUrl: "published",
+  portalInstructions: "published",
+  notes: "published",
+  conflictText: "published",
+};
+
+/**
+ * The route fields no answer can move, derived from the mapping above rather than typed out again.
+ *
+ * `deadline` is `published` and is deliberately NOT here: the rule's own deadline BLOCK is
+ * published, and every value the engine computes from it is `intake`, so a consumer comparing two
+ * evaluations of one rule can compare the block and must not compare the dates. It is excluded by
+ * the caller that only carries dates rather than by reclassifying it, because the classification is
+ * about where the value comes from and that one genuinely comes from the rule.
+ */
+export const PUBLISHED_ROUTE_FIELDS: readonly (keyof FindingRoute)[] = (
+  Object.keys(ROUTE_FIELD_ORIGIN) as (keyof FindingRoute)[]
+).filter((field) => ROUTE_FIELD_ORIGIN[field] === "published");
+
+/**
  * The dispositions that denote something an organizer FILES.
  *
  * `required` and `may_be_required`, and the second is not a hedge to be excluded: an

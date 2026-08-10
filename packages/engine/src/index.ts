@@ -50,6 +50,9 @@ export { branchesForceInfeasible, computeWindowVerdict, windowIsMissed } from ".
 // restate it in prose, after the merged disposition and the scalar-free test.
 export {
   FILING_DISPOSITIONS,
+  PUBLISHED_ROUTE_FIELDS,
+  ROUTE_FIELD_ORIGIN,
+  type RouteFieldOrigin,
   bindingRouteOf,
   canBlockWhenMissed,
   offersAFilingAction,

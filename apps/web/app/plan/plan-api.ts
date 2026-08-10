@@ -26,6 +26,7 @@ import type {
   VerificationStatus,
 } from "@pop-engine/engine";
 import {
+  PUBLISHED_ROUTE_FIELDS,
   bindingRouteOf,
   branchesForceInfeasible,
   canBlockWhenMissed,
@@ -1096,10 +1097,17 @@ const blockerIsANarrowedMissedRoute = (plan: PlanResponse): boolean => {
   //     disposition, window and status to the panel (#252 review). Moving a condition from the
   //     finding to the branch table and weakening it on the way is the same class as the bypass
   //     that used to sit in front of the six conditions.
-  //   • THE VALUES A BRANCH CANNOT MOVE. A branch answers an intake field, so it can change the
-  //     disposition, the window, the date and the status, and it cannot change what the rule
-  //     PUBLISHES about itself. The identity, the fee and the filing path are compared; the four a
-  //     branch owns are not.
+  //   • THE VALUES A BRANCH CANNOT MOVE, DERIVED RATHER THAN LISTED. A branch answers an intake
+  //     field, so it can move whatever `buildFinding` computes from the intake and nothing the rule
+  //     publishes about itself. `ROUTE_FIELD_ORIGIN` is that partition, stated once beside the
+  //     function that makes it, as a TOTAL record so a new route field fails to compile until it is
+  //     classified. This list is its `published` half intersected with what a blocker carries.
+  //
+  //     A HAND-TYPED VERSION OF THIS LIST WAS MISSING `portalInstructions`, which let a crossed
+  //     payload put arbitrary filing instructions under the named blocking route while the widened
+  //     keys turned the panel's legacy fallback off, so nothing behind it caught them. That is the
+  //     fifth hand-maintained list on this branch to be found incomplete, and every one of them was
+  //     correct when written (#252 review).
   //
   // AGAINST THE ROUTE THE BLOCKER NAMES, NOT THE MERGED HEADLINE. A merged base finding's headline
   // is its binding route's, and a promoted blocker may name a different route of the same group.
@@ -1116,15 +1124,51 @@ const blockerIsANarrowedMissedRoute = (plan: PlanResponse): boolean => {
   );
   if (!branchesForceInfeasible(branchVerdicts)) return false;
   const publisher = (finding.routes ?? []).find((entry) => entry.ruleId === ruleId) ?? finding;
-  const published = ["name", "agency", "feeDisplay", "portalName", "portalUrl"] as const;
+  const immutable = BLOCKER_ROUTE_FIELDS.filter((field) =>
+    (PUBLISHED_ROUTE_FIELDS as readonly string[]).includes(field),
+  );
   if (
-    published.some((field) => blocker[field] !== undefined && blocker[field] !== publisher[field])
+    immutable.some(
+      (field) =>
+        blocker[field] !== undefined &&
+        (blocker[field] as unknown) !== (publisher[field] as unknown),
+    )
   ) {
     return false;
   }
-  // Its citations are the plan's own rules', which is weaker than the set equality the narrowed
-  // path applies and is all a promoted blocker supports: a branch may merge differently.
-  return (blocker.sources ?? []).every((source) => finding.ruleIds.includes(source.ruleId));
+  // ITS CITATIONS ARE THE NAMED ROUTE'S OWN, BY VALUE. This compared rule-id membership on the
+  // PARENT finding, which is the weakest check available: a sibling's citation passed, and so did
+  // fabricated citation text and a fabricated url carrying the right rule id (#252 review).
+  //
+  // The payload carries enough to do it properly, and the reason is worth stating rather than
+  // assuming. `ruleSources` gives a rule at most ONE source, copied off the rule, so a branch
+  // cannot change it; a merged finding concatenates its routes' own; and a promoted blocker is
+  // already `blockerView`-narrowed by the branch that produced it, so its `sources` are exactly its
+  // own rule's. Filtering the base finding by the named rule therefore yields precisely what a
+  // legitimate promoted blocker must carry, which is the same set equality the narrowed path
+  // applies. No approximation is needed and none is made.
+  return sourcesAreTheRoutesOwn(blocker, finding, ruleId);
+};
+
+/**
+ * The blocker's citations are the named rule's own, by value.
+ *
+ * ONE IMPLEMENTATION FOR BOTH PATHS, because they need the same thing and the promoted one had a
+ * weaker copy: `blockerView` FILTERS a finding's sources to the blocking rule on both paths — the
+ * narrowed one directly, the promoted one inside the branch that produced it — so on either the
+ * blocker carries exactly the sources the base finding holds for that rule.
+ *
+ * Absent is accepted, which is the pre-widening blocker; `WIDENED_BLOCKER_KEYS` decides that shape
+ * as a group and it never reaches here carrying only some of them.
+ */
+const sourcesAreTheRoutesOwn = (
+  blocker: ConsumedBlockingFinding,
+  finding: ConsumedFinding,
+  ruleId: string,
+): boolean => {
+  if (blocker.sources === undefined) return true;
+  const own = (finding.sources ?? []).filter((source) => source.ruleId === ruleId);
+  return JSON.stringify(blocker.sources) === JSON.stringify(own);
 };
 
 /** Conditions 4 to 7: the blocker IS the returned finding, narrowed to the route it names. */
@@ -1136,10 +1180,7 @@ const narrowedBlockerHolds = (
 ): boolean => {
   // 4. Its citations are that rule's. `blockerView` filters rather than copies, so this is set
   //    equality against the finding's own sources for that rule.
-  if (blocker.sources !== undefined) {
-    const own = (finding.sources ?? []).filter((source) => source.ruleId === ruleId);
-    if (JSON.stringify(blocker.sources) !== JSON.stringify(own)) return false;
-  }
+  if (!sourcesAreTheRoutesOwn(blocker, finding, ruleId)) return false;
 
   // 5. Its summary is the null the engine writes, on a merged finding.
   const merged = (finding.routes?.length ?? 0) > 1;
