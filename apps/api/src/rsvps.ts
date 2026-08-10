@@ -9,7 +9,7 @@ import type { Pool, PoolClient, QueryResult, QueryResultRow } from "pg";
 // Admission is `events.capacity`, the confirmed venue/event capacity, and a NULL capacity means
 // no enforced limit (spec AC 2, resolving SPEC-CONFLICT #209 on 2026-08-03). It used to be
 // F-101 `headcount`, which was wrong in a way worth recording: `headcount` is a regulatory input
-// that drives the 75+ assembly gate, the DOHMH thresholds and the Parks exactly-20 conflict, so
+// that drives the 75+ assembly gate and the Parks exactly-20 conflict, so
 // admitting against it meant raising an RSVP cap silently moved the event's permit findings. The
 // same column also feeds F-402's gauge, which is the shape F-306 promotes into.
 // Public POST requires F-301 public_page_published so unpublished events cannot collect RSVPs.
@@ -284,8 +284,8 @@ export type ListRsvpsResult =
  * silent wrong denominator it used to serve. `specs/F-302-rsvp-guest-list.md` records that.
  *
  * `events.headcount` is NOT what this response reports and is not read here at all. It stays a
- * regulatory input driving the 75-plus assembly gate, the DOHMH thresholds and the Parks
- * exactly-20 conflict, unchanged everywhere it is used as one. Admission is `capacity` alone.
+ * regulatory input driving the 75-plus assembly gate and the Parks exactly-20 conflict, unchanged
+ * everywhere it is used as one. Admission is `capacity` alone.
  *
  * `specs/F-302-rsvp-guest-list.md` records what removing `headcount` from this response needs.
  */

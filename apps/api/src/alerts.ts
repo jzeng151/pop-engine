@@ -1505,13 +1505,33 @@ function reminderCopy(
     // EVERY PUBLISHED NOTE, because the qualification IS one of them and nothing here can tell
     // which. `findings.ts` builds this array as the rule's own notes, then the DEADLINE's and
     // VERIFICATION's qualifications, all flattened, with no marker separating the caveat about a
-    // date from a note about anything else. Reading only `deadline_display` therefore dropped the
-    // caveat silently, and dropped it
-    // hardest exactly where it matters most: DOB-ASSEMBLY-001 publishes no display string at all,
-    // so its reminder stated a computed calendar date with no hint that the published lead may be
-    // ten BUSINESS days and that the wording is unpinned. A date presented without the doubt the
-    // ruleset attaches to it is a resolved requirement PopEngine invented (AGENTS.md: an
-    // unresolved state stays visible end to end).
+    // date from a note about anything else.
+    //
+    // WHOSE NOTES THESE ARE, ON A MERGED LINE: THIS ROUTE'S, and a fourth kind joins the three
+    // above. `subjectFromRoute` narrows `notes` to `route.notes`, which is `ruleNotes()` for that
+    // route's own rule, because the merged line's array concatenates every contributing rule's and
+    // a reminder headed with one route's name and date quoted a sibling's threshold as if it
+    // qualified this filing. `applyDependencySequencing` then appends its sequencing caveat to the
+    // gated route's notes as well as to the line's, so a route's array is its own notes, its
+    // deadline and verification qualifications, and — where the route is gated — the caveat saying
+    // the issued-before-filed order is not confirmed. All four are quoted here for the same reason
+    // the three were (#252 review).
+    //
+    // Reading only `deadline_display` therefore dropped the
+    // caveat silently, and dropped it hardest on the rule that carries the most of it:
+    // DOB-ASSEMBLY-001 has a long deadline `qualification` and five notes of its own, and a
+    // reminder built from `deadline_display` alone stated a computed calendar date with no hint
+    // of any of them. WHERE THAT ACTUALLY HAPPENS IS THE FIXTURE SUITE, not production. Since
+    // nyc.v2.8 this rule's deadline is `business_days_minimum`, which needs the holiday list
+    // `config.business_day_math` pins; `PUBLISHED_HOLIDAY_CALENDARS` in `calendar.ts` is empty, so
+    // in the running product the finding renders `not_calculable` with a null `latest_apply_date`
+    // (`plan.test.ts` asserts both fields) and therefore gets no reminder at all, by point 1
+    // above. The
+    // fixture suite supplies an empty holiday list and therefore does compute a date, which is
+    // where the dropped caveat is observable, and the rule's own `qualification` says the two
+    // disagree by design. A date presented without the doubt the ruleset attaches to it is a
+    // resolved requirement PopEngine invented (AGENTS.md: an unresolved state stays visible end to
+    // end), so the handling below stands whichever of the two a given run is in.
     //
     // Quoted, never summarised. Picking which notes "belong to" the deadline would be this file
     // deciding which published qualifications an organizer needs, which is the ruleset's call.
