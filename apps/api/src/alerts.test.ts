@@ -4579,7 +4579,8 @@ describe.skipIf(databaseUrl === "")("F-203 deadline alerts", () => {
         await pool.query(
           `INSERT INTO permit_plans (id, event_id, event_revision, ruleset_version, snapshot_date,
                                      verdict, verdict_detail, intake_snapshot, generated_at)
-           VALUES ($1, $2, 1, $3, $4, 'conditional', $5::jsonb, '{}'::jsonb, current_timestamp)`,
+           VALUES ($1, $2, 1, $3, $4, 'conditional', $5::jsonb, '{}'::jsonb, current_timestamp)
+           ON CONFLICT (id) DO UPDATE SET verdict_detail = EXCLUDED.verdict_detail`,
           [
             planId,
             eventId,
@@ -7061,6 +7062,119 @@ describe.skipIf(databaseUrl === "")("F-203 deadline alerts", () => {
      * unknown and makes the plan CONDITIONAL. It arms on any ruleset with a resolved undated
      * binding route, which is what this fixture is.
      */
+    /**
+     * #252 review: A CANDIDATE GROUP SENDS NO FILING INSTRUCTION, WHICH IS THE RULE'S SECOND CLAUSE.
+     *
+     * `isFilingSubject` read the disposition alone, so a candidate group holding a resolved, dated,
+     * required route scheduled "file by <date>" reminders and let the slack copy say "apply
+     * within" — while `plan-line.tsx` and `checklist-item.tsx` withheld the same action from the
+     * same group, because a candidate group's open question is WHICH of its routes applies (design
+     * §5.3). `offersAFilingAction` has carried both clauses since it was extracted; this file kept
+     * its own predicate.
+     */
+    it("schedules no filing reminder for a route of a candidate group", async () => {
+      const eventId = await createEvent(scenario("C"));
+      const planId = randomUUID();
+      const itemId = randomUUID();
+      const applyBy = dayFromToday(9);
+      const route = (overrides: Record<string, unknown>) => ({
+        triggerResult: "true",
+        unknownFields: [] as string[],
+        agency: "NYPD",
+        deadline: null,
+        deadlineDisplay: null,
+        latestApplyDate: null,
+        applyAfterDate: null,
+        deadlineStatus: "not_applicable",
+        slackDays: null,
+        feeDisplay: null,
+        portalName: null,
+        portalUrl: null,
+        portalInstructions: null,
+        ...overrides,
+      });
+      // The rendering is the only thing that differs between the two runs, so the plan row is
+      // written once and its `verdict_detail` rewritten in place: the item and its task hang off it.
+      const detailFor = (headlineMode: string) =>
+        JSON.stringify({
+          today: todayInJurisdiction("US-NY-NYC"),
+          minSlackDays: null,
+          finding_renderings: [
+            {
+              rule_ids: ["NYPD-SOUND-001", "PARKS-EVENT-001"],
+              notes: [],
+              note_text: null,
+              conflict_text: null,
+              deadline_display: null,
+              slack_days: null,
+              deadline_unknown_fields: [],
+              timeline_unresolved_reason: null,
+              portal_instructions: null,
+              headline_mode: headlineMode,
+              routes: [
+                // Resolved, dated and REQUIRED: the disposition test admits it on either mode.
+                route({
+                  ruleId: "NYPD-SOUND-001",
+                  disposition: "required",
+                  name: "Sound Device Permit",
+                  latestApplyDate: applyBy,
+                  deadlineStatus: "on_track",
+                }),
+                route({
+                  ruleId: "PARKS-EVENT-001",
+                  disposition: "may_be_required",
+                  name: "Special Event Permit",
+                  ...(headlineMode === "candidate"
+                    ? { triggerResult: "unknown", unknownFields: ["sapo_event_type"] }
+                    : {}),
+                }),
+              ],
+            },
+          ],
+        });
+      await pool.query(
+        `INSERT INTO permit_plans (id, event_id, event_revision, ruleset_version, snapshot_date,
+                                   verdict, verdict_detail, intake_snapshot, generated_at)
+         VALUES ($1, $2, 1, $3, $4, 'conditional', $5::jsonb, '{}'::jsonb, current_timestamp)`,
+        [planId, eventId, ruleset.rulesetVersion, ruleset.snapshotDate, detailFor("candidate")],
+      );
+      await pool.query(
+        `INSERT INTO permit_plan_items (id, plan_id, rule_ids, triggered_by, permit_name, agency,
+                                        sources, kind, disposition, deadline_status,
+                                        verification_status)
+         VALUES ($1, $2, ARRAY['NYPD-SOUND-001','PARKS-EVENT-001'], '[]'::jsonb,
+                 'Sound Device Permit', 'NYPD', '[]'::jsonb, 'permit', 'required',
+                 'not_applicable', 'SOURCE_CONFIRMED')`,
+        [itemId, planId],
+      );
+      await pool.query(
+        "INSERT INTO checklist_items (id, plan_item_id, cohort_position) VALUES ($1, $2, 0)",
+        [randomUUID(), itemId],
+      );
+      const insert = async (headlineMode: string) => {
+        await pool.query("DELETE FROM alerts WHERE event_id = $1", [eventId]);
+        await pool.query("UPDATE permit_plans SET verdict_detail = $2::jsonb WHERE id = $1", [
+          planId,
+          detailFor(headlineMode),
+        ]);
+        const client = await pool.connect();
+        try {
+          await schedulerWith()(client, eventId, planId, {
+            email: "organizer@example.test",
+            phone: null,
+          });
+        } finally {
+          client.release();
+        }
+        return (await alertsOf(eventId)).filter((row) => row.alert_type === "deadline_reminder");
+      };
+
+      expect(await insert("candidate")).toHaveLength(0);
+      // NOT VACUOUS: the same route on a SETTLED group schedules its reminders, so this is the
+      // second clause of the rule firing and not the fixture failing to date anything.
+      expect((await insert("applies_together")).length).toBeGreaterThan(0);
+    });
+
     it("warns off a route's slack when the merged line it sits on carries none", async () => {
       const eventId = await createEvent(scenario("C"));
       const planId = randomUUID();
@@ -7831,7 +7945,9 @@ describe.skipIf(databaseUrl === "")("F-203 deadline alerts", () => {
                 deadline_unknown_fields: [],
                 timeline_unresolved_reason: null,
                 portal_instructions: null,
-                headline_mode: "candidate",
+                // SETTLED, so the disposition clause is what suppresses the barred route rather
+                // than the group's mode doing it for free (#252 review).
+                headline_mode: "applies_together",
                 routes: [
                   route({
                     ruleId: "NYPD-SOUND-001",
@@ -7844,8 +7960,6 @@ describe.skipIf(databaseUrl === "")("F-203 deadline alerts", () => {
                     ruleId: "PARKS-EVENT-001",
                     disposition: "prohibited_or_ineligible",
                     name: "Commercial advertising by sound device",
-                    triggerResult: "unknown",
-                    unknownFields: ["sound_purpose"],
                     latestApplyDate: barredApplyBy,
                     deadlineStatus: "deadline_approaching",
                   }),

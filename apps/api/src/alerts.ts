@@ -25,6 +25,7 @@ import {
   CONFIRM_WITH_AGENCY,
   DEPENDENCY_SEQUENCING_BINDINGS,
   FILING_DISPOSITIONS,
+  offersAFilingAction,
 } from "@pop-engine/engine";
 import type {
   Deadline,
@@ -1295,9 +1296,18 @@ const subjectFromRoute = (
  * is a notification telling them to file it.
  *
  * THE SET ITSELF IS THE ENGINE'S NOW, imported rather than declared here for the third time. It is
- * one classification — which dispositions denote something an organizer files — read by eight
+ * one classification — which dispositions denote something an organizer files — read by nine
  * surfaces across both apps, and it was written out locally in this file and in `plan.ts` while the
  * web renderers asked the question a third way (#252 review).
+ *
+ * AND THE DISPOSITION IS ONLY HALF THE QUESTION. `offersAFilingAction` has two clauses and this
+ * read one of them: the group must also be SETTLED. A candidate group holding a resolved, dated,
+ * required route passed the disposition test, so this file sent "file by <date>" reminders and let
+ * the slack copy say "apply within" for a group whose open question is WHICH of its routes applies
+ * — while `plan-line.tsx` and `checklist-item.tsx` withheld the same action from the same group.
+ * Not a missing rule: a consumer that kept its own predicate after the shared one landed, which is
+ * the ninth surface for this rule and the first where the fix was already there and unused
+ * (#252 review).
  */
 
 /**
@@ -1316,7 +1326,10 @@ const subjectFromRoute = (
  *     with the verdict they are scheduled against.
  */
 const isFilingSubject = (subject: AlertSubject): boolean =>
-  FILING_DISPOSITIONS.has(subject.row.disposition);
+  offersAFilingAction(
+    { disposition: subject.row.disposition },
+    subject.rendering?.headline_mode ?? null,
+  );
 
 /**
  * The routes a row schedules from. An unmerged row is itself, so nothing about its alerts moves;

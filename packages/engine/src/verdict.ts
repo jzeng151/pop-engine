@@ -1,12 +1,7 @@
 // Verdict algorithm, ARCHITECTURE steps 3–6. Branch evaluation for unknowns runs before any
 // window check, so an unknown-conditioned finding can never render INFEASIBLE (Scenario F).
 
-import {
-  BLOCKING_DISPOSITION_FLOOR,
-  DISPOSITION_STRENGTH,
-  resolveFindings,
-  routesOf,
-} from "./findings";
+import { resolveFindings, routesOf } from "./findings";
 import type { DefiniteRoutes } from "./findings";
 import type { PlanContext } from "./deadlines";
 import {
@@ -186,9 +181,12 @@ function blockerView(finding: Finding, route: FindingRoute): Finding {
  * line took them from different rules. An entry here is one rule's own disposition beside one rule's
  * own window, so a single membership test covers both.
  */
+// MEMBERSHIP IS THE WHOLE TEST, because membership IS `canBlockWhenMissed`. This also compared the
+// disposition against the blocking floor, which `evaluate` had already applied to the same value
+// when it built the set — one clause of the shared predicate, restated beside the set the predicate
+// filled. Equivalent today and free to drift the day the floor rule changes shape, which is the
+// reason the predicate was extracted (#252 review).
 const blocksWhenMissed = (route: FindingRoute, definite: DefiniteRoutes): boolean =>
-  DISPOSITION_STRENGTH.indexOf(route.disposition) >=
-    DISPOSITION_STRENGTH.indexOf(BLOCKING_DISPOSITION_FLOOR) &&
   definite.blockingRuleIds.has(route.ruleId);
 
 /**
@@ -290,7 +288,7 @@ function describeDifference(base: readonly Finding[], candidate: readonly Findin
   // than answer "not missed".
   const missedAsScoped = (finding: Finding, id: string): boolean => {
     const route = routesOf(finding).find((entry) => entry.ruleId === id);
-    return (route?.deadlineStatus ?? finding.deadlineStatus) === "published_deadline_missed";
+    return windowIsMissed({ deadlineStatus: route?.deadlineStatus ?? finding.deadlineStatus });
   };
   const describeMissed = (finding: Finding, id: string): string =>
     missedAsScoped(finding, id) ? `${id} (published deadline missed as scoped)` : id;
@@ -309,7 +307,7 @@ function describeDifference(base: readonly Finding[], candidate: readonly Findin
   /** The routes whose own windows are missed, which is a different set from the line's rule ids. */
   const missedRouteIds = (finding: Finding): string[] =>
     routesOf(finding)
-      .filter((route) => route.deadlineStatus === "published_deadline_missed")
+      .filter(windowIsMissed)
       .map((route) => route.ruleId)
       .sort();
   const missedRoutes = (finding: Finding): string => missedRouteIds(finding).join(",");

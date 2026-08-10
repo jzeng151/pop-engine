@@ -2394,6 +2394,18 @@ describe.runIf(databaseUrl.length > 0)("F-202 compliance checklist", () => {
       tent_days_in_place: null,
     };
 
+    /**
+     * The same group with the tent question ANSWERED, so both routes resolve and the line is
+     * `applies_together` rather than `candidate`.
+     *
+     * The reminder tests below use this one and the two above it do not, and the difference is the
+     * point: a candidate group's open question is WHICH of its routes applies, so it offers no
+     * filing action on any surface — `offersAFilingAction`'s second clause, which the alert path
+     * used to ignore (#252 review). Rendering a merged line's values is a different question from
+     * instructing a filing, so the rows above still read the unanswered shape.
+     */
+    const SETTLED_TALL_TENT = { ...TALL_TENT, tent_area_sqft: 500, tent_days_in_place: 2 };
+
     const dobItem = async (): Promise<ChecklistItemView & Record<string, unknown>> => {
       const eventId = await createEvent(TALL_TENT);
       await generatePlan(eventId);
@@ -2681,7 +2693,7 @@ describe.runIf(databaseUrl.length > 0)("F-202 compliance checklist", () => {
     });
 
     it("schedules the reminders that route's window earns, naming that route", async () => {
-      const eventId = await createEvent(TALL_TENT);
+      const eventId = await createEvent(SETTLED_TALL_TENT);
       await generatePlan(eventId);
       await review(appWith(fakeStorage()), eventId, undefined, {
         contactEmail: "organizer@example.test",
@@ -2720,7 +2732,7 @@ describe.runIf(databaseUrl.length > 0)("F-202 compliance checklist", () => {
      * bound on an unresolved attempt (#252 review).
      */
     it("records the window its reminders retire on, which its item column does not carry", async () => {
-      const eventId = await createEvent(TALL_TENT);
+      const eventId = await createEvent(SETTLED_TALL_TENT);
       await generatePlan(eventId);
       await review(appWith(fakeStorage()), eventId, undefined, {
         contactEmail: "organizer@example.test",
@@ -2747,8 +2759,14 @@ describe.runIf(databaseUrl.length > 0)("F-202 compliance checklist", () => {
 
       expect(rows).toHaveLength(reminderOffsets.length);
       for (const row of rows) {
-        // Nothing on the item says when this reminder stops being true. The alert does.
-        expect(row.item_apply_by).toBeNull();
+        // THE ITEM COLUMN IS NO LONGER NULL ON THIS FIXTURE, and the assertion is dropped rather
+        // than reworded. It was null because the dated tent route was NON-BINDING, and on this
+        // published group the only thing that makes it non-binding is an unresolved trigger —
+        // which makes the line a candidate group, which now schedules no filing reminder at all.
+        // The two conditions are mutually exclusive here. What the alert carries the date FOR is
+        // still pinned, by the synthetic `applies_together` group in `alerts.test.ts` whose binding
+        // route is undated because a stronger route binds, which is the shape this one modelled
+        // (#252 review).
         expect(row.controlling_apply_by).toBe("2026-08-05");
         expect(row.shut_the_day_after).toBe(true);
         // Still open on its own last day, which is the day the reminder is about.
