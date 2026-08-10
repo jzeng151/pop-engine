@@ -75,7 +75,7 @@ If any contributor or agent finds a disagreement:
 4. If the authoritative artifact is unclear, assign an owner and add a blocking item to `OPEN-QUESTIONS.md`.
 5. Resolve the source artifact first.
 6. Update all derived contracts/docs in the same reconciliation PR or explicitly track each follow-up.
-7. Add a regression test or validation rule so the contradiction cannot silently return.
+7. Add the smallest practical guard against the contradiction returning, and document its coverage and limits. Use structural validation when the authoritative artifact is machine-readable. A prose check is partial: it must name the files and claim patterns it covers, and neither the check nor any record citing it may claim that arbitrary rewordings are prevented.
 
 Contributors must not:
 
