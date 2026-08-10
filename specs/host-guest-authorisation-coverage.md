@@ -561,7 +561,8 @@ What it does do, as a consequence rather than as output: once a published rule c
 `venue_has_assembly_approval`, the generic verdict engine sees an unknown-capable field that a
 trigger reads, so it adds the field to `missingFacts` and evaluates its branches. That is the
 assembly-approval PORTION OF THE DATA F-102 Acceptance Criterion 6 would render. This spec produces
-it; it does not render it, does not test its rendering, and states no criterion about it.
+it; F-102's existing generic missing-fact renderer exposes each branch when the verdict is
+CONDITIONAL, without a web-lane change or a rendering criterion in this spec.
 
 **This document states no implementation status for F-102's criteria.** Two sentences here did, both
 sourced to PR #170: that Acceptance Criterion 6 is an approved criterion never implemented, and that
@@ -570,10 +571,6 @@ says the opposite about the same subject, that "the status of another spec's cri
 asserted here", so the two could not both stand and the blocker is the one that is right. Which
 criteria of F-102 are implemented is F-102's to state and a reader's to check in the tree, not a
 fact this spec carries into its own approval.
-
-**Consequence to state plainly:** this feature produces the assembly-approval branch data and
-renders none of it. Where that data is shown, and when, is F-102's question. The finding itself
-renders normally, because it is an ordinary finding.
 
 Accessibility requirement inherited rather than restated: any status this introduces must be
 distinguishable without colour alone, matching the treatment F-206 uses for verification statuses.
@@ -1250,9 +1247,9 @@ The first draft permitted only `packages/engine/src/ruleset.ts` under the engine
 feature **unimplementable**.
 
 Must not touch: `specs/F-102`, the plan view, the checklist, or any file owned by an in-flight core
-feature. Coordination point: this feature produces assembly-coverage data that no criterion in this
-spec renders, and it renders none of it, per the UI section. What another feature's criteria do with
-that data is that feature's call; the two remain separate approvals.
+feature. Coordination point: F-102's existing generic missing-fact renderer handles the branch data
+this feature produces, without a rendering criterion or web-lane work in this spec. What another
+feature's criteria do with that data is that feature's call; the two remain separate approvals.
 
 ## Rollout and Fallback
 
@@ -1407,10 +1404,10 @@ of work are already promised the next ruleset version, and a fourth wants a publ
    named confirmation for it is regulatory publication, so it is the product owner's approval under
    `docs/DOCUMENTATION-GOVERNANCE.md` §6, and that is the whole requirement even where the product
    owner authored it.
-4. **DEPENDENCY. DOB-ASSEMBLY-001's coverage confirmation is unimplemented.** This feature produces
-   assembly-coverage data that no criterion in this spec renders, and it renders none of it, per the
-   UI section. Rendering it would sit in another feature's footprint, which this one excludes, and
-   the status of another spec's criteria is not asserted here. No action is owed here.
+4. **DEPENDENCY. DOB-ASSEMBLY-001's coverage confirmation is unimplemented.** F-102's existing
+   generic missing-fact renderer handles the branch data this feature produces, without a rendering
+   criterion or web-lane work in this spec. The status of another spec's criteria is not asserted
+   here. No action is owed here.
 5. **PREREQUISITE, product owner. Verification research** on whether an existing venue approval
    removes the temporary filing, per
    Fixtures and Verification above. Not established; the rule asserts no exemption in either
@@ -1685,7 +1682,8 @@ approval.**
     data is not shown to an operator until it is. So the correction reached the blocker list and not
     the prose the blocker is about, which left this document contradicting its own resolved blocker
     at the point where a reader would act on it. Both sentences are removed and the section now says
-    what this feature does, which is that it produces the branch data and renders none of it.
+    that F-102's existing generic missing-fact renderer handles the branch data without adding a
+    rendering criterion or web-lane work to this spec.
     Recorded because the defect is the shape of the fix rather than the finding: a blocker that
     states a conclusion does not sweep the document for the sentences that state the opposite, and
     round 3 recorded the same lesson about a narrowing whose consequence was not carried through.
