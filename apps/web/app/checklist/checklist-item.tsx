@@ -165,6 +165,28 @@ const conflictReadings = (
 };
 
 /**
+ * The route the row's date, fee and filing details belong to, whichever way it was chosen.
+ *
+ * TWO WAYS A ROW CAN CARRY ONE ROUTE'S SCALARS, and both are here because both are ATTRIBUTED in
+ * words below. `filingRouteRuleId` names the route where the line publishes no window of its own.
+ * Where it DOES publish one, the scalars are the binding route's, and on a candidate row the same
+ * paragraph names that route because the heading no longer can.
+ *
+ * Lifted out of `PlanContextBody` because the citation promotion has to follow the SAME route the
+ * paragraph names. It read `filingRouteRuleId` alone, so on the second branch it fell through to
+ * contributing order and promoted whichever rule the published file lists first, under a sentence
+ * naming a different one (#252 review).
+ */
+const attributedRouteOf = (context: PlanContext): ConsumedRoute | null => {
+  const routes = context.routes ?? [];
+  const named =
+    context.filingRouteRuleId == null
+      ? null
+      : (routes.find((route) => route.ruleId === context.filingRouteRuleId) ?? null);
+  return named ?? (isCandidateRow(context) ? (routes[0] ?? null) : null);
+};
+
+/**
  * The row's citations with the filing route's own first, because the first one is PROMOTED.
  *
  * `PlanContextBody` lifts `sources[0]` out of the disclosure and renders it directly beneath the
@@ -185,9 +207,9 @@ const conflictReadings = (
 const citationsLedByFilingRoute = (
   context: PlanContext,
 ): { lead: PlanContext["sources"][number] | undefined; rest: PlanContext["sources"] } => {
-  const ruleId = context.filingRouteRuleId;
+  const ruleId = attributedRouteOf(context)?.ruleId;
   const [first, ...others] = context.sources;
-  if (ruleId == null) return { lead: first, rest: others };
+  if (ruleId === undefined) return { lead: first, rest: others };
   const own = context.sources.filter((source) => source.ruleId === ruleId);
   const siblings = context.sources.filter((source) => source.ruleId !== ruleId);
   // A filing route whose rule publishes no source of its own promotes NOTHING rather than a
@@ -227,7 +249,14 @@ function ContextCitation({ source }: { source: PlanContext["sources"][number] })
  * `lastVerifiedDate` is absent because the row states it in its summary, above.
  */
 const hasContextDetail = (context: PlanContext): boolean =>
-  context.sources.length > 1 ||
+  // THE CITATIONS THE DISCLOSURE ACTUALLY HOLDS, not the count before they were narrowed. This
+  // gate read `sources.length > 1` while the panel below renders `rest`, so a row whose filing
+  // route publishes no source of its own and whose single sibling citation had moved into `rest`
+  // showed no promoted citation AND no control to open the one it had: a published citation became
+  // unreachable. Same shape as the scalar-free heading reading `filingRouteRuleId` after the
+  // attribution moved — a narrowing whose own visibility condition was left on the old value
+  // (#252 review).
+  citationsLedByFilingRoute(context).rest.length > 0 ||
   conflictReadings(context).length > 0 ||
   (context.noteText !== null && context.noteText !== context.conflictText) ||
   context.publishedNotes.length > 0 ||
@@ -251,29 +280,17 @@ export function PlanContextBody({
   const { lead: primarySource, rest: furtherSources } = citationsLedByFilingRoute(context);
   const [detailsOpen, setDetailsOpen] = useState(false);
   /**
-   * The route the filing date, fee and filing details above belong to, whenever the row does not
-   * name it somewhere else.
+   * The route the paragraph below names, and the route the promoted citation above came from: one
+   * selection, `attributedRouteOf`, because a sentence naming one rule beside a citation from
+   * another is the crossing this row exists to remove.
    *
-   * TWO WAYS A ROW CAN CARRY ONE ROUTE'S SCALARS. `filingRouteRuleId` names the route where the
-   * line publishes no window of its own. Where it DOES publish one, the scalars are the binding
-   * route's, `routes[0]`, and the row said so through its heading — until the heading became the
-   * deciding question. On a candidate row that leaves an agency, an apply-by date, a fee and a
-   * portal under a generic question with nothing naming which rule published them, which is worse
-   * than the attribution it replaced: those values went from belonging to a permit that might not
-   * apply to belonging to nothing at all (#252 review).
-   *
-   * So the sentence below is rendered for both, and it is the SAME sentence: the heading no longer
-   * carries the attribution, so the paragraph that already existed for the one case carries it for
-   * the other. A row that is not a candidate is unchanged, because its heading still names the
+   * The sentence is rendered for BOTH ways a row carries one route's scalars, and it is the same
+   * sentence: on a candidate row the heading became the deciding question, so the paragraph that
+   * already existed for the named-filing-route case carries the attribution for the binding-route
+   * case too. A row that is not a candidate is unchanged, because its heading still names the
    * permit.
    */
-  const namedFilingRoute =
-    context.filingRouteRuleId == null
-      ? null
-      : ((context.routes ?? []).find((route) => route.ruleId === context.filingRouteRuleId) ??
-        null);
-  const filingRoute =
-    namedFilingRoute ?? (isCandidateRow(context) ? ((context.routes ?? [])[0] ?? null) : null);
+  const filingRoute = attributedRouteOf(context);
   // THE QUESTION THAT WOULD DECIDE IT, on the surface the organizer works the item on.
   //
   // The conditionality already reached this row — the disposition badge above reads "may be
@@ -304,10 +321,16 @@ export function PlanContextBody({
   const summaryShowsResearchTreatment =
     context.verificationStatus === "RESEARCH_REQUIRED" &&
     includesAgencyConfirmation([context.deadlineDisplay, context.feeDisplay]);
+  // THE TEXTS THE DISCLOSURE ACTUALLY RENDERS. This asked whether the merged `conflictText` carries
+  // the confirm-with-agency phrase, and the panel renders one paragraph PER ROUTE now: the merged
+  // value is only the first publisher's in binding order, so a sibling's reading carrying the
+  // phrase left this false and the row repeated the line the disclosure was already showing. Third
+  // gate on this row found reading a pre-narrowing value, after `gatedRoutesOf` and
+  // `hasContextDetail` (#252 review).
   const detailsShowResearchTreatment =
     context.verificationStatus === "RESEARCH_REQUIRED" &&
     includesAgencyConfirmation([
-      context.conflictText,
+      ...conflictReadings(context).map(({ text }) => text),
       context.noteText,
       context.timelineUnresolvedReason,
       context.portalInstructions,

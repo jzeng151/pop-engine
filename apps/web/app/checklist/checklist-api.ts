@@ -11,6 +11,7 @@
 
 import {
   CHECKLIST_STATUSES,
+  bindingRouteOf,
   mergedDispositionOf,
   noRouteSuppliesScalars,
 } from "@pop-engine/engine";
@@ -625,11 +626,33 @@ const dispositionFollowsFromRoutes = (context: PlanContext): boolean => {
   return context.disposition === mergedDispositionOf(routes);
 };
 
+/**
+ * `routes[0]` IS THE BINDING ROUTE HERE TOO, and this is the third boundary to check the claim
+ * rather than define it.
+ *
+ * Everything `filingRouteIsCarried` does above rests on that position: the identity and the tuple
+ * are compared against `routes[0]` whenever the row does not name a filing route, and
+ * `attributedRouteOf` in `checklist-item.tsx` names that route in words on a candidate row. So a
+ * reordered payload that copies the new first route's identity and tuple satisfied every comparison
+ * and the row named the wrong rule (#252 review).
+ *
+ * `bindingRouteOf` is the engine's own selection, exported on this PR in `0904f55f` for the plan
+ * boundary and used unchanged here. Third rule shared this way, after `mergedDispositionOf` and
+ * `noRouteSuppliesScalars` — and a third boundary is exactly when a hand-written fourth copy would
+ * have started to drift.
+ */
+const bindsWhereTheEngineWouldBind = (context: PlanContext): boolean => {
+  const routes = (context.routes ?? []) as readonly FindingRoute[];
+  const binding = bindingRouteOf(routes);
+  return binding === null || binding.ruleId === routes[0]?.ruleId;
+};
+
 const isPlanContext = (value: unknown): value is PlanContext =>
   shapedLike(PLAN_CONTEXT_CHECKS)(value) &&
   routeGroupIsWhole(value) &&
   routeContractHolds(value) &&
   dispositionFollowsFromRoutes(value) &&
+  bindsWhereTheEngineWouldBind(value) &&
   filingRouteIsCarried(value);
 
 const DOCUMENT_CHECKS: FieldChecks<ChecklistDocument> = { id: isString, filename: isString };
@@ -709,6 +732,7 @@ const isChecklistItem = (value: unknown): value is ChecklistItem =>
   routeGroupIsWhole(value) &&
   routeContractHolds(value) &&
   dispositionFollowsFromRoutes(value) &&
+  bindsWhereTheEngineWouldBind(value) &&
   filingRouteIsCarried(value);
 
 /**

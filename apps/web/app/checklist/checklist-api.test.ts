@@ -534,7 +534,7 @@ describe("loadChecklist", () => {
                 headlineMode: "applies_together",
                 // Named, so the FILING fields are legitimately the second route's while the identity
                 // above them must still be the binding route's. Both halves of the row are checked.
-                filingRouteRuleId: (routes[1] as Record<string, unknown>).ruleId,
+                filingRouteRuleId: (routes[0] as Record<string, unknown>).ruleId,
                 ...override,
               }),
             ],
@@ -578,9 +578,60 @@ describe("loadChecklist", () => {
    * — which has a name. The row the api itself serves was rejected and the organizer's whole
    * checklist read as unreadable, which is worse than any crossing the check prevents.
    */
+  /**
+   * #252 review: THE THIRD BOUNDARY TO DEFINE THE BINDING ROUTE RATHER THAN CHECK IT.
+   *
+   * Everything `filingRouteIsCarried` does rests on `routes[0]`: the identity and the filing tuple
+   * are compared against it wherever the row names no filing route, and `attributedRouteOf` names
+   * that route in words on a candidate row. So a reordered payload that copies the new first
+   * route's identity and tuple satisfied every comparison and the row named the wrong rule.
+   *
+   * `bindingRouteOf` is the engine's own selection, exported on this PR for the plan boundary and
+   * used unchanged here rather than written a third time.
+   */
+  it("refuses a row whose routes are not in binding order", async () => {
+    const [first, second] = mergedRoutes("true") as Record<string, unknown>[];
+    // Availability ties, so the engine binds the EARLIER published date.
+    const tight = { ...second, latestApplyDate: "2026-03-01", deadlineStatus: "on_track" };
+    const loose = { ...first, latestApplyDate: "2026-09-01", deadlineStatus: "on_track" };
+    const rowWith = (routes: Record<string, unknown>[]) => {
+      const binding = routes[0] as Record<string, unknown>;
+      return checklistBody({
+        items: [
+          trackedItem(STREET_MEDIUM, {
+            routes,
+            headlineMode: "applies_together",
+            filingRouteRuleId: null,
+            permitName: binding.name,
+            agency: binding.agency,
+            latestApplyDate: binding.latestApplyDate,
+            deadlineStatus: binding.deadlineStatus,
+            feeDisplay: binding.feeDisplay,
+            portalName: binding.portalName,
+            portalUrl: binding.portalUrl,
+            portalInstructions: binding.portalInstructions,
+          }),
+        ],
+      });
+    };
+
+    stubFetch(async () => jsonResponse(200, rowWith([loose, tight])));
+    await expect(loadChecklist("https://api.example.com", "event-1")).resolves.toMatchObject({
+      ok: false,
+    });
+
+    // NOT VACUOUS: the same two routes in the order the engine produces read.
+    stubFetch(async () => jsonResponse(200, rowWith([tight, loose])));
+    await expect(loadChecklist("https://api.example.com", "event-1")).resolves.toMatchObject({
+      ok: true,
+    });
+  });
+
   it("reads a scalar-free row whose filing fields are attributed to a route", async () => {
+    // IN BINDING ORDER: the unresolved route is the only one contributing the merged
+    // `may_be_required`, so it binds even though its own trigger has not resolved. That is exactly
+    // what makes the row scalar-free, and the filing tuple is then attributed to it by name.
     const routes = [
-      { ...(mergedRoutes("true")[0] as object), disposition: "advisory" },
       {
         ...(mergedRoutes("unknown")[1] as object),
         disposition: "may_be_required",
@@ -588,6 +639,7 @@ describe("loadChecklist", () => {
         deadlineStatus: "on_track",
         feeDisplay: "$1,050 licence fee",
       },
+      { ...(mergedRoutes("true")[0] as object), disposition: "advisory" },
     ] as Record<string, unknown>[];
     stubFetch(async () =>
       jsonResponse(
@@ -626,9 +678,11 @@ describe("loadChecklist", () => {
             trackedItem(STREET_MEDIUM, {
               // THE CONDITION, NOT THE SHAPE: a resolved route BELOW `required`, so the ceiling
               // does not bite and the unknown route alone carries the group to `may_be_required`.
+              // IN BINDING ORDER, which here is the UNRESOLVED route: it is the only one
+              // contributing the merged `may_be_required`, so it is the whole pool.
               routes: [
-                { ...(mergedRoutes("true")[0] as object), disposition: "advisory" },
                 { ...(mergedRoutes("unknown")[1] as object), disposition: "may_be_required" },
+                { ...(mergedRoutes("true")[0] as object), disposition: "advisory" },
               ],
               disposition: "may_be_required",
               headlineMode: "candidate",

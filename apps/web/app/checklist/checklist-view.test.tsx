@@ -815,7 +815,9 @@ describe("AC 5 · deadline context lives where the work happens", () => {
       unknownFields: [],
       name,
       agency: "NYC",
-      deadline: null,
+      // A published window on the route the row reads, which is what makes it bind: without one
+      // the two routes tie on availability and the rule id decides, the other way round.
+      deadline: ruleId === "STREET-MEDIUM-001" ? { type: "before_issuance" } : null,
       deadlineDisplay: null,
       latestApplyDate: "2026-08-01",
       applyAfterDate,
@@ -876,7 +878,9 @@ describe("AC 5 · deadline context lives where the work happens", () => {
       unknownFields: [],
       name,
       agency: "NYC",
-      deadline: null,
+      // Same reason as the test above: the binding route publishes a window TYPE and no date, so
+      // it is more available than a route publishing no window at all and binds ahead of it.
+      deadline: ruleId === "STREET-MEDIUM-001" ? { type: "before_issuance" } : null,
       deadlineDisplay: null,
       latestApplyDate,
       applyAfterDate,
@@ -2647,8 +2651,10 @@ describe("a checklist row whose window comes from another route (#252)", () => {
    * naming that route as its binding route is a shape the api cannot produce and the boundary now
    * refuses.
    */
+  // Built on the TENT route because that is the one that BINDS: it is the only route contributing
+  // the merged `required`, so the row's own portal is its portal.
   const BINDING_WITH_PORTAL = {
-    ...TALL_ROUTE,
+    ...TENT_ROUTE,
     portalName: portalNameOf(STREET_MEDIUM),
     portalUrl: portalUrlOf(STREET_MEDIUM),
   };
@@ -2662,7 +2668,7 @@ describe("a checklist row whose window comes from another route (#252)", () => {
             latestApplyDate: "2026-08-26",
             deadlineStatus: "on_track",
             feeDisplay: "TUP: $100 initial 30 days",
-            routes: [TALL_ROUTE, TENT_ROUTE],
+            routes: [TENT_ROUTE, TALL_ROUTE],
             headlineMode: "candidate",
             filingRouteRuleId: "DOB-TENT-001",
           }),
@@ -2717,7 +2723,7 @@ describe("a checklist row whose window comes from another route (#252)", () => {
         created: true,
         items: [
           trackedItem(STREET_MEDIUM, {
-            routes: [TALL_ROUTE, TENT_ROUTE],
+            routes: [TENT_ROUTE, TALL_ROUTE],
             headlineMode: "candidate",
             filingRouteRuleId: null,
           }),
@@ -2753,6 +2759,101 @@ describe("a checklist row whose window comes from another route (#252)", () => {
   };
 
   /**
+   * #252 review: THE SAME PROMOTION, ON THE BRANCH WHERE NO FILING ROUTE IS NAMED.
+   *
+   * `filingRouteRuleId` is null on a candidate row whose binding route publishes its own window, so
+   * the attribution paragraph names `routes[0]` instead — and the citation promotion read the id
+   * alone, fell through to contributing order, and promoted whichever rule the published file lists
+   * first. One route's dates under another route's citation, one branch over from the fix.
+   */
+  it("leads a candidate row's citations with the route its paragraph names", async () => {
+    stubApi({
+      [GET_CHECKLIST]: checklistOf({
+        created: true,
+        items: [
+          trackedItem(STREET_MEDIUM, {
+            routes: [DATED_BINDING, TENT_ROUTE],
+            headlineMode: "candidate",
+            // No filing route is NAMED, so the row's values are the binding route's.
+            filingRouteRuleId: null,
+            sources: [
+              {
+                ruleId: "DOB-TENT-001",
+                citation: "Tent permit page",
+                urls: ["https://example.test/tent"],
+              },
+              {
+                ruleId: "DOB-TALL-STRUCTURE-001",
+                citation: "Tall structure page",
+                urls: ["https://example.test/tall"],
+              },
+            ],
+          }),
+        ],
+      }),
+    });
+    await renderView();
+
+    const row = candidateRow();
+    // The paragraph names the binding route, so the promoted citation is that route's.
+    expect(row.textContent).toContain(DATED_BINDING.name);
+    const promoted = row.querySelector(".check-item__citations a") as HTMLAnchorElement;
+    // NOT VACUOUS: the tent route's citation is FIRST in contributing order, which is what the
+    // old code promoted.
+    expect(promoted.getAttribute("href")).toBe("https://example.test/tall");
+  });
+
+  /**
+   * #252 review: A NARROWING WHOSE VISIBILITY CHECK WAS LEFT ON THE PRE-NARROWING VALUE.
+   *
+   * Where the filing route publishes no source of its own, the promotion moves every citation into
+   * the disclosure. `hasContextDetail` still counted the ORIGINAL list and opened the disclosure
+   * only above one, so a row with exactly one sibling citation showed no promoted citation and no
+   * control to open the one it had: a published citation became unreachable.
+   */
+  it("keeps a lone sibling citation reachable when the filing route publishes none", async () => {
+    stubApi({
+      [GET_CHECKLIST]: checklistOf({
+        created: true,
+        items: [
+          trackedItem(STREET_MEDIUM, {
+            routes: [DATED_BINDING, TENT_ROUTE],
+            headlineMode: "candidate",
+            filingRouteRuleId: null,
+            // The route the row's values are attributed to publishes no source of its own, and
+            // exactly one sibling citation exists.
+            sources: [
+              {
+                ruleId: "DOB-TENT-001",
+                citation: "Tent permit page",
+                urls: ["https://example.test/tent"],
+              },
+            ],
+            // Nothing else would open the disclosure on its own.
+            publishedNotes: [],
+            noteText: null,
+            conflictText: null,
+            portalName: null,
+            portalUrl: null,
+            portalInstructions: null,
+            timelineUnresolvedReason: null,
+            deadlineUnknownFields: [],
+          }),
+        ],
+      }),
+    });
+    await renderView();
+
+    const row = candidateRow();
+    // Nothing is promoted, which is correct: the attributed route cites nothing of its own.
+    expect(row.querySelector(".check-item__citations")).toBeNull();
+    // NOT VACUOUS: before this the disclosure was gated on the original count and never opened,
+    // so the sibling's page was on no surface at all.
+    const expanded = await expandRow(row);
+    expect(expanded.querySelector('a[href="https://example.test/tent"]')).not.toBeNull();
+  });
+
+  /**
    * #252 review: THE PROMOTED CITATION IS AN ATTRIBUTION, NOT A RANKING, ONCE A ROUTE IS NAMED.
    *
    * `PlanContextBody` lifts `sources[0]` out of the disclosure and renders it directly beneath the
@@ -2772,7 +2873,7 @@ describe("a checklist row whose window comes from another route (#252)", () => {
         items: [
           trackedItem(STREET_MEDIUM, {
             latestApplyDate: "2026-08-26",
-            routes: [TALL_ROUTE, TENT_ROUTE],
+            routes: [TENT_ROUTE, TALL_ROUTE],
             headlineMode: "candidate",
             // The filing route is the SECOND contributing rule, which is the whole shape.
             filingRouteRuleId: "DOB-TENT-001",
@@ -2869,7 +2970,7 @@ describe("a checklist row whose window comes from another route (#252)", () => {
             portalName: null,
             portalUrl: null,
             portalInstructions: null,
-            routes: [{ ...TALL_ROUTE, applyAfterDate: "2026-07-20" }, TENT_ROUTE],
+            routes: [{ ...TENT_ROUTE, applyAfterDate: "2026-07-20" }, TALL_ROUTE],
             headlineMode: "candidate",
             filingRouteRuleId: null,
           }),
@@ -2879,11 +2980,11 @@ describe("a checklist row whose window comes from another route (#252)", () => {
     await renderView();
 
     const row = candidateRow();
-    expect(
-      within(row).getByText(
-        new RegExp(`earliest realistic filing for ${TALL_ROUTE.name} 2026-07-20`),
-      ),
-    ).toBeDefined();
+    // Substring rather than a RegExp: the published name contains "30+ days", and `+` is a
+    // quantifier.
+    expect(row.textContent).toContain(
+      `earliest realistic filing for ${TENT_ROUTE.name} 2026-07-20`,
+    );
   });
 
   /**
@@ -2953,7 +3054,7 @@ describe("a checklist row whose window comes from another route (#252)", () => {
         items: [
           trackedItem(STREET_MEDIUM, {
             latestApplyDate: "2026-08-26",
-            routes: [TALL_ROUTE, TENT_ROUTE],
+            routes: [TENT_ROUTE, TALL_ROUTE],
             headlineMode: "candidate",
             filingRouteRuleId: "DOB-TENT-001",
           }),
@@ -2987,7 +3088,7 @@ describe("a checklist row whose window comes from another route (#252)", () => {
         items: [
           trackedItem(STREET_MEDIUM, {
             latestApplyDate: "2026-08-26",
-            routes: [TALL_ROUTE, TENT_ROUTE],
+            routes: [TENT_ROUTE, TALL_ROUTE],
             headlineMode: "candidate",
             filingRouteRuleId: "DOB-TENT-001",
           }),
@@ -3016,12 +3117,12 @@ describe("a checklist row whose window comes from another route (#252)", () => {
           trackedItem(STREET_MEDIUM, {
             latestApplyDate: "2026-08-26",
             routes: [
+              TENT_ROUTE,
               {
                 ...TALL_ROUTE,
                 triggerResult: "unknown",
                 unknownFields: ["structure_over_10ft_tall"],
               },
-              TENT_ROUTE,
             ],
             headlineMode: "candidate",
             filingRouteRuleId: "DOB-TENT-001",
@@ -3033,8 +3134,10 @@ describe("a checklist row whose window comes from another route (#252)", () => {
 
     const row = await expandedCandidateRow();
     expect(within(row).getByTestId("deciding-question").textContent).toBe(
+      // The fields arrive in ROUTE order and the routes are in binding order, so the unresolved
+      // route that binds names its own field first.
       "The answers so far do not say whether this requirement applies." +
-        " Answering structure over 10ft tall, tent area sqft would decide it.",
+        " Answering tent area sqft, structure over 10ft tall would decide it.",
     );
   });
 
@@ -3051,7 +3154,7 @@ describe("a checklist row whose window comes from another route (#252)", () => {
         items: [
           trackedItem(STREET_MEDIUM, {
             latestApplyDate: "2026-08-26",
-            routes: [TALL_ROUTE, TENT_ROUTE],
+            routes: [TENT_ROUTE, TALL_ROUTE],
             headlineMode: "candidate",
             filingRouteRuleId: "DOB-TENT-001",
             deadlineUnknownFields: ["structure_types"],
@@ -3087,7 +3190,7 @@ describe("a checklist row whose window comes from another route (#252)", () => {
           // No date override: with a null filing id the row's window is its binding route's, and
           // this one publishes none. The date is not what this test is about.
           trackedItem(STREET_MEDIUM, {
-            routes: [BINDING_WITH_PORTAL, TENT_ROUTE],
+            routes: [BINDING_WITH_PORTAL, TALL_ROUTE],
             headlineMode: "candidate",
             filingRouteRuleId: null,
           }),
@@ -3116,8 +3219,8 @@ describe("a checklist row whose window comes from another route (#252)", () => {
           // The row's own portal, for the reason given on the candidate case above.
           trackedItem(STREET_MEDIUM, {
             routes: [
-              BINDING_WITH_PORTAL,
-              { ...TENT_ROUTE, triggerResult: "true", unknownFields: [] },
+              { ...BINDING_WITH_PORTAL, triggerResult: "true", unknownFields: [] },
+              TALL_ROUTE,
             ],
             headlineMode: "applies_together",
             filingRouteRuleId: null,
@@ -3140,7 +3243,7 @@ describe("a checklist row whose window comes from another route (#252)", () => {
         items: [
           trackedItem(STREET_MEDIUM, {
             latestApplyDate: "2026-08-26",
-            routes: [TALL_ROUTE, { ...TENT_ROUTE, triggerResult: "true", unknownFields: [] }],
+            routes: [{ ...TENT_ROUTE, triggerResult: "true", unknownFields: [] }, TALL_ROUTE],
             headlineMode: "applies_together",
             filingRouteRuleId: "DOB-TENT-001",
           }),
