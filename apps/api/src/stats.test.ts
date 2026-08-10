@@ -145,9 +145,7 @@ describe.runIf(databaseUrl.length > 0)("F-402 event stats", () => {
     const bad = await request(api).get("/api/events/not-a-uuid/stats");
     expect(bad.status).toBe(400);
 
-    const missing = await request(api).get(
-      `/api/events/${randomUUID()}/stats`,
-    );
+    const missing = await request(api).get(`/api/events/${randomUUID()}/stats`);
     expect(missing.status).toBe(404);
   });
 

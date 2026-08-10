@@ -228,6 +228,48 @@ function contributedDisposition(
     : finding.disposition;
 }
 
+/**
+ * Whether a merged line's own scalars can come from any of its routes: the condition §4.3's
+ * amendment of 2026-08-09 states, read off the route list alone.
+ *
+ * `mergeGroup()` publishes NO headline scalars in exactly one case — the group holds a route whose
+ * trigger resolved AND no resolved route contributes the merged disposition — and that case is
+ * decidable from what a route entry already carries. `disposition` on a route is the rule's own
+ * value before any group arithmetic, `triggerResult` is its own trigger, and those two are precisely
+ * what `unresolvedRouteCeilingApplies` and `contributedDisposition` read. So the merged disposition
+ * and the contributing set are recomputed here rather than approximated, and nothing else is needed.
+ *
+ * EXPORTED BECAUSE THE VALIDATORS NEED THE CONDITION, NOT THE SHAPE. The plan and checklist
+ * boundaries accept an all-null headline as an approved state; testing for the SHAPE let any merged
+ * group null its scalars and skip the binding-route comparison, which turned a narrow exception into
+ * a way around the check the route contract exists to enforce (#252 review). They test this instead,
+ * and it is defined beside the merge that produces the state so the two cannot drift.
+ *
+ * A route list of fewer than two is not a merged line and has no such state.
+ */
+export function noRouteSuppliesScalars(routes: readonly FindingRoute[]): boolean {
+  if (routes.length < 2) return false;
+  const resolved = (route: FindingRoute): boolean => route.triggerResult !== "unknown";
+  const ceilingApplies = routes.some(
+    (route) =>
+      resolved(route) &&
+      DISPOSITION_STRENGTH.indexOf(route.disposition) >=
+        DISPOSITION_STRENGTH.indexOf(UNRESOLVED_ROUTE_CAP_TRIGGER),
+  );
+  const contributed = (route: FindingRoute): Disposition =>
+    resolved(route) || !ceilingApplies
+      ? route.disposition
+      : DISPOSITION_STRENGTH.indexOf(route.disposition) >
+          DISPOSITION_STRENGTH.indexOf(UNRESOLVED_ROUTE_CEILING)
+        ? UNRESOLVED_ROUTE_CEILING
+        : route.disposition;
+  const disposition = strongestDisposition(routes.map(contributed));
+  return (
+    routes.some(resolved) &&
+    !routes.some((route) => resolved(route) && contributed(route) === disposition)
+  );
+}
+
 function strongestDisposition(dispositions: readonly Disposition[]): Disposition {
   return dispositions.reduce((strongest, value) =>
     DISPOSITION_STRENGTH.indexOf(value) > DISPOSITION_STRENGTH.indexOf(strongest)
@@ -574,6 +616,7 @@ function sequenceRoute(
   route: FindingRoute,
   applyAfterDate: string,
   slackWarningDays: number,
+  sequencingNote: string,
 ): FindingRoute {
   const windowDays =
     route.latestApplyDate === null
@@ -582,6 +625,9 @@ function sequenceRoute(
   const closed = windowDays !== null && windowDays < 0;
   return {
     ...route,
+    // The caveat too: a route's notes are captured when the group merges and this runs after, so
+    // without it the per-route readers state the sequence and lose the sentence qualifying it.
+    notes: [...(route.notes ?? []), sequencingNote],
     applyAfterDate: closed ? null : applyAfterDate,
     slackDays: closed ? null : (windowDays ?? route.slackDays),
     deadlineStatus:
@@ -665,6 +711,36 @@ function applyDependencySequencing(
     //
     // An unmerged finding has one route and it is the binding one, so this is the whole of the
     // change: every single-rule line sequences exactly as before.
+    /**
+     * The caveat this sequence has to travel with, composed once and attached BOTH to the finding
+     * and to the gated route.
+     *
+     * ON THE ROUTE AS WELL AS ON THE LINE, because the route is where the per-route readers look.
+     * `routeFrom()` captures a route's notes when the group merges, and this runs afterwards, so a
+     * route's notes were a snapshot taken before the sequence existed. `alerts.ts` reads them per
+     * route, and dropped this caveat from the reminder and from the at-risk warning that says the
+     * requirement waits on another agency's decision — stating the wait while losing the sentence
+     * saying the ordering is not confirmed by located primary text (#252 review).
+     *
+     * It is this route's own caveat, about this rule's own sequence, so attaching it here restores
+     * an attribution rather than putting a sibling's note back on the route.
+     */
+    const sequencingNote =
+      `sequenced after ${binding.upstreamRuleId} per ${binding.dependencyRuleId}: earliest ` +
+      `pursuit ${applyAfterDate}, once the ${earliestDecisionDays}–${latestDecisionDays} day ` +
+      `decision window opens` +
+      (gatedWindowDays === null
+        ? ""
+        : sequenceClosedWindow
+          ? `, which is after this permit's own ${gatedLatestApplyDate ?? ""} deadline, so ` +
+            `the sequence leaves no window to file in. Strict issued-before-filed sequencing ` +
+            `is not confirmed by located primary text` +
+            (directFilingOpen
+              ? ` — filing directly may still be open, so confirm the order with the agency`
+              : `, so confirm the order with the agency`)
+          : `, leaving ${gatedWindowDays} days to file. Strict issued-before-filed sequencing ` +
+            `is not confirmed by located primary text — confirm the order with the agency`);
+
     const gatedRouteBinds =
       gated.routes === undefined || gated.routes[0]?.ruleId === binding.gatedRuleId;
 
@@ -701,27 +777,11 @@ function applyDependencySequencing(
         : {
             routes: gated.routes.map((route) =>
               route.ruleId === binding.gatedRuleId
-                ? sequenceRoute(route, applyAfterDate, context.slackWarningDays)
+                ? sequenceRoute(route, applyAfterDate, context.slackWarningDays, sequencingNote)
                 : route,
             ),
           }),
-      notes: [
-        ...gated.notes,
-        `sequenced after ${binding.upstreamRuleId} per ${binding.dependencyRuleId}: earliest ` +
-          `pursuit ${applyAfterDate}, once the ${earliestDecisionDays}–${latestDecisionDays} day ` +
-          `decision window opens` +
-          (gatedWindowDays === null
-            ? ""
-            : sequenceClosedWindow
-              ? `, which is after this permit's own ${gatedLatestApplyDate ?? ""} deadline, so ` +
-                `the sequence leaves no window to file in. Strict issued-before-filed sequencing ` +
-                `is not confirmed by located primary text` +
-                (directFilingOpen
-                  ? ` — filing directly may still be open, so confirm the order with the agency`
-                  : `, so confirm the order with the agency`)
-              : `, leaving ${gatedWindowDays} days to file. Strict issued-before-filed sequencing ` +
-                `is not confirmed by located primary text — confirm the order with the agency`),
-      ],
+      notes: [...gated.notes, sequencingNote],
     });
   }
 

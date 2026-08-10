@@ -263,6 +263,54 @@ describe("loadPlan", () => {
    */
   it("reads a merged finding that publishes no scalars of its own", async () => {
     const finding = mergedFinding("unknown", "candidate");
+    // THE CONDITION, NOT THE SHAPE: a resolved route BELOW `required`, so the unresolved-route
+    // ceiling does not bite and the unknown route alone carries the group to `may_be_required`.
+    // That is the one case §4.3 publishes no scalars for, and it is what the routes have to show.
+    const routes = [
+      { ...(finding.routes[0] as Record<string, unknown>), disposition: "advisory" },
+      { ...(finding.routes[1] as Record<string, unknown>), disposition: "may_be_required" },
+    ];
+    stubFetch(async () =>
+      jsonResponse(200, {
+        ...storedPlan,
+        findings: [
+          {
+            ...finding,
+            routes,
+            disposition: "may_be_required",
+            name: null,
+            agency: null,
+            deadline: null,
+            deadlineDisplay: null,
+            latestApplyDate: null,
+            applyAfterDate: null,
+            deadlineStatus: "not_calculable",
+            feeDisplay: null,
+            portalName: null,
+            portalUrl: null,
+            portalInstructions: null,
+          },
+        ],
+      }),
+    );
+
+    await expect(loadPlan("https://api.example.com", "event-1")).resolves.toMatchObject({
+      ok: true,
+    });
+  });
+
+  /**
+   * #252 review: THE SCALAR-FREE STATE IS A CONDITION, NOT A SHAPE.
+   *
+   * §4.3 publishes no headline scalars in ONE case: the group holds a resolved route and none of
+   * them contributes the merged disposition. Accepting the SHAPE alone let any merged group null its
+   * name, dates, fee and portal and skip the binding-route comparison, so a plan silently missing
+   * every one of those published values passed validation.
+   */
+  it("refuses an ordinary merged group that nulls its headline", async () => {
+    // Both routes resolved and `required`, so a resolved route does contribute the merged
+    // disposition and this line has a binding route to read: the scalars are not nobody's.
+    const finding = mergedFinding("true");
     stubFetch(async () =>
       jsonResponse(200, {
         ...storedPlan,
@@ -286,7 +334,7 @@ describe("loadPlan", () => {
     );
 
     await expect(loadPlan("https://api.example.com", "event-1")).resolves.toMatchObject({
-      ok: true,
+      ok: false,
     });
   });
 

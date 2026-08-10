@@ -229,16 +229,27 @@ function rescopeVerdictLine(
   return verdictCopy(suggestion.reevaluatedVerdict);
 }
 
+/**
+ * THE SAME REFERENCE THE BLOCKER SECTION SHOWS, NOT ONE RE-FOUND BY RULE ID.
+ *
+ * `blockingFinding` is the merged line NARROWED to the route whose window closed, and this sentence
+ * names the finding a rescope removes. Resolving its rule ids back through `findings` collapsed the
+ * match to the parent line, so on a merged group whose blocker is a NON-binding route the sentence
+ * rendered the binding route's name, citation and portal — a route the rescope is not removing, in
+ * the one sentence that says what it removes. That is the defect the panel above it already fixed by
+ * reading the blocker off the narrowed object, surviving one section down (#252 review).
+ *
+ * The panel's own `blockerReference` is passed in rather than rebuilt, so both places show one
+ * reference and the legacy fallback for a plan stored before the narrowing is applied once.
+ */
 function RescopeReason({
   suggestion,
   blockingFinding,
-  findings,
-  rulesetReferences,
+  blockerReference,
 }: {
   suggestion: ConsumedVerdictDetail["rescopeSuggestions"][number];
   blockingFinding: ConsumedVerdictDetail["blockingFinding"];
-  findings: readonly ConsumedFinding[];
-  rulesetReferences: readonly FindingReference[];
+  blockerReference: FindingReference | null;
 }) {
   if (blockingFinding === null) return null;
   const removesBlocker = suggestion.droppedRuleIds.some((ruleId) =>
@@ -250,9 +261,7 @@ function RescopeReason({
       {removesBlocker ? (
         <>
           This removes{" "}
-          <FindingReferences
-            references={referencesForRuleIds(blockingFinding.ruleIds, findings, rulesetReferences)}
-          />{" "}
+          {blockerReference === null ? null : <FindingReferences references={[blockerReference]} />}{" "}
           — the missed-deadline finding that blocks the current event date.
         </>
       ) : (
@@ -265,11 +274,13 @@ function RescopeReason({
 function RescopeLadder({
   suggestions,
   blockingFinding,
+  blockerReference,
   findings,
   rulesetReferences,
 }: {
   suggestions: ConsumedVerdictDetail["rescopeSuggestions"];
   blockingFinding: ConsumedVerdictDetail["blockingFinding"];
+  blockerReference: FindingReference | null;
   findings: readonly ConsumedFinding[];
   rulesetReferences: readonly FindingReference[];
 }) {
@@ -317,8 +328,7 @@ function RescopeLadder({
             <RescopeReason
               suggestion={suggestion}
               blockingFinding={blockingFinding}
-              findings={findings}
-              rulesetReferences={rulesetReferences}
+              blockerReference={blockerReference}
             />
             {suggestion.droppedRuleIds.length > 0 && (
               <p className="verdict-detail__rescope-dropped">
@@ -736,6 +746,7 @@ export function VerdictDetailPanel({
         <RescopeLadder
           suggestions={detail.rescopeSuggestions}
           blockingFinding={blocker}
+          blockerReference={blockerReference}
           findings={findings}
           rulesetReferences={references}
         />

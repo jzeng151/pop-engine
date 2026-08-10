@@ -88,10 +88,11 @@ describe("finding the published ruleset", () => {
     // Picking one of two would put every permit fact on screen behind an artifact nobody chose,
     // and the page would look entirely normal doing it.
     expect(() => publishedRulesFileIn(rulesDirectoryWith({}))).toThrow(/found 0/);
-    expect(() =>
-      publishedRulesFileIn(
-        rulesDirectoryWith({ [FIXTURE]: ruleset(), [SECOND_FIXTURE]: ruleset() }),
-      ),
+    expect(
+      () =>
+        publishedRulesFileIn(
+          rulesDirectoryWith({ [FIXTURE]: ruleset(), [SECOND_FIXTURE]: ruleset() }),
+        ),
       // Named in sorted order, so the message is stable whatever the directory hands back.
     ).toThrow(new RegExp(`found 2: ${FIXTURE}, ${SECOND_FIXTURE}`.replace(/\./g, "\\.")));
   });

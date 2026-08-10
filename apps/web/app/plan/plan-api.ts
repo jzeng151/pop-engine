@@ -25,6 +25,7 @@ import type {
   VerdictDetail,
   VerificationStatus,
 } from "@pop-engine/engine";
+import { noRouteSuppliesScalars } from "@pop-engine/engine";
 import { CREDENTIALED } from "../intake/events-api";
 import {
   absentOr,
@@ -543,10 +544,23 @@ const HEADLINE_SCALARS = [
   "portalInstructions",
 ] as const satisfies readonly (keyof ConsumedFinding & keyof ConsumedRoute)[];
 
+/**
+ * THE EXCEPTION IS A CONDITION, NOT A SHAPE. §4.3's amendment publishes no headline scalars in ONE
+ * case: the group holds a resolved route and none of them contributes the merged disposition. Read
+ * as a shape — "everything null and `not_calculable`" — it accepted that state on ANY merged group,
+ * so an ordinary `applies_together` group could null its name, dates, fee and portal and skip the
+ * binding-route comparison entirely, and a plan silently missing every one of those published values
+ * passed validation (#252 review). The routes carry what decides it, so the condition is tested.
+ *
+ * `noRouteSuppliesScalars` is the engine's own, exported from beside the merge that produces the
+ * state rather than restated here: a second copy of a rule this specific would drift, and a drifted
+ * copy of THIS rule reads as enforcement while allowing the thing it forbids.
+ */
 const publishesNoScalars = (finding: ConsumedFinding): boolean =>
   finding.deadlineStatus === "not_calculable" &&
   finding.deadline === null &&
-  HEADLINE_SCALARS.every((field) => field === "deadlineStatus" || finding[field] === null);
+  HEADLINE_SCALARS.every((field) => field === "deadlineStatus" || finding[field] === null) &&
+  noRouteSuppliesScalars((finding.routes ?? []) as readonly FindingRoute[]);
 
 const headlineMatchesBinding = (finding: ConsumedFinding): boolean => {
   const binding = finding.routes?.[0];

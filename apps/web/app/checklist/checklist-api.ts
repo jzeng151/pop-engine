@@ -9,12 +9,13 @@
 // reason it is worth the weight here is the same one it was worth there — every field below is
 // regulatory content or organizer state, and a silently-undefined one renders as an answer.
 
-import { CHECKLIST_STATUSES } from "@pop-engine/engine";
+import { CHECKLIST_STATUSES, noRouteSuppliesScalars } from "@pop-engine/engine";
 import type {
   ChecklistStatus,
   Deadline,
   DeadlineStatus,
   Disposition,
+  FindingRoute,
   FindingSource,
   HeadlineMode,
   RuleUserSummary,
@@ -480,12 +481,24 @@ const FILED_FIELDS = [
  * Every filed field is null and the status reads `not_calculable`, so there is nothing to attribute
  * and nothing to compare against.
  */
+/**
+ * THE EXCEPTION IS A CONDITION, NOT A SHAPE, for the same reason the plan boundary's is. §4.3's
+ * amendment publishes nothing in ONE case: the group holds a resolved route and none of them
+ * contributes the merged disposition. Testing the shape alone let ANY merged row null its identity
+ * and filing tuple and skip every comparison below, and the checklist does not render a route list,
+ * so such a row loses the permit name, the date, the fee and the portal with nothing on screen to
+ * recover them from and still reads as valid (#252 review).
+ *
+ * `noRouteSuppliesScalars` is the engine's own predicate, exported from beside the merge that
+ * produces the state, so this boundary and the plan's test one rule rather than two copies of it.
+ */
 const publishesNoFilingFields = (context: PlanContext): boolean =>
   context.deadlineStatus === "not_calculable" &&
   context.deadline === null &&
   context.permitName === null &&
   context.agency === null &&
-  FILED_FIELDS.every((field) => field === "deadlineStatus" || context[field] === null);
+  FILED_FIELDS.every((field) => field === "deadlineStatus" || context[field] === null) &&
+  noRouteSuppliesScalars((context.routes ?? []) as readonly FindingRoute[]);
 
 const matchesRoute = (context: PlanContext, route: ConsumedRoute): boolean =>
   (context.deadline?.type ?? null) === (route.deadline?.type ?? null) &&

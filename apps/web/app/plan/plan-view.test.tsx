@@ -2413,6 +2413,98 @@ describe("F-102 · CONDITIONAL branch table and INFEASIBLE rescope ladder", () =
     expect(barredRoute.disposition).toBe("prohibited_or_ineligible");
   });
 
+  /**
+   * #252 review: THE RESCOPE SENTENCE NAMED THE ROUTE IT IS NOT REMOVING.
+   *
+   * "This removes X — the missed-deadline finding that blocks the current event date" resolved the
+   * blocker's rule ids back through `findings`, which on a merged line returns the parent and
+   * collapses to the headline. Where the blocker is a NON-binding route, the sentence named the
+   * binding route instead: the panel above had already been fixed to read the narrowed blocker, and
+   * this section had not.
+   */
+  it("names the blocking route, not the headline, in the rescope explanation", async () => {
+    const route = (overrides: Partial<FindingRoute> = {}): FindingRoute => ({
+      ruleId: "DOB-TENT-001",
+      triggerResult: "true",
+      disposition: "required",
+      unknownFields: [],
+      name: "Tent permit",
+      agency: "DOB",
+      deadline: null,
+      deadlineDisplay: null,
+      latestApplyDate: "2026-09-01",
+      applyAfterDate: null,
+      deadlineStatus: "on_track",
+      slackDays: null,
+      feeDisplay: null,
+      portalName: null,
+      portalUrl: null,
+      portalInstructions: null,
+      ...overrides,
+    });
+    stubApi(
+      plan({
+        verdict: "INFEASIBLE",
+        findings: [
+          finding({
+            ruleIds: ["DOB-TENT-001", "DOB-TALL-STRUCTURE-001"],
+            headlineMode: "applies_together",
+            routes: [
+              route({}),
+              route({
+                ruleId: "DOB-TALL-STRUCTURE-001",
+                name: "Tall structure permit",
+                latestApplyDate: "2026-07-01",
+                deadlineStatus: "published_deadline_missed",
+              }),
+            ],
+          }),
+        ],
+        verdictDetail: {
+          ...emptyVerdictDetail,
+          // The blocker is the NON-binding route, narrowed by `blockerView` as the engine serves it.
+          blockingFinding: {
+            ruleIds: ["DOB-TALL-STRUCTURE-001"],
+            name: "Tall structure permit",
+            agency: "DOB",
+            disposition: "required",
+            deadlineDisplay: null,
+            latestApplyDate: "2026-07-01",
+            deadlineStatus: "published_deadline_missed",
+            feeDisplay: null,
+            portalName: null,
+            portalUrl: null,
+            portalInstructions: null,
+            sources: [],
+            userSummary: null,
+          },
+          missedRuleIds: ["DOB-TALL-STRUCTURE-001"],
+          rescopeSuggestions: [
+            {
+              change: { field: "structure_over_10ft_tall", value: "no" },
+              reevaluatedVerdict: "CONDITIONAL",
+              droppedRuleIds: ["DOB-TALL-STRUCTURE-001"],
+              introducedRuleIds: [],
+              remainingMissingFields: [],
+              remainingTimelineReasons: [],
+              minSlackDays: null,
+              atRiskFindingName: null,
+            },
+          ],
+        },
+      }),
+    );
+    renderPlan();
+    await screen.findByTestId("rescope-ladder");
+
+    const reason = screen
+      .getByTestId("rescope-ladder")
+      .querySelector(".verdict-detail__rescope-reason");
+    // The route the rescope actually drops, not the one the merged line reads.
+    expect(reason?.textContent).toContain("Tall structure permit");
+    expect(reason?.textContent).not.toContain("Tent permit");
+  });
+
   it("shows nothing under a FEASIBLE verdict that has no branch or rescope work", async () => {
     stubApi(plan({ verdict: "FEASIBLE" }));
     renderPlan();

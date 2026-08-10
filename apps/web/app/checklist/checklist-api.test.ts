@@ -581,7 +581,13 @@ describe("loadChecklist", () => {
         checklistBody({
           items: [
             trackedItem(STREET_MEDIUM, {
-              routes: mergedRoutes("unknown"),
+              // THE CONDITION, NOT THE SHAPE: a resolved route BELOW `required`, so the ceiling
+              // does not bite and the unknown route alone carries the group to `may_be_required`.
+              routes: [
+                { ...(mergedRoutes("true")[0] as object), disposition: "advisory" },
+                { ...(mergedRoutes("unknown")[1] as object), disposition: "may_be_required" },
+              ],
+              disposition: "may_be_required",
               headlineMode: "candidate",
               filingRouteRuleId: null,
               // The identity goes with the rest: on this shape no route supplies the line's values,
@@ -605,6 +611,46 @@ describe("loadChecklist", () => {
 
     await expect(loadChecklist("https://api.example.com", "event-1")).resolves.toMatchObject({
       ok: true,
+    });
+  });
+
+  /**
+   * #252 review: the sibling of the plan boundary's scalar-free condition. Accepting the SHAPE let
+   * any merged row null its identity and filing tuple and skip every comparison, and the checklist
+   * renders no route list, so such a row loses the permit name, the date, the fee and the portal
+   * with nothing on screen to recover them from.
+   */
+  it("refuses an ordinary merged row that nulls its identity and filing fields", async () => {
+    stubFetch(async () =>
+      jsonResponse(
+        200,
+        checklistBody({
+          items: [
+            trackedItem(STREET_MEDIUM, {
+              // Both routes resolved and `required`: a resolved route contributes the merged
+              // disposition, so this row has a binding route to read and its values are not nobody's.
+              routes: mergedRoutes("true"),
+              headlineMode: "applies_together",
+              filingRouteRuleId: null,
+              permitName: null,
+              agency: null,
+              deadline: null,
+              deadlineDisplay: null,
+              latestApplyDate: null,
+              applyAfterDate: null,
+              deadlineStatus: "not_calculable",
+              feeDisplay: null,
+              portalName: null,
+              portalUrl: null,
+              portalInstructions: null,
+            }),
+          ],
+        }),
+      ),
+    );
+
+    await expect(loadChecklist("https://api.example.com", "event-1")).resolves.toMatchObject({
+      ok: false,
     });
   });
 

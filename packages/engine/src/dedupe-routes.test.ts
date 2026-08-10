@@ -761,6 +761,21 @@ describe("dependency sequencing over a merged gated line (#252)", () => {
     expect(sound?.notes.some((note) => note.includes("sequenced after PARKS-EVENT-001"))).toBe(
       true,
     );
+    // AND ON THE GATED ROUTE, which is where every per-route reader looks. `routeFrom()` captures a
+    // route's notes when the group merges and this sequencing runs afterwards, so the route's notes
+    // were a snapshot taken before the sequence existed: `alerts.ts` reads them per route and sent
+    // the reminder, and the at-risk warning that says the requirement waits on another agency's
+    // decision, without the sentence saying the ordering is not confirmed (#252 review).
+    const gatedNote = gatedRoute?.notes?.find((note) =>
+      note.includes("sequenced after PARKS-EVENT-001"),
+    );
+    expect(gatedNote).toContain("Strict issued-before-filed sequencing is not confirmed");
+    // The same sentence on both, rather than two compositions of it.
+    expect(sound?.notes.find((note) => note.includes("sequenced after PARKS-EVENT-001"))).toBe(
+      gatedNote,
+    );
+    // The route that is not gated keeps its own notes and gains no sequence it is not in.
+    expect(otherRoute?.notes?.some((note) => note.includes("sequenced after"))).toBe(false);
   });
 
   it("states the gated route's own window in the note, not the binding route's", () => {

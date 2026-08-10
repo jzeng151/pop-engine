@@ -48,7 +48,10 @@ describe("loadEventStats", () => {
       message: "The API could not be reached.",
     });
 
-    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(jsonResponse(200, { checkins_total: "nope" })));
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(jsonResponse(200, { checkins_total: "nope" })),
+    );
     await expect(loadEventStats("https://api.example.com", "event-1")).resolves.toEqual({
       ok: false,
       message: "The API returned stats this page cannot read.",
