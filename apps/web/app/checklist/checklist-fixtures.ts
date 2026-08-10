@@ -163,7 +163,13 @@ const filedFrom = (overrides: Record<string, unknown>): Record<string, unknown> 
       : routes[0]
   ) as Record<string, unknown> | undefined;
   if (route === undefined) return {};
+  const binding = routes[0] as Record<string, unknown>;
   const filed: Record<string, unknown> = {
+    // Identity is the BINDING route's whatever route the filing fields came from: the api reads
+    // `permitName` and `agency` off the row's own columns, which on a merged line are `routes[0]`'s,
+    // and the boundary refuses a row where they are another route's.
+    permitName: binding.name,
+    agency: binding.agency,
     deadline: route.deadline === null || route.deadline === undefined ? null : route.deadline,
     deadlineDisplay: route.deadlineDisplay,
     latestApplyDate: route.latestApplyDate,

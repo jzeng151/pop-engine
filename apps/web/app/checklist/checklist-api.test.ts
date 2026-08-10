@@ -511,6 +511,65 @@ describe("loadChecklist", () => {
   });
 
   /**
+   * #252 review: THE IDENTITY IS THE BINDING ROUTE'S TOO, and it is not part of the filing tuple.
+   *
+   * `permitName` and `agency` are not attributed by `filingRouteRuleId`: the api reads them off the
+   * row's own columns, which on a merged line are `routes[0]`'s. Unchecked, a row could take its
+   * name from one route and its date, fee and portal from another and clear every check, and
+   * `displayName()` heads the row and the disclosure with that name while the metadata row prints
+   * that agency — one permit's identity over another permit's filing.
+   */
+  it("refuses a row whose permit name or agency is not its binding route's", async () => {
+    const routes = mergedRoutes("true");
+    const binding = routes[0] as Record<string, unknown>;
+    const crossed = [{ permitName: "SAPO permit" }, { agency: "SAPO (CECM)" }];
+    for (const override of crossed) {
+      stubFetch(async () =>
+        jsonResponse(
+          200,
+          checklistBody({
+            items: [
+              trackedItem(STREET_MEDIUM, {
+                routes,
+                headlineMode: "applies_together",
+                // Named, so the FILING fields are legitimately the second route's while the identity
+                // above them must still be the binding route's. Both halves of the row are checked.
+                filingRouteRuleId: (routes[1] as Record<string, unknown>).ruleId,
+                ...override,
+              }),
+            ],
+          }),
+        ),
+      );
+
+      await expect(loadChecklist("https://api.example.com", "event-1")).resolves.toMatchObject({
+        ok: false,
+      });
+    }
+
+    // Not vacuous: the same row with the binding route's own identity reads.
+    stubFetch(async () =>
+      jsonResponse(
+        200,
+        checklistBody({
+          items: [
+            trackedItem(STREET_MEDIUM, {
+              routes,
+              headlineMode: "applies_together",
+              filingRouteRuleId: (routes[1] as Record<string, unknown>).ruleId,
+              permitName: binding.name,
+              agency: binding.agency,
+            }),
+          ],
+        }),
+      ),
+    );
+    await expect(loadChecklist("https://api.example.com", "event-1")).resolves.toMatchObject({
+      ok: true,
+    });
+  });
+
+  /**
    * The approved state where the row's filing fields are nobody's: no resolved route contributes the
    * merged disposition, so the line publishes none of them (design §4.3, amended 2026-08-09). It
    * must not be read as a crossed row.
@@ -525,6 +584,10 @@ describe("loadChecklist", () => {
               routes: mergedRoutes("unknown"),
               headlineMode: "candidate",
               filingRouteRuleId: null,
+              // The identity goes with the rest: on this shape no route supplies the line's values,
+              // so the row publishes no name or agency of its own either.
+              permitName: null,
+              agency: null,
               deadline: null,
               deadlineDisplay: null,
               latestApplyDate: null,

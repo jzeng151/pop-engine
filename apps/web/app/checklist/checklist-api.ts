@@ -483,11 +483,39 @@ const FILED_FIELDS = [
 const publishesNoFilingFields = (context: PlanContext): boolean =>
   context.deadlineStatus === "not_calculable" &&
   context.deadline === null &&
+  context.permitName === null &&
+  context.agency === null &&
   FILED_FIELDS.every((field) => field === "deadlineStatus" || context[field] === null);
 
 const matchesRoute = (context: PlanContext, route: ConsumedRoute): boolean =>
   (context.deadline?.type ?? null) === (route.deadline?.type ?? null) &&
   FILED_FIELDS.every((field) => context[field] === route[field]);
+
+/**
+ * THE ROW'S IDENTITY IS ITS BINDING ROUTE'S, WHATEVER ROUTE ITS FILING FIELDS CAME FROM.
+ *
+ * `permitName` and `agency` are not in `FILED_FIELDS` and are not attributed by
+ * `filingRouteRuleId`: the api reads them off the row's own columns, which for a merged line are the
+ * binding route's, and `mergeGroup()` leads the route list with that route. So they are checked
+ * against `routes[0]` on every merged row, including one whose filing fields legitimately come from
+ * a different route — that row shows one route's date, fee and portal beneath ANOTHER route's permit
+ * name and agency by design, and says so, which only holds if the name and agency really are the
+ * binding route's.
+ *
+ * Unchecked, a body could take the name from one route and the filing fields from another and clear
+ * every check here: `displayName()` heads the row and the disclosure with that name and the metadata
+ * row prints that agency, so the organizer reads one permit's identity over another permit's filing
+ * (#252 review). This is the same invariant the plan boundary applies to its headline tuple, on the
+ * two fields that boundary's tuple has and this one's did not.
+ *
+ * REPORTED AND NOT FIXED LAST ROUND, which is the part worth recording: the sweep that closed the
+ * plan side named this gap and left it open because the thread had not asked for it. The scope test
+ * this repository works to makes it in scope — the defect is in code this branch changes, the fix
+ * stays inside artifacts it already touches, and it needs no product decision — so deferring it was
+ * the error, not the enumeration.
+ */
+const identityMatchesBinding = (context: PlanContext, route: ConsumedRoute): boolean =>
+  context.permitName === route.name && context.agency === route.agency;
 
 /**
  * A NULL FILING ROUTE IS A CLAIM TOO, and it was the one this check waved through. Null says the
@@ -501,7 +529,9 @@ const filingRouteIsCarried = (context: PlanContext): boolean => {
   const routes = context.routes ?? [];
   if (routes.length === 0) return true;
   if (publishesNoFilingFields(context)) return true;
-  if (context.filingRouteRuleId == null) return matchesRoute(context, routes[0] as ConsumedRoute);
+  const binding = routes[0] as ConsumedRoute;
+  if (!identityMatchesBinding(context, binding)) return false;
+  if (context.filingRouteRuleId == null) return matchesRoute(context, binding);
   const named = routes.filter((route) => route.ruleId === context.filingRouteRuleId);
   if (named.length !== 1) return false;
   return matchesRoute(context, named[0] as ConsumedRoute);
