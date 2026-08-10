@@ -247,26 +247,46 @@ function contributedDisposition(
  *
  * A route list of fewer than two is not a merged line and has no such state.
  */
-export function noRouteSuppliesScalars(routes: readonly FindingRoute[]): boolean {
-  if (routes.length < 2) return false;
-  const resolved = (route: FindingRoute): boolean => route.triggerResult !== "unknown";
+const routeResolved = (route: FindingRoute): boolean => route.triggerResult !== "unknown";
+
+/** What each route contributes to its group's disposition, off the route entries alone. */
+function routeContributions(routes: readonly FindingRoute[]): (route: FindingRoute) => Disposition {
   const ceilingApplies = routes.some(
     (route) =>
-      resolved(route) &&
+      routeResolved(route) &&
       DISPOSITION_STRENGTH.indexOf(route.disposition) >=
         DISPOSITION_STRENGTH.indexOf(UNRESOLVED_ROUTE_CAP_TRIGGER),
   );
-  const contributed = (route: FindingRoute): Disposition =>
-    resolved(route) || !ceilingApplies
+  return (route) =>
+    routeResolved(route) || !ceilingApplies
       ? route.disposition
       : DISPOSITION_STRENGTH.indexOf(route.disposition) >
           DISPOSITION_STRENGTH.indexOf(UNRESOLVED_ROUTE_CEILING)
         ? UNRESOLVED_ROUTE_CEILING
         : route.disposition;
+}
+
+/**
+ * The disposition a merged line must publish, recomputed from its route entries.
+ *
+ * The merged disposition is the strongest any route CONTRIBUTES, which is not the strongest any
+ * route publishes: an unresolved route is capped where the group holds a resolved one at or above
+ * `required`. Both facts are on the route entries, so a consumer can check the headline against them
+ * rather than taking it on trust — and the boundaries do, because `disposition` is the one headline
+ * value that is legitimately not `routes[0]`'s and so sits outside every other comparison they make.
+ */
+export function mergedDispositionOf(routes: readonly FindingRoute[]): Disposition | null {
+  if (routes.length === 0) return null;
+  return strongestDisposition(routes.map(routeContributions(routes)));
+}
+
+export function noRouteSuppliesScalars(routes: readonly FindingRoute[]): boolean {
+  if (routes.length < 2) return false;
+  const contributed = routeContributions(routes);
   const disposition = strongestDisposition(routes.map(contributed));
   return (
-    routes.some(resolved) &&
-    !routes.some((route) => resolved(route) && contributed(route) === disposition)
+    routes.some(routeResolved) &&
+    !routes.some((route) => routeResolved(route) && contributed(route) === disposition)
   );
 }
 
@@ -741,8 +761,21 @@ function applyDependencySequencing(
           : `, leaving ${gatedWindowDays} days to file. Strict issued-before-filed sequencing ` +
             `is not confirmed by located primary text — confirm the order with the agency`);
 
+    // WHETHER THE HEADLINE HAS A ROUTE TO SEQUENCE AT ALL, which is two questions and used to be
+    // one. `routes[0]` is the binding route, so a gated rule that is not it sequences only its own
+    // entry — and on a group whose headline no route supplies, there is no binding route to be,
+    // whichever entry leads the list. `mergeGroup` nulls every scalar on that group and this pass
+    // then wrote `applyAfterDate` straight back onto it, producing a line that satisfies neither
+    // state: not scalar-free, and not its binding route's either. The web boundary refuses exactly
+    // that finding, so the engine was emitting a plan its own contract rejects (#252 review).
+    //
+    // This is the third place to assume `routes[0]` is binding, after the two validators, and it is
+    // the only one that WRITES. The other two ask `noRouteSuppliesScalars` before they read, which
+    // is what this now does too, so the invariant "a merged line either reads as `routes[0]` or
+    // publishes nothing" holds by construction rather than by each caller remembering it.
     const gatedRouteBinds =
-      gated.routes === undefined || gated.routes[0]?.ruleId === binding.gatedRuleId;
+      gated.routes === undefined ||
+      (gated.routes[0]?.ruleId === binding.gatedRuleId && !noRouteSuppliesScalars(gated.routes));
 
     sequenced.set(binding.gatedRuleId, {
       ...gated,

@@ -300,6 +300,40 @@ describe("loadPlan", () => {
   });
 
   /**
+   * #252 review: THE HEADLINE DISPOSITION HAS TO FOLLOW FROM THE ROUTES.
+   *
+   * It is excluded from the binding-route comparison on purpose, since the merged value is the
+   * strongest any route CONTRIBUTES rather than `routes[0]`'s, and that left it checked by nothing.
+   * `PlanLine` renders blocker styling and blocker copy off it, so a headline of
+   * `prohibited_or_ineligible` beside two routes that publish `required` and `advisory` is a blocker
+   * an organizer is shown that no route in the group states.
+   */
+  it("refuses a merged finding whose disposition no route contributes", async () => {
+    const finding = mergedFinding("true");
+    for (const disposition of ["prohibited_or_ineligible", "advisory"]) {
+      stubFetch(async () =>
+        jsonResponse(200, { ...storedPlan, findings: [{ ...finding, disposition }] }),
+      );
+      await expect(loadPlan("https://api.example.com", "event-1")).resolves.toMatchObject({
+        ok: false,
+      });
+    }
+
+    // Not vacuous: the value the routes DO contribute reads, and it is the capped one where an
+    // unresolved route would otherwise carry the group past a resolved sibling.
+    const capped = mergedFinding("unknown", "candidate");
+    stubFetch(async () =>
+      jsonResponse(200, {
+        ...storedPlan,
+        findings: [{ ...capped, disposition: "required" }],
+      }),
+    );
+    await expect(loadPlan("https://api.example.com", "event-1")).resolves.toMatchObject({
+      ok: true,
+    });
+  });
+
+  /**
    * #252 review: THE SCALAR-FREE STATE IS A CONDITION, NOT A SHAPE.
    *
    * §4.3 publishes no headline scalars in ONE case: the group holds a resolved route and none of

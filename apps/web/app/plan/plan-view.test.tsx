@@ -5,7 +5,12 @@ import { resolve } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { cleanup, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { CONFIRM_WITH_AGENCY, type Finding, type FindingRoute } from "@pop-engine/engine";
+import {
+  CONFIRM_WITH_AGENCY,
+  mergedDispositionOf,
+  type Finding,
+  type FindingRoute,
+} from "@pop-engine/engine";
 import { publishedRulesFileIn } from "../rules-file";
 import PlanPage from "../events/[id]/plan/page";
 import { PlanView } from "./plan-view";
@@ -114,6 +119,13 @@ const headlineOf = (overrides: Partial<Finding>): Partial<Finding> => {
   for (const field of HEADLINE_FROM_BINDING) {
     headline[field] = field in overrides ? overrides[field] : binding[field];
   }
+  // `disposition` is the one headline value that is NOT the binding route's: it is the strongest
+  // any route contributes, capped where an unresolved route would be promoted past a resolved one.
+  // The boundary checks it against that arithmetic, so a fixture derives it the same way.
+  headline.disposition =
+    "disposition" in overrides
+      ? overrides.disposition
+      : mergedDispositionOf(overrides.routes as readonly FindingRoute[]);
   return headline as Partial<Finding>;
 };
 
@@ -861,6 +873,35 @@ describe("the routes of a merged dedupe line", () => {
     expect(own.querySelector('a[href="https://example.test/dcwp"]')).not.toBeNull();
     // The one status it must publish says the window exists and this line cannot be dated.
     expect(line.getByText(/not calculable/)).toBeDefined();
+  });
+
+  /**
+   * #252 review: THE GATE LIVES ON THE ROUTE, AND THE PLAN DID NOT SHOW IT.
+   *
+   * `applyDependencySequencing` leaves the headline gate alone where the gated rule is a non-binding
+   * member and stores it on that route, so the entry is the only place a plan can render it. The
+   * checklist reads it through `gatedRoutesOf` and the reminders schedule against it; this renderer
+   * never read the field, so one surface showed an earliest realistic filing date and the other did
+   * not. The signature counts it too, so a group differing only by this visible value is not
+   * collapsed as identical.
+   */
+  it("renders a route's own gate, and does not collapse a group that differs only by it", async () => {
+    const gated = route({
+      ruleId: "NYPD-SOUND-001",
+      name: "Sound Device Permit",
+      applyAfterDate: "2026-08-12",
+    });
+    const line = await lineWith({
+      ruleIds: ["DOB-TENT-001", "NYPD-SOUND-001"],
+      headlineMode: "applies_together",
+      routes: [route({ name: "Sound Device Permit" }), gated],
+    });
+
+    expect(line.getByText(/Earliest realistic filing:/)).toBeDefined();
+    expect(line.getByText(/2026-08-12/)).toBeDefined();
+    // NOT VACUOUS: every other rendered field of the two entries is identical, including the name,
+    // so the gate is the only thing keeping the block on screen.
+    expect(screen.getByRole("article").querySelectorAll(".line__route")).toHaveLength(2);
   });
 
   /**

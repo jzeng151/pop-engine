@@ -238,6 +238,7 @@ const routeSignature = (route: ConsumedRoute): string =>
     route.deadline?.type ?? null,
     route.deadlineDisplay,
     route.latestApplyDate,
+    route.applyAfterDate,
     route.deadlineStatus,
     route.feeDisplay,
     route.portalName,
@@ -299,6 +300,17 @@ function Route({ route, mode }: { route: ConsumedRoute; mode: HeadlineMode }) {
               {humanize(route.deadlineStatus)}
             </span>
           )}
+        </p>
+      )}
+      {/* THE GATE THE ROUTE CARRIES, on the surface that lists the routes. `mergeGroup` leaves the
+          headline gate alone where the gated rule is a non-binding member and stores it on that
+          route instead, so the entry is the only place a plan can show it — and this renderer never
+          read the field, so the checklist and the reminders had the earliest realistic filing date
+          and the plan did not (#252 review). Named as this route's, never attributed to the line,
+          which is the same rule `gatedRoutesOf` follows on the checklist. */}
+      {route.applyAfterDate !== null && (
+        <p className="line__route-deadline-notice">
+          <strong>Earliest realistic filing:</strong> {route.applyAfterDate}
         </p>
       )}
       {/* Beside the status token rather than in place of it, which is how the pre-summary line above

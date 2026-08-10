@@ -46,7 +46,7 @@ export { CONFIRM_WITH_AGENCY } from "./deadlines";
 export { computeWindowVerdict } from "./verdict";
 // The one correct fallback for a finding that carries no route list: an unmerged finding, or a
 // replayed artifact stored before the field existed, is its own single route.
-export { noRouteSuppliesScalars, routesOf } from "./findings";
+export { mergedDispositionOf, noRouteSuppliesScalars, routesOf } from "./findings";
 export { UNKNOWN_ANSWER } from "./conditions";
 export {
   DEFAULT_DISPOSITION_BY_RULE_KIND,

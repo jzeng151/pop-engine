@@ -615,6 +615,36 @@ describe("loadChecklist", () => {
   });
 
   /**
+   * #252 review: the sibling of the plan boundary's disposition invariant, on the row that renders
+   * the same value as a badge. It is the one headline value that is legitimately not `routes[0]`'s,
+   * so it sits outside every comparison `filingRouteIsCarried` makes and was checked by nothing.
+   */
+  it("refuses a row whose disposition no route contributes", async () => {
+    const routes = mergedRoutes("true");
+    for (const disposition of ["prohibited_or_ineligible", "advisory"]) {
+      stubFetch(async () =>
+        jsonResponse(
+          200,
+          checklistBody({
+            items: [
+              trackedItem(STREET_MEDIUM, {
+                routes,
+                headlineMode: "applies_together",
+                filingRouteRuleId: null,
+                disposition,
+              }),
+            ],
+          }),
+        ),
+      );
+
+      await expect(loadChecklist("https://api.example.com", "event-1")).resolves.toMatchObject({
+        ok: false,
+      });
+    }
+  });
+
+  /**
    * #252 review: the sibling of the plan boundary's scalar-free condition. Accepting the SHAPE let
    * any merged row null its identity and filing tuple and skip every comparison, and the checklist
    * renders no route list, so such a row loses the permit name, the date, the fee and the portal

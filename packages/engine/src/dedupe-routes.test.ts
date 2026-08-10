@@ -12,7 +12,7 @@
 // plan verdict in either direction.
 
 import { describe, expect, it } from "vitest";
-import { evaluate, parseEngineRuleset } from "./index";
+import { evaluate, noRouteSuppliesScalars, parseEngineRuleset } from "./index";
 import type { EventIntake, Verdict } from "./types";
 
 const TODAY = "2026-07-22";
@@ -1128,5 +1128,180 @@ describe("a merged line no route can supply the scalars for (#252)", () => {
     expect(settled?.name).toBe("Sidewalk cafe licence");
     expect(settled?.feeDisplay).toBe("$1,050 licence fee");
     expect(settled?.deadlineStatus).not.toBe("not_calculable");
+  });
+});
+
+/**
+ * THE INVARIANT THE WHOLE ROUTE SHAPE RESTS ON, asserted over the engine's own output rather than
+ * at one call site.
+ *
+ * A merged line either reads as its binding route — `routes[0]`, which `mergeGroup` puts first —
+ * or, on the one group where no route can supply its scalars, publishes none of them. Four separate
+ * findings on #252 were one consumer or another assuming the first half unconditionally: two
+ * validators, and `applyDependencySequencing`, which nulled the scalars in `mergeGroup` and wrote
+ * `applyAfterDate` back two steps later in the same pass. Pinning the invariant over evaluated plans
+ * closes the class: a future pass that writes a headline scalar without asking fails here rather
+ * than at whichever boundary happens to refuse the plan.
+ */
+describe("every merged line the engine emits reads as its binding route, or as nobody (#252)", () => {
+  const HEADLINE_SCALARS = [
+    "name",
+    "agency",
+    "deadlineDisplay",
+    "latestApplyDate",
+    "applyAfterDate",
+    "deadlineStatus",
+    "feeDisplay",
+    "portalName",
+    "portalUrl",
+    "portalInstructions",
+  ] as const;
+
+  const assertInvariant = (evaluated: ReturnType<typeof plan>) => {
+    const merged = evaluated.findings.filter((finding) => (finding.routes?.length ?? 0) > 1);
+    expect(merged.length).toBeGreaterThan(0);
+    for (const finding of merged) {
+      const routes = finding.routes as NonNullable<typeof finding.routes>;
+      if (noRouteSuppliesScalars(routes)) {
+        expect(finding.deadlineStatus).toBe("not_calculable");
+        expect(finding.deadline).toBeNull();
+        for (const field of HEADLINE_SCALARS) {
+          if (field === "deadlineStatus") continue;
+          expect({ ruleIds: finding.ruleIds, field, value: finding[field] }).toEqual({
+            ruleIds: finding.ruleIds,
+            field,
+            value: null,
+          });
+        }
+        continue;
+      }
+      const binding = routes[0] as (typeof routes)[number];
+      expect(finding.deadline?.type ?? null).toBe(binding.deadline?.type ?? null);
+      for (const field of HEADLINE_SCALARS) {
+        expect({ ruleIds: finding.ruleIds, field, value: finding[field] }).toEqual({
+          ruleIds: finding.ruleIds,
+          field,
+          value: binding[field],
+        });
+      }
+    }
+  };
+
+  it("holds on a group whose binding route supplies the scalars", () => {
+    assertInvariant(
+      plan([
+        {
+          id: "OPEN-001",
+          dedupeKey: "shared",
+          trigger: ALWAYS,
+          output: {
+            permit_name: "OPEN-001 permit",
+            deadline: { type: "published_minimum", calendar_days: 104 },
+            fee: { display: "$40" },
+            portal: { name: "open portal", url: "https://example.test/open" },
+          },
+        },
+        {
+          id: "MISSED-001",
+          dedupeKey: "shared",
+          trigger: ALWAYS,
+          output: {
+            permit_name: "MISSED-001 permit",
+            deadline: { type: "published_minimum", calendar_days: 184 },
+            fee: { display: "$900" },
+          },
+        },
+      ]),
+    );
+  });
+
+  it("holds on a group no route can supply the scalars for", () => {
+    const FIELD = [{ field: "sidewalk_use", type: "enum", values: ["unknown", "cafe"] }];
+    assertInvariant(
+      plan(
+        [
+          {
+            id: "DOT-SIDEWALK-ADVISORY-001",
+            kind: "advisory",
+            dedupeKey: "sidewalk",
+            trigger: ALWAYS,
+            output: {
+              permit_name: "Sidewalk clearance advisory",
+              deadline: { type: "published_minimum", calendar_days: 60 },
+            },
+          },
+          {
+            id: "DOT-SIDEWALK-CAFE-001",
+            kind: "eligibility",
+            dedupeKey: "sidewalk",
+            trigger: { all: [{ field: "sidewalk_use", op: "eq", value: "cafe" }] },
+            output: {
+              permit_name: "Sidewalk cafe licence",
+              deadline: { type: "published_minimum", calendar_days: 10 },
+            },
+          },
+        ],
+        { sidewalk_use: null },
+        FIELD,
+      ),
+    );
+  });
+
+  /**
+   * The case that broke it: the gated route leads a group whose headline is nobody's, so
+   * `applyDependencySequencing` treated it as the binding route and wrote the gate back onto a
+   * scalar-free line.
+   */
+  it("holds after dependency sequencing writes a gate onto a scalar-free group", () => {
+    const FIELD = [{ field: "sound_purpose", type: "enum", values: ["unknown", "amplified"] }];
+    assertInvariant(
+      plan(
+        [
+          {
+            id: "PARKS-EVENT-001",
+            dedupeKey: null,
+            trigger: ALWAYS,
+            output: {
+              permit_name: "Parks event permit",
+              deadline: {
+                type: "composite",
+                hard_floor_days: 21,
+                processing_range_days: [21, 30],
+              },
+            },
+          },
+          // The dependency rule the binding names, without which no sequencing runs at all.
+          {
+            id: "NYPD-SOUND-PARKS-DEP-001",
+            kind: "dependency",
+            dedupeKey: null,
+            trigger: ALWAYS,
+            output: { note_text: "sound permit follows the parks approval" },
+          },
+          {
+            id: "NYPD-SOUND-001",
+            kind: "eligibility",
+            dedupeKey: "sound",
+            trigger: { all: [{ field: "sound_purpose", op: "eq", value: "amplified" }] },
+            output: {
+              permit_name: "Sound Device Permit",
+              deadline: { type: "published_minimum", calendar_days: 5 },
+            },
+          },
+          {
+            id: "NYPD-SOUND-ADVISORY-001",
+            kind: "advisory",
+            dedupeKey: "sound",
+            trigger: ALWAYS,
+            output: {
+              permit_name: "Sound advisory",
+              deadline: { type: "published_minimum", calendar_days: 90 },
+            },
+          },
+        ],
+        { sound_purpose: null },
+        FIELD,
+      ),
+    );
   });
 });

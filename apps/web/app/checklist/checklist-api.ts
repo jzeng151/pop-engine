@@ -9,7 +9,11 @@
 // reason it is worth the weight here is the same one it was worth there — every field below is
 // regulatory content or organizer state, and a silently-undefined one renders as an answer.
 
-import { CHECKLIST_STATUSES, noRouteSuppliesScalars } from "@pop-engine/engine";
+import {
+  CHECKLIST_STATUSES,
+  mergedDispositionOf,
+  noRouteSuppliesScalars,
+} from "@pop-engine/engine";
 import type {
   ChecklistStatus,
   Deadline,
@@ -585,10 +589,24 @@ const routeGroupIsWhole = (context: PlanContext): boolean => {
   return present === 0 || present === ROUTE_GROUP_FIELDS.length;
 };
 
+/**
+ * The same invariant the plan boundary applies to its headline disposition, on the row that renders
+ * the same value as a badge. `disposition` is the one headline value that is legitimately not
+ * `routes[0]`'s — it is the strongest any route contributes — so it sits outside every comparison
+ * `filingRouteIsCarried` makes, and was checked by nothing. `mergedDispositionOf` is the engine's
+ * own arithmetic, including the cap on an unresolved route, rather than a restatement of it here.
+ */
+const dispositionFollowsFromRoutes = (context: PlanContext): boolean => {
+  const routes = (context.routes ?? []) as readonly FindingRoute[];
+  if (routes.length === 0) return true;
+  return context.disposition === mergedDispositionOf(routes);
+};
+
 const isPlanContext = (value: unknown): value is PlanContext =>
   shapedLike(PLAN_CONTEXT_CHECKS)(value) &&
   routeGroupIsWhole(value) &&
   routeContractHolds(value) &&
+  dispositionFollowsFromRoutes(value) &&
   filingRouteIsCarried(value);
 
 const DOCUMENT_CHECKS: FieldChecks<ChecklistDocument> = { id: isString, filename: isString };
@@ -667,6 +685,7 @@ const isChecklistItem = (value: unknown): value is ChecklistItem =>
   shapedLike(ITEM_CHECKS)(value) &&
   routeGroupIsWhole(value) &&
   routeContractHolds(value) &&
+  dispositionFollowsFromRoutes(value) &&
   filingRouteIsCarried(value);
 
 /**

@@ -25,7 +25,7 @@ import type {
   VerdictDetail,
   VerificationStatus,
 } from "@pop-engine/engine";
-import { noRouteSuppliesScalars } from "@pop-engine/engine";
+import { mergedDispositionOf, noRouteSuppliesScalars } from "@pop-engine/engine";
 import { CREDENTIALED } from "../intake/events-api";
 import {
   absentOr,
@@ -572,8 +572,30 @@ const headlineMatchesBinding = (finding: ConsumedFinding): boolean => {
   );
 };
 
+/**
+ * THE ONE HEADLINE VALUE THAT IS NOT `routes[0]`'S STILL HAS TO FOLLOW FROM THE ROUTES.
+ *
+ * `disposition` is excluded from `headlineMatchesBinding` on purpose — the merged value is the
+ * strongest any route CONTRIBUTES, so it is the group's rather than the binding route's — and that
+ * left it checked by nothing at all. A body carrying valid routes and valid binding scalars beside a
+ * headline of `prohibited_or_ineligible` that no route contributes cleared the boundary, and
+ * `PlanLine` renders blocker styling and blocker copy off that value (#252 review).
+ *
+ * `mergedDispositionOf` is the engine's own arithmetic, exported from beside the merge: the cap on
+ * an unresolved route is part of it, so a hand-written comparison here would have to restate the
+ * ceiling rule and would drift from it.
+ */
+const dispositionFollowsFromRoutes = (finding: ConsumedFinding): boolean => {
+  const routes = (finding.routes ?? []) as readonly FindingRoute[];
+  if (routes.length === 0) return true;
+  return finding.disposition === mergedDispositionOf(routes);
+};
+
 const isConsumedFinding = (value: unknown): value is ConsumedFinding =>
-  shapedLike(FINDING_CHECKS)(value) && routeContractHolds(value) && headlineMatchesBinding(value);
+  shapedLike(FINDING_CHECKS)(value) &&
+  routeContractHolds(value) &&
+  dispositionFollowsFromRoutes(value) &&
+  headlineMatchesBinding(value);
 
 const BRANCH_OUTCOME_CHECKS: FieldChecks<ConsumedBranchOutcome> = {
   value: isString,
