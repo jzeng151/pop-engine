@@ -1,11 +1,18 @@
 "use client";
 
 import { useRef, useState } from "react";
-import { CHECKLIST_STATUSES, CONFIRM_WITH_AGENCY, type ChecklistStatus } from "@pop-engine/engine";
+import {
+  CHECKLIST_STATUSES,
+  CONFIRM_WITH_AGENCY,
+  type ChecklistStatus,
+  offersAFilingAction,
+} from "@pop-engine/engine";
 import { Disclosure } from "../disclosure";
 import { PortalBlock } from "../portal-block";
 import { formatSnapshotDate } from "../plan/snapshot-banner";
+import { CANDIDATE_HEADING } from "../plan/plan-line";
 import { includesAgencyConfirmation, NOT_COVERED_BY_RULESET } from "../verification-copy";
+import type { ConsumedRoute } from "../plan/plan-api";
 import { MovedDeadlineNoticeBlock } from "./moved-deadline-notice";
 import {
   ACCEPTED_DOCUMENT_TYPES,
@@ -26,8 +33,49 @@ import {
 
 const humanize = (token: string): string => token.replace(/_/g, " ");
 
+/** Two or more, the same guard both surfaces make: one route is not a choice between routes. */
+const isCandidateRow = (context: PlanContext): boolean =>
+  context.headlineMode === "candidate" && (context.routes?.length ?? 0) >= 2;
+
+/**
+ * THE HEADING IS THE QUESTION, NOT A PERMIT, on this surface as on the plan line.
+ *
+ * Design §5.3 settles it: a candidate group has not decided which of its routes applies, so a
+ * heading taken from the summary or the binding route's name states one unresolved candidate as the
+ * requirement. The plan line has done this since the heading moved; the checklist inherited the
+ * MERGED `userSummary.heading` through this function instead, and `mergeUserSummary` takes that
+ * heading from the first route in binding order that publishes one — so the row an organizer works
+ * was titled with one candidate's permit name (#252 review).
+ *
+ * `CANDIDATE_HEADING` is imported rather than restated, so the two surfaces cannot drift into two
+ * sentences for one question.
+ */
 const displayName = (context: PlanContext): string =>
-  context.userSummary?.heading ?? context.permitName ?? "Additional plan context";
+  isCandidateRow(context)
+    ? CANDIDATE_HEADING
+    : (context.userSummary?.heading ?? context.permitName ?? "Additional plan context");
+
+/**
+ * What the row's CONTROLS are labelled with, which is a different question from what it is headed
+ * with: a status select, a notes box and an upload need a NOUN, and the deciding question is not
+ * one. "Status for The answers so far do not say which of these applies." names nothing.
+ *
+ * On a candidate row they may not take the merged summary heading either, for the reason above — it
+ * is one contributing rule's — so they fall back the way every other surface here falls back when a
+ * route publishes no name of its own: the rule ids. That composes no new copy. What it does NOT do
+ * is give the row a settled name, and it cannot: the whole point is that the answers have not
+ * decided which permit this task is. Naming it would be a copy decision this lane does not hold.
+ *
+ * `permitName` IS NOT A FALLBACK HERE, AND THE ROUND THAT USED IT AS ONE WAS WRONG. On a candidate
+ * row that is not scalar-free, `permitName` is the BINDING route's name — one candidate of several
+ * — so labelling the controls with it named the row after one route while the heading beside it
+ * said the answers do not decide which. The previous round narrowed the heading and left the
+ * ACCESSIBLE NAME saying the old thing, so a screen-reader user was given a settled attribution a
+ * sighted user was not, on controls that update the COMBINED item (#252 review). The rule ids name
+ * every contributing rule and prefer none, which is what the controls act on.
+ */
+const trackingLabel = (context: PlanContext): string =>
+  isCandidateRow(context) ? context.ruleIds.join(", ") : displayName(context);
 
 /**
  * Whether this row has anything to say about timing. `deadlineStatus` is always set, so
@@ -39,7 +87,45 @@ const hasDeadlineData = (context: PlanContext): boolean =>
   context.latestApplyDate !== null ||
   context.applyAfterDate !== null ||
   context.deadlineStatus !== "not_applicable" ||
-  context.deadline !== null;
+  context.deadline !== null ||
+  gatedRoutesOf(context).length > 0;
+
+/**
+ * The routes carrying a dependency gate that the row's own scalars do not.
+ *
+ * A merged line's scalars are the BINDING route's, entirely, so a gated rule that is a non-binding
+ * member of the group sequences its OWN route and leaves the headline alone — the engine's
+ * deliberate choice, so that a line can never date one route off another. The consequence here is
+ * that `applyAfterDate` on the row is the binding route's, which for such a group is null, and F-202
+ * AC 5 requires a gated item to show its start date. `filingRouteOf` does not reach the case either:
+ * it declines the moment the row publishes its own window, which is exactly this shape (#252 review).
+ *
+ * So the gate is read off the route that carries it, and rendered NAMING that route. Attributing it
+ * to the row would tell an organizer the binding filing cannot realistically begin until a date that
+ * belongs to a different rule. The one route skipped is the one whose gate the scalar above already
+ * carries, so no gate is shown twice.
+ *
+ * WHICH ROUTE THAT IS, is not always `routes[0]`. Where the binding route publishes no window of its
+ * own the checklist response fills the whole timing block from the filing route instead, gate
+ * included, and `filingRouteRuleId` names it. Skipping index 0 there dropped the case the other way
+ * round: a binding route carrying a gate but no deadline, beside a sibling publishing a deadline but
+ * no gate, rendered the sibling's null gate on the row and skipped the binding route here, so the
+ * F-202 AC 5 start date was on neither surface (#252 review).
+ */
+const gatedRoutesOf = (context: PlanContext): readonly ConsumedRoute[] => {
+  const routes = context.routes ?? [];
+  // NOTHING IS SKIPPED WHERE THE ROW SHOWS NO GATE. The skip exists so a gate the scalar above
+  // already carries is not repeated, and a row publishing no `applyAfterDate` carries none to
+  // repeat. Reaching for `routes[0]` regardless treated the binding route's gate as already
+  // rendered on a scalar-free row, where by construction the row publishes no scalars at all, so
+  // the F-202 AC 5 start date appeared on neither surface (#252 review). This is `routes[0]`-as-
+  // binding once more, in a place the #263 enumeration missed; the row is now in that table.
+  const onTheRow =
+    context.applyAfterDate === null
+      ? null
+      : (context.filingRouteRuleId ?? routes[0]?.ruleId ?? null);
+  return routes.filter((route) => route.applyAfterDate !== null && route.ruleId !== onTheRow);
+};
 
 /**
  * The published deadline's own type, for a rule that states a kind of deadline but no prose and
@@ -55,6 +141,88 @@ const deadlineTypeLabel = (context: PlanContext): string | null =>
   context.deadline !== null
     ? humanize(context.deadline.type)
     : null;
+
+/**
+ * Every official-conflict reading this row carries, with the rule that published each.
+ *
+ * An unmerged row is its own route and keeps the single unnamed paragraph it always rendered. A
+ * merged row lists one per contributing route that publishes any, in the order the routes arrive,
+ * which is binding order. A route with no per-route value recorded — a plan stored before
+ * `FindingRoute.conflictText` — contributes nothing rather than being read as publishing none, and
+ * the row falls back to the merged text so such a plan loses nothing it had.
+ */
+const conflictReadings = (
+  context: PlanContext,
+): readonly { ruleId: string; name: string | null; text: string }[] => {
+  const routes = context.routes ?? [];
+  const perRoute = routes.filter((route) => route.conflictText != null);
+  if (perRoute.length === 0) {
+    return context.conflictText === null
+      ? []
+      : [{ ruleId: context.ruleIds.join("+"), name: null, text: context.conflictText }];
+  }
+  return perRoute.map((route) => ({
+    ruleId: route.ruleId,
+    // The same fallback the gate beside it uses, so a route publishing no name is still named.
+    name: routes.length > 1 ? (route.name ?? route.ruleId) : null,
+    text: route.conflictText as string,
+  }));
+};
+
+/**
+ * The route the row's date, fee and filing details belong to, whichever way it was chosen.
+ *
+ * TWO WAYS A ROW CAN CARRY ONE ROUTE'S SCALARS, and both are here because both are ATTRIBUTED in
+ * words below. `filingRouteRuleId` names the route where the line publishes no window of its own.
+ * Where it DOES publish one, the scalars are the binding route's, and on a candidate row the same
+ * paragraph names that route because the heading no longer can.
+ *
+ * Lifted out of `PlanContextBody` because the citation promotion has to follow the SAME route the
+ * paragraph names. It read `filingRouteRuleId` alone, so on the second branch it fell through to
+ * contributing order and promoted whichever rule the published file lists first, under a sentence
+ * naming a different one (#252 review).
+ */
+const attributedRouteOf = (context: PlanContext): ConsumedRoute | null => {
+  const routes = context.routes ?? [];
+  const named =
+    context.filingRouteRuleId == null
+      ? null
+      : (routes.find((route) => route.ruleId === context.filingRouteRuleId) ?? null);
+  return named ?? (isCandidateRow(context) ? (routes[0] ?? null) : null);
+};
+
+/**
+ * The row's citations with the filing route's own first, because the first one is PROMOTED.
+ *
+ * `PlanContextBody` lifts `sources[0]` out of the disclosure and renders it directly beneath the
+ * sentence attributing the date, fee and portal above it to the selected filing route. The merged
+ * list concatenates in CONTRIBUTING order, which is where the rules sit in the published file, so a
+ * group whose first contributing rule is not the filing route presented another rule's official
+ * page as the support for the filing tuple beside it (#252 review).
+ *
+ * WHY THIS IS NOT THE RESIDUAL #263 RECORDED. That entry says `sources[0]` is a ranking rather than
+ * an attribution and that changing it would mean picking a preferred rule. True while nothing named
+ * a route; `filingRouteRuleId` names one, and the row states in words that the values above belong
+ * to it, so the choice is made by the payload rather than by this component. Where no filing route
+ * is named the order is untouched, and that residual stands for those rows.
+ *
+ * Every citation still renders and none is dropped: the rest follow in their original order inside
+ * the disclosure, each carrying its own `ruleId` as it always did.
+ */
+const citationsLedByFilingRoute = (
+  context: PlanContext,
+): { lead: PlanContext["sources"][number] | undefined; rest: PlanContext["sources"] } => {
+  const ruleId = attributedRouteOf(context)?.ruleId;
+  const [first, ...others] = context.sources;
+  if (ruleId === undefined) return { lead: first, rest: others };
+  const own = context.sources.filter((source) => source.ruleId === ruleId);
+  const siblings = context.sources.filter((source) => source.ruleId !== ruleId);
+  // A filing route whose rule publishes no source of its own promotes NOTHING rather than a
+  // sibling's page: `ruleSources` returns `[]` for a rule with no `source` block. The siblings
+  // still render inside the disclosure, so no published citation is dropped either way.
+  const [leadOwn, ...furtherOwn] = own;
+  return { lead: leadOwn, rest: [...furtherOwn, ...siblings] };
+};
 
 /** Two snapshot pairs are the same pair, so the row has nothing the banner has not already said. */
 const samePlan = (left: SourcePlan, right: SourcePlan): boolean =>
@@ -86,8 +254,15 @@ function ContextCitation({ source }: { source: PlanContext["sources"][number] })
  * `lastVerifiedDate` is absent because the row states it in its summary, above.
  */
 const hasContextDetail = (context: PlanContext): boolean =>
-  context.sources.length > 1 ||
-  context.conflictText !== null ||
+  // THE CITATIONS THE DISCLOSURE ACTUALLY HOLDS, not the count before they were narrowed. This
+  // gate read `sources.length > 1` while the panel below renders `rest`, so a row whose filing
+  // route publishes no source of its own and whose single sibling citation had moved into `rest`
+  // showed no promoted citation AND no control to open the one it had: a published citation became
+  // unreachable. Same shape as the scalar-free heading reading `filingRouteRuleId` after the
+  // attribution moved — a narrowing whose own visibility condition was left on the old value
+  // (#252 review).
+  citationsLedByFilingRoute(context).rest.length > 0 ||
+  conflictReadings(context).length > 0 ||
   (context.noteText !== null && context.noteText !== context.conflictText) ||
   context.publishedNotes.length > 0 ||
   context.portalName !== null ||
@@ -107,15 +282,60 @@ export function PlanContextBody({
    */
   currentPlan: SourcePlan;
 }) {
-  const [primarySource, ...furtherSources] = context.sources;
+  const { lead: primarySource, rest: furtherSources } = citationsLedByFilingRoute(context);
   const [detailsOpen, setDetailsOpen] = useState(false);
+  /**
+   * The route the paragraph below names, and the route the promoted citation above came from: one
+   * selection, `attributedRouteOf`, because a sentence naming one rule beside a citation from
+   * another is the crossing this row exists to remove.
+   *
+   * The sentence is rendered for BOTH ways a row carries one route's scalars, and it is the same
+   * sentence: on a candidate row the heading became the deciding question, so the paragraph that
+   * already existed for the named-filing-route case carries the attribution for the binding-route
+   * case too. A row that is not a candidate is unchanged, because its heading still names the
+   * permit.
+   */
+  const filingRoute = attributedRouteOf(context);
+  // THE QUESTION THAT WOULD DECIDE IT, on the surface the organizer works the item on.
+  //
+  // The conditionality already reached this row — the disposition badge above reads "may be
+  // required" — but the answer that would settle it did not. It was served on the checklist
+  // response and read by nothing, so the plan page said "the answers so far do not say which of
+  // these applies, answering tent area would decide it" while the checklist said only "may be
+  // required", and the one actionable thing about the row lived on the page the organizer is not
+  // working from (#252 review). AC 5's reasoning for keeping `applyAfterDate` here is the same
+  // reasoning: the checklist is where the item is worked, so what to do next about it is summary
+  // information there.
+  //
+  // The routes themselves are NOT listed here. The plan line is where a reader compares two routes'
+  // windows, fees and portals; what the checklist needs is the question, and the fields naming it
+  // are each route's own `unknownFields`, deduplicated. Nothing is composed: the sentence is fixed
+  // and the field names are the intake registry's.
+  const candidateRoutes = context.headlineMode === "candidate" ? (context.routes ?? []) : [];
+  // The trigger unknowns AND the deadline unknowns, the same union the plan line makes, for the
+  // reason written there: a route's `unknownFields` are its trigger's only, and a candidate group
+  // whose filing timeline also waits on an answer would otherwise be told a shorter list of
+  // fields "would decide it" than actually does (design §5.3, #252 review).
+  const decidingFields = [
+    ...new Set([
+      ...candidateRoutes.flatMap((route) => route.unknownFields),
+      ...(candidateRoutes.length > 0 ? context.deadlineUnknownFields : []),
+    ]),
+  ];
+  const triggeredRoutes = candidateRoutes.filter((route) => route.triggerResult === "true").length;
   const summaryShowsResearchTreatment =
     context.verificationStatus === "RESEARCH_REQUIRED" &&
     includesAgencyConfirmation([context.deadlineDisplay, context.feeDisplay]);
+  // THE TEXTS THE DISCLOSURE ACTUALLY RENDERS. This asked whether the merged `conflictText` carries
+  // the confirm-with-agency phrase, and the panel renders one paragraph PER ROUTE now: the merged
+  // value is only the first publisher's in binding order, so a sibling's reading carrying the
+  // phrase left this false and the row repeated the line the disclosure was already showing. Third
+  // gate on this row found reading a pre-narrowing value, after `gatedRoutesOf` and
+  // `hasContextDetail` (#252 review).
   const detailsShowResearchTreatment =
     context.verificationStatus === "RESEARCH_REQUIRED" &&
     includesAgencyConfirmation([
-      context.conflictText,
+      ...conflictReadings(context).map(({ text }) => text),
       context.noteText,
       context.timelineUnresolvedReason,
       context.portalInstructions,
@@ -124,6 +344,28 @@ export function PlanContextBody({
 
   return (
     <>
+      {/* THE UNSETTLED STATEMENT COMES BEFORE THE SCALARS IT QUALIFIES, which is the order the plan
+          line already renders the routes block in and for the same reason. The apply-by date, the
+          gate, the fee and the filing attribution below are ONE route's, and on a candidate row no
+          route is known to be the one. Rendered after them, this sentence corrected filing work the
+          organizer had already read as theirs to do (#252 review).
+
+          See `decidingFields` above. Two routes or it is not a merged line, the same guard the plan
+          line makes. The leading sentence branches because a candidate group can already have a
+          triggered route: where one has, the requirement is reached and what is open is which
+          routes reach it, and a sentence saying the requirement itself may not apply would be
+          false. Neither branch repeats the filing-route sentence's opening words, so a reader (and
+          a test) can tell the two apart by their first clause. */}
+      {candidateRoutes.length >= 2 && (
+        <p className="check-item__text" data-testid="deciding-question">
+          {triggeredRoutes > 0
+            ? "The answers so far do not say which of the published routes to this requirement apply."
+            : "The answers so far do not say whether this requirement applies."}
+          {decidingFields.length > 0 &&
+            ` Answering ${decidingFields.map(humanize).join(", ")} would decide it.`}
+        </p>
+      )}
+
       <p className="check-item__meta">
         {/* F-206 AC 2: every line shows its verification status, on the line itself. Rendered here
             rather than in either head, so a trackable row and a read-only context row carry it
@@ -184,6 +426,12 @@ export function PlanContextBody({
               {" · "}earliest realistic filing {context.applyAfterDate}
             </span>
           )}
+          {gatedRoutesOf(context).map((route) => (
+            <span key={route.ruleId} data-testid="route-apply-after">
+              {" · "}earliest realistic filing for {route.name ?? route.ruleId}{" "}
+              {route.applyAfterDate}
+            </span>
+          ))}
           {context.deadlineStatus !== "not_applicable" && (
             <span>
               {" · "}
@@ -197,6 +445,21 @@ export function PlanContextBody({
           an absent fee and an explicit null are one value by the time a finding carries it, so no
           sentence here can say which this row is. */}
       {context.feeDisplay !== null && <p className="check-item__text">{context.feeDisplay}</p>}
+
+      {/* WHOSE WINDOW THIS IS, when it is not this line's own. A merged dedupe line takes its name
+          from the binding route, and where that route publishes no window the filing date, fee and
+          portal above come from another route of the same requirement. Saying so is what keeps a
+          checklist row from naming one rule and dating another: the values are all one route's,
+          and this names it. Rendered for the two cases `filingRoute` covers: a line publishing no
+          window of its own, and a CANDIDATE row, whose heading is the deciding question and so no
+          longer names the binding route the scalars above belong to. */}
+      {filingRoute !== null && (
+        <p className="check-item__text">
+          The published rules give this requirement {(context.routes ?? []).length} routes. The
+          filing date, fee and filing details above are {filingRoute.name ?? filingRoute.ruleId}
+          &apos;s.
+        </p>
+      )}
 
       {/* Same copy as the plan line, for the same reason: COVERAGE_GAP is an unmodelled
           combination, not a missing source. A summary field, because it explains why no citation
@@ -212,16 +475,31 @@ export function PlanContextBody({
 
       {hasContextDetail(context) && (
         <Disclosure
-          label={`Details for ${displayName(context)}`}
+          label={`Details for ${trackingLabel(context)}`}
           className="check-item__detail"
           onOpenChange={setDetailsOpen}
         >
           {/* No last-verified date here: the summary above already states it. */}
           {/* Both readings of an official conflict, verbatim; never resolved to one silently. The
-              badge in the summary already says OFFICIAL CONFLICT. */}
-          {context.conflictText !== null && (
-            <p className="check-item__caveat">{context.conflictText}</p>
-          )}
+              badge in the summary already says OFFICIAL CONFLICT.
+
+              EVERY ROUTE THAT PUBLISHES A CONFLICT, NOT THE ONE THE MERGE KEPT. `mergeGroup` does
+              not concatenate this field: it falls back through the routes in binding order and
+              takes the first that publishes any, so `context.conflictText` is exactly one rule's
+              text and a sibling's official reading was dropped from the row entirely. The plan
+              line's route entries render this per route already; this is the same field on the
+              fourth surface (#252 review).
+
+              NAMED, NOT MERGED INTO ONE PARAGRAPH. Two rules' readings run together under one
+              caveat would read as four readings of one requirement. Each is its own paragraph led
+              by that route's published name, which is the attribution the plan line's entry gets
+              from its heading, and no sentence is composed around either value. */}
+          {conflictReadings(context).map(({ ruleId, name, text }) => (
+            <p className="check-item__caveat" key={ruleId}>
+              {name !== null && <strong>{name} </strong>}
+              {text}
+            </p>
+          ))}
           {context.noteText !== null && context.noteText !== context.conflictText && (
             <p className="check-item__text">{context.noteText}</p>
           )}
@@ -235,13 +513,29 @@ export function PlanContextBody({
             </p>
           )}
 
-          {/* F-204: application path from the rules data only. AC 2 — "apply at [portal]", new tab. */}
+          {/* F-204: application path from the rules data only. AC 2 — "apply at [portal]", new tab.
+              NO CANDIDATE ROW OFFERS A FILING ACTION, the rule the plan line's route entries
+              already carry (design §5.3), on the surface the organizer actually works the item on.
+              The row states above that the answers do not decide which route applies, and these
+              scalars are one route's; saying "apply at" under that sentence tells an organizer to
+              file the permit the same row just said was undecided (#252 review). The portal is a
+              published value, so it is named rather than dropped. */}
           <PortalBlock
             portalName={context.portalName}
             portalUrl={context.portalUrl}
             portalInstructions={context.portalInstructions}
             className="check-item__text"
             instructionsClassName="check-item__text"
+            // The row's own values are the attributed route's, so the rule is asked of that
+            // route where there is one and of the row's own disposition where there is not.
+            lead={
+              offersAFilingAction(
+                filingRoute ?? context,
+                candidateRoutes.length > 0 ? "candidate" : null,
+              )
+                ? "apply at"
+                : "portal"
+            }
           />
 
           {context.publishedNotes.map((note) => (
@@ -319,6 +613,8 @@ export function ChecklistItemCard({
   onDownload,
 }: ChecklistItemCardProps) {
   const name = displayName(item);
+  // The controls name a thing to act on; the heading answers what the row is about.
+  const label = trackingLabel(item);
   const [notesDraft, setNotesDraft] = useState(item.notes ?? "");
   const [busy, setBusy] = useState(false);
   const [failure, setFailure] = useState<string | null>(null);
@@ -404,7 +700,7 @@ export function ChecklistItemCard({
               status from every status rather than a next-step ladder. */}
           <select
             className="check-item__select"
-            aria-label={`Status for ${name}`}
+            aria-label={`Status for ${label}`}
             value={item.status}
             disabled={busy}
             onChange={(event) => {
@@ -424,7 +720,7 @@ export function ChecklistItemCard({
           <span className="check-item__field-label">Notes</span>
           <textarea
             className="check-item__notes"
-            aria-label={`Notes for ${name}`}
+            aria-label={`Notes for ${label}`}
             rows={2}
             value={notesDraft}
             disabled={busy}
@@ -467,7 +763,7 @@ export function ChecklistItemCard({
           <input
             ref={fileInput}
             type="file"
-            aria-label={`Add a document to ${name}`}
+            aria-label={`Add a document to ${label}`}
             accept={ACCEPTED_DOCUMENT_TYPES.join(",")}
             disabled={busy}
             onChange={(event) => chooseFile(event.target.files?.[0] ?? null)}

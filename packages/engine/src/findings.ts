@@ -17,32 +17,37 @@ import type {
   EventIntake,
   Finding,
   FindingKind,
+  FindingRoute,
   FindingSource,
+  Deadline,
   DeadlineStatus,
   Disposition,
+  HeadlineMode,
   TriggeredBy,
   RuleUserSummary,
   Tristate,
+  VerificationStatus,
 } from "./types";
 
 /**
- * Which routes resolved, by the role they play in a merged line. `verdict.ts` needs both, because a
- * merged line's disposition and its timeline are read off DIFFERENT routes (`mergeGroup`), and a
- * missed window may only close a plan when each of those two routes resolved on its own trigger.
+ * Which routes resolved on their own triggers, which is what decides whether a missed window may
+ * close a plan (#254). The trigger result is not on `Finding`, so `verdict.ts` cannot recover it.
+ *
+ * ONE SET, NOT THE TWO #254 INTRODUCED. That change carried a second set naming the route each
+ * merged line's TIMELINE was read off, because under AD-19 a line's disposition and its window came
+ * from different routes and neither was recoverable from the line. `verdict.ts` no longer reads
+ * merged lines at all: it reads route entries, and each entry pairs a disposition with the window
+ * published by the SAME rule, so one id answers both halves of the question and the second set has
+ * nothing left to distinguish. What #254 fixed is unchanged, because it is this set that does the
+ * work: a route whose trigger came back `unknown` is absent here whatever it publishes.
  */
 export type DefiniteRoutes = {
   /**
    * Rules that published a disposition at or above `required` AND whose own trigger resolved, so
    * the requirement or bar they assert does not hang off an unanswered question. `verdict.ts` reads
-   * this to decide which missed findings may close a plan; see `blocksWhenMissed` there.
+   * this to decide which missed routes may close a plan; see `blocksWhenMissed` there.
    */
   readonly blockingRuleIds: ReadonlySet<string>;
-  /**
-   * Per finding, the id of the route whose published window the finding's timeline came from, and
-   * only where that route's own trigger resolved. A finding whose id is absent carries a window that
-   * hangs off an unanswered question, so its `published_deadline_missed` is conditional too.
-   */
-  readonly windowRuleIds: ReadonlySet<string>;
 };
 
 export type ResolvedFindings = {
@@ -162,12 +167,178 @@ export const BLOCKING_DISPOSITION_FLOOR: Disposition = "required";
 const UNRESOLVED_ROUTE_CAP_TRIGGER: Disposition = "required";
 
 /**
+ * Where each of a route's values COMES FROM: the published rule, or the intake this plan was
+ * evaluated against.
+ *
+ * WHY A TOTAL MAPPING RATHER THAN A LIST. `buildFinding` copies most of a finding straight off the
+ * rule and computes the rest from the intake, and a consumer comparing a finding evaluated under
+ * one set of answers against the same rule evaluated under another needs to know which is which.
+ * `plan-api.ts` needs exactly that: a blocker promoted out of a BRANCH was evaluated with one
+ * intake field answered differently, so its intake-derived values legitimately differ from the base
+ * line's and its published ones cannot.
+ *
+ * IT IS A RECORD, NOT AN ARRAY, AND THAT IS THE WHOLE POINT. `Record<keyof Required<FindingRoute>,
+ * ...>` requires every key: a field added to `FindingRoute` fails to COMPILE until it is
+ * classified. Five hand-maintained lists on this branch were each correct when written and wrong
+ * the moment the thing they described grew — the collapse signature twice, the `ConsumedRoute`
+ * projection, the blocker validator's conditions, and the promoted blocker's immutable set, where
+ * `portalInstructions` was simply missing and let a crossed payload put arbitrary filing
+ * instructions under a blocking route (#252 review). "Someone will remember" is what failed five
+ * times; this is the compiler refusing instead.
+ *
+ * THE CLASSIFICATION IS `buildFinding` READ OFF, not a judgement:
+ *
+ *   • `intake` — everything `computeDeadline` produces, plus the disposition, which
+ *     `resolveDisposition` demotes when the rule's own trigger came back `unknown`. Answering a
+ *     field can move any of these.
+ *   • `published` — copied from the `EngineRule`. No answer changes what a rule says about itself.
+ *
+ * `triggerResult` and `unknownFields` are `intake`: they ARE the answer state.
+ */
+export type RouteFieldOrigin = "intake" | "published";
+
+export const ROUTE_FIELD_ORIGIN: {
+  readonly [Field in keyof Required<FindingRoute>]: RouteFieldOrigin;
+} = {
+  ruleId: "published",
+  triggerResult: "intake",
+  disposition: "intake",
+  unknownFields: "intake",
+  name: "published",
+  agency: "published",
+  deadline: "published",
+  deadlineDisplay: "intake",
+  latestApplyDate: "intake",
+  applyAfterDate: "intake",
+  deadlineStatus: "intake",
+  slackDays: "intake",
+  feeDisplay: "published",
+  portalName: "published",
+  portalUrl: "published",
+  portalInstructions: "published",
+  notes: "published",
+  conflictText: "published",
+};
+
+/**
+ * The route fields no answer can move, derived from the mapping above rather than typed out again.
+ *
+ * `deadline` is `published` and is deliberately NOT here: the rule's own deadline BLOCK is
+ * published, and every value the engine computes from it is `intake`, so a consumer comparing two
+ * evaluations of one rule can compare the block and must not compare the dates. It is excluded by
+ * the caller that only carries dates rather than by reclassifying it, because the classification is
+ * about where the value comes from and that one genuinely comes from the rule.
+ */
+export const PUBLISHED_ROUTE_FIELDS: readonly (keyof FindingRoute)[] = (
+  Object.keys(ROUTE_FIELD_ORIGIN) as (keyof FindingRoute)[]
+).filter((field) => ROUTE_FIELD_ORIGIN[field] === "published");
+
+/**
+ * The dispositions that denote something an organizer FILES.
+ *
+ * `required` and `may_be_required`, and the second is not a hedge to be excluded: an
+ * unknown-triggered `required` rule is demoted to it (`resolveDisposition`), and a requirement that
+ * may apply is still one to file for. `advisory` and `no_new_requirement` publish no filing at all,
+ * and `prohibited_or_ineligible` publishes the opposite of one.
+ */
+export const FILING_DISPOSITIONS: ReadonlySet<Disposition> = new Set<Disposition>([
+  "required",
+  "may_be_required",
+]);
+
+/**
+ * Whether a surface may offer a FILING ACTION for this route or finding: "apply at", an Apply link,
+ * a published filing instruction, "apply within N days".
+ *
+ * ONE FUNCTION FOR EIGHT SURFACES, and the count is the argument. The candidate portal lead, the
+ * candidate entry actions, the candidate portal instructions, the checklist filing selection, the
+ * slack-warning copy and three more found this round are all the same sentence asked eight times:
+ * does this thing have a filing, and if not, do not tell anyone to file it. Each was answered
+ * locally, each answer was slightly different, and the worst instance told an organizer to apply at
+ * the portal of the rule that BARS their event (#252 review).
+ *
+ * TWO CLAUSES, NOT THREE, and the third is the interesting one.
+ *
+ *   1. THE DISPOSITION PUBLISHES A FILING. This is the clause every local answer was missing.
+ *   2. THE GROUP IS SETTLED. A candidate group's open question is WHICH of its routes applies, so
+ *      even a route whose own trigger resolved is not yet a filing an organizer should be told to
+ *      make (design §5.3). `headlineMode` carries this; an unmerged finding has no group and is
+ *      settled by construction.
+ *   3. The route's own trigger resolved — proposed as a third clause and REDUNDANT WHERE IT CAN BE
+ *      EVALUATED. The route contract pairs an `unknown` trigger with `candidate` mode, so clause 2
+ *      already refuses every unresolved route of a merged line. Applied to an UNMERGED finding it
+ *      would say something different and wrong: an unknown-triggered `required` rule is demoted to
+ *      `may_be_required` rather than withdrawn, and the approved position is that such a finding
+ *      still gets its filing path — the insurance card's checklist link is gated on the rule id
+ *      "never on disposition" for exactly this reason. It is kept as an optional guard, so a
+ *      payload carrying a route's trigger but no mode is still refused, and it is documented as
+ *      belt-and-braces rather than as a third independent test.
+ *
+ * WHAT THE RULE DOES NOT DECIDE, deliberately: whether the portal is NAMED. Every surface that
+ * withholds the action still renders the published portal, without the imperative and without the
+ * rule's own filing instruction. A rule published that value and dropping it would lose regulatory
+ * content; what is withheld is the instruction to act on it.
+ *
+ * WHAT IT DOES NOT COVER, stated so the next reviewer does not have to find it: `verificationStatus`
+ * is not read. An `OFFICIAL_CONFLICT` route still offers its filing action, because the conflict its
+ * two readings record is about the WINDOW rather than about whether the filing exists. That is
+ * existing behaviour on every surface and changing it would be a product decision.
+ */
+export const offersAFilingAction = (
+  candidate: { readonly disposition: Disposition; readonly triggerResult?: Tristate },
+  headlineMode?: HeadlineMode | null,
+): boolean =>
+  FILING_DISPOSITIONS.has(candidate.disposition) &&
+  headlineMode !== "candidate" &&
+  candidate.triggerResult !== "unknown";
+
+/**
+ * Whether a route is one a MISSED window may close a plan on, which is membership in
+ * `blockingRuleIds` stated as the predicate it always was.
+ *
+ * ONE IMPLEMENTATION, FOR THE REASON `mergedDispositionOf` HAS ONE. This is the third rule a
+ * boundary would otherwise restate from prose, after the ceiling and the scalar-free test, and a
+ * restated rule drifts: each of the three clauses below was argued out separately (F-102 AC 10 for
+ * the floor, #254 for the trigger, `evaluate` for the conflict exclusion) and none of them reads
+ * as an obvious consequence of the other two. `evaluate` builds the set from this, and
+ * `plan-api.ts` checks a stored blocker against it, so neither can drift from the other.
+ *
+ * THE THREE CLAUSES, and what each is doing:
+ *
+ *   • The disposition is at or above `required`. F-102 AC 10, amended 2026-08-08.
+ *   • The trigger RESOLVED. `resolveDisposition` demotes an unknown-triggered `required`, so this
+ *     clause only ever bites on `prohibited_or_ineligible`, which is deliberately left undemoted so
+ *     a barred finding still RENDERS its bar (`proposals.ts` §2). Telling an organizer their event
+ *     is barred AND past its deadline, in a payload that also says the engine does not know the
+ *     fact the bar hangs off, is the failure this repository forbids everywhere else (#254).
+ *   • The rule is not OFFICIAL_CONFLICT. Its own reading of its window may be one of the two that
+ *     disagree, so closing a plan on it resolves the conflict in the harsher direction (F-102).
+ *
+ * `verificationStatus` is passed separately because `FindingRoute` does not carry one and does not
+ * need to: `parseEngineRuleset` refuses a `dedupe_key` whose rules disagree on it, so a group's
+ * status is every route's status.
+ */
+export const canBlockWhenMissed = (
+  route: Pick<FindingRoute, "disposition" | "triggerResult">,
+  verificationStatus: VerificationStatus,
+): boolean =>
+  route.triggerResult === "true" &&
+  verificationStatus !== "OFFICIAL_CONFLICT" &&
+  DISPOSITION_STRENGTH.indexOf(route.disposition) >=
+    DISPOSITION_STRENGTH.indexOf(BLOCKING_DISPOSITION_FLOOR);
+
+/**
  * One contributing route to a group's requirement: its finding, and whether its own trigger
  * resolved. The trigger result is not on `Finding` and is not published anywhere; it is carried
  * here only so the merge can honor §8.4's "candidate requirements produced by official-conflict or
  * unknown branches remain conditional; they are not promoted by deduplication".
  */
-type Contribution = { readonly finding: Finding; readonly triggerResult: Tristate };
+type Contribution = {
+  readonly finding: Finding;
+  readonly triggerResult: Tristate;
+  /** The intake fields this rule's own trigger could not resolve. */
+  readonly unknownFields: readonly string[];
+};
 
 /**
  * Whether the ceiling bites on this group. What §8.4 forbids is deduplication PROMOTING an
@@ -220,6 +391,68 @@ function contributedDisposition(
     : finding.disposition;
 }
 
+/**
+ * Whether a merged line's own scalars can come from any of its routes: the condition §4.3's
+ * amendment of 2026-08-09 states, read off the route list alone.
+ *
+ * `mergeGroup()` publishes NO headline scalars in exactly one case — the group holds a route whose
+ * trigger resolved AND no resolved route contributes the merged disposition — and that case is
+ * decidable from what a route entry already carries. `disposition` on a route is the rule's own
+ * value before any group arithmetic, `triggerResult` is its own trigger, and those two are precisely
+ * what `unresolvedRouteCeilingApplies` and `contributedDisposition` read. So the merged disposition
+ * and the contributing set are recomputed here rather than approximated, and nothing else is needed.
+ *
+ * EXPORTED BECAUSE THE VALIDATORS NEED THE CONDITION, NOT THE SHAPE. The plan and checklist
+ * boundaries accept an all-null headline as an approved state; testing for the SHAPE let any merged
+ * group null its scalars and skip the binding-route comparison, which turned a narrow exception into
+ * a way around the check the route contract exists to enforce (#252 review). They test this instead,
+ * and it is defined beside the merge that produces the state so the two cannot drift.
+ *
+ * A route list of fewer than two is not a merged line and has no such state.
+ */
+const routeResolved = (route: FindingRoute): boolean => route.triggerResult !== "unknown";
+
+/** What each route contributes to its group's disposition, off the route entries alone. */
+function routeContributions(routes: readonly FindingRoute[]): (route: FindingRoute) => Disposition {
+  const ceilingApplies = routes.some(
+    (route) =>
+      routeResolved(route) &&
+      DISPOSITION_STRENGTH.indexOf(route.disposition) >=
+        DISPOSITION_STRENGTH.indexOf(UNRESOLVED_ROUTE_CAP_TRIGGER),
+  );
+  return (route) =>
+    routeResolved(route) || !ceilingApplies
+      ? route.disposition
+      : DISPOSITION_STRENGTH.indexOf(route.disposition) >
+          DISPOSITION_STRENGTH.indexOf(UNRESOLVED_ROUTE_CEILING)
+        ? UNRESOLVED_ROUTE_CEILING
+        : route.disposition;
+}
+
+/**
+ * The disposition a merged line must publish, recomputed from its route entries.
+ *
+ * The merged disposition is the strongest any route CONTRIBUTES, which is not the strongest any
+ * route publishes: an unresolved route is capped where the group holds a resolved one at or above
+ * `required`. Both facts are on the route entries, so a consumer can check the headline against them
+ * rather than taking it on trust — and the boundaries do, because `disposition` is the one headline
+ * value that is legitimately not `routes[0]`'s and so sits outside every other comparison they make.
+ */
+export function mergedDispositionOf(routes: readonly FindingRoute[]): Disposition | null {
+  if (routes.length === 0) return null;
+  return strongestDisposition(routes.map(routeContributions(routes)));
+}
+
+export function noRouteSuppliesScalars(routes: readonly FindingRoute[]): boolean {
+  if (routes.length < 2) return false;
+  const contributed = routeContributions(routes);
+  const disposition = strongestDisposition(routes.map(contributed));
+  return (
+    routes.some(routeResolved) &&
+    !routes.some((route) => routeResolved(route) && contributed(route) === disposition)
+  );
+}
+
 function strongestDisposition(dispositions: readonly Disposition[]): Disposition {
   return dispositions.reduce((strongest, value) =>
     DISPOSITION_STRENGTH.indexOf(value) > DISPOSITION_STRENGTH.indexOf(strongest)
@@ -256,10 +489,10 @@ function strongestDisposition(dispositions: readonly Disposition[]): Disposition
  * 3. no published window at all. Such a route says nothing about when the requirement must be
  *    filed, so it cannot decide the group's timeline.
  */
-function windowAvailability(finding: Finding): number {
-  if (finding.deadline === null) return 3;
-  if (finding.deadlineStatus === "published_deadline_missed") return 1;
-  return finding.latestApplyDate === null ? 2 : 0;
+function windowAvailability(candidate: BindingCandidate): number {
+  if (candidate.deadline === null) return 3;
+  if (candidate.deadlineStatus === "published_deadline_missed") return 1;
+  return candidate.latestApplyDate === null ? 2 : 0;
 }
 
 /**
@@ -277,7 +510,26 @@ function windowAvailability(finding: Finding): number {
  * A total order over the group, so which member wins does not depend on the order they arrive in,
  * which is the whole point (#239).
  */
-function compareBinding(a: Finding, b: Finding): number {
+/**
+ * The four published values the binding order is decided on, which a `Finding` and a `FindingRoute`
+ * both carry. Stated as a shape so the comparator has ONE body: `mergeGroup` sorts findings and
+ * `bindingRouteOf` sorts route entries, and a comparator written twice is a rule that drifts.
+ */
+type BindingCandidate = {
+  readonly ruleId: string;
+  readonly deadline: Deadline | null;
+  readonly deadlineStatus: DeadlineStatus;
+  readonly latestApplyDate: string | null;
+};
+
+const bindingCandidateOf = (finding: Finding): BindingCandidate => ({
+  ruleId: finding.ruleIds[0] ?? "",
+  deadline: finding.deadline,
+  deadlineStatus: finding.deadlineStatus,
+  latestApplyDate: finding.latestApplyDate,
+});
+
+function compareBindingCandidates(a: BindingCandidate, b: BindingCandidate): number {
   const available = windowAvailability(a) - windowAvailability(b);
   if (available !== 0) return available;
   if (
@@ -287,7 +539,49 @@ function compareBinding(a: Finding, b: Finding): number {
   ) {
     return a.latestApplyDate < b.latestApplyDate ? -1 : 1;
   }
-  return (a.ruleIds[0] ?? "") <= (b.ruleIds[0] ?? "") ? -1 : 1;
+  return a.ruleId <= b.ruleId ? -1 : 1;
+}
+
+function compareBinding(a: Finding, b: Finding): number {
+  return compareBindingCandidates(bindingCandidateOf(a), bindingCandidateOf(b));
+}
+
+/**
+ * Which route a merged line's identity and timeline come from, recomputed from the route entries.
+ *
+ * THE THIRD RULE READ OFF THE ROUTE LIST ALONE, after `mergedDispositionOf` and
+ * `noRouteSuppliesScalars`, and exported for the same reason: a consumer that needs it was
+ * ASSUMING it. `plan-api.ts` defined the binding route as `routes[0]` and checked the headline
+ * against that, so a body ordering a later route first and copying its tuple into the headline
+ * passed every per-field check while the page understated the filing urgency; and `plan.ts`'s
+ * `filingRouteOf` takes the first route publishing a window, which is only the right route because
+ * the list arrives in binding order — a premise it depends on and does not itself establish
+ * (#252 review).
+ *
+ * THE SELECTION IS §4.3's, recomputed and not approximated. The pool is the routes CONTRIBUTING the
+ * merged disposition, intersected with the resolved ones where any of those resolved, skipped where
+ * that intersection is empty. `routeContributions` is the same function `mergedDispositionOf` reads,
+ * so the cap on an unresolved route is part of it here too. The order within the pool is
+ * `compareBindingCandidates`: window availability, then the earlier published date, then the rule id.
+ *
+ * It returns a route even where the line publishes no scalars off it. `noRouteSuppliesScalars` is
+ * the separate question of whether that route's values may be COPIED to the headline; the route
+ * list is still in binding order there, and the single-valued texts still fall back through it.
+ *
+ * Null for a list of fewer than two, which is not a merged line and has no binding route.
+ */
+export function bindingRouteOf(routes: readonly FindingRoute[]): FindingRoute | null {
+  if (routes.length < 2) return null;
+  const contributed = routeContributions(routes);
+  const disposition = strongestDisposition(routes.map(contributed));
+  const contributing = routes.filter((route) => contributed(route) === disposition);
+  const resolved = contributing.filter(routeResolved);
+  const pool = resolved.length > 0 ? resolved : contributing;
+  return (
+    [...pool].sort((a, b) =>
+      compareBindingCandidates({ ...a, ruleId: a.ruleId }, { ...b, ruleId: b.ruleId }),
+    )[0] ?? null
+  );
 }
 
 /**
@@ -310,100 +604,122 @@ function mergeUserSummary(
 }
 
 /**
- * One finding for a dedupe group, retaining every contributing rule, source and trigger reason.
+ * One route entry: a contributing rule's own published values and its own trigger result, so the
+ * merge no longer has to discard the losing routes' name, window and fee to fit one line.
+ */
+function routeFrom(
+  finding: Finding,
+  triggerResult: Tristate,
+  unknownFields: readonly string[],
+): FindingRoute {
+  return {
+    ruleId: finding.ruleIds[0] as string,
+    triggerResult,
+    disposition: finding.disposition,
+    unknownFields,
+    name: finding.name,
+    agency: finding.agency,
+    deadline: finding.deadline,
+    deadlineDisplay: finding.deadlineDisplay,
+    latestApplyDate: finding.latestApplyDate,
+    applyAfterDate: finding.applyAfterDate,
+    deadlineStatus: finding.deadlineStatus,
+    slackDays: finding.slackDays,
+    feeDisplay: finding.feeDisplay,
+    portalName: finding.portalName,
+    portalUrl: finding.portalUrl,
+    portalInstructions: finding.portalInstructions,
+    notes: finding.notes,
+    conflictText: finding.conflictText,
+  };
+}
+
+/**
+ * Every route a finding holds, and the ONE correct fallback for a finding that carries no list:
+ * an unmerged finding is its own single route, and so is a replayed artifact stored before the
+ * field existed. Consumers read routes through this rather than writing the fallback themselves,
+ * because a consumer that forgets it silently stops seeing an unmerged finding's window.
  *
- * ONE RULE DECIDES EVERY FIELD, and it is a reading of what a dedupe group is: its members are
- * alternative published routes to one requirement. That reading gives three classes of field.
+ * The synthesized route's `triggerResult` is `"true"`: the trigger result is not on `Finding` and
+ * cannot be recovered from one, and every reader of this value asks whether a route is known to
+ * apply, which for an unmerged finding is answered by its own `disposition` instead.
+ */
+export function routesOf(finding: Finding): readonly FindingRoute[] {
+  return finding.routes ?? [routeFrom(finding, "true", [])];
+}
+
+/**
+ * One finding for a dedupe group, retaining every contributing rule, source, trigger reason AND
+ * every route's own published values.
  *
- * 1. `disposition` is the strongest any route still offers, because any one route applying means
- *    the requirement applies. An unresolved route is capped at `may_be_required` per §8.4, but only
- *    where the group holds a resolved route at or above that ceiling, since promotion past such a
- *    route is what §8.4 forbids (`unresolvedRouteCeilingApplies`).
- * 2. NO SINGLE ROUTE DECIDES EVERY FIELD, and pretending one does is what this round fixed.
- *    `disposition` is the group's STRONGEST and the filing window is the group's TIGHTEST, and
- *    those two select different routes whenever the blocking or strongest route is not also the
- *    one that has to be filed soonest. Ranking only the routes that supplied the merged disposition
- *    ran the disposition filter BEFORE the window ranking, so `windowAvailability` never saw a
- *    route in a weaker disposition tier: a group holding a CLOSED window under a weaker disposition
- *    beside a stronger route publishing no window dropped `published_deadline_missed` and the
- *    closed route's apply-by date, and adding a `dedupe_key` to two rules moved the plan verdict
- *    (#244 review). Ranking the WHOLE group for every field instead put the losing route's permit
- *    name, fee and portal on a barred line, which tells an organizer to file for something they
- *    are barred from. Both orderings are hybrids; only the split below says which half is which.
+ * THE MERGED LINE IS NO LONGER THE ONLY PLACE A ROUTE'S FACTS CAN LIVE, and that is the whole
+ * change. A group's members are alternative published routes to one requirement, and the line has
+ * room for one name, one window, one fee. Three orderings of "which route wins the slot" were
+ * tried: the first contributing rule (#239), one binding route for every field, and a per-field
+ * split with identity following the strongest disposition and the timeline following the tightest
+ * window (AD-19). Each moved the defect rather than removing it, and the last produced a line
+ * naming route A while quoting route B's deadline and status, with A's own window unrecoverable
+ * from anywhere on the finding. No ordering can be right: when the strongest disposition and the
+ * tightest window select different routes, two routes have a claim on one slot.
  *
- *    So each decided field names its route, and there are exactly two:
+ * So every route keeps its own values in `routes`, and the line reads as ONE of them.
  *
- *    IDENTITY, from `identityBinding`, the tightest window among the routes that CONTRIBUTED the
- *    merged disposition. These say WHAT the requirement is and WHO an organizer deals with, so they
- *    have to belong to the route the headline disposition describes: `kind` and `name` (what the
- *    line is), `agency` (who), `feeDisplay` (what is paid, which must not be quoted off a route
- *    that is not the one being described), `portalName`, `portalUrl` and `portalInstructions`
- *    (where it is filed), `verificationStatus` (how well sourced that route is), `noteText` (the
- *    scope or eligibility caveat, which is what carries a bar), `conflictText` (both readings of
- *    that route's official conflict) and the `userSummary` heading (the title of the line).
- *
- *    TIMELINE, from `windowBinding`, the tightest window over EVERY route in the group whatever
- *    disposition it contributed. These say WHEN, and a published window may never be dropped for
- *    sitting under a weaker disposition: `deadline`, `deadlineDisplay`, `latestApplyDate`,
- *    `deadlineStatus`, `slackDays`, `applyAfterDate` (the dependency gate, which is dated off the
- *    same route and is filled by the sequencing pass below) and `timelineUnresolvedReason` (why a
- *    published window could not be dated, which `verdict.ts` reads to keep a plan conditional).
- *
- *    The two coincide in every group `nyc.v2.11` publishes, so this splits nothing today; it bounds
- *    what a future dedupe group can render.
- * 3. `ruleIds`, `notes`, `sources`, `triggeredBy`, `deadlineUnknownFields` and the summary points
+ * 1. `disposition` is unchanged from AD-19: the strongest any route still offers, because any one
+ *    route applying means the requirement applies, with a route whose own trigger resolved
+ *    `unknown` capped at `may_be_required` where the group holds a resolved route at or above that
+ *    ceiling (`unresolvedRouteCeilingApplies`). It never understates what an organizer must do.
+ * 2. THE HEADLINE MODE SAYS WHY THE ROUTES CO-FIRED, because that is what decides how the line
+ *    reads. A trigger that evaluates `unknown` produces a finding and enters the merge exactly like
+ *    a `true` one, so co-firing is two situations wearing one shape: routes that genuinely apply
+ *    together, and routes we cannot yet tell apart. Measured over the v2 full draft, five of the
+ *    nine multi-member groups reach two members ONLY through unknowns, and `sapo_permit` reaches
+ *    fourteen only when `sapo_event_type` is unanswered (`docs/research/draft-dedupe-cofiring.md`
+ *    §4.2, §5.1). Collapsing that into one candidate's name, window and fee destroys the most
+ *    information exactly when the organizer knows the least.
+ * 3. IDENTITY AND TIMELINE COME FROM ONE ROUTE, the binding route, so a line can never name one
+ *    route and date another. AD-19 split them because a published window must not be dropped for
+ *    sitting in a weaker disposition tier; that reason is gone, because no window is dropped now.
+ *    The binding route is the tightest window among the routes contributing the merged disposition,
+ *    intersected with the RESOLVED routes where any resolved route exists, so the headline only ever
+ *    moves from a route that might apply to one that does. The intersection is skipped where it
+ *    would be empty, which is where the headline disposition comes only from unresolved routes: the
+ *    mode is `candidate` there and the copy says so.
+ * 4. `ruleIds`, `notes`, `sources`, `triggeredBy`, `deadlineUnknownFields` and the summary points
  *    concatenate over every route in contributing order, which is the approved contract that a
- *    merged finding retains every contributing rule and source. `lastVerifiedDate` is in neither
- *    family: it is the earliest across the group when every route publishes one, because it is fact
- *    provenance for the whole line rather than a value read off one route.
- * 4. The four single-valued published text fields (`noteText`, `conflictText`, the summary heading
- *    and `timelineUnresolvedReason`) cannot concatenate like `notes` and carry text that must not
- *    be dropped, so where their own family's binding route publishes none they fall back through
- *    the remaining routes in that family's order: the first three through identity order, the
- *    fourth through timeline order. Both orders are total, so neither is the file order the defect
- *    was, and the fallback only ever fills a field the binding route leaves empty.
+ *    merged finding retains every contributing rule and source. `lastVerifiedDate` is the earliest
+ *    across the group when every route publishes one, being provenance for the whole line.
+ * 5. The four single-valued published text fields (`noteText`, `conflictText`, the summary heading
+ *    and `timelineUnresolvedReason`) cannot concatenate like `notes` and carry text that must not be
+ *    dropped, so where the binding route publishes none they fall back through the remaining routes
+ *    in binding order. That order is total, so it is not the file order the defect was, and the
+ *    fallback only ever fills a field the binding route leaves empty.
  *
- * THE LOSING ROUTES' `feeDisplay` AND PORTAL FIELDS ARE NOT RENDERED ON THE MERGED LINE. Two fees or
- * two portals on one line would read as two payments or two filings, which no artifact supports.
- * Nothing is fabricated and
- * the alternate route is not hidden: it keeps its rule id, citation, notes, trigger reasons and
- * its own summary points (including any fee or action point it publishes), so an organizer sees
- * that a second published route exists and what it says.
+ * THE LOSING ROUTES' FEE AND PORTAL ARE STILL NOT ON THE HEADLINE. Two fees or two portals in one
+ * slot would read as two payments or two filings. They are on the route entries instead, which is
+ * where a reader can tell whose they are.
  *
- * Ruleset order is not a regulatory fact, and until this it decided all of the above: nyc.v2.11's
- * `dob-structure` group mixes disposition and deadline, so reversing those two rules in the
- * published file turned a `required` finding with a filing date into a `may_be_required` one with
- * none, no regulatory fact having changed (#239).
+ * THE APPROVED ARTIFACT FOR THESE MERGED VALUES IS `docs/proposals/dedupe-route-list.md`, APPROVED
+ * by the product owner on 2026-08-08 under `docs/DOCUMENTATION-GOVERNANCE.md` §6 and recorded in
+ * `docs/BASELINE.md` and on AD-19's own row. The approval covers the design in its sections 3 to 8:
+ * §3.3 names the scalars that move back to the identity binding, §4 the two headline modes and how
+ * they are computed, §4.3 the binding route including the intersection with the resolved subset and
+ * the single-valued texts falling back in binding order. It supersedes exactly the one sentence of
+ * AD-19 its §9 names, and AD-19 remains the approved record of everything else it decided. The
+ * engine implemented this while the proposal was still PROPOSED; `SPEC-CONFLICT` #253 records that
+ * divergence and the approval closes it.
  *
- * NO APPROVED ARTIFACT STATES THESE MERGED VALUES. `ARCHITECTURE.md` says only that a group merges
- * deterministically, retaining every contributing rule and source; the precedence table
- * `ARCHITECTURE-FUTURE.md` §8.4 calls for is Phase 2+ direction and does not exist yet. What is
+ * `ARCHITECTURE.md` supplies the rest: a group merges deterministically, retaining every
+ * contributing rule and source, which is rule 4 above. The precedence table
+ * `ARCHITECTURE-FUTURE.md` §8.4 calls for is Phase 2+ direction and still does not exist. What is
  * taken from §8.4 is the three things it settles now, that a blocking finding is never erased on a
  * shared key, an unknown or official-conflict branch's candidate is not promoted by deduplication,
- * and merge order is deterministic rather than incidental array order. The rest is the safe
- * direction for a regulatory product: understating what an organizer must file, or how soon, is the
- * failure this cannot risk. It is approved as product scope (`docs/BASELINE.md`, AD-19). Nothing
- * here asserts a new regulatory fact. Every merged value is some contributing rule's own published
- * value, and every contributing rule stays in `ruleIds` and `sources`.
+ * and merge order is deterministic rather than incidental array order. Nothing here asserts a new
+ * regulatory fact: every value on the line and on every route is some contributing rule's own
+ * published value.
  */
-/**
- * A merged finding, plus the id of the route its TIMELINE was read off — carried only where that
- * route's own trigger resolved, and null otherwise. The trigger result is not on `Finding`, and the
- * window-binding route is not always the one that contributed the disposition, so `verdict.ts`
- * cannot recover either from the merged line: a group holding a resolved bar with no deadline beside
- * an unknown-triggered route with a closed window renders `prohibited_or_ineligible` and
- * `published_deadline_missed` while the missed window is entirely conditional (#254 review).
- */
-type MergedFinding = { readonly finding: Finding; readonly windowRuleId: string | null };
-
-const definiteWindowRuleId = ({ finding, triggerResult }: Contribution): string | null =>
-  triggerResult === "unknown" ? null : (finding.ruleIds[0] ?? null);
-
-function mergeGroup(group: readonly Contribution[]): MergedFinding {
+function mergeGroup(group: readonly Contribution[]): Finding {
   const first = group[0] as Contribution;
-  if (group.length === 1) {
-    return { finding: first.finding, windowRuleId: definiteWindowRuleId(first) };
-  }
+  if (group.length === 1) return first.finding;
 
   const ceilingApplies = unresolvedRouteCeilingApplies(group);
   const contributed = (contribution: Contribution): Disposition =>
@@ -411,68 +727,108 @@ function mergeGroup(group: readonly Contribution[]): MergedFinding {
   const disposition = strongestDisposition(group.map(contributed));
   const findings = group.map((contribution) => contribution.finding);
 
-  // Identity reads off the routes that contributed the headline disposition; the timeline reads off
-  // the whole group, so a published window is never dropped for sitting in a weaker tier (above).
-  const byIdentity = group
-    .filter((contribution) => contributed(contribution) === disposition)
+  // The routes that contributed the headline disposition, narrowed to those known to apply where
+  // any of them is. Skipped where that leaves nothing, i.e. where the headline disposition comes
+  // only from routes whose triggers did not resolve.
+  const contributing = group.filter((contribution) => contributed(contribution) === disposition);
+  const isResolved = (contribution: Contribution): boolean =>
+    contribution.triggerResult !== "unknown";
+  const resolved = contributing.filter(isResolved);
+  const bindingPool = resolved.length > 0 ? resolved : contributing;
+  // THE GROUP HOLDS A SETTLED ROUTE AND NONE OF THEM CARRIES THE HEADLINE, which is the one case
+  // §4.2 and §4.3 step 2 pointed at different routes for, amended 2026-08-09 by the product owner
+  // so that the line picks neither. Every scalar below is one route's own published value, and on
+  // this shape choosing one publishes a settled route's fee and portal under an unsettled route's
+  // disposition, or an unsettled route's under a settled group. The line publishes none of them and
+  // every route keeps its own beneath (§4.3, `unattributableScalars`).
+  const unattributable = resolved.length === 0 && group.some(isResolved);
+  const binding = bindingPool
     .map((contribution) => contribution.finding)
-    .sort(compareBinding);
-  const byTimelineRoutes = [...group].sort((left, right) =>
-    compareBinding(left.finding, right.finding),
-  );
-  const byTimeline = byTimelineRoutes.map((contribution) => contribution.finding);
-  const identityBinding = byIdentity[0] as Finding;
-  const windowRoute = byTimelineRoutes[0] as Contribution;
-  const windowBinding = windowRoute.finding;
-  // Each family's binding route first, then the rest, for the fields it leaves empty.
-  const identityOrder = [
-    identityBinding,
-    ...findings.filter((finding) => finding !== identityBinding).sort(compareBinding),
+    .sort(compareBinding)[0] as Finding;
+  // The binding route first, then the rest, for the single-valued texts it leaves empty.
+  const bindingOrder = [
+    binding,
+    ...findings.filter((finding) => finding !== binding).sort(compareBinding),
   ];
-  const publishedText =
-    (order: readonly Finding[]) =>
-    (read: (finding: Finding) => string | null): string | null =>
-      order.map(read).find((text) => text !== null) ?? null;
-  const identityText = publishedText(identityOrder);
-  const userSummary = mergeUserSummary(findings, identityOrder);
+  const publishedText = (read: (finding: Finding) => string | null): string | null =>
+    bindingOrder.map(read).find((text) => text !== null) ?? null;
+  const userSummary = mergeUserSummary(findings, bindingOrder);
   const verificationDates = findings.map((finding) => finding.lastVerifiedDate);
   const published = verificationDates.filter((date): date is string => typeof date === "string");
   const lastVerifiedDate: string | null =
     published.length === group.length
       ? published.reduce((earliest, date) => (date < earliest ? date : earliest))
       : null;
+  // IN BINDING ORDER, NOT CONTRIBUTING ORDER. `ruleIds`, `notes` and `sources` concatenate in
+  // contributing order because they are provenance a reader scans; this list is the first place
+  // the order becomes a ranked visual list an organizer chooses a permit from, and contributing
+  // order is where the rules sit in the published file. That is the #239 defect class, arriving in
+  // the new list (#252 review). `bindingOrder` is total and leads with the route the headline
+  // reads, so the entry the line is about is the entry read first.
+  const contributionOf = new Map(group.map((contribution) => [contribution.finding, contribution]));
+  const routes = bindingOrder.map((finding) => {
+    const { triggerResult, unknownFields } = contributionOf.get(finding) as Contribution;
+    return routeFrom(finding, triggerResult, unknownFields);
+  });
+  const headlineMode: HeadlineMode = routes.every((route) => route.triggerResult !== "unknown")
+    ? "applies_together"
+    : "candidate";
 
-  const merged: Finding = {
-    // Identity: kind, name, agency, feeDisplay, the three portal fields and verificationStatus.
-    ...identityBinding,
+  return {
+    // Identity and timeline, both off the binding route.
+    ...binding,
     disposition,
-    // Timeline: every field that says when, off the group's tightest published window.
-    deadline: windowBinding.deadline,
-    deadlineDisplay: windowBinding.deadlineDisplay,
-    latestApplyDate: windowBinding.latestApplyDate,
-    applyAfterDate: windowBinding.applyAfterDate,
-    deadlineStatus: windowBinding.deadlineStatus,
-    slackDays: windowBinding.slackDays,
-    timelineUnresolvedReason: publishedText(byTimeline)(
-      (finding) => finding.timelineUnresolvedReason,
-    ),
     ruleIds: findings.flatMap((finding) => finding.ruleIds),
     notes: findings.flatMap((finding) => finding.notes),
     sources: findings.flatMap((finding) => finding.sources),
     ...(userSummary === null ? {} : { userSummary }),
     triggeredBy: findings.flatMap((finding) => finding.triggeredBy),
     deadlineUnknownFields: findings.flatMap((finding) => finding.deadlineUnknownFields),
-    noteText: identityText((finding) => finding.noteText),
-    conflictText: identityText((finding) => finding.conflictText),
+    noteText: publishedText((finding) => finding.noteText),
+    conflictText: publishedText((finding) => finding.conflictText),
+    timelineUnresolvedReason: publishedText((finding) => finding.timelineUnresolvedReason),
     ...(verificationDates.some((date) => date !== undefined) ? { lastVerifiedDate } : {}),
+    routes,
+    headlineMode,
+    ...(unattributable ? UNATTRIBUTABLE_SCALARS : {}),
   };
-  return { finding: merged, windowRuleId: definiteWindowRuleId(windowRoute) };
 }
+
+/**
+ * What a merged line publishes where no route can supply its scalars: none of them.
+ *
+ * THE FIELDS ARE EVERY ONE A SINGLE ROUTE WOULD HAVE BEEN PICKED FOR: the identity a reader names
+ * the line by, the whole timeline, the fee and the three portal fields. They are on the route
+ * entries, which is where a reader can tell whose they are, and `ruleIds`, `notes`, `sources`,
+ * `triggeredBy`, the summary and the published texts are untouched, because none of those is a pick.
+ *
+ * `deadlineStatus` IS THE ONE FIELD THAT CANNOT BE ABSENT, so it takes the only value that is true
+ * of this line rather than the least visible one. `not_applicable` would say no filing date applies
+ * to this requirement, which is false: the routes publish windows. `not_calculable` says the window
+ * exists and this line cannot be dated, which is exactly the state, and it is the value the engine
+ * already uses for a published window it cannot turn into a date. Every consumer that branches on
+ * the status already handles it, and `timelineUnresolvedReason` still carries whatever published
+ * text the routes supply, verbatim.
+ */
+const UNATTRIBUTABLE_SCALARS = {
+  name: null,
+  agency: null,
+  deadline: null,
+  deadlineDisplay: null,
+  latestApplyDate: null,
+  applyAfterDate: null,
+  deadlineStatus: "not_calculable",
+  slackDays: null,
+  feeDisplay: null,
+  portalName: null,
+  portalUrl: null,
+  portalInstructions: null,
+} as const satisfies Partial<Finding>;
 
 /** Findings sharing a dedupe key merge deterministically, retaining every contributing rule and source. */
 function dedupe(
   findings: readonly (Contribution & { readonly dedupeKey: string | null })[],
-): MergedFinding[] {
+): Finding[] {
   const groups: Contribution[][] = [];
   const positionByKey = new Map<string, number>();
   for (const { dedupeKey, ...contribution } of findings) {
@@ -497,6 +853,35 @@ function dedupe(
  * invented. The strictness of the ordering is RESEARCH_REQUIRED on the dependency rule, so this
  * dates when pursuit can realistically begin rather than asserting that filing earlier is barred.
  */
+/**
+ * The same gate applied to one route, off that route's own published window. The note stays on the
+ * finding: it is one sentence about the sequence, not a per-route value.
+ */
+function sequenceRoute(
+  route: FindingRoute,
+  applyAfterDate: string,
+  slackWarningDays: number,
+  sequencingNote: string,
+): FindingRoute {
+  const windowDays =
+    route.latestApplyDate === null
+      ? null
+      : differenceInCalendarDays(applyAfterDate, route.latestApplyDate);
+  const closed = windowDays !== null && windowDays < 0;
+  return {
+    ...route,
+    // The caveat too: a route's notes are captured when the group merges and this runs after, so
+    // without it the per-route readers state the sequence and lose the sentence qualifying it.
+    notes: [...(route.notes ?? []), sequencingNote],
+    applyAfterDate: closed ? null : applyAfterDate,
+    slackDays: closed ? null : (windowDays ?? route.slackDays),
+    deadlineStatus:
+      windowDays !== null && windowDays < slackWarningDays && route.deadlineStatus === "on_track"
+        ? "deadline_approaching"
+        : route.deadlineStatus,
+  };
+}
+
 function applyDependencySequencing(
   findings: readonly Finding[],
   context: DeadlineContext,
@@ -520,12 +905,25 @@ function applyDependencySequencing(
 
     const [earliestDecisionDays, latestDecisionDays] = upstream.deadline.processingRangeDays;
     const applyAfterDate = addCalendarDays(context.today, earliestDecisionDays);
+    // WHOSE WINDOW IS BEING SEQUENCED: the gated RULE's, which on a merged line is its route
+    // entry rather than the line's scalars. The scalars are the binding route's, and where the
+    // gated rule is a non-binding member they are a different rule's published window entirely.
+    // Every value below is read off this route, so the squeeze test, the closed-window test, the
+    // direct-filing test and the organizer-facing note all describe the route the gate is about.
+    // On an unmerged finding, and on a merged one whose gated rule binds, the route's values are
+    // the scalars, so nothing moves for either.
+    // `??` is not usable here: a route publishing no date is not a route with no values, and
+    // reading its null as "missing" would put the binding route's date back.
+    const gatedRoute = gated.routes?.find((route) => route.ruleId === binding.gatedRuleId) ?? gated;
+    const gatedLatestApplyDate = gatedRoute.latestApplyDate;
+    const gatedDeadlineStatus = gatedRoute.deadlineStatus;
+
     // Window width: between the earliest upstream decision and the gated item's own deadline
     // (F-102 AC 5). Narrow or negative means the sequence is a squeeze.
     const gatedWindowDays =
-      gated.latestApplyDate === null
+      gatedLatestApplyDate === null
         ? null
-        : differenceInCalendarDays(applyAfterDate, gated.latestApplyDate);
+        : differenceInCalendarDays(applyAfterDate, gatedLatestApplyDate);
 
     // The sequencing may tighten the rendering but may never close a window on its own: the
     // dependency rule's verification block says a strict issued-before-filed order is NOT
@@ -544,7 +942,65 @@ function applyDependencySequencing(
     // Strict issued-before-filed sequencing is not confirmed, so the direct route stays open —
     // but only while this finding's own published deadline is. Past it, saying so would assert a
     // window the rule itself closed.
-    const directFilingOpen = gated.deadlineStatus !== "published_deadline_missed";
+    const directFilingOpen = gatedDeadlineStatus !== "published_deadline_missed";
+
+    // WHOSE WINDOW THE HEADLINE SEQUENCING IS ABOUT. The merged line's scalars are the BINDING
+    // route's, entirely, so that a line can never name one route and date another; `routes[0]` is
+    // that route, because `mergeGroup` builds the list in binding order. Where the gated rule is a
+    // non-binding member, sequencing the line wrote the gate, the gated slack and the squeezed
+    // status onto scalars belonging to a route that is not gated at all — a headline naming the
+    // ungated route while displaying the NYPD gate, with that route's own entry still reading
+    // `applyAfterDate: null` beside it (#252 review). The route entries are sequenced either way,
+    // which is where the gated route's own window has lived since `verdict.ts` began reading them,
+    // so nothing is dropped by leaving the scalars to their route.
+    //
+    // An unmerged finding has one route and it is the binding one, so this is the whole of the
+    // change: every single-rule line sequences exactly as before.
+    /**
+     * The caveat this sequence has to travel with, composed once and attached BOTH to the finding
+     * and to the gated route.
+     *
+     * ON THE ROUTE AS WELL AS ON THE LINE, because the route is where the per-route readers look.
+     * `routeFrom()` captures a route's notes when the group merges, and this runs afterwards, so a
+     * route's notes were a snapshot taken before the sequence existed. `alerts.ts` reads them per
+     * route, and dropped this caveat from the reminder and from the at-risk warning that says the
+     * requirement waits on another agency's decision — stating the wait while losing the sentence
+     * saying the ordering is not confirmed by located primary text (#252 review).
+     *
+     * It is this route's own caveat, about this rule's own sequence, so attaching it here restores
+     * an attribution rather than putting a sibling's note back on the route.
+     */
+    const sequencingNote =
+      `sequenced after ${binding.upstreamRuleId} per ${binding.dependencyRuleId}: earliest ` +
+      `pursuit ${applyAfterDate}, once the ${earliestDecisionDays}–${latestDecisionDays} day ` +
+      `decision window opens` +
+      (gatedWindowDays === null
+        ? ""
+        : sequenceClosedWindow
+          ? `, which is after this permit's own ${gatedLatestApplyDate ?? ""} deadline, so ` +
+            `the sequence leaves no window to file in. Strict issued-before-filed sequencing ` +
+            `is not confirmed by located primary text` +
+            (directFilingOpen
+              ? ` — filing directly may still be open, so confirm the order with the agency`
+              : `, so confirm the order with the agency`)
+          : `, leaving ${gatedWindowDays} days to file. Strict issued-before-filed sequencing ` +
+            `is not confirmed by located primary text — confirm the order with the agency`);
+
+    // WHETHER THE HEADLINE HAS A ROUTE TO SEQUENCE AT ALL, which is two questions and used to be
+    // one. `routes[0]` is the binding route, so a gated rule that is not it sequences only its own
+    // entry — and on a group whose headline no route supplies, there is no binding route to be,
+    // whichever entry leads the list. `mergeGroup` nulls every scalar on that group and this pass
+    // then wrote `applyAfterDate` straight back onto it, producing a line that satisfies neither
+    // state: not scalar-free, and not its binding route's either. The web boundary refuses exactly
+    // that finding, so the engine was emitting a plan its own contract rejects (#252 review).
+    //
+    // This is the third place to assume `routes[0]` is binding, after the two validators, and it is
+    // the only one that WRITES. The other two ask `noRouteSuppliesScalars` before they read, which
+    // is what this now does too, so the invariant "a merged line either reads as `routes[0]` or
+    // publishes nothing" holds by construction rather than by each caller remembering it.
+    const gatedRouteBinds =
+      gated.routes === undefined ||
+      (gated.routes[0]?.ruleId === binding.gatedRuleId && !noRouteSuppliesScalars(gated.routes));
 
     sequenced.set(binding.gatedRuleId, {
       ...gated,
@@ -554,32 +1010,36 @@ function applyDependencySequencing(
       // it late — so the field is null and the note below carries the conflict instead. Both
       // consumers read the field: a date means "wait until this date", null means there is no
       // gate to wait for.
-      applyAfterDate: sequenceClosedWindow ? null : applyAfterDate,
+      applyAfterDate: !gatedRouteBinds
+        ? gated.applyAfterDate
+        : sequenceClosedWindow
+          ? null
+          : applyAfterDate,
       // Slack for a gated finding is the window it can actually be filed in, not the distance
       // from today to its own deadline (F-102 AC 5: latest_apply − apply_after). Keeping the
       // ungated figure overstates the buffer that deadline copy and F-203's alerts read.
-      slackDays: sequenceClosedWindow ? null : (gatedWindowDays ?? gated.slackDays),
+      slackDays: !gatedRouteBinds
+        ? gated.slackDays
+        : sequenceClosedWindow
+          ? null
+          : (gatedWindowDays ?? gated.slackDays),
       deadlineStatus:
-        isSqueezed && gated.deadlineStatus === "on_track"
+        isSqueezed && gatedRouteBinds && gated.deadlineStatus === "on_track"
           ? "deadline_approaching"
           : gated.deadlineStatus,
-      notes: [
-        ...gated.notes,
-        `sequenced after ${binding.upstreamRuleId} per ${binding.dependencyRuleId}: earliest ` +
-          `pursuit ${applyAfterDate}, once the ${earliestDecisionDays}–${latestDecisionDays} day ` +
-          `decision window opens` +
-          (gatedWindowDays === null
-            ? ""
-            : sequenceClosedWindow
-              ? `, which is after this permit's own ${gated.latestApplyDate ?? ""} deadline, so ` +
-                `the sequence leaves no window to file in. Strict issued-before-filed sequencing ` +
-                `is not confirmed by located primary text` +
-                (directFilingOpen
-                  ? ` — filing directly may still be open, so confirm the order with the agency`
-                  : `, so confirm the order with the agency`)
-              : `, leaving ${gatedWindowDays} days to file. Strict issued-before-filed sequencing ` +
-                `is not confirmed by located primary text — confirm the order with the agency`),
-      ],
+      // The gated rule's own route carries the same sequencing, computed off ITS OWN window rather
+      // than off the merged line's. `verdict.ts` reads the routes, so a route left unsequenced
+      // would put the ungated slack back into the verdict the sequencing just narrowed.
+      ...(gated.routes === undefined
+        ? {}
+        : {
+            routes: gated.routes.map((route) =>
+              route.ruleId === binding.gatedRuleId
+                ? sequenceRoute(route, applyAfterDate, context.slackWarningDays, sequencingNote)
+                : route,
+            ),
+          }),
+      notes: [...gated.notes, sequencingNote],
     });
   }
 
@@ -623,30 +1083,25 @@ export function resolveFindings(
     // dedupe key that mixes verification statuses, so an official-conflict route only ever merges
     // with other official-conflict routes (#254 review).
     if (
-      evaluation.result === "true" &&
-      rule.verificationStatus !== "OFFICIAL_CONFLICT" &&
-      DISPOSITION_STRENGTH.indexOf(finding.disposition) >=
-        DISPOSITION_STRENGTH.indexOf(BLOCKING_DISPOSITION_FLOOR)
+      canBlockWhenMissed(
+        { disposition: finding.disposition, triggerResult: evaluation.result },
+        rule.verificationStatus,
+      )
     ) {
       blockingRuleIds.add(rule.id);
     }
-    triggered.push({ finding, triggerResult: evaluation.result, dedupeKey: rule.dedupeKey });
+    triggered.push({
+      finding,
+      triggerResult: evaluation.result,
+      unknownFields: evaluation.unknownFields,
+      dedupeKey: rule.dedupeKey,
+    });
   }
 
-  const merged = dedupe(triggered);
-  const windowRuleIds = new Set(
-    merged
-      .map(({ windowRuleId }) => windowRuleId)
-      .filter((ruleId): ruleId is string => ruleId !== null),
-  );
-
   return {
-    findings: applyDependencySequencing(
-      merged.map(({ finding }) => finding),
-      deadlineContext,
-    ),
+    findings: applyDependencySequencing(dedupe(triggered), deadlineContext),
     trace,
     unknownFields: [...unknownFields],
-    definiteRoutes: { blockingRuleIds, windowRuleIds },
+    definiteRoutes: { blockingRuleIds },
   };
 }

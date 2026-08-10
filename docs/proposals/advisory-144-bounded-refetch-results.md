@@ -73,16 +73,16 @@ quote nor detect a substitution. **This reconciliation exists because a dossier 
 that page's content is now in question**, which is the strongest possible argument for keeping the
 bytes rather than a fingerprint of them.
 
-| Row | Committed preimage | sha256 |
-| --- | --- | --- |
-| 1 | `01-block-parties.page.html` | `646dc3b274456dc5a722205c6c1059a93c790aaf0aa08bde8af3f33f2dbb56bb` |
-| 2 | `02-frequently-asked-questions.page.html` | `abdada1ace8b3eaef356959c7a7d009825648dc28a28f139035b58a5c1c40f8d` |
-| 3 | `03-permit-deadlines.page.html` | `95a1501394e7fc381647191d3ceb05c700d2fadfea1aafc2736dc3e85b67cec6` |
-| 4 | `04-open-culture.page.html` | `8783f4b568e3ec30cbfea2d7bb579e6a27fdd4cc24639ebe94d0e96eadf9cda1` |
-| 5 | `05-single-block-festivals.page.html` | `c846b615e7adbe12cc0804299a4e006a71ae3fbd12de18897a94ac13e262d4ff` |
-| 6 | `06-street-events.page.html` | `80829da4f5d65761c470a3f6df4d9e3fbef5f1c3ecc2a37760b49f5b2713a8f0` |
-| 7 | `07-street-festivals.page.html` | `11f4e567bdb64aca13735244302ea8fd68d937f25570221112ba07445f95ebce` |
-| 8 | `08-fees.page.html` | `d02117d5b7b4aa91808961f3d20f573f128beb0f666b96cbc3ed85c80e4d36cb` |
+| Row | Committed preimage                        | sha256                                                             |
+| --- | ----------------------------------------- | ------------------------------------------------------------------ |
+| 1   | `01-block-parties.page.html`              | `646dc3b274456dc5a722205c6c1059a93c790aaf0aa08bde8af3f33f2dbb56bb` |
+| 2   | `02-frequently-asked-questions.page.html` | `abdada1ace8b3eaef356959c7a7d009825648dc28a28f139035b58a5c1c40f8d` |
+| 3   | `03-permit-deadlines.page.html`           | `95a1501394e7fc381647191d3ceb05c700d2fadfea1aafc2736dc3e85b67cec6` |
+| 4   | `04-open-culture.page.html`               | `8783f4b568e3ec30cbfea2d7bb579e6a27fdd4cc24639ebe94d0e96eadf9cda1` |
+| 5   | `05-single-block-festivals.page.html`     | `c846b615e7adbe12cc0804299a4e006a71ae3fbd12de18897a94ac13e262d4ff` |
+| 6   | `06-street-events.page.html`              | `80829da4f5d65761c470a3f6df4d9e3fbef5f1c3ecc2a37760b49f5b2713a8f0` |
+| 7   | `07-street-festivals.page.html`           | `11f4e567bdb64aca13735244302ea8fd68d937f25570221112ba07445f95ebce` |
+| 8   | `08-fees.page.html`                       | `d02117d5b7b4aa91808961f3d20f573f128beb0f666b96cbc3ed85c80e4d36cb` |
 
 Recomputable with one command from the repository root, and it depends on nothing but the files:
 
@@ -236,14 +236,14 @@ section 4 of the scope document predicted this observation exactly.
 
 ### 3.1 `ADV-ALCOHOL-PUBLIC-001`
 
-| claim | inputs observed | section 4 outcome |
-| --- | --- | --- |
-| **A-1** block parties | row 1 present as quoted; row 2(a) names Block Parties | **The prohibition is supported by both pages. The actor is not.** See A-0 below. Retained iff the verification owner promotes |
-| **A-2** street events | row 2(a) names Street Event; row 6 no provision | **The prohibition is supported by the FAQ. The actor is not.** Same |
-| **A-3** festivals | row 2(a) names Street Festivals; row 7(a) no provision | **The prohibition is supported for street festivals only, and the actor is not.** See section 6, defect 1: the claim is broader than the sentence |
-| **A-4** parades | row 2(a) names Parades | **The prohibition is supported by the FAQ. The actor is not, and here the record points the other way**: the same page says parade permits are issued by NYPD. See section 6, defect 2 |
-| **A-0** the actor, "**SAPO** prohibits" | row 2(a); row 1 | **UNRESOLVED.** Neither page attributes the prohibition to an agency. This is a claim in its own right and it is not settled by this fetch |
-| **A-5** attribution to a source | derived | Every category with a supported prohibition is carried by the FAQ, so **"per the CECM FAQ" is accurate for all four as a source citation**. A-1 is additionally carried by `block-parties.page`. This is separate from A-0: naming the page a claim comes from is not naming the agency that prohibits |
+| claim                                   | inputs observed                                        | section 4 outcome                                                                                                                                                                                                                                                                                      |
+| --------------------------------------- | ------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| **A-1** block parties                   | row 1 present as quoted; row 2(a) names Block Parties  | **The prohibition is supported by both pages. The actor is not.** See A-0 below. Retained iff the verification owner promotes                                                                                                                                                                          |
+| **A-2** street events                   | row 2(a) names Street Event; row 6 no provision        | **The prohibition is supported by the FAQ. The actor is not.** Same                                                                                                                                                                                                                                    |
+| **A-3** festivals                       | row 2(a) names Street Festivals; row 7(a) no provision | **The prohibition is supported for street festivals only, and the actor is not.** See section 6, defect 1: the claim is broader than the sentence                                                                                                                                                      |
+| **A-4** parades                         | row 2(a) names Parades                                 | **The prohibition is supported by the FAQ. The actor is not, and here the record points the other way**: the same page says parade permits are issued by NYPD. See section 6, defect 2                                                                                                                 |
+| **A-0** the actor, "**SAPO** prohibits" | row 2(a); row 1                                        | **UNRESOLVED.** Neither page attributes the prohibition to an agency. This is a claim in its own right and it is not settled by this fetch                                                                                                                                                             |
+| **A-5** attribution to a source         | derived                                                | Every category with a supported prohibition is carried by the FAQ, so **"per the CECM FAQ" is accurate for all four as a source citation**. A-1 is additionally carried by `block-parties.page`. This is separate from A-0: naming the page a claim comes from is not naming the agency that prohibits |
 
 **A-0 is split out because an earlier revision of this document did not have it, and calling A-1
 confirmed without it overstated the fetch.** The advisory does not say alcohol is prohibited at block
@@ -277,20 +277,20 @@ this document performs only the first half. All four categories remain unpromote
 
 ### 3.2 `ADV-SAPO-OTHER-CLASS-001`
 
-| claim | inputs observed | section 4 outcome |
-| --- | --- | --- |
-| **B-1a** street festival | row 8: "Street Festival" | **On the schedule.** See section 6, defect 3, on which of the three states that is |
-| **B-1b** single block festival | row 8: "Single Block Festival" | Same |
-| **B-1c** production event | row 8: "Production Events (with curb lane or sidewalk only)" and "(with curb lane and sidewalk)" | Same, with the qualifier noted below |
-| **B-1d** open culture | row 8: "Open Culture Event" | Same |
-| **B-1e** plaza-and-street extra large | row 8: "Extra Large Event"; row 3: "Extra Large Events" | **Different published label**, unambiguously. Section 4's rule keeps the class **under the label the schedule publishes** |
-| **B-2** "known published" | derived | Retained for whichever figures survive, which on these observations is all four |
-| **B-3** production 10 days | row 2(b) as printed | **As printed.** Retained iff promoted |
-| **B-4** open culture 15 days | rows 3 and 4 both as printed, and they agree | **As printed on both.** Retained iff promoted. No conflict |
-| **B-5** street festival Dec 31 | rows 2(c) and 7(b) both as printed, and they agree | **As printed on both.** Retained iff promoted. No conflict |
-| **B-6** single block festival 90 days | rows 3 and 5 both as printed, and they agree | **As printed on both.** Retained iff promoted |
-| **B-7** single block festival Dec 31 | row 2(d) as printed | **As printed.** Retained iff promoted |
-| **B-8** the two are both live | derived, `B-6 ∧ B-7` | **TRUE on today's pages.** 90 days on `permit-deadlines.page` and `single-block-festivals.page`, December 31st of the year before on the FAQ, all three fetched in the same hour |
+| claim                                 | inputs observed                                                                                  | section 4 outcome                                                                                                                                                                |
+| ------------------------------------- | ------------------------------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **B-1a** street festival              | row 8: "Street Festival"                                                                         | **On the schedule.** See section 6, defect 3, on which of the three states that is                                                                                               |
+| **B-1b** single block festival        | row 8: "Single Block Festival"                                                                   | Same                                                                                                                                                                             |
+| **B-1c** production event             | row 8: "Production Events (with curb lane or sidewalk only)" and "(with curb lane and sidewalk)" | Same, with the qualifier noted below                                                                                                                                             |
+| **B-1d** open culture                 | row 8: "Open Culture Event"                                                                      | Same                                                                                                                                                                             |
+| **B-1e** plaza-and-street extra large | row 8: "Extra Large Event"; row 3: "Extra Large Events"                                          | **Different published label**, unambiguously. Section 4's rule keeps the class **under the label the schedule publishes**                                                        |
+| **B-2** "known published"             | derived                                                                                          | Retained for whichever figures survive, which on these observations is all four                                                                                                  |
+| **B-3** production 10 days            | row 2(b) as printed                                                                              | **As printed.** Retained iff promoted                                                                                                                                            |
+| **B-4** open culture 15 days          | rows 3 and 4 both as printed, and they agree                                                     | **As printed on both.** Retained iff promoted. No conflict                                                                                                                       |
+| **B-5** street festival Dec 31        | rows 2(c) and 7(b) both as printed, and they agree                                               | **As printed on both.** Retained iff promoted. No conflict                                                                                                                       |
+| **B-6** single block festival 90 days | rows 3 and 5 both as printed, and they agree                                                     | **As printed on both.** Retained iff promoted                                                                                                                                    |
+| **B-7** single block festival Dec 31  | row 2(d) as printed                                                                              | **As printed.** Retained iff promoted                                                                                                                                            |
+| **B-8** the two are both live         | derived, `B-6 ∧ B-7`                                                                             | **TRUE on today's pages.** 90 days on `permit-deadlines.page` and `single-block-festivals.page`, December 31st of the year before on the FAQ, all three fetched in the same hour |
 
 **The `OFFICIAL_CONFLICT` the advisory prints is live and was re-confirmed.** Round 2 #5 recorded it
 on 2026-07-22 and it holds on 2026-07-28: two official CECM pages publish 90 days while a third
@@ -390,12 +390,12 @@ return rule.source === null
 From there it is **serialized engine output and user-visible text**, not a field only a rules reader
 sees:
 
-| Reached | Where |
-| --- | --- |
-| Rendered on the plan | `apps/web/app/plan/plan-line.tsx`, the per-line citation F-206 AC 2 requires |
-| Rendered on the checklist | `apps/web/app/checklist/checklist-item.tsx:71` prints `{source.citation}` |
-| **Persisted** | `apps/api/src/plan.ts:191` writes `JSON.stringify(finding.sources)` into `permit_plan_items.sources`, a `jsonb` column declared in migration `001_initial_schema.ts:208` |
-| Persisted again | the checklist's own `sources` column, read back at `apps/api/src/checklist.ts:199` |
+| Reached                   | Where                                                                                                                                                                    |
+| ------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Rendered on the plan      | `apps/web/app/plan/plan-line.tsx`, the per-line citation F-206 AC 2 requires                                                                                             |
+| Rendered on the checklist | `apps/web/app/checklist/checklist-item.tsx:71` prints `{source.citation}`                                                                                                |
+| **Persisted**             | `apps/api/src/plan.ts:191` writes `JSON.stringify(finding.sources)` into `permit_plan_items.sources`, a `jsonb` column declared in migration `001_initial_schema.ts:208` |
+| Persisted again           | the checklist's own `sources` column, read back at `apps/api/src/checklist.ts:199`                                                                                       |
 
 **And the persistence cuts the other way from the obvious reading.** `docs/ARCHITECTURE.md:128`
 describes that column as "immutable citation + URL snapshots", and AD-7 makes plans immutable
@@ -423,8 +423,8 @@ outcome. **Three results land nowhere.** Two are the same defect in two places.
 The FAQ names "Street Festivals". **Single Block Festivals are a distinct SAPO class on that same
 page**, listed separately in both the event-type list and the deadline list, and the alcohol sentence
 does not name them. Section 4's A-3 observation is binary, "does either name festivals", and has no
-state for "names a narrower class than the claim". Mapping this to *supported* would license the
-advisory's broader word on a narrower sentence; mapping it to *unsupported* would discard a quote that
+state for "names a narrower class than the claim". Mapping this to _supported_ would license the
+advisory's broader word on a narrower sentence; mapping it to _unsupported_ would discard a quote that
 plainly supports street festivals. **Neither is right and section 4 offers only those two.**
 
 **Defect 2: the source supports A-4's prohibition but not its attributed agent.** The advisory says
@@ -463,12 +463,12 @@ and the published label is "Extra Large Event".
 Nothing in this document triggers either, and neither engine change is proposed here. Recorded so the
 promotion decision sees them, from the amendment on issue #144 and PR #177 section 5.0.
 
-| Outcome | Engine consequence |
-| --- | --- |
-| Promoting `ADV-ALCOHOL-PUBLIC-001` off `COVERAGE_GAP` | `packages/engine/src/intake/validate.ts:248` emits the issue code as the literal `coverage_gap` while the status travels separately from the advisory, and the intake page renders both together. Four tests pin the pair |
-| Promoting `ADV-SAPO-OTHER-CLASS-001` off `COVERAGE_GAP` | `packages/engine/src/verdict.ts:345` drops a rescope suggestion only for a `COVERAGE_GAP` finding, and `packages/engine/src/proposals.ts:152-155` names "hold it as some other SAPO class" as the case that clause exists to prevent |
-| Leaving both at `COVERAGE_GAP` and narrowing the text | Neither site moves |
-| Correcting `SAPO-BLOCK-PARTY-ELIG-001`'s citation only | Neither of the two sites above moves, but **it is not free either**: `findings.ts:66-69` copies the citation into every generated `Finding`, so it moves serialized engine output, the plan and checklist rendering, and diverges new stored plans from old. Section 5.1, and issue #181 |
+| Outcome                                                 | Engine consequence                                                                                                                                                                                                                                                                       |
+| ------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Promoting `ADV-ALCOHOL-PUBLIC-001` off `COVERAGE_GAP`   | `packages/engine/src/intake/validate.ts:248` emits the issue code as the literal `coverage_gap` while the status travels separately from the advisory, and the intake page renders both together. Four tests pin the pair                                                                |
+| Promoting `ADV-SAPO-OTHER-CLASS-001` off `COVERAGE_GAP` | `packages/engine/src/verdict.ts:345` drops a rescope suggestion only for a `COVERAGE_GAP` finding, and `packages/engine/src/proposals.ts:152-155` names "hold it as some other SAPO class" as the case that clause exists to prevent                                                     |
+| Leaving both at `COVERAGE_GAP` and narrowing the text   | Neither site moves                                                                                                                                                                                                                                                                       |
+| Correcting `SAPO-BLOCK-PARTY-ELIG-001`'s citation only  | Neither of the two sites above moves, but **it is not free either**: `findings.ts:66-69` copies the citation into every generated `Finding`, so it moves serialized engine output, the plan and checklist rendering, and diverges new stored plans from old. Section 5.1, and issue #181 |
 
 **The three constraints from the decision are unchanged by these results.** A status change is still
 not a remedy, both outcomes still require a publication, and **retaining the block-party category is

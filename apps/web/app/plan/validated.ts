@@ -100,6 +100,30 @@ export const arrayOf =
     Array.isArray(value) && value.every(check);
 
 /**
+ * A list the wire contract says is present-or-null and never shorter than `minimum`, enforced rather
+ * than documented.
+ *
+ * `every` is vacuously true on an empty array, so an empty list is not a harmless degenerate case
+ * here: it is the one value that answers every question asked of it in the affirmative. A finding
+ * carrying `routes: []` passed the shape check and then told `hasOnlyUndatedDeadlines` that all of
+ * its routes were undated, printing "No dated deadlines identified." on a FEASIBLE plan beside a
+ * line showing a date (#252 review).
+ *
+ * A SHORT LIST IS THE SAME DEFECT ONE ENTRY LATER, which is why the bound is a parameter. `routes`
+ * is published only for a finding that MERGED, so its contract minimum is two, and every consumer
+ * already tests `length > 1` before reading a line as merged — `candidateRoutesOf` and `Routes` on
+ * the plan, the deciding-question guard on the checklist row. A one-entry list therefore passed the
+ * shape check and was then read as unmerged, so a `candidate` line fell back to the permit heading
+ * and never showed the deciding question, presenting an incomplete route set as a complete line
+ * (#252 review). A shape the contract says cannot exist is rejected here, not reinterpreted
+ * downstream, so a reader never has to guess which of "no routes" and "unmerged" a short list meant.
+ */
+export const atLeast =
+  <T>(minimum: number, check: (value: unknown) => value is readonly T[]) =>
+  (value: unknown): value is readonly T[] =>
+    check(value) && value.length >= minimum;
+
+/**
  * A token set that cannot fall behind the engine's union, and that carries the union it came from so
  * `isToken` proves the right one. `Record<Union, true>` is exhaustive, so adding a member to
  * `Verdict` or `VerificationStatus` upstream breaks the caller until it is listed; the phantom

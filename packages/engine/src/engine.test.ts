@@ -10,6 +10,7 @@ import {
   addCalendarDays,
   countBusinessDays,
   differenceInCalendarDays,
+  bindingRouteOf,
   evaluate,
   parseEngineRuleset,
   subtractBusinessDays,
@@ -410,14 +411,82 @@ describe("dedupe field merge (#239)", () => {
     expect(plan.verdict).toBe("CONDITIONAL");
   });
 
-  it("reads identity off the disposition's route and the timeline off the window's", () => {
-    // AMENDED from round 2, which asserted every scalar off the disposition's route. That claim
-    // was never a property of the merge: it held only because the disposition filter ran first,
-    // and running it first is what let a closed window be dropped (the two tests below). The two
-    // cannot both bind, so each field family names its route. Identity, meaning what the line is
-    // and who is dealt with, stays with the disposition: a barred line must not quote another
-    // route's permit name, fee or portal, which would invite filing for something barred. The
-    // timeline comes from the group's tightest window, so no published window is lost.
+  /**
+   * #252 review: THE MERGE'S OWN CHOICE AND THE ONE A CONSUMER RECOMPUTES ARE ONE CHOICE.
+   *
+   * `mergeGroup` sorts findings and `bindingRouteOf` sorts route entries, because the two callers
+   * hold different shapes: the merge has not built the routes yet when it picks, and a boundary has
+   * nothing else. They share `compareBindingCandidates` and `routeContributions`, so the ordering
+   * and the pool cannot drift; what this pins is that the two ENTRY POINTS agree, over every group
+   * the other tests in this file construct plus the published ruleset's own.
+   *
+   * `routes[0]` is the binding route on every merged line, including a scalar-free one: the line
+   * withholds that route's values there, it does not stop being the route the list is ordered by.
+   */
+  it("agrees with bindingRouteOf on which route binds", () => {
+    const groups = [
+      // Window availability decides: a dated route over an undated one, whatever the file order.
+      [
+        disposedRule("RULE-Z", "REQUIRED", undefined, { permit_name: "no window" }),
+        disposedRule("RULE-A", "REQUIRED", calendarWindow(45), { permit_name: "dated" }),
+      ],
+      // Availability ties, so the earlier published date decides.
+      [
+        disposedRule("RULE-A", "REQUIRED", calendarWindow(20), { permit_name: "later" }),
+        disposedRule("RULE-B", "REQUIRED", calendarWindow(60), { permit_name: "earlier" }),
+      ],
+      // Both tie, so the rule id decides.
+      [
+        disposedRule("RULE-Z", "REQUIRED", calendarWindow(45), { permit_name: "z" }),
+        disposedRule("RULE-A", "REQUIRED", calendarWindow(45), { permit_name: "a" }),
+      ],
+      // The pool, not the whole group: the barred route contributes the merged disposition and the
+      // required one does not, so the required route's tighter window cannot bind.
+      [
+        disposedRule("RULE-A", "REQUIRED", calendarWindow(60), { permit_name: "permit route" }),
+        disposedRule("RULE-B", "PROHIBITED_OR_INELIGIBLE", undefined, { permit_name: "barred" }),
+      ],
+    ];
+    for (const rules of groups) {
+      const merged = mergedGroup(rules);
+      const routes = merged?.routes ?? [];
+      expect(routes.length).toBeGreaterThan(1);
+      // NOT VACUOUS: each group above is ordered so that the declared-first rule is NOT the one
+      // that binds, so an implementation returning `routes[0]` unconditionally would still have to
+      // agree with a merge that put the right route there.
+      expect(bindingRouteOf(routes)?.ruleId).toBe(routes[0]?.ruleId);
+      expect(routes[0]?.ruleId).not.toBe(rules[0]?.id);
+    }
+
+    // And over every merged line the published ruleset produces, on the intake that reaches them.
+    const plan = evaluate(
+      {
+        ...parkIntake,
+        event_date: "2026-12-04",
+        structure_types: ["tent_canopy"],
+        tent_area_sqft: 500,
+        tent_days_in_place: 2,
+        structure_over_10ft_tall: "yes",
+      } as EventIntake,
+      ruleset,
+      TODAY,
+      calendar,
+    );
+    const merged = plan.findings.filter((finding) => (finding.routes?.length ?? 0) > 1);
+    expect(merged.length).toBeGreaterThan(0);
+    for (const finding of merged) {
+      expect(bindingRouteOf(finding.routes ?? [])?.ruleId).toBe(finding.routes?.[0]?.ruleId);
+    }
+  });
+
+  it("reads identity and timeline off one route, and keeps the other route's window", () => {
+    // AMENDED from the per-field split, which read identity off the disposition's route and the
+    // timeline off the window's. Both roundes were orderings of "one route decides every field",
+    // and the split's version of the defect is exactly this fixture: it rendered
+    // "barred route, not eligible at this location, apply by 2026-10-20, on track", naming one
+    // route and dating another, and scheduled deadline reminders at the barred line's date.
+    // The line now reads as ONE route, and the other route's window is on the route list rather
+    // than in the headline's slot.
     const blocked = mergedGroup([
       disposedRule("RULE-A", "REQUIRED", calendarWindow(45), {
         permit_name: "permit route",
@@ -430,18 +499,43 @@ describe("dedupe field merge (#239)", () => {
       }),
     ]);
     expect(blocked).toMatchObject({
-      // Identity: the blocking route's, exactly as round 2 pinned it.
+      // The line is the blocking route, end to end: name, fee, portal AND timeline.
       disposition: "prohibited_or_ineligible",
       name: "barred route",
       feeDisplay: null,
       portalName: null,
       portalUrl: null,
       noteText: "not eligible at this location",
-      // Timeline: the only published window in the group, which used to be dropped entirely.
-      latestApplyDate: "2026-10-20",
-      deadlineStatus: "on_track",
+      latestApplyDate: null,
+      deadlineStatus: "not_applicable",
+      headlineMode: "applies_together",
     });
-    expect(blocked?.deadline).not.toBeNull();
+    expect(blocked?.deadline).toBeNull();
+    // The permit route's window, fee and portal are not lost: they are its own, on its own entry.
+    // IN BINDING ORDER, so the route the line reads is the entry read first and the list is not
+    // ordered by where the rules sit in the published file (#252 review). RULE-B is declared
+    // second above and is listed first here because it is the binding route.
+    expect(blocked?.routes).toMatchObject([
+      {
+        ruleId: "RULE-B",
+        triggerResult: "true",
+        disposition: "prohibited_or_ineligible",
+        name: "barred route",
+        latestApplyDate: null,
+        deadlineStatus: "not_applicable",
+        feeDisplay: null,
+      },
+      {
+        ruleId: "RULE-A",
+        triggerResult: "true",
+        disposition: "required",
+        name: "permit route",
+        latestApplyDate: "2026-10-20",
+        deadlineStatus: "on_track",
+        feeDisplay: "$100",
+        portalName: "permit portal",
+      },
+    ]);
   });
 
   /**
@@ -466,32 +560,53 @@ describe("dedupe field merge (#239)", () => {
       }),
     ];
     for (const listing of [group, [...group].reverse()]) {
-      expect(mergedGroup(listing, closedWindow)).toMatchObject({
+      const merged = mergedGroup(listing, closedWindow);
+      // The line is the blocking route, which publishes no window and quotes no fee.
+      expect(merged).toMatchObject({
         disposition: "prohibited_or_ineligible",
+        name: "barred route",
+        feeDisplay: null,
+        latestApplyDate: null,
+        deadlineStatus: "not_applicable",
+      });
+      // The closed window is kept on the route that published it, with its own $500 and its own
+      // negative slack. `routes` retains contributing order, like `ruleIds` and `sources`, so the
+      // route is looked up by id rather than by position.
+      expect(merged?.routes?.map((route) => route.ruleId).sort()).toEqual(["RULE-A", "RULE-B"]);
+      expect(merged?.routes?.find((route) => route.ruleId === "RULE-A")).toMatchObject({
+        disposition: "required",
+        name: "closed route",
         latestApplyDate: "2026-06-18",
         deadlineStatus: "published_deadline_missed",
         slackDays: -34,
-        // Identity stays with the blocking route, so its $500 is not quoted on a barred line. The
-        // closed route keeps that fee in its own rule id, sources and summary points.
-        name: "barred route",
-        feeDisplay: null,
+        feeDisplay: "$500",
       });
     }
   });
 
   it("carries the closed window into the verdict at every tier the sweep found", () => {
     // The verdict is what the dropped window cost: `computeWindowVerdict` reads
-    // `published_deadline_missed`, and a merged line that no longer carries it read FEASIBLE while
-    // a published filing was already late. The two weaker tiers now reach INFEASIBLE, which is
-    // what the group's rules published before a `dedupe_key` was added to them.
+    // `published_deadline_missed`, and a merged line that no longer carried it read FEASIBLE while
+    // a published filing was already late.
     //
-    // AMENDED 2026-08-08. The blocker tier used to read CONDITIONAL here, and that was
-    // `computeWindowVerdict` rather than the merge: it blocked only on a missed finding whose
-    // disposition was EXACTLY `required`, so `prohibited_or_ineligible`, which is STRONGER, fell
-    // through to the missed-but-not-blocking branch. The product owner corrected the rule to block
-    // at or above `required` in the strength order (F-102 acceptance criteria, amended the same
-    // day), so all three tiers now reach INFEASIBLE and the merge no longer moves this verdict at
-    // all. What the #244 fix recovers is still the missed status, the apply-by date and the fee.
+    // EVERY TIER NOW READS WHAT THE SAME TWO RULES READ UNMERGED, which is the property adding a
+    // `dedupe_key` should have had all along. Two tiers move, in opposite directions, and both
+    // moves are the merge letting go of a crossed pair rather than a new judgement.
+    //
+    // The blocker tier moves CONDITIONAL to INFEASIBLE, and reaches it twice over. The closed
+    // route's OWN disposition is `required`, which the route check reads directly; and the product
+    // owner's 2026-08-08 amendment blocks at or above `required` in the strength order rather than
+    // exactly at it, so the merged `prohibited_or_ineligible` no longer falls through either
+    // (F-102 AC 10). This is the loss AD-19's BASELINE record filed as unrecovered.
+    //
+    // The two weaker tiers move INFEASIBLE to CONDITIONAL, and that is a correction rather than a
+    // regression. The closed route publishes `may_be_required` or `advisory`; the `required` route
+    // publishes no window at all. Neither rule alone reads INFEASIBLE, and unmerged the pair reads
+    // CONDITIONAL. INFEASIBLE came from crossing one route's disposition with the other's window,
+    // which is the same defect this change removes, seen in the pessimistic direction. The
+    // at-or-above floor does not put it back: the floor widens WHICH dispositions may block, and
+    // these two sit below it, while the crossing was about WHOSE window sat beside them.
+
     const missedThenStronger = (missed: string, stronger: string) =>
       evaluate(
         { event_date: "2026-08-02", headcount: 50 } as unknown as EventIntake,
@@ -504,13 +619,14 @@ describe("dedupe field merge (#239)", () => {
       );
     const cases = [
       ["REQUIRED", "PROHIBITED_OR_INELIGIBLE", "INFEASIBLE"],
-      ["MAY_BE_REQUIRED", "REQUIRED", "INFEASIBLE"],
-      ["ADVISORY", "REQUIRED", "INFEASIBLE"],
+      ["MAY_BE_REQUIRED", "REQUIRED", "CONDITIONAL"],
+      ["ADVISORY", "REQUIRED", "CONDITIONAL"],
     ] as const;
     for (const [missed, stronger, verdict] of cases) {
       const plan = missedThenStronger(missed, stronger);
-      expect(plan.findings[0]?.deadlineStatus).toBe("published_deadline_missed");
-      expect(plan.findings[0]?.latestApplyDate).toBe("2026-06-18");
+      const closed = plan.findings[0]?.routes?.find((route) => route.ruleId === "RULE-A");
+      expect(closed?.deadlineStatus).toBe("published_deadline_missed");
+      expect(closed?.latestApplyDate).toBe("2026-06-18");
       expect(plan.verdictDetail.missedRuleIds).toContain("RULE-A");
       expect(plan.verdict).toBe(verdict);
     }
@@ -1099,7 +1215,15 @@ describe("an unknown trigger never blocks, however barred the finding (F-102 AC 
     );
     expect(plan.findings).toHaveLength(1);
     expect(plan.findings[0]?.disposition).toBe("prohibited_or_ineligible");
-    expect(plan.findings[0]?.deadlineStatus).toBe("published_deadline_missed");
+    // The line publishes no timeline of its own: the group holds a resolved route and none of them
+    // contributes the merged disposition, so no route can supply the scalars (§4.3, amended
+    // 2026-08-09). The missed window is on the route that published it, and the verdict reads
+    // routes, so what this test is about is unchanged.
+    expect(plan.findings[0]?.deadlineStatus).toBe("not_calculable");
+    expect(plan.findings[0]?.latestApplyDate).toBeNull();
+    expect(
+      plan.findings[0]?.routes?.map((route) => [route.ruleId, route.deadlineStatus]),
+    ).toContainEqual(["BAR-001", "published_deadline_missed"]);
     expect(plan.verdict).toBe("CONDITIONAL");
     expect(plan.verdictDetail.blockingFinding).toBeNull();
   });
@@ -1162,13 +1286,19 @@ describe("a merged line's window has to resolve too, not just its bar (F-102 AC 
       { id: "test-calendar@2026", holidays: [] },
     );
 
+  const routeOf = (plan: ReturnType<typeof planWithHeight>, ruleId: string) =>
+    plan.findings[0]?.routes?.find((route) => route.ruleId === ruleId);
+
   it("waits for the answer when the window comes from the route that did not resolve", () => {
     const plan = planWithHeight("unknown");
     expect(plan.findings).toHaveLength(1);
-    // The merged line still says both things it published: barred, and past a filing window.
+    // The line reads the barred route, which is the one contributing the headline disposition, so
+    // the window it does NOT publish is no longer quoted beside the bar. RULE-B's window is not
+    // dropped: it is on RULE-B's own entry, attributed to RULE-B.
     expect(plan.findings[0]?.disposition).toBe("prohibited_or_ineligible");
-    expect(plan.findings[0]?.deadlineStatus).toBe("published_deadline_missed");
-    expect(plan.findings[0]?.latestApplyDate).toBe("2026-06-18");
+    expect(plan.findings[0]?.deadlineStatus).toBe("not_applicable");
+    expect(routeOf(plan, "RULE-B")?.deadlineStatus).toBe("published_deadline_missed");
+    expect(routeOf(plan, "RULE-B")?.latestApplyDate).toBe("2026-06-18");
     // Only the verdict waits: answering under 20 ft drops RULE-B and with it the missed window.
     expect(plan.verdict).toBe("CONDITIONAL");
     expect(plan.verdictDetail.blockingFinding).toBeNull();
@@ -1181,9 +1311,67 @@ describe("a merged line's window has to resolve too, not just its bar (F-102 AC 
 
   it("still blocks once that same route resolves", () => {
     const plan = planWithHeight(30);
-    expect(plan.findings[0]?.deadlineStatus).toBe("published_deadline_missed");
+    expect(routeOf(plan, "RULE-B")?.deadlineStatus).toBe("published_deadline_missed");
     expect(plan.verdict).toBe("INFEASIBLE");
-    expect(plan.verdictDetail.blockingFinding?.ruleIds).toEqual(["BAR-NODATE-001", "RULE-B"]);
+    // Narrowed to the route whose window closed, which is what the panel names.
+    expect(plan.verdictDetail.blockingFinding?.ruleIds).toEqual(["RULE-B"]);
+  });
+
+  /**
+   * The tier where the DISPOSITION DEMOTION DOES NOT REACH, which is the one `blockingRuleIds`
+   * exists for. `resolveDisposition()` demotes an unknown-triggered `required` to
+   * `may_be_required`, so a permit route with an unanswered trigger falls below the blocking floor
+   * on its own; a route publishing `prohibited_or_ineligible` keeps that disposition deliberately
+   * (`proposals.ts` §2) so it still RENDERS, and would therefore clear the floor while hanging off
+   * an unanswered question. Nothing but the resolved-trigger set stops it (#254).
+   */
+  /** `datedRoute`'s window and trigger, declared as a prohibition rather than a permit. */
+  const barredDatedRoute = {
+    ...datedRoute,
+    id: "BAR-DATED-001",
+    kind: "prohibition",
+    output: { ...datedRoute.output, permit_name: "barred dated route" },
+  };
+
+  const barredDatedPlan = (structureHeightFt: number | string) =>
+    evaluate(
+      {
+        event_date: "2026-08-02",
+        headcount: 50,
+        structure_height_ft: structureHeightFt,
+      } as unknown as EventIntake,
+      syntheticRuleset([barredDatedRoute], [{ field: "structure_height_ft", type: "integer" }]),
+      TODAY,
+      { id: "test-calendar@2026", holidays: [] },
+    );
+
+  it("does not block on a barred route whose own trigger never resolved", () => {
+    const plan = barredDatedPlan("unknown");
+    // It renders exactly what it publishes, bar and closed window both.
+    expect(plan.findings[0]?.disposition).toBe("prohibited_or_ineligible");
+    expect(plan.findings[0]?.deadlineStatus).toBe("published_deadline_missed");
+    // The verdict waits for the height instead of declaring the event over.
+    expect(plan.verdict).toBe("CONDITIONAL");
+    expect(plan.verdictDetail.blockingFinding).toBeNull();
+  });
+
+  /**
+   * THE POSITIVE HALF OF AC 10's WIDER BAR, which nothing pinned until now (#252 review). The test
+   * above pins that an UNRESOLVED barred route waits; this pins that a resolved one blocks, which
+   * is the half F-102's Amendment section used to record as an open residual on the reasoning that
+   * `computeWindowVerdict()` selected on exactly `required`. It selects at or above `required`
+   * (`blocksWhenMissed`, `verdict.ts`), so the route's own `prohibited_or_ineligible` clears the
+   * floor and the missed window closes the plan.
+   */
+  it("blocks on a barred route whose own trigger resolved and whose window has closed", () => {
+    const plan = barredDatedPlan(30);
+    expect(plan.findings[0]?.disposition).toBe("prohibited_or_ineligible");
+    expect(plan.findings[0]?.deadlineStatus).toBe("published_deadline_missed");
+    expect(plan.findings[0]?.latestApplyDate).toBe("2026-06-18");
+    expect(plan.verdict).toBe("INFEASIBLE");
+    // Narrowed to the barred route itself, which is the one the panel names.
+    expect(plan.verdictDetail.blockingFinding?.ruleIds).toEqual(["BAR-DATED-001"]);
+    expect(plan.verdictDetail.blockingFinding?.latestApplyDate).toBe("2026-06-18");
   });
 });
 

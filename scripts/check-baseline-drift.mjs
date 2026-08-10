@@ -39,6 +39,28 @@ const repoRoot = process.env.BASELINE_CHECK_ROOT
 const baselinePath = join(repoRoot, "docs/BASELINE.md");
 
 /**
+ * What a manifest row may name as an artifact when it WRITES A NAME OUT: a local `.md` or `.json`
+ * path. It selects among the tokens in a row's prose, where the alternative reading of an
+ * unrecognised token is "this backticked word is not a path at all".
+ *
+ * IT IS NOT APPLIED TO A GLOB EXPANSION, and the round that applied it to both was wrong about what
+ * the two are doing. An expansion is not a claim to be recognised, it is a set of files that EXIST
+ * and that a row has already marked APPROVED, so a name this pattern cannot spell is not a token to
+ * ignore — it is an approved artifact nobody inspects. The pattern drops a filename with a space, a
+ * non-ASCII letter, a newline or an uppercase `.MD`, and the run then exits 0 saying the baseline
+ * status check passed while a file the row calls APPROVED declares PROPOSED. origin/main failed all
+ * four; that fix made this branch pass them (#252 review).
+ *
+ * What an expansion is constrained by instead is ENTRY TYPE, which is the property the original
+ * defect was actually about: `docs/proposals/*` reached
+ * `docs/proposals/advisory-144-refetch-2026-07-28`, a DIRECTORY of eight tracked files, and a
+ * directory can never carry a self-declared status whatever the row says. That test lives in
+ * `expandGlob` beside the listing that produces the entries, and every reader of a path is now
+ * guarded besides, so a name this cannot spell is inspected and reported rather than dropped.
+ */
+const ARTIFACT_PATH = /^[\w./-]+\.(md|json)$/;
+
+/**
  * Expand a manifest glob (`specs/F-*.md`) to the files it actually covers.
  *
  * Globs used to be skipped, which is exactly how "APPROVED except F-101/F-102/F-201" sat stale in
@@ -46,6 +68,11 @@ const baselinePath = join(repoRoot, "docs/BASELINE.md");
  * a status for twelve files and the check looked at none of them. Only the one shape the manifest
  * uses is supported — a `*` in the filename, not a path — so an unexpected pattern is reported
  * rather than silently matching nothing.
+ *
+ * THE LISTING IS GUARDED like every other read of a manifest-named path. `existsSync` answers yes
+ * for a FILE, so a row whose glob is rooted at one — `docs/proposals/one.md/*` — threw a bare
+ * `ENOTDIR` naming the syscall and neither the token nor the row. Throws are returned as a message
+ * rather than raised, so the caller can attribute them.
  */
 function expandGlob(token) {
   const slash = token.lastIndexOf("/");
@@ -55,14 +82,31 @@ function expandGlob(token) {
   const [prefix, suffix] = pattern.split("*");
   const absoluteDirectory = join(repoRoot, directory);
   if (!existsSync(absoluteDirectory)) return [];
-  return readdirSync(absoluteDirectory)
-    .filter((name) => name.startsWith(prefix) && name.endsWith(suffix))
-    .map((name) => (directory === "" ? name : `${directory}/${name}`))
-    .sort();
+  let entries;
+  try {
+    entries = readdirSync(absoluteDirectory, { withFileTypes: true });
+  } catch (error) {
+    return { error: error.message };
+  }
+  return (
+    entries
+      // isFile, NOT not-isDirectory. A broken symlink is neither a directory nor a file, so the
+      // negative test admitted one whose name carries the expected suffix; the later `existsSync`
+      // then FOLLOWS the missing target, finds nothing, and skips the entry silently. The run exits
+      // 0 having verified nothing for a path a manifest row calls APPROVED, which is the same
+      // outcome as the unreadable-name defect this filter was added for (#252 review). Sockets,
+      // FIFOs and devices go the same way and for the same reason: a status can only be read from a
+      // file.
+      .filter((entry) => entry.isFile())
+      .map((entry) => entry.name)
+      .filter((name) => name.startsWith(prefix) && name.endsWith(suffix))
+      .map((name) => (directory === "" ? name : `${directory}/${name}`))
+      .sort()
+  );
 }
 
 /** Pull backticked local .md/.json paths out of a manifest table row, expanding globs. */
-function filePathsInRow(row) {
+function filePathsInRow(row, label) {
   const paths = [];
   for (const match of row.matchAll(/`([^`]+)`/g)) {
     const token = match[1].trim().replace(/^\//, ""); // `/AGENTS.md` -> AGENTS.md
@@ -70,6 +114,13 @@ function filePathsInRow(row) {
       const expanded = expandGlob(token);
       if (expanded === null) {
         unsupportedGlobs.push(token);
+        continue;
+      }
+      if (expanded.error !== undefined) {
+        unreadable.push(
+          `${token}: named by manifest row "${label}", and the directory it globs cannot be ` +
+            `listed (${expanded.error})`,
+        );
         continue;
       }
       // A glob matching nothing means the row claims APPROVED for a set of artifacts and the
@@ -82,7 +133,7 @@ function filePathsInRow(row) {
       paths.push(...expanded);
       continue;
     }
-    if (/^[\w./-]+\.(md|json)$/.test(token)) paths.push(token);
+    if (ARTIFACT_PATH.test(token)) paths.push(token);
   }
   return paths;
 }
@@ -116,9 +167,12 @@ if (conflictMarkers.length > 0) {
   process.exit(1);
 }
 
-const approvedFiles = new Set();
+/** Approved artifact path -> the manifest row that named it, so a failure can say which row. */
+const approvedFiles = new Map();
 const unsupportedGlobs = [];
 const emptyGlobs = [];
+/** Paths a row names that exist and cannot be read as artifacts, with the row that named them. */
+const unreadable = [];
 /** Rows publishing a digest: `{ file, expected, row, malformed? }`. */
 const checksumClaims = [];
 for (const row of baseline.split(/\r?\n/)) {
@@ -127,8 +181,11 @@ for (const row of baseline.split(/\r?\n/)) {
   // cells[0] is empty (leading pipe); status is the 3rd content column.
   const statusCell = cells[3] ?? "";
   if (!/APPROVED/i.test(statusCell)) continue;
-  const paths = filePathsInRow(row);
-  for (const p of paths) approvedFiles.add(p);
+  const rowLabel = cells[1] || row.slice(0, 60);
+  const paths = filePathsInRow(row, rowLabel);
+  for (const p of paths) {
+    if (!approvedFiles.has(p)) approvedFiles.set(p, rowLabel);
+  }
 
   // A digest belongs to the artifact named in the same row, so the pairing is positional
   // rather than guessed: one path and one digest, or the row is ambiguous and says so.
@@ -163,10 +220,23 @@ const failures = [];
 const checked = [];
 const headerless = [];
 
-for (const rel of [...approvedFiles].sort()) {
+for (const rel of [...approvedFiles.keys()].sort()) {
   const abs = join(repoRoot, rel);
   if (!existsSync(abs)) continue; // manifest may reference not-yet-created files
-  const status = declaredStatus(abs);
+  // A path that exists and cannot be read as a status-carrying artifact is drift, and it has to
+  // READ as drift. This used to escape as an unhandled `EISDIR` from `readFileSync`, which names
+  // the syscall and neither the path nor the row that claimed it. A stack trace out of the script
+  // whose whole purpose is to make drift legible is the wrong way to report drift.
+  let status;
+  try {
+    status = declaredStatus(abs);
+  } catch (error) {
+    unreadable.push(
+      `${rel}: named by manifest row "${approvedFiles.get(rel)}", and cannot be read as an ` +
+        `artifact (${error.message})`,
+    );
+    continue;
+  }
   if (status === null) {
     // Warn, do not fail. A file that declares nothing cannot contradict the manifest, and failing
     // here would break the build until someone writes approval dates for nine spec files that
@@ -208,7 +278,22 @@ for (const claim of checksumClaims) {
   }
   // Over the exact bytes on disk. Nothing is parsed, normalised or reserialised: the digest has to
   // describe the artifact a deployment loads, not a reformatting of it.
-  const actual = createHash("sha256").update(readFileSync(abs)).digest("hex");
+  //
+  // GUARDED, and this is the read that made "the status loop was guarded" not enough. It runs
+  // BEFORE the status loop's report, so a row publishing a digest for a path that is a DIRECTORY
+  // still died on a bare EISDIR and the graceful message further down was never reached. Reported
+  // with the path and the row, like every other unreadable artifact.
+  let bytes;
+  try {
+    bytes = readFileSync(abs);
+  } catch (error) {
+    unreadable.push(
+      `${claim.file}: named by manifest row "${claim.row}", publishes a sha256, and cannot be ` +
+        `read as an artifact (${error.message})`,
+    );
+    continue;
+  }
+  const actual = createHash("sha256").update(bytes).digest("hex");
   if (actual !== claim.expected) {
     checksumFailures.push(
       `${claim.file}: manifest says sha256 ${claim.expected}, file is ${actual}` +
@@ -338,7 +423,12 @@ const SKIPPED_DIRECTORIES = skippedDirectories();
  * scope. The template is the one that goes stale and it is still checked.
  */
 const asBasenamePattern = (pattern) =>
-  new RegExp(`^${pattern.split("*").map((part) => part.replace(/[.+^${}()|[\]\\?]/g, "\\$&")).join("[^/]*")}$`);
+  new RegExp(
+    `^${pattern
+      .split("*")
+      .map((part) => part.replace(/[.+^${}()|[\]\\?]/g, "\\$&"))
+      .join("[^/]*")}$`,
+  );
 const ignoredFiles = () => {
   const lines = gitignoreLines().filter((line) => !line.endsWith("/"));
   const patterns = (prefixed) =>
@@ -407,9 +497,13 @@ const PUBLISHED_RULESET = /^nyc-rules\.v.+\.json$/;
  */
 let publishedCache = null;
 const publishedRulesets = () => {
-  publishedCache ??= readdirSync(join(repoRoot, "rules")).filter((entry) =>
-    PUBLISHED_RULESET.test(entry),
-  );
+  // WITH ENTRY TYPES, because a name alone does not make something a ruleset a deployment can open.
+  // A DIRECTORY under `rules/` called `nyc-rules.v9.9.json` counted as published, which both
+  // resolved references to a path nothing can read and tripped the exactly-one invariant with a
+  // second "ruleset" that is not one. Same rule as the glob expansion: entry type decides.
+  publishedCache ??= readdirSync(join(repoRoot, "rules"), { withFileTypes: true })
+    .filter((entry) => entry.isFile() && PUBLISHED_RULESET.test(entry.name))
+    .map((entry) => entry.name);
   return publishedCache;
 };
 
@@ -934,7 +1028,10 @@ function danglingInLiterals(sourceFile, literals) {
         if (resolves(token[0], value, token.index)) continue;
         if (literal.continues && token.index + token[0].length === value.length) continue;
         const at = valueAt === -1 ? literal.index : literal.index + valueAt + token.index;
-        found.push({ line: sourceFile.getLineAndCharacterOfPosition(at).line + 1, named: token[0] });
+        found.push({
+          line: sourceFile.getLineAndCharacterOfPosition(at).line + 1,
+          named: token[0],
+        });
       }
     }
   }
@@ -1171,7 +1268,10 @@ function shellWords(command) {
     // inside a double-quoted string.
     const substitutes = character === "`" && quote !== "'";
     if (substitutes) backquoted = !backquoted;
-    if (substitutes || (quote === null && (/\s/.test(character) || SHELL_OPERATORS.has(character)))) {
+    if (
+      substitutes ||
+      (quote === null && (/\s/.test(character) || SHELL_OPERATORS.has(character)))
+    ) {
       if (word !== null) words.push(word);
       word = null;
       continue;
@@ -1736,6 +1836,17 @@ if (posFailures.length > 0) {
       "is the WIDENING branch: it changes an assigned ID's meaning and needs an amendment to " +
       "docs/DESIGN.md:25. A new capability needs a new ID and a new product decision. Either way " +
       "this rule moves with the decision that changed it, not around it.",
+  );
+  process.exit(1);
+}
+
+if (unreadable.length > 0) {
+  console.error("Baseline manifest marks APPROVED something that cannot be read as an artifact:\n");
+  for (const f of unreadable) console.error("  ✗ " + f);
+  console.error(
+    "\nOnly a file carries a self-declared status. A row that reaches a directory, or a document " +
+      "this cannot parse, states an approval nothing can be checked against. Fix the row or the " +
+      "artifact.",
   );
   process.exit(1);
 }

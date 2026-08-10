@@ -8,6 +8,7 @@ import PlanPage from "../events/[id]/plan/page";
 import { publishedRulesFileIn } from "../rules-file";
 import { ChecklistView } from "./checklist-view";
 import { NOT_COVERED_BY_RULESET } from "../verification-copy";
+import { CANDIDATE_HEADING } from "../plan/plan-line";
 import { CONFIRM_WITH_AGENCY } from "@pop-engine/engine";
 import {
   ALCOHOL_ADVISORY,
@@ -108,6 +109,13 @@ const renderView = async () => {
 const rowFor = (ruleId: string) => screen.getByRole("article", { name: nameOf(ruleId) });
 
 /**
+ * A CANDIDATE row is not headed by a permit name, so it cannot be found by one. Design §5.3 makes
+ * the heading the deciding question on this surface as on the plan line, so that is what names the
+ * card (#252 review).
+ */
+const candidateRow = () => screen.getByRole("article", { name: CANDIDATE_HEADING });
+
+/**
  * One row with its detail expanded when it has any.
  *
  * The row is progressively disclosed: the summary carries the status badge, agency, disposition,
@@ -116,6 +124,15 @@ const rowFor = (ruleId: string) => screen.getByRole("article", { name: nameOf(ru
  * cases assert a field renders with the right content, which the split does not change, so the
  * helper opens the panel first.
  */
+const expandRow = async (row: HTMLElement): Promise<HTMLElement> => {
+  const toggle = within(row).queryByRole("button", { name: /^Details for/ });
+  if (toggle !== null) await userEvent.click(toggle);
+  return row;
+};
+
+/** A candidate row expanded, found by the question that heads it rather than by a permit name. */
+const expandedCandidateRow = async (): Promise<HTMLElement> => expandRow(candidateRow());
+
 const expandedRowFor = async (ruleId: string): Promise<HTMLElement> => {
   const row = rowFor(ruleId);
   const toggle = within(row).queryByRole("button", { name: /^Details for/ });
@@ -781,6 +798,124 @@ describe("AC 5 · deadline context lives where the work happens", () => {
     expect(within(row).getByText(/apply by 2026-08-01/)).toBeDefined();
     expect(within(row).getByText(/earliest realistic filing 2026-07-20/)).toBeDefined();
     expect(within(row).getByText(/deadline approaching/)).toBeDefined();
+  });
+
+  /**
+   * #252: the gate belongs to a NON-BINDING route of a merged item whose binding route publishes
+   * its own window. The engine sequences the gated route and leaves the headline scalars to the
+   * binding route deliberately, so `applyAfterDate` on the row is null and `filingRouteOf` declines
+   * the row because it already has a window. The start date AC 5 requires was on the response the
+   * whole time, on the route that carries it, and nothing read it.
+   */
+  it("shows a gate carried by a route the row's own dates are not read off", async () => {
+    const route = (ruleId: string, name: string, applyAfterDate: string | null) => ({
+      ruleId,
+      triggerResult: "true",
+      disposition: "required",
+      unknownFields: [],
+      name,
+      agency: "NYC",
+      // A published window on the route the row reads, which is what makes it bind: without one
+      // the two routes tie on availability and the rule id decides, the other way round.
+      deadline: ruleId === "STREET-MEDIUM-001" ? { type: "before_issuance" } : null,
+      deadlineDisplay: null,
+      latestApplyDate: "2026-08-01",
+      applyAfterDate,
+      deadlineStatus: "on_track",
+      feeDisplay: null,
+      portalName: null,
+      portalUrl: null,
+      portalInstructions: null,
+    });
+    stubApi({
+      [GET_CHECKLIST]: checklistOf({
+        created: true,
+        items: [
+          trackedItem(STREET_MEDIUM, {
+            latestApplyDate: "2026-08-01",
+            // The binding route is not gated, and the row says so.
+            applyAfterDate: null,
+            deadlineStatus: "on_track",
+            headlineMode: "applies_together",
+            routes: [
+              route("STREET-MEDIUM-001", "Street Activity Permit", null),
+              route("NYPD-SOUND-001", "Sound device permit", "2026-07-20"),
+            ],
+            filingRouteRuleId: null,
+          }),
+        ],
+      }),
+    });
+    await renderView();
+
+    const row = rowFor(STREET_MEDIUM);
+    // Named for the route that carries it, never attributed to the binding filing.
+    expect(
+      within(row).getByText(/earliest realistic filing for Sound device permit 2026-07-20/),
+    ).toBeDefined();
+    expect(within(row).queryByText(/earliest realistic filing 2026-07-20/)).toBeNull();
+  });
+
+  /**
+   * #252 review: THE SAME AC 5 START DATE, LOST THE OTHER WAY ROUND. Where the binding route
+   * publishes a gate but no window of its own and a sibling publishes the window, the checklist
+   * response fills the row's whole timing block from that sibling, gate included, so the row reads
+   * `applyAfterDate: null`. Skipping `routes[0]` here on the assumption that the row's scalar is
+   * the binding route's then skipped the only route carrying a gate, and the date was on neither
+   * surface. The route skipped is the one the scalar came from, which is the filing route whenever
+   * there is one.
+   */
+  it("shows the binding route's gate when the row's dates come from a filing route", async () => {
+    const route = (
+      ruleId: string,
+      name: string,
+      applyAfterDate: string | null,
+      latestApplyDate: string | null,
+    ) => ({
+      ruleId,
+      triggerResult: "true",
+      disposition: "required",
+      unknownFields: [],
+      name,
+      agency: "NYC",
+      // Same reason as the test above: the binding route publishes a window TYPE and no date, so
+      // it is more available than a route publishing no window at all and binds ahead of it.
+      deadline: ruleId === "STREET-MEDIUM-001" ? { type: "before_issuance" } : null,
+      deadlineDisplay: null,
+      latestApplyDate,
+      applyAfterDate,
+      deadlineStatus: latestApplyDate === null ? "not_applicable" : "on_track",
+      feeDisplay: null,
+      portalName: null,
+      portalUrl: null,
+      portalInstructions: null,
+    });
+    stubApi({
+      [GET_CHECKLIST]: checklistOf({
+        created: true,
+        items: [
+          trackedItem(STREET_MEDIUM, {
+            // The binding route publishes no window, so the row's dates are the filing route's,
+            // and its gate is null.
+            latestApplyDate: "2026-08-01",
+            applyAfterDate: null,
+            deadlineStatus: "on_track",
+            headlineMode: "applies_together",
+            routes: [
+              route("STREET-MEDIUM-001", "Street Activity Permit", "2026-07-20", null),
+              route("NYPD-SOUND-001", "Sound device permit", null, "2026-08-01"),
+            ],
+            filingRouteRuleId: "NYPD-SOUND-001",
+          }),
+        ],
+      }),
+    });
+    await renderView();
+
+    const row = rowFor(STREET_MEDIUM);
+    expect(
+      within(row).getByText(/earliest realistic filing for Street Activity Permit 2026-07-20/),
+    ).toBeDefined();
   });
 
   it("renders the deadline prose a rule publishes", async () => {
@@ -2467,5 +2602,699 @@ describe("F-202 AC 9 · moved-deadline notice", () => {
       "Timeline unresolved reason: previous holiday calendar was unavailable; current processing time is unavailable.",
     );
     expect(notice.textContent).not.toContain("previous not calculable; current not calculable");
+  });
+});
+
+/**
+ * #252. A merged dedupe line reads as its binding route, and where that route publishes no window
+ * the api reads the filing date, status, fee and filing details off another route of the same
+ * requirement. The row has to say whose they are: naming one rule and dating another is exactly
+ * the crossover the route list exists to remove, and it would arrive here instead.
+ */
+describe("a checklist row whose window comes from another route (#252)", () => {
+  const TENT_ROUTE = {
+    ruleId: "DOB-TENT-001",
+    triggerResult: "unknown",
+    disposition: "required",
+    unknownFields: ["tent_area_sqft"],
+    name: "DOB permit — tent/canopy over 400 gross sq ft or in place 30+ days",
+    agency: "DOB",
+    deadline: { type: "business_days_minimum" },
+    deadlineDisplay: null,
+    latestApplyDate: "2026-08-26",
+    applyAfterDate: null,
+    deadlineStatus: "on_track",
+    feeDisplay: "TUP: $100 initial 30 days",
+    portalName: null,
+    portalUrl: null,
+    portalInstructions: null,
+  };
+  const TALL_ROUTE = {
+    ...TENT_ROUTE,
+    ruleId: "DOB-TALL-STRUCTURE-001",
+    triggerResult: "true",
+    disposition: "may_be_required",
+    unknownFields: [],
+    name: "DOB permit — structure over 10 feet tall",
+    // The published rule states no deadline of any kind, which is why the tent route's window is
+    // what the row ends up reading.
+    deadline: null,
+    latestApplyDate: null,
+    deadlineStatus: "not_applicable",
+    feeDisplay: null,
+  };
+
+  /**
+   * The binding route with the row's own portal on it, which is what a real payload carries: a null
+   * `filingRouteRuleId` says the values above are the line's own, and a merged line's own values are
+   * its binding route's. DOB-TALL-STRUCTURE-001 publishes no portal, so a row rendering one while
+   * naming that route as its binding route is a shape the api cannot produce and the boundary now
+   * refuses.
+   */
+  // Built on the TENT route because that is the one that BINDS: it is the only route contributing
+  // the merged `required`, so the row's own portal is its portal.
+  const BINDING_WITH_PORTAL = {
+    ...TENT_ROUTE,
+    portalName: portalNameOf(STREET_MEDIUM),
+    portalUrl: portalUrlOf(STREET_MEDIUM),
+  };
+
+  it("renders the date and fee, and names the route that publishes them", async () => {
+    stubApi({
+      [GET_CHECKLIST]: checklistOf({
+        created: true,
+        items: [
+          trackedItem(STREET_MEDIUM, {
+            latestApplyDate: "2026-08-26",
+            deadlineStatus: "on_track",
+            feeDisplay: "TUP: $100 initial 30 days",
+            routes: [TENT_ROUTE, TALL_ROUTE],
+            headlineMode: "candidate",
+            filingRouteRuleId: "DOB-TENT-001",
+          }),
+        ],
+      }),
+    });
+    await renderView();
+
+    const row = await expandedCandidateRow();
+    expect(within(row).getByText(/apply by 2026-08-26/)).toBeDefined();
+    expect(within(row).getByText("TUP: $100 initial 30 days")).toBeDefined();
+    expect(
+      within(row).getByText(/The published rules give this requirement 2 routes/),
+    ).toBeDefined();
+    expect(row.textContent).toContain(
+      "DOB permit — tent/canopy over 400 gross sq ft or in place 30+ days's.",
+    );
+  });
+
+  it("says nothing about routes on a row whose window is its own", async () => {
+    stubApi({
+      [GET_CHECKLIST]: checklistOf({
+        created: true,
+        items: [trackedItem(STREET_MEDIUM, { latestApplyDate: "2026-08-26" })],
+      }),
+    });
+    await renderView();
+
+    const row = await expandedRowFor(STREET_MEDIUM);
+    expect(within(row).queryByText(/The published rules give this requirement/)).toBeNull();
+    expect(within(row).queryByTestId("deciding-question")).toBeNull();
+  });
+
+  /**
+   * #252: THE DECIDING QUESTION REACHES THE SURFACE THE ORGANIZER WORKS THE ITEM ON.
+   *
+   * `headlineMode` was served on this response and read by nothing. The plan page said "the
+   * answers so far do not say which of these applies, answering tent area would decide it" and the
+   * checklist, which `checklist-item.tsx`'s own comment calls the place the organizer works the
+   * item, said only "may be required". The conditionality survived to it; the question that would
+   * settle it did not, and all 56 affected plans are `candidate`.
+   */
+  /**
+   * #252 review: THE HEADING IS THE QUESTION ON THIS SURFACE TOO (design §5.3). The checklist
+   * inherited the MERGED `userSummary.heading`, which `mergeUserSummary` takes from the first route
+   * in binding order that publishes one, so the row an organizer works was titled with one
+   * candidate's permit name while the plan line asked the question.
+   */
+  it("heads a candidate row with the deciding question, not with a candidate's name", async () => {
+    stubApi({
+      [GET_CHECKLIST]: checklistOf({
+        created: true,
+        items: [
+          trackedItem(STREET_MEDIUM, {
+            routes: [TENT_ROUTE, TALL_ROUTE],
+            headlineMode: "candidate",
+            filingRouteRuleId: null,
+          }),
+        ],
+      }),
+    });
+    await renderView();
+
+    const row = candidateRow();
+    expect(within(row).getByRole("heading").textContent).toBe(CANDIDATE_HEADING);
+    expect(within(row).queryByText(nameOf(STREET_MEDIUM))).toBeNull();
+    // The CONTROLS take a noun rather than the question, and not the merged heading either: they
+    // fall back the way every other surface does when no name is settled.
+    expect(within(row).getByRole("combobox").getAttribute("aria-label")).not.toContain(
+      CANDIDATE_HEADING,
+    );
+    expect(within(row).getByRole("combobox").getAttribute("aria-label")).not.toContain(
+      nameOf(STREET_MEDIUM),
+    );
+  });
+
+  /**
+   * A candidate group that is NOT scalar-free: the binding route resolved and contributes the
+   * merged disposition, so the line publishes its own window and `filingRouteRuleId` is null. That
+   * is the shape whose attribution the heading used to carry.
+   */
+  const DATED_BINDING = {
+    ...TALL_ROUTE,
+    disposition: "required",
+    latestApplyDate: "2026-08-26",
+    deadlineStatus: "on_track",
+    feeDisplay: "$150 filing fee",
+  };
+
+  /**
+   * #252 review: THE SAME PROMOTION, ON THE BRANCH WHERE NO FILING ROUTE IS NAMED.
+   *
+   * `filingRouteRuleId` is null on a candidate row whose binding route publishes its own window, so
+   * the attribution paragraph names `routes[0]` instead — and the citation promotion read the id
+   * alone, fell through to contributing order, and promoted whichever rule the published file lists
+   * first. One route's dates under another route's citation, one branch over from the fix.
+   */
+  it("leads a candidate row's citations with the route its paragraph names", async () => {
+    stubApi({
+      [GET_CHECKLIST]: checklistOf({
+        created: true,
+        items: [
+          trackedItem(STREET_MEDIUM, {
+            routes: [DATED_BINDING, TENT_ROUTE],
+            headlineMode: "candidate",
+            // No filing route is NAMED, so the row's values are the binding route's.
+            filingRouteRuleId: null,
+            sources: [
+              {
+                ruleId: "DOB-TENT-001",
+                citation: "Tent permit page",
+                urls: ["https://example.test/tent"],
+              },
+              {
+                ruleId: "DOB-TALL-STRUCTURE-001",
+                citation: "Tall structure page",
+                urls: ["https://example.test/tall"],
+              },
+            ],
+          }),
+        ],
+      }),
+    });
+    await renderView();
+
+    const row = candidateRow();
+    // The paragraph names the binding route, so the promoted citation is that route's.
+    expect(row.textContent).toContain(DATED_BINDING.name);
+    const promoted = row.querySelector(".check-item__citations a") as HTMLAnchorElement;
+    // NOT VACUOUS: the tent route's citation is FIRST in contributing order, which is what the
+    // old code promoted.
+    expect(promoted.getAttribute("href")).toBe("https://example.test/tall");
+  });
+
+  /**
+   * #252 review: A NARROWING WHOSE VISIBILITY CHECK WAS LEFT ON THE PRE-NARROWING VALUE.
+   *
+   * Where the filing route publishes no source of its own, the promotion moves every citation into
+   * the disclosure. `hasContextDetail` still counted the ORIGINAL list and opened the disclosure
+   * only above one, so a row with exactly one sibling citation showed no promoted citation and no
+   * control to open the one it had: a published citation became unreachable.
+   */
+  it("keeps a lone sibling citation reachable when the filing route publishes none", async () => {
+    stubApi({
+      [GET_CHECKLIST]: checklistOf({
+        created: true,
+        items: [
+          trackedItem(STREET_MEDIUM, {
+            routes: [DATED_BINDING, TENT_ROUTE],
+            headlineMode: "candidate",
+            filingRouteRuleId: null,
+            // The route the row's values are attributed to publishes no source of its own, and
+            // exactly one sibling citation exists.
+            sources: [
+              {
+                ruleId: "DOB-TENT-001",
+                citation: "Tent permit page",
+                urls: ["https://example.test/tent"],
+              },
+            ],
+            // Nothing else would open the disclosure on its own.
+            publishedNotes: [],
+            noteText: null,
+            conflictText: null,
+            portalName: null,
+            portalUrl: null,
+            portalInstructions: null,
+            timelineUnresolvedReason: null,
+            deadlineUnknownFields: [],
+          }),
+        ],
+      }),
+    });
+    await renderView();
+
+    const row = candidateRow();
+    // Nothing is promoted, which is correct: the attributed route cites nothing of its own.
+    expect(row.querySelector(".check-item__citations")).toBeNull();
+    // NOT VACUOUS: before this the disclosure was gated on the original count and never opened,
+    // so the sibling's page was on no surface at all.
+    const expanded = await expandRow(row);
+    expect(expanded.querySelector('a[href="https://example.test/tent"]')).not.toBeNull();
+  });
+
+  /**
+   * #252 review: THE PROMOTED CITATION IS AN ATTRIBUTION, NOT A RANKING, ONCE A ROUTE IS NAMED.
+   *
+   * `PlanContextBody` lifts `sources[0]` out of the disclosure and renders it directly beneath the
+   * sentence saying the date, fee and portal above belong to the selected filing route. The merged
+   * list concatenates in CONTRIBUTING order, so a group whose first contributing rule is not the
+   * filing route presented another rule's official page as the support for that filing tuple.
+   */
+  it("leads a row's citations with the filing route's own", async () => {
+    const source = (ruleId: string, citation: string, url: string) => ({
+      ruleId,
+      citation,
+      urls: [url],
+    });
+    stubApi({
+      [GET_CHECKLIST]: checklistOf({
+        created: true,
+        items: [
+          trackedItem(STREET_MEDIUM, {
+            latestApplyDate: "2026-08-26",
+            routes: [TENT_ROUTE, TALL_ROUTE],
+            headlineMode: "candidate",
+            // The filing route is the SECOND contributing rule, which is the whole shape.
+            filingRouteRuleId: "DOB-TENT-001",
+            sources: [
+              source("DOB-TALL-STRUCTURE-001", "Tall structure page", "https://example.test/tall"),
+              source("DOB-TENT-001", "Tent permit page", "https://example.test/tent"),
+            ],
+          }),
+        ],
+      }),
+    });
+    await renderView();
+
+    // NOT VACUOUS: before this the promoted citation was the tall route's, which is the one still
+    // present further down inside the disclosure.
+    const row = candidateRow();
+    const promoted = row.querySelector(".check-item__citations a") as HTMLAnchorElement;
+    expect(promoted.getAttribute("href")).toBe("https://example.test/tent");
+    // And nothing is dropped: the sibling still renders behind the expand.
+    const expanded = await expandRow(row);
+    expect(expanded.querySelector('a[href="https://example.test/tall"]')).not.toBeNull();
+  });
+
+  /**
+   * #252 review: THE FOURTH SURFACE FOR THE SAME FIELD.
+   *
+   * `mergeGroup` does not concatenate `conflictText`: it falls back through the routes in binding
+   * order and takes the first that publishes any. So a merged row rendered exactly one rule's two
+   * readings and dropped the sibling's official reading entirely, on the disclosure whose whole
+   * purpose is that a conflict is never resolved to one reading silently.
+   */
+  it("renders every route's official reading on a merged row, each named", async () => {
+    const withConflict = (route: Record<string, unknown>, text: string) => ({
+      ...route,
+      conflictText: text,
+    });
+    stubApi({
+      [GET_CHECKLIST]: checklistOf({
+        created: true,
+        items: [
+          trackedItem(STREET_MEDIUM, {
+            verificationStatus: "OFFICIAL_CONFLICT",
+            // What the merge leaves on the line: the first publisher in binding order.
+            conflictText: "the tall route reads the threshold as 10 feet",
+            routes: [
+              withConflict(DATED_BINDING, "the tall route reads the threshold as 10 feet"),
+              withConflict(TENT_ROUTE, "the tent route reads the same threshold as 400 sq ft"),
+            ],
+            headlineMode: "candidate",
+            filingRouteRuleId: null,
+          }),
+        ],
+      }),
+    });
+    await renderView();
+
+    const details = await expandedCandidateRow();
+    // NOT VACUOUS: the second is the one the merged scalar dropped, and the first proves the row
+    // did not simply stop rendering conflicts.
+    expect(details.textContent).toContain("the tall route reads the threshold as 10 feet");
+    expect(details.textContent).toContain("the tent route reads the same threshold as 400 sq ft");
+    // Each is attributed, because two rules' readings run together read as four readings of one.
+    expect(details.textContent).toContain(DATED_BINDING.name);
+    expect(details.textContent).toContain(TENT_ROUTE.name);
+  });
+
+  /**
+   * #252 review: THE GATE VANISHED ON A ROW THAT PUBLISHES NOTHING TO HANG IT ON.
+   *
+   * `gatedRoutesOf` skips one route so a gate the row's own scalar already shows is not repeated,
+   * and it found that route at `routes[0]` whenever `filingRouteRuleId` was null. On a scalar-free
+   * row that is exactly wrong: the line publishes NO headline scalars by construction, so there is
+   * no gate on the row and `filingRouteRuleId` is null because nothing was selected rather than
+   * because the binding route was. The binding route's own start date was skipped as already
+   * rendered and appeared nowhere, which is F-202 AC 5 lost on the one row shape that can only ever
+   * show it here. `routes[0]`-as-binding again, in a place the #263 enumeration did not list.
+   */
+  it("shows a scalar-free row's gate, which no scalar above it carries", async () => {
+    stubApi({
+      [GET_CHECKLIST]: checklistOf({
+        created: true,
+        items: [
+          trackedItem(STREET_MEDIUM, {
+            // Scalar-free: `TALL_ROUTE` resolved and `TENT_ROUTE` did not, and the resolved one
+            // does not contribute the merged `required`, so the line publishes nothing of its own.
+            permitName: null,
+            agency: null,
+            deadline: null,
+            deadlineDisplay: null,
+            latestApplyDate: null,
+            applyAfterDate: null,
+            deadlineStatus: "not_calculable",
+            feeDisplay: null,
+            portalName: null,
+            portalUrl: null,
+            portalInstructions: null,
+            routes: [{ ...TENT_ROUTE, applyAfterDate: "2026-07-20" }, TALL_ROUTE],
+            headlineMode: "candidate",
+            filingRouteRuleId: null,
+          }),
+        ],
+      }),
+    });
+    await renderView();
+
+    const row = candidateRow();
+    // Substring rather than a RegExp: the published name contains "30+ days", and `+` is a
+    // quantifier.
+    expect(row.textContent).toContain(
+      `earliest realistic filing for ${TENT_ROUTE.name} 2026-07-20`,
+    );
+  });
+
+  /**
+   * #252 review: THE HEADING FIX CHANGED WHAT SIGHTED USERS SEE AND LEFT THE ACCESSIBLE NAME SAYING
+   * THE OLD THING. On a candidate row that is not scalar-free, `permitName` is the BINDING route's
+   * name, so labelling the controls with it named the row after one candidate while the heading
+   * said the answers do not decide which — and those controls update the COMBINED item.
+   */
+  it("labels a candidate row's controls after no single route", async () => {
+    stubApi({
+      [GET_CHECKLIST]: checklistOf({
+        created: true,
+        items: [
+          trackedItem(STREET_MEDIUM, {
+            routes: [DATED_BINDING, TENT_ROUTE],
+            headlineMode: "candidate",
+            filingRouteRuleId: null,
+          }),
+        ],
+      }),
+    });
+    await renderView();
+
+    const row = candidateRow();
+    for (const control of [within(row).getByRole("combobox"), within(row).getByRole("textbox")]) {
+      const label = control.getAttribute("aria-label") ?? "";
+      expect(label).not.toContain(nameOf(STREET_MEDIUM));
+      expect(label).not.toContain(DATED_BINDING.name);
+      expect(label).not.toContain(TENT_ROUTE.name);
+      // Every contributing rule, preferring none: what the controls actually act on.
+      expect(label).toContain("DOB-TALL-STRUCTURE-001");
+      expect(label).toContain("DOB-TENT-001");
+    }
+  });
+
+  /**
+   * #252 review: AND THE ATTRIBUTION THE HEADING USED TO CARRY. On a candidate group whose binding
+   * route publishes a window, `filingRouteRuleId` is null, so the paragraph naming whose values
+   * these are did not render — and the heading that used to name them is now the question. The
+   * agency, date, fee and portal were left attributed to nothing at all.
+   */
+  it("names the route a candidate row's filing details belong to", async () => {
+    stubApi({
+      [GET_CHECKLIST]: checklistOf({
+        created: true,
+        items: [
+          trackedItem(STREET_MEDIUM, {
+            routes: [DATED_BINDING, TENT_ROUTE],
+            headlineMode: "candidate",
+            filingRouteRuleId: null,
+          }),
+        ],
+      }),
+    });
+    await renderView();
+
+    const row = candidateRow();
+    expect(
+      within(row).getByText(/The filing date, fee and filing details above are/).textContent,
+    ).toContain(DATED_BINDING.name);
+  });
+
+  it("names the question that would decide a candidate row", async () => {
+    stubApi({
+      [GET_CHECKLIST]: checklistOf({
+        created: true,
+        items: [
+          trackedItem(STREET_MEDIUM, {
+            latestApplyDate: "2026-08-26",
+            routes: [TENT_ROUTE, TALL_ROUTE],
+            headlineMode: "candidate",
+            filingRouteRuleId: "DOB-TENT-001",
+          }),
+        ],
+      }),
+    });
+    await renderView();
+
+    const row = await expandedCandidateRow();
+    // TALL_ROUTE's trigger resolved, so the requirement IS reached and what is open is which of
+    // its routes reach it. The sentence must not say the requirement itself may not apply.
+    expect(within(row).getByTestId("deciding-question").textContent).toBe(
+      "The answers so far do not say which of the published routes to this requirement apply." +
+        " Answering tent area sqft would decide it.",
+    );
+  });
+
+  /**
+   * #252 review: THE DECIDING QUESTION LEADS THE ROW, ahead of the scalars it qualifies.
+   *
+   * `PlanContextBody` rendered the named permit's apply-by date, its gate, its fee and the filing
+   * attribution first and reached this sentence only afterwards, so a row whose routes are not
+   * known to apply opened as one route's filing work and corrected itself below. The plan line
+   * already renders its routes block before the scalars it qualifies; this pins the same order
+   * here.
+   */
+  it("puts the deciding question ahead of the candidate route's scalars", async () => {
+    stubApi({
+      [GET_CHECKLIST]: checklistOf({
+        created: true,
+        items: [
+          trackedItem(STREET_MEDIUM, {
+            latestApplyDate: "2026-08-26",
+            routes: [TENT_ROUTE, TALL_ROUTE],
+            headlineMode: "candidate",
+            filingRouteRuleId: "DOB-TENT-001",
+          }),
+        ],
+      }),
+    });
+    await renderView();
+
+    const row = await expandedCandidateRow();
+    const text = row.textContent ?? "";
+    const question = text.indexOf("The answers so far do not say");
+    const applyBy = text.indexOf("apply by 2026-08-26");
+    const attribution = text.indexOf("The published rules give this requirement");
+    expect(question).toBeGreaterThanOrEqual(0);
+    expect(applyBy).toBeGreaterThanOrEqual(0);
+    expect(attribution).toBeGreaterThanOrEqual(0);
+    expect(question).toBeLessThan(applyBy);
+    expect(question).toBeLessThan(attribution);
+  });
+
+  it("says the requirement itself is unsettled when no route has resolved", async () => {
+    stubApi({
+      [GET_CHECKLIST]: checklistOf({
+        created: true,
+        items: [
+          trackedItem(STREET_MEDIUM, {
+            latestApplyDate: "2026-08-26",
+            routes: [
+              TENT_ROUTE,
+              {
+                ...TALL_ROUTE,
+                triggerResult: "unknown",
+                unknownFields: ["structure_over_10ft_tall"],
+              },
+            ],
+            headlineMode: "candidate",
+            filingRouteRuleId: "DOB-TENT-001",
+          }),
+        ],
+      }),
+    });
+    await renderView();
+
+    const row = await expandedCandidateRow();
+    expect(within(row).getByTestId("deciding-question").textContent).toBe(
+      // The fields arrive in ROUTE order and the routes are in binding order, so the unresolved
+      // route that binds names its own field first.
+      "The answers so far do not say whether this requirement applies." +
+        " Answering tent area sqft, structure over 10ft tall would decide it.",
+    );
+  });
+
+  /**
+   * #252 review: THE DECIDING QUESTION IS BOTH SETS OF UNKNOWNS, here for the same reason as on
+   * the plan line. A route's `unknownFields` are its trigger's, and a candidate row whose filing
+   * timeline also waits on an answer was told a shorter list of fields "would decide it" than
+   * actually does (design §5.3).
+   */
+  it("names the deadline unknowns alongside the trigger unknowns", async () => {
+    stubApi({
+      [GET_CHECKLIST]: checklistOf({
+        created: true,
+        items: [
+          trackedItem(STREET_MEDIUM, {
+            latestApplyDate: "2026-08-26",
+            routes: [TENT_ROUTE, TALL_ROUTE],
+            headlineMode: "candidate",
+            filingRouteRuleId: "DOB-TENT-001",
+            deadlineUnknownFields: ["structure_types"],
+          }),
+        ],
+      }),
+    });
+    await renderView();
+
+    const row = await expandedCandidateRow();
+    expect(within(row).getByTestId("deciding-question").textContent).toBe(
+      "The answers so far do not say which of the published routes to this requirement apply." +
+        " Answering tent area sqft, structure types would decide it.",
+    );
+  });
+
+  /**
+   * #252 review: A CANDIDATE ROW MUST NOT OFFER A FILING ACTION, the same rule the plan line's
+   * route entries already carry (design §5.3), on the independent checklist path. The row states
+   * that the answers do not decide which route applies and then its details said "apply at" the
+   * filing route's portal, so the working surface presented the requirement as unresolved and
+   * offered the filing in the same disclosure.
+   */
+  it("names the portal on a candidate row rather than telling an organizer to apply at it", async () => {
+    stubApi({
+      [GET_CHECKLIST]: checklistOf({
+        created: true,
+        items: [
+          // The row publishes its own window here, so nothing is attributed elsewhere and the
+          // portal below is the row's own. DOB-TENT-001 publishes no portal at all, so naming it
+          // as the filing route would leave this row with none to render — and would be the
+          // crossed attribution the boundary now refuses (#252 review).
+          // No date override: with a null filing id the row's window is its binding route's, and
+          // this one publishes none. The date is not what this test is about.
+          trackedItem(STREET_MEDIUM, {
+            routes: [BINDING_WITH_PORTAL, TALL_ROUTE],
+            headlineMode: "candidate",
+            filingRouteRuleId: null,
+          }),
+        ],
+      }),
+    });
+    await renderView();
+
+    const row = await expandedCandidateRow();
+    expect(within(row).getByTestId("deciding-question")).toBeDefined();
+    expect(within(row).queryByText(/apply at/)).toBeNull();
+    // Published, so still named and still linked. Only the instruction to file is withheld.
+    expect(within(row).getByText(/portal:/)).toBeDefined();
+    expect(
+      within(row)
+        .getByRole("link", { name: portalNameOf(STREET_MEDIUM) as string })
+        .getAttribute("href"),
+    ).toBe(portalUrlOf(STREET_MEDIUM));
+  });
+
+  it("still says apply at the portal once the row's routes apply together", async () => {
+    stubApi({
+      [GET_CHECKLIST]: checklistOf({
+        created: true,
+        items: [
+          // The row's own portal, for the reason given on the candidate case above.
+          trackedItem(STREET_MEDIUM, {
+            routes: [
+              { ...BINDING_WITH_PORTAL, triggerResult: "true", unknownFields: [] },
+              TALL_ROUTE,
+            ],
+            headlineMode: "applies_together",
+            filingRouteRuleId: null,
+          }),
+        ],
+      }),
+    });
+    await renderView();
+
+    const row = await expandedRowFor(STREET_MEDIUM);
+    expect(within(row).getByText(/apply at/)).toBeDefined();
+  });
+
+  it("renders no deciding question when every route resolved", async () => {
+    // `applies_together`: the routes are triggered, so there is nothing left to decide and a
+    // sentence saying otherwise would be false.
+    stubApi({
+      [GET_CHECKLIST]: checklistOf({
+        created: true,
+        items: [
+          trackedItem(STREET_MEDIUM, {
+            latestApplyDate: "2026-08-26",
+            routes: [{ ...TENT_ROUTE, triggerResult: "true", unknownFields: [] }, TALL_ROUTE],
+            headlineMode: "applies_together",
+            filingRouteRuleId: "DOB-TENT-001",
+          }),
+        ],
+      }),
+    });
+    await renderView();
+
+    const row = await expandedRowFor(STREET_MEDIUM);
+    expect(within(row).queryByTestId("deciding-question")).toBeNull();
+  });
+
+  /**
+   * #252: `routes: []` PASSED THE VALIDATOR AND ANSWERED EVERY QUESTION ASKED OF IT.
+   *
+   * `every` is vacuously true on an empty array, so an empty route list is not a harmless
+   * degenerate case: it is the one value that agrees with anything. On the plan page it made
+   * `hasOnlyUndatedDeadlines` print "No dated deadlines identified." on a FEASIBLE plan beside a
+   * dated line. The wire contract says the field is null-or-non-empty, and the validator now says
+   * so too rather than documenting it.
+   */
+  it("refuses a checklist response whose route list is empty", async () => {
+    stubApi({
+      [GET_CHECKLIST]: checklistOf({
+        created: true,
+        items: [trackedItem(STREET_MEDIUM, { latestApplyDate: "2026-08-26", routes: [] })],
+      }),
+    });
+    await renderView();
+
+    expect(screen.queryByText(STREET_MEDIUM)).toBeNull();
+  });
+
+  /**
+   * #252: a one-entry list is the same defect one entry later. `routes` is published only for a line
+   * that MERGED, and this row's own guards read `length >= 2` before treating it as merged, so a
+   * one-entry list was accepted and then read as unmerged — an incomplete route set rendered as a
+   * complete line, and "The published rules give this requirement 1 routes" if it reached that
+   * sentence.
+   */
+  it("refuses a checklist response whose route list is shorter than a merge", async () => {
+    stubApi({
+      [GET_CHECKLIST]: checklistOf({
+        created: true,
+        items: [
+          trackedItem(STREET_MEDIUM, { latestApplyDate: "2026-08-26", routes: [TALL_ROUTE] }),
+        ],
+      }),
+    });
+    await renderView();
+
+    expect(screen.queryByText(STREET_MEDIUM)).toBeNull();
   });
 });

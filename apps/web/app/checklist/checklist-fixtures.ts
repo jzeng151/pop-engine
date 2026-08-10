@@ -23,8 +23,10 @@
 import { readFileSync } from "node:fs";
 import {
   DEFAULT_DISPOSITION_BY_RULE_KIND,
+  noRouteSuppliesScalars,
   parseEngineRuleset,
   type Deadline,
+  type FindingRoute,
 } from "@pop-engine/engine";
 import { rulesFileIn } from "../rules-file";
 
@@ -97,8 +99,15 @@ export const planContext = (
   overrides: Record<string, unknown> = {},
 ): Record<string, unknown> => {
   const rule = ruleOf(ruleId);
+  // A merged row names every rule it merged, one per route: `mergeGroup()` builds `ruleIds` and
+  // `routes` from one group, and the boundary refuses a row where the two disagree. A fixture that
+  // overrides `routes` therefore gets the matching ids rather than the single rule's, unless it
+  // overrides `ruleIds` too, which is how a test asks for the mismatch on purpose.
+  const routes = overrides.routes;
   return {
-    ruleIds: [rule.id],
+    ruleIds: Array.isArray(routes)
+      ? routes.map((route) => (route as { readonly ruleId: string }).ruleId)
+      : [rule.id],
     permitName: rule.name,
     userSummary: rule.userSummary,
     agency: rule.agency,
@@ -130,7 +139,57 @@ export const planContext = (
     sourceUrl: rule.source?.urls[0] ?? null,
     sourcePlan: { ...PUBLISHED_SNAPSHOT },
     ...overrides,
+    // THE FILED FIELDS ARE THE NAMED ROUTE'S, which is what the api serves: `planContext` in
+    // `apps/api/src/checklist.ts` reads every one of them off the filing route through
+    // `fromFilingRoute`, and the boundary refuses a row where they disagree with the route it
+    // names. A fixture that sets `filingRouteRuleId` therefore gets that route's values, unless it
+    // also overrides one of them, which is how a test asks for the mismatch on purpose.
+    ...filedFrom(overrides),
   };
+};
+
+/**
+ * The fields the api attributes to a route: the one `filingRouteRuleId` names, or `routes[0]` where
+ * it names none. A null filing id says the values above are the line's OWN, and a merged line's own
+ * values are its binding route's, which `mergeGroup()` puts first in the list. Both branches read
+ * off a route, because the boundary refuses a row whose filed fields disagree with the route it
+ * attributes them to.
+ */
+const filedFrom = (overrides: Record<string, unknown>): Record<string, unknown> => {
+  const named = overrides.filingRouteRuleId;
+  const routes = overrides.routes;
+  if (!Array.isArray(routes) || routes.length === 0) return {};
+  const route = (
+    typeof named === "string"
+      ? routes.find((entry) => (entry as { readonly ruleId: string }).ruleId === named)
+      : routes[0]
+  ) as Record<string, unknown> | undefined;
+  if (route === undefined) return {};
+  const binding = routes[0] as Record<string, unknown>;
+  // Identity is the BINDING route's whatever route the filing fields came from: the api reads
+  // `permitName` and `agency` off the row's own columns, which on a merged line are `routes[0]`'s.
+  // Except on the shape where no route can supply the line's scalars, where the engine nulls the
+  // identity and `filingRouteOf` still fills the filing tuple from a route that publishes a window
+  // — the row the boundary must accept with a null name beside an attributed date.
+  const scalarFree = noRouteSuppliesScalars(routes as readonly FindingRoute[]);
+  const filed: Record<string, unknown> = {
+    permitName: scalarFree ? null : binding.name,
+    agency: scalarFree ? null : binding.agency,
+    deadline: route.deadline === null || route.deadline === undefined ? null : route.deadline,
+    deadlineDisplay: route.deadlineDisplay,
+    latestApplyDate: route.latestApplyDate,
+    applyAfterDate: route.applyAfterDate,
+    deadlineStatus: route.deadlineStatus,
+    feeDisplay: route.feeDisplay,
+    portalName: route.portalName,
+    portalUrl: route.portalUrl,
+    portalInstructions: route.portalInstructions,
+  };
+  // An explicit override still wins, so a test can still build the crossed row on purpose.
+  for (const field of Object.keys(filed)) {
+    if (field in overrides) filed[field] = overrides[field];
+  }
+  return filed;
 };
 
 /** A trackable row: the organizer's state on top of that plan context. */
@@ -138,7 +197,7 @@ export const trackedItem = (
   ruleId: string = STREET_MEDIUM,
   overrides: Record<string, unknown> = {},
 ): Record<string, unknown> => ({
-  ...planContext(ruleId),
+  ...planContext(ruleId, overrides),
   id: `item-${ruleId}`,
   planItemId: `plan-item-${ruleId}`,
   status: "not_started",

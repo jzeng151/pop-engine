@@ -53,19 +53,19 @@ row, row 9 S4's per-rule row, row 10 the persistence row, row 11 the no-submissi
 the two lists partition the table. The four corrections round 11 made, from the previous walk, still
 stand.
 
-| Result | Lowest layer it requires |
-| --- | --- |
-| Section 1's gate, dependent and clause columns; section 3's rule counts | the PARSED ruleset (`parseEngineRuleset`, `parseIntakeContract`). No submission. |
-| Section 1's `"unknown"` holds and dependents-scoped-out columns; section 3's "leaves scope" claim | scope resolution over an intake (`createScopeResolver`, `termHolds`). No `evaluate`. |
-| Section 1's `"unknown"` acceptance results; **R5's two recounts** (the 8 non-nullable enumerable fields, and `headcount` and `food_vendor_count`) | `parseIntakeContract` -> `validateIntake` ONLY. Most of these probes are REJECTED by the validator, which IS the result; they never reach `evaluate`. |
-| Section 4's per-scenario answer table | reading `SCENARIO_INTAKE_FIXTURES` through `fixtureSubmission`, as section 4 states. No validator, no engine. |
-| Section 2; **R5's per-scenario missing-fact and branch-count columns** and its `plaza_level` and `DOB-TENT-001` results; R3's AC 6 split; S4's plan-level results and diffs | `parseIntakeContract` -> `validateIntake` -> `evaluate`. R5's `DOB-TENT-001` result pairs an evaluated finding with a read of `plan-line.tsx`. |
+| Result                                                                                                                                                                                   | Lowest layer it requires                                                                                                                                                                                                                                                                                                             |
+| ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Section 1's gate, dependent and clause columns; section 3's rule counts                                                                                                                  | the PARSED ruleset (`parseEngineRuleset`, `parseIntakeContract`). No submission.                                                                                                                                                                                                                                                     |
+| Section 1's `"unknown"` holds and dependents-scoped-out columns; section 3's "leaves scope" claim                                                                                        | scope resolution over an intake (`createScopeResolver`, `termHolds`). No `evaluate`.                                                                                                                                                                                                                                                 |
+| Section 1's `"unknown"` acceptance results; **R5's two recounts** (the 8 non-nullable enumerable fields, and `headcount` and `food_vendor_count`)                                        | `parseIntakeContract` -> `validateIntake` ONLY. Most of these probes are REJECTED by the validator, which IS the result; they never reach `evaluate`.                                                                                                                                                                                |
+| Section 4's per-scenario answer table                                                                                                                                                    | reading `SCENARIO_INTAKE_FIXTURES` through `fixtureSubmission`, as section 4 states. No validator, no engine.                                                                                                                                                                                                                        |
+| Section 2; **R5's per-scenario missing-fact and branch-count columns** and its `plaza_level` and `DOB-TENT-001` results; R3's AC 6 split; S4's plan-level results and diffs              | `parseIntakeContract` -> `validateIntake` -> `evaluate`. R5's `DOB-TENT-001` result pairs an evaluated finding with a read of `plan-line.tsx`.                                                                                                                                                                                       |
 | **R1's Scenario F block** (verdict, missing-fact and branch counts, and the branch text absent from the screen); R2; R3's "On screen" column; **R5's "Branch reasons on screen" column** | the component path: `PlanView` rendered with `@testing-library/react` and a stubbed `fetch` in the page's three-call shape, over a plan body from `validateIntake` -> `evaluate`, per round 2's method header. `apps/api/src/plan.ts` is NOT in the loop; the stub stands in for it, and the stub envelope is the one audited below. |
-| R3's runtime member measurement | `evaluate`, then a JSON round trip, then the web's own parser (`readChecked`, `arrayOf`, `shapedLike`) called directly. No component is rendered. |
-| S2, S3 | `parseEngineRuleset` -> `parseIntakeContract` -> `validateIntake` -> `evaluate` |
-| S4's per-rule tables | `evaluateTrigger` and `evaluateCondition` called directly, because per-rule `unknownFields` and `triggeredBy` are not observable from the plan |
-| S2's persistence result | a direct `INSERT` against the migrated `events` table |
-| **R1's artifact reading** (F-102, the answer key, the authority hierarchy, governance section 2); R4; sections 5, 6 and 7 | no submission. R4 is a repo-wide search for a renderer, and section 5's layer table is read from the code. |
+| R3's runtime member measurement                                                                                                                                                          | `evaluate`, then a JSON round trip, then the web's own parser (`readChecked`, `arrayOf`, `shapedLike`) called directly. No component is rendered.                                                                                                                                                                                    |
+| S2, S3                                                                                                                                                                                   | `parseEngineRuleset` -> `parseIntakeContract` -> `validateIntake` -> `evaluate`                                                                                                                                                                                                                                                      |
+| S4's per-rule tables                                                                                                                                                                     | `evaluateTrigger` and `evaluateCondition` called directly, because per-rule `unknownFields` and `triggeredBy` are not observable from the plan                                                                                                                                                                                       |
+| S2's persistence result                                                                                                                                                                  | a direct `INSERT` against the migrated `events` table                                                                                                                                                                                                                                                                                |
+| **R1's artifact reading** (F-102, the answer key, the authority hierarchy, governance section 2); R4; sections 5, 6 and 7                                                                | no submission. R4 is a repo-wide search for a renderer, and section 5's layer table is read from the code.                                                                                                                                                                                                                           |
 
 Three consequences that were previously implied or wrong, stated instead:
 
@@ -171,11 +171,11 @@ organizer's screen.
 Ten registry fields declare `unknown` among their values. Only three of them are gates, meaning
 they appear in another field's `asked_when`:
 
-| Gate | Dependents | Clause | `"unknown"` holds? | Dependents scoped out? |
-| --- | --- | --- | --- | --- |
-| `obstructs_public_way` | `sapo_event_type` | `compare != no` | **yes** | no |
-| `event_open_to_public` | `food_affinity_private_exception_claimed` | `compare != yes` | **yes** | no |
-| `sapo_event_type` | `street_event_size`, `plaza_level`, `plaza_multiple_blocks`, `has_amusement_ride` | `compare = <value>` | no | **YES, all four** |
+| Gate                   | Dependents                                                                        | Clause              | `"unknown"` holds? | Dependents scoped out? |
+| ---------------------- | --------------------------------------------------------------------------------- | ------------------- | ------------------ | ---------------------- |
+| `obstructs_public_way` | `sapo_event_type`                                                                 | `compare != no`     | **yes**            | no                     |
+| `event_open_to_public` | `food_affinity_private_exception_claimed`                                         | `compare != yes`    | **yes**            | no                     |
+| `sapo_event_type`      | `street_event_size`, `plaza_level`, `plaza_multiple_blocks`, `has_amusement_ride` | `compare = <value>` | no                 | **YES, all four**      |
 
 The other seven fields that declare `unknown` gate nothing: `street_event_size`, `plaza_level`,
 `food_affinity_private_exception_claimed`, `sound_audible_from_public_way`,
@@ -240,12 +240,12 @@ C  sapo_event_type="unknown",     street_event_size=null
              "SAPO-BLOCK-PARTY-SPONSOR-001","SAPO-PLAZA-001"]
 ```
 
-| | `sapo_event_type: "street_event"`, `street_event_size: "large"` | `sapo_event_type: "unknown"` |
-| --- | --- | --- |
-| accepted by `validateIntake` | yes | yes |
-| verdict | `FEASIBLE_AT_RISK` | **`CONDITIONAL`** |
-| findings | 2 | **5** |
-| `SAPO-STREET-LARGE-001` | present, required | **absent from findings** |
+|                              | `sapo_event_type: "street_event"`, `street_event_size: "large"` | `sapo_event_type: "unknown"` |
+| ---------------------------- | --------------------------------------------------------------- | ---------------------------- |
+| accepted by `validateIntake` | yes                                                             | yes                          |
+| verdict                      | `FEASIBLE_AT_RISK`                                              | **`CONDITIONAL`**            |
+| findings                     | 2                                                               | **5**                        |
+| `SAPO-STREET-LARGE-001`      | present, required                                               | **absent from findings**     |
 
 Rules that appear only in the unknown case: `SAPO-BLOCK-PARTY-001`,
 `SAPO-BLOCK-PARTY-SPONSOR-001`, `SAPO-PLAZA-001`, `ADV-SAPO-OTHER-CLASS-001`, all
@@ -268,11 +268,11 @@ Rules that appear only in the unknown case: `SAPO-BLOCK-PARTY-001`,
 **Which channel names WHICH loss, because rounds 1 to 13 counted three and the count was wrong.**
 Two other channels carry content, and neither carries THIS loss:
 
-| Channel | What it names |
-| --- | --- |
+| Channel                     | What it names                                                                                                                                                                        |
+| --------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | `missingFacts` branch table | **the street-permit loss itself**: the `street_event` branch reason reads "adds SAPO-STREET-LARGE-001, SAPO-STREET-MEDIUM-001, SAPO-STREET-SMALL-001, SAPO-STREET-XL-001; drops ..." |
-| `unresolvedTimelines` | **a different rule's different loss**: `SAPO-PLAZA-001` could not date itself because `plaza_level` was not asked. Real, and not about the street permit. |
-| `trace` | **nothing about either.** It records `SAPO-STREET-LARGE-001` as `false`, which is what it records when the rule genuinely does not apply. |
+| `unresolvedTimelines`       | **a different rule's different loss**: `SAPO-PLAZA-001` could not date itself because `plaza_level` was not asked. Real, and not about the street permit.                            |
+| `trace`                     | **nothing about either.** It records `SAPO-STREET-LARGE-001` as `false`, which is what it records when the rule genuinely does not apply.                                            |
 
 The `trace` row is measured rather than argued. Answering the gate `street_event` with
 `street_event_size: "small"`, where the large-event permit genuinely does not apply, gives:
@@ -318,14 +318,14 @@ their dependents in scope.
 **None of the six answers a gate `"unknown"`.** Measured by reading
 `SCENARIO_INTAKE_FIXTURES` through `fixtureSubmission`:
 
-| Scenario | `sapo_event_type` | fields answered `"unknown"` |
-| --- | --- | --- |
-| A | `street_event` | none |
-| B | not asked | none |
-| C | not asked | none |
-| D | `block_party` | none |
-| E | `plaza_event` | `structure_over_10ft_tall` |
-| F | not asked | `food_affinity_private_exception_claimed`, `sound_audible_from_public_way`, `venue_license_covers_event_area`, `venue_has_assembly_approval` |
+| Scenario | `sapo_event_type` | fields answered `"unknown"`                                                                                                                  |
+| -------- | ----------------- | -------------------------------------------------------------------------------------------------------------------------------------------- |
+| A        | `street_event`    | none                                                                                                                                         |
+| B        | not asked         | none                                                                                                                                         |
+| C        | not asked         | none                                                                                                                                         |
+| D        | `block_party`     | none                                                                                                                                         |
+| E        | `plaza_event`     | `structure_over_10ft_tall`                                                                                                                   |
+| F        | not asked         | `food_affinity_private_exception_claimed`, `sound_audible_from_public_way`, `venue_license_covers_event_area`, `venue_has_assembly_approval` |
 
 Scenarios E and F answer five fields `"unknown"`, and **every one of them is a dependent that gates
 nothing**. So no approved answer key depends on the behaviour measured here, and the question of
@@ -341,11 +341,11 @@ a partial plan as complete", and that is the clause this path tests.
 
 Traced through the layers:
 
-| Layer | What it carries |
-| --- | --- |
-| `evaluate` | `CONDITIONAL`, missing fact `sapo_event_type`, branch table naming the four SAPO-STREET rules, unresolved timeline naming `plaza_level`, trace with `result: "false"` |
-| `apps/api/src/plan.ts` | persists and serves `verdictDetail` whole, including `missingFacts` and its branches |
-| `apps/web/.../verdict-copy.ts` | renders `CONDITIONAL: sapo event type` |
+| Layer                          | What it carries                                                                                                                                                       |
+| ------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `evaluate`                     | `CONDITIONAL`, missing fact `sapo_event_type`, branch table naming the four SAPO-STREET rules, unresolved timeline naming `plaza_level`, trace with `result: "false"` |
+| `apps/api/src/plan.ts`         | persists and serves `verdictDetail` whole, including `missingFacts` and its branches                                                                                  |
+| `apps/web/.../verdict-copy.ts` | renders `CONDITIONAL: sapo event type`                                                                                                                                |
 
 **The clause holds.** The plan is not presented as complete: the verdict is CONDITIONAL and the
 field the plan is waiting on is named on screen.
@@ -361,12 +361,12 @@ it is the only part of the original concern that survives measurement.
 
 Stated plainly because the request was to confirm or refute rather than to soften:
 
-| Claim | Result |
-| --- | --- |
-| `termHolds` returns a plain boolean and a gate answered `"unknown"` fails every clause kind | **Refuted.** `!=` holds on `"unknown"`. Two of three gates are unaffected. |
-| `askedFields` never adds the dependent | **Confirmed**, for `sapo_event_type`'s four dependents only |
-| The dependent resolves `not_asked` and the condition returns `false` before any operator runs | **Confirmed.** The trace records `SAPO-STREET-LARGE-001` as `false`. |
-| The requirement disappears with no unknown, no finding and no visible trace | **Refuted, but by one channel rather than three.** An unknown is present (verdict CONDITIONAL) and findings are added rather than only removed, and the branch table names the lost rules explicitly. It is the ONLY channel that does: `unresolvedTimelines` names a different rule's loss and `trace` is byte-identical to a genuine non-match (section 2). |
+| Claim                                                                                         | Result                                                                                                                                                                                                                                                                                                                                                        |
+| --------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `termHolds` returns a plain boolean and a gate answered `"unknown"` fails every clause kind   | **Refuted.** `!=` holds on `"unknown"`. Two of three gates are unaffected.                                                                                                                                                                                                                                                                                    |
+| `askedFields` never adds the dependent                                                        | **Confirmed**, for `sapo_event_type`'s four dependents only                                                                                                                                                                                                                                                                                                   |
+| The dependent resolves `not_asked` and the condition returns `false` before any operator runs | **Confirmed.** The trace records `SAPO-STREET-LARGE-001` as `false`.                                                                                                                                                                                                                                                                                          |
+| The requirement disappears with no unknown, no finding and no visible trace                   | **Refuted, but by one channel rather than three.** An unknown is present (verdict CONDITIONAL) and findings are added rather than only removed, and the branch table names the lost rules explicitly. It is the ONLY channel that does: `unresolvedTimelines` names a different rule's loss and `trace` is byte-identical to a genuine non-match (section 2). |
 
 **The scoping layer is silent; the plan is not.** `askedFields` genuinely discards the information
 that a dependent was excluded and why, which is the defect issue #108 describes. On v2.8 the verdict
@@ -402,7 +402,6 @@ second is what prevents the harm today.
    `validateIntake` and then `evaluate` with the ruleset's own `calendarId`.
 4. Compare `plan.verdict`, the rule ids in `plan.findings`, and `plan.verdictDetail.missingFacts`.
 
-
 ---
 
 # Round 2: the rendering gap, measured
@@ -419,8 +418,8 @@ stubbed `fetch` in the same three-call shape the page makes, with the plan body 
 `specs/F-102-feasibility-verdict.md` is **APPROVED (2026-07-24)**. Its Outputs table sets the copy
 rule for one verdict explicitly:
 
-| Verdict | detail carries | Copy rule |
-| --- | --- | --- |
+| Verdict     | detail carries                                        | Copy rule                 |
+| ----------- | ----------------------------------------------------- | ------------------------- |
 | CONDITIONAL | each missing fact + every branch's verdict and reason | **branch table rendered** |
 
 And AC 6, **Branching**: "every material unknown produces a fully evaluated branch (Scenario F:
@@ -539,15 +538,15 @@ absent in both states.
 
 For the same submission, every member measured:
 
-| Member | Size | On screen |
-| --- | --- | --- |
-| `missingFacts` (the branch table) | 757 chars | **No**, except each `field` as de-underscored text |
-| `trace` | 1884 chars | **No** |
-| `missedRuleIds` | 24 chars | **No** |
-| `unresolvedTimelines` | 109 chars | **Yes**, verbatim, on the finding it belongs to |
-| `blockingFinding` | null | n/a |
-| `minSlackDays` | null | n/a |
-| `rescopeSuggestions` | empty | n/a |
+| Member                            | Size       | On screen                                          |
+| --------------------------------- | ---------- | -------------------------------------------------- |
+| `missingFacts` (the branch table) | 757 chars  | **No**, except each `field` as de-underscored text |
+| `trace`                           | 1884 chars | **No**                                             |
+| `missedRuleIds`                   | 24 chars   | **No**                                             |
+| `unresolvedTimelines`             | 109 chars  | **Yes**, verbatim, on the finding it belongs to    |
+| `blockingFinding`                 | null       | n/a                                                |
+| `minSlackDays`                    | null       | n/a                                                |
+| `rescopeSuggestions`              | empty      | n/a                                                |
 
 **The branches are not dropped by the renderer, and rounds 1 to 3 were wrong to say they are
 dropped at the type boundary. Nothing drops them. They are present at runtime and no code looks
@@ -555,7 +554,8 @@ at them.** `apps/web/app/plan/plan-api.ts:134` defines what the web consumes:
 
 ```ts
 export type ConsumedVerdictDetail = Omit<
-  Pick<VerdictDetail, "minSlackDays" | "missingFacts">, "missingFacts"
+  Pick<VerdictDetail, "minSlackDays" | "missingFacts">,
+  "missingFacts"
 > & { readonly missingFacts: readonly Pick<MissingFact, "field">[] };
 ```
 
@@ -596,10 +596,10 @@ F missingFacts: ["sound_audible_from_public_way","venue_license_covers_event_are
 venue_has_assembly_approval appears anywhere in the plan: false
 ```
 
-| AC 6 unknown | Engine emits a missing fact | What AC 6 needs |
-| --- | --- | --- |
-| `sound_audible_from_public_way` | yes, 2 branches | renderer only |
-| `venue_license_covers_event_area` | yes, 2 branches | renderer only |
+| AC 6 unknown                      | Engine emits a missing fact           | What AC 6 needs                                           |
+| --------------------------------- | ------------------------------------- | --------------------------------------------------------- |
+| `sound_audible_from_public_way`   | yes, 2 branches                       | renderer only                                             |
+| `venue_license_covers_event_area` | yes, 2 branches                       | renderer only                                             |
 | **`venue_has_assembly_approval`** | **no, absent from the plan entirely** | **a rules or engine resolution FIRST, then the renderer** |
 
 Widening `ConsumedVerdictDetail` and `MISSING_FACT_CHECKS` cannot render a branch the engine never
@@ -643,14 +643,14 @@ instead, which `tent_area_sqft` does in Scenario E.
 
 Measured across the six approved scenarios, through the same component path:
 
-| Scenario | Verdict | Missing facts | Facts with branches | Branch reasons on screen |
-| --- | --- | --- | --- | --- |
-| A | INFEASIBLE | none | 0 | n/a |
-| B | CONDITIONAL | none | 0 | n/a |
-| C | FEASIBLE | none | 0 | n/a |
-| D | FEASIBLE_AT_RISK | none | 0 | n/a |
-| E | CONDITIONAL | `tent_area_sqft`, `structure_over_10ft_tall` | 1 | none |
-| F | CONDITIONAL | `sound_audible_from_public_way`, `venue_license_covers_event_area` | 2 | none |
+| Scenario | Verdict          | Missing facts                                                      | Facts with branches | Branch reasons on screen |
+| -------- | ---------------- | ------------------------------------------------------------------ | ------------------- | ------------------------ |
+| A        | INFEASIBLE       | none                                                               | 0                   | n/a                      |
+| B        | CONDITIONAL      | none                                                               | 0                   | n/a                      |
+| C        | FEASIBLE         | none                                                               | 0                   | n/a                      |
+| D        | FEASIBLE_AT_RISK | none                                                               | 0                   | n/a                      |
+| E        | CONDITIONAL      | `tent_area_sqft`, `structure_over_10ft_tall`                       | 1                   | none                     |
+| F        | CONDITIONAL      | `sound_audible_from_public_way`, `venue_license_covers_event_area` | 2                   | none                     |
 
 **These are two distinct rendering gaps, not one.** A missing fact does not always carry branches.
 When `alternativeValues` returns no enumerable candidates, `evaluateConditional` pushes
@@ -725,8 +725,7 @@ across all six approved scenarios:
   the threshold path in scenario E above.
 
 **One enumerable field is reachable that no trigger reads, so 7 is the trigger-only count and not
-the total.** `plaza_level` is read by no rule trigger, which is why it never appeared in the list of
-15. It is read by `SAPO-PLAZA-001`'s deadline as `level_field`, and `resolveFindings` unions
+the total.** `plaza_level` is read by no rule trigger, which is why it never appeared in the list of 15. It is read by `SAPO-PLAZA-001`'s deadline as `level_field`, and `resolveFindings` unions
 deadline unknown fields into the same set `evaluateConditional` consumes (`findings.ts:261-263`).
 Measured on approved scenario E, where `SAPO-PLAZA-001` fires:
 
@@ -742,10 +741,10 @@ checked and produces nothing.
 
 Stated with both numbers rather than one doing two jobs:
 
-| Count | Enumerable | Numeric |
-| --- | --- | --- |
-| Trigger-referenced and reachable | 7 | 8 |
-| Plus deadline-only consumption | **8** (`plaza_level`) | 8 |
+| Count                            | Enumerable            | Numeric |
+| -------------------------------- | --------------------- | ------- |
+| Trigger-referenced and reachable | 7                     | 8       |
+| Plus deadline-only consumption   | **8** (`plaza_level`) | 8       |
 
 So the reachable surface is **at least 8 enumerable fields plus 8 numeric ones**, not 15 plus 10.
 "At least" is meant literally: the count is over fields the published ruleset consumes today, and
@@ -789,7 +788,6 @@ Every bullet in this section was re-checked against what the document now establ
 one that was flagged. Two moved, both above. The remaining "establishes" bullets each trace to a
 measurement in R1 to R5 and none were weakened by round 3's results, which measure the engine rather
 than the renderer.
-
 
 ---
 
@@ -835,13 +833,13 @@ the same point should be visible as two.
 **Why the minimal-rule approach could not have worked, which is a finding about the artifact format
 rather than about the probe.** Round 4 measured the parser's requirements exactly:
 
-| Member | Required? | Measured against `parseEngineRuleset` |
-| --- | --- | --- |
-| `verification` | **yes** | omitting it fails `ruleset.rules[0].verification must be an object` |
-| `verification.status` | **yes**, from a closed set | `""` fails "must be a non-empty string"; `NOT_A_STATUS` fails "has unsupported value" |
-| `source` | no | omitted entirely, parses |
-| `output` | present, may be empty | `{}` parses |
-| `id`, `kind`, `trigger` | yes | `kind` accepts permit, note, advisory, prohibition, registration |
+| Member                  | Required?                  | Measured against `parseEngineRuleset`                                                 |
+| ----------------------- | -------------------------- | ------------------------------------------------------------------------------------- |
+| `verification`          | **yes**                    | omitting it fails `ruleset.rules[0].verification must be an object`                   |
+| `verification.status`   | **yes**, from a closed set | `""` fails "must be a non-empty string"; `NOT_A_STATUS` fails "has unsupported value" |
+| `source`                | no                         | omitted entirely, parses                                                              |
+| `output`                | present, may be empty      | `{}` parses                                                                           |
+| `id`, `kind`, `trigger` | yes                        | `kind` accepts permit, note, advisory, prohibition, registration                      |
 
 `verification.status` cannot be omitted and cannot be a value outside the published set. There is
 therefore **no way to express a non-regulatory rule in this schema**: every rule the parser accepts
@@ -859,9 +857,9 @@ raw.intake_fields = raw.intake_fields.map((f) =>
   // three-state answer is expressible. Values only, no rule, no output, no verification.
   f.field === "generator_present"
     ? { field: f.field, type: "enum", values: ["yes", "no", "unknown"], collected: true }
-    // The published clause is the bare truthiness `generator_present`; made explicit against the
-    // enum so "unknown" scopes the dependents out.
-    : f.asked_when === "generator_present"
+    : // The published clause is the bare truthiness `generator_present`; made explicit against the
+      // enum so "unknown" scopes the dependents out.
+      f.asked_when === "generator_present"
       ? { ...f, asked_when: "generator_present = yes" }
       : f,
 );
@@ -878,11 +876,11 @@ scope-only gate: no trigger and no deadline reads it, and its whole job is to ga
 `generator_gasoline_gallons`, `generator_diesel_gallons` and `generator_kw`. **Those three belong to
 TWO published rules, not one**, which round 5 got wrong by attributing all three to FDNY:
 
-| Gated dependent | Read by | Threshold |
-| --- | --- | --- |
-| `generator_gasoline_gallons` | `FDNY-GENERATOR-001` (`kind: "permit"`) | `gt 2.5` |
-| `generator_diesel_gallons` | `FDNY-GENERATOR-001` | `gt 10` |
-| `generator_kw` | `DEP-GENERATOR-REG-001` (`kind: "registration"`) | `gte 40` |
+| Gated dependent              | Read by                                          | Threshold |
+| ---------------------------- | ------------------------------------------------ | --------- |
+| `generator_gasoline_gallons` | `FDNY-GENERATOR-001` (`kind: "permit"`)          | `gt 2.5`  |
+| `generator_diesel_gallons`   | `FDNY-GENERATOR-001`                             | `gt 10`   |
+| `generator_kw`               | `DEP-GENERATOR-REG-001` (`kind: "registration"`) | `gte 40`  |
 
 `FDNY-GENERATOR-001`'s third trigger condition reads `battery_system_kwh`, which
 `battery_present` gates, not `generator_present`. Both rules are published content, quoted here
@@ -947,11 +945,11 @@ Base intake is approved scenario C, unchanged apart from the generator answers. 
 answers are 5 gasoline gallons (over FDNY's 2.5) and 50 kW (over DEP's 40), so both rules fire when
 the gate is answered `"yes"`.
 
-| Answer to `generator_present` | Verdict | Findings | `FDNY-GENERATOR-001` | `DEP-GENERATOR-REG-001` | `missingFacts` | Gate named anywhere in the plan |
-| --- | --- | --- | --- | --- | --- | --- |
-| `"yes"`, 5 gal + 50 kW | FEASIBLE | 6 | **present** | **present** | none | no |
-| `"no"` | FEASIBLE | 4 | absent | absent | none | no |
-| **`"unknown"`** | **FEASIBLE** | **4** | **absent** | **absent** | **none** | **no** |
+| Answer to `generator_present` | Verdict      | Findings | `FDNY-GENERATOR-001` | `DEP-GENERATOR-REG-001` | `missingFacts` | Gate named anywhere in the plan |
+| ----------------------------- | ------------ | -------- | -------------------- | ----------------------- | -------------- | ------------------------------- |
+| `"yes"`, 5 gal + 50 kW        | FEASIBLE     | 6        | **present**          | **present**             | none           | no                              |
+| `"no"`                        | FEASIBLE     | 4        | absent               | absent                  | none           | no                              |
+| **`"unknown"`**               | **FEASIBLE** | **4**    | **absent**           | **absent**              | **none**       | **no**                          |
 
 **TWO published requirements leave the plan with no missing fact, no branch, no finding and no
 unresolved timeline**: an FDNY permit and a DEP registration, from two different agencies. The
@@ -1010,19 +1008,19 @@ gate is silent even though a trigger reads it.
 This is not hypothetical, and v2.8 demonstrates it. Answering `sapo_event_type: "unknown"` on
 approved scenario A, eleven published rules read the gate, and measured per rule:
 
-| Rule reading the gate | Trigger result | `unknownFields` propagated |
-| --- | --- | --- |
-| `SAPO-STREET-SMALL-001` | false | **none** |
-| `SAPO-STREET-MEDIUM-001` | false | **none** |
-| `SAPO-STREET-LARGE-001` | false | **none** |
-| `SAPO-STREET-XL-001` | false | **none** |
-| `SAPO-INSURANCE-BLOCK-PARTY-RIDE-001` | false | **none** |
-| `SAPO-BLOCK-PARTY-001` | unknown | `["sapo_event_type"]` |
-| `SAPO-BLOCK-PARTY-ELIG-001` | unknown | `["sapo_event_type"]` |
-| `SAPO-BLOCK-PARTY-SPONSOR-001` | unknown | `["sapo_event_type"]` |
-| `SAPO-PLAZA-001` | unknown | `["sapo_event_type"]` |
-| `SAPO-INSURANCE-001` | unknown | `["sapo_event_type"]` |
-| `ADV-SAPO-OTHER-CLASS-001` | unknown | `["sapo_event_type"]` |
+| Rule reading the gate                 | Trigger result | `unknownFields` propagated |
+| ------------------------------------- | -------------- | -------------------------- |
+| `SAPO-STREET-SMALL-001`               | false          | **none**                   |
+| `SAPO-STREET-MEDIUM-001`              | false          | **none**                   |
+| `SAPO-STREET-LARGE-001`               | false          | **none**                   |
+| `SAPO-STREET-XL-001`                  | false          | **none**                   |
+| `SAPO-INSURANCE-BLOCK-PARTY-RIDE-001` | false          | **none**                   |
+| `SAPO-BLOCK-PARTY-001`                | unknown        | `["sapo_event_type"]`      |
+| `SAPO-BLOCK-PARTY-ELIG-001`           | unknown        | `["sapo_event_type"]`      |
+| `SAPO-BLOCK-PARTY-SPONSOR-001`        | unknown        | `["sapo_event_type"]`      |
+| `SAPO-PLAZA-001`                      | unknown        | `["sapo_event_type"]`      |
+| `SAPO-INSURANCE-001`                  | unknown        | `["sapo_event_type"]`      |
+| `ADV-SAPO-OTHER-CLASS-001`            | unknown        | `["sapo_event_type"]`      |
 
 The five that propagate nothing are `all` nodes whose OTHER condition reads a dependent the gate
 itself has just scoped out, so the sibling resolves `not_asked` -> false and settles the node before
@@ -1104,12 +1102,12 @@ rules whose trigger carries `in ["no", "unknown"]`.
 Measured on `DOHMH-EXEMPTION-001` (`all` of `food_present = true` and
 `event_open_to_public in ["no", "unknown"]`), varying only that one answer:
 
-| Answer state | Trigger result | `unknownFields` | `triggeredBy` |
-| --- | --- | --- | --- |
-| answered `"no"` | true | `[]` | `food_present`, `event_open_to_public: "no"` |
-| **explicit `"unknown"`** | **true** | **`[]`** | **`food_present`, `event_open_to_public: "unknown"`** |
-| in scope, `null` | unknown | `["event_open_to_public"]` | both fields |
-| not asked (out of scope) | false | `[]` | none |
+| Answer state             | Trigger result | `unknownFields`            | `triggeredBy`                                         |
+| ------------------------ | -------------- | -------------------------- | ----------------------------------------------------- |
+| answered `"no"`          | true           | `[]`                       | `food_present`, `event_open_to_public: "no"`          |
+| **explicit `"unknown"`** | **true**       | **`[]`**                   | **`food_present`, `event_open_to_public: "unknown"`** |
+| in scope, `null`         | unknown        | `["event_open_to_public"]` | both fields                                           |
+| not asked (out of scope) | false          | `[]`                       | none                                                  |
 
 So the explicit unknown satisfies BOTH halves of the surfacing condition being false, nothing
 propagates it and no deadline reads it, and the plan still changes: an advisory the organizer would
@@ -1204,11 +1202,11 @@ a trigger ACCEPTS, round 8 on returned trigger output, round 9 on that plus dead
 **So S4's conclusion rests on the plan comparisons, and the predicate is kept only to say where to
 look.** The two comparisons together are what the section establishes:
 
-| Comparison | What moved between answered and unknown |
-| --- | --- |
+| Comparison                              | What moved between answered and unknown                                                  |
+| --------------------------------------- | ---------------------------------------------------------------------------------------- |
 | S3 (generator amounts, no other reader) | two findings DROPPED, `FDNY-GENERATOR-001` and `DEP-GENERATOR-REG-001`, nothing reported |
-| the `plaza_level` diff above | no finding dropped; the loss REPORTED as an unresolved timeline |
-| the `any`-arm diff here | no finding dropped; provenance changed, nothing reported |
+| the `plaza_level` diff above            | no finding dropped; the loss REPORTED as an unresolved timeline                          |
+| the `any`-arm diff here                 | no finding dropped; provenance changed, nothing reported                                 |
 
 Silence in the sense #108 alleges is the first row and only the first row. The third row is a
 smaller and different harm, a plan that is right about what applies and wrong about why. Anyone

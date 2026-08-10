@@ -28,6 +28,7 @@ import type {
   DeadlineStatus,
   Finding,
   FindingKind,
+  FindingRoute,
   VerificationStatus,
 } from "@pop-engine/engine";
 import {
@@ -38,7 +39,15 @@ import {
   type AlertScheduler,
 } from "./alerts";
 import { movedDeadlineNotice, type NoticePlanItem } from "./moved-deadline-notice";
-import { calendarDateFrom, renderingKey, PlanIntegrityError, type FindingRendering } from "./plan";
+import {
+  calendarDateFrom,
+  filingRouteOf,
+  renderingKey,
+  FILING_ORDER_DATE,
+  FILING_ORDER_JOIN,
+  PlanIntegrityError,
+  type FindingRendering,
+} from "./plan";
 import { DocumentStorageError, type DocumentStorage } from "./storage";
 
 const isChecklistStatus = (value: unknown): value is ChecklistStatus =>
@@ -212,8 +221,11 @@ const PLAN_ITEM_COLUMNS = `id, plan_id, rule_ids, permit_name, agency, kind, dis
  * Plan items carry uuid primary keys, so the table has no stable order of its own (F-201 hit
  * the same wall reading plans back). The soonest published filing date first is both stable and
  * the order the work actually happens in; the trailing keys break ties for undated lines.
+ *
+ * The date is the one the ROW RENDERS, which on a merged dedupe line is its filing route's rather
+ * than the column's. See `FILING_ORDER_JOIN`.
  */
-const PLAN_ITEM_ORDER = `latest_apply_date NULLS LAST, permit_name, rule_ids`;
+const PLAN_ITEM_ORDER = `${FILING_ORDER_DATE} NULLS LAST, item.permit_name, item.rule_ids`;
 
 /**
  * The order of checklist rows created together, which is a different question.
@@ -265,53 +277,160 @@ const isoDate = (value: Date | string | null): string | null =>
  * the item table has no columns for them (see `plan.ts`); they are carried through here rather
  * than restated, so there is one copy of each string.
  */
-const planContext = (item: PlanItemRow, rendering: FindingRendering) => ({
-  ruleIds: item.rule_ids,
-  permitName: item.permit_name,
-  userSummary: rendering.user_summary ?? null,
-  agency: item.agency,
-  kind: item.kind,
-  disposition: item.disposition,
-  deadline: item.deadline,
-  deadlineDisplay: rendering.deadline_display,
-  latestApplyDate: isoDate(item.latest_apply_date),
-  applyAfterDate: isoDate(item.apply_after_date),
-  deadlineStatus: item.deadline_status,
-  slackDays: rendering.slack_days,
-  deadlineUnknownFields: rendering.deadline_unknown_fields,
-  timelineUnresolvedReason: rendering.timeline_unresolved_reason,
-  verificationStatus: item.verification_status,
-  lastVerifiedDate: isoDate(item.last_verified_date),
-  // `publishedNotes`, not `notes`: a checklist item already has `notes`, and those are the
-  // organizer's. Published regulatory text and a user's scratchpad must never share a field.
-  publishedNotes: rendering.notes,
-  noteText: rendering.note_text,
-  // Both readings of an OFFICIAL_CONFLICT rule; never resolved to one silently.
-  conflictText: rendering.conflict_text,
-  feeDisplay: item.fee_display,
-  portalName: item.portal_name,
-  portalUrl: item.portal_url,
-  portalInstructions: rendering.portal_instructions,
-  sources: item.sources,
-  sourceUrl: item.source_url,
-  sourcePlan: {
-    rulesetVersion: item.source_ruleset_version,
-    snapshotDate: isoDate(item.source_snapshot_date),
-  },
-});
+/**
+ * The value a field takes when a filing route is what the row renders: THAT ROUTE'S, INCLUDING ITS
+ * NULLS.
+ *
+ * `??` reads null as "missing" and falls back, and the filing route's null is not missing: it is
+ * the route publishing no fee, no portal or no instruction. Falling back put the binding row's fee
+ * and portal beside the filing route's deadline under a sentence saying all of those filing details
+ * belong to the selected route, which is the one-route-end-to-end rule this whole file is built on,
+ * broken in the fields a reader acts on (#252 review). A route either supplies these values or the
+ * line has none to show.
+ */
+const fromFilingRoute =
+  (filing: FindingRoute | null) =>
+  <Value>(read: (route: FindingRoute) => Value, columnValue: Value): Value =>
+    filing === null ? columnValue : read(filing);
 
-const noticeItemFrom = (item: PlanItemRow): NoticePlanItem => ({
-  deadline: item.deadline,
-  latest_apply_date: isoDate(item.latest_apply_date),
-  apply_after_date: isoDate(item.apply_after_date),
-  deadline_status: item.deadline_status,
-  verification_status: item.verification_status,
-  last_verified_date: isoDate(item.last_verified_date),
-  sources: item.sources,
-  source_url: item.source_url,
-  source_ruleset_version: item.source_ruleset_version,
-  source_snapshot_date: isoDate(item.source_snapshot_date),
-});
+const planContext = (item: PlanItemRow, rendering: FindingRendering) => {
+  const filing = filingRouteOf(item, rendering);
+  const filed = fromFilingRoute(filing);
+  return {
+    ruleIds: item.rule_ids,
+    permitName: item.permit_name,
+    userSummary: rendering.user_summary ?? null,
+    agency: item.agency,
+    kind: item.kind,
+    disposition: item.disposition,
+    deadline: filed((route) => route.deadline, item.deadline),
+    deadlineDisplay: filed((route) => route.deadlineDisplay, rendering.deadline_display),
+    latestApplyDate: filed((route) => route.latestApplyDate, isoDate(item.latest_apply_date)),
+    applyAfterDate: filed((route) => route.applyAfterDate, isoDate(item.apply_after_date)),
+    deadlineStatus: filed((route) => route.deadlineStatus, item.deadline_status),
+    slackDays: filed((route) => route.slackDays, rendering.slack_days),
+    /**
+     * Every contributing route of a merged dedupe line, and which one the window, status and fee
+     * above were read off when the line publishes none of its own. `filingRouteRuleId` is null on
+     * an unmerged line and on a merged line that carries its own window: there the values above are
+     * the line's own and nothing is being attributed elsewhere.
+     *
+     * SERVED EXACTLY AS THE PLAN ENDPOINT SERVES IT, which is the stored list or null. Null means
+     * this plan predates the field, never "this line has no routes" — the contract
+     * `FindingRendering.routes` states. Synthesized instead from the row's columns, a two-rule line
+     * stored before the field was served `routes: ["DOB-TENT-001"]`: a one-entry list is a claim
+     * that this requirement has one route, and for a merged row it is a false one. Nothing renders
+     * it today, because both web components require two or more, and one endpoint contradicting
+     * another's stated contract is how the next reader gets it wrong (#252 review).
+     */
+    routes: rendering.routes ?? null,
+    headlineMode: rendering.headline_mode ?? null,
+    filingRouteRuleId: filing?.ruleId ?? null,
+    deadlineUnknownFields: rendering.deadline_unknown_fields,
+    timelineUnresolvedReason: rendering.timeline_unresolved_reason,
+    verificationStatus: item.verification_status,
+    lastVerifiedDate: isoDate(item.last_verified_date),
+    // `publishedNotes`, not `notes`: a checklist item already has `notes`, and those are the
+    // organizer's. Published regulatory text and a user's scratchpad must never share a field.
+    publishedNotes: rendering.notes,
+    noteText: rendering.note_text,
+    // Both readings of an OFFICIAL_CONFLICT rule; never resolved to one silently.
+    conflictText: rendering.conflict_text,
+    // The filing route's fee, not another route's: it travels with the window above so an organizer
+    // reads one rule's date and that same rule's price, never one of each.
+    feeDisplay: filed((route) => route.feeDisplay, item.fee_display),
+    portalName: filed((route) => route.portalName, item.portal_name),
+    portalUrl: filed((route) => route.portalUrl, item.portal_url),
+    portalInstructions: filed((route) => route.portalInstructions, rendering.portal_instructions),
+    sources: item.sources,
+    sourceUrl: item.source_url,
+    sourcePlan: {
+      rulesetVersion: item.source_ruleset_version,
+      snapshotDate: isoDate(item.source_snapshot_date),
+    },
+  };
+};
+
+/**
+ * The window a moved-deadline notice compares against, which is the same window the checklist row
+ * renders. Reading the columns alone made a regeneration onto a merged line whose binding route
+ * publishes no window report `became_not_applicable` and say "The requirement no longer carries a
+ * filing date of its own" — false, because the route that publishes it still does (#252 review).
+ */
+const noticeItemFrom = (item: PlanItemRow, rendering: FindingRendering): NoticePlanItem => {
+  const filing = filingRouteOf(item, rendering);
+  const filed = fromFilingRoute(filing);
+  // THE PROVENANCE OF THE DEADLINE ABOVE IT, WHICH IS THE SAME ROUTE OR IT IS NOT PROVENANCE.
+  // The notice states a previous filing date and cites the source it rests on. The date is the
+  // filing route's, and `sources` concatenates over the group in CONTRIBUTING order while
+  // `source_url` is `sources[0].urls[0]` (`plan.ts`), so the Primary source beside a narrowed date
+  // was whichever rule the published file happens to list first. It labelled one route's official
+  // page as the source for another route's deadline change (#252 review). The same narrowing
+  // `blockerView` and `insuranceView` do, and by the same means: `FindingSource.ruleId`.
+  //
+  // A ROUTE WITH NO SOURCE OF ITS OWN CITES NONE. `ruleSources` returns `[]` where a rule publishes
+  // no `source` block, so the filtered set can legitimately be empty; falling back to the group's
+  // there would put back exactly the misattribution this removes.
+  const ownSources =
+    filing === null
+      ? item.sources
+      : item.sources.filter((source) => source.ruleId === filing.ruleId);
+  return {
+    deadline: filed((route) => route.deadline, item.deadline),
+    latest_apply_date: filed((route) => route.latestApplyDate, isoDate(item.latest_apply_date)),
+    apply_after_date: filed((route) => route.applyAfterDate, isoDate(item.apply_after_date)),
+    deadline_status: filed((route) => route.deadlineStatus, item.deadline_status),
+    verification_status: item.verification_status,
+    last_verified_date: isoDate(item.last_verified_date),
+    sources: ownSources,
+    source_url: filing === null ? item.source_url : (ownSources[0]?.urls[0] ?? null),
+    source_ruleset_version: item.source_ruleset_version,
+    source_snapshot_date: isoDate(item.source_snapshot_date),
+  };
+};
+
+/**
+ * The rendering that goes with `noticeItemFrom`'s item, read off the same route.
+ *
+ * ONE ROUTE END TO END, WHICH IS WHAT WAS MISSING. `noticeItemFrom` replaces the deadline, the date
+ * and the status with the filing route's, and the merged rendering was passed beside it unchanged —
+ * so `movedDeadlineNotice` compared the filing route's typed fields against the BINDING route's
+ * `deadline_display`. A regeneration that changes which route binds while the filing route, its date
+ * and its published text all stay put then reported a deadline-state change with no filing data
+ * changed, and the checklist showed the unchanged date under a notice saying it had moved
+ * (#252 review).
+ *
+ * `conflict_text` IS ADJUSTED TOO, and it is provenance rather than state: `movedDeadlineNotice`
+ * puts it on `previousProvenance` beside the sources, where it stands as the two readings that
+ * qualify the date that moved. The merged value is not a concatenation — `mergeGroup` falls back
+ * through the routes in binding order and takes the first that publishes any — so beside a narrowed
+ * date it quoted another rule's two readings as the qualification on this one. `FindingRoute`
+ * gained a per-route form this round, so unlike the two fields below there is something to narrow
+ * to. Absence means the plan predates the field and the merged value stands, which is the reading
+ * `insurance-panel.tsx` gives the same optional field.
+ *
+ * ONLY `deadline_display` IS ADJUSTED OF THE STATE FIELDS, and the other two `stateSide` reads are
+ * deliberately
+ * left merged. `FindingRoute` publishes no `timelineUnresolvedReason` and no
+ * `deadlineUnknownFields`: the first is single-valued text the merge falls back through binding
+ * order for, and the second concatenates over the whole group. Neither has a per-route form to
+ * narrow to, and more to the point the checklist row RENDERS the merged values of both
+ * (`planContext`), so comparing them is comparing what the organizer actually sees. Narrowing them
+ * here would report "nothing moved" on a row whose own text had changed, which is the mirror of the
+ * defect being fixed.
+ */
+const noticeRenderingFrom = (item: PlanItemRow, rendering: FindingRendering): FindingRendering => {
+  const filing = filingRouteOf(item, rendering);
+  if (filing === null) return rendering;
+  return {
+    ...rendering,
+    deadline_display: filing.deadlineDisplay,
+    // `undefined` is the pre-field plan and falls back; `null` is this route publishing no
+    // conflict and must NOT, for the reason `fromFilingRoute` refuses `??` on the fee and portal.
+    conflict_text:
+      filing.conflictText === undefined ? rendering.conflict_text : filing.conflictText,
+  };
+};
 
 type LatestPlan = {
   id: string;
@@ -404,6 +523,7 @@ async function planItems(database: Queryable, planId: string): Promise<PlanItemR
             plan.snapshot_date AS source_snapshot_date
        FROM permit_plan_items AS item
        JOIN permit_plans AS plan ON plan.id = item.plan_id
+       ${FILING_ORDER_JOIN}
       WHERE item.plan_id = $1
       ORDER BY ${PLAN_ITEM_ORDER}`,
     [planId],
@@ -601,10 +721,10 @@ async function checklistView(
       deadlineNotice:
         !struckThrough && current !== undefined && current.id !== item.id
           ? movedDeadlineNotice(
-              noticeItemFrom(item),
-              renderingOrFail(renderings, item),
-              noticeItemFrom(current),
-              renderingOrFail(renderings, current),
+              noticeItemFrom(item, renderingOrFail(renderings, item)),
+              noticeRenderingFrom(item, renderingOrFail(renderings, item)),
+              noticeItemFrom(current, renderingOrFail(renderings, current)),
+              noticeRenderingFrom(current, renderingOrFail(renderings, current)),
             )
           : null,
       documents: (documents.get(item.checklist_item_id) ?? []).map(documentView),

@@ -256,6 +256,101 @@ export type FindingSource = {
   readonly urls: readonly string[];
 };
 
+/**
+ * One contributing rule of a merged dedupe group, with its own published values and its own
+ * trigger result. Every value here is that rule's own; nothing on a route is derived from the
+ * group. A merged line has room for one name, one window and one fee, so before this existed the
+ * merge had to discard the losing routes' versions of all three (`docs/proposals/dedupe-route-list.md`).
+ *
+ * `verificationStatus` is deliberately absent: `rejectMixedDedupeVerificationStatuses` refuses at
+ * load any ruleset whose dedupe key mixes verification statuses, so it is a constant within a group.
+ */
+export type FindingRoute = {
+  readonly ruleId: string;
+  /** "true" or "unknown". Never "false": a trigger that resolves false produces no finding. */
+  readonly triggerResult: Tristate;
+  /**
+   * This rule's own disposition, as `resolveDisposition` produced it, before any group arithmetic.
+   * Not capped by the unresolved-route ceiling: the ceiling constrains what the merged HEADLINE may
+   * claim, and a route entry claims nothing about the group.
+   */
+  readonly disposition: Disposition;
+  /**
+   * The intake fields this route's OWN trigger could not resolve, which is the question that
+   * decides whether it applies. Empty when `triggerResult` is "true". Per route rather than per
+   * finding: `deadlineUnknownFields` on the merged line concatenates over the group and says which
+   * answers stopped a DATE resolving, which is a different question from which answers stopped a
+   * route resolving.
+   */
+  readonly unknownFields: readonly string[];
+  readonly name: string | null;
+  readonly agency: string | null;
+  readonly deadline: Deadline | null;
+  readonly deadlineDisplay: string | null;
+  readonly latestApplyDate: string | null;
+  readonly applyAfterDate: string | null;
+  readonly deadlineStatus: DeadlineStatus;
+  readonly slackDays: number | null;
+  readonly feeDisplay: string | null;
+  readonly portalName: string | null;
+  readonly portalUrl: string | null;
+  readonly portalInstructions: string | null;
+  /**
+   * This route's own published notes, as `ruleNotes()` built them for its own rule: the rule's
+   * `notes`, its deadline qualification, its verification qualification, and the confirm-with-agency
+   * floor where its own window could not be dated.
+   *
+   * WITHOUT IT THE ATTRIBUTION EXISTS NOWHERE. The merged line's `notes` concatenate over the group
+   * with no marker saying which rule published which string, so a consumer holding one route cannot
+   * recover its notes from the line — and `alerts.ts` sends a reminder headed with ONE route's name
+   * and filing date, so it was quoting another route's threshold and qualification as if they
+   * qualified this filing (#252 review). Every other value that reminder reads is already per route;
+   * this was the one the merge alone knew.
+   *
+   * Optional because a plan stored before this field carries no per-route notes, and a replayed
+   * artifact is read as it was written. A consumer treats absence as "not recorded" rather than as
+   * "this route publishes none"; there is no way to tell the two apart on such a plan, which is why
+   * absence is not a value.
+   */
+  readonly notes?: readonly string[];
+  /**
+   * This route's own `conflictText`: both readings of an OFFICIAL_CONFLICT rule, verbatim, or null
+   * where its own rule publishes none.
+   *
+   * SINGLE-VALUED ON THE MERGED LINE, WHICH IS WHY IT NEEDED CARRYING TOO. `mergeGroup` does not
+   * concatenate this one — it falls back through the routes in binding order and takes the first
+   * that publishes any — so the line's value is exactly ONE route's text with nothing recording
+   * whose. A consumer that narrows the rest of a message to one route and leaves this quoted both
+   * readings of another rule's conflict under this route's name and date (#252 review). The same
+   * shape as `notes`, one field over, and the same fix.
+   *
+   * Optional for the same reason `notes` is: a plan stored before this field carries no per-route
+   * value, and a consumer treats absence as "not recorded" rather than as "this route publishes
+   * none", which `null` is.
+   */
+  readonly conflictText?: string | null;
+};
+
+/**
+ * Why a group's routes arrived on one line, which is what decides how the line reads.
+ *
+ * `applies_together`: every contributing trigger resolved, so the recorded answers meet each
+ * route's own conditions. `candidate`: at least one did not, so the group holds routes whose
+ * conditions are not known to be met and the line names the question rather than asserting one.
+ *
+ * THIS IS A STATEMENT ABOUT TRIGGERS, NOT ABOUT DISPOSITIONS, and copy reading it must say so. A
+ * route whose trigger resolved can still publish `MAY_BE_REQUIRED` or `NO_NEW_REQUIREMENT`;
+ * DOB-TALL-STRUCTURE-001 publishes the first and SAPO-INSURANCE-BLOCK-EXEMPT-001 the second. The
+ * name is retained because it is the stored value on plans already written, but "together" here
+ * means the triggers fired together, and what each route then requires is its own `disposition`.
+ *
+ * Derived from the routes' own `triggerResult`s and stored only so a client need not recompute it.
+ * There is no third value for the mixed case: the resolved subset is recoverable from the routes,
+ * and a group-level flag would have to say two things at once about two different routes
+ * (`docs/proposals/dedupe-route-list.md` §4.2).
+ */
+export type HeadlineMode = "applies_together" | "candidate";
+
 export type Finding = {
   readonly ruleIds: readonly string[];
   readonly kind: FindingKind;
@@ -301,6 +396,16 @@ export type Finding = {
    */
   readonly lastVerifiedDate?: string | null;
   readonly triggeredBy: readonly TriggeredBy[];
+  /**
+   * Every contributing route, present exactly when this finding merged two or more rules. A
+   * single-rule finding is its own route and every scalar on it is that rule's, so a one-entry list
+   * would restate the finding and make "did this merge?" unanswerable from the shape. Absent on
+   * replayed artifacts that predate this field. Read it through `routesOf`, which is the one
+   * correct fallback.
+   */
+  readonly routes?: readonly FindingRoute[];
+  /** Present exactly when `routes` is. */
+  readonly headlineMode?: HeadlineMode;
 };
 
 export type BranchOutcome = {
@@ -355,9 +460,45 @@ export type EvaluationTraceEntry = { readonly ruleId: string; readonly result: T
 export type UnresolvedTimeline = { readonly ruleIds: readonly string[]; readonly reason: string };
 
 export type VerdictDetail = {
+  /**
+   * The route whose published window closed, never the merged line that holds it.
+   *
+   * THE PUBLISHED VALUES TRAVEL WITH IT, and that is what this carries beyond a rule id and a name.
+   * A consumer given only those two had to find the finding again by rule id, which on a merged
+   * dedupe line returns the whole line: the panel then rendered the HEADLINE route's name, portal
+   * and apply-by date under a heading about the missed one, and on a two-route group with one open
+   * window the date it printed was in the future of the plan's own clock (#252 review). Every field
+   * here is the blocking route's own, as `blockerView` narrowed it.
+   *
+   * ALL OF WHAT F-102 NAMES, NOT THE SUBSET THE PANEL HAPPENED TO READ. The amended edge case lists
+   * the blocking route's "rule id, name, agency, disposition, window, status, fee, portal,
+   * instructions and citations", and `blockerView` narrows every one of them; this serialization
+   * carried six. A route filing through instructions rather than a URL — the `nypd_sound` precinct
+   * route publishes a null portal url and files in person — then reached the panel with nothing
+   * that says where to file, and the widening had already turned the legacy fallback off, so
+   * consulting the whole finding could not supply it either (#252 review).
+   *
+   * Optional because plans stored before this widening carry only `ruleIds` and `name`; a replayed
+   * detail is read as it was written, and a consumer treats absence as "not recorded".
+   */
   readonly blockingFinding: {
     readonly ruleIds: readonly string[];
     readonly name: string | null;
+    readonly agency?: string | null;
+    readonly disposition?: Disposition;
+    readonly deadlineDisplay?: string | null;
+    readonly latestApplyDate?: string | null;
+    readonly deadlineStatus?: DeadlineStatus;
+    readonly feeDisplay?: string | null;
+    readonly portalName?: string | null;
+    readonly portalUrl?: string | null;
+    readonly portalInstructions?: string | null;
+    readonly sources?: readonly FindingSource[];
+    /**
+     * Null where the blocking route is not the route the merged line reads: the heading is written
+     * about a rule and belongs to that one, so it is dropped rather than reattributed.
+     */
+    readonly userSummary?: RuleUserSummary | null;
   } | null;
   readonly missedRuleIds: readonly string[];
   readonly minSlackDays: number | null;

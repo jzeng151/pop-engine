@@ -385,8 +385,7 @@ describe.concurrent("the PR #128 break, which is the coverage floor for what get
         `import { readFileSync } from "node:fs";\n` +
         `const RULES_FILE = process.env.RULES_FILE ?? "rules/${MISSING}";\n` +
         `export const RULESET = JSON.parse(readFileSync(RULES_FILE, "utf8"));\n`,
-      "apps/web/app/checklist/checklist-view.test.tsx":
-        `import { RULESET } from "./checklist-fixtures";\nexport const value = RULESET;\n`,
+      "apps/web/app/checklist/checklist-view.test.tsx": `import { RULESET } from "./checklist-fixtures";\nexport const value = RULESET;\n`,
     });
 
     expect(status).toBe(1);
@@ -556,17 +555,20 @@ describe.concurrent("the version, which is spelled in three places", () => {
   // afterwards: a check reading only the declaration's position confirms the initial value against
   // the artifact and passes, while `validateRuleset` compares the reassigned one and rejects the
   // published ruleset at boot.
-  it.each([["let"], ["var"]])("refuses a %s pin, which the const argument does not cover", async (kind) => {
-    const { status, output } = await runOn({
-      "apps/api/src/ruleset.ts":
-        `${kind} EXPECTED_RULESET_VERSION = "${FIXTURE_VERSION}";\n` +
-        `EXPECTED_RULESET_VERSION = "nyc.v9.9";\n` +
-        `export { EXPECTED_RULESET_VERSION };\n`,
-    });
+  it.each([["let"], ["var"]])(
+    "refuses a %s pin, which the const argument does not cover",
+    async (kind) => {
+      const { status, output } = await runOn({
+        "apps/api/src/ruleset.ts":
+          `${kind} EXPECTED_RULESET_VERSION = "${FIXTURE_VERSION}";\n` +
+          `EXPECTED_RULESET_VERSION = "nyc.v9.9";\n` +
+          `export { EXPECTED_RULESET_VERSION };\n`,
+      });
 
-    expect(status).toBe(1);
-    expect(output).toContain("no longer declares EXPECTED_RULESET_VERSION");
-  });
+      expect(status).toBe(1);
+      expect(output).toContain("no longer declares EXPECTED_RULESET_VERSION");
+    },
+  );
 
   it("fails when the one constant allowed to name a version is gone", async () => {
     const { status, output } = await runOn({
@@ -782,7 +784,8 @@ describe.concurrent("round 9: valid code the check used to reject", () => {
   // Reporting `nyc-rules.v` as a missing file made ordinary dynamic selection fail CI.
   it("accepts a version interpolated into the filename", async () => {
     const { status, output } = await runOn({
-      "apps/web/app/reader.ts": "const p = `rules/" + ["nyc", "rules.v"].join("-") + "${version}.json`;\n",
+      "apps/web/app/reader.ts":
+        "const p = `rules/" + ["nyc", "rules.v"].join("-") + "${version}.json`;\n",
     });
 
     expect(status).toBe(0);
@@ -883,7 +886,8 @@ describe.concurrent("round 10: the exemption is only for files vitest runs", () 
     ["the tree the config excludes", "scripts/dedupe-cofiring/reader.test.mjs"],
   ])("refuses the marker in %s", async (_label, path) => {
     const { status, output } = await runOn({
-      [path]: `// baseline-check: fixture ruleset names\n` + `export const p = "rules/${MISSING}";\n`,
+      [path]:
+        `// baseline-check: fixture ruleset names\n` + `export const p = "rules/${MISSING}";\n`,
     });
 
     expect(status).toBe(1);
@@ -901,7 +905,8 @@ describe.concurrent("round 10: the exemption is only for files vitest runs", () 
     ["scripts/nested/deep/reader.test.mjs"],
   ])("still lets %s claim it", async (path) => {
     const { status } = await runOn({
-      [path]: `// baseline-check: fixture ruleset names\n` + `export const p = "rules/${MISSING}";\n`,
+      [path]:
+        `// baseline-check: fixture ruleset names\n` + `export const p = "rules/${MISSING}";\n`,
     });
 
     expect(status).toBe(0);
@@ -919,7 +924,9 @@ describe.concurrent("round 10: the exemption is only for files vitest runs", () 
       const opens = new RegExp(`${declaration}\\s*\\[`).exec(text);
       if (opens === null) return [];
       const body = text.slice(opens.index + opens[0].length);
-      return [...body.slice(0, body.indexOf("]")).matchAll(/["'`]([^"'`]+)["'`]/g)].map((m) => m[1]);
+      return [...body.slice(0, body.indexOf("]")).matchAll(/["'`]([^"'`]+)["'`]/g)].map(
+        (m) => m[1],
+      );
     };
 
     const config = readFileSync(join(repo, "vitest.config.ts"), "utf8");
@@ -985,7 +992,11 @@ describe.concurrent("round 10: package scripts are executable entry points", () 
     "fails on a stale ruleset in %s",
     async (manifest) => {
       const { status, output } = await runOn({
-        [manifest]: JSON.stringify({ name: "x", scripts: { seed: `node seed.mjs rules/${MISSING}` } }, null, 2),
+        [manifest]: JSON.stringify(
+          { name: "x", scripts: { seed: `node seed.mjs rules/${MISSING}` } },
+          null,
+          2,
+        ),
       });
 
       expect(status).toBe(1);
@@ -1064,7 +1075,8 @@ describe.concurrent("round 11: a bump does not break the guard", () => {
       for (const entry of readdirSync(join(repo, directory), { withFileTypes: true })) {
         const relative = `${directory}/${entry.name}`;
         if (entry.isDirectory()) {
-          if (!["node_modules", ".next", "dist", "coverage"].includes(entry.name)) collect(relative);
+          if (!["node_modules", ".next", "dist", "coverage"].includes(entry.name))
+            collect(relative);
         } else if (
           // The replay fixtures come too. `engine.test.ts` points at
           // `__fixtures__/nyc-rules.v2.3.json`, which is a superseded ruleset kept so old plans
@@ -1110,7 +1122,7 @@ describe.concurrent("round 11: cooked values are tokenized as values", () => {
     ["an opening brace", "{backup"],
     ["a closing brace", "}backup"],
     ["a single quote", "'backup"],
-    ['a double quote', '\\"backup'],
+    ["a double quote", '\\"backup'],
     ["a backtick", "`backup"],
   ])("fails a published name with %s in a string literal", async (_label, suffix) => {
     const { status, output } = await runOn({
@@ -1255,7 +1267,8 @@ describe.concurrent("round 12: a tagged template's value is the tag's to decide"
   // reported as missing.
   it("still accepts String.raw whose raw value is the published artifact", async () => {
     const { status, output } = await runOn({
-      "apps/web/app/reader.ts": "const p = readFileSync(String.raw`rules/" + FIXTURE_RULESET + "`);\n",
+      "apps/web/app/reader.ts":
+        "const p = readFileSync(String.raw`rules/" + FIXTURE_RULESET + "`);\n",
     });
 
     expect(status).toBe(0);
@@ -1351,14 +1364,17 @@ describe.concurrent("round 13: each format decodes by its own rules", () => {
     // and that file is not there. Unquoting has to produce the name the shell would, not a
     // convenient one.
     ["an escaped space", `cat rules/${FIXTURE_RULESET}\\ copy`],
-  ])("still fails a shell-quoted script naming a file that is not there, with %s", async (_label, command) => {
-    const { status, output } = await runOn({
-      "package.json": JSON.stringify({ name: "x", scripts: { seed: command } }, null, 2),
-    });
+  ])(
+    "still fails a shell-quoted script naming a file that is not there, with %s",
+    async (_label, command) => {
+      const { status, output } = await runOn({
+        "package.json": JSON.stringify({ name: "x", scripts: { seed: command } }, null, 2),
+      });
 
-    expect(status).toBe(1);
-    expect(output).toContain("package.json:4 names");
-  });
+      expect(status).toBe(1);
+      expect(output).toContain("package.json:4 names");
+    },
+  );
 
   // An unterminated quote is not valid shell and would not run, so there are no words to speak of.
   // Dropping the stray quote would invent a value the shell never produces, so the command is
@@ -1517,7 +1533,11 @@ describe.concurrent("round 14: shell operators, one boundary, and escaped YAML q
   // The pair for that boundary: the artifact named cleanly, with nothing after it, still passes in
   // both formats. Without this the fix above could be satisfied by reporting every value.
   it.each([
-    ["a JS literal", "apps/web/app/reader.ts", (name) => `const p = readFileSync("rules/${name}");\n`],
+    [
+      "a JS literal",
+      "apps/web/app/reader.ts",
+      (name) => `const p = readFileSync("rules/${name}");\n`,
+    ],
     ["a .env override", "apps/api/.env.example", (name) => `RULES_FILE="rules/${name}"\n`],
   ])("still accepts the published artifact named cleanly in %s", async (_label, file, shape) => {
     const { status, output } = await runOn({ [file]: shape(FIXTURE_RULESET) });
@@ -1670,17 +1690,18 @@ describe.concurrent("round 15: ignored files, substitution, and values that span
   // Verified on Node v24.18.0: a quoted .env value that LITERALLY spans lines is one value, in all
   // three quote characters. The segmenter stopped at the newline and the raw pass then validated
   // the existing first line.
-  it.each([['"', '"'], ["'", "'"], ["`", "`"]])(
-    "fails a .env value spanning lines in %s quotes",
-    async (open, close) => {
-      const { status, output } = await runOn({
-        "apps/api/.env.example": `RULES_FILE=${open}rules/${FIXTURE_RULESET}\nbackup${close}\n`,
-      });
+  it.each([
+    ['"', '"'],
+    ["'", "'"],
+    ["`", "`"],
+  ])("fails a .env value spanning lines in %s quotes", async (open, close) => {
+    const { status, output } = await runOn({
+      "apps/api/.env.example": `RULES_FILE=${open}rules/${FIXTURE_RULESET}\nbackup${close}\n`,
+    });
 
-      expect(status).toBe(1);
-      expect(output).toContain(`names ${FIXTURE_RULESET}`);
-    },
-  );
+    expect(status).toBe(1);
+    expect(output).toContain(`names ${FIXTURE_RULESET}`);
+  });
 
   // The pair for the multiline segmenter: an ordinary single-line value naming the artifact is
   // still quiet, and an UNQUOTED value still stops at its line, which is what Node does.
@@ -1740,6 +1761,123 @@ describe.concurrent("round 15: ignored files, substitution, and values that span
 
     expect(status).toBe(1);
     expect(output).toContain(`.github/workflows/ci.yml:6 names ${MISSING}`);
+  });
+});
+
+// A glob row expands to ARTIFACTS. It expanded to directory entries too, and PR #252 is what found
+// it: an approval recorded as an exception clause inside the archived-material row put the word
+// APPROVED in a status cell whose path column is `docs/proposals/*`, the row flipped from unchecked
+// to checked, and the expansion handed `declaredStatus` a directory that has been on main all along.
+// The check died on an unhandled EISDIR naming the syscall and neither the path nor the row.
+//
+// Both halves are proved here, because the row was also fixed and either fix alone would make
+// `pnpm check:baseline` green on this repo while leaving the other defect in place.
+describe.concurrent("round 16: a glob row expands to artifacts, never to directories", () => {
+  const approvedRow = (artifact) =>
+    `# Fixture manifest\n\n| Concern | Artifact | Status | Notes |\n| --- | --- | --- | --- |\n` +
+    `| Drafts | \`${artifact}\` | APPROVED 2026-08-08 by the product owner | none |\n`;
+
+  it("skips a directory inside an APPROVED glob and still checks the files beside it", async () => {
+    const { status, output } = await runOn({
+      "docs/BASELINE.md": approvedRow("docs/proposals/*"),
+      "docs/proposals/one.md": "# One\n\n**Status:** APPROVED 2026-08-08\n",
+      // The shape that broke it: a directory sitting in the globbed directory, with files under it.
+      "docs/proposals/advisory-refetch-2026-07-28/notes.md": "# Notes\n\n**Status:** PROPOSED\n",
+    });
+
+    expect(status).toBe(0);
+    expect(output).toContain("✓ docs/proposals/one.md");
+    expect(output).not.toContain("advisory-refetch-2026-07-28");
+  });
+
+  it("reports the path and the row that named it rather than throwing EISDIR", async () => {
+    const { status, output } = await runOn({
+      "docs/BASELINE.md": approvedRow("docs/proposals/legacy.md"),
+      // A directory named like an artifact, which the extension test alone would still admit.
+      "docs/proposals/legacy.md/inner.md": "# Inner\n\n**Status:** PROPOSED\n",
+    });
+
+    expect(status).toBe(1);
+    expect(output).toContain("docs/proposals/legacy.md");
+    expect(output).toContain('named by manifest row "Drafts"');
+    expect(output).not.toContain("at readFileSync");
+  });
+});
+
+// Round 16 closed the INSTANCE and not the class (#252 review). Two rules came out of it: a path a
+// manifest row names may be anything on disk, and a guard that stops guarding is the failure this
+// file exists to remove. Both are still broken in three places, and the second one was made WORSE
+// by the fix: filtering expansions on a filename pattern silently drops the files it cannot spell.
+describe.concurrent("round 17: a manifest row's path is whatever is on disk (#252)", () => {
+  const approvedRow = (artifact, extra = "") =>
+    `# Fixture manifest\n\n| Concern | Artifact | Status | Notes |\n| --- | --- | --- | --- |\n` +
+    `| Drafts | \`${artifact}\` | APPROVED 2026-08-08 by the product owner | ${extra} |\n`;
+
+  // ITEM 5. The filename pattern the round 16 fix put on expansions drops any name it cannot
+  // spell, and a dropped expansion is a file the row marks APPROVED that nothing inspects. Each of
+  // these four declares PROPOSED under an APPROVED glob and origin/main failed every one of them.
+  it.each([
+    ["a space", "draft note.md"],
+    ["a non-ASCII letter", "réunion.md"],
+    ["a newline", "draft\nnote.md"],
+    ["an uppercase extension", "DRAFT.MD"],
+  ])("fails a PROPOSED file a glob reaches whose name has %s", async (_label, name) => {
+    const { status, output } = await runOn({
+      "docs/BASELINE.md": approvedRow("docs/proposals/*"),
+      // A sibling the pattern DOES spell, so the expansion is non-empty and the run reaches the
+      // status check. That is the shape the real manifest has, and it is what made the dropped
+      // file exit 0 printing "Baseline status check passed" rather than failing as empty.
+      "docs/proposals/ordinary.md": "# Ordinary\n\n**Status:** APPROVED 2026-08-08\n",
+      [`docs/proposals/${name}`]: "# Draft\n\n**Status:** PROPOSED\n",
+    });
+
+    expect(status).toBe(1);
+    expect(output).toContain('header says "PROPOSED"');
+  });
+
+  // ITEM 4a. The checksum loop reads the file's bytes and runs BEFORE the status loop's report, so
+  // a digest published for a path that is a directory died on a bare EISDIR naming the syscall.
+  it("reports a checksum row whose path is a directory rather than throwing EISDIR", async () => {
+    const { status, output } = await runOn({
+      "docs/BASELINE.md": approvedRow(
+        "docs/proposals/legacy.md",
+        "sha256 `" + "0".repeat(64) + "`",
+      ),
+      "docs/proposals/legacy.md/inner.md": "# Inner\n\n**Status:** PROPOSED\n",
+    });
+
+    expect(status).toBe(1);
+    expect(output).toContain("docs/proposals/legacy.md");
+    expect(output).toContain('named by manifest row "Drafts"');
+    expect(output).not.toContain("at readFileSync");
+  });
+
+  // ITEM 4b. A glob whose directory half is a FILE. `existsSync` says yes and `readdirSync` throws
+  // ENOTDIR, which is the same defect from the other side: the row is wrong and must read as wrong.
+  it("reports a glob rooted at a file rather than throwing ENOTDIR", async () => {
+    const { status, output } = await runOn({
+      "docs/BASELINE.md": approvedRow("docs/proposals/one.md/*"),
+      "docs/proposals/one.md": "# One\n\n**Status:** APPROVED 2026-08-08\n",
+    });
+
+    expect(status).toBe(1);
+    expect(output).toContain("docs/proposals/one.md/*");
+    expect(output).toContain('named by manifest row "Drafts"');
+    expect(output).not.toContain("at readdirSync");
+  });
+
+  // ITEM 4c. `publishedRulesets` listed names without asking what they are, so a DIRECTORY named
+  // like a ruleset counted as published and a reference to it resolved against something no
+  // deployment can open.
+  it("does not count a directory under rules/ as a published ruleset", async () => {
+    const { status, output } = await runOn({
+      [`rules/${MISSING}/placeholder.json`]: "{}\n",
+    });
+
+    expect(status).toBe(0);
+    expect(output).toContain("check passed");
+    // The message the bug produced: a directory counted towards "exactly one published ruleset".
+    expect(output).not.toContain("holds 2 published rulesets");
   });
 });
 

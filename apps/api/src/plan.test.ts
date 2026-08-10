@@ -16,7 +16,14 @@ import {
 import { SCENARIO_INTAKE_FIXTURES, fixtureSubmission } from "@pop-engine/engine/fixtures";
 import { createApp } from "./app";
 import { holidayCalendarWarning, pinnedCalendar, todayInJurisdiction } from "./calendar";
-import { calendarDateFrom, createPlanService } from "./plan";
+import {
+  calendarDateFrom,
+  createPlanService,
+  filingRouteOf,
+  storedRoutes,
+  type FindingRendering,
+  type StoredPlanItem,
+} from "./plan";
 import { loadRuleset, rulesFilePath } from "./ruleset";
 
 const databaseUrl = process.env.DATABASE_URL ?? "";
@@ -1114,5 +1121,195 @@ describe.runIf(databaseUrl.length > 0)("plan API (F-201)", () => {
     } finally {
       await frozen.end();
     }
+  });
+});
+
+/**
+ * #252. A stored plan item has one window, one fee and one name; a merged dedupe line has one per
+ * ROUTE. These pin which route a consumer with one window to show reads, and they need no database:
+ * `checklist.ts` and `alerts.ts` both call these, and a consumer that writes its own fallback is
+ * how a route's window stops being seen.
+ */
+describe("the route a stored plan item reads its window off (#252)", () => {
+  const rendering = (routes: FindingRendering["routes"]): FindingRendering => ({
+    rule_ids: ["A", "B"],
+    notes: [],
+    note_text: null,
+    conflict_text: null,
+    deadline_display: null,
+    slack_days: null,
+    deadline_unknown_fields: [],
+    timeline_unresolved_reason: null,
+    portal_instructions: null,
+    routes,
+    headline_mode: "candidate",
+  });
+
+  const route = (overrides: Record<string, unknown>) =>
+    ({
+      ruleId: "A",
+      triggerResult: "true",
+      disposition: "may_be_required",
+      unknownFields: [],
+      name: "route A",
+      agency: "DOB",
+      deadline: null,
+      deadlineDisplay: null,
+      latestApplyDate: null,
+      applyAfterDate: null,
+      deadlineStatus: "not_applicable",
+      slackDays: null,
+      feeDisplay: null,
+      portalName: null,
+      portalUrl: null,
+      portalInstructions: null,
+      ...overrides,
+    }) as NonNullable<FindingRendering["routes"]>[number];
+
+  /** A merged line whose binding route publishes no window at all. */
+  const item: StoredPlanItem = {
+    rule_ids: ["A", "B"],
+    permit_name: "route A",
+    agency: "DOB",
+    disposition: "may_be_required",
+    deadline: null,
+    latest_apply_date: null,
+    apply_after_date: null,
+    deadline_status: "not_applicable",
+    fee_display: null,
+    portal_name: null,
+    portal_url: null,
+  };
+
+  it("reads the dated route when another route publishes a computable window", () => {
+    const routes = [
+      route({}),
+      route({
+        ruleId: "B",
+        name: "route B",
+        deadline: { type: "published_minimum", calendarDays: 30 },
+        latestApplyDate: "2026-08-26",
+        deadlineStatus: "on_track",
+        feeDisplay: "$100",
+      }),
+    ];
+    expect(filingRouteOf(item, rendering(routes))?.ruleId).toBe("B");
+  });
+
+  /**
+   * THE TEST IS A PUBLISHED WINDOW, NOT A COMPUTED DATE. DOB-TENT-001's window is a business-day
+   * count and production publishes no holiday list, so it has no date at all and still has a fee,
+   * a deadline type and a `not_calculable` status. Keying on the date dropped every one of those:
+   * 56 lines of the 3,200-intake control sweep lost the fee and read `not_applicable`.
+   */
+  it("reads a route whose published window the engine could not date", () => {
+    const routes = [
+      route({}),
+      route({
+        ruleId: "B",
+        name: "route B",
+        deadline: { type: "business_days_minimum", businessDays: 15 },
+        latestApplyDate: null,
+        deadlineStatus: "not_calculable",
+        feeDisplay: "TUP: $100 initial 30 days",
+      }),
+    ];
+    const filing = filingRouteOf(item, rendering(routes));
+    expect(filing?.ruleId).toBe("B");
+    expect(filing?.feeDisplay).toBe("TUP: $100 initial 30 days");
+    expect(filing?.deadlineStatus).toBe("not_calculable");
+  });
+
+  /**
+   * §4.3 amended 2026-08-09: a merged line whose scalars no route can supply publishes none of
+   * them, so its stored item reaches this function with every timing column null. Checked rather
+   * than assumed, because this is the surface the engine change hands the row to: the row does not
+   * go blank and nothing throws. It reads a route and NAMES it, which is the attributed filling
+   * this function exists for, so what an organizer sees is one route's window under a row that says
+   * whose it is — the same behaviour a merged line whose binding route publishes no window has had
+   * since #252. Nothing on the plan or in alerts picks a route on this shape; the checklist row is
+   * the one surface that does, and it says so.
+   */
+  it("still names a route for a line that publishes no scalars of its own", () => {
+    const routes = [
+      route({ ruleId: "A", latestApplyDate: null }),
+      route({
+        ruleId: "B",
+        name: "route B",
+        triggerResult: "unknown",
+        unknownFields: ["sidewalk_use"],
+        deadline: { type: "published_minimum", calendarDays: 30 },
+        latestApplyDate: "2026-08-26",
+        deadlineStatus: "on_track",
+        feeDisplay: "$1,050 licence fee",
+      }),
+    ];
+    const unattributable: StoredPlanItem = {
+      ...item,
+      permit_name: null,
+      agency: null,
+      deadline_status: "not_calculable",
+    };
+    const filing = filingRouteOf(unattributable, rendering(routes));
+    expect(filing?.ruleId).toBe("B");
+    expect(filing?.feeDisplay).toBe("$1,050 licence fee");
+  });
+
+  /**
+   * #252 review: A FILING ROUTE, NOT MERELY A DATED ONE. The row labels whatever this returns as its
+   * filing date, fee and filing details, and `PortalBlock` renders that route's portal as "apply
+   * at" on an applies-together row. The rules schema permits `advisory` and `no_new_requirement`
+   * kinds to publish a deadline, so selecting on the date alone converted an advisory into a filing
+   * action — the same conversion the alert scheduler makes at its own boundary.
+   */
+  it("skips a dated route that publishes no filing, and takes the next that does", () => {
+    const routes = [
+      route({}),
+      route({
+        ruleId: "ADVISORY-001",
+        name: "advisory route",
+        disposition: "advisory",
+        deadline: { type: "published_minimum", calendarDays: 10 },
+        latestApplyDate: "2026-08-01",
+        deadlineStatus: "on_track",
+      }),
+      route({
+        ruleId: "B",
+        name: "route B",
+        deadline: { type: "published_minimum", calendarDays: 30 },
+        latestApplyDate: "2026-08-26",
+        deadlineStatus: "on_track",
+        feeDisplay: "$100",
+      }),
+    ];
+    const filing = filingRouteOf(item, rendering(routes));
+    expect(filing?.ruleId).toBe("B");
+    expect(filing?.feeDisplay).toBe("$100");
+  });
+
+  it("selects nothing where the only dated routes publish no filing", () => {
+    const routes = [
+      route({}),
+      route({
+        ruleId: "NOTE-001",
+        name: "note route",
+        disposition: "no_new_requirement",
+        latestApplyDate: "2026-08-01",
+        deadlineStatus: "on_track",
+      }),
+    ];
+    expect(filingRouteOf(item, rendering(routes))).toBeNull();
+  });
+
+  it("leaves a line that publishes its own window alone", () => {
+    const dated = { ...item, deadline: { type: "published_minimum" } as never };
+    expect(filingRouteOf(dated, rendering([route({}), route({ ruleId: "B" })]))).toBeNull();
+  });
+
+  it("treats an unmerged row as its own single route, and never reattributes it", () => {
+    const unmerged: StoredPlanItem = { ...item, rule_ids: ["A"] };
+    expect(storedRoutes(unmerged, undefined)).toHaveLength(1);
+    expect(storedRoutes(unmerged, undefined)[0]?.ruleId).toBe("A");
+    expect(filingRouteOf(unmerged, undefined)).toBeNull();
   });
 });

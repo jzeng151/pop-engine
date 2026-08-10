@@ -21,8 +21,19 @@ import { createHash, randomUUID } from "node:crypto";
 import { Router, type NextFunction, type Request, type Response } from "express";
 import { Pool } from "pg";
 import type { PoolClient, QueryResult, QueryResultRow } from "pg";
-import { CONFIRM_WITH_AGENCY, DEPENDENCY_SEQUENCING_BINDINGS } from "@pop-engine/engine";
-import type { Deadline, Disposition, VerificationStatus } from "@pop-engine/engine";
+import {
+  CONFIRM_WITH_AGENCY,
+  DEPENDENCY_SEQUENCING_BINDINGS,
+  offersAFilingAction,
+} from "@pop-engine/engine";
+import type {
+  Deadline,
+  DeadlineStatus,
+  Disposition,
+  FindingKind,
+  FindingRoute,
+  VerificationStatus,
+} from "@pop-engine/engine";
 import {
   ALERT_CHANNELS,
   AlertDeliveryError,
@@ -38,7 +49,13 @@ import {
   todayInJurisdiction,
 } from "./calendar";
 import { canonicalOptionalPhone } from "./contact";
-import { calendarDateFrom, renderingKey, type FindingRendering } from "./plan";
+import {
+  calendarDateFrom,
+  FILING_ORDER_DATE,
+  FILING_ORDER_JOIN,
+  renderingKey,
+  type FindingRendering,
+} from "./plan";
 
 /** Mirrors the `alerts.alert_type` CHECK in migration 001. */
 export const ALERT_TYPES = ["deadline_reminder", "slack_warning", "dependency_unlocked"] as const;
@@ -205,20 +222,38 @@ const RETRY_BACKOFF = `CASE
  * The claim is the point of action, and it is also the only safe point: it runs under the event
  * lock, so what it reads is a state no review is midway through changing.
  */
-const FILING_WINDOW_HAS_SHUT = (day: string): string => `(
-       EXISTS (
-         SELECT 1
-           FROM checklist_items AS closed_checklist
-           JOIN permit_plan_items AS closed_item
-             ON closed_item.id = closed_checklist.plan_item_id
-          WHERE closed_checklist.id = alerts.checklist_item_id
-            AND closed_item.latest_apply_date IS NOT NULL
-            AND closed_item.latest_apply_date < ${day}::date
+export const FILING_WINDOW_HAS_SHUT = (day: string): string => `(
+       (
+         alerts.payload->>'controlling_apply_by' IS NULL
+         -- AND IT IS NOT A ROUTE-SCHEDULED ALERT, which is the other half of the same rule and was
+         -- missing. The date below says which window this alert is about; this says the item column
+         -- is not it. A route-scheduled dependency_unlocked, a gated route with an apply_after_date
+         -- and no published filing deadline, has no date to carry, so it fell into this branch and
+         -- was retired the day after a DIFFERENT route's window shut. Nothing had shut: the route
+         -- it is about publishes no window at all.
+         AND alerts.payload->>'route_scheduled' IS NULL
+         AND EXISTS (
+           SELECT 1
+             FROM checklist_items AS closed_checklist
+             JOIN permit_plan_items AS closed_item
+               ON closed_item.id = closed_checklist.plan_item_id
+            WHERE closed_checklist.id = alerts.checklist_item_id
+              AND closed_item.latest_apply_date IS NOT NULL
+              AND closed_item.latest_apply_date < ${day}::date
+         )
        )
        -- coalesce, because this expression is now NEGATED at the claim as well as asserted at the
        -- sweep. Without it a row carrying no controlling date yields NULL rather than false, the
        -- sweep harmlessly does not match it, and NOT NULL makes it permanently unclaimable. A
        -- predicate that is only ever asserted can be three-valued; one that is also negated cannot.
+       --
+       -- THE PAYLOAD DATE WINS OVER THE ITEM COLUMN WHERE BOTH EXIST, which is why the first branch
+       -- is guarded rather than left as a plain OR. An alert scheduled off one route of a merged
+       -- dedupe line counts down to THAT route's published window, and the item column carries the
+       -- window of whichever route the merged line reads. Read as a disjunction, a reminder for a
+       -- route whose window is still open would be retired the day after a DIFFERENT route's window
+       -- shut. The row that names its own controlling date is the row that knows which window this
+       -- alert is about, so nothing else gets to answer for it.
        OR coalesce((alerts.payload->>'controlling_apply_by')::date < ${day}::date, false)
      )`;
 
@@ -827,11 +862,15 @@ export type AlertSchedulerSettings = {
 type PlanAlertRow = {
   checklist_item_id: string | null;
   rule_ids: string[];
+  /** Read to find a requirement's predecessor task; see `priorTaskIds`. */
+  kind: FindingKind;
   permit_name: string | null;
   agency: string | null;
   deadline: Deadline | null;
   latest_apply_date: Date | string | null;
   apply_after_date: Date | string | null;
+  deadline_status: DeadlineStatus;
+  fee_display: string | null;
   portal_name: string | null;
   portal_url: string | null;
   disposition: Disposition;
@@ -845,10 +884,37 @@ type PlannedAlert = {
   readonly subject: string;
   readonly body: string;
   /**
-   * What makes this alert the same alert across regenerations. Combined with the channel into the
-   * row's `idempotency_key`, which is what keeps a sent alert from being sent again (AC 7).
+   * What this alert is about with no route in it: the task, the kind of alert, and for a reminder
+   * the published offset. The route joins it in `assignIdentities`, which is the ONE place an
+   * identity is minted. See the identity statement above that function.
    */
-  readonly identity: string;
+  readonly identityBase: string;
+  /**
+   * The route this alert was scheduled off, or null on a row that has no dedupe group.
+   *
+   * Provenance, not identity: it says which route produced these words, and `assignIdentities`
+   * decides which route NAMES them. The two differ whenever a line's routes publish the same copy.
+   */
+  readonly routeRuleId: string | null;
+  /**
+   * Every route of the merged line this alert came from, whether or not that route schedules an
+   * alert of its own. Empty on a row with no dedupe group.
+   *
+   * Read for one purpose: to name the identities these same words may ALREADY be stored under, so
+   * a route joining or leaving the set that publishes them re-keys the existing row instead of
+   * inserting a second one beside it. See `ScheduledAlert.supersededIdentities`.
+   */
+  readonly groupRouteRuleIds: readonly string[];
+  /**
+   * The identity bases this same alert may already be stored under because its TASK moved.
+   *
+   * A requirement whose route membership changes becomes a new `checklist_items` row, so every
+   * identity built off `checklist_item_id` moved with it while the alert stayed the same alert.
+   * These are the same bases rebuilt on the predecessor rows, and `assignIdentities` expands them
+   * exactly as it expands the current one, so adoption re-keys the delivered row instead of
+   * inserting a second one beside it. Empty where the task has no predecessor (`priorTaskIds`).
+   */
+  readonly priorIdentityBases: readonly string[];
   /**
    * The event revision this alert's plan was evaluated at, for the one row the staleness JOIN
    * cannot reach. Only the plan-level slack warning sets it; everything else finds its plan
@@ -856,12 +922,47 @@ type PlannedAlert = {
    */
   readonly planEventRevision?: number;
   /**
-   * The day this alert's number counts down to, for rows the sweep cannot reach through an item.
+   * The published window this alert is about, for rows the sweep cannot reach through an item.
    *
-   * Only the plan-level slack warning sets it. Everything else hangs off a checklist item and the
-   * sweep reads that item's own `latest_apply_date`, which is live rather than a snapshot.
+   * The plan-level slack warning sets it because it hangs off no checklist item at all. A
+   * ROUTE-SCHEDULED alert sets it for the other half of the same reason: it does hang off an item,
+   * but the item's `latest_apply_date` is the window of whichever route the merged line reads, and
+   * this alert counts down to its OWN route's window. Where the merged line's binding route
+   * publishes none the column is NULL, and `FILING_WINDOW_HAS_SHUT` reads only that column, so the
+   * window never shut: a reminder held in retry backoff would still be delivered saying "file by
+   * 2026-08-31" after that date had passed, which is the outcome that predicate exists to prevent
+   * (#252 review). Two further readers inherit it — `HELD_FOR_RECONCILIATION` tells the organizer a
+   * live filing reminder is paused about a deadline already gone, and
+   * `unresolvedAttemptPastTheCutoff`'s earlier-of bound stops being reachable.
+   *
+   * Everything else still hangs off an item whose own `latest_apply_date` IS its window, which is
+   * live rather than a snapshot, so it stays unset there.
+   *
+   * `null` is a VALUE here and `undefined` is the absence of one, and the two mean different things
+   * to the upsert: it merges payloads, so only an explicit null can clear a date an earlier
+   * generation wrote. A producer that controls this field writes null where its subject publishes
+   * no window; a producer that does not control it leaves the field undefined and the key is never
+   * written at all.
    */
-  readonly controllingApplyBy?: string;
+  readonly controllingApplyBy?: string | null;
+  /**
+   * That this alert was scheduled off ONE route of a merged dedupe line, whether or not that route
+   * published a window to record above.
+   *
+   * `controllingApplyBy` alone was not enough to say it. It is only written where the route has a
+   * date, so a route-scheduled `dependency_unlocked` — a gate with an `apply_after_date` and no
+   * `latest_apply_date` — carried nothing, and `FILING_WINDOW_HAS_SHUT` fell through to the item
+   * column. That column is the window of whichever route the merged line READS, so this alert was
+   * retired the day after a DIFFERENT route's window shut, which is the exact outcome that
+   * predicate's own comment says must not happen. A gated route with no published filing deadline
+   * has no window that can shut, and it must be able to say so.
+   *
+   * So the two are read together: the date answers where there is one, and this says the item
+   * column may not answer where there is not. Absent on every alert that is not route-scheduled,
+   * including every row written before this field existed, so those keep reading the column that
+   * is genuinely theirs.
+   */
+  readonly routeScheduled?: true;
   /**
    * The slot this alert was MEANT for, before it was clamped forward if that moment had passed.
    *
@@ -870,6 +971,67 @@ type PlannedAlert = {
    * intent for it to differ from.
    */
   readonly intendedAt?: string;
+};
+
+/** A planned alert with its identity minted. See the statement above `assignIdentities`. */
+type ScheduledAlert = PlannedAlert & {
+  /**
+   * What makes this alert the same alert across regenerations. Combined with the channel and the
+   * destination into the row's `idempotency_key`, which is what keeps a sent alert from being sent
+   * again (AC 7).
+   */
+  readonly identity: string;
+  /**
+   * The identities these same words may already be stored under, for a route-keyed alert only.
+   *
+   * A RE-KEYING IS HOW THIS FILE DELIVERS SOMETHING TWICE, and there are two ways a row's key can
+   * be out of step with the identity the current plan mints for its words:
+   *
+   *   THE DEPLOY BOUNDARY. A plan generated before route lists existed keys its reminders without
+   *   a route at all. The first regeneration after the deploy expands that same line into its
+   *   routes and keys each one; the reconciler will not touch a `sent` row, so the route-keyed row
+   *   is INSERTED and delivered — same subject, same body, same recipient, twice.
+   *
+   *   THE SET OF ROUTES PUBLISHING THESE WORDS CHANGING. The words are named by the lowest rule id
+   *   among the routes that publish them, so a route joining that set with a lower id, or the
+   *   naming route leaving it (its window withdrawn, its copy diverging), moves the name to another
+   *   route of the same line. Same words, new key, same duplicate.
+   *
+   * So the row that already said these words is given the key they are about to be said under,
+   * once, before the upsert runs. Matched on the STORED SUBJECT: whichever key the words are
+   * filed under, that row is this alert. Where no stored row reproduces them, nothing is adopted
+   * and nothing is duplicated, because nothing is about to be sent in those words at all.
+   *
+   * Self-limiting in both cases. After one regeneration the row carries the current identity, no
+   * superseded key matches, and the adoption is a no-op until the set changes again.
+   */
+  readonly supersededIdentities: readonly string[];
+  /**
+   * The keys this alert may be stored under because its TASK moved, matched only against a row that
+   * was DELIVERED. See the adoption query for why the status test belongs to this set alone.
+   */
+  readonly priorTaskIdentities: readonly string[];
+  /**
+   * The identities this reminder may already be stored under WHATEVER WORDS those rows carry,
+   * because no other reminder of this generation can claim them.
+   *
+   * THE COPY MATCH IS WHY THIS LIST IS SEPARATE, and it is right where it applies. A line's routes
+   * can publish the same subject and different bodies, so `supersededIdentities` names keys that
+   * two of this generation's reminders both list, and the stored copy is what tells them apart.
+   * That test asks the prior row to already contain the message about to be sent, which it cannot
+   * when the same regeneration ALSO rewrites the copy: a filing date moving and the canonical route
+   * moving are each identity-preserving on their own, and composed they made the adoption skip and
+   * the upsert insert the new key beside a sent row, delivering the corrected reminder to the same
+   * destination (#252 review).
+   *
+   * The routes listed here are the ones whose schedulings this reminder COALESCES on this
+   * generation. A route publishes one copy per task, type and offset, so it belongs to exactly one
+   * group and these lists are disjoint across the generation's reminders: a row filed under one of
+   * them is this reminder under a former name and nothing else, with or without matching copy.
+   * Every other route of the line stays in `supersededIdentities` and keeps the copy test, since a
+   * route that is not in this group may still be publishing its own distinct reminder.
+   */
+  readonly coalescedIdentities: readonly string[];
 };
 
 const isoDate = (value: Date | string | null): string | null =>
@@ -918,19 +1080,369 @@ async function planVerdict(database: Queryable, planId: string): Promise<PlanVer
  * checklist row, and an alert about a line the organizer is not tracking is noise. Rows with no
  * task are skipped rather than scheduled against a null `checklist_item_id`, which is reserved for
  * the plan-level slack warning.
+ *
+ * FILING ORDER IS THE DATE THE ROW RENDERS, not the column. `item.latest_apply_date` is the binding
+ * route's, and a merged dedupe line whose binding route publishes no window leaves it NULL while
+ * the line still files under another route's dated one. Ordering on the column alone sorted such a
+ * line last under a docstring promising filing order, which is the last surviving instance of the
+ * read-the-column class this branch removed everywhere else. It is decorative here — nothing about
+ * an alert's content or identity depends on the order these rows arrive in — and it is corrected
+ * anyway, because the next reader of this function has no way to tell a deliberate exception from
+ * the four places that were defects. Same join and same expression the checklist orders by, so the
+ * two surfaces cannot drift.
  */
 async function planAlertRows(database: Queryable, planId: string): Promise<PlanAlertRow[]> {
   const { rows } = await database.query<PlanAlertRow>(
-    `SELECT checklist.id AS checklist_item_id, item.rule_ids, item.permit_name, item.agency,
-            item.deadline, item.latest_apply_date, item.apply_after_date, item.portal_name,
+    `SELECT checklist.id AS checklist_item_id, item.rule_ids, item.kind, item.permit_name, item.agency,
+            item.deadline, item.latest_apply_date, item.apply_after_date, item.deadline_status,
+            item.fee_display, item.portal_name,
             item.portal_url, item.disposition, item.verification_status
        FROM permit_plan_items AS item
        LEFT JOIN checklist_items AS checklist ON checklist.plan_item_id = item.id
+       ${FILING_ORDER_JOIN}
       WHERE item.plan_id = $1
-      ORDER BY item.latest_apply_date NULLS LAST, item.permit_name, item.rule_ids`,
+      ORDER BY ${FILING_ORDER_DATE} NULLS LAST, item.permit_name, item.rule_ids`,
     [planId],
   );
   return rows;
+}
+
+/**
+ * The checklist rows this event's requirements USED TO BE, keyed by the row each is now.
+ *
+ * WHY A REQUIREMENT CHANGES TASK AT ALL. `requirementKey()` in `checklist.ts` is `kind` plus the
+ * sorted rule ids, so a regeneration that adds or removes a contributing ROUTE produces a different
+ * key for the same requirement: `materialize()` finds no tracked row, creates a new `checklist_items`
+ * row, and the previous row is struck. Every alert identity is built off `checklist_item_id`, so
+ * each one moved with it, `assignIdentities` built even its superseded keys off the NEW id, and a
+ * reminder already delivered under the old id was unfindable — inserted again and delivered a second
+ * time to the same destination, which F-203 AC 7 forbids (#252 review).
+ *
+ * Nothing an organizer can see changed in that regeneration: the requirement is the same, the date
+ * is the same. Only the group's membership moved, and the identity was keyed on the membership.
+ *
+ * WHY THE PREDECESSOR IS FINDABLE WITHOUT A MIGRATION. `materialize()` never deletes a superseded
+ * row: it stops pointing the new plan item at it and `struckChecklistItemIds` marks it. So the old
+ * row is still in the table with its own id and its own plan item, and a requirement that changed
+ * membership overlaps its predecessor on at least one rule id — a route joined or left, the rest
+ * stayed. That overlap, within one event and one finding kind, is what identifies the predecessor,
+ * and it is the same relation for rows written before this change as after: no column is added and
+ * no stored key is rewritten, so reminders already sent keep working.
+ *
+ * MEMBERSHIP OVERLAP, NOT EQUALITY, and deliberately not `requirementKey` itself: equality is what
+ * the checklist already tested and found nothing, since the whole defect is that the key moved.
+ */
+type PriorTask = { readonly id: string; readonly ruleIds: readonly string[] };
+
+async function priorTaskIds(
+  database: Queryable,
+  planId: string,
+): Promise<Map<string, PriorTask[]>> {
+  const { rows } = await database.query<{
+    checklist_item_id: string;
+    rule_ids: string[];
+    kind: FindingKind;
+    plan_id: string;
+  }>(
+    `SELECT checklist.id AS checklist_item_id, item.rule_ids, item.kind, plan.id AS plan_id
+       FROM checklist_items AS checklist
+       JOIN permit_plan_items AS item ON item.id = checklist.plan_item_id
+       JOIN permit_plans AS plan ON plan.id = item.plan_id
+      WHERE plan.event_id = (SELECT event_id FROM permit_plans WHERE id = $1)`,
+    [planId],
+  );
+  // EVERY GENERATION OF THE EVENT, IN ORDER, AND WHAT EACH ONE HELD. The requirement's presence in
+  // the plans BETWEEN a predecessor and its successor is what tells a membership change from a
+  // restoration, and it is stored: `materialize` never deletes a plan or its items.
+  const { rows: history } = await database.query<{
+    plan_id: string;
+    rule_ids: string[] | null;
+    kind: FindingKind | null;
+  }>(
+    `SELECT plan.id AS plan_id, item.rule_ids, item.kind
+       FROM permit_plans AS plan
+       LEFT JOIN permit_plan_items AS item ON item.plan_id = plan.id
+      WHERE plan.event_id = (SELECT event_id FROM permit_plans WHERE id = $1)
+      ORDER BY plan.generated_at, plan.id`,
+    [planId],
+  );
+  const planOrder: string[] = [];
+  const heldBy = new Map<string, { ruleIds: string[]; kind: FindingKind }[]>();
+  for (const row of history) {
+    if (!heldBy.has(row.plan_id)) {
+      planOrder.push(row.plan_id);
+      heldBy.set(row.plan_id, []);
+    }
+    if (row.rule_ids !== null && row.kind !== null) {
+      (heldBy.get(row.plan_id) as { ruleIds: string[]; kind: FindingKind }[]).push({
+        ruleIds: row.rule_ids,
+        kind: row.kind,
+      });
+    }
+  }
+  /**
+   * Whether the requirement was present in EVERY generation between the two, so that the later task
+   * continues the earlier one rather than restoring it after a gap.
+   *
+   * THE HARM THIS REFUSES IS THE ONE HARM THIS MECHANISM HAD NOT PRODUCED YET. A requirement dropped
+   * from an intervening plan and restored later gets a NEW task, because F-202 makes the original
+   * terminal. Adopting across that gap re-keys the old task's already-DELIVERED alert onto the new
+   * one and the upsert preserves its sent status, so the restored requirement's reminder never
+   * goes out and the organizer is never told to file something the plan says they must. The three
+   * earlier rounds on this mechanism produced a duplicate, a swap and another duplicate; this
+   * produces silence (#252 review).
+   *
+   * PRESENCE IS THE SAME RELATION THE PREDECESSOR TEST USES — same kind, overlapping rule ids —
+   * because it is the same question asked of a plan rather than of a task. A membership change
+   * keeps the requirement present in every generation, since a merge retains every contributing
+   * rule id and an unmerge keeps the rest; only a DROP makes it absent, and absence is exactly what
+   * `checklist.ts` reads to strike a row.
+   */
+  const presentThroughout = (from: string, to: string, prior: PriorTask, kind: FindingKind) => {
+    const start = planOrder.indexOf(from);
+    const end = planOrder.indexOf(to);
+    if (start < 0 || end < 0) return false;
+    for (let index = Math.min(start, end) + 1; index < Math.max(start, end); index += 1) {
+      const held = heldBy.get(planOrder[index] as string) ?? [];
+      const carried = held.some(
+        (entry) =>
+          entry.kind === kind && entry.ruleIds.some((ruleId) => prior.ruleIds.includes(ruleId)),
+      );
+      if (!carried) return false;
+    }
+    return true;
+  };
+  const byTask = new Map<string, PriorTask[]>();
+  for (const row of rows) {
+    const priors = rows
+      .filter(
+        (other) =>
+          other.checklist_item_id !== row.checklist_item_id &&
+          other.kind === row.kind &&
+          other.rule_ids.some((ruleId) => row.rule_ids.includes(ruleId)) &&
+          presentThroughout(
+            other.plan_id,
+            row.plan_id,
+            { id: other.checklist_item_id, ruleIds: other.rule_ids },
+            row.kind,
+          ),
+      )
+      .map((other) => ({ id: other.checklist_item_id, ruleIds: other.rule_ids }))
+      .sort((left, right) => left.id.localeCompare(right.id));
+    if (priors.length > 0) byTask.set(row.checklist_item_id, priors);
+  }
+  return byTask;
+}
+
+/**
+ * Every key a predecessor task could have stored this alert under.
+ *
+ * THE ROUTE SUFFIX HAS TO BE REBUILT TOO, and the bare base is not enough. `assignIdentities` joins
+ * the canonical route to the base on every merged row, so a reminder delivered while the
+ * requirement was merged is stored under `${task}:${type}:${offset}:${ruleId}` — and the generation
+ * that drops a route may be unmerged, with no route of its own to join. The suffixes are therefore
+ * taken from the PRIOR task's rule ids as well as this one's: the requirement's alert may be filed
+ * under any rule the requirement contained, then or now.
+ */
+const priorIdentitiesFor = (
+  priors: readonly PriorTask[],
+  ruleIds: readonly string[],
+  base: (taskId: string) => string,
+): string[] =>
+  priors.flatMap((prior) => {
+    const key = base(prior.id);
+    const suffixes = [...new Set([...prior.ruleIds, ...ruleIds])].sort();
+    return [key, ...suffixes.map((ruleId) => `${key}:${ruleId}`)];
+  });
+
+/**
+ * One scheduling subject: a plan row read through ONE of its published routes.
+ *
+ * A merged dedupe line has one `latest_apply_date` column and one `permit_name`, and both belong to
+ * the binding route. Where that route publishes no window the columns carry none, so scheduling off
+ * them dropped every reminder for a requirement whose OTHER route publishes a dated window — on the
+ * shipped ruleset that is DOB-TENT-001's 15-business-day window on every plan where
+ * DOB-TALL-STRUCTURE-001 binds, and it deleted both of the organizer's reminders (#252 review).
+ *
+ * Each route schedules on its own window and is named by its own rule, so no reminder quotes one
+ * route's date under another route's name. `routeRuleId` is null for an unmerged row, which is
+ * every row on a plan with no dedupe group: those are the row itself, unchanged in every field.
+ */
+type AlertSubject = {
+  readonly row: PlanAlertRow;
+  readonly rendering: FindingRendering | undefined;
+  readonly routeRuleId: string | null;
+  /**
+   * Every route of the line, including the ones that schedule nothing. A route with no window
+   * schedules no alert and can still be the route a stored row is keyed on, from a generation where
+   * it had one, so the set an identity is compared against is the line's routes rather than the
+   * ones expanded here.
+   */
+  readonly groupRouteRuleIds: readonly string[];
+};
+
+const subjectFromRoute = (
+  row: PlanAlertRow,
+  rendering: FindingRendering | undefined,
+  route: FindingRoute,
+  groupRouteRuleIds: readonly string[],
+): AlertSubject => ({
+  row: {
+    ...row,
+    rule_ids: [route.ruleId],
+    permit_name: route.name,
+    agency: route.agency,
+    deadline: route.deadline,
+    latest_apply_date: route.latestApplyDate,
+    apply_after_date: route.applyAfterDate,
+    deadline_status: route.deadlineStatus,
+    fee_display: route.feeDisplay,
+    portal_name: route.portalName,
+    portal_url: route.portalUrl,
+    // THE GRAMMAR COMES FROM THE SAME ROUTE AS THE NOUNS. `isSettledRequirement` reads this column
+    // to choose between "file by <date>" and "may be required ... if it applies", and leaving the
+    // merged line's value here paired ONE route's name and date with the GROUP's certainty. The
+    // group's disposition is the strongest any route offers, so a `may_be_required` route was
+    // reminded imperatively wherever any sibling was `required` — PopEngine asserting a requirement
+    // the ruleset hedges — and a `required` route was softened to "may be required" wherever the
+    // group's headline was capped by an unresolved sibling.
+    //
+    // `verification_status` is NOT taken per route, and that is not an omission:
+    // `rejectMixedDedupeVerificationStatuses` refuses at load any dedupe key whose members mix
+    // statuses, so the group's value is the route's value and `FindingRoute` carries none.
+    disposition: route.disposition,
+  },
+  rendering:
+    rendering === undefined
+      ? undefined
+      : {
+          ...rendering,
+          deadline_display: route.deadlineDisplay,
+          slack_days: route.slackDays,
+          portal_instructions: route.portalInstructions,
+          // THE NOTES ARE THIS ROUTE'S, WHERE THE PLAN RECORDED WHOSE THEY ARE. `reminderCopy`
+          // quotes every note verbatim under a heading carrying ONE route's name and filing date,
+          // and the merged line's `notes` concatenate over the whole group, so a reminder for
+          // route A carried route B's threshold and B's deadline qualification as if they
+          // qualified A's filing. That is wrong regulatory text in a message an organizer acts on,
+          // not a display fault (#252 review).
+          //
+          // A PLAN STORED BEFORE `FindingRoute.notes` EXISTED CANNOT BE ATTRIBUTED, and this does
+          // not guess at it. The merge kept no marker saying which rule published which string, and
+          // nothing else in the row records it, so for those plans the group's notes are all there
+          // is: they are carried unchanged rather than dropped, because dropping them would take a
+          // published qualification off a filing date, which is the defect this file's own note
+          // block exists to prevent. Those rows keep the crossing until they are regenerated, and
+          // that residue is stated rather than closed here.
+          ...(route.notes === undefined ? {} : { notes: route.notes }),
+          // THE SAME NARROWING, ON THE LAST PUBLISHED STRING THAT WAS STILL THE LINE'S. The merged
+          // `conflict_text` is not a concatenation: `mergeGroup` falls back through the routes in
+          // binding order and takes the first that publishes any, so it is one route's text with
+          // nothing recording whose. `reminderCopy` quotes both readings verbatim under a heading
+          // carrying THIS route's name and date, so a route that publishes no conflict at all
+          // carried another rule's (#252 review). Absent means not recorded, as with the notes.
+          ...(route.conflictText === undefined ? {} : { conflict_text: route.conflictText }),
+        },
+  routeRuleId: route.ruleId,
+  groupRouteRuleIds,
+});
+
+/**
+ * The dispositions that describe a filing an organizer can be reminded to make.
+ *
+ * EVERY REMINDER THIS FILE WRITES IS AN INSTRUCTION TO FILE, so the set is an allow-list of the two
+ * dispositions that state one, not a deny-list of the one that obviously does not. Excluding only
+ * `prohibited_or_ineligible` left `advisory` and `no_new_requirement` in, and the rules schema
+ * permits those kinds to publish a deadline: `reminderCopy` reads anything that is not `required`
+ * through `isSettledRequirement` and says "may be required for your event. If it applies, file by
+ * <date>", so a dated advisory route became an instruction to file a permit the ruleset does not
+ * say is required at all — a filing path invented in an email (#252 review).
+ *
+ * A route outside this set keeps its disposition, its notes and its sources on the plan line and in
+ * the checklist row's route list, which is where a reader learns what it says. What it does not get
+ * is a notification telling them to file it.
+ *
+ * THE RULE ITSELF IS THE ENGINE'S NOW, and this file names none of its parts. The classification of
+ * which dispositions denote something an organizer files was written out locally here and in
+ * `plan.ts` while the web renderers asked the question a third way; it is `FILING_DISPOSITIONS`,
+ * and this file no longer reads even that, because the whole question is `offersAFilingAction`
+ * (#252 review).
+ *
+ * AND THE DISPOSITION IS ONLY HALF THE QUESTION. `offersAFilingAction` has two clauses and this
+ * read one of them: the group must also be SETTLED. A candidate group holding a resolved, dated,
+ * required route passed the disposition test, so this file sent "file by <date>" reminders and let
+ * the slack copy say "apply within" for a group whose open question is WHICH of its routes applies
+ * — while `plan-line.tsx` and `checklist-item.tsx` withheld the same action from the same group.
+ * Not a missing rule: a consumer that kept its own predicate after the shared one landed, which is
+ * the ninth surface for this rule and the first where the fix was already there and unused
+ * (#252 review).
+ */
+
+/**
+ * Whether this scheduling subject is one an organizer can be told to act on.
+ *
+ * THE THREE READERS OF `alertSubjects` AND WHAT EACH WANTS, because one filter read by two callers
+ * with different questions is how this went wrong twice:
+ *
+ *   • the deadline-reminder loop — FILING ROUTES ONLY. Its copy is "file by <date>".
+ *   • the dependency-unlock loop — FILING ROUTES ONLY, for the same reason: it announces that the
+ *     window an organizer was waiting on to file is open, which is an instruction to act on a
+ *     filing and says nothing an advisory or a bar has a filing for.
+ *   • the plan-level slack-warning selection — EVERY DATED ROUTE. It is a measurement rather than a
+ *     message: it has to find the route that produced `minSlackDays`, and the engine computes that
+ *     over every route whatever its disposition, so narrowing it here makes the alerts disagree
+ *     with the verdict they are scheduled against.
+ */
+const isFilingSubject = (subject: AlertSubject): boolean =>
+  offersAFilingAction(
+    { disposition: subject.row.disposition },
+    subject.rendering?.headline_mode ?? null,
+  );
+
+/**
+ * The routes a row schedules from. An unmerged row is itself, so nothing about its alerts moves;
+ * only a row that stored a route list expands, and only into routes that publish a date to schedule
+ * against.
+ *
+ * EVERY DATED ROUTE, WHATEVER IT PUBLISHES, because this expansion answers two different questions
+ * and only one of them is about filing. Its callers are enumerated above `offersAFilingAction`: the
+ * two that write a message to an organizer filter it, and the one that MEASURES the plan's slack
+ * must not, because `computeWindowVerdict` takes `minSlackDays` over every route regardless of
+ * disposition. Filtering here made the plan and the alerts disagree about the same number: a dated
+ * advisory route could hold the minimum and put the plan at FEASIBLE_AT_RISK while
+ * `controllingFilingStillOpen` could not find the route that produced it, so no warning was
+ * scheduled on a plan the verdict had already called at risk (#252 review).
+ *
+ * A BARRED OR ADVISORY ROUTE STILL SCHEDULES NO MESSAGE, because every reminder this file writes is
+ * a filing instruction
+ * and a prohibition has no filing to instruct. `reminderCopy` chooses between "file by <date>" and
+ * "may be required ... if it applies, file by <date>" on `isSettledRequirement`, which tests for
+ * `required`, so a `prohibited_or_ineligible` route took the second branch: the reminder read the
+ * barred route as merely unsettled and told the organizer to file it. That is a filing path
+ * PopEngine invented for a rule that publishes a bar, which is the one thing AGENTS.md's regulatory
+ * safety section forbids outright (#252 review).
+ *
+ * IT ONLY ARISES ON A MERGED LINE. An unmerged barred finding never reaches here at all: its kind is
+ * `prohibition` or `eligibility`, `TRACKABLE_FINDING_KINDS` in `checklist.ts` admits only `permit`
+ * and `insurance`, so no checklist row and no alert exist for it. A merged line takes its `kind`
+ * from the binding route, so a group holding a permit beside a barred route IS trackable, and the
+ * expansion above then reached the barred route the parent row's trackability was never about.
+ *
+ * SUPPRESSED RATHER THAN REWORDED. A reminder for a bar would have to say something no published
+ * value supports: the rule states the event is barred, not that a filing is due, and there is no
+ * date to remind against that means anything. The route keeps its disposition, its note and its
+ * sources on the plan line and on the checklist row's route list, which is where a reader learns
+ * about it; what it does not get is a notification telling them to file.
+ */
+function alertSubjects(row: PlanAlertRow, rendering: FindingRendering | undefined): AlertSubject[] {
+  const routes = rendering?.routes;
+  if (routes == null || routes.length < 2) {
+    return [{ row, rendering, routeRuleId: null, groupRouteRuleIds: [] }];
+  }
+  const groupRouteRuleIds = routes.map((route) => route.ruleId);
+  return routes
+    .filter((route) => route.latestApplyDate !== null || route.applyAfterDate !== null)
+    .map((route) => subjectFromRoute(row, rendering, route, groupRouteRuleIds));
 }
 
 const requirementLabel = (row: PlanAlertRow): string => row.permit_name ?? row.rule_ids.join(", ");
@@ -1044,8 +1556,7 @@ const confirmationLine = (
   status: VerificationStatus,
   rendered: readonly (string | null | undefined)[] = [],
 ): string | null =>
-  status === "RESEARCH_REQUIRED" &&
-  !rendered.some((line) => line?.includes(CONFIRM_WITH_AGENCY))
+  status === "RESEARCH_REQUIRED" && !rendered.some((line) => line?.includes(CONFIRM_WITH_AGENCY))
     ? `${subject}: ${CONFIRM_WITH_AGENCY}`
     : null;
 
@@ -1087,7 +1598,33 @@ function reminderCopy(
     // EVERY PUBLISHED NOTE, because the qualification IS one of them and nothing here can tell
     // which. `findings.ts` builds this array as the rule's own notes, then the DEADLINE's and
     // VERIFICATION's qualifications, all flattened, with no marker separating the caveat about a
-    // date from a note about anything else. Reading only `deadline_display` therefore dropped the
+    // date from a note about anything else.
+    //
+    // WHOSE NOTES THESE ARE, ON A MERGED LINE: THIS ROUTE'S. `subjectFromRoute` narrows `notes` to
+    // `route.notes`, which is `ruleNotes()` for that route's own rule, because the merged line's
+    // array concatenates every contributing rule's and a reminder headed with one route's name and
+    // date quoted a sibling's threshold as if it qualified this filing. It narrows only where the
+    // route carries them: `FindingRoute.notes` is optional and absent on a plan stored before it
+    // existed, and such a row keeps the merged array, which is the residue `docs/BASELINE.md`
+    // records rather than closes.
+    //
+    // So a route's array holds four kinds, not the three above: its rule's own notes, its deadline
+    // qualification, its verification qualification, the confirm-with-agency floor `ruleNotes()`
+    // adds where that rule's own window could not be dated, and — where the route is gated —
+    // `applyDependencySequencing`'s caveat, appended to the gated route as well as to the line so
+    // the per-route readers stop losing it. Every one is quoted here for the reason the first three
+    // were (#252 review).
+    //
+    // NONE OF THAT IS REACHABLE IN PRODUCTION TODAY, and it is stated here for the same reason the
+    // paragraph below states it about its own example. No route-scheduled reminder can fire for a
+    // merged group on `nyc-rules.v2.11.json`: its one multi-member group is DOB-TENT-001, whose
+    // `business_days_minimum` deadline is undatable while `PUBLISHED_HOLIDAY_CALENDARS` is empty,
+    // beside DOB-TALL-STRUCTURE-001, which publishes no deadline at all, so neither route ever
+    // carries the date `alertSubjects` requires. What this paragraph describes is observable in the
+    // fixture suite and on any ruleset whose group dates two routes; the handling stands either
+    // way, and the identity work #262 covers is unreachable for the same reason.
+    //
+    // Reading only `deadline_display` therefore dropped the
     // caveat silently, and dropped it hardest on the rule that carries the most of it:
     // DOB-ASSEMBLY-001 has a long deadline `qualification` and five notes of its own, and a
     // reminder built from `deadline_display` alone stated a computed calendar date with no hint
@@ -1242,6 +1779,21 @@ function dependencyCopy(
  * answer key's verdict model and `specs/F-102`, and `apps/web/app/plan/verdict-copy.ts` already
  * renders it. Restating it differently here would put two vocabularies on one verdict.
  *
+ * THE BODY SENTENCES SAY NEITHER "SLACK" NOR "FEASIBLE-AT-RISK", and all three branches were
+ * rewritten together (product owner, 2026-08-10; recorded in `docs/BASELINE.md`). "Slack" is our
+ * internal word for the room left before a deadline and an organizer does not know it, and
+ * FEASIBLE-AT-RISK is a verdict CODE — `apps/web/app/plan/verdict-copy.ts` maps it to "At risk" and
+ * every other surface reads through that map, so this file was the one place the enum reached an
+ * organizer. Only the third branch was new; changing that one alone would have left one email
+ * speaking two ways, which is why the two already shipping changed with it. No artifact stated any
+ * of the three sentences, so none was amended: the only artifact-fixed string in this function is
+ * the ungated subject above, and it carries neither term.
+ *
+ * THE NUMBER STILL MEANS TWO DIFFERENT THINGS AND THE SENTENCES STILL SAY WHICH. The ungated one
+ * counts days to apply and names the date it counts from; the gated one describes a WIDTH and
+ * deliberately does not say "you have N days"; the third says the date needs no filing at all.
+ * Collapsing them into one sentence would restate the defect the paragraph above documents.
+ *
  * AND IT IS ANCHORED TO THE DATE IT WAS MEASURED FROM, which is the whole of the :851 fix. `N` is
  * frozen at plan generation, so a plan made with nine days of slack and converted eight days later
  * sent "apply within 9 days" while the filing date was tomorrow, contradicting the reminder
@@ -1269,6 +1821,15 @@ const slackWarningCopy = (
   evaluatedOn: string,
   /** Whether the requirement that PRODUCED this number waits on another agency's decision. */
   controllingIsGated: boolean,
+  /**
+   * Whether the requirement that produced this number publishes a filing at all.
+   *
+   * TIED THE SAME WAY `controllingIsGated` IS TIED, and in the same direction: true if ANY tied
+   * controller publishes a filing. The harm to avoid is withholding a filing instruction that is
+   * genuinely due, so a tie between a required route and an advisory one takes the filing copy;
+   * only a tie where NOTHING publishes a filing takes the third branch.
+   */
+  controllingPublishesFiling: boolean,
   /**
    * Every requirement whose slack IS this number, with what the ruleset says about each.
    *
@@ -1300,22 +1861,38 @@ const slackWarningCopy = (
   // ordinary filing deadline has a gated row AND an ungated controlling minimum, and the proxy
   // then called an ungated countdown a window width. The caller identifies the requirement that
   // produced the number and passes that, so one value decides every sentence here.
-  subject: controllingIsGated
-    ? `At risk — the narrowest filing window is ${minSlackDays} days wide`
-    : `At risk — apply within ${minSlackDays} days of ${evaluatedOn}`,
+  subject: !controllingPublishesFiling
+    ? `At risk — the narrowest published window is ${minSlackDays} days`
+    : controllingIsGated
+      ? `At risk — the narrowest filing window is ${minSlackDays} days wide`
+      : `At risk — apply within ${minSlackDays} days of ${evaluatedOn}`,
   body: [
     // THE FIRST LINE BRANCHES TOO, because it was contradicting the qualification below it. It
     // said the number was measured from the evaluation date while the next line said it was a
     // width, so the body disagreed with itself in exactly the case the qualification exists to
     // describe. A width is not measured from a date at all, so the gated sentence says what the
     // number is once rather than stating it wrongly and then correcting it.
-    controllingIsGated
-      ? `Your plan is FEASIBLE-AT-RISK: the narrowest slack across its dated requirements is ` +
-        `${minSlackDays} days. That requirement waits on another agency's decision, so the number ` +
-        `is the WIDTH of the window it can be filed in, not time remaining and not measured from ` +
-        `any date. Its own start and filing dates are on your checklist.`
-      : `Your plan is FEASIBLE-AT-RISK: the narrowest slack across its dated requirements is ` +
-        `${minSlackDays} days, measured from the plan's evaluation date ${evaluatedOn}.`,
+    // TWO INDEPENDENT FLAGS, FOUR SENTENCES, and no combination borrows another's. `gated` decides
+    // whether N is a countdown or a WIDTH; `publishesFiling` decides whether an organizer has
+    // anything to file. Neither answers the other's question, so neither takes precedence and the
+    // four cases are enumerated rather than layered. The first non-filing sentence covered both
+    // gated states with one countdown, which called a width a countdown for the gated half — the
+    // defect the two filing branches exist to avoid — and dropped the evaluation-date anchor its
+    // ungated half needs, so a plan emailed a week after it was evaluated stated a stored number as
+    // though it were current (product owner, 2026-08-10, correcting the same day's approval).
+    !controllingPublishesFiling
+      ? controllingIsGated
+        ? `Your plan is at risk. The requirement with the least room publishes a window ` +
+          `${minSlackDays} days wide. Nothing needs to be filed for it: the window is a range the ` +
+          `rule publishes, not time to apply.`
+        : `Your plan is at risk. Counting from ${evaluatedOn}, the requirement with the least ` +
+          `room leaves ${minSlackDays} days. Nothing needs to be filed for it: that is a date the ` +
+          `rule publishes, not a deadline to apply by.`
+      : controllingIsGated
+        ? `Your plan is at risk. The requirement with the least room can only be applied for ` +
+          `during a window ${minSlackDays} days wide.`
+        : `Your plan is at risk. Counting from ${evaluatedOn}, the requirement with the least ` +
+          `room leaves ${minSlackDays} days to apply.`,
     // THE THIRD BUILDER TO NEED THIS. AGENTS.md keeps the published verification states visible END
     // TO END and a notification is an end; reminders got it in round 7, dependency alerts in round
     // 10, and this one published a risk and a number while saying nothing about the status of the
@@ -1354,12 +1931,29 @@ async function plannedAlerts(
   planId: string,
   settings: AlertSchedulerSettings,
   now: Date,
-): Promise<PlannedAlert[]> {
+): Promise<ScheduledAlert[]> {
   const plan = await planVerdict(client, planId);
   if (plan === null) return [];
   const rows = await planAlertRows(client, planId);
+  const priors = await priorTaskIds(client, planId);
   const renderings = await renderingsForPlan(client, planId);
-  const byRuleId = new Map(rows.map((row) => [row.rule_ids[0] ?? "", row]));
+  // KEYED BY EVERY CONTRIBUTING RULE ID, AND BY EVERY ROUTE, not by `rule_ids[0]`. After a merge
+  // `rule_ids` concatenates in contributing order, so the first entry is whichever member sits
+  // earlier in the published file: keying on it made an upstream or dependency rule findable only
+  // when it happened to be listed first, which is the #244 defect class. Each route resolves to its
+  // OWN window here, so a dependency reads the date published by the rule that names it rather than
+  // the date on whichever route the merged line reads.
+  const byRuleId = new Map<string, PlanAlertRow>();
+  for (const row of rows) {
+    const rendering = renderings.get(renderingKey(row.rule_ids));
+    // UNFILTERED, because this map is a LOOKUP rather than a message. Dependency sequencing finds
+    // its upstream and gated rows through it, and a route hidden here degrades that lookup to the
+    // merged row, which is the scalar read the route expansion exists to avoid.
+    for (const subject of alertSubjects(row, rendering)) {
+      for (const ruleId of subject.row.rule_ids) byRuleId.set(ruleId, subject.row);
+    }
+    for (const ruleId of row.rule_ids) if (!byRuleId.has(ruleId)) byRuleId.set(ruleId, row);
+  }
   // THE DAY SCHEDULING HAPPENS, not the day the plan was evaluated. A plan pins `today` at
   // generation, and an organizer can generate one on Monday and convert it on Friday: read against
   // the plan's clock, a filing date that closed on Wednesday still looks like it is ahead, and the
@@ -1399,122 +1993,165 @@ async function plannedAlerts(
   };
   const planned: PlannedAlert[] = [];
 
-  for (const row of rows) {
-    if (row.checklist_item_id === null) continue;
-    const rendering = renderings.get(renderingKey(row.rule_ids));
-    const applyBy = isoDate(row.latest_apply_date);
+  for (const planRow of rows) {
+    if (planRow.checklist_item_id === null) continue;
+    const planRendering = renderings.get(renderingKey(planRow.rule_ids));
+    const subjects = alertSubjects(planRow, planRendering).filter(isFilingSubject);
+    // NO IDENTITY IS MINTED IN THIS LOOP. Each scheduling records what it is about and which route
+    // it came from, and `assignIdentities` turns that into a key once every scheduling is known —
+    // because which route NAMES a reminder depends on the other schedulings beside it, and a
+    // per-scheduling answer is exactly the order-dependent choice this key has failed on four
+    // times. The statement above `assignIdentities` is the whole rule.
+    for (const { row, rendering, routeRuleId, groupRouteRuleIds } of subjects) {
+      const applyBy = isoDate(row.latest_apply_date);
+      // The window this alert counts down to, recorded on the row wherever it is NOT the window the
+      // sweep would find through the checklist item, together with the fact that this alert is
+      // route-scheduled at all. The second half carries the cases the first cannot: a route with a
+      // gate and no filing deadline has no date to record and still must not be answered for by
+      // another route's. See `PlannedAlert.controllingApplyBy` and `routeScheduled`.
+      //
+      // WRITTEN AS null WHERE THERE IS NO WINDOW, NOT OMITTED, because the upsert MERGES payloads
+      // and an absent key is what a merge reads as "unchanged". A route that published a window on
+      // one generation and none on the next kept the old date, `FILING_WINDOW_HAS_SHUT` answered
+      // off a window the plan no longer publishes, and a live alert was cancelled. F-203's Outputs
+      // suppress on a date that has GONE, never on the ABSENCE of one.
+      const routeApplyBy =
+        routeRuleId === null ? {} : { routeScheduled: true as const, controllingApplyBy: applyBy };
 
-    const openOn = isoDate(row.apply_after_date);
-    const binding = DEPENDENCY_SEQUENCING_BINDINGS.find(
-      (candidate) => candidate.gatedRuleId === (row.rule_ids[0] ?? ""),
-    );
-    const upstream = binding === undefined ? undefined : byRuleId.get(binding.upstreamRuleId);
+      const openOn = isoDate(row.apply_after_date);
+      const binding = DEPENDENCY_SEQUENCING_BINDINGS.find(
+        (candidate) => candidate.gatedRuleId === (row.rule_ids[0] ?? ""),
+      );
+      const upstream = binding === undefined ? undefined : byRuleId.get(binding.upstreamRuleId);
 
-    // A filing date already behind is not something to remind anyone to meet. The reminder would
-    // read "file by <a day that has passed>", which is the one thing a missed window must never be
-    // dressed up as. The checklist still shows the missed status.
-    if (applyBy !== null && applyBy >= schedulingToday) {
-      for (const daysBefore of settings.reminderDaysBefore) {
-        const sendOn = shiftDays(applyBy, -daysBefore);
-        const { subject, body } = reminderCopy(row, rendering, applyBy, daysBefore, {
-          // Its day has already gone, so it goes out on the next tick and says so.
-          late: sendOn < schedulingToday,
-          // Named only while the upstream decision is still ahead of this reminder. Once the
-          // window has opened the sequence is no longer news, and the unlock alert has said it.
-          // `<=`, not `<`. A reminder landing exactly ON the day the upstream decision is first
-          // expected still lands before that decision is known — the window opens that day, it
-          // does not close the day before. The strict form dropped the sequencing note on precisely
-          // the case where the two alerts arrive together and the organizer most needs to be told
-          // which one waits on the other.
-          pendingUpstream: openOn !== null && sendOn <= openOn ? (upstream ?? null) : null,
+      // A filing date already behind is not something to remind anyone to meet. The reminder would
+      // read "file by <a day that has passed>", which is the one thing a missed window must never be
+      // dressed up as. The checklist still shows the missed status.
+      if (applyBy !== null && applyBy >= schedulingToday) {
+        for (const daysBefore of settings.reminderDaysBefore) {
+          const sendOn = shiftDays(applyBy, -daysBefore);
+          const { subject, body } = reminderCopy(row, rendering, applyBy, daysBefore, {
+            // Its day has already gone, so it goes out on the next tick and says so.
+            late: sendOn < schedulingToday,
+            // Named only while the upstream decision is still ahead of this reminder. Once the
+            // window has opened the sequence is no longer news, and the unlock alert has said it.
+            // `<=`, not `<`. A reminder landing exactly ON the day the upstream decision is first
+            // expected still lands before that decision is known — the window opens that day, it
+            // does not close the day before. The strict form dropped the sequencing note on precisely
+            // the case where the two alerts arrive together and the organizer most needs to be told
+            // which one waits on the other.
+            pendingUpstream: openOn !== null && sendOn <= openOn ? (upstream ?? null) : null,
+            openOn,
+          });
+          planned.push({
+            alertType: "deadline_reminder",
+            checklistItemId: row.checklist_item_id,
+            ...routeApplyBy,
+            // Already past at scheduling time — a checklist created inside the reminder window —
+            // is due NOW rather than at a moment that has gone (spec edge case, and AC 2's bound is
+            // measured from this field).
+            sendAt: dueAt(sendOn).at,
+            intendedAt: dueAt(sendOn).intended,
+            subject,
+            body,
+            // THE OFFSET IS PART OF WHICH REMINDER THIS IS, and the send day alone does not carry
+            // it. The published offsets are 7 and 1, so a regeneration that moves a filing date by
+            // exactly their difference lands the new 7-day reminder on the day the old 1-day
+            // reminder already occupies. Same item, same type, same day — the same key. If the old
+            // one had been sent, the conflict clause correctly refuses to touch a sent row, and the
+            // new reminder carrying the CORRECTED filing date was silently dropped on the floor.
+            // THE OFFSET IS WHICH REMINDER THIS IS, AND THE DAY IS NOT PART OF IT. The send day used
+            // to be in here, which meant an event edit that moved the filing date minted a new key:
+            // the reminder already SENT was correctly left alone, a fresh row was inserted for the
+            // same channel and the same recipient, and the organizer was reminded twice. AC 7, as
+            // this PR amended it and the product owner approved it, says a re-send is legitimate when
+            // the DESTINATION differs, not when the attempt does. A moved date is not a different
+            // destination. Same ruling the product owner made for the slack warning in round 15,
+            // arriving on the reminder.
+            //
+            // The offset stays, and on its own it is enough. The day was added to tell the 7-day
+            // reminder from the 1-day one when a moved date landed them on the same calendar day; a
+            // key of item plus offset cannot collide between offsets at all, so that case is closed
+            // by construction rather than by a second component.
+            //
+            // What a moved date does now is UPDATE the unsent row it already owns — new send day, new
+            // copy, same identity — which is the same treatment round 20 gave `send_at`. The intended
+            // day still decides the copy and whether the reminder is a catch-up; it just no longer
+            // decides whether this is the same reminder.
+            //
+            // WHICH ROUTE joins it on every merged row, in `assignIdentities`. An unmerged row adds
+            // nothing and keeps the key it had.
+            identityBase: `${row.checklist_item_id}:deadline_reminder:${daysBefore}`,
+            priorIdentityBases: priorIdentitiesFor(
+              priors.get(row.checklist_item_id ?? "") ?? [],
+              row.rule_ids,
+              (taskId) => `${taskId}:deadline_reminder:${daysBefore}`,
+            ),
+            routeRuleId,
+            groupRouteRuleIds,
+          });
+        }
+      }
+
+      // A FILING DEADLINE THAT HAS PASSED CLOSES THE UNLOCK TOO, and the reminder guard above was
+      // not enough on its own. Materializing an older plan after the gated item's latest apply date
+      // correctly skips the reminder and then scheduled this anyway, on a day already behind, so the
+      // next tick sent "You can now pursue" about a window the same plan reports as missed. Two
+      // surfaces contradicting each other on one requirement, with the notification the one that is
+      // wrong.
+      //
+      // A NULL latest apply date is allowed through, deliberately. That is a gated requirement with
+      // no published filing deadline at all — nothing has closed, so there is nothing to contradict,
+      // and suppressing it would drop a true alert to guard against a state that cannot arise. The
+      // guard is about a date that has gone, not about the absence of one.
+      const filingStillOpen = applyBy === null || applyBy >= schedulingToday;
+
+      // No binding or no upstream row means nothing published names what this waits on, and an
+      // unlock alert that cannot name its dependency is not the alert AC 4 asks for.
+      if (openOn !== null && binding !== undefined && upstream !== undefined && filingStillOpen) {
+        const { subject, body } = dependencyCopy(
+          row,
+          upstream,
+          byRuleId.get(binding.dependencyRuleId),
+          rendering,
+          renderings.get(renderingKey([binding.dependencyRuleId]))?.note_text ?? null,
           openOn,
-        });
+        );
         planned.push({
-          alertType: "deadline_reminder",
+          alertType: "dependency_unlocked",
           checklistItemId: row.checklist_item_id,
-          // Already past at scheduling time — a checklist created inside the reminder window —
-          // is due NOW rather than at a moment that has gone (spec edge case, and AC 2's bound is
-          // measured from this field).
-          sendAt: dueAt(sendOn).at,
-          intendedAt: dueAt(sendOn).intended,
+          ...routeApplyBy,
+          // Same treatment as a reminder, and for the same reason: an unlock whose gate opened
+          // before the plan was materialized is due now, not at a past instant that would score it
+          // late against AC 2 the moment it was written.
+          sendAt: dueAt(openOn).at,
+          intendedAt: dueAt(openOn).intended,
           subject,
           body,
-          // THE OFFSET IS PART OF WHICH REMINDER THIS IS, and the send day alone does not carry
-          // it. The published offsets are 7 and 1, so a regeneration that moves a filing date by
-          // exactly their difference lands the new 7-day reminder on the day the old 1-day
-          // reminder already occupies. Same item, same type, same day — the same key. If the old
-          // one had been sent, the conflict clause correctly refuses to touch a sent row, and the
-          // new reminder carrying the CORRECTED filing date was silently dropped on the floor.
-          // THE OFFSET IS WHICH REMINDER THIS IS, AND THE DAY IS NOT PART OF IT. The send day used
-          // to be in here, which meant an event edit that moved the filing date minted a new key:
-          // the reminder already SENT was correctly left alone, a fresh row was inserted for the
-          // same channel and the same recipient, and the organizer was reminded twice. AC 7, as
-          // this PR amended it and the product owner approved it, says a re-send is legitimate when
-          // the DESTINATION differs, not when the attempt does. A moved date is not a different
-          // destination. Same ruling the product owner made for the slack warning in round 15,
-          // arriving on the reminder.
+          // NO DATE IN THIS ONE, and that is the difference between it and a reminder. A reminder is
+          // one of several per requirement and its day is what tells them apart; an unlock is a
+          // single announcement per gated requirement — "the window you were waiting on is open" —
+          // and it can only be true once.
           //
-          // The offset stays, and on its own it is enough. The day was added to tell the 7-day
-          // reminder from the 1-day one when a moved date landed them on the same calendar day; a
-          // key of item plus offset cannot collide between offsets at all, so that case is closed
-          // by construction rather than by a second component.
-          //
-          // What a moved date does now is UPDATE the unsent row it already owns — new send day, new
-          // copy, same identity — which is the same treatment round 20 gave `send_at`. The intended
-          // day still decides the copy and whether the reminder is a catch-up; it just no longer
-          // decides whether this is the same reminder.
-          identity: `${row.checklist_item_id}:deadline_reminder:${daysBefore}`,
+          // `apply_after_date` is today plus the upstream processing range, so it moves every time
+          // the plan is regenerated on a later day, even when the event, the requirement and the
+          // upstream have not changed at all. Keyed on that date, a regeneration minted a second
+          // unlock whose predecessor was already sent and therefore correctly untouchable, and the
+          // organizer was told a second time that they may now pursue something they had already
+          // been told was open.
+          identityBase: `${row.checklist_item_id}:dependency_unlocked`,
+          // THE SIBLING, and it has the same defect for the same reason: keyed off the task, so a
+          // membership change moved it and told the organizer a second time that they may now
+          // pursue something they had already been told was open.
+          priorIdentityBases: priorIdentitiesFor(
+            priors.get(row.checklist_item_id ?? "") ?? [],
+            row.rule_ids,
+            (taskId) => `${taskId}:dependency_unlocked`,
+          ),
+          routeRuleId,
+          groupRouteRuleIds,
         });
       }
-    }
-
-    // A FILING DEADLINE THAT HAS PASSED CLOSES THE UNLOCK TOO, and the reminder guard above was
-    // not enough on its own. Materializing an older plan after the gated item's latest apply date
-    // correctly skips the reminder and then scheduled this anyway, on a day already behind, so the
-    // next tick sent "You can now pursue" about a window the same plan reports as missed. Two
-    // surfaces contradicting each other on one requirement, with the notification the one that is
-    // wrong.
-    //
-    // A NULL latest apply date is allowed through, deliberately. That is a gated requirement with
-    // no published filing deadline at all — nothing has closed, so there is nothing to contradict,
-    // and suppressing it would drop a true alert to guard against a state that cannot arise. The
-    // guard is about a date that has gone, not about the absence of one.
-    const filingStillOpen = applyBy === null || applyBy >= schedulingToday;
-
-    // No binding or no upstream row means nothing published names what this waits on, and an
-    // unlock alert that cannot name its dependency is not the alert AC 4 asks for.
-    if (openOn !== null && binding !== undefined && upstream !== undefined && filingStillOpen) {
-      const { subject, body } = dependencyCopy(
-        row,
-        upstream,
-        byRuleId.get(binding.dependencyRuleId),
-        rendering,
-        renderings.get(renderingKey([binding.dependencyRuleId]))?.note_text ?? null,
-        openOn,
-      );
-      planned.push({
-        alertType: "dependency_unlocked",
-        checklistItemId: row.checklist_item_id,
-        // Same treatment as a reminder, and for the same reason: an unlock whose gate opened
-        // before the plan was materialized is due now, not at a past instant that would score it
-        // late against AC 2 the moment it was written.
-        sendAt: dueAt(openOn).at,
-        intendedAt: dueAt(openOn).intended,
-        subject,
-        body,
-        // NO DATE IN THIS ONE, and that is the difference between it and a reminder. A reminder is
-        // one of several per requirement and its day is what tells them apart; an unlock is a
-        // single announcement per gated requirement — "the window you were waiting on is open" —
-        // and it can only be true once.
-        //
-        // `apply_after_date` is today plus the upstream processing range, so it moves every time
-        // the plan is regenerated on a later day, even when the event, the requirement and the
-        // upstream have not changed at all. Keyed on that date, a regeneration minted a second
-        // unlock whose predecessor was already sent and therefore correctly untouchable, and the
-        // organizer was told a second time that they may now pursue something they had already
-        // been told was open.
-        identity: `${row.checklist_item_id}:dependency_unlocked`,
-      });
     }
   }
 
@@ -1575,12 +2212,23 @@ async function plannedAlerts(
   // width into a countdown and states a filing date the sources do not publish. So every tied
   // controller is retained for the copy and the status, and openness decides only whether the
   // warning may go out at all.
+  // READ PER ROUTE, BECAUSE THE NUMBER IS COMPUTED PER ROUTE. `computeWindowVerdict` takes
+  // `minSlackDays` from every route of every finding, and a merged dedupe line's own `slack_days`
+  // is the binding route's alone. Where that route publishes no window the line's slack is null and
+  // no row here matched it at all, so `controllingFilingStillOpen` was false and the warning was
+  // suppressed on a plan the verdict had already called FEASIBLE_AT_RISK — the at-risk alert simply
+  // did not exist. Confirmed on a synthetic ruleset whose binding route is undated: verdict
+  // FEASIBLE_AT_RISK, `minSlackDays` 9 off the dated route, merged `slack_days` null (#252 review).
+  // The same expansion the reminders take, so the two cannot disagree about which windows a plan has.
   const dated = rows
-    .map((row) => ({ row, slack: renderings.get(renderingKey(row.rule_ids))?.slack_days }))
-    .filter((entry): entry is { row: PlanAlertRow; slack: number } => typeof entry.slack === "number");
+    .flatMap((row) => alertSubjects(row, renderings.get(renderingKey(row.rule_ids))))
+    .map((subject) => ({ subject, slack: subject.rendering?.slack_days }))
+    .filter(
+      (entry): entry is { subject: AlertSubject; slack: number } => typeof entry.slack === "number",
+    );
   /** Openness, and nothing else: whether the requirement the number describes can still be filed. */
   const openDated = dated.filter((entry) => {
-    const applyBy = isoDate(entry.row.latest_apply_date);
+    const applyBy = isoDate(entry.subject.row.latest_apply_date);
     return applyBy !== null && applyBy >= schedulingToday;
   });
   const controllingFilingStillOpen =
@@ -1612,7 +2260,26 @@ async function plannedAlerts(
   //
   // Same rule, and the reason it produces opposite answers is that one side risks saying too much
   // and the other risks saying nothing at all.
-  const controllingIsGated = controlling.some((dated) => dated.row.apply_after_date !== null);
+  // ONE ROUTE ANSWERS BOTH QUESTIONS, because the sentence describes one requirement.
+  //
+  // These were two independent `some` tests over the tied set, and on a tie they could describe
+  // DIFFERENT routes: a gated non-filing controller made `controllingIsGated` true while an ungated
+  // filing one made the filing test true, and the copy then said the narrowest FILING window is N
+  // days wide when the only filing controller was a countdown (#252 review). Two flags read off two
+  // routes and the copy assumed they agreed.
+  //
+  // THE SAME TWO HARM DIRECTIONS, APPLIED TO SELECT A ROUTE RATHER THAN TWO BOOLEANS, and in this
+  // order because the harms are ordered: withholding a filing instruction that is genuinely due is
+  // worse than naming a width, and calling a width a countdown asserts a filing date the sources do
+  // not publish while calling a countdown a width only loses an anchor. So: prefer a route that
+  // publishes a filing, and among those prefer a gated one.
+  const isGated = (dated: { subject: AlertSubject }) => dated.subject.row.apply_after_date !== null;
+  const controllingRoute =
+    controlling.find((dated) => isFilingSubject(dated.subject) && isGated(dated)) ??
+    controlling.find((dated) => isFilingSubject(dated.subject)) ??
+    controlling.find(isGated) ??
+    controlling[0];
+  const controllingIsGated = controllingRoute !== undefined && isGated(controllingRoute);
   /**
    * The day the LAST of the controlling requirements closes, for the poller to compare.
    *
@@ -1621,7 +2288,7 @@ async function plannedAlerts(
    * requirement has expired, and this is the day that happens.
    */
   const controllingApplyBy = controlling
-    .map((dated) => isoDate(dated.row.latest_apply_date))
+    .map((dated) => isoDate(dated.subject.row.latest_apply_date))
     .filter((day): day is string => day !== null)
     .sort()
     .at(-1);
@@ -1635,15 +2302,14 @@ async function plannedAlerts(
       settings.slackWarningDays,
       plan.today,
       controllingIsGated,
-      controlling.map((dated) => {
-        const rendering = renderings.get(renderingKey(dated.row.rule_ids));
-        return {
-          subject: withAgency(dated.row),
-          verificationStatus: dated.row.verification_status,
-          notes: rendering?.notes ?? [],
-          conflictText: rendering?.conflict_text ?? null,
-        };
-      }),
+      controllingRoute !== undefined && isFilingSubject(controllingRoute.subject),
+      controlling.map((dated) => ({
+        // The route's own name, so the copy names the rule whose window produced the number.
+        subject: withAgency(dated.subject.row),
+        verificationStatus: dated.subject.row.verification_status,
+        notes: dated.subject.rendering?.notes ?? [],
+        conflictText: dated.subject.rendering?.conflict_text ?? null,
+      })),
     );
     planned.push({
       alertType: "slack_warning",
@@ -1702,11 +2368,186 @@ async function plannedAlerts(
       //
       // The evaluation date rides the payload, so a pending warning is rewritten with the current
       // date and a sent one is left alone.
-      identity: "slack_warning",
+      identityBase: "slack_warning",
+      // The one identity with no task in it: the plan-level warning hangs off no checklist row, so
+      // nothing about it moves when a requirement's membership does.
+      priorIdentityBases: [],
+      routeRuleId: null,
+      groupRouteRuleIds: [],
     });
   }
 
-  return planned;
+  return assignIdentities(planned);
+}
+
+/**
+ * WHAT A REMINDER IS, AND WHAT ITS IDENTITY IS ACROSS EVERY TRANSITION IT CAN MAKE. Written out in
+ * full and kept beside the code that mints it, because four rounds have patched this key one
+ * transition at a time and a duplicate delivery came back after each of them. A fifth patch is not
+ * what this needs; a statement the next reader can check the code against is.
+ *
+ * A REMINDER IS A MESSAGE AN ORGANIZER RECEIVES: one checklist task's words, on one channel, at one
+ * destination. Everything else a row carries — which route produced it, which rule ids, which plan
+ * generation, which day it is due, how many times it has been attempted — is PROVENANCE. Provenance
+ * is how PopEngine finds the message again; it is not what makes two messages the same message.
+ * Two sentences follow, and every defect this key has had is a violation of one of them:
+ *
+ *   1. Two schedulings that would deliver the same words to the same destination are ONE reminder,
+ *      whatever produced them.
+ *   2. A reminder keeps its identity while its provenance changes, because the organizer receives
+ *      the same message either way.
+ *
+ * SO THE IDENTITY IS: the checklist task, the alert type, the published offset for a reminder, and
+ * — on a merged dedupe line — the CANONICAL ROUTE OF THE WORDS, which is the lowest rule id among
+ * the routes of that line whose copy is identical to this one's. Not the first route, not the
+ * binding route, not the route this particular scheduling came from. Plus the channel and the
+ * destination, which `idempotencyKey` adds and which are part of the message rather than of its
+ * provenance.
+ *
+ * THE CANONICAL ROUTE IS COMPUTED FROM THE SET, NEVER FROM AN ORDER, and that is the correction
+ * this round makes. "The first of the identical routes" was stable only while binding order was,
+ * and binding order is a function of which triggers have resolved: two byte-identical
+ * `may_be_required` routes stay coalesced when the lower-id one goes from `unknown` to `true`, but
+ * the resolved route now sorts first, so the words changed their name and the reminder was
+ * delivered a second time (#252 review). A minimum over a set has no such input. The same argument
+ * retires every ordering answer this key has been given.
+ *
+ * THE TRANSITIONS, and what holds the two sentences at each:
+ *
+ *   CREATED — the identity is minted here, from the plan alone. Nothing is read from the alerts
+ *   table, so two generations of the same plan mint the same key.
+ *
+ *   RESCHEDULED, the filing date moves and the copy is rewritten — SAME identity. The send day and
+ *   the intended day are provenance (rounds 9 and 20); the upsert moves the row it already owns.
+ *
+ *   ROUTE ADDED to the group, ROUTE REMOVED from it — same identity for every reminder whose words
+ *   are unchanged, because the canonical route is the lowest id among the routes publishing THOSE
+ *   WORDS and a route with different copy is not one of them. Where the arriving route publishes
+ *   the same words with a lower id, the name moves and `supersededIdentities` re-keys the row that
+ *   already holds them rather than letting a second one be inserted.
+ *
+ *   ROUTE WINDOW GAINED, ROUTE WINDOW LOST — same identity. The route is in the key
+ *   unconditionally on every merged row, so the key cannot depend on how many of the line's routes
+ *   happened to publish a date the day the plan was generated (the 1-to-2 count defect). Where the
+ *   naming route is the one that loses its window and stops scheduling at all, the name moves to
+ *   the next id publishing the words and `supersededIdentities` carries the row across.
+ *
+ *   RESCHEDULED AND RENAMED AT ONCE — same identity, and this is the one the transitions above
+ *   do not settle between them. Each of the two is identity-preserving on its own, and the
+ *   mechanisms that hold them apart are different: a reschedule keeps the key and lets the upsert
+ *   move the row, a rename keeps the words and lets the adoption move the key. Composed, neither
+ *   holds, because the row that must be adopted is filed under the old name AND stores the old
+ *   words. `coalescedIdentities` is what carries it: the keys of the routes this reminder now
+ *   coalesces belong to no other reminder of the generation, so they are adopted without asking
+ *   the prior row to contain the message it has not been sent yet.
+ *
+ *   COALESCED, two or more routes publishing byte-identical copy — ONE reminder, named by the
+ *   lowest of their ids. Three of the nine multi-member groups in the v2 full draft publish
+ *   byte-identical outputs and are the ones that merge most often
+ *   (`docs/research/draft-dedupe-cofiring.md` §5.2, §5.7, §5.8), so this is the common case rather
+ *   than the exotic one.
+ *
+ *   RETRIED — same identity, and nothing here is consulted. Failure count, backoff and last error
+ *   live on the row and survive the upsert's payload merge.
+ *
+ *   RETIRED, the requirement or its window goes — the key leaves the plan's set and the reconciler
+ *   cancels the row. REVIVED, it comes back — the same key returns and the cancelled row goes back
+ *   to pending, which is why the key may not carry anything about the row's state.
+ *
+ *   REPLAYED AFTER A DEPLOY, a plan written before route lists existed — its rows are keyed with no
+ *   route at all, and `supersededIdentities` gives them the key the words are about to be said
+ *   under, once, before the upsert can mint a second row beside them.
+ *
+ * WHERE IT CANNOT BE HELD, NAMED RATHER THAN LEFT TO BE DISCOVERED. The identity rests on rule ids
+ * being stable across ruleset publications. If a published rule is reissued under a NEW id, every
+ * reminder that route names re-keys: the adoption below matches on the stored copy, so it is
+ * carried across only while some other route of the same line still publishes those exact words,
+ * and otherwise the organizer receives one duplicate of each already-sent reminder on that line.
+ * The alternative — keying on the words themselves — breaks sentence 2 on every moved date, which
+ * is the far commoner transition. Rule ids are the published anchor everything else in this
+ * repository already keys on, so a rule id changing is a ruleset event, not a routine one.
+ *
+ * AND THERE ARE TWO IDENTITIES, WHICH IS THE PART EVERY ROUND MISSED. The row key here says which
+ * reminder this is TO POPENGINE, and it is recomputed from the current plan. The provider key says
+ * which message is already IN FLIGHT AT THE PROVIDER, and it is fixed by the first handoff. They
+ * coincide until something re-keys a row that has already been attempted, which is exactly what the
+ * adoption does — so `providerKey` reads the attempt rather than the row.
+ */
+function assignIdentities(planned: readonly PlannedAlert[]): ScheduledAlert[] {
+  // THE TEST IS THE WORDS, NOT THE FIELDS THEY CAME FROM. Every difference between two routes an
+  // organizer could act on is in the copy by construction: the name, the agency, the date, the fee,
+  // the portal and the published deadline text are all rendered into the subject or the body. Two
+  // routes whose copy is identical are indistinguishable to the person receiving it, and comparing
+  // the rendered strings needs no list of fields kept in step with `reminderCopy`.
+  //
+  // SCOPED TO ONE CHECKLIST TASK AND ONE TYPE, so this can never merge two requirements. Two tasks
+  // with identical copy are still two things to file, and nothing here may decide otherwise.
+  const groups = new Map<string, PlannedAlert[]>();
+  for (const alert of planned) {
+    const words = JSON.stringify([
+      alert.alertType,
+      alert.checklistItemId,
+      alert.subject,
+      alert.body,
+    ]);
+    const group = groups.get(words);
+    if (group === undefined) groups.set(words, [alert]);
+    else group.push(alert);
+  }
+
+  return [...groups.values()].map((group) => {
+    // The lowest id wins, over the SET of schedulings that deliver these words. `sort()` on the
+    // ids rather than picking a member of the group, so nothing about the order the schedulings
+    // arrived in can reach the key.
+    const first = group[0] as PlannedAlert;
+    const canonical =
+      first.routeRuleId === null
+        ? null
+        : ([...group]
+            .map((alert) => alert.routeRuleId)
+            .filter((ruleId): ruleId is string => ruleId !== null)
+            .sort()[0] ?? null);
+    const identity = canonical === null ? first.identityBase : `${first.identityBase}:${canonical}`;
+    // The routes whose schedulings THIS reminder coalesces, which no other reminder of this
+    // generation lists, so a row under one of their keys is this reminder whatever words it stores.
+    const coalescedRuleIds = new Set(
+      group
+        .map((alert) => alert.routeRuleId)
+        .filter((ruleId): ruleId is string => ruleId !== null && ruleId !== canonical),
+    );
+    const keyFor = (ruleId: string) => `${first.identityBase}:${ruleId}`;
+    const coalesced = canonical === null ? [] : [...coalescedRuleIds].sort().map(keyFor);
+    // Every OTHER key these same words could already be stored under: the pre-route-list key, and
+    // the routes of the line this reminder does not speak for, whether or not they schedule
+    // anything on this generation. Both are keys another reminder of the same line also lists, so
+    // the copy match below is what tells them apart, and a route publishing different copy cannot
+    // be adopted by mistake.
+    // EVERY BASE THIS ALERT MAY ALREADY BE STORED UNDER, not only the current one. A requirement
+    // whose route membership changes becomes a NEW checklist row, so the identity moved with the
+    // task while the alert stayed the same alert; the predecessor bases are the same keys rebuilt on
+    // the rows it used to be, and they expand over the routes exactly as the current base does,
+    // because a delivered row could be stored under any route of the old task as easily as the new
+    // one (#252 review). Unmerged rows have no route component, so the base alone is the key there,
+    // which is why the prior bases are listed whether or not this alert has a canonical route.
+    // Already whole keys: `priorIdentitiesFor` expanded each predecessor base over the rule ids the
+    // requirement held then and now, because the generation that drops a route may have no route of
+    // its own to join and the delivered row's key has one.
+    const priorBases = [...new Set(group.flatMap((alert) => alert.priorIdentityBases))].sort();
+    const routeSuffixes =
+      canonical === null
+        ? []
+        : [...new Set(group.flatMap((alert) => alert.groupRouteRuleIds))]
+            .filter((ruleId) => ruleId !== canonical && !coalescedRuleIds.has(ruleId))
+            .sort();
+    const superseded = canonical === null ? [] : [first.identityBase, ...routeSuffixes.map(keyFor)];
+    return {
+      ...first,
+      identity,
+      supersededIdentities: superseded,
+      coalescedIdentities: coalesced,
+      priorTaskIdentities: priorBases,
+    };
+  });
 }
 
 /** A calendar day shifted by whole days, in UTC so no timezone can move the day itself. */
@@ -1759,6 +2600,33 @@ const idempotencyKey = (
   createHash("sha256").update(recipient).digest("hex").slice(0, 12);
 
 /**
+ * THE KEY ALREADY IN FLIGHT, and the row's own only where there is none.
+ *
+ * WHY THE ROW'S KEY IS NOT ENOUGH BY ITSELF. `idempotency_key` is recomputed from the current plan,
+ * and one path deliberately REWRITES it on a row that already exists: the legacy adoption above,
+ * which hands a pre-route-list row the key its route-keyed successor would use. A row can be sitting
+ * in that state with an unresolved attempt against it — the provider accepted, this side timed out
+ * and marked the row failed — and the retry then falls inside the provider's dedup window. Handed
+ * the NEW key, the provider has nothing to match it against and delivers the reminder a second time:
+ * the adoption written to close a duplicate opening one, one layer down (#252 review).
+ *
+ * SO THE TWO IDENTITIES ARE READ FROM THE TWO PLACES THAT HOLD THEM. The row says which reminder
+ * PopEngine means; the oldest unresolved, unsuperseded attempt says which message the provider may
+ * be holding, and that is the key that has to go back. `alert_send_attempts.idempotency_key` has
+ * recorded it since migration 014 precisely so a reconciliation could look the message up by it.
+ *
+ * NO TIME BOUND ON THE ATTEMPT, deliberately. Inside the provider's window the repeated key is what
+ * deduplicates; outside it the provider treats it as a fresh message, which is the same outcome as
+ * sending the row's own key, so bounding this would add a branch that changes nothing. Superseded
+ * attempts are excluded for the reason `unresolvedAttemptPastTheCutoff` excludes them: they speak
+ * for a schedule that has ended. A RESOLVED attempt is excluded because this side learned what
+ * happened to it — either it was delivered, and the row is sent and never retried, or the provider
+ * was proven never to have been reached, and there is nothing to deduplicate against.
+ *
+ * WHAT THIS DOES NOT CHANGE is the trade recorded below: a corrected wording may still be
+ * deduplicated away inside the window. That was already true of every row whose key did not move,
+ * and it is the trade this file has taken since round 19.
+ *
  * WHY THE PROVIDER IS SIMPLY HANDED THE ROW'S KEY, with no digest of the copy on the end.
  *
  * Round 10 added that digest so a CHANGED request would get a fresh provider identity: a corrected
@@ -1798,7 +2666,7 @@ const idempotencyKey = (
  * person is the harm the spec names; delivering the earlier wording of a message they already have
  * is not.
  */
-const providerKey = (row: DueAlertRow): string => row.idempotency_key;
+const providerKey = (row: DueAlertRow): string => row.in_flight_key ?? row.idempotency_key;
 
 /**
  * The addresses to schedule to: what the organizer just entered, falling back to what this event's
@@ -1906,6 +2774,129 @@ export function createAlertScheduler(settings: AlertSchedulerSettings): AlertSch
     const keys: string[] = [];
     /** Alerts this review brought back from `cancelled`, whose attempts belong to what it ended. */
     const revived: string[] = [];
+    // EVERY ADOPTION RUNS BEFORE ANY UPSERT, so a key holds the row that is its own by the time
+    // anything claims it. Both statements were already right; their order was not, and the order
+    // only shows on a generation where one alert's adoption moves a row out from under ANOTHER
+    // alert of the same generation. A coalesced set that splits is that generation: two routes
+    // publish one reminder, then one route's copy is corrected while the other still publishes the
+    // words that went out, so the corrected route keeps the key and the delivered words move to the
+    // second route's. Interleaved, the corrected route's upsert ran first, found the sent row still
+    // filed under its key, and left it exactly as it is, which is what AC 7 requires of a row that
+    // IS this alert's. It was not: it was the other reminder's row, not yet moved. The adoption
+    // then moved it away, leaving no row under the corrected route, and its reminder was inserted
+    // and delivered by the NEXT regeneration instead — an alert waiting on a later review of a plan
+    // that did not change (#252 review).
+    //
+    // Two passes rather than a rule about which alerts may adopt: the adoption is a statement about
+    // the rows a PRIOR generation left, and the upsert is a statement about the row this one owns,
+    // so nothing is being ordered here that was not already two separate things.
+    for (const alert of planned) {
+      if (
+        alert.supersededIdentities.length === 0 &&
+        alert.coalescedIdentities.length === 0 &&
+        alert.priorTaskIdentities.length === 0
+      ) {
+        continue;
+      }
+      for (const channel of channels) {
+        // Non-null: `channels` is filtered on exactly this.
+        const recipient = recipientFor(contacts, channel) ?? "";
+        const key = idempotencyKey(eventId, alert.identity, channel, recipient);
+        // THE ROW THAT ALREADY SAID THESE WORDS TAKES THIS KEY, before the upsert can mint a second
+        // one beside it. `supersededIdentities` explains which keys those are; what it needs here
+        // is one statement. The copy match is the whole test: this row is about to be delivered
+        // saying exactly what that row was delivered saying, so they are one alert and one of them
+        // may already have gone out.
+        //
+        // THE WHOLE MESSAGE, SUBJECT AND BODY, because that is what `assignIdentities` groups on
+        // and the two tests have to be the same test. Two routes of one line can publish the same
+        // subject and different bodies — a different published deadline sentence, note, fee or
+        // portal all render into the body alone — and `assignIdentities` correctly makes them two
+        // reminders. Matching on the subject alone let the second one's adoption re-key the FIRST
+        // route's row: the second upsert then overwrote that row's pending copy, or found it
+        // already sent and skipped, and one route's distinct reminder was never delivered
+        // (#252 review). The statement above `assignIdentities` asserts this match is safe because
+        // "a route publishing different copy ... its subject is not this one", which is true only
+        // where the copy differs in the subject; the code now tests what the statement means.
+        //
+        // AND THE COPY MATCH DOES NOT APPLY TO EVERY SUPERSEDED KEY, which is the composition the
+        // five preceding rounds each left open. The test above asks the prior row to already carry
+        // the message about to be sent, and it cannot when THE SAME regeneration rewrites the copy
+        // and moves the canonical route: a moved filing date rewrites the words while a lower-id
+        // route joining the identical-copy set moves the name, and each transition on its own is
+        // identity-preserving. Composed, the adoption skipped and the upsert inserted the new key
+        // beside the sent row, delivering the corrected reminder to the same destination (#252
+        // review). `coalescedIdentities` names the keys of the routes THIS reminder now speaks for,
+        // which no other reminder of this generation lists, so those rows are adopted on the key
+        // alone. Every other superseded key keeps the copy test, because it is shared.
+        //
+        // AT MOST ONE ROW, AND THE SENT ONE FIRST. `idempotency_key` is UNIQUE, so re-keying two
+        // rows to one key would abort the review; and where a sent row and an unsent row both hold
+        // these words, adopting the unsent one would cancel the record of the delivered message and
+        // then deliver it again. The rest are superseded and the reconciler cancels them, which is
+        // what rule 1 says they are. `NOT EXISTS` because the current key may already be taken, and
+        // a row that already holds it is this alert.
+        // WHAT PREDECESSOR ADOPTION MATCHES: THESE WORDS, DELIVERED, UNDER A KEY THIS REQUIREMENT
+        // USED TO HOLD. All three parts, and the first is the one the previous round left out.
+        //
+        // Keyed on the task alone it matched the wrong thing one level down from the defect it
+        // fixed. Every alert of the new generation lists the same predecessor keys, because the
+        // predecessor is a property of the TASK while the row being adopted belongs to a ROUTE, so
+        // with only a status test whichever alert was processed first took the sent row. A
+        // regeneration that adds a route with different copy which binds first then had the NEW
+        // route adopt the OLD route's delivered reminder, its own distinct reminder suppressed as
+        // already sent, and the old route's unchanged reminder inserted under another key and
+        // delivered again: one email the organizer already had, and one filing instruction they
+        // never got. Worse than the duplicate it replaced (#252 review).
+        //
+        // MATCHED ON THE COPY, NOT ON THE ROUTE ID, and that is not a weaker test here. The route
+        // the delivered row was keyed under may not exist in this generation at all — it is the
+        // route that just left the group — so a route-id match would fail exactly where adoption is
+        // needed. The words identify the alert instead, and they identify it UNIQUELY:
+        // `assignIdentities` groups schedulings by `[alertType, checklistItemId, subject, body]`, so
+        // two routes of one group publishing identical copy are already ONE alert rather than two
+        // competing for the same row. There is no case where a copy match has to choose between two
+        // routes, because a generation never mints two alerts with the same words for one task and
+        // type. That is the property the previous round assumed and this one relies on explicitly.
+        //
+        // AND DELIVERED, which the other two key sets do not require and must not. The harm is a
+        // SENT reminder going out twice; a pending row that is not adopted is cancelled and
+        // rescheduled, which no organizer sees. The wider rule would also be wrong: a task can end
+        // deliberately — a kind change strikes it and cancels its reminders, and a task with the
+        // same rule ids may be appended later as a NEW task — and resurrecting those cancelled rows
+        // onto it would undo the ending the checklist just recorded.
+        await client.query(
+          `UPDATE alerts SET idempotency_key = $2
+              WHERE id = (SELECT prior.id FROM alerts prior
+                           WHERE prior.idempotency_key = ANY($5::text[])
+                              OR (prior.idempotency_key = ANY($1::text[])
+                                  AND prior.payload->>'subject' = $3
+                                  AND prior.payload->>'body' = $4)
+                              OR (prior.idempotency_key = ANY($6::text[])
+                                  AND prior.status = 'sent'
+                                  AND prior.payload->>'subject' = $3
+                                  AND prior.payload->>'body' = $4)
+                           ORDER BY (prior.status = 'sent') DESC, prior.idempotency_key
+                           LIMIT 1)
+                AND NOT EXISTS (SELECT 1 FROM alerts held WHERE held.idempotency_key = $2)`,
+          [
+            alert.supersededIdentities.map((identity) =>
+              idempotencyKey(eventId, identity, channel, recipient),
+            ),
+            key,
+            alert.subject,
+            alert.body,
+            alert.coalescedIdentities.map((identity) =>
+              idempotencyKey(eventId, identity, channel, recipient),
+            ),
+            alert.priorTaskIdentities.map((identity) =>
+              idempotencyKey(eventId, identity, channel, recipient),
+            ),
+          ],
+        );
+      }
+    }
+
     for (const alert of planned) {
       for (const channel of channels) {
         // Non-null: `channels` is filtered on exactly this.
@@ -2079,6 +3070,7 @@ export function createAlertScheduler(settings: AlertSchedulerSettings): AlertSch
               ...(alert.controllingApplyBy === undefined
                 ? {}
                 : { controlling_apply_by: alert.controllingApplyBy }),
+              ...(alert.routeScheduled === undefined ? {} : { route_scheduled: true }),
               ...(alert.intendedAt === undefined ? {} : { intended_at: alert.intendedAt }),
             }),
           ],
@@ -2157,8 +3149,29 @@ type DueAlertRow = {
   channel: AlertChannel;
   recipient: string;
   idempotency_key: string;
+  /**
+   * The key an earlier handoff already presented for this row, or null where none has been. See
+   * `providerKey`: the row's key is what PopEngine currently calls this reminder, and this is what
+   * the provider may already know it as.
+   */
+  in_flight_key: string | null;
   payload: { subject?: string; body?: string };
 };
+
+/**
+ * The key of the attempt still speaking for this row, read as a column so `providerKey` needs no
+ * second round trip inside the send. Ordered so a row holding several unresolved attempts presents
+ * the FIRST key it ever presented, which is the one the provider's window is measured from.
+ */
+const IN_FLIGHT_KEY = `(
+       SELECT attempt.idempotency_key
+         FROM alert_send_attempts AS attempt
+        WHERE attempt.alert_id = alerts.id
+          AND attempt.outcome_recorded_at IS NULL
+          AND attempt.superseded_at IS NULL
+        ORDER BY attempt.attempted_at, attempt.id
+        LIMIT 1
+     )`;
 
 /**
  * Where the attempt-intent write gets its connection, which must not be the pool the send already
@@ -2294,7 +3307,11 @@ async function recordAttemptIntent(
             AND EXISTS (SELECT 1 FROM recorded)
        )
        SELECT id FROM recorded`,
-      [row.id, row.idempotency_key, attemptId, timeZone],
+      // THE KEY THIS SEND WILL PRESENT, not the row's, so the record says what the provider was
+      // actually handed. They differ on exactly one row — one whose key was rewritten after an
+      // earlier handoff — and recording the row's there would lose the only copy of the key a
+      // reconciliation could look the message up by.
+      [row.id, providerKey(row), attemptId, timeZone],
     );
     recorded = rows[0]?.id ?? null;
   } catch (error) {
@@ -2351,7 +3368,7 @@ async function settleUnacknowledgedIntent(
       `INSERT INTO alert_send_attempts (id, alert_id, idempotency_key, outcome_recorded_at)
             VALUES ($1, $2, $3, clock_timestamp())
        ON CONFLICT (id) DO UPDATE SET outcome_recorded_at = clock_timestamp()`,
-      [attemptId, row.id, row.idempotency_key],
+      [attemptId, row.id, providerKey(row)],
     );
   } finally {
     client.release();
@@ -2766,7 +3783,8 @@ async function sendOne(
       // predicate is re-asked here: the event edit this guards against can commit in the window
       // between the two. The event row is held by then, so what this reads is a revision no writer
       // is midway through changing.
-      `SELECT id, channel, recipient, idempotency_key, payload
+      `SELECT id, channel, recipient, idempotency_key, payload,
+              ${IN_FLIGHT_KEY} AS in_flight_key
          FROM alerts
         WHERE id = $1 AND status IN ('pending', 'failed') AND send_at <= statement_timestamp()
           AND (next_attempt_at IS NULL OR next_attempt_at <= statement_timestamp())
@@ -3117,15 +4135,17 @@ export function createAlertPoller(dependencies: {
         // A row whose own transaction could not even record an outcome — the database went away
         // mid-send — must not take the rest of the batch down with it. It stays as it was, which
         // means it is still due on the next tick.
-        const outcome = await sendOne(database, id, senders, jurisdiction).catch((error: unknown) => {
-          console.error(`alert ${id} could not be recorded`, error);
-          // COUNTED AS UNREACHED, not as nothing to do. `drained` exists to tell "no more work"
-          // from "more work I did not reach", and a transaction that threw is the second: the row
-          // is untouched and still due. Reported as drained, the tick waited out a whole interval
-          // and the retry could pass the bound.
-          abandoned += 1;
-          return null;
-        });
+        const outcome = await sendOne(database, id, senders, jurisdiction).catch(
+          (error: unknown) => {
+            console.error(`alert ${id} could not be recorded`, error);
+            // COUNTED AS UNREACHED, not as nothing to do. `drained` exists to tell "no more work"
+            // from "more work I did not reach", and a transaction that threw is the second: the row
+            // is untouched and still due. Reported as drained, the tick waited out a whole interval
+            // and the retry could pass the bound.
+            abandoned += 1;
+            return null;
+          },
+        );
         if (outcome === null) continue;
         if (outcome.status === "skipped") {
           skipped.push(id);
@@ -3810,7 +4830,10 @@ export function parseContacts(
     // naming a space as the cause.
     //
     // The phone branch below already had this shape, which is why only one of the two broke.
-    if (typeof contactEmail !== "string" || !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(contactEmail.trim())) {
+    if (
+      typeof contactEmail !== "string" ||
+      !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(contactEmail.trim())
+    ) {
       return { error: "contactEmail must be an email address" };
     }
   }

@@ -35,6 +35,17 @@
 import type { ConsumedFinding } from "./plan-api";
 
 /**
+ * What the sentence is read off: the four published values that decide whether it applies and which
+ * agency it names. A merged line and one of its contributing routes both carry all four, and it is
+ * the same sentence on either, so it is stated once over the shape rather than twice over the two
+ * types. Projected from `ConsumedFinding` so a rename there still fails this typecheck.
+ */
+type BusinessDayLine = Pick<
+  ConsumedFinding,
+  "agency" | "deadline" | "deadlineStatus" | "latestApplyDate"
+>;
+
+/**
  * How an agency's published name reads inside the notice, in both positions it appears: as the
  * subject of "<agency> counts as business days" and as the object of "Confirm with <agency>". The
  * article is grammar, not regulatory content, so it is decided here rather than added to the
@@ -74,16 +85,16 @@ const AGENCY_IN_SENTENCE: Readonly<Record<string, string>> = {
  * exactly one undatable path in `packages/engine/src/deadlines.ts` (`holidays === null`), so type
  * plus `not_calculable` plus no computed date identifies this case with nothing left to parse.
  *
- * A MERGED FINDING GETS THE SENTENCE, and what keeps it about the right agency is the published
- * ruleset rather than a count of contributing rules. `packages/engine/src/findings.ts:407-411`
- * sources the two fields this sentence combines from two DIFFERENT routes by design (AD-19):
- * `agency` arrives with `identityBinding`, the tightest window among only the routes that
- * contributed the headline disposition, while `deadline` and `deadlineStatus` arrive from
- * `windowBinding`, the tightest window across the whole group. `findings.ts:328-330` states the
- * consequence: "The two coincide in every group nyc.v2.11 publishes, so this splits nothing today;
- * it bounds what a future dedupe group can render." A group whose window came from a DOB rule and
- * whose disposition came from an SLA one would render "which days the NY State Liquor Authority
- * counts" beside DOB's window and send the organizer to the wrong agency to confirm it.
+ * A MERGED FINDING GETS THE SENTENCE, and the two fields it combines are now one route's. AD-19's
+ * per-field split, under which `agency` arrived with the identity binding and `deadline` with the
+ * window binding, is the one sentence of AD-19 this branch supersedes: `findings.ts:481-482` takes
+ * identity and timeline both off the binding route, so the agency this sentence names is the agency
+ * that published the window it explains. On a route entry the same is true by construction: every
+ * value on a route is that rule's own. So the group-crosses-agencies hazard the invariant below was
+ * written against can no longer produce the wrong agency on either surface, which is what that
+ * comment predicted would happen when this route list landed. The invariant is kept anyway, as the
+ * artifact-level check it already is: it costs one test and it fails on the event, a `dedupe_key`
+ * edit, that #239 and #244 both record moving rendered output with no code change.
  *
  * NO PUBLISHED GROUP CROSSES AGENCIES, and that is checked rather than assumed. `dob-structure` is
  * the only `dedupe_key` group in nyc.v2.11 holding a rule with a `business_days_minimum` deadline,
@@ -101,20 +112,21 @@ const AGENCY_IN_SENTENCE: Readonly<Record<string, string>> = {
  * and the decision recorded in `docs/BASELINE.md` names DOB-ASSEMBLY-001 as the one finding that
  * falls back, so narrowing further is not this file's to decide.
  *
- * The narrower fix, reading the agency off the timeline-binding route, still needs a contract that
- * does not exist: `ConsumedFinding` carries one merged `agency` and a flat `ruleIds`, no per-route
- * agency exists on the shape, and `timelineUnresolvedReason` does not name its route either
- * (`deadlines.ts:294-295` builds it without a rule id; the id an organizer sees in the verdict panel
- * is added there from `entry.ruleIds`). Keying a rule id to an agency in this file would publish a
- * regulatory fact outside `rules/nyc-rules.v2.11.json` and go stale the moment the ruleset corrected
- * it. When PR #252's route list lands on the merged finding, the agency is read off the timeline
- * route and the artifact invariant stops being load bearing.
+ * A NON-BINDING ROUTE GETS THE SENTENCE TOO, off its own four fields, which is why this reads a
+ * shape rather than a `ConsumedFinding`. Where DOB-TALL-STRUCTURE-001 binds the `dob-structure`
+ * group and DOB-TENT-001 rides along unresolved, the deployed null holiday calendar leaves the tent
+ * route `not_calculable` with no date of its own, and the merged line's scalars are the tall route's,
+ * so the finding-level call above returns null. The route entry then carried "not calculable" and
+ * nothing else, and F-201 AC 13's explanation of what the exact date depends on was absent from the
+ * one line that has the undatable window. The criterion is written about a finding whose published
+ * deadline `type` is `business_days_minimum` and which could not be dated; a route entry publishing
+ * exactly that is that finding's window, listed where the merge put it.
  */
-export function businessDayNotice(finding: ConsumedFinding): string | null {
-  if (finding.deadlineStatus !== "not_calculable" || finding.latestApplyDate !== null) return null;
-  if (finding.deadline === null || finding.deadline.type !== "business_days_minimum") return null;
+export function businessDayNotice(line: BusinessDayLine): string | null {
+  if (line.deadlineStatus !== "not_calculable" || line.latestApplyDate !== null) return null;
+  if (line.deadline === null || line.deadline.type !== "business_days_minimum") return null;
 
-  const agency = finding.agency === null ? undefined : AGENCY_IN_SENTENCE[finding.agency];
+  const agency = line.agency === null ? undefined : AGENCY_IN_SENTENCE[line.agency];
   if (agency === undefined) return null;
 
   return (

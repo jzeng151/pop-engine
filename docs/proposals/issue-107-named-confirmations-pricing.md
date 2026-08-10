@@ -72,11 +72,11 @@ For an enum gate, `"unknown"` makes an `eq "no"` condition evaluate tri-state UN
 `note_text`, so the sentence cannot hedge. Demonstrated with a synthetic confirmation rule keyed on
 `event_open_to_public`, driven through `validateIntake` and then `evaluate`:
 
-| answer | intake valid | confirmation emitted |
-|---|---|---|
-| `"no"` | yes | yes, correctly |
-| `"unknown"` | yes | **yes**, stating "You told us this event is not open to the public" |
-| `"yes"` | yes | no, correctly |
+| answer      | intake valid | confirmation emitted                                                |
+| ----------- | ------------ | ------------------------------------------------------------------- |
+| `"no"`      | yes          | yes, correctly                                                      |
+| `"unknown"` | yes          | **yes**, stating "You told us this event is not open to the public" |
+| `"yes"`     | yes          | no, correctly                                                       |
 
 **Not hypothetical for the fixture suite pinned at `46971a0`.** Five fields in the corrected
 historical inventory are answered `"unknown"`: `structure_over_10ft_tall` in Scenario E, and
@@ -103,12 +103,12 @@ boolean is nullable. Sentence withdrawn.
 partial.** Guard 1 `parseIntakeContract`, guard 2 `validateIntake`, guard 3 `evaluate`. All three routes
 by which a boolean could reach an unknown state are closed:
 
-| Route | Result | Where |
-|---|---|---|
-| asked, answered `"unknown"` | rejected `invalid_value` | `validateIntake` |
-| asked, `null` | rejected `required` | `validateIntake` |
-| asked, omitted | rejected `required` | `validateIntake`, the non-nullable branch |
-| **not asked** | condition evaluates `"false"`, so the trigger is false and `resolveFindings` skips the rule: **silence, not a false confirmation** | `conditions.ts` `resolveAnswer` returns a `not_asked` state distinct from `unknown`, and the condition branch for it returns `"false"`; `findings.ts` continues on a false result |
+| Route                       | Result                                                                                                                             | Where                                                                                                                                                                             |
+| --------------------------- | ---------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| asked, answered `"unknown"` | rejected `invalid_value`                                                                                                           | `validateIntake`                                                                                                                                                                  |
+| asked, `null`               | rejected `required`                                                                                                                | `validateIntake`                                                                                                                                                                  |
+| asked, omitted              | rejected `required`                                                                                                                | `validateIntake`, the non-nullable branch                                                                                                                                         |
+| **not asked**               | condition evaluates `"false"`, so the trigger is false and `resolveFindings` skips the rule: **silence, not a false confirmation** | `conditions.ts` `resolveAnswer` returns a `not_asked` state distinct from `unknown`, and the condition branch for it returns `"false"`; `findings.ts` continues on a false result |
 
 So an asked boolean is necessarily `true` or `false`, and an unasked one produces nothing. Measured
 directly: a synthetic confirmation rule on `plaza_multiple_blocks` and on `has_amusement_ride`, under
@@ -138,14 +138,14 @@ with the enums.
 `"unknown"` among its values. Verified through the guards in order, guard 1 `parseIntakeContract`,
 guard 2 `validateIntake`, guard 3 `evaluate`, every route to an unknown state is closed on both:
 
-| Route | structure_types | open_flame_or_cooking |
-|---|---|---|
-| explicit `"unknown"` | `invalid_value` | `invalid_value` |
-| `["unknown"]` | `invalid_value` | `invalid_value` |
-| `null` | `required` | `required` |
-| omitted | `required` | `required` |
-| `[]` empty | `invalid_value` | `invalid_value` |
-| answered `["none"]` | confirmation emits correctly | confirmation emits correctly |
+| Route                | structure_types              | open_flame_or_cooking        |
+| -------------------- | ---------------------------- | ---------------------------- |
+| explicit `"unknown"` | `invalid_value`              | `invalid_value`              |
+| `["unknown"]`        | `invalid_value`              | `invalid_value`              |
+| `null`               | `required`                   | `required`                   |
+| omitted              | `required`                   | `required`                   |
+| `[]` empty           | `invalid_value`              | `invalid_value`              |
+| answered `["none"]`  | confirmation emits correctly | confirmation emits correctly |
 
 **So the safe split is ten of seventeen covered and seven dropped, and the seven dropped are exactly the
 seven unknown-capable enums.** The seven are `obstructs_public_way`, `event_open_to_public`,
@@ -185,10 +185,10 @@ above.
 Applied mechanically to all 33 declared fields: **17 qualify**. The 16 that do not are listed below
 WITH their test result, so a fifth correction has nowhere to hide:
 
-| Excluded field | Type | Why it fails the test |
-|---|---|---|
-| `borough`, `location_type`, `sapo_event_type`, `street_event_size`, `plaza_level` | enum | no value in the declared domain means absence; every value names a thing that is present |
-| `headcount`, `event_date`, `food_vendor_count`, `tent_area_sqft`, `tent_days_in_place`, `stage_height_ft`, `stage_area_sqft`, `generator_gasoline_gallons`, `generator_diesel_gallons`, `generator_kw`, `battery_system_kwh` | integer, number, date | no absence value in the domain; zero is a quantity, not an absence |
+| Excluded field                                                                                                                                                                                                               | Type                  | Why it fails the test                                                                    |
+| ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------- | ---------------------------------------------------------------------------------------- |
+| `borough`, `location_type`, `sapo_event_type`, `street_event_size`, `plaza_level`                                                                                                                                            | enum                  | no value in the declared domain means absence; every value names a thing that is present |
+| `headcount`, `event_date`, `food_vendor_count`, `tent_area_sqft`, `tent_days_in_place`, `stage_height_ft`, `stage_area_sqft`, `generator_gasoline_gallons`, `generator_diesel_gallons`, `generator_kw`, `battery_system_kwh` | integer, number, date | no absence value in the domain; zero is a quantity, not an absence                       |
 
 The three fields this pass adds over round 3 are `venue_has_assembly_approval`, which the review named,
 plus `plaza_multiple_blocks` and `food_affinity_private_exception_claimed`, which it did not. The
@@ -210,22 +210,22 @@ Fourteen in total. Four are MIXED, ruling one thing out while triggering another
 `event_open_to_public`, `sound_audible_from_public_way`, `venue_license_covers_event_area`, and
 `obstructs_public_way` in the pure-trigger direction.
 
-| Field | Negative value | In the issue? | Rules whose trigger reads it |
-|---|---|---|---|
-| `obstructs_public_way` | `"no"` | yes | 1: SAPO-SCOPE-001 |
-| `alcohol` | `false` | yes | 5: ADV-ALCOHOL-PUBLIC-001, SAPO-BLOCK-PARTY-ELIG-001, SLA-CATERING-001, SLA-ONEDAY-001, SLA-VENUE-LICENSE-001 |
-| `generator_present` | `false` | yes | **0** |
-| `battery_present` | `false` | yes | **0** |
-| `food_present` | `false` | **no** | 3: DOHMH-EXEMPTION-001, DOHMH-ORGANIZER-NOTIFY-001, DOHMH-VENDOR-PERMIT-001 |
-| `selling_anything` | `false` | **no** | 2: PARKS-TUA-001, SAPO-BLOCK-PARTY-ELIG-001 |
-| `amplified_sound` | `false` | **no** | 3: ADV-NOISE-CODE-001, NYPD-SOUND-001, NYPD-SOUND-PARKS-DEP-001 |
-| `structure_types` | `["none"]` | **no** | 4: DOB-PROP-TRUSS-001, DOB-STAGE-001, DOB-TALL-STRUCTURE-001, DOB-TENT-001 |
-| `open_flame_or_cooking` | `["none"]` | **no** | 3: FDNY-FUEL-001, FDNY-OPENFLAME-001, PARKS-PROPANE-001 |
-| `has_amusement_ride` | `false` | **no** | 1: SAPO-INSURANCE-BLOCK-PARTY-RIDE-001 |
-| `event_open_to_public` | `"no"` | **no** | 2 ruled out of 3 that read it: DOHMH-VENDOR-PERMIT-001 and DOHMH-ORGANIZER-NOTIFY-001 both require `"yes"`; DOHMH-EXEMPTION-001 fires ON `"no"` |
-| `sound_audible_from_public_way` | `"no"` | **no** | 1: NYPD-SOUND-001's private-venue branch. MIXED: also triggers ADV-NOISE-CODE-001 |
-| `structure_over_10ft_tall` | `"no"` | **no** | 1: DOB-TALL-STRUCTURE-001, when its structure condition holds |
-| `venue_license_covers_event_area` | `"no"` | **no** | 1: SLA-VENUE-LICENSE-001. MIXED: also triggers SLA-CATERING-001 and SLA-ONEDAY-001 |
+| Field                             | Negative value | In the issue? | Rules whose trigger reads it                                                                                                                    |
+| --------------------------------- | -------------- | ------------- | ----------------------------------------------------------------------------------------------------------------------------------------------- |
+| `obstructs_public_way`            | `"no"`         | yes           | 1: SAPO-SCOPE-001                                                                                                                               |
+| `alcohol`                         | `false`        | yes           | 5: ADV-ALCOHOL-PUBLIC-001, SAPO-BLOCK-PARTY-ELIG-001, SLA-CATERING-001, SLA-ONEDAY-001, SLA-VENUE-LICENSE-001                                   |
+| `generator_present`               | `false`        | yes           | **0**                                                                                                                                           |
+| `battery_present`                 | `false`        | yes           | **0**                                                                                                                                           |
+| `food_present`                    | `false`        | **no**        | 3: DOHMH-EXEMPTION-001, DOHMH-ORGANIZER-NOTIFY-001, DOHMH-VENDOR-PERMIT-001                                                                     |
+| `selling_anything`                | `false`        | **no**        | 2: PARKS-TUA-001, SAPO-BLOCK-PARTY-ELIG-001                                                                                                     |
+| `amplified_sound`                 | `false`        | **no**        | 3: ADV-NOISE-CODE-001, NYPD-SOUND-001, NYPD-SOUND-PARKS-DEP-001                                                                                 |
+| `structure_types`                 | `["none"]`     | **no**        | 4: DOB-PROP-TRUSS-001, DOB-STAGE-001, DOB-TALL-STRUCTURE-001, DOB-TENT-001                                                                      |
+| `open_flame_or_cooking`           | `["none"]`     | **no**        | 3: FDNY-FUEL-001, FDNY-OPENFLAME-001, PARKS-PROPANE-001                                                                                         |
+| `has_amusement_ride`              | `false`        | **no**        | 1: SAPO-INSURANCE-BLOCK-PARTY-RIDE-001                                                                                                          |
+| `event_open_to_public`            | `"no"`         | **no**        | 2 ruled out of 3 that read it: DOHMH-VENDOR-PERMIT-001 and DOHMH-ORGANIZER-NOTIFY-001 both require `"yes"`; DOHMH-EXEMPTION-001 fires ON `"no"` |
+| `sound_audible_from_public_way`   | `"no"`         | **no**        | 1: NYPD-SOUND-001's private-venue branch. MIXED: also triggers ADV-NOISE-CODE-001                                                               |
+| `structure_over_10ft_tall`        | `"no"`         | **no**        | 1: DOB-TALL-STRUCTURE-001, when its structure condition holds                                                                                   |
+| `venue_license_covers_event_area` | `"no"`         | **no**        | 1: SLA-VENUE-LICENSE-001. MIXED: also triggers SLA-CATERING-001 and SLA-ONEDAY-001                                                              |
 
 Three observations, each verified rather than inferred:
 
@@ -233,7 +233,7 @@ Three observations, each verified rather than inferred:
    `battery_present` appear in no rule's trigger. FDNY-GENERATOR-001 reads
    `generator_gasoline_gallons`, `generator_diesel_gallons` and `battery_system_kwh`;
    DEP-GENERATOR-REG-001 reads `generator_kw`. The two `_present` booleans are consumed only by
-   *scoping* those quantity questions, which is what nyc.v2.5 added them for, and is why they are
+   _scoping_ those quantity questions, which is what nyc.v2.5 added them for, and is why they are
    absent from `UNCONSUMED_INTAKE_FIELDS`. A confirmation rule keyed on either would be the first
    trigger in the ruleset to read it. That is mechanically fine, and it means the confirmation's
    warrant is "you told us there is none, so the quantity question was never asked" rather than "this
@@ -258,14 +258,14 @@ field contributes only when its answer is the negative value and the field was i
 
 Under the **seventeen-field** reading:
 
-| Scenario | Confirmation set | Count |
-|---|---|---|
-| A | alcohol, structures, open flame, generator, battery | 5 |
-| B | alcohol, selling, amplified sound, structures, open flame, generator, battery | 7 |
-| C | alcohol, food, selling, structures, open flame, generator, battery | 7 |
-| D | alcohol, food, selling, structures, generator, battery, **amusement ride** | 7 |
-| E | alcohol, selling, open flame, battery, **multiple plaza blocks** | 5 |
-| F | selling, structures, open flame, generator, battery, **not open to the public** | 6 |
+| Scenario | Confirmation set                                                                | Count |
+| -------- | ------------------------------------------------------------------------------- | ----- |
+| A        | alcohol, structures, open flame, generator, battery                             | 5     |
+| B        | alcohol, selling, amplified sound, structures, open flame, generator, battery   | 7     |
+| C        | alcohol, food, selling, structures, open flame, generator, battery              | 7     |
+| D        | alcohol, food, selling, structures, generator, battery, **amusement ride**      | 7     |
+| E        | alcohol, selling, open flame, battery, **multiple plaza blocks**                | 5     |
+| F        | selling, structures, open flame, generator, battery, **not open to the public** | 6     |
 
 **Corrected in review, and this is the correction that matters most for the noise argument.** The
 earlier tables treated the unknown-answered fields as contributing nothing. Section 0 establishes, by
@@ -273,14 +273,14 @@ driving it through the guards, that an `eq "no"` trigger on an `"unknown"` answe
 cannot both stand, and treating the unknowns as silent assumed one of the four remedies section 0 lists
 as UNPRICED. So the table below is **the shape actually measured**, with no remedy assumed:
 
-| Scenario | true confirmations | FALSE confirmations, from an unknown answer | total lines | rendered sentences |
-|---|---|---|---|---|
-| A | 5 | 0 | 5 | 10 |
-| B | 7 | 0 | 7 | 14 |
-| C | 7 | 0 | 7 | 14 |
-| D | 7 | 0 | 7 | 14 |
-| E | 5 | 1 (`structure_over_10ft_tall`) | 6 | 12 |
-| F | 6 | **4** (`food_affinity_private_exception_claimed`, `sound_audible_from_public_way`, `venue_license_covers_event_area`, `venue_has_assembly_approval`) | **10** | **20** |
+| Scenario | true confirmations | FALSE confirmations, from an unknown answer                                                                                                          | total lines | rendered sentences |
+| -------- | ------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------- | ----------- | ------------------ |
+| A        | 5                  | 0                                                                                                                                                    | 5           | 10                 |
+| B        | 7                  | 0                                                                                                                                                    | 7           | 14                 |
+| C        | 7                  | 0                                                                                                                                                    | 7           | 14                 |
+| D        | 7                  | 0                                                                                                                                                    | 7           | 14                 |
+| E        | 5                  | 1 (`structure_over_10ft_tall`)                                                                                                                       | 6           | 12                 |
+| F        | 6                  | **4** (`food_affinity_private_exception_claimed`, `sound_audible_from_public_way`, `venue_license_covers_event_area`, `venue_has_assembly_approval`) | **10**      | **20**             |
 
 Mean 7.0 lines, range 5 to 10, and 14 rendered sentences on average once section 3's duplication is
 included.
@@ -308,14 +308,14 @@ false confirmation would be stated in Scenarios E and F.
 
 Under the issue's **four-field** reading:
 
-| Scenario | Confirmation set | Count |
-|---|---|---|
-| A | alcohol, generator, battery | 3 |
-| B | alcohol, generator, battery | 3 |
-| C | alcohol, generator, battery | 3 |
-| D | alcohol, generator, battery | 3 |
-| E | alcohol, battery | 2 |
-| F | generator, battery | 2 |
+| Scenario | Confirmation set            | Count |
+| -------- | --------------------------- | ----- |
+| A        | alcohol, generator, battery | 3     |
+| B        | alcohol, generator, battery | 3     |
+| C        | alcohol, generator, battery | 3     |
+| D        | alcohol, generator, battery | 3     |
+| E        | alcohol, battery            | 2     |
+| F        | generator, battery          | 2     |
 
 Mean 2.7, range 2 to 3.
 
@@ -498,13 +498,13 @@ only on `noteText !== null && noteText !== conflictText`. So the volume is doubl
 measurement reported:
 
 | Scenario | confirmations | rendered sentences |
-|---|---|---|
-| A | 5 | 10 |
-| B | 7 | 14 |
-| C | 7 | 14 |
-| D | 7 | 14 |
-| E | 6 | 12 |
-| F | 10 | 20 |
+| -------- | ------------- | ------------------ |
+| A        | 5             | 10                 |
+| B        | 7             | 14                 |
+| C        | 7             | 14                 |
+| D        | 7             | 14                 |
+| E        | 6             | 12                 |
+| F        | 10            | 20                 |
 
 Scenario B therefore carries **14 rendered absence sentences beside 3 substantive findings** unless the
 rule shape or the renderer changes, which compounds rather than qualifies the noise finding in section 5.
@@ -528,7 +528,7 @@ instead". There is no hand-written list in F-102 or in any code to stop hand-wri
   event requirement identified from your answers.", with **no list of absent permit types**. A repo
   search for any code emitting such a list returns nothing.
 - So Scenario B's approved copy is currently unimplemented, which is consistent with the issue's
-  overall claim, but the work is *adding* a capability rather than replacing existing product copy.
+  overall claim, but the work is _adding_ a capability rather than replacing existing product copy.
 
 ### A pre-existing AC 4 defect, which this proposal does not cause
 
@@ -562,12 +562,12 @@ nothing applies is the case that grows most, because it has the most negative an
 **Worse than volume: the sets do not match.** Scenario B's approved output names four absences. Here
 is what the proposed line does with each:
 
-| Absence the approved copy names | Where it comes from | Proposed line |
-|---|---|---|
-| street / SAPO | `location_type = private_venue` | **silent**, the organizer never mentioned a street |
-| park | `location_type = private_venue` | **silent**, same |
-| sound | `amplified_sound = false` | named only under the seventeen-field reading, not among the issue's four |
-| assembly | `headcount = 60`, below the 75 threshold | **silent**, a threshold rather than an absence answer |
+| Absence the approved copy names | Where it comes from                      | Proposed line                                                            |
+| ------------------------------- | ---------------------------------------- | ------------------------------------------------------------------------ |
+| street / SAPO                   | `location_type = private_venue`          | **silent**, the organizer never mentioned a street                       |
+| park                            | `location_type = private_venue`          | **silent**, same                                                         |
+| sound                           | `amplified_sound = false`                | named only under the seventeen-field reading, not among the issue's four |
+| assembly                        | `headcount = 60`, below the 75 threshold | **silent**, a threshold rather than an absence answer                    |
 
 **Under the broad seventeen-field reading the overlap is one of four:** sound, via
 `amplified_sound = false`. Under the issue's four named fields it is zero, because `amplified_sound`
@@ -604,11 +604,11 @@ pricing state. Named confirmations are no longer pending on current `main`: deci
 `msg_68b1f57ec560` completed the approvals, and nyc.v2.9 published nine named-confirmation rules now
 carried by nyc.v2.10.
 
-| Change | Adds or edits | Moves evaluated output? | Needs a decision first? |
-|---|---|---|---|
-| TPA source re-attribution on DOB-ASSEMBLY-001 | edits `deadline.qualification` | **yes**: `buildFinding` copies the qualification into persisted and rendered `notes`; F-202 AC 9 also compares it in the stored deadline snapshot, so an older checklist emits a moved-deadline state notice until review re-points it; no date, status or verdict moves | **yes**: evaluated regulatory source and content, needing the verification owner plus rules reviewer |
-| `DEPENDENCY_SEQUENCING_BINDINGS` into the ruleset | adds published data, removes an engine constant | only if the published table differs from the constant | **yes**: `proposals.ts` carries an explicit "PROPOSAL — NOT YET APPROVED" header requiring verification-owner plus engine-owner sign-off, and publishing the machine-readable binding IS approving the sequencing semantics |
-| Named confirmations | historical proposal: adds N rules; published outcome: nine rules | **yes, moves approved answer-key output** | **historical:** undecided, with THREE independent approval classes rather than two; **current:** complete under `msg_68b1f57ec560` and published in nyc.v2.9 |
+| Change                                            | Adds or edits                                                    | Moves evaluated output?                                                                                                                                                                                                                                                  | Needs a decision first?                                                                                                                                                                                                     |
+| ------------------------------------------------- | ---------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| TPA source re-attribution on DOB-ASSEMBLY-001     | edits `deadline.qualification`                                   | **yes**: `buildFinding` copies the qualification into persisted and rendered `notes`; F-202 AC 9 also compares it in the stored deadline snapshot, so an older checklist emits a moved-deadline state notice until review re-points it; no date, status or verdict moves | **yes**: evaluated regulatory source and content, needing the verification owner plus rules reviewer                                                                                                                        |
+| `DEPENDENCY_SEQUENCING_BINDINGS` into the ruleset | adds published data, removes an engine constant                  | only if the published table differs from the constant                                                                                                                                                                                                                    | **yes**: `proposals.ts` carries an explicit "PROPOSAL — NOT YET APPROVED" header requiring verification-owner plus engine-owner sign-off, and publishing the machine-readable binding IS approving the sequencing semantics |
+| Named confirmations                               | historical proposal: adds N rules; published outcome: nine rules | **yes, moves approved answer-key output**                                                                                                                                                                                                                                | **historical:** undecided, with THREE independent approval classes rather than two; **current:** complete under `msg_68b1f57ec560` and published in nyc.v2.9                                                                |
 
 **Corrected in review: at `46971a0`, none of the three was decision-free, so there were no ready
 passengers.** An earlier version of this brief described the first two that way, and I relayed it.
@@ -635,11 +635,11 @@ required for the proposed publication.** Governance's
 a number behind a sigil is the citation shape this session has had to correct four times. Every named
 confirmation adds a rule trigger and organizer-visible regulatory text, so it lands on three rows:
 
-| Change class row | Required approval, quoted from the row |
-|---|---|
-| Product scope, feature meaning, phase | "Product owner/team decision" |
-| Rule trigger, dedupe, branch, deadline, or formula semantics | "Verification owner plus engine owner" |
-| Regulatory source/status/content | "Verification owner plus rules reviewer" |
+| Change class row                                             | Required approval, quoted from the row   |
+| ------------------------------------------------------------ | ---------------------------------------- |
+| Product scope, feature meaning, phase                        | "Product owner/team decision"            |
+| Rule trigger, dedupe, branch, deadline, or formula semantics | "Verification owner plus engine owner"   |
+| Regulatory source/status/content                             | "Verification owner plus rules reviewer" |
 
 The "UI copy only" row does not add a fourth class: its own exception routes a regulatory claim to the
 regulatory source/content approval above. At the pinned commit, listing only the rules-owner and

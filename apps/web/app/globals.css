@@ -967,6 +967,70 @@ a.pe-link:hover,
   font-size: 0.9375rem;
 }
 
+/* The contributing routes of a merged dedupe line. Set off from the line's own summary, because
+   what it says is that the line is not the whole answer. */
+.line__routes {
+  margin: 0.9rem 0 0;
+  padding: 0.7rem 0.85rem;
+  border: 1px solid var(--pe-rule);
+  border-left-width: 0.35rem;
+  border-radius: var(--pe-radius);
+}
+
+.line__routes-intro {
+  margin: 0;
+  max-width: 72ch;
+  font-size: 0.9375rem;
+  text-wrap: pretty;
+}
+
+.line__route-list {
+  display: grid;
+  gap: 0.7rem;
+  margin: 0.7rem 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.line__route {
+  padding-left: 0.75rem;
+  border-left: 2px solid var(--pe-rule);
+}
+
+.line__route-head,
+.line__route-deadline,
+.line__route-deadline-notice,
+.line__route-fee,
+.line__route-portal {
+  margin: 0.3rem 0 0;
+  font-size: 0.9375rem;
+}
+
+.line__route-head {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  align-items: baseline;
+  margin-top: 0;
+}
+
+.line__route-label {
+  font-weight: 700;
+  font-size: 0.8rem;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.line__route-name {
+  font-weight: 600;
+}
+
+.line__route-disposition,
+.line__route-agency {
+  color: var(--pe-steel);
+  font-size: 0.84rem;
+}
+
 .line__summary {
   display: grid;
   gap: 0.55rem;
@@ -1081,6 +1145,8 @@ a.pe-link:hover,
 .verdict-detail__lede,
 .verdict-detail__thresholds,
 .verdict-detail__empty-branches,
+.verdict-detail__blocker-portal,
+.verdict-detail__blocker-instructions,
 .verdict-detail__missed,
 .verdict-detail__rescope-verdict,
 .verdict-detail__rescope-dropped {

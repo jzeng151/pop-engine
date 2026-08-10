@@ -87,8 +87,27 @@ const intake: EventIntake = {
  */
 const heightAnswered: EventIntake = { ...intake, structure_over_10ft_tall: "no" };
 
+/**
+ * The same event with the height answered "yes" and the tent's own size and duration unanswered,
+ * which is the state where the OTHER route binds the merged line.
+ *
+ * DOB-TALL-STRUCTURE-001's trigger resolves true and it publishes MAY_BE_REQUIRED with no deadline
+ * at all. DOB-TENT-001's trigger goes tri-state unknown, so its `required` is demoted to
+ * `may_be_required` on its own finding, the binding route is taken from the resolved subset, and
+ * that subset holds only the tall route. The merged line therefore carries the tall route's
+ * scalars: no deadline, `not_applicable`, no date. The published 15-business-day window is on the
+ * tent route, where the deployed null holiday calendar leaves it `not_calculable`.
+ */
+const tallStructureBinds: EventIntake = {
+  ...intake,
+  structure_over_10ft_tall: "yes",
+  tent_area_sqft: null,
+  tent_days_in_place: null,
+};
+
 const evaluated = evaluate(intake, ruleset, TODAY, productionCalendar);
 const evaluatedAlone = evaluate(heightAnswered, ruleset, TODAY, productionCalendar);
+const evaluatedTallBinding = evaluate(tallStructureBinds, ruleset, TODAY, productionCalendar);
 
 const findIn = (plan: typeof evaluated, ruleId: string): Finding => {
   const finding = plan.findings.find((candidate) => candidate.ruleIds.includes(ruleId));
@@ -97,6 +116,26 @@ const findIn = (plan: typeof evaluated, ruleId: string): Finding => {
 };
 
 const findingFor = (ruleId: string): Finding => findIn(evaluated, ruleId);
+
+/**
+ * A published deadline swapped onto a merged line AND onto its binding route, because those are one
+ * rule's value: `mergeGroup()` spreads the binding route into the finding, and the plan boundary
+ * refuses a body where the headline and `routes[0]` disagree. Changing only the finding builds a
+ * line no api can serve.
+ */
+const withBindingDeadline = (finding: Finding, deadline: unknown): Finding =>
+  ({
+    ...finding,
+    deadline,
+    timelineUnresolvedReason: null,
+    ...(finding.routes === undefined
+      ? {}
+      : {
+          routes: finding.routes.map((route, index) =>
+            index === 0 ? { ...route, deadline } : route,
+          ),
+        }),
+  }) as Finding;
 
 /** DOB-TENT-001 with no route merged into it, off the height-answered evaluation. */
 const tentAlone = (): Finding => findIn(evaluatedAlone, "DOB-TENT-001");
@@ -304,12 +343,11 @@ describe("a published business-day window with no computable date", () => {
   });
 });
 
-describe("a merged dedupe line, whose agency and window need not come from one route", () => {
-  // `findings.ts:407-411` takes `agency` from `identityBinding` and `deadline`/`deadlineStatus`
-  // from `windowBinding`, and `findings.ts:328-330` records that the two coincide in every group
-  // nyc.v2.11 publishes without bounding what a future group can do. This sentence combines exactly
-  // those two fields, so what has to hold is that no published group's routes disagree about the
-  // agency. That is a fact about the artifact, and it is asserted here as one.
+describe("a merged dedupe line, and the routes whose windows it did not take", () => {
+  // `findings.ts:481-482` now takes identity and timeline both off the binding route, so the agency
+  // and the window this sentence combines are one rule's on the merged line and one rule's on every
+  // route entry. The published-ruleset invariant below is kept as the artifact-level check it
+  // already was: a `dedupe_key` edit is the event that moves rendered output with no code change.
 
   it("gets the same sentence when a second route merged into it", async () => {
     // The same DOB-TENT-001, on the intake that leaves the structure height unanswered:
@@ -326,6 +364,47 @@ describe("a merged dedupe line, whose agency and window need not come from one r
       "Apply by: the exact date depends on which days DOB counts as business days. " +
         "Allow more if it closes for holidays. Confirm with DOB.",
     );
+  });
+
+  it("carries the sentence on the route whose window it is, when another route binds", async () => {
+    // F-201 AC 13 on the entry that has the undatable window. The merged line's scalars are
+    // DOB-TALL-STRUCTURE-001's, and that rule publishes no deadline at all, so the line-level
+    // sentence does not apply and must not render. DOB-TENT-001's 15-business-day window is on its
+    // route entry, undatable for the same deployed reason as everywhere else in this file, and
+    // before this the entry said "not calculable" and nothing more (#252 review).
+    const merged = findIn(evaluatedTallBinding, "DOB-TENT-001");
+    expect(merged.ruleIds).toContain("DOB-TALL-STRUCTURE-001");
+    expect(merged.deadline).toBeNull();
+    expect(merged.deadlineStatus).toBe("not_applicable");
+    const tent = merged.routes?.find((route) => route.ruleId === "DOB-TENT-001");
+    expect(tent?.deadline?.type).toBe("business_days_minimum");
+    expect(tent?.deadlineStatus).toBe("not_calculable");
+    expect(tent?.latestApplyDate).toBeNull();
+
+    const { container } = render(<PlanLine finding={await asServed(merged)} />);
+    const entry = [...container.querySelectorAll("li.line__route")].find((item) =>
+      item.textContent?.includes("tent/canopy"),
+    );
+    if (entry === undefined) throw new Error("the routes block rendered no DOB-TENT-001 entry");
+    // The sentence, without the "Apply by:" frame: this group is `candidate` — DOB-TENT-001's own
+    // trigger is unanswered — and a candidate entry may not render as a filing instruction (design
+    // §5.3). The note itself is approved copy about confirming a date, not an action, so it stays.
+    expect(merged.headlineMode).toBe("candidate");
+    expect(entry.querySelector(".line__route-deadline-notice")?.textContent?.trim()).toBe(
+      "the exact date depends on which days DOB counts as business days. " +
+        "Allow more if it closes for holidays. Confirm with DOB.",
+    );
+    // The state the entry reports is unchanged: this is still `not_calculable`, said beside the
+    // sentence rather than replaced by it, which is how the pre-summary line renders the same pair.
+    expect(entry.querySelector(".line__route-deadline")?.textContent).toContain("not calculable");
+    // And the sentence renders once, on that entry. The line's own window is the tall route's and
+    // there is none, so neither the summary's apply-by point nor the pre-summary notice appears.
+    expect(container.querySelector(".line__deadline-notice")).toBeNull();
+    expect(
+      [...container.querySelectorAll("li.line__point")].filter((item) =>
+        /^(Apply by|Exact apply-by date):/.test(item.textContent ?? ""),
+      ),
+    ).toEqual([]);
   });
 
   it("holds the published ruleset to one agency per business-day dedupe group", () => {
@@ -373,11 +452,11 @@ describe("the cases this copy must not reach", () => {
   it("never states a window for a research_required deadline", async () => {
     // No agency published a lead time at all, so there is no window to state. This is the same
     // `not_calculable` status arrived at from a different cause.
-    const researchRequired = {
-      ...findingFor("DOB-TENT-001"),
-      deadline: { type: "research_required", display: null, boundary: "inclusive" },
-      timelineUnresolvedReason: null,
-    };
+    const researchRequired = withBindingDeadline(findingFor("DOB-TENT-001"), {
+      type: "research_required",
+      display: null,
+      boundary: "inclusive",
+    });
 
     const line = await applyByLine(researchRequired);
     expect(line).toContain(`Exact apply-by date: not calculable — ${CONFIRM_WITH_AGENCY}`);
@@ -387,10 +466,11 @@ describe("the cases this copy must not reach", () => {
   it("never states a window when an unanswered intake field is what blocked the date", async () => {
     // SAPO-PLAZA-001's unknown level: a real published window, but by level and in calendar days.
     const unknownLevel = {
-      ...findingFor("DOB-TENT-001"),
-      deadline: { type: "published_minimum_by_level", boundary: "inclusive" },
+      ...withBindingDeadline(findingFor("DOB-TENT-001"), {
+        type: "published_minimum_by_level",
+        boundary: "inclusive",
+      }),
       deadlineUnknownFields: ["plaza_level"],
-      timelineUnresolvedReason: null,
     };
 
     expect(await applyByLine(unknownLevel)).not.toContain("business days before your event");

@@ -3,17 +3,29 @@
 
 import { randomUUID } from "node:crypto";
 import type { Pool, PoolClient } from "pg";
-import { compareToPinned, evaluate } from "@pop-engine/engine";
+import { FILING_DISPOSITIONS, compareToPinned, evaluate } from "@pop-engine/engine";
 import type {
+  Deadline,
+  DeadlineStatus,
+  Disposition,
   EngineRuleset,
   EventIntake,
   Finding,
+  FindingRoute,
+  HeadlineMode,
   HolidayCalendar,
   IntakeValue,
   PermitPlan,
 } from "@pop-engine/engine";
 
-type StoredFinding = Finding & { readonly lastVerifiedDate: string | null };
+// The optional engine fields are normalized to explicit nulls on the wire, following
+// `userSummary`: a client reading a stored plan gets the same key set whether the plan predates
+// the field or the finding simply has no value for it.
+type StoredFinding = Omit<Finding, "routes" | "headlineMode"> & {
+  readonly lastVerifiedDate: string | null;
+  readonly routes: readonly FindingRoute[] | null;
+  readonly headlineMode: HeadlineMode | null;
+};
 
 /**
  * A stored plan whose items no longer match what was written. F-201 AC 5: a partial plan is never
@@ -147,6 +159,15 @@ export type FindingRendering = {
   portal_instructions: string | null;
   /** Absent on plans stored before organizer summaries were introduced. */
   user_summary?: Finding["userSummary"];
+  /**
+   * Every contributing route of a merged dedupe line, with its own name, window and fee. Absent on
+   * plans stored before the route list was introduced, and null there on read: `null` means "this
+   * plan predates the field", never "this line has no routes". A merged line always has two or
+   * more and an unmerged one carries none, so `[]` is never written.
+   */
+  routes?: readonly FindingRoute[] | null;
+  /** Present exactly when `routes` is, and absent on the same stored plans. */
+  headline_mode?: HeadlineMode | null;
 };
 
 const renderingOf = (finding: Finding): FindingRendering => ({
@@ -160,9 +181,185 @@ const renderingOf = (finding: Finding): FindingRendering => ({
   timeline_unresolved_reason: finding.timelineUnresolvedReason,
   portal_instructions: finding.portalInstructions,
   user_summary: finding.userSummary ?? null,
+  routes: finding.routes ?? null,
+  headline_mode: finding.headlineMode ?? null,
 });
 
 export const renderingKey = (ruleIds: readonly string[]): string => ruleIds.join(",");
+
+/**
+ * The columns of a stored plan item that a route is read from or synthesized out of. Structural
+ * rather than a named row type because `checklist.ts` and `alerts.ts` select different column sets
+ * and both need this, and duplicating the fallback in each is exactly how a consumer stops seeing a
+ * route's window.
+ */
+export type StoredPlanItem = {
+  readonly rule_ids: readonly string[];
+  readonly permit_name: string | null;
+  readonly agency: string | null;
+  readonly disposition: Disposition;
+  readonly deadline: Deadline | null;
+  readonly latest_apply_date: Date | string | null;
+  readonly apply_after_date: Date | string | null;
+  readonly deadline_status: DeadlineStatus;
+  readonly fee_display: string | null;
+  readonly portal_name: string | null;
+  readonly portal_url: string | null;
+};
+
+const storedDate = (value: Date | string | null): string | null =>
+  value === null ? null : calendarDateFrom(value);
+
+/**
+ * Every route of a stored plan item: the persisted counterpart of the engine's `routesOf`, and the
+ * ONE correct fallback for a row that carries none. An unmerged item is its own single route, and
+ * so is a row from a plan stored before the field existed.
+ *
+ * This exists because the plan-item table has one window, one fee and one name per row while a
+ * merged dedupe line has one per ROUTE, and `checklist.ts` and `alerts.ts` read the table. Reading
+ * only the columns is what deleted an organizer's filing date, fee and both reminders on every
+ * merged line whose binding route publishes no window (#252 review).
+ */
+export function storedRoutes(
+  item: StoredPlanItem,
+  rendering: FindingRendering | undefined,
+): readonly FindingRoute[] {
+  const routes = rendering?.routes;
+  if (routes != null && routes.length > 0) return routes;
+  return [
+    {
+      ruleId: item.rule_ids[0] ?? "",
+      triggerResult: "true",
+      disposition: item.disposition,
+      unknownFields: [],
+      name: item.permit_name,
+      agency: item.agency,
+      deadline: item.deadline,
+      deadlineDisplay: rendering?.deadline_display ?? null,
+      latestApplyDate: storedDate(item.latest_apply_date),
+      applyAfterDate: storedDate(item.apply_after_date),
+      deadlineStatus: item.deadline_status,
+      slackDays: rendering?.slack_days ?? null,
+      feeDisplay: item.fee_display,
+      portalName: item.portal_name,
+      portalUrl: item.portal_url,
+      portalInstructions: rendering?.portal_instructions ?? null,
+    },
+  ];
+}
+
+/**
+ * The route a consumer with exactly one window to show must read, or null when the row's own
+ * columns already carry one.
+ *
+ * A merged line takes its identity and timeline from ONE route, the binding route, so that a line
+ * can never name one route and date another. Where that route publishes no window the line has
+ * none, and the columns say so: no `deadline`, no `latest_apply_date`,
+ * `deadline_status = 'not_applicable'`, no `fee_display`. The requirement's published window did
+ * not stop existing; it is on another route.
+ *
+ * THE TEST IS A PUBLISHED WINDOW, NOT A COMPUTED DATE. A rule can publish a window the engine
+ * cannot turn into a date — a business-day count with no published holiday list, which is what
+ * DOB-TENT-001 is in production — and that line reads `not_calculable` with a fee and a published
+ * deadline type. Keying this on `latest_apply_date` alone dropped exactly those: measured over the
+ * 3,200-intake control sweep with no holiday list published, 56 lines lost the tent route's TUP fee
+ * and reported `not_applicable` where the same rules unmerged report `not_calculable`.
+ *
+ * `routes` arrives in binding order, so the first entry publishing a window is the tightest one the
+ * merged disposition still rests on. It supplies the window, the status AND the fee together, from
+ * one route, which is what keeps this from re-creating the crossover the route list exists to
+ * remove: the values a reader sees are all one rule's, and `routes` says which rule.
+ */
+/**
+ * A FILING ROUTE, NOT MERELY A DATED ONE. The row labels whatever this returns as its filing date,
+ * fee and filing details, and `PortalBlock` renders that route's portal as "apply at" on a row
+ * whose routes apply together. A dated `advisory` or `no_new_requirement` route selected purely
+ * because it carries a date therefore became an instruction to file something the ruleset does not
+ * say is required — the same conversion the alert scheduler makes at its own boundary, one door
+ * over (#252 review). The rules schema permits those kinds to publish a deadline, so the date test
+ * alone was never sufficient.
+ *
+ * Mirrored in `FILING_ORDER_JOIN` below, which orders rows by the same choice. A predicate fixed in
+ * TypeScript and left in SQL is a guard that disagrees with itself.
+ */
+
+export function filingRouteOf(
+  item: StoredPlanItem,
+  rendering: FindingRendering | undefined,
+): FindingRoute | null {
+  if (item.deadline !== null || storedDate(item.latest_apply_date) !== null) return null;
+  const routes = storedRoutes(item, rendering);
+  if (routes.length < 2) return null;
+  return (
+    routes.find(
+      (route) =>
+        FILING_DISPOSITIONS.has(route.disposition) &&
+        (route.deadline !== null || route.latestApplyDate !== null),
+    ) ?? null
+  );
+}
+
+/**
+ * `filingRouteOf` in SQL, so a plan item can be ORDERED by the window it actually renders.
+ *
+ * THE ORDER THE WORK HAPPENS IN IS THE ORDER OF THE DATE THE ROW SHOWS. `latest_apply_date NULLS
+ * LAST` reads a column that a merged dedupe line leaves NULL whenever its binding route publishes
+ * no window, and that line still renders "apply by <a date>" off its filing route. Sorted on the
+ * column alone, 42 of the 3,200 intakes in `scripts/checklist-order-sweep.mts` reorder under a
+ * published holiday list, with the only DATED requirement sorted BEHIND a research-required one
+ * (#252 review). Under the deployed `holidays: null` the same sweep reorders 0, because a
+ * business-day window nothing can date is not a window that can sort ahead of anything. Every one
+ * of the 42 has `structure_over_10ft_tall: "yes"`. `materialize` then freezes whichever order it
+ * got into `cohort_position`, which migration 007 exists to make permanent, so a later
+ * regeneration does not correct it.
+ *
+ * IN SQL RATHER THAN IN TYPESCRIPT, deliberately. The order's other two keys are `permit_name` and
+ * `rule_ids`, and a text comparison moved out of the database is a text comparison under a
+ * different collation. Sorting the date here and the ties there would decide a tie by one rule in
+ * one place and another rule in the next.
+ *
+ * The join condition is `filingRouteOf`'s own first test: a row publishing its own window is never
+ * looked up. The route list is written only for a merged line, so no unmerged row matches and no
+ * plan stored before the field existed does either — both fall through to the column, which is
+ * theirs. Joined on the plan through `item.plan_id` so this needs no table the caller does not
+ * already have.
+ */
+export const FILING_ORDER_JOIN = `LEFT JOIN LATERAL (
+         SELECT (route->>'latestApplyDate')::date AS latest_apply_date
+           FROM permit_plans AS ordering_plan
+           CROSS JOIN jsonb_array_elements(
+                  coalesce(nullif(ordering_plan.verdict_detail->'finding_renderings', 'null'::jsonb),
+                           '[]'::jsonb)) AS rendering
+           CROSS JOIN jsonb_array_elements(
+                  coalesce(nullif(rendering->'routes', 'null'::jsonb), '[]'::jsonb))
+                  WITH ORDINALITY AS listed(route, route_position)
+          WHERE ordering_plan.id = item.plan_id
+            AND rendering->'rule_ids' = to_jsonb(item.rule_ids)
+            -- TWO ROUTES OR IT IS NOT A MERGED LINE, the same guard filingRouteOf, plan-line.tsx
+            -- and alertSubjects all make, and it was the one place that did not make it. A stored
+            -- rendering carrying a ONE-entry route list describes a line with a single route, whose
+            -- own columns are that route's; storedRoutes collapses it back to the row and every
+            -- TypeScript reader treats it as unmerged. Without this test the lateral read the lone
+            -- route's window instead and ordered the row by it, so the same plan sorted one way
+            -- through the API and another through SQL. One shape out of 32 exhaustive route-list
+            -- shapes disagreed, and it disagreed here.
+            AND jsonb_array_length(
+                  coalesce(nullif(rendering->'routes', 'null'::jsonb), '[]'::jsonb)) >= 2
+            -- A PUBLISHED WINDOW, NOT A COMPUTED DATE, which is the same test filingRouteOf makes
+            -- and for the same reason: a business-day count with no published holiday list is a
+            -- window the engine cannot date, and it is still the route this line files under.
+            AND (route->'deadline' <> 'null'::jsonb OR route->'latestApplyDate' <> 'null'::jsonb)
+            -- A FILING ROUTE, the same test filingRouteOf makes and for the same reason: the row
+            -- labels this route's date as its filing date, so a dated advisory selected here would
+            -- order the row by a window nobody files against.
+            AND route->>'disposition' IN ('required', 'may_be_required')
+          -- Binding order, so this is the same route the row reads its date and fee off.
+          ORDER BY route_position
+          LIMIT 1
+       ) AS filing_route ON item.deadline IS NULL AND item.latest_apply_date IS NULL`;
+
+/** The window a plan item is ordered by. Requires `FILING_ORDER_JOIN` in the same statement. */
+export const FILING_ORDER_DATE = `coalesce(item.latest_apply_date, filing_route.latest_apply_date)`;
 
 async function insertPlan(
   client: PoolClient,
@@ -363,6 +560,8 @@ export function createPlanService(
             ...finding,
             userSummary: finding.userSummary ?? null,
             lastVerifiedDate: finding.lastVerifiedDate ?? null,
+            routes: finding.routes ?? null,
+            headlineMode: finding.headlineMode ?? null,
           })),
         };
       } catch (error) {
@@ -509,6 +708,8 @@ function findingFromRow(row: PlanItemRow, rendering: FindingRendering): StoredFi
     conflictText: rendering.conflict_text,
     sources: row.sources,
     userSummary: rendering.user_summary ?? null,
+    routes: rendering.routes ?? null,
+    headlineMode: rendering.headline_mode ?? null,
     verificationStatus: row.verification_status,
     lastVerifiedDate: isoDate(row.last_verified_date),
     triggeredBy: row.triggered_by,

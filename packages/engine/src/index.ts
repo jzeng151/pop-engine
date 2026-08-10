@@ -43,7 +43,23 @@ export {
   subtractBusinessDays,
 } from "./calendar";
 export { CONFIRM_WITH_AGENCY } from "./deadlines";
-export { computeWindowVerdict } from "./verdict";
+export { branchesForceInfeasible, computeWindowVerdict, windowIsMissed } from "./verdict";
+// The one correct fallback for a finding that carries no route list: an unmerged finding, or a
+// replayed artifact stored before the field existed, is its own single route.
+// `canBlockWhenMissed` is the third rule exported so a boundary can RECOMPUTE it rather than
+// restate it in prose, after the merged disposition and the scalar-free test.
+export {
+  FILING_DISPOSITIONS,
+  PUBLISHED_ROUTE_FIELDS,
+  ROUTE_FIELD_ORIGIN,
+  type RouteFieldOrigin,
+  bindingRouteOf,
+  canBlockWhenMissed,
+  offersAFilingAction,
+  mergedDispositionOf,
+  noRouteSuppliesScalars,
+  routesOf,
+} from "./findings";
 export { UNKNOWN_ANSWER } from "./conditions";
 export {
   DEFAULT_DISPOSITION_BY_RULE_KIND,
@@ -53,4 +69,14 @@ export {
   DEPENDENCY_SEQUENCING_BINDINGS,
   UNKNOWN_TRIGGER_DISPOSITION,
 } from "./proposals";
+// The answer key's scenario intakes, exported so a CONSUMER can run its own boundary over what
+// `evaluate` actually emits rather than over payloads a test author wrote. Three guards on
+// `apps/web`'s plan boundary have refused valid engine output, each found by review rather than by
+// a test, because every fixture the boundary had ever seen was hand-built (#252 review).
+export {
+  FIXTURE_TODAY,
+  SCENARIO_INTAKE_FIXTURES,
+  fixtureSubmission,
+  type ScenarioIntakeFixture,
+} from "./intake/scenario-intake-fixtures";
 export * from "./types";

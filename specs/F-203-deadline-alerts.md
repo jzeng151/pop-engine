@@ -21,7 +21,7 @@ The contact is a separate table rather than columns on an existing row because `
 `alerts` rows, by type:
 
 | alert_type          | When scheduled                                                                                      |
-|---------------------|-----------------------------------------------------------------------------------------------------|
+| ------------------- | --------------------------------------------------------------------------------------------------- |
 | deadline_reminder   | `latest_apply_date − 7 days` and `latest_apply_date − 1 day` per dated permit item                  |
 | slack_warning       | immediately at checklist creation when the plan verdict is FEASIBLE-AT-RISK ("apply within N days") |
 | dependency_unlocked | at `apply_after_date` for gated items (Parks→NYPD), null `latest_apply_date` included               |

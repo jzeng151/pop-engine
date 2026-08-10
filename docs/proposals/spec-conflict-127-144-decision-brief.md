@@ -11,11 +11,11 @@ product owner has been carrying some of them.
 
 Re-measured against `a7158c6`, three claims changed:
 
-| earlier claim, against `048bff3` | on `a7158c6` |
-|---|---|
-| PR #131 is open and sequencing-blocks option B | **gone.** `8d91e8c` merged it. Option B has no sequencing blocker |
+| earlier claim, against `048bff3`                              | on `a7158c6`                                                      |
+| ------------------------------------------------------------- | ----------------------------------------------------------------- |
+| PR #131 is open and sequencing-blocks option B                | **gone.** `8d91e8c` merged it. Option B has no sequencing blocker |
 | `specs/F-203-deadline-alerts.md` has no 2026-07-27 amendments | **false.** `65730ec`, `951d2f4` and `54f659b` amended it that day |
-| OPEN-QUESTIONS T-4 cites sections that do not exist | **gone.** `7626391` merged the #161 citation fix |
+| OPEN-QUESTIONS T-4 cites sections that do not exist           | **gone.** `7626391` merged the #161 citation fix                  |
 
 **Method:** every claim below was checked against `main` rather than taken from the issue. Where a
 claim could not be verified either way it says so. No approved artifact is changed by this document,
@@ -27,12 +27,12 @@ and no permit fact is asserted anywhere in it.
 
 ## Every location the issue cites verifies exactly
 
-| Issue claim | On `main` | Verdict |
-|---|---|---|
-| `ROADMAP.md:57` lists F-203 (full) for escalations, digests, team reminders | `- **F-203 (full)** — alert escalations, digests, team reminders.` | accurate |
-| `specs/F-203-deadline-alerts.md` is APPROVED | `**Status:** APPROVED (2026-07-25; …)` | accurate |
-| `ROADMAP.md:103` lists Square/POS with no F-id | `- Square/POS integrations.` | accurate |
-| `ROADMAP.md:90` already scopes F-408 | `- **F-408 · Inventory Low-Stock Alerts** — manual counts or Square webhook (deliberately last).` | accurate |
+| Issue claim                                                                 | On `main`                                                                                         | Verdict  |
+| --------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------- | -------- |
+| `ROADMAP.md:57` lists F-203 (full) for escalations, digests, team reminders | `- **F-203 (full)** — alert escalations, digests, team reminders.`                                | accurate |
+| `specs/F-203-deadline-alerts.md` is APPROVED                                | `**Status:** APPROVED (2026-07-25; …)`                                                            | accurate |
+| `ROADMAP.md:103` lists Square/POS with no F-id                              | `- Square/POS integrations.`                                                                      | accurate |
+| `ROADMAP.md:90` already scopes F-408                                        | `- **F-408 · Inventory Low-Stock Alerts** — manual counts or Square webhook (deliberately last).` | accurate |
 
 Section context, which the issue does not give: `:57` sits under "Phase 2 — Execution Hardening
 (post-capstone)" and `:103` under "Phase 4 — Platform, AI & Expansion", where it is the only
@@ -60,12 +60,12 @@ F-203's own APPROVED spec already assigns the Phase 2 scope to F-203. Its "Phase
 So `ROADMAP.md:57` and the approved F-203 spec **agree on three capabilities and not on a fourth**,
 which an earlier revision of this brief stated as unqualified agreement. Set side by side:
 
-| capability | `specs/F-203-deadline-alerts.md:53` | `docs/ROADMAP.md:57` | `docs/PRD.md:206` |
-|---|---|---|---|
-| escalations | yes | yes | yes |
-| digests | yes | yes | yes |
-| team reminders | yes | yes | yes |
-| **per-user preferences** | **yes** | **absent** | **absent** |
+| capability               | `specs/F-203-deadline-alerts.md:53` | `docs/ROADMAP.md:57` | `docs/PRD.md:206` |
+| ------------------------ | ----------------------------------- | -------------------- | ----------------- |
+| escalations              | yes                                 | yes                  | yes               |
+| digests                  | yes                                 | yes                  | yes               |
+| team reminders           | yes                                 | yes                  | yes               |
+| **per-user preferences** | **yes**                             | **absent**           | **absent**        |
 
 The spec assigns four Phase 2 capabilities; the Roadmap and the PRD assign three. So there is no
 disagreement about what F-203 MEANS, which is what the issue's §5 citation implies, and there is a
@@ -146,11 +146,11 @@ rule's sense. What is corrected is the claim that option A needs no such decisio
 of the decision rather than two separate hazards.** `docs/DESIGN.md` lines 24 to 26 carry three ID
 rules, and one branch of each item runs into one of them:
 
-| | the branch | the rule it runs into |
-|---|---|---|
-| item 1, option A | mints F-215 for the Phase 2 depth of F-203 | `:26` capabilities are absorbed rather than **split** |
-| item 1, option A | AND removes approved capabilities from F-203 | `:25` an assigned ID's **meaning never changes** |
-| item 2, widening | grows F-408 from inventory alerts into POS integrations | `:25` an assigned ID's **meaning never changes** |
+|                  | the branch                                              | the rule it runs into                                 |
+| ---------------- | ------------------------------------------------------- | ----------------------------------------------------- |
+| item 1, option A | mints F-215 for the Phase 2 depth of F-203              | `:26` capabilities are absorbed rather than **split** |
+| item 1, option A | AND removes approved capabilities from F-203            | `:25` an assigned ID's **meaning never changes**      |
+| item 2, widening | grows F-408 from inventory alerts into POS integrations | `:25` an assigned ID's **meaning never changes**      |
 
 **Option A runs into BOTH rules, which an earlier revision missed by reading `:25` as being about
 growth only.** It is not: it says an assigned id's meaning never CHANGES, and narrowing is a change.
@@ -163,14 +163,14 @@ So the comparison this brief drew earlier needs restating, and it is not symmetr
 Rechecked branch by branch against BOTH rules rather than at the branch last reported, which is the
 third time this comparison has been restated and the first time it was derived rather than sampled:
 
-| branch | `:26` split | `:25` meaning change | why |
-|---|---|---|---|
-| item 1 A, all three branches | **yes** | **yes** | splits the depth onto a new id, and narrows F-203 whichever branch is taken, because F-203 loses capabilities in every one |
-| item 1 B, retain | no | no | absorption, and the Roadmap and PRD are corrected to match what the approved spec already assigns, which is reconciliation rather than a meaning change |
-| item 1 B, **drop** | no | **yes** | deleting per-user preferences from the approved spec removes a capability F-203 currently has. Recorded as engaging nothing by an earlier revision |
-| item 2 A | no | **yes** | the `:90` boundary sentence and the `PRD.md:226` retarget both move the Square webhook away from F-408, which narrows it. **Found by this recheck, not reported** |
-| item 2 B, widening | no | **yes** | grows F-408 into the standalone capability |
-| item 2 B, narrowing | no | no | F-408 keeps exactly its current scope; the broader capability is recorded as dropped without ever having been F-408's |
+| branch                       | `:26` split | `:25` meaning change | why                                                                                                                                                               |
+| ---------------------------- | ----------- | -------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| item 1 A, all three branches | **yes**     | **yes**              | splits the depth onto a new id, and narrows F-203 whichever branch is taken, because F-203 loses capabilities in every one                                        |
+| item 1 B, retain             | no          | no                   | absorption, and the Roadmap and PRD are corrected to match what the approved spec already assigns, which is reconciliation rather than a meaning change           |
+| item 1 B, **drop**           | no          | **yes**              | deleting per-user preferences from the approved spec removes a capability F-203 currently has. Recorded as engaging nothing by an earlier revision                |
+| item 2 A                     | no          | **yes**              | the `:90` boundary sentence and the `PRD.md:226` retarget both move the Square webhook away from F-408, which narrows it. **Found by this recheck, not reported** |
+| item 2 B, widening           | no          | **yes**              | grows F-408 into the standalone capability                                                                                                                        |
+| item 2 B, narrowing          | no          | no                   | F-408 keeps exactly its current scope; the broader capability is recorded as dropped without ever having been F-408's                                             |
 
 **So FOUR of the six branches engage `:25`, after an earlier revision recorded none of them.** The
 pattern behind the repeated miss is one reading: `:25` was taken to be about growth, so every branch
@@ -205,25 +205,25 @@ Referenced across `ROADMAP.md`, `PRD.md`, `specs/` and all 300 tracker issues: 6
 `specs/` currently holds 12 files: F-101, F-102, F-201, F-202, F-203, F-204, F-205, F-206, F-301,
 F-302, F-401, F-402.
 
-| Family | Taken | Lowest unused |
-|---|---|---|
-| F-1xx | F-101 … F-109 | F-110 |
-| F-2xx | F-201 … F-214 | F-215 |
-| F-3xx | F-301 … F-309 | F-310 |
-| F-4xx | F-401 … F-413 | F-414 |
-| F-5xx | F-501 … F-503 | F-504 |
-| F-6xx | F-601 … F-606 | F-607 |
-| F-7xx | F-701 … F-704, F-710 … F-715 | F-705 |
+| Family | Taken                        | Lowest unused |
+| ------ | ---------------------------- | ------------- |
+| F-1xx  | F-101 … F-109                | F-110         |
+| F-2xx  | F-201 … F-214                | F-215         |
+| F-3xx  | F-301 … F-309                | F-310         |
+| F-4xx  | F-401 … F-413                | F-414         |
+| F-5xx  | F-501 … F-503                | F-504         |
+| F-6xx  | F-601 … F-606                | F-607         |
+| F-7xx  | F-701 … F-704, F-710 … F-715 | F-705         |
 
 **The part that costs more than it looks.** DESIGN.md's approved lifecycle model declares each
 stage's id range, and every range is exactly saturated:
 
-| Stage | Declared range | Taken | Free inside the range |
-|---|---|---|---|
-| 1 IDEATE | F-101–F-109 | F-101–F-109 | none |
-| 2 COMPLY | F-201–F-214 | F-201–F-214 | none |
-| 3 MARKET | F-301–F-309 | F-301–F-309 | none |
-| 4 OPERATE & ADMINISTER | F-401–F-413 | F-401–F-413 | none |
+| Stage                  | Declared range | Taken       | Free inside the range |
+| ---------------------- | -------------- | ----------- | --------------------- |
+| 1 IDEATE               | F-101–F-109    | F-101–F-109 | none                  |
+| 2 COMPLY               | F-201–F-214    | F-201–F-214 | none                  |
+| 3 MARKET               | F-301–F-309    | F-301–F-309 | none                  |
+| 4 OPERATE & ADMINISTER | F-401–F-413    | F-401–F-413 | none                  |
 
 So minting F-215 (item 1's stage) or F-414 (item 2's stage) is not a one-line Roadmap edit. It
 extends a range published in APPROVED `DESIGN.md`, which makes the new-id options edits to **two**
@@ -284,29 +284,29 @@ grep -nE "F-[0-9]{3}[–-]F-[0-9]{3}" <approved artifacts>
 
 **Item 1, the F-203 Phase 2 depth.**
 
-| location | classification | why |
-|---|---|---|
-| `docs/ROADMAP.md:57` | **moves** under A | assigns the Phase 2 scope |
-| `docs/PRD.md:206` | **moves** under A | assigns the same scope; found round 2 |
-| `specs/F-203-deadline-alerts.md:53` | **moves** under A and B | names the destination; B rewrites it anyway |
-| `docs/DESIGN.md:34` STAGE 2 `F-201–F-214` | **moves** under A | saturated, so a new id extends it |
-| `docs/DESIGN.md:27` absorption policy | **moves or exception** under A | see below; found round 3 |
-| `docs/ARCHITECTURE-FUTURE.md:328` `F-208–F-214` | **flagged, architecture ADR approval** | a new F-215 falls outside every ownership row in §9.3. Which module owns it is a technical boundary, routed by governance to architecture, not to the product owner. **Found by the range search, not by the id search** |
-| `docs/ARCHITECTURE-FUTURE.md:396` | **flagged, architecture ADR approval** | lists F-203 among the outbound worker's consumers; whether the depth is a distinct consumer is a delivery-architecture reading, same route |
-| `docs/ARCHITECTURE.md:58` `COMPLY (F-201–F-206)` | **stays** | a Phase 0-1.5 subset, not an enumeration: F-207 to F-214 already exist and are already outside it |
-| `docs/DESIGN.md` 12, 16, 18, 73, 80, 86; `docs/PRD.md:167`; `docs/ROADMAP.md:29`, `:53`; `docs/ARCHITECTURE.md:193`, `:276`, `:281`; `specs/F-102`, `F-201`, `F-202` | **stay** | name F-203 as the Phase 1 feature: tracks, lanes, dependency graph, Twilio reuse, endpoints |
+| location                                                                                                                                                             | classification                         | why                                                                                                                                                                                                                      |
+| -------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `docs/ROADMAP.md:57`                                                                                                                                                 | **moves** under A                      | assigns the Phase 2 scope                                                                                                                                                                                                |
+| `docs/PRD.md:206`                                                                                                                                                    | **moves** under A                      | assigns the same scope; found round 2                                                                                                                                                                                    |
+| `specs/F-203-deadline-alerts.md:53`                                                                                                                                  | **moves** under A and B                | names the destination; B rewrites it anyway                                                                                                                                                                              |
+| `docs/DESIGN.md:34` STAGE 2 `F-201–F-214`                                                                                                                            | **moves** under A                      | saturated, so a new id extends it                                                                                                                                                                                        |
+| `docs/DESIGN.md:27` absorption policy                                                                                                                                | **moves or exception** under A         | see below; found round 3                                                                                                                                                                                                 |
+| `docs/ARCHITECTURE-FUTURE.md:328` `F-208–F-214`                                                                                                                      | **flagged, architecture ADR approval** | a new F-215 falls outside every ownership row in §9.3. Which module owns it is a technical boundary, routed by governance to architecture, not to the product owner. **Found by the range search, not by the id search** |
+| `docs/ARCHITECTURE-FUTURE.md:396`                                                                                                                                    | **flagged, architecture ADR approval** | lists F-203 among the outbound worker's consumers; whether the depth is a distinct consumer is a delivery-architecture reading, same route                                                                               |
+| `docs/ARCHITECTURE.md:58` `COMPLY (F-201–F-206)`                                                                                                                     | **stays**                              | a Phase 0-1.5 subset, not an enumeration: F-207 to F-214 already exist and are already outside it                                                                                                                        |
+| `docs/DESIGN.md` 12, 16, 18, 73, 80, 86; `docs/PRD.md:167`; `docs/ROADMAP.md:29`, `:53`; `docs/ARCHITECTURE.md:193`, `:276`, `:281`; `specs/F-102`, `F-201`, `F-202` | **stay**                               | name F-203 as the Phase 1 feature: tracks, lanes, dependency graph, Twilio reuse, endpoints                                                                                                                              |
 
 **Item 2, the Square/POS scope.**
 
-| location | classification | why |
-|---|---|---|
-| `docs/ROADMAP.md:103` | **moves** under A and B | the standalone entry itself |
-| `docs/ROADMAP.md:90` | **moves** under A and under B's WIDENING branch | F-408's entry, bounded under A, absorbing under B's widening. B's narrowing branch records the broader capability as dropped and leaves F-408's entry as it is |
-| `docs/PRD.md:226` | **moves** under A and under B's WIDENING branch only | assigns the Square webhook to F-408. It does NOT move on B's narrowing branch, which keeps exactly that scope, so there is nothing to widen. An earlier revision marked it as moving under all of B, which contradicted the change set derived from this table |
-| `docs/ARCHITECTURE-FUTURE.md:336` | **moves** under A | maps webhooks to F-408 and no other id; found round 2 |
-| `docs/DESIGN.md:36` STAGE 4 `F-401–F-413` | **moves** under A | saturated |
-| `docs/ARCHITECTURE-FUTURE.md:331` `F-401–F-413` | **flagged, architecture ADR approval** | a second declared range covering the same band. A new F-414 sits outside it, and whether it belongs here or in the External integrations row at `:336` is a module-boundary question, routed to architecture. **Found by the range search, not by the id search** |
-| `docs/ARCHITECTURE-FUTURE.md:67`, `:401` | **stay** | name POS and webhooks in a directory layout and a worker consumer list, both id-agnostic |
+| location                                        | classification                                       | why                                                                                                                                                                                                                                                               |
+| ----------------------------------------------- | ---------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `docs/ROADMAP.md:103`                           | **moves** under A and B                              | the standalone entry itself                                                                                                                                                                                                                                       |
+| `docs/ROADMAP.md:90`                            | **moves** under A and under B's WIDENING branch      | F-408's entry, bounded under A, absorbing under B's widening. B's narrowing branch records the broader capability as dropped and leaves F-408's entry as it is                                                                                                    |
+| `docs/PRD.md:226`                               | **moves** under A and under B's WIDENING branch only | assigns the Square webhook to F-408. It does NOT move on B's narrowing branch, which keeps exactly that scope, so there is nothing to widen. An earlier revision marked it as moving under all of B, which contradicted the change set derived from this table    |
+| `docs/ARCHITECTURE-FUTURE.md:336`               | **moves** under A                                    | maps webhooks to F-408 and no other id; found round 2                                                                                                                                                                                                             |
+| `docs/DESIGN.md:36` STAGE 4 `F-401–F-413`       | **moves** under A                                    | saturated                                                                                                                                                                                                                                                         |
+| `docs/ARCHITECTURE-FUTURE.md:331` `F-401–F-413` | **flagged, architecture ADR approval**               | a second declared range covering the same band. A new F-414 sits outside it, and whether it belongs here or in the External integrations row at `:336` is a module-boundary question, routed to architecture. **Found by the range search, not by the id search** |
+| `docs/ARCHITECTURE-FUTURE.md:67`, `:401`        | **stay**                                             | name POS and webhooks in a directory layout and a worker consumer list, both id-agnostic                                                                                                                                                                          |
 
 **Does the derived set differ from the current one anywhere other than the three findings? Yes, in
 two places, and both are the same shape.** `docs/ARCHITECTURE-FUTURE.md:328` and `:331` are declared
@@ -329,15 +329,15 @@ the approver for anything flagged, so that default cannot recur silently.
 that file more than any other for eight rounds and never checked itself against the whole list. Doing
 that now:
 
-| step | status |
-|---|---|
-| 1. Stop the affected implementation | **satisfied by circumstance.** Nothing is being implemented on either item: the Phase 2 depth is unscheduled, and the advisories are shipped rather than in progress |
-| 2. Record a SPEC-CONFLICT issue with both exact artifact locations and the user-visible consequence | **satisfied.** #127 names both Roadmap entries and states the consequence, that drafting either into `/specs` would create duplicate or untraceable authority |
-| 3. Identify the concern and its authoritative artifact | **satisfied.** #127 names feature identity and scheduling, authoritative artifact `docs/ROADMAP.md` under §1 |
-| 4. If the authoritative artifact is unclear, assign an owner and add a blocking OPEN-QUESTIONS item | **not applicable to #127**, whose authority is clear; **satisfied for #144** by T-4 |
-| 5. Resolve the source artifact first | **satisfied by ordering.** Every change set below starts at `docs/ROADMAP.md`, which §1 makes the authoritative ID registry, before the PRD, the spec or anything derived |
-| 6. Update all derived contracts in the same reconciliation PR or explicitly track each follow-up | **satisfied.** The change sets carry the derived artifacts, and the architecture items are explicitly tracked follow-ups rather than silent omissions |
-| 7. **Add a regression test or validation rule so the contradiction cannot silently return** | **NOT ADDRESSED IN ANY OPTION, and this is the finding.** |
+| step                                                                                                | status                                                                                                                                                                    |
+| --------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1. Stop the affected implementation                                                                 | **satisfied by circumstance.** Nothing is being implemented on either item: the Phase 2 depth is unscheduled, and the advisories are shipped rather than in progress      |
+| 2. Record a SPEC-CONFLICT issue with both exact artifact locations and the user-visible consequence | **satisfied.** #127 names both Roadmap entries and states the consequence, that drafting either into `/specs` would create duplicate or untraceable authority             |
+| 3. Identify the concern and its authoritative artifact                                              | **satisfied.** #127 names feature identity and scheduling, authoritative artifact `docs/ROADMAP.md` under §1                                                              |
+| 4. If the authoritative artifact is unclear, assign an owner and add a blocking OPEN-QUESTIONS item | **not applicable to #127**, whose authority is clear; **satisfied for #144** by T-4                                                                                       |
+| 5. Resolve the source artifact first                                                                | **satisfied by ordering.** Every change set below starts at `docs/ROADMAP.md`, which §1 makes the authoritative ID registry, before the PRD, the spec or anything derived |
+| 6. Update all derived contracts in the same reconciliation PR or explicitly track each follow-up    | **satisfied.** The change sets carry the derived artifacts, and the architecture items are explicitly tracked follow-ups rather than silent omissions                     |
+| 7. **Add a regression test or validation rule so the contradiction cannot silently return**         | **NOT ADDRESSED IN ANY OPTION, and this is the finding.**                                                                                                                 |
 
 **Step 7 is mandatory and every option omitted it.** The derivation added a one-time matrix check, run
 by whoever executes the change set, which is not a validation rule: it closes the contradiction once
@@ -385,18 +385,18 @@ and the product owner answers it once for whichever option is taken.
 that is what the LEAVE branch had. The rule is that after any branch, `ROADMAP.md`, `PRD.md` and the
 F-203 spec must agree on which id carries each of the four capabilities:
 
-| branch | Roadmap | PRD | spec | agree? |
-|---|---|---|---|---|
-| retain under new id | 4 on F-215 | 4 on F-215 | 4 on F-215 | yes |
-| leave with F-203 | 3 on F-215 + 1 on F-203 | same | same split | yes, once the F-203 entries are kept |
-| drop | 3 on F-215 | 3 on F-215 | 3, fourth recorded dropped | yes |
+| branch              | Roadmap                 | PRD        | spec                       | agree?                               |
+| ------------------- | ----------------------- | ---------- | -------------------------- | ------------------------------------ |
+| retain under new id | 4 on F-215              | 4 on F-215 | 4 on F-215                 | yes                                  |
+| leave with F-203    | 3 on F-215 + 1 on F-203 | same       | same split                 | yes, once the F-203 entries are kept |
+| drop                | 3 on F-215              | 3 on F-215 | 3, fourth recorded dropped | yes                                  |
 
 The steps below are written for the retain branch, which is the one that keeps all four capabilities
 together; the other two branches change steps 1, 3 and 14 as described.
 
 1. `docs/ROADMAP.md:57`: replace `- **F-203 (full)** — alert escalations, digests, team reminders.`
    with an entry naming the new id, for example `- **F-215 · Alert Escalations & Digests** — alert
-   escalations, digests, team reminders, per-user preferences (the Phase 2 depth of F-203).`
+escalations, digests, team reminders, per-user preferences (the Phase 2 depth of F-203).`
 2. `docs/DESIGN.md`, lifecycle model: extend STAGE 2's declared range from `F-201–F-214` to
    `F-201–F-215`. Required because the range is saturated.
 3. `docs/PRD.md:206`: **required, and missing from an earlier revision of this list.** It carries the
@@ -435,12 +435,12 @@ together; the other two branches change steps 1, 3 and 14 as described.
     the reconciliation is one-time and the mismatch can return on any later edit.
 13. Tracker: open the F-215 issue; F-203's own issue needs no change.
 14. `specs/F-203-deadline-alerts.md:53`: **required, not optional.** Its Phase 1 Scope Cut reads
-   "Phase 2 (F-203 full, per ROADMAP)". Step 1 removes the `F-203 (full)` entry that sentence points
-   at, so without this edit an APPROVED spec cites a Roadmap entry that no longer exists. Governance
-   §5 makes that a conflict requiring reconciliation, so option A either retargets the pointer to the
-   new id in the same change set or opens a tracked reconciliation for it. An earlier draft of this
-   brief called the edit unnecessary and the retarget optional; that was wrong, and it understated
-   option A by one approved artifact. See the sequencing note below.
+    "Phase 2 (F-203 full, per ROADMAP)". Step 1 removes the `F-203 (full)` entry that sentence points
+    at, so without this edit an APPROVED spec cites a Roadmap entry that no longer exists. Governance
+    §5 makes that a conflict requiring reconciliation, so option A either retargets the pointer to the
+    new id in the same change set or opens a tracked reconciliation for it. An earlier draft of this
+    brief called the edit unnecessary and the retarget optional; that was wrong, and it understated
+    option A by one approved artifact. See the sequencing note below.
 
 ### Item 1, option B: expand F-203 explicitly, without changing its meaning
 
@@ -466,6 +466,7 @@ together; the other two branches change steps 1, 3 and 14 as described.
    and that is a second change set with its own approval, exactly as it would be for a new id under
    option A. Leaving them fused meant choosing option B silently took on a Phase 2 spec obligation the
    product owner is not being asked for, and made option B look more expensive than it is.
+
 3. `specs/F-203-deadline-alerts.md` status header, plus its BASELINE row.
 4. `docs/ROADMAP.md` status header and BASELINE row.
 5. **The per-user preferences branch, and BOTH branches move an artifact an earlier revision left
@@ -481,6 +482,7 @@ together; the other two branches change steps 1, 3 and 14 as described.
      Roadmap and PRD carry three preserves the original gap rather than closing it.
 
    So neither branch is free, and the artifact counts below account for both.
+
 6. `docs/DESIGN.md:25`, **on the DROP branch only.** Deleting per-user preferences from the approved
    F-203 spec removes a capability F-203 currently has, which narrows an assigned id's meaning. That
    branch needs an amendment or a recorded approved exception with its status header and BASELINE
@@ -612,12 +614,12 @@ one. It caught the first draft of this brief, which is the guard working: a docu
 that a phrasing is gone is exactly the shape a copy-paste out of git history also has, and the
 guard cannot tell them apart. Paraphrasing here costs nothing.
 
-| Superseded phrasing | Occurrences on `main` |
-|---|---|
-| the spaced form asserting a source is not yet established | 0 files |
-| its hyphenated run-together, used adjectivally | 0 files |
-| the spaced form asserting that a source has not been published | 0 files |
-| the hyphenated no-plus-source compound | 0 files |
+| Superseded phrasing                                            | Occurrences on `main` |
+| -------------------------------------------------------------- | --------------------- |
+| the spaced form asserting a source is not yet established      | 0 files               |
+| its hyphenated run-together, used adjectivally                 | 0 files               |
+| the spaced form asserting that a source has not been published | 0 files               |
+| the hyphenated no-plus-source compound                         | 0 files               |
 
 All four cited locations now state the published meaning instead. F-206 AC 2 and the PRD and DESIGN
 lines all read that a source-less COVERAGE_GAP "visibly states that the combination is not covered by
@@ -664,12 +666,12 @@ prohibition quote, VS Round2 #6". Round 2 #6 reads, in full:
 > "must be a member of a block association and given permission by their neighbors"; 60-day
 > deadline. Community-board recommendation per SAPO rules §1-04(h).
 
-| claim | located in the dossier |
-|---|---|
-| block parties | **candidate lead located**, in the quoted line above |
-| street events | **no candidate lead located** |
-| festivals | **no candidate lead located** |
-| parades | **no candidate lead located** — "parade" appears nowhere in `VERIFICATION-SOURCES.md` |
+| claim         | located in the dossier                                                                |
+| ------------- | ------------------------------------------------------------------------------------- |
+| block parties | **candidate lead located**, in the quoted line above                                  |
+| street events | **no candidate lead located**                                                         |
+| festivals     | **no candidate lead located**                                                         |
+| parades       | **no candidate lead located** — "parade" appears nowhere in `VERIFICATION-SOURCES.md` |
 
 Two further precisions. The located prohibition is on `block-parties.page`, not on the CECM FAQ the
 advisory names, so the attribution does not match the record even for the one category with a lead.
@@ -693,16 +695,16 @@ rules file's `verification` block, named reviewer."
 
 So what the dossier establishes is narrower than either side of the round-1 exchange said:
 
-| claim | status against the dossier |
-|---|---|
-| production 10 days | **candidate lead located** (RF-2), fetched 2026-07-22, never promoted |
-| open culture 15 days | **candidate lead located** (Round 2 #4), same |
-| street festival Dec 31 of prior year | **candidate lead located** (RF-2), same |
-| single block festival 90 days vs Dec 31 | **candidate lead located** (Round 2 #5), same |
-| alcohol prohibited at block parties | **candidate lead located** (Round 2 #6), same |
-| alcohol prohibited at street events | **no candidate lead located** |
-| alcohol prohibited at festivals | **no candidate lead located** |
-| alcohol prohibited at parades | **no candidate lead located.** "parade" appears nowhere in the dossier |
+| claim                                   | status against the dossier                                             |
+| --------------------------------------- | ---------------------------------------------------------------------- |
+| production 10 days                      | **candidate lead located** (RF-2), fetched 2026-07-22, never promoted  |
+| open culture 15 days                    | **candidate lead located** (Round 2 #4), same                          |
+| street festival Dec 31 of prior year    | **candidate lead located** (RF-2), same                                |
+| single block festival 90 days vs Dec 31 | **candidate lead located** (Round 2 #5), same                          |
+| alcohol prohibited at block parties     | **candidate lead located** (Round 2 #6), same                          |
+| alcohol prohibited at street events     | **no candidate lead located**                                          |
+| alcohol prohibited at festivals         | **no candidate lead located**                                          |
+| alcohol prohibited at parades           | **no candidate lead located.** "parade" appears nowhere in the dossier |
 
 **What promotion would cost, and it is not four fetches.** An earlier revision priced it as a
 re-fetch of four URLs plus one `verification` edit. That is the research half only, and it omits the
@@ -825,15 +827,15 @@ brief decides none of it.
 
 ## Everything else in the issue, verified
 
-| Issue claim | Status on `main` |
-|---|---|
-| `PRD.md:225` and `ROADMAP.md:88` require F-109's five scope-support states | **true**, both present, five values unchanged |
-| `ARCHITECTURE-FUTURE.md` §7.1 publishes four result-completeness values and leaves the relationship open | **true**, and §7.1 says so in terms |
-| ruleset legend defines COVERAGE_GAP as an unmodeled combination asserting nothing | **true** |
-| the F-109 draft on PR #134 has no approved mapping and its AC-01 adopts the four values | **true**, PR #134 is OPEN and carries `specs/F-109-coverage-state-classification.md` |
-| SPEC-CONFLICT #75 is closed and does not reconcile the claim-bearing advisories | **true** |
-| issue #54's title is stale | **true**, still reads "[F-109] Coverage-state classification (phase-4)" |
-| OPEN-QUESTIONS T-4 tracks the question | **true**, and T-4 is the better statement of it than the issue is |
+| Issue claim                                                                                              | Status on `main`                                                                     |
+| -------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------ |
+| `PRD.md:225` and `ROADMAP.md:88` require F-109's five scope-support states                               | **true**, both present, five values unchanged                                        |
+| `ARCHITECTURE-FUTURE.md` §7.1 publishes four result-completeness values and leaves the relationship open | **true**, and §7.1 says so in terms                                                  |
+| ruleset legend defines COVERAGE_GAP as an unmodeled combination asserting nothing                        | **true**                                                                             |
+| the F-109 draft on PR #134 has no approved mapping and its AC-01 adopts the four values                  | **true**, PR #134 is OPEN and carries `specs/F-109-coverage-state-classification.md` |
+| SPEC-CONFLICT #75 is closed and does not reconcile the claim-bearing advisories                          | **true**                                                                             |
+| issue #54's title is stale                                                                               | **true**, still reads "[F-109] Coverage-state classification (phase-4)"              |
+| OPEN-QUESTIONS T-4 tracks the question                                                                   | **true**, and T-4 is the better statement of it than the issue is                    |
 
 **Line citations:** 11 of the issue's 12 file:line references still resolve to what it claims. The
 exception is `specs/F-206-rules-snapshot-banner.md:41`, now a blank line; the COVERAGE_GAP edge case
@@ -866,13 +868,13 @@ for an interaction that is not there.
 The issue's authority section and OPEN-QUESTIONS T-4 agree, and T-4 is more precise. Summarising
 without deciding:
 
-| Decision | Class | Satisfied? |
-|---|---|---|
-| Item 1, one axis or three (in documents only) | durable architecture decision; product owner as architecture owner | **no** |
-| Item 1 or 2, once implemented as a consumed shared enum | all affected lane owners plus architecture owner | **no** |
-| Item 3, the legend and the two advisories | regulatory status/content: verification owner plus rules reviewer | **no** |
-| Item 4, F-206/PRD/DESIGN/UI conformance | lower authority, follows the rules resolution | the COVERAGE_GAP copy half is **already done** by #146 |
-| Item 5, fixtures and a rules-artifact check | follows whichever invariant is approved | **no** |
+| Decision                                                | Class                                                              | Satisfied?                                             |
+| ------------------------------------------------------- | ------------------------------------------------------------------ | ------------------------------------------------------ |
+| Item 1, one axis or three (in documents only)           | durable architecture decision; product owner as architecture owner | **no**                                                 |
+| Item 1 or 2, once implemented as a consumed shared enum | all affected lane owners plus architecture owner                   | **no**                                                 |
+| Item 3, the legend and the two advisories               | regulatory status/content: verification owner plus rules reviewer  | **no**                                                 |
+| Item 4, F-206/PRD/DESIGN/UI conformance                 | lower authority, follows the rules resolution                      | the COVERAGE_GAP copy half is **already done** by #146 |
+| Item 5, fixtures and a rules-artifact check             | follows whichever invariant is approved                            | **no**                                                 |
 
 **None of #144's five decisions is satisfied.** #136 carried only the rename, and it says so.
 
@@ -900,7 +902,7 @@ revision: the previous ordering made a live defect wait on a decision that T-4 s
 shipped.
 
 T-4 adds one routing point worth carrying into the decision: because one option on the table would
-retire or redefine the shipped `COVERAGE_GAP`, a closing change taking that path is *also* a
+retire or redefine the shipped `COVERAGE_GAP`, a closing change taking that path is _also_ a
 regulatory status change, and the other two paths do not reach the verification owner at all. So the
 choice of option determines which owners must sign, and two of the three options can be fully
 approved without the only owner who changes verification statuses.

@@ -25,8 +25,7 @@ type Queryable = {
 };
 
 type StatsResult =
-  | { status: 200; body: EventStats }
-  | { status: 400 | 404; body: { error: string } };
+  { status: 200; body: EventStats } | { status: 400 | 404; body: { error: string } };
 
 const asCount = (value: string | number | null | undefined): number => {
   const parsed = typeof value === "number" ? value : Number(value ?? 0);

@@ -60,6 +60,55 @@ const deadlineTypeLabel = (finding: ConsumedFinding): string | null =>
  */
 const isRequired = (finding: ConsumedFinding): boolean => finding.disposition === "required";
 
+/**
+ * The insurance rule's OWN published values, where the line it arrived on merged.
+ *
+ * The panel selects a finding because ANY of its rule ids is an insurance id, and then rendered the
+ * line's scalars — which on a merged group are the BINDING route's, and the binding route need not
+ * be the insurance one. So a group holding an insurance rule beside a permit that binds showed the
+ * permit's name, agency, disposition and deadline as the insurance card, with the insurance
+ * checklist link beside it (#252 review).
+ *
+ * The same narrowing `blockerView` does in the engine, and for the same reason: select by rule,
+ * then read that rule's own route rather than the line. `noteText` is dropped on a merged line for
+ * the reason the blocker drops its summary — it is single-valued and falls back through the routes
+ * in binding order, so a merged one is not this rule's own and there is no per-route form to narrow
+ * to. `notes` comes from the route where the plan recorded them. An unmerged finding is its own
+ * route and is returned untouched.
+ */
+const insuranceView = (finding: ConsumedFinding): ConsumedFinding => {
+  const routes = finding.routes ?? [];
+  if (routes.length < 2) return finding;
+  const route = routes.find((entry) => INSURANCE_RULE_IDS.has(entry.ruleId));
+  if (route === undefined) return finding;
+  return {
+    ...finding,
+    ruleIds: [route.ruleId],
+    name: route.name,
+    agency: route.agency,
+    disposition: route.disposition,
+    deadline: route.deadline,
+    deadlineDisplay: route.deadlineDisplay,
+    latestApplyDate: route.latestApplyDate,
+    applyAfterDate: route.applyAfterDate,
+    deadlineStatus: route.deadlineStatus,
+    feeDisplay: route.feeDisplay,
+    portalName: route.portalName,
+    portalUrl: route.portalUrl,
+    portalInstructions: route.portalInstructions,
+    // THE ROUTE'S OWN NOTES, and the round that called this blocked was wrong. `plan.ts` serves
+    // `routes: finding.routes ?? null`, the whole `FindingRoute`, so the per-route notes were
+    // already on the wire and only `ConsumedRoute` ignored them; naming and validating them there
+    // was the whole of it, and no wire contract moved. Without this the card rendered the GROUP's
+    // concatenated notes under the narrowed insurance name, attributing a sibling's published
+    // qualification to the insurance rule (#252 review). A plan stored before the engine carried
+    // per-route notes has none, and falls back to the line's.
+    notes: route.notes ?? finding.notes,
+    noteText: null,
+    sources: finding.sources.filter((source) => source.ruleId === route.ruleId),
+  };
+};
+
 /** Whether a checklist row exists for this finding to receive the certificate against (AC 4). */
 const isTrackable = (finding: ConsumedFinding): boolean =>
   finding.ruleIds.some((ruleId) => TRACKABLE_INSURANCE_RULE_IDS.has(ruleId));
@@ -112,7 +161,9 @@ function InsuranceCard({ finding, eventId }: { finding: ConsumedFinding; eventId
 
       {trackable && (
         <p className="insurance__action">
-          <a href={`/events/${eventId}/checklist`}>Track the certificate on your compliance checklist</a>
+          <a href={`/events/${eventId}/checklist`}>
+            Track the certificate on your compliance checklist
+          </a>
         </p>
       )}
     </article>
@@ -137,9 +188,9 @@ export function InsurancePanel({
   findings: readonly ConsumedFinding[];
   eventId: string;
 }) {
-  const insuranceFindings = findings.filter((finding) =>
-    finding.ruleIds.some((ruleId) => INSURANCE_RULE_IDS.has(ruleId)),
-  );
+  const insuranceFindings = findings
+    .filter((finding) => finding.ruleIds.some((ruleId) => INSURANCE_RULE_IDS.has(ruleId)))
+    .map(insuranceView);
 
   if (insuranceFindings.length === 0) return null;
 

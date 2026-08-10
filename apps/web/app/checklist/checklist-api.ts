@@ -9,21 +9,36 @@
 // reason it is worth the weight here is the same one it was worth there — every field below is
 // regulatory content or organizer state, and a silently-undefined one renders as an answer.
 
-import { CHECKLIST_STATUSES } from "@pop-engine/engine";
+import {
+  CHECKLIST_STATUSES,
+  bindingRouteOf,
+  mergedDispositionOf,
+  noRouteSuppliesScalars,
+} from "@pop-engine/engine";
 import type {
   ChecklistStatus,
   Deadline,
   DeadlineStatus,
   Disposition,
+  FindingRoute,
   FindingSource,
+  HeadlineMode,
   RuleUserSummary,
   VerificationStatus,
 } from "@pop-engine/engine";
 import { CREDENTIALED } from "../intake/events-api";
 import {
+  HEADLINE_MODES,
+  ROUTE_CHECKS,
+  agreesWithRoute,
+  routeContractHolds,
+  type ConsumedRoute,
+} from "../plan/plan-api";
+import {
   absentOr,
   arrayOf,
   asRecord,
+  atLeast,
   type FieldChecks,
   isNumber,
   isString,
@@ -92,6 +107,19 @@ export type PlanContext = {
   readonly portalInstructions: string | null;
   readonly sources: readonly FindingSource[];
   readonly sourcePlan: SourcePlan;
+  /**
+   * Every contributing route of a merged dedupe line, each with its own name, window and fee. Null
+   * on an unmerged line and on a plan stored before the field existed; never a one-entry list, and
+   * never `[]`. Absent from an api deployed before the checklist served it.
+   *
+   * `filingRouteRuleId` names the route the window, status, fee and filing details above were read
+   * off, and is null wherever they are the line's own — which is every unmerged row and every
+   * merged row whose binding route publishes a window. It is what keeps a row from naming one rule
+   * and dating another (#252 review).
+   */
+  readonly routes?: readonly ConsumedRoute[] | null;
+  readonly headlineMode?: HeadlineMode | null;
+  readonly filingRouteRuleId?: string | null;
 };
 
 export type ChecklistDocument = {
@@ -412,7 +440,220 @@ const PLAN_CONTEXT_CHECKS: FieldChecks<PlanContext> = {
   portalInstructions: nullOr(isString),
   sources: arrayOf(shapedLike(SOURCE_CHECKS)),
   sourcePlan: shapedLike(SOURCE_PLAN_CHECKS),
+  // Absent from an api deployed before the checklist read routes, which is the deploy window this
+  // change opens. Absence is "not served", never "this line has no routes".
+  routes: absentOr(nullOr(atLeast(2, arrayOf(shapedLike(ROUTE_CHECKS))))),
+  headlineMode: absentOr(nullOr(isToken(HEADLINE_MODES))),
+  filingRouteRuleId: absentOr(nullOr(isString)),
 };
+
+/**
+ * A FILING ROUTE THE ROW DOES NOT CARRY NAMES NOTHING. `filingRouteRuleId` says which route the
+ * window, status, fee and filing details above it were read off, and the api sets it from a route
+ * of the row's own list. A body supplying valid matching `routes` and `ruleIds` beside an unrelated
+ * `filingRouteRuleId` cleared every check here: `PlanContextBody` then resolves no route, drops the
+ * attribution sentence with no sign it did, and leaves the alternate route's date, fee and portal
+ * rendered beneath the binding permit's heading, so crossed values read as a complete row (#252
+ * review). `gatedRoutesOf` reads the same field to decide which route's gate the row already shows,
+ * and an id naming no route makes it skip the wrong one.
+ *
+ * Exactly one member, not at least one, so this holds on its own wherever a row carries the field
+ * rather than leaning on `routeContractHolds` refusing the duplicate.
+ *
+ * AND THE VALUES ARE THAT ROUTE'S, not merely some route's. Membership alone still accepted a row
+ * whose `deadline`, dates, status, fee or portal came from a DIFFERENT route than the one it names:
+ * `PlanContextBody` resolves the named route and states in as many words that the filing details
+ * above belong to it, so the row asserts an attribution that is false rather than dropping one
+ * (#252 review). The api reads every one of these fields off the named route through
+ * `fromFilingRoute`, so equality is what it already produces; this refuses the bodies it cannot.
+ *
+ * The comparison is over the fields the api attributes, and `deadline` by its published TYPE, which
+ * is the only part of it either side carries.
+ */
+const FILED_FIELDS = [
+  "deadlineDisplay",
+  "latestApplyDate",
+  "applyAfterDate",
+  "deadlineStatus",
+  "feeDisplay",
+  "portalName",
+  "portalUrl",
+  "portalInstructions",
+] as const satisfies readonly (keyof PlanContext & keyof ConsumedRoute)[];
+
+/**
+ * The approved state where the row's filing fields are nobody's: the merged line publishes no
+ * scalars because no resolved route contributes its disposition (design §4.3, amended 2026-08-09).
+ * Every filed field is null and the status reads `not_calculable`, so there is nothing to attribute
+ * and nothing to compare against.
+ */
+/**
+ * THE EXCEPTION IS A CONDITION, NOT A SHAPE, for the same reason the plan boundary's is. §4.3's
+ * amendment publishes nothing in ONE case: the group holds a resolved route and none of them
+ * contributes the merged disposition. Testing the shape alone let ANY merged row null its identity
+ * and filing tuple and skip every comparison below, and the checklist does not render a route list,
+ * so such a row loses the permit name, the date, the fee and the portal with nothing on screen to
+ * recover them from and still reads as valid (#252 review).
+ *
+ * `noRouteSuppliesScalars` is the engine's own predicate, exported from beside the merge that
+ * produces the state, so this boundary and the plan's test one rule rather than two copies of it.
+ */
+const publishesNoFilingFields = (context: PlanContext): boolean =>
+  context.deadlineStatus === "not_calculable" &&
+  context.deadline === null &&
+  context.permitName === null &&
+  context.agency === null &&
+  FILED_FIELDS.every((field) => field === "deadlineStatus" || context[field] === null) &&
+  noRouteSuppliesScalars((context.routes ?? []) as readonly FindingRoute[]);
+
+/** `agreesWithRoute` is the plan boundary's, shared so the three tuples cannot drift on what
+ * "agrees" means; the route SELECTION stays here, because this one is named by the row. */
+const matchesRoute = (context: PlanContext, route: ConsumedRoute): boolean =>
+  agreesWithRoute(context, route, FILED_FIELDS);
+
+/**
+ * THE ROW'S IDENTITY IS ITS BINDING ROUTE'S, WHATEVER ROUTE ITS FILING FIELDS CAME FROM.
+ *
+ * `permitName` and `agency` are not in `FILED_FIELDS` and are not attributed by
+ * `filingRouteRuleId`: the api reads them off the row's own columns, which for a merged line are the
+ * binding route's, and `mergeGroup()` leads the route list with that route. So they are checked
+ * against `routes[0]` on every merged row, including one whose filing fields legitimately come from
+ * a different route — that row shows one route's date, fee and portal beneath ANOTHER route's permit
+ * name and agency by design, and says so, which only holds if the name and agency really are the
+ * binding route's.
+ *
+ * Unchecked, a body could take the name from one route and the filing fields from another and clear
+ * every check here: `displayName()` heads the row and the disclosure with that name and the metadata
+ * row prints that agency, so the organizer reads one permit's identity over another permit's filing
+ * (#252 review). This is the same invariant the plan boundary applies to its headline tuple, on the
+ * two fields that boundary's tuple has and this one's did not.
+ *
+ * REPORTED AND NOT FIXED LAST ROUND, which is the part worth recording: the sweep that closed the
+ * plan side named this gap and left it open because the thread had not asked for it. The scope test
+ * this repository works to makes it in scope — the defect is in code this branch changes, the fix
+ * stays inside artifacts it already touches, and it needs no product decision — so deferring it was
+ * the error, not the enumeration.
+ */
+const identityMatchesBinding = (context: PlanContext, route: ConsumedRoute): boolean =>
+  context.permitName === route.name && context.agency === route.agency;
+
+/**
+ * THE IDENTITY EXCEPTION IS NOT THE FILING-TUPLE EXCEPTION, and reading them as one refused a
+ * checklist the engine itself produces.
+ *
+ * On the approved scalar-free shape the merged line publishes no identity — `permitName` and
+ * `agency` are null — but `filingRouteOf` then REPOPULATES the filing tuple from a route that does
+ * publish a window and names it in `filingRouteRuleId`, which is the attributed filling this
+ * boundary exists to check. So the filed fields are not null, `publishesNoFilingFields` is false,
+ * and the identity comparison ran against `routes[0]`, which has a name: the row was rejected and
+ * `loadChecklist` reported the organizer's whole checklist as unreadable (#252 review). Losing a
+ * checklist is worse than any crossing this check prevents.
+ *
+ * The two questions are answered separately now, off the same condition. Where no route can supply
+ * the line's scalars the identity must be ABSENT, and where one can it must be the binding route's;
+ * the filing tuple is checked against whichever route the row attributes it to either way.
+ */
+const identityIsWhatTheRoutesAllow = (context: PlanContext, binding: ConsumedRoute): boolean =>
+  noRouteSuppliesScalars((context.routes ?? []) as readonly FindingRoute[])
+    ? context.permitName === null && context.agency === null
+    : identityMatchesBinding(context, binding);
+
+/**
+ * A NULL FILING ROUTE IS A CLAIM TOO, and it was the one this check waved through. Null says the
+ * values above are the line's OWN, and a merged line's own values are its binding route's, which is
+ * `routes[0]`: `mergeGroup()` spreads the binding route into the finding and leads the list with it.
+ * So a row with valid routes, a null filing id and a date, fee or portal from the SECOND route said
+ * "these are this line's own" about values no route on the row publishes as the line's — the same
+ * crossing the non-null branch refuses, on the branch that is the normal case (#252 review).
+ */
+const filingRouteIsCarried = (context: PlanContext): boolean => {
+  const routes = context.routes ?? [];
+  if (routes.length === 0) return true;
+  const binding = routes[0] as ConsumedRoute;
+  if (!identityIsWhatTheRoutesAllow(context, binding)) return false;
+  if (publishesNoFilingFields(context)) return true;
+  if (context.filingRouteRuleId == null) return matchesRoute(context, binding);
+  const named = routes.filter((route) => route.ruleId === context.filingRouteRuleId);
+  if (named.length !== 1) return false;
+  return matchesRoute(context, named[0] as ConsumedRoute);
+};
+
+/**
+ * The same cross-field rule the plan boundary applies, at the door the organizer works the item
+ * through. `routeContractHolds` is shared rather than restated: this boundary serves the same two
+ * fields and had no cross-field check at all, so a row carrying `triggerResult: "unknown"` under
+ * `headlineMode: "applies_together"` was accepted here and `PlanContextBody`, which reads routes
+ * only in `candidate` mode, suppressed the deciding question the unknown exists to ask (#252
+ * review). Every read of a `PlanContext` body goes through this, including `ITEM_CHECKS`, which
+ * spreads the same field checks.
+ */
+/**
+ * THE THREE ROUTE FIELDS ARE ONE VERSIONED GROUP, served together or not at all.
+ *
+ * `apps/api/src/checklist.ts` writes `routes`, `headlineMode` and `filingRouteRuleId` in one object
+ * literal, so a row carrying some of them is a row no deployment of that api produces. Checked one
+ * at a time they were independent, and the missing one is not read as missing: `gatedRoutesOf` falls
+ * back to `routes[0]` when `filingRouteRuleId` is absent, so a body with routes and no filing id
+ * silently treats the FIRST route as the one the row's scalars came from and skips its gate — the
+ * same class of silent-version defect the widened blocker carries at the plan boundary (#252
+ * review). `routeContractHolds` already pairs `routes` with `headlineMode`, on their VALUES; this
+ * pairs all three on their PRESENCE, which is the axis the deploy window moves along.
+ *
+ * Absence of all three stays legal, and that is the whole point of the group: it is the api deployed
+ * before the checklist served routes, which is a real deploy window rather than a hypothesis.
+ */
+const ROUTE_GROUP_FIELDS: readonly (keyof PlanContext)[] = [
+  "routes",
+  "headlineMode",
+  "filingRouteRuleId",
+];
+
+const routeGroupIsWhole = (context: PlanContext): boolean => {
+  const present = ROUTE_GROUP_FIELDS.filter((field) => field in context).length;
+  return present === 0 || present === ROUTE_GROUP_FIELDS.length;
+};
+
+/**
+ * The same invariant the plan boundary applies to its headline disposition, on the row that renders
+ * the same value as a badge. `disposition` is the one headline value that is legitimately not
+ * `routes[0]`'s — it is the strongest any route contributes — so it sits outside every comparison
+ * `filingRouteIsCarried` makes, and was checked by nothing. `mergedDispositionOf` is the engine's
+ * own arithmetic, including the cap on an unresolved route, rather than a restatement of it here.
+ */
+const dispositionFollowsFromRoutes = (context: PlanContext): boolean => {
+  const routes = (context.routes ?? []) as readonly FindingRoute[];
+  if (routes.length === 0) return true;
+  return context.disposition === mergedDispositionOf(routes);
+};
+
+/**
+ * `routes[0]` IS THE BINDING ROUTE HERE TOO, and this is the third boundary to check the claim
+ * rather than define it.
+ *
+ * Everything `filingRouteIsCarried` does above rests on that position: the identity and the tuple
+ * are compared against `routes[0]` whenever the row does not name a filing route, and
+ * `attributedRouteOf` in `checklist-item.tsx` names that route in words on a candidate row. So a
+ * reordered payload that copies the new first route's identity and tuple satisfied every comparison
+ * and the row named the wrong rule (#252 review).
+ *
+ * `bindingRouteOf` is the engine's own selection, exported on this PR in `0904f55f` for the plan
+ * boundary and used unchanged here. Third rule shared this way, after `mergedDispositionOf` and
+ * `noRouteSuppliesScalars` — and a third boundary is exactly when a hand-written fourth copy would
+ * have started to drift.
+ */
+const bindsWhereTheEngineWouldBind = (context: PlanContext): boolean => {
+  const routes = (context.routes ?? []) as readonly FindingRoute[];
+  const binding = bindingRouteOf(routes);
+  return binding === null || binding.ruleId === routes[0]?.ruleId;
+};
+
+const isPlanContext = (value: unknown): value is PlanContext =>
+  shapedLike(PLAN_CONTEXT_CHECKS)(value) &&
+  routeGroupIsWhole(value) &&
+  routeContractHolds(value) &&
+  dispositionFollowsFromRoutes(value) &&
+  bindsWhereTheEngineWouldBind(value) &&
+  filingRouteIsCarried(value);
 
 const DOCUMENT_CHECKS: FieldChecks<ChecklistDocument> = { id: isString, filename: isString };
 
@@ -485,6 +726,15 @@ const ITEM_CHECKS: FieldChecks<ChecklistItem> = {
   documents: arrayOf(shapedLike(DOCUMENT_CHECKS)),
 };
 
+/** An item is a `PlanContext` with the row's own fields, so it carries the same route contract. */
+const isChecklistItem = (value: unknown): value is ChecklistItem =>
+  shapedLike(ITEM_CHECKS)(value) &&
+  routeGroupIsWhole(value) &&
+  routeContractHolds(value) &&
+  dispositionFollowsFromRoutes(value) &&
+  bindsWhereTheEngineWouldBind(value) &&
+  filingRouteIsCarried(value);
+
 /**
  * One count per status, keyed off the engine's own list, so a status added upstream stops this
  * compiling rather than going uncounted on screen.
@@ -523,8 +773,8 @@ const CHECKLIST_CHECKS: FieldChecks<ChecklistResponse> = {
   planChanged: isBoolean,
   planStale: isBoolean,
   statusRollup: shapedLike(ROLLUP_CHECKS),
-  items: arrayOf(shapedLike(ITEM_CHECKS)),
-  contextItems: arrayOf(shapedLike(PLAN_CONTEXT_CHECKS)),
+  items: arrayOf(isChecklistItem),
+  contextItems: arrayOf(isPlanContext),
   simulatedAlertDeliveries: arrayOf(shapedLike(SIMULATED_DELIVERY_CHECKS)),
   failedAlertDeliveries: arrayOf(shapedLike(FAILED_DELIVERY_CHECKS)),
   alertsHeldForReconciliation: arrayOf(shapedLike(RECONCILIATION_HOLD_CHECKS)),
@@ -537,8 +787,18 @@ const ITEM_UPDATE_CHECKS: FieldChecks<ChecklistItemUpdate> = {
   notes: nullOr(isString),
 };
 
+/**
+ * Members a row may legitimately omit, because an api deployed before the checklist read routes
+ * does not serve them. Web and api deploy separately, so requiring them would replace an
+ * organizer's whole checklist with "this page cannot read it" for the length of a web-first
+ * rollout. Absence is read as "not served", and each is still type-checked when present.
+ */
+const OPTIONAL_ITEM_FIELDS: readonly string[] = ["routes", "headlineMode", "filingRouteRuleId"];
+
 /** The fields this feature reads off a checklist row, exposed so a test can assert coverage. */
-export const CONSUMED_ITEM_FIELDS: readonly string[] = Object.keys(ITEM_CHECKS);
+export const CONSUMED_ITEM_FIELDS: readonly string[] = Object.keys(ITEM_CHECKS).filter(
+  (field) => !OPTIONAL_ITEM_FIELDS.includes(field),
+);
 
 /**
  * The one field this page will accept a body without, because the two services deploy separately.

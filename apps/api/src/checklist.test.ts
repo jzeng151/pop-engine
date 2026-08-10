@@ -27,9 +27,9 @@ import {
   SCENARIO_INTAKE_FIXTURES,
   fixtureSubmission,
 } from "@pop-engine/engine/fixtures";
-import { createAlertScheduler, type AlertScheduler } from "./alerts";
+import { createAlertScheduler, FILING_WINDOW_HAS_SHUT, type AlertScheduler } from "./alerts";
 import { createApp } from "./app";
-import { createPlanService } from "./plan";
+import { createPlanService, FILING_ORDER_DATE, FILING_ORDER_JOIN } from "./plan";
 import { deadlineReminderOffsets, loadRuleset, rulesFilePath } from "./ruleset";
 import { attachmentDisposition, DocumentStorageError, type DocumentStorage } from "./storage";
 
@@ -2370,6 +2370,549 @@ describe.runIf(databaseUrl.length > 0)("F-202 compliance checklist", () => {
       // Without this the browser drops the idempotency key on a cross-origin upload, and every
       // repeat becomes a new document again — the failure would be invisible from the api's side.
       expect(allowed).toContain("x-upload-key");
+    });
+  });
+
+  /**
+   * #252. A merged dedupe line reads as ONE route, its binding route, and where that route
+   * publishes no window the line's own columns carry none. The checklist reads those columns, so
+   * before this it rendered an undated, feeless task for a requirement whose OTHER route publishes
+   * a 15-business-day window and a TUP fee, and F-203 scheduled nothing at all.
+   *
+   * This is the whole of the published ruleset's dedupe group, driven end to end through the real
+   * API: `structure_over_10ft_tall: "yes"` resolves DOB-TALL-STRUCTURE-001, which publishes no
+   * deadline, while DOB-TENT-001's area/duration question is unanswered so its trigger is unknown.
+   * The resolved route binds and the dated one does not.
+   */
+  describe("a merged dedupe line whose binding route publishes no window (#252)", () => {
+    /** The intake the review measured: the tall-structure route resolved, the tent route not. */
+    const TALL_TENT = {
+      ...scenario("A"),
+      structure_types: ["tent_canopy"],
+      structure_over_10ft_tall: "yes",
+      tent_area_sqft: null,
+      tent_days_in_place: null,
+    };
+
+    /**
+     * The same group with the tent question ANSWERED, so both routes resolve and the line is
+     * `applies_together` rather than `candidate`.
+     *
+     * The reminder tests below use this one and the two above it do not, and the difference is the
+     * point: a candidate group's open question is WHICH of its routes applies, so it offers no
+     * filing action on any surface — `offersAFilingAction`'s second clause, which the alert path
+     * used to ignore (#252 review). Rendering a merged line's values is a different question from
+     * instructing a filing, so the rows above still read the unanswered shape.
+     */
+    const SETTLED_TALL_TENT = { ...TALL_TENT, tent_area_sqft: 500, tent_days_in_place: 2 };
+
+    const dobItem = async (): Promise<ChecklistItemView & Record<string, unknown>> => {
+      const eventId = await createEvent(TALL_TENT);
+      await generatePlan(eventId);
+      const response = await review(appWith(fakeStorage()), eventId);
+      expect(response.status).toBe(201);
+      const item = (response.body.items as ChecklistItemView[]).find((candidate) =>
+        candidate.ruleIds.includes("DOB-TENT-001"),
+      );
+      expect(item).toBeDefined();
+      return item as ChecklistItemView & Record<string, unknown>;
+    };
+
+    it("keeps the filing date, the fee and the status the other route publishes", async () => {
+      const item = await dobItem();
+      // Both rules merged onto one line, and the line reads as the resolved route.
+      expect(item.ruleIds).toEqual(["DOB-TENT-001", "DOB-TALL-STRUCTURE-001"]);
+      expect(item.permitName).toBe("DOB permit — structure over 10 feet tall");
+      // None of these is on the line's own columns; every one is DOB-TENT-001's, and the row says
+      // so rather than presenting them as the named route's.
+      expect(item.latestApplyDate).toBe("2026-08-05");
+      expect(item.deadlineStatus).toBe("on_track");
+      expect(item.feeDisplay).toBe(
+        "TUP: $100 initial 30 days, $130 per additional period — confirm instrument",
+      );
+      expect(item.filingRouteRuleId).toBe("DOB-TENT-001");
+    });
+
+    it("carries both routes, each with its own name, window and fee", async () => {
+      const item = await dobItem();
+      expect(item.headlineMode).toBe("candidate");
+      const routes = item.routes as Record<string, unknown>[];
+      // IN BINDING ORDER: the route the line reads first, not the order the rules sit in the file.
+      expect(routes.map((route) => route.ruleId)).toEqual([
+        "DOB-TALL-STRUCTURE-001",
+        "DOB-TENT-001",
+      ]);
+      expect(routes[0]).toMatchObject({
+        triggerResult: "true",
+        disposition: "may_be_required",
+        latestApplyDate: null,
+        deadlineStatus: "not_applicable",
+        feeDisplay: null,
+      });
+      expect(routes[1]).toMatchObject({
+        triggerResult: "unknown",
+        latestApplyDate: "2026-08-05",
+        deadlineStatus: "on_track",
+      });
+      expect(routes[1]?.unknownFields).toEqual(
+        expect.arrayContaining(["tent_area_sqft", "tent_days_in_place"]),
+      );
+    });
+
+    /**
+     * #252 review: THE FILING ROUTE'S NULLS ARE THE FILING ROUTE'S ANSWER.
+     *
+     * `??` reads null as "missing", so where the selected filing route published no fee and no
+     * portal the row fell back to the binding route's — and the sentence above them says all of
+     * these filing details belong to the selected route. One route's deadline beside another
+     * route's price and application portal, presented as one rule's.
+     *
+     * SYNTHETIC, and it has to be: on `nyc.v2.11` the one dedupe group runs the other way round
+     * (DOB-TENT-001 is the dated route AND the one publishing the fee, DOB-TALL-STRUCTURE-001
+     * publishes neither), so the fallback cannot fire there. The shape is a plan written directly
+     * with the group's own rule ids; every value below is this fixture's, not the ruleset's.
+     */
+    it("keeps the filing route's own nulls instead of the binding route's fee and portal", async () => {
+      const eventId = await createEvent(TALL_TENT);
+      const planId = randomUUID();
+      const itemId = randomUUID();
+      const route = (overrides: Record<string, unknown>) => ({
+        triggerResult: "true",
+        unknownFields: [],
+        agency: "DOB",
+        deadline: null,
+        deadlineDisplay: null,
+        latestApplyDate: null,
+        applyAfterDate: null,
+        deadlineStatus: "not_applicable",
+        slackDays: null,
+        feeDisplay: null,
+        portalName: null,
+        portalUrl: null,
+        portalInstructions: null,
+        ...overrides,
+      });
+      await pool.query(
+        `INSERT INTO permit_plans
+           (id, event_id, event_revision, ruleset_version, snapshot_date, verdict, verdict_detail,
+            intake_snapshot, generated_at)
+         VALUES ($1, $2, 1, $3, $4, 'conditional', $5::jsonb, '{}'::jsonb, clock_timestamp())`,
+        [
+          planId,
+          eventId,
+          ruleset.rulesetVersion,
+          ruleset.snapshotDate,
+          JSON.stringify({
+            finding_renderings: [
+              {
+                rule_ids: ["DOB-TALL-STRUCTURE-001", "DOB-TENT-001"],
+                notes: [],
+                note_text: null,
+                conflict_text: null,
+                deadline_display: null,
+                slack_days: null,
+                deadline_unknown_fields: [],
+                timeline_unresolved_reason: null,
+                // The binding route's, like every other column below.
+                portal_instructions: "file through the binding route's counter",
+                headline_mode: "candidate",
+                routes: [
+                  // Binding: a fee and a portal, and no window at all.
+                  route({
+                    ruleId: "DOB-TALL-STRUCTURE-001",
+                    disposition: "may_be_required",
+                    name: "DOB permit — structure over 10 feet tall",
+                    feeDisplay: "$500 fixture fee",
+                    portalName: "Fixture portal",
+                    portalUrl: "https://example.test/fixture",
+                    portalInstructions: "file through the binding route's counter",
+                  }),
+                  // The filing route: the window, and nothing else published.
+                  route({
+                    ruleId: "DOB-TENT-001",
+                    disposition: "required",
+                    triggerResult: "unknown",
+                    name: "DOB permit — tent/canopy",
+                    latestApplyDate: "2026-08-05",
+                    deadlineStatus: "on_track",
+                  }),
+                ],
+              },
+            ],
+          }),
+        ],
+      );
+      await pool.query(
+        `INSERT INTO permit_plan_items
+           (id, plan_id, rule_ids, triggered_by, sources, kind, disposition, deadline_status,
+            verification_status, permit_name, agency, latest_apply_date, fee_display, portal_name,
+            portal_url)
+         VALUES ($1, $2, ARRAY['DOB-TALL-STRUCTURE-001','DOB-TENT-001'], '[]'::jsonb, '[]'::jsonb,
+                 'permit', 'may_be_required', 'not_applicable', 'SOURCE_CONFIRMED',
+                 'DOB permit — structure over 10 feet tall', 'DOB', NULL, '$500 fixture fee',
+                 'Fixture portal', 'https://example.test/fixture')`,
+        [itemId, planId],
+      );
+
+      const response = await review(appWith(fakeStorage()), eventId, planId);
+      expect(response.status).toBe(201);
+      const item = (response.body.items as ChecklistItemView[]).find((candidate) =>
+        candidate.ruleIds.includes("DOB-TENT-001"),
+      ) as ChecklistItemView & Record<string, unknown>;
+
+      // The window is the filing route's, which is the whole reason the row reads that route.
+      expect(item.latestApplyDate).toBe("2026-08-05");
+      expect(item.filingRouteRuleId).toBe("DOB-TENT-001");
+      // And so is everything the sentence beside it claims: that route publishes no fee, no portal
+      // and no instruction, so the row shows none rather than the other route's.
+      expect(item.feeDisplay).toBeNull();
+      expect(item.portalName).toBeNull();
+      expect(item.portalUrl).toBeNull();
+      expect(item.portalInstructions).toBeNull();
+    });
+
+    /**
+     * #252 review: THE PROVENANCE OF A NARROWED DEADLINE IS THAT ROUTE'S PROVENANCE.
+     *
+     * `noticeItemFrom` narrows the deadline, the date and the status to the filing route and left
+     * `sources` and `source_url` as the merged item's. `sources` concatenates over the group in
+     * CONTRIBUTING order and `source_url` is `sources[0].urls[0]`, so the notice labelled whichever
+     * rule the published file lists first as the Primary source for another route's deadline
+     * change. `conflict_text` is the same defect one field over: `mergeGroup` falls back through
+     * binding order and takes the first route that publishes any, so the two readings quoted beside
+     * the moved date were the binding route's.
+     *
+     * SYNTHETIC for the reason the fee-and-portal test above is: the one published group runs the
+     * other way round. Every value below is this fixture's.
+     */
+    it("cites the filing route's own source beside a deadline it narrowed", async () => {
+      const eventId = await createEvent(TALL_TENT);
+      const planId = randomUUID();
+      const itemId = randomUUID();
+      const route = (overrides: Record<string, unknown>) => ({
+        triggerResult: "true",
+        unknownFields: [],
+        agency: "DOB",
+        deadline: null,
+        deadlineDisplay: null,
+        latestApplyDate: null,
+        applyAfterDate: null,
+        deadlineStatus: "not_applicable",
+        slackDays: null,
+        feeDisplay: null,
+        portalName: null,
+        portalUrl: null,
+        portalInstructions: null,
+        ...overrides,
+      });
+      const bindingSource = {
+        ruleId: "DOB-TALL-STRUCTURE-001",
+        citation: "the binding route's page",
+        urls: ["https://example.test/binding"],
+      };
+      const filingSource = {
+        ruleId: "DOB-TENT-001",
+        citation: "the filing route's page",
+        urls: ["https://example.test/filing"],
+      };
+      await pool.query(
+        `INSERT INTO permit_plans
+           (id, event_id, event_revision, ruleset_version, snapshot_date, verdict, verdict_detail,
+            intake_snapshot, generated_at)
+         VALUES ($1, $2, 1, $3, $4, 'conditional', $5::jsonb, '{}'::jsonb, clock_timestamp())`,
+        [
+          planId,
+          eventId,
+          ruleset.rulesetVersion,
+          ruleset.snapshotDate,
+          JSON.stringify({
+            finding_renderings: [
+              {
+                rule_ids: ["DOB-TALL-STRUCTURE-001", "DOB-TENT-001"],
+                notes: [],
+                note_text: null,
+                // The binding route's, which is what a merged line carries.
+                conflict_text: "the binding route's two readings",
+                deadline_display: null,
+                slack_days: null,
+                deadline_unknown_fields: [],
+                timeline_unresolved_reason: null,
+                portal_instructions: null,
+                headline_mode: "applies_together",
+                routes: [
+                  route({
+                    ruleId: "DOB-TALL-STRUCTURE-001",
+                    disposition: "may_be_required",
+                    name: "DOB permit — structure over 10 feet tall",
+                    conflictText: "the binding route's two readings",
+                  }),
+                  // The filing route: the window, its own page, and no conflict of its own.
+                  route({
+                    ruleId: "DOB-TENT-001",
+                    disposition: "required",
+                    name: "DOB permit — tent/canopy",
+                    latestApplyDate: "2026-07-01",
+                    deadlineStatus: "on_track",
+                    conflictText: null,
+                  }),
+                ],
+              },
+            ],
+          }),
+        ],
+      );
+      await pool.query(
+        `INSERT INTO permit_plan_items
+           (id, plan_id, rule_ids, triggered_by, sources, source_url, kind, disposition,
+            deadline_status, verification_status, permit_name, agency, latest_apply_date)
+         VALUES ($1, $2, ARRAY['DOB-TALL-STRUCTURE-001','DOB-TENT-001'], '[]'::jsonb, $3::jsonb, $4,
+                 'permit', 'may_be_required', 'not_applicable', 'SOURCE_CONFIRMED',
+                 'DOB permit — structure over 10 feet tall', 'DOB', NULL)`,
+        [itemId, planId, JSON.stringify([bindingSource, filingSource]), bindingSource.urls[0]],
+      );
+
+      const api = appWith(fakeStorage());
+      expect((await review(api, eventId, planId)).status).toBe(201);
+      await generatePlan(eventId);
+
+      const read = await request(api).get(`/api/events/${eventId}/checklist`);
+      const item = (read.body.items as ChecklistItemView[]).find((candidate) =>
+        candidate.ruleIds.includes("DOB-TENT-001"),
+      );
+      // The date that moved is the filing route's, which is what makes the rest attribution.
+      expect(item?.deadlineNotice?.dateChange).toMatchObject({
+        kind: "both",
+        previous: "2026-07-01",
+      });
+      // NOT VACUOUS, each on its own: before the narrowing these read both sources, the binding
+      // route's url, and the binding route's two readings.
+      const provenance = item?.deadlineNotice?.previousProvenance;
+      expect(provenance?.sources).toEqual([filingSource]);
+      expect(provenance?.sourceUrl).toBe("https://example.test/filing");
+      expect(provenance?.conflictText).toBeNull();
+    });
+
+    it("schedules the reminders that route's window earns, naming that route", async () => {
+      const eventId = await createEvent(SETTLED_TALL_TENT);
+      await generatePlan(eventId);
+      await review(appWith(fakeStorage()), eventId, undefined, {
+        contactEmail: "organizer@example.test",
+      });
+
+      const { rows } = await pool.query<{
+        subject: string;
+        send_at: Date;
+        alert_type: string;
+      }>(
+        `SELECT alert.alert_type, alert.payload->>'subject' AS subject, alert.send_at
+           FROM alerts AS alert
+           JOIN checklist_items AS checklist ON checklist.id = alert.checklist_item_id
+           JOIN permit_plan_items AS item ON item.id = checklist.plan_item_id
+          WHERE alert.event_id = $1 AND 'DOB-TENT-001' = ANY(item.rule_ids)
+          ORDER BY alert.send_at`,
+        [eventId],
+      );
+
+      // One per published offset, exactly as an unmerged dated requirement gets.
+      expect(rows).toHaveLength(reminderOffsets.length);
+      expect(rows.every((row) => row.alert_type === "deadline_reminder")).toBe(true);
+      // The reminder names the route whose window it counts down to, not the route the line reads.
+      expect(rows[0]?.subject).toContain("tent/canopy");
+      expect(rows[0]?.subject).not.toContain("structure over 10 feet tall");
+    });
+
+    /**
+     * The window a route-scheduled reminder retires on, recorded on the alert itself.
+     *
+     * The plan item's `latest_apply_date` is the merged line's, and here the line's binding route
+     * publishes none, so it is NULL. `FILING_WINDOW_HAS_SHUT` read only that column, so the window
+     * never shut for these reminders on any day: one held in retry backoff would be delivered
+     * saying "file by 2026-08-05" after that date had passed, which is the one thing the predicate
+     * exists to prevent. Two further readers inherit it, the reconciliation hold and the earlier-of
+     * bound on an unresolved attempt (#252 review).
+     */
+    it("records the window its reminders retire on, which its item column does not carry", async () => {
+      const eventId = await createEvent(SETTLED_TALL_TENT);
+      await generatePlan(eventId);
+      await review(appWith(fakeStorage()), eventId, undefined, {
+        contactEmail: "organizer@example.test",
+      });
+
+      const { rows } = await pool.query<{
+        controlling_apply_by: string | null;
+        item_apply_by: string | null;
+        shut_the_day_after: boolean;
+        shut_on_the_day: boolean;
+      }>(
+        // THE PREDICATE ITSELF, imported rather than restated, so this asserts what the sweep and
+        // the claim actually evaluate.
+        `SELECT alerts.payload->>'controlling_apply_by' AS controlling_apply_by,
+                item.latest_apply_date::text AS item_apply_by,
+                ${FILING_WINDOW_HAS_SHUT("'2026-08-06'")} AS shut_the_day_after,
+                ${FILING_WINDOW_HAS_SHUT("'2026-08-05'")} AS shut_on_the_day
+           FROM alerts
+           JOIN checklist_items AS checklist ON checklist.id = alerts.checklist_item_id
+           JOIN permit_plan_items AS item ON item.id = checklist.plan_item_id
+          WHERE alerts.event_id = $1 AND 'DOB-TENT-001' = ANY(item.rule_ids)`,
+        [eventId],
+      );
+
+      expect(rows).toHaveLength(reminderOffsets.length);
+      for (const row of rows) {
+        // THE ITEM COLUMN IS NO LONGER NULL ON THIS FIXTURE, and the assertion is dropped rather
+        // than reworded. It was null because the dated tent route was NON-BINDING, and on this
+        // published group the only thing that makes it non-binding is an unresolved trigger —
+        // which makes the line a candidate group, which now schedules no filing reminder at all.
+        // The two conditions are mutually exclusive here. What the alert carries the date FOR is
+        // still pinned, by the synthetic `applies_together` group in `alerts.test.ts` whose binding
+        // route is undated because a stronger route binds, which is the shape this one modelled
+        // (#252 review).
+        expect(row.controlling_apply_by).toBe("2026-08-05");
+        expect(row.shut_the_day_after).toBe(true);
+        // Still open on its own last day, which is the day the reminder is about.
+        expect(row.shut_on_the_day).toBe(false);
+      }
+    });
+
+    /**
+     * The row renders "apply by 2026-08-05" and sorts where that date puts it. `PLAN_ITEM_ORDER`
+     * read the column, which is NULL here, so the only DATED requirement on this plan sorted behind
+     * an undated `research_required` one — and `materialize` freezes that into `cohort_position`,
+     * which migration 007 exists to make permanent (#252 review).
+     */
+    it("sorts on the date the row shows, not on the column the row leaves empty", async () => {
+      const eventId = await createEvent({
+        ...TALL_TENT,
+        structure_types: ["tent_canopy", "stage_platform_scaffold"],
+        stage_height_ft: 4,
+        stage_area_sqft: 200,
+      });
+      await generatePlan(eventId);
+      const response = await review(appWith(fakeStorage()), eventId);
+      expect(response.status).toBe(201);
+      const order = (response.body.items as ChecklistItemView[]).map((item) =>
+        item.ruleIds.join("+"),
+      );
+      const dobStructure = order.indexOf("DOB-TENT-001+DOB-TALL-STRUCTURE-001");
+      const dobStage = order.indexOf("DOB-STAGE-001");
+      expect(dobStructure).toBeGreaterThanOrEqual(0);
+      expect(dobStage).toBeGreaterThanOrEqual(0);
+      expect(dobStructure).toBeLessThan(dobStage);
+    });
+
+    /**
+     * `null` on `routes` means "this plan predates the field", never "this line has no routes"
+     * (`FindingRendering.routes`). Synthesized from the row's columns instead, a two-rule line
+     * stored before the field was served a one-entry list naming `rule_ids[0]` alone, which is a
+     * claim that a merged requirement has one route. The plan endpoint has always served the
+     * stored list or null; this is the checklist agreeing with it (#252 review).
+     */
+    it("serves the stored route list or nothing, never one synthesized from the row", async () => {
+      const eventId = await createEvent(TALL_TENT);
+      await generatePlan(eventId);
+      const response = await review(appWith(fakeStorage()), eventId);
+      const items = response.body.items as (ChecklistItemView & Record<string, unknown>)[];
+      for (const item of items) {
+        const routes = item.routes as unknown[] | null;
+        if (routes === null) continue;
+        expect(routes.length).toBeGreaterThan(1);
+      }
+      // Every unmerged line on this plan carries none rather than a restatement of itself.
+      const sound = items.find((item) => item.ruleIds.includes("NYPD-SOUND-001"));
+      expect(sound?.routes).toBeNull();
+    });
+
+    /**
+     * #252: `FILING_ORDER_JOIN` LACKED THE `routes.length >= 2` GUARD ITS THREE TYPESCRIPT
+     * COUNTERPARTS ALL MAKE.
+     *
+     * `filingRouteOf`, `plan-line.tsx` and `alertSubjects` each treat a ONE-entry route list as an
+     * unmerged line, because a line with a single route has its own columns and `storedRoutes`
+     * collapses it back to the row. The lateral did not, so it read the lone route's window and
+     * ordered the item by it: the same plan sorted one way through the api and another through
+     * SQL. One shape out of 32 exhaustive route-list shapes disagreed, and it disagreed here.
+     *
+     * Written against the stored rendering directly, because no engine output produces a one-entry
+     * list; that is exactly what makes the guard a contract about the column rather than about
+     * something the engine happens not to emit today.
+     */
+    it("orders a one-entry route list off the row's own column, as every other reader does", async () => {
+      const eventId = await createEvent(TALL_TENT);
+      await generatePlan(eventId);
+      const { rows: planRows } = await pool.query<{ id: string }>(
+        "SELECT id FROM permit_plans WHERE event_id = $1 ORDER BY generated_at DESC LIMIT 1",
+        [eventId],
+      );
+      const planId = planRows[0]?.id as string;
+      // The line's own window is NULL and its single route publishes one. Every TypeScript reader
+      // calls this unmerged, so the ordering date is the column: NULL, and the row sorts last.
+      await pool.query(
+        `UPDATE permit_plans
+            SET verdict_detail = jsonb_set(verdict_detail, '{finding_renderings}',
+                  jsonb_build_array(jsonb_build_object(
+                    'rule_ids', to_jsonb(ARRAY['DOB-TENT-001','DOB-TALL-STRUCTURE-001']),
+                    'routes', jsonb_build_array(jsonb_build_object(
+                      'ruleId', 'DOB-TENT-001',
+                      'deadline', 'null'::jsonb,
+                      'latestApplyDate', '2026-08-05')))))
+          WHERE id = $1`,
+        [planId],
+      );
+      const { rows } = await pool.query<{ ordering_date: string | null }>(
+        `SELECT ${FILING_ORDER_DATE} AS ordering_date
+           FROM permit_plan_items AS item
+           ${FILING_ORDER_JOIN}
+          WHERE item.plan_id = $1 AND item.rule_ids @> ARRAY['DOB-TENT-001']`,
+        [planId],
+      );
+      expect(rows).toHaveLength(1);
+      expect(rows[0]?.ordering_date).toBeNull();
+    });
+
+    /**
+     * #252 review: THE NOTICE COMPARED ONE ROUTE'S TYPED FIELDS AGAINST ANOTHER'S TEXT.
+     *
+     * `noticeItemFrom` replaces the deadline, the date and the status with the filing route's, and
+     * the merged rendering was passed beside it unchanged — so `movedDeadlineNotice` compared the
+     * filing route's fields against the BINDING route's `deadline_display`. A regeneration that
+     * moves which route binds, while the filing route and its window stay exactly where they are,
+     * then reported a deadline-state change over unchanged filing data.
+     *
+     * The regeneration is real and only the binding route's published text is edited onto it,
+     * because that string is the whole of what a changed binding puts on this line: the item's own
+     * columns are NULL either way, and every other field the notice reads is the filing route's.
+     */
+    it("reports no deadline change when only the headline binding moved", async () => {
+      const eventId = await createEvent(TALL_TENT);
+      await generatePlan(eventId);
+      const api = appWith(fakeStorage());
+      expect((await review(api, eventId)).status).toBe(201);
+
+      await generatePlan(eventId);
+      const { rows: latest } = await pool.query<{ id: string }>(
+        "SELECT id FROM permit_plans WHERE event_id = $1 ORDER BY generated_at DESC LIMIT 1",
+        [eventId],
+      );
+      await pool.query(
+        `UPDATE permit_plans
+            SET verdict_detail = jsonb_set(verdict_detail, '{finding_renderings}', (
+                  SELECT jsonb_agg(
+                           CASE WHEN rendering->'rule_ids' ? 'DOB-TENT-001'
+                                THEN jsonb_set(rendering, '{deadline_display}', $2::jsonb)
+                                ELSE rendering END)
+                    FROM jsonb_array_elements(verdict_detail->'finding_renderings') AS rendering))
+          WHERE id = $1`,
+        [latest[0]?.id, JSON.stringify("the newly binding route's published lead time")],
+      );
+
+      const read = await request(api).get(`/api/events/${eventId}/checklist`);
+      const item = (read.body.items as ChecklistItemView[]).find((candidate) =>
+        candidate.ruleIds.includes("DOB-TENT-001"),
+      );
+      // The filing data the row shows is untouched, which is what makes a notice about it false.
+      expect(item?.latestApplyDate).toBe("2026-08-05");
+      expect(item?.deadlineStatus).toBe("on_track");
+      expect(item?.deadlineNotice).toBeNull();
     });
   });
 });
