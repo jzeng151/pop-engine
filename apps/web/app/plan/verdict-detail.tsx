@@ -1,4 +1,5 @@
 import type { Verdict } from "@pop-engine/engine";
+import { offersAFilingAction } from "@pop-engine/engine";
 import { PortalBlock, type PortalFields } from "../portal-block";
 import { WIDENED_BLOCKER_KEYS } from "./plan-api";
 import type { ConsumedFinding, ConsumedVerdictDetail } from "./plan-api";
@@ -39,7 +40,10 @@ export type FindingReference = {
  */
 type ReferenceSource = Pick<ConsumedFinding, "ruleIds" | "name"> &
   Partial<
-    Pick<ConsumedFinding, "userSummary" | "sources" | "portalName" | "portalUrl" | "headlineMode">
+    Pick<
+      ConsumedFinding,
+      "userSummary" | "sources" | "portalName" | "portalUrl" | "headlineMode" | "disposition"
+    >
   >;
 
 const referenceFromFinding = (finding: ReferenceSource): FindingReference => {
@@ -55,12 +59,16 @@ const referenceFromFinding = (finding: ReferenceSource): FindingReference => {
         : { label: fallbackSource.citation, url: fallbackSource.urls[0] as string }),
     portalName: finding.portalName ?? null,
     portalUrl: finding.portalUrl ?? null,
-    // THE SAME RULE EVERY OTHER SECTION OF THIS PANEL NOW APPLIES. A merged line's portal is its
-    // binding route's, and on a `candidate` line no route is known to be the one, so the panel
-    // names the portal without instructing a filing — wherever it names it. Reached from the branch
-    // tables, the unresolved-timeline list and the unmerged-finding fallback in the missed-route
-    // list, so the treatment does not depend on which section happens to build the reference.
-    settled: finding.headlineMode !== "candidate",
+    // ONE PREDICATE FOR EVERY SURFACE THAT OFFERS A FILING ACTION. This read the group's mode and
+    // nothing else, so a resolved `advisory` or a `prohibited_or_ineligible` finding rendered an
+    // Apply link: the mode says the group is settled, and settled is not the same as having a
+    // filing to make. `offersAFilingAction` is the engine's own test and adds the clause this was
+    // missing (#252 review).
+    // A reference built without one is a caller that knows nothing about the finding's
+    // disposition; it keeps the previous behaviour rather than silently withholding the link.
+    settled:
+      finding.disposition === undefined ||
+      offersAFilingAction({ disposition: finding.disposition }, finding.headlineMode),
   };
 };
 
@@ -430,11 +438,12 @@ function missedRouteEntries(
             source === undefined ? null : { label: source.citation, url: source.urls[0] as string },
           portalName: route.portalName,
           portalUrl: route.portalUrl,
-          // The route's own trigger result, which is what decides whether its portal reads as an
-          // instruction. A route whose window is past and whose trigger is unresolved is exactly
-          // the case: the verdict says the requirement applies only conditionally, and an "Apply
-          // through" beside it says otherwise.
-          settled: route.triggerResult === "true",
+          // The route's own trigger AND its own disposition. A resolved trigger says the route
+          // applies; it says nothing about whether the route publishes a filing, and this is the
+          // section that exists for routes whose windows are past — including the `advisory` ones
+          // it now describes in words as publishing no filing of their own. An Apply link beside
+          // that sentence contradicts it (#252 review).
+          settled: offersAFilingAction(route, finding.headlineMode),
         },
         disposition: route.disposition,
       });
@@ -739,6 +748,16 @@ export function VerdictDetailPanel({
       portalUrl: referenceShowsPortal ? null : (blockerFacts?.portalUrl ?? null),
       portalInstructions: blockerFacts?.portalInstructions ?? null,
     };
+    // AND THE WORST INSTANCE OF THE SAME RULE. This block took the default "apply at" lead and
+    // rendered the rule's own filing instructions beneath it, so a blocker whose disposition is
+    // `prohibited_or_ineligible` told the organizer to file the very route that BARS their event,
+    // two lines under a heading saying it blocks the date. Not an unneeded action: one that
+    // contradicts the finding beside it (#252 review). The portal is still named and still linked,
+    // which is what `lead: "portal"` keeps.
+    const blockerOffersFiling =
+      blockerFacts?.disposition === undefined
+        ? true
+        : offersAFilingAction({ disposition: blockerFacts.disposition }, null);
     return (
       <div className="verdict-detail" data-testid="verdict-detail">
         {blocker !== null && (
@@ -760,6 +779,7 @@ export function VerdictDetailPanel({
               {...blockerPortal}
               className="verdict-detail__blocker-portal"
               instructionsClassName="verdict-detail__blocker-instructions"
+              lead={blockerOffersFiling ? "apply at" : "portal"}
             />
             {missedRoutes.length > 1 && (
               <p className="verdict-detail__missed">

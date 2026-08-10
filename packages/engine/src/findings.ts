@@ -167,6 +167,65 @@ export const BLOCKING_DISPOSITION_FLOOR: Disposition = "required";
 const UNRESOLVED_ROUTE_CAP_TRIGGER: Disposition = "required";
 
 /**
+ * The dispositions that denote something an organizer FILES.
+ *
+ * `required` and `may_be_required`, and the second is not a hedge to be excluded: an
+ * unknown-triggered `required` rule is demoted to it (`resolveDisposition`), and a requirement that
+ * may apply is still one to file for. `advisory` and `no_new_requirement` publish no filing at all,
+ * and `prohibited_or_ineligible` publishes the opposite of one.
+ */
+export const FILING_DISPOSITIONS: ReadonlySet<Disposition> = new Set<Disposition>([
+  "required",
+  "may_be_required",
+]);
+
+/**
+ * Whether a surface may offer a FILING ACTION for this route or finding: "apply at", an Apply link,
+ * a published filing instruction, "apply within N days".
+ *
+ * ONE FUNCTION FOR EIGHT SURFACES, and the count is the argument. The candidate portal lead, the
+ * candidate entry actions, the candidate portal instructions, the checklist filing selection, the
+ * slack-warning copy and three more found this round are all the same sentence asked eight times:
+ * does this thing have a filing, and if not, do not tell anyone to file it. Each was answered
+ * locally, each answer was slightly different, and the worst instance told an organizer to apply at
+ * the portal of the rule that BARS their event (#252 review).
+ *
+ * TWO CLAUSES, NOT THREE, and the third is the interesting one.
+ *
+ *   1. THE DISPOSITION PUBLISHES A FILING. This is the clause every local answer was missing.
+ *   2. THE GROUP IS SETTLED. A candidate group's open question is WHICH of its routes applies, so
+ *      even a route whose own trigger resolved is not yet a filing an organizer should be told to
+ *      make (design §5.3). `headlineMode` carries this; an unmerged finding has no group and is
+ *      settled by construction.
+ *   3. The route's own trigger resolved — proposed as a third clause and REDUNDANT WHERE IT CAN BE
+ *      EVALUATED. The route contract pairs an `unknown` trigger with `candidate` mode, so clause 2
+ *      already refuses every unresolved route of a merged line. Applied to an UNMERGED finding it
+ *      would say something different and wrong: an unknown-triggered `required` rule is demoted to
+ *      `may_be_required` rather than withdrawn, and the approved position is that such a finding
+ *      still gets its filing path — the insurance card's checklist link is gated on the rule id
+ *      "never on disposition" for exactly this reason. It is kept as an optional guard, so a
+ *      payload carrying a route's trigger but no mode is still refused, and it is documented as
+ *      belt-and-braces rather than as a third independent test.
+ *
+ * WHAT THE RULE DOES NOT DECIDE, deliberately: whether the portal is NAMED. Every surface that
+ * withholds the action still renders the published portal, without the imperative and without the
+ * rule's own filing instruction. A rule published that value and dropping it would lose regulatory
+ * content; what is withheld is the instruction to act on it.
+ *
+ * WHAT IT DOES NOT COVER, stated so the next reviewer does not have to find it: `verificationStatus`
+ * is not read. An `OFFICIAL_CONFLICT` route still offers its filing action, because the conflict its
+ * two readings record is about the WINDOW rather than about whether the filing exists. That is
+ * existing behaviour on every surface and changing it would be a product decision.
+ */
+export const offersAFilingAction = (
+  candidate: { readonly disposition: Disposition; readonly triggerResult?: Tristate },
+  headlineMode?: HeadlineMode | null,
+): boolean =>
+  FILING_DISPOSITIONS.has(candidate.disposition) &&
+  headlineMode !== "candidate" &&
+  candidate.triggerResult !== "unknown";
+
+/**
  * Whether a route is one a MISSED window may close a plan on, which is membership in
  * `blockingRuleIds` stated as the predicate it always was.
  *

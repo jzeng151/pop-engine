@@ -21,7 +21,11 @@ import { createHash, randomUUID } from "node:crypto";
 import { Router, type NextFunction, type Request, type Response } from "express";
 import { Pool } from "pg";
 import type { PoolClient, QueryResult, QueryResultRow } from "pg";
-import { CONFIRM_WITH_AGENCY, DEPENDENCY_SEQUENCING_BINDINGS } from "@pop-engine/engine";
+import {
+  CONFIRM_WITH_AGENCY,
+  DEPENDENCY_SEQUENCING_BINDINGS,
+  FILING_DISPOSITIONS,
+} from "@pop-engine/engine";
 import type {
   Deadline,
   DeadlineStatus,
@@ -1289,11 +1293,12 @@ const subjectFromRoute = (
  * A route outside this set keeps its disposition, its notes and its sources on the plan line and in
  * the checklist row's route list, which is where a reader learns what it says. What it does not get
  * is a notification telling them to file it.
+ *
+ * THE SET ITSELF IS THE ENGINE'S NOW, imported rather than declared here for the third time. It is
+ * one classification — which dispositions denote something an organizer files — read by eight
+ * surfaces across both apps, and it was written out locally in this file and in `plan.ts` while the
+ * web renderers asked the question a third way (#252 review).
  */
-const FILING_DISPOSITIONS: ReadonlySet<Disposition> = new Set<Disposition>([
-  "required",
-  "may_be_required",
-]);
 
 /**
  * Whether this scheduling subject is one an organizer can be told to act on.
@@ -2174,9 +2179,26 @@ async function plannedAlerts(
   //
   // Same rule, and the reason it produces opposite answers is that one side risks saying too much
   // and the other risks saying nothing at all.
-  const controllingIsGated = controlling.some(
-    (dated) => dated.subject.row.apply_after_date !== null,
-  );
+  // ONE ROUTE ANSWERS BOTH QUESTIONS, because the sentence describes one requirement.
+  //
+  // These were two independent `some` tests over the tied set, and on a tie they could describe
+  // DIFFERENT routes: a gated non-filing controller made `controllingIsGated` true while an ungated
+  // filing one made the filing test true, and the copy then said the narrowest FILING window is N
+  // days wide when the only filing controller was a countdown (#252 review). Two flags read off two
+  // routes and the copy assumed they agreed.
+  //
+  // THE SAME TWO HARM DIRECTIONS, APPLIED TO SELECT A ROUTE RATHER THAN TWO BOOLEANS, and in this
+  // order because the harms are ordered: withholding a filing instruction that is genuinely due is
+  // worse than naming a width, and calling a width a countdown asserts a filing date the sources do
+  // not publish while calling a countdown a width only loses an anchor. So: prefer a route that
+  // publishes a filing, and among those prefer a gated one.
+  const isGated = (dated: { subject: AlertSubject }) => dated.subject.row.apply_after_date !== null;
+  const controllingRoute =
+    controlling.find((dated) => isFilingSubject(dated.subject) && isGated(dated)) ??
+    controlling.find((dated) => isFilingSubject(dated.subject)) ??
+    controlling.find(isGated) ??
+    controlling[0];
+  const controllingIsGated = controllingRoute !== undefined && isGated(controllingRoute);
   /**
    * The day the LAST of the controlling requirements closes, for the poller to compare.
    *
@@ -2199,7 +2221,7 @@ async function plannedAlerts(
       settings.slackWarningDays,
       plan.today,
       controllingIsGated,
-      controlling.some((dated) => isFilingSubject(dated.subject)),
+      controllingRoute !== undefined && isFilingSubject(controllingRoute.subject),
       controlling.map((dated) => ({
         // The route's own name, so the copy names the rule whose window produced the number.
         subject: withAgency(dated.subject.row),

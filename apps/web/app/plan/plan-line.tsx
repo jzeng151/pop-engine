@@ -10,6 +10,7 @@ import { includesAgencyConfirmation, NOT_COVERED_BY_RULESET } from "../verificat
 import { businessDayNotice } from "./business-day-notice";
 import type { ConsumedFinding, ConsumedRoute } from "./plan-api";
 import type { HeadlineMode } from "@pop-engine/engine";
+import { offersAFilingAction } from "@pop-engine/engine";
 
 // F-206 AC 2 and AC 3: every plan line carries its citation and its verification status, both
 // visible. Every string an organizer reads is either published in the rules artifact and carried
@@ -373,7 +374,7 @@ function Route({ route, mode }: { route: ConsumedRoute; mode: HeadlineMode }) {
         portalInstructions={shown.portalInstructions}
         className="line__route-portal"
         instructionsClassName="line__portal-instructions"
-        lead={mode === "candidate" ? "portal" : "apply at"}
+        lead={offersAFilingAction(route, mode) ? "apply at" : "portal"}
       />
     </li>
   );
@@ -800,7 +801,9 @@ export function PlanLine({ finding }: { finding: ConsumedFinding }) {
           portalInstructions={finding.portalInstructions}
           className="line__portal"
           instructionsClassName="line__portal-instructions"
-          lead={isCandidate ? "portal" : "apply at"}
+          lead={
+            offersAFilingAction(finding, isCandidate ? "candidate" : null) ? "apply at" : "portal"
+          }
         />
 
         {finding.notes.map((note) => (

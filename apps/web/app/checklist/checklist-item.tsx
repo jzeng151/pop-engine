@@ -1,7 +1,12 @@
 "use client";
 
 import { useRef, useState } from "react";
-import { CHECKLIST_STATUSES, CONFIRM_WITH_AGENCY, type ChecklistStatus } from "@pop-engine/engine";
+import {
+  CHECKLIST_STATUSES,
+  CONFIRM_WITH_AGENCY,
+  type ChecklistStatus,
+  offersAFilingAction,
+} from "@pop-engine/engine";
 import { Disclosure } from "../disclosure";
 import { PortalBlock } from "../portal-block";
 import { formatSnapshotDate } from "../plan/snapshot-banner";
@@ -521,7 +526,16 @@ export function PlanContextBody({
             portalInstructions={context.portalInstructions}
             className="check-item__text"
             instructionsClassName="check-item__text"
-            lead={candidateRoutes.length > 0 ? "portal" : "apply at"}
+            // The row's own values are the attributed route's, so the rule is asked of that
+            // route where there is one and of the row's own disposition where there is not.
+            lead={
+              offersAFilingAction(
+                filingRoute ?? context,
+                candidateRoutes.length > 0 ? "candidate" : null,
+              )
+                ? "apply at"
+                : "portal"
+            }
           />
 
           {context.publishedNotes.map((note) => (

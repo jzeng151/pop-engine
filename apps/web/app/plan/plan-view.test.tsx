@@ -2145,6 +2145,66 @@ describe("F-102 · CONDITIONAL branch table and INFEASIBLE rescope ladder", () =
    * consulting the whole finding for them, so both halves are the fix: `VerdictDetail` carries the
    * narrowed values and the section renders the published filing path beneath the reason.
    */
+  /**
+   * #252 review: THE PANEL TOLD THE ORGANIZER TO FILE THE ROUTE THAT BARS THEIR EVENT.
+   *
+   * The blocker's `PortalBlock` took the default "apply at" lead and rendered the rule's own filing
+   * instructions beneath it, whatever the blocker publishes. On a `prohibited_or_ineligible`
+   * blocker that is an action contradicting the finding two lines above it, not merely an
+   * unnecessary one. The portal is still named and still linked; the imperative and the
+   * instructions are withheld, which is what `offersAFilingAction` decides on every other surface.
+   */
+  it("names a barred blocker's portal instead of telling the organizer to apply at it", async () => {
+    stubApi(
+      plan({
+        verdict: "INFEASIBLE",
+        findings: [
+          finding({
+            ruleIds: ["PARKS-PROPANE-001"],
+            name: "Propane prohibited in this park",
+            disposition: "prohibited_or_ineligible",
+            deadlineStatus: "published_deadline_missed",
+            latestApplyDate: "2026-07-12",
+            portalName: "Parks permit office",
+            portalUrl: null,
+            portalInstructions: "File in person at the borough office",
+            // The blocker's citations must be exactly this rule's, and it publishes none.
+            sources: [],
+          }),
+        ],
+        verdictDetail: {
+          ...emptyVerdictDetail,
+          blockingFinding: {
+            ruleIds: ["PARKS-PROPANE-001"],
+            name: "Propane prohibited in this park",
+            agency: "NYC Parks",
+            disposition: "prohibited_or_ineligible",
+            deadlineDisplay: null,
+            latestApplyDate: "2026-07-12",
+            deadlineStatus: "published_deadline_missed",
+            feeDisplay: null,
+            portalName: "Parks permit office",
+            portalUrl: null,
+            portalInstructions: "File in person at the borough office",
+            sources: [],
+            userSummary: null,
+          },
+          missedRuleIds: ["PARKS-PROPANE-001"],
+          trace: [{ ruleId: "PARKS-PROPANE-001", result: "true" }],
+        },
+      }),
+    );
+    renderPlan();
+    await screen.findByTestId("verdict-detail");
+
+    const blocker = screen.getByTestId("blocking-finding");
+    // NOT VACUOUS: the portal is still named, so this is the lead and the instruction being
+    // withheld rather than the block disappearing.
+    expect(blocker.textContent).toContain("Parks permit office");
+    expect(blocker.textContent).not.toContain("apply at");
+    expect(blocker.textContent).not.toContain("File in person at the borough office");
+  });
+
   it("renders an instructions-only blocker's published filing path", async () => {
     stubApi(
       plan({
@@ -2636,10 +2696,77 @@ describe("F-102 · CONDITIONAL branch table and INFEASIBLE rescope ladder", () =
     const unsettled = section.querySelector('a[href="https://example.gov/dobnow"]');
     expect(unsettled?.textContent).toBe("DOB NOW");
     expect(section.textContent).toContain("portal: DOB NOW");
-    // The settled route beside it keeps the action, so this is not a blanket suppression.
+    // AND SO IS THE RESOLVED ROUTE BESIDE IT, which is a change and the right one. This asserted
+    // that a route whose own trigger resolved keeps the Apply link; the group is in CANDIDATE mode,
+    // and design §5.3 suppresses the action for every entry of a candidate group including a
+    // triggered one, which is what the plan line has done since the entries were neutralised. This
+    // panel now reads the same predicate, so the two surfaces stop disagreeing about one group
+    // (#252 review).
     expect(
       section.querySelector('a[href="https://example.gov/tall-portal"]')?.textContent,
-    ).toContain("Apply through");
+    ).not.toContain("Apply through");
+    expect(section.textContent).toContain("portal: DOB tall structures");
+  });
+
+  /**
+   * #252 review: NOT A BLANKET SUPPRESSION, which the candidate case above no longer proves.
+   *
+   * `offersAFilingAction` withholds the action on two counts and this pins the other side of both:
+   * a settled group whose route publishes a filing keeps its Apply link.
+   */
+  it("keeps the apply link on a settled route that publishes a filing", async () => {
+    const route = (overrides: Partial<FindingRoute> = {}): FindingRoute => ({
+      ruleId: "DOB-TENT-001",
+      triggerResult: "true",
+      disposition: "required",
+      unknownFields: [],
+      name: "Tent permit",
+      agency: "DOB",
+      deadline: null,
+      deadlineDisplay: null,
+      latestApplyDate: "2026-07-01",
+      applyAfterDate: null,
+      deadlineStatus: "published_deadline_missed",
+      slackDays: null,
+      feeDisplay: null,
+      portalName: "DOB NOW",
+      portalUrl: "https://example.gov/dobnow",
+      portalInstructions: null,
+      ...overrides,
+    });
+    stubApi(
+      plan({
+        verdict: "CONDITIONAL",
+        findings: [
+          finding({
+            ruleIds: ["DOB-TALL-STRUCTURE-001", "DOB-TENT-001"],
+            // The binding route's, which on a tie is the earlier rule id.
+            name: "Tall structure permit",
+            disposition: "required",
+            deadlineStatus: "published_deadline_missed",
+            latestApplyDate: "2026-07-01",
+            portalName: "DOB NOW",
+            portalUrl: "https://example.gov/dobnow",
+            headlineMode: "applies_together",
+            routes: [
+              route({ ruleId: "DOB-TALL-STRUCTURE-001", name: "Tall structure permit" }),
+              route({}),
+            ],
+          }),
+        ],
+        verdictDetail: {
+          ...emptyVerdictDetail,
+          missedRuleIds: ["DOB-TENT-001", "DOB-TALL-STRUCTURE-001"],
+        },
+      }),
+    );
+    renderPlan();
+    await screen.findByTestId("missed-may-be-required");
+
+    const section = screen.getByTestId("missed-may-be-required");
+    expect(section.querySelector('a[href="https://example.gov/dobnow"]')?.textContent).toContain(
+      "Apply through",
+    );
   });
 
   it("describes a barred conditional miss without calling it may-be-required", async () => {

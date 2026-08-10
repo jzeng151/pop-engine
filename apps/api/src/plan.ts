@@ -3,7 +3,7 @@
 
 import { randomUUID } from "node:crypto";
 import type { Pool, PoolClient } from "pg";
-import { compareToPinned, evaluate } from "@pop-engine/engine";
+import { FILING_DISPOSITIONS, compareToPinned, evaluate } from "@pop-engine/engine";
 import type {
   Deadline,
   DeadlineStatus,
@@ -282,10 +282,6 @@ export function storedRoutes(
  * Mirrored in `FILING_ORDER_JOIN` below, which orders rows by the same choice. A predicate fixed in
  * TypeScript and left in SQL is a guard that disagrees with itself.
  */
-const FILING_DISPOSITIONS: ReadonlySet<Disposition> = new Set<Disposition>([
-  "required",
-  "may_be_required",
-]);
 
 export function filingRouteOf(
   item: StoredPlanItem,

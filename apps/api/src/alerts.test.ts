@@ -761,6 +761,50 @@ describe.skipIf(databaseUrl === "")("F-203 deadline alerts", () => {
     });
 
     /**
+     * #252 review: TWO FLAGS READ OFF TWO DIFFERENT ROUTES.
+     *
+     * `controllingIsGated` and the publishes-a-filing test were independent `some` calls over the
+     * tied set, so on a tie they could describe different requirements: a gated non-filing route
+     * made the first true while an ungated filing route made the second true, and the copy then
+     * said the narrowest FILING window is N days wide when the only filing controller was a
+     * countdown. Both flags come off ONE selected route now.
+     */
+    it("describes one controlling requirement when a tie splits the two flags", async () => {
+      const eventId = await createEvent(scenario("C"));
+      const { planId } = await insertDuePlan(eventId, {
+        verdict: "feasible_at_risk",
+        minSlackDays: 9,
+        // The GATED, NON-FILING half of the tie: it publishes a dated window and no filing.
+        latestApplyDate: dayFromToday(30),
+        applyAfterDate: dayFromToday(21),
+        disposition: "advisory",
+        // The UNGATED, FILING half, tying on slack. `laterDated` rows are `required`.
+        laterDated: { latestApplyDate: dayFromToday(9), slackDays: 9 },
+      });
+      const client = await pool.connect();
+      try {
+        await schedulerWith()(client, eventId, planId, {
+          email: "organizer@example.test",
+          phone: null,
+        });
+      } finally {
+        client.release();
+      }
+
+      const warning = (await alertsOf(eventId)).find((row) => row.alert_type === "slack_warning");
+      // The filing controller is preferred, and it is ungated, so the copy is the ungated FILING
+      // sentence end to end: a countdown, anchored, with something to apply for.
+      expect(warning?.payload.subject).toBe(
+        `At risk — apply within 9 days of ${todayInJurisdiction("US-NY-NYC")}`,
+      );
+      // NOT VACUOUS: the gated sentence and the non-filing sentences are the ones a split would
+      // have produced, and none of them may appear.
+      expect(String(warning?.payload.body)).toContain("leaves 9 days to apply.");
+      expect(String(warning?.payload.body)).not.toContain("days wide");
+      expect(String(warning?.payload.body)).not.toContain("Nothing needs to be filed");
+    });
+
+    /**
      * #252 review: THE FOURTH COMBINATION, which the first non-filing sentence covered with a
      * countdown written for the third.
      *
