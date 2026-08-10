@@ -23,8 +23,10 @@
 import { readFileSync } from "node:fs";
 import {
   DEFAULT_DISPOSITION_BY_RULE_KIND,
+  noRouteSuppliesScalars,
   parseEngineRuleset,
   type Deadline,
+  type FindingRoute,
 } from "@pop-engine/engine";
 import { rulesFileIn } from "../rules-file";
 
@@ -164,12 +166,15 @@ const filedFrom = (overrides: Record<string, unknown>): Record<string, unknown> 
   ) as Record<string, unknown> | undefined;
   if (route === undefined) return {};
   const binding = routes[0] as Record<string, unknown>;
+  // Identity is the BINDING route's whatever route the filing fields came from: the api reads
+  // `permitName` and `agency` off the row's own columns, which on a merged line are `routes[0]`'s.
+  // Except on the shape where no route can supply the line's scalars, where the engine nulls the
+  // identity and `filingRouteOf` still fills the filing tuple from a route that publishes a window
+  // — the row the boundary must accept with a null name beside an attributed date.
+  const scalarFree = noRouteSuppliesScalars(routes as readonly FindingRoute[]);
   const filed: Record<string, unknown> = {
-    // Identity is the BINDING route's whatever route the filing fields came from: the api reads
-    // `permitName` and `agency` off the row's own columns, which on a merged line are `routes[0]`'s,
-    // and the boundary refuses a row where they are another route's.
-    permitName: binding.name,
-    agency: binding.agency,
+    permitName: scalarFree ? null : binding.name,
+    agency: scalarFree ? null : binding.agency,
     deadline: route.deadline === null || route.deadline === undefined ? null : route.deadline,
     deadlineDisplay: route.deadlineDisplay,
     latestApplyDate: route.latestApplyDate,

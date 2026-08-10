@@ -535,6 +535,27 @@ const identityMatchesBinding = (context: PlanContext, route: ConsumedRoute): boo
   context.permitName === route.name && context.agency === route.agency;
 
 /**
+ * THE IDENTITY EXCEPTION IS NOT THE FILING-TUPLE EXCEPTION, and reading them as one refused a
+ * checklist the engine itself produces.
+ *
+ * On the approved scalar-free shape the merged line publishes no identity — `permitName` and
+ * `agency` are null — but `filingRouteOf` then REPOPULATES the filing tuple from a route that does
+ * publish a window and names it in `filingRouteRuleId`, which is the attributed filling this
+ * boundary exists to check. So the filed fields are not null, `publishesNoFilingFields` is false,
+ * and the identity comparison ran against `routes[0]`, which has a name: the row was rejected and
+ * `loadChecklist` reported the organizer's whole checklist as unreadable (#252 review). Losing a
+ * checklist is worse than any crossing this check prevents.
+ *
+ * The two questions are answered separately now, off the same condition. Where no route can supply
+ * the line's scalars the identity must be ABSENT, and where one can it must be the binding route's;
+ * the filing tuple is checked against whichever route the row attributes it to either way.
+ */
+const identityIsWhatTheRoutesAllow = (context: PlanContext, binding: ConsumedRoute): boolean =>
+  noRouteSuppliesScalars((context.routes ?? []) as readonly FindingRoute[])
+    ? context.permitName === null && context.agency === null
+    : identityMatchesBinding(context, binding);
+
+/**
  * A NULL FILING ROUTE IS A CLAIM TOO, and it was the one this check waved through. Null says the
  * values above are the line's OWN, and a merged line's own values are its binding route's, which is
  * `routes[0]`: `mergeGroup()` spreads the binding route into the finding and leads the list with it.
@@ -545,9 +566,9 @@ const identityMatchesBinding = (context: PlanContext, route: ConsumedRoute): boo
 const filingRouteIsCarried = (context: PlanContext): boolean => {
   const routes = context.routes ?? [];
   if (routes.length === 0) return true;
-  if (publishesNoFilingFields(context)) return true;
   const binding = routes[0] as ConsumedRoute;
-  if (!identityMatchesBinding(context, binding)) return false;
+  if (!identityIsWhatTheRoutesAllow(context, binding)) return false;
+  if (publishesNoFilingFields(context)) return true;
   if (context.filingRouteRuleId == null) return matchesRoute(context, binding);
   const named = routes.filter((route) => route.ruleId === context.filingRouteRuleId);
   if (named.length !== 1) return false;

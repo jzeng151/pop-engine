@@ -570,6 +570,49 @@ describe("loadChecklist", () => {
   });
 
   /**
+   * #252 review: THE IDENTITY EXCEPTION AND THE FILING-TUPLE EXCEPTION ARE NOT ONE EXCEPTION.
+   *
+   * On the approved scalar-free shape the engine nulls the identity, and `filingRouteOf` then fills
+   * the filing tuple from a route that publishes a window and names it. So the filed fields are NOT
+   * null, the all-null exception does not apply, and the identity was compared against `routes[0]`
+   * — which has a name. The row the api itself serves was rejected and the organizer's whole
+   * checklist read as unreadable, which is worse than any crossing the check prevents.
+   */
+  it("reads a scalar-free row whose filing fields are attributed to a route", async () => {
+    const routes = [
+      { ...(mergedRoutes("true")[0] as object), disposition: "advisory" },
+      {
+        ...(mergedRoutes("unknown")[1] as object),
+        disposition: "may_be_required",
+        latestApplyDate: "2026-08-26",
+        deadlineStatus: "on_track",
+        feeDisplay: "$1,050 licence fee",
+      },
+    ] as Record<string, unknown>[];
+    stubFetch(async () =>
+      jsonResponse(
+        200,
+        checklistBody({
+          items: [
+            trackedItem(STREET_MEDIUM, {
+              routes,
+              disposition: "may_be_required",
+              headlineMode: "candidate",
+              // What `planContext` serves: no identity of its own, and the filing tuple attributed
+              // to the route that publishes the window.
+              filingRouteRuleId: (routes[1] as Record<string, unknown>).ruleId,
+            }),
+          ],
+        }),
+      ),
+    );
+
+    await expect(loadChecklist("https://api.example.com", "event-1")).resolves.toMatchObject({
+      ok: true,
+    });
+  });
+
+  /**
    * The approved state where the row's filing fields are nobody's: no resolved route contributes the
    * merged disposition, so the line publishes none of them (design §4.3, amended 2026-08-09). It
    * must not be read as a crossed row.

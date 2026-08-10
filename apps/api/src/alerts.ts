@@ -1507,15 +1507,29 @@ function reminderCopy(
     // VERIFICATION's qualifications, all flattened, with no marker separating the caveat about a
     // date from a note about anything else.
     //
-    // WHOSE NOTES THESE ARE, ON A MERGED LINE: THIS ROUTE'S, and a fourth kind joins the three
-    // above. `subjectFromRoute` narrows `notes` to `route.notes`, which is `ruleNotes()` for that
-    // route's own rule, because the merged line's array concatenates every contributing rule's and
-    // a reminder headed with one route's name and date quoted a sibling's threshold as if it
-    // qualified this filing. `applyDependencySequencing` then appends its sequencing caveat to the
-    // gated route's notes as well as to the line's, so a route's array is its own notes, its
-    // deadline and verification qualifications, and — where the route is gated — the caveat saying
-    // the issued-before-filed order is not confirmed. All four are quoted here for the same reason
-    // the three were (#252 review).
+    // WHOSE NOTES THESE ARE, ON A MERGED LINE: THIS ROUTE'S. `subjectFromRoute` narrows `notes` to
+    // `route.notes`, which is `ruleNotes()` for that route's own rule, because the merged line's
+    // array concatenates every contributing rule's and a reminder headed with one route's name and
+    // date quoted a sibling's threshold as if it qualified this filing. It narrows only where the
+    // route carries them: `FindingRoute.notes` is optional and absent on a plan stored before it
+    // existed, and such a row keeps the merged array, which is the residue `docs/BASELINE.md`
+    // records rather than closes.
+    //
+    // So a route's array holds four kinds, not the three above: its rule's own notes, its deadline
+    // qualification, its verification qualification, the confirm-with-agency floor `ruleNotes()`
+    // adds where that rule's own window could not be dated, and — where the route is gated —
+    // `applyDependencySequencing`'s caveat, appended to the gated route as well as to the line so
+    // the per-route readers stop losing it. Every one is quoted here for the reason the first three
+    // were (#252 review).
+    //
+    // NONE OF THAT IS REACHABLE IN PRODUCTION TODAY, and it is stated here for the same reason the
+    // paragraph below states it about its own example. No route-scheduled reminder can fire for a
+    // merged group on `nyc-rules.v2.11.json`: its one multi-member group is DOB-TENT-001, whose
+    // `business_days_minimum` deadline is undatable while `PUBLISHED_HOLIDAY_CALENDARS` is empty,
+    // beside DOB-TALL-STRUCTURE-001, which publishes no deadline at all, so neither route ever
+    // carries the date `alertSubjects` requires. What this paragraph describes is observable in the
+    // fixture suite and on any ruleset whose group dates two routes; the handling stands either
+    // way, and the identity work #262 covers is unreachable for the same reason.
     //
     // Reading only `deadline_display` therefore dropped the
     // caveat silently, and dropped it hardest on the rule that carries the most of it:
