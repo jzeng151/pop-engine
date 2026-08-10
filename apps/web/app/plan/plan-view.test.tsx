@@ -905,6 +905,46 @@ describe("the routes of a merged dedupe line", () => {
   });
 
   /**
+   * #252 review: THE SIGNATURE DECIDES WHETHER THE ENTRIES RENDER AT ALL, so a value it ignores can
+   * be collapsed away before the code that renders it ever runs.
+   *
+   * Twice now a route gained a rendered value and the hand-listed signature did not know about it —
+   * the typed deadline, then `conflictText` — and each time a group whose entries differ collapsed
+   * into one, dropping the sibling's published value silently. The signature is derived from the
+   * route now, so these two cases are one test rather than two, and a third field needs no third.
+   */
+  it("keeps a group whose routes differ only in a value the entry renders", async () => {
+    const cases: { field: string; overrides: Partial<FindingRoute>; shown: string }[] = [
+      {
+        field: "conflictText",
+        overrides: { conflictText: "two published readings of the same threshold" },
+        shown: "two published readings of the same threshold",
+      },
+      {
+        field: "deadline type",
+        overrides: { deadline: { type: "before_issuance" } as FindingRoute["deadline"] },
+        shown: "before issuance",
+      },
+    ];
+    for (const { overrides, shown } of cases) {
+      cleanup();
+      const line = await lineWith({
+        ruleIds: ["DOB-TENT-001", "DOB-TALL-STRUCTURE-001"],
+        headlineMode: "applies_together",
+        routes: [
+          route({ ruleId: "DOB-TENT-001" }),
+          route({ ruleId: "DOB-TALL-STRUCTURE-001", ...overrides }),
+        ],
+      });
+
+      // NOT VACUOUS: the two routes are identical in every other rendered field, including the
+      // name, so the one value under test is all that keeps the block on screen.
+      expect(screen.getByRole("article").querySelectorAll(".line__route")).toHaveLength(2);
+      expect(line.getByText(shown)).toBeDefined();
+    }
+  });
+
+  /**
    * #252 review: A TYPED-ONLY DEADLINE IS THE WHOLE TIMING REQUIREMENT, on a route as on a line.
    *
    * SAPO-INSURANCE-001 publishes `{type: "before_issuance"}` and nothing else, so a route carrying

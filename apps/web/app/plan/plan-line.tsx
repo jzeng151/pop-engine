@@ -229,22 +229,47 @@ const candidateRoutesOf = (finding: ConsumedFinding): readonly ConsumedRoute[] |
  * twelfth: the rule is that identical ENTRIES are not listed twice, and a field the entry shows
  * cannot be missing from the test of whether two entries are identical.
  */
-const routeSignature = (route: ConsumedRoute): string =>
-  JSON.stringify([
-    route.triggerResult,
-    route.name,
-    route.agency,
-    route.disposition,
-    route.deadline?.type ?? null,
-    route.deadlineDisplay,
-    route.latestApplyDate,
-    route.applyAfterDate,
-    route.deadlineStatus,
-    route.feeDisplay,
-    route.portalName,
-    route.portalUrl,
-    route.portalInstructions,
-  ]);
+/**
+ * What an entry renders, so two routes rendering the same thing are the same entry.
+ *
+ * DERIVED FROM THE ROUTE RATHER THAN HAND-LISTED, and that is the correction. A list of fields has
+ * to be extended every time a route gains one, and it was not: the typed deadline was missed when
+ * route entries started rendering it, and `conflictText` was missed the round it was added, each
+ * time collapsing a group whose entries differ into one entry and dropping the sibling's published
+ * value silently. Same defect class as a validator that compares the fields someone thought of
+ * (#252 review).
+ *
+ * EVERY FIELD BY DEFAULT, so a new one is compared without anyone remembering to add it, and
+ * excluding a field becomes the deliberate act rather than including one. Two are treated
+ * specially and both are stated where they happen: `deadline` reduces to its published TYPE,
+ * because that is the only part the entry renders; and `ruleId` is replaced by the name the entry
+ * actually shows, since the id differs on every pair and comparing it would collapse nothing at
+ * all. Keys are sorted so two routes built by different producers cannot differ by insertion order.
+ *
+ * IT FAILS IN THE SAFE DIRECTION. A field the wire carries and the entry does NOT render — today
+ * `unknownFields`, which the introduction reads rather than the entry — makes two otherwise
+ * identical routes sign differently, so the block renders both instead of collapsing them. Showing
+ * an organizer two identical-looking entries is a rendering fault; dropping a route's published
+ * conflict or window is a regulatory one, and this trades the first for the second.
+ */
+const routeSignature = (route: ConsumedRoute): string => {
+  const { ruleId, ...rest } = route;
+  const compared: Record<string, unknown> = {
+    ...rest,
+    // The NAME AS RENDERED, not the id. `ruleId` differs on every pair by definition, so comparing
+    // it would collapse nothing and §5.1's byte-identical groups — three of the draft's nine, and
+    // the ones that merge most often — would list one permit twice. But the entry falls back to the
+    // id where a route publishes no name, so two unnamed routes DO render differently and this is
+    // what carries that: the expression the entry renders, rather than either field alone.
+    renderedName: route.name ?? ruleId,
+    deadline: route.deadline?.type ?? null,
+  };
+  return JSON.stringify(
+    Object.keys(compared)
+      .sort()
+      .map((key) => [key, compared[key]]),
+  );
+};
 
 /**
  * One contributing route of a merged line, with its own name, window and fee.
