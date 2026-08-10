@@ -197,6 +197,31 @@ describe("an insurance rule merged onto a line another route binds (#252)", () =
     deadline: null,
   };
 
+  it("renders the insurance route's own notes, not the group's", () => {
+    const merged: ConsumedFinding = {
+      ...findingFor(STREET_INSURANCE),
+      ruleIds: ["SAPO-STREET-MEDIUM-001", "SAPO-INSURANCE-001"],
+      name: bindingRoute.name,
+      agency: bindingRoute.agency,
+      disposition: bindingRoute.disposition,
+      deadline: null,
+      // What the merge produces: every contributing rule's notes, concatenated.
+      notes: ["the permit's own note", "the insurance rule's own note"],
+      headlineMode: "applies_together",
+      routes: [
+        { ...bindingRoute, notes: ["the permit's own note"] },
+        { ...insuranceRoute, notes: ["the insurance rule's own note"] },
+      ],
+    };
+
+    render(<InsurancePanel findings={[merged]} eventId="event-1" />);
+
+    const card = screen.getByRole("article");
+    expect(card.textContent).toContain("the insurance rule's own note");
+    // The sibling's published qualification is not attributed to the insurance rule.
+    expect(card.textContent).not.toContain("the permit's own note");
+  });
+
   it("renders the insurance rule's own name, agency and disposition, not the binding route's", () => {
     const merged: ConsumedFinding = {
       ...findingFor(STREET_INSURANCE),

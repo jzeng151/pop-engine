@@ -171,6 +171,19 @@ export type ConsumedRoute = Omit<
    * there, so a new engine deadline kind does not make the validator refuse the whole plan.
    */
   readonly deadline: ConsumedDeadline | null;
+  /**
+   * This route's own published notes.
+   *
+   * ALREADY ON THE WIRE, WHICH IS WHY THIS NEEDS NO WIDENING OF THE CONTRACT. `plan.ts` serves
+   * `routes: finding.routes ?? null` — the whole `FindingRoute`, not a projection — so the engine's
+   * per-route notes have been transmitted since the field was added and only this type ignored
+   * them. A round of this review recorded narrowing them as blocked on a wire change; it was not,
+   * and the note saying so was wrong (#252 review).
+   *
+   * Optional because a plan stored before `FindingRoute.notes` carries none, and absence means "not
+   * recorded" rather than "this route publishes none", which is `[]`.
+   */
+  readonly notes?: readonly string[];
 };
 
 /**
@@ -367,6 +380,8 @@ export const HEADLINE_MODES = tokensOf<HeadlineMode>({ applies_together: true, c
 const TRIGGER_RESULTS = tokensOf<Exclude<Tristate, "false">>({ true: true, unknown: true });
 
 export const ROUTE_CHECKS: FieldChecks<ConsumedRoute> = {
+  notes: (value: unknown): value is readonly string[] | undefined =>
+    value === undefined || arrayOf(isString)(value),
   ruleId: isString,
   triggerResult: isToken(TRIGGER_RESULTS),
   disposition: isToken(DISPOSITIONS),
@@ -853,35 +868,81 @@ const BLOCKER_ROUTE_FIELDS = [
   "portalInstructions",
 ] as const satisfies readonly (keyof ConsumedBlockingFinding & keyof ConsumedRoute)[];
 
-const blockerAgreesWithItsRoute = (plan: PlanResponse): boolean => {
+/**
+ * WHAT A WIDENED BLOCKER HAS TO BE, stated once as one claim rather than as the fields three rounds
+ * of review happened to think of.
+ *
+ * The claim the payload makes is: **this is a MISSED ROUTE of a finding on this plan, narrowed to
+ * that route by `blockerView`.** Written as "compare the fields I thought of", it was wrong three
+ * times in three different ways — a crossed scalar tuple, a sibling's sources or a merged summary,
+ * and a rule id belonging to a route that is not missed at all. Each round added a field. The
+ * framing is what was wrong, so this is the framing, and every condition below is a clause OF that
+ * claim rather than a check bolted onto it (#252 review).
+ *
+ * The claim decomposes into six conditions, and they are exhaustive over what the payload can
+ * support:
+ *
+ * 1. IT NAMES ONE RULE. `blockerView` rewrites `ruleIds` to `[route.ruleId]`, so a widened blocker
+ *    naming none or several is not one it produced.
+ * 2. THAT RULE IS ON THIS PLAN. The finding carrying it is where the route's published values live;
+ *    without it there is nothing to check the blocker against.
+ * 3. THAT RULE'S WINDOW IS MISSED. `verdictDetail.missedRuleIds` holds the route ids whose windows
+ *    closed, and the panel's whole sentence is that this route's deadline was missed. A blocker
+ *    naming an on-track sibling makes the panel state a miss for a route that has none.
+ * 4. ITS PUBLISHED VALUES ARE THAT ROUTE'S. The identity, disposition, window, status, fee and
+ *    portal, compared through `agreesWithRoute` like every other tuple this boundary checks.
+ * 5. ITS CITATIONS ARE THAT RULE'S. `blockerView` filters rather than copies, so the test is set
+ *    equality against the finding's sources filtered by `FindingSource.ruleId`.
+ * 6. ITS SUMMARY IS THE NULL THE ENGINE WRITES, on a merged finding. `mergeUserSummary` takes the
+ *    heading from the first route in binding order that publishes one and concatenates the points
+ *    over the group, so a merged summary is never the blocking route's own. An unmerged blocker
+ *    keeps its own, which is why the test is on the finding's route list rather than on the blocker.
+ *
+ * WHAT IS STILL NOT CHECKED AFTER THIS, named rather than left implicit:
+ *
+ * - THAT THIS ROUTE IS THE ONE THAT BLOCKS, where several are missed. `computeWindowVerdict` picks
+ *   the missed route with the longest published lead and only a route that `blocksWhenMissed`
+ *   admits, which needs each route's own trigger result — `DefiniteRoutes` — and that is not on the
+ *   wire at all. A payload naming a different missed route of the same plan is accepted here.
+ * - THAT THE VERDICT IS INFEASIBLE. The engine only sets a blocker on that verdict, but the field
+ *   is optional and stored plans replay as written, so refusing on it would be a cross-field rule
+ *   about verdicts rather than about the blocker.
+ * - ANYTHING ABOUT A PRE-NARROWING BLOCKER. A payload carrying none of the widened keys is a plan
+ *   stored before the narrowing; it has no values to check and is accepted whole, which is what
+ *   `WIDENED_BLOCKER_KEYS` decides.
+ * - THE ROUTE'S EXISTENCE ON A REPLAYED PLAN. Where the blocking line is no longer among the
+ *   findings — a rescoped or replayed plan — there is nothing to compare against, and the panel has
+ *   its own last-resort reference for exactly that state.
+ */
+const blockerIsANarrowedMissedRoute = (plan: PlanResponse): boolean => {
   const blocker = plan.verdictDetail.blockingFinding;
   if (blocker === null) return true;
+  // Pre-narrowing plans carry no values to check.
   if (!WIDENED_BLOCKER_KEYS.some((key) => key in blocker)) return true;
-  const ruleId = blocker.ruleIds[0];
-  if (ruleId === undefined) return true;
+
+  // 1. It names one rule.
+  if (blocker.ruleIds.length !== 1) return false;
+  const ruleId = blocker.ruleIds[0] as string;
+
+  // 2. That rule is on this plan, or the plan no longer holds the line and nothing can be checked.
   const finding = plan.findings.find((entry) => entry.ruleIds.includes(ruleId));
   if (finding === undefined) return true;
-  // An unmerged finding is its own route and the narrowing read its own values, so it is compared
-  // as the route it is. A merged one is compared against the entry the blocker names.
-  const route = (finding.routes ?? []).find((entry) => entry.ruleId === ruleId);
-  // THE TWO FIELDS THE TUPLE CHECK CANNOT REACH, checked here instead of left out. `blockerView`
-  // does not copy a route value into either, so neither is comparable field-by-field — but both are
-  // narrowed, and a payload that widens them again reaches `referenceFromFinding`, which PREFERS
-  // the summary heading and the summary's first source over the finding's own. So the panel names
-  // the right blocking route and links to another route's regulatory material (#252 review).
-  //
-  // `sources` must be exactly the blocking rule's, which `FindingSource.ruleId` makes checkable.
-  // `userSummary` must be null on a MERGED blocker: `mergeUserSummary` takes the heading from the
-  // first route in binding order that publishes one and concatenates the points over the group, so
-  // a merged summary is never the blocking route's own, and the engine nulls it for that reason.
-  // An unmerged blocker keeps its own, which is why the test is on the finding's route list.
+
+  // 3. That rule's window is missed.
+  if (!plan.verdictDetail.missedRuleIds.includes(ruleId)) return false;
+
+  // 5. Its citations are that rule's.
   if (blocker.sources !== undefined) {
     const own = (finding.sources ?? []).filter((source) => source.ruleId === ruleId);
     if (JSON.stringify(blocker.sources) !== JSON.stringify(own)) return false;
   }
-  if ((finding.routes?.length ?? 0) > 1 && blocker.userSummary !== undefined) {
-    if (blocker.userSummary !== null) return false;
-  }
+
+  // 6. Its summary is the null the engine writes, on a merged finding.
+  const merged = (finding.routes?.length ?? 0) > 1;
+  if (merged && blocker.userSummary !== undefined && blocker.userSummary !== null) return false;
+
+  // 4. Its published values are that route's. An unmerged finding is its own route.
+  const route = (finding.routes ?? []).find((entry) => entry.ruleId === ruleId);
   if (route === undefined) {
     return finding.routes == null
       ? BLOCKER_ROUTE_FIELDS.every(
@@ -895,7 +956,7 @@ const blockerAgreesWithItsRoute = (plan: PlanResponse): boolean => {
 const readPlan = (body: unknown): PlanResponse | null => {
   const plan = readChecked(PLAN_CHECKS, body);
   if (plan === null) return null;
-  return blockerAgreesWithItsRoute(plan) ? normalizePlan(plan) : null;
+  return blockerIsANarrowedMissedRoute(plan) ? normalizePlan(plan) : null;
 };
 
 /** The plan a set of findings was generated as (`GET /api/events/:id/plan`). */

@@ -96,10 +96,14 @@ const insuranceView = (finding: ConsumedFinding): ConsumedFinding => {
     portalName: route.portalName,
     portalUrl: route.portalUrl,
     portalInstructions: route.portalInstructions,
-    // `notes` stays the line's: the web's `ConsumedRoute` does not carry the engine's per-route
-    // notes, so narrowing them here would mean widening the plan wire contract, which this defect
-    // does not need. The residue is that a merged insurance card can still show a sibling's
-    // published note beneath its own name; recorded rather than left to be found.
+    // THE ROUTE'S OWN NOTES, and the round that called this blocked was wrong. `plan.ts` serves
+    // `routes: finding.routes ?? null`, the whole `FindingRoute`, so the per-route notes were
+    // already on the wire and only `ConsumedRoute` ignored them; naming and validating them there
+    // was the whole of it, and no wire contract moved. Without this the card rendered the GROUP's
+    // concatenated notes under the narrowed insurance name, attributing a sibling's published
+    // qualification to the insurance rule (#252 review). A plan stored before the engine carried
+    // per-route notes has none, and falls back to the line's.
+    notes: route.notes ?? finding.notes,
     noteText: null,
     sources: finding.sources.filter((source) => source.ruleId === route.ruleId),
   };

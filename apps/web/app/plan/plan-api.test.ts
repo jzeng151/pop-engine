@@ -403,7 +403,13 @@ describe("loadPlan", () => {
       ...storedPlan,
       verdict: "INFEASIBLE",
       findings: [finding],
-      verdictDetail: { ...storedPlan.verdictDetail, blockingFinding },
+      verdictDetail: {
+        ...storedPlan.verdictDetail,
+        blockingFinding,
+        // The route the blocker names has to be one whose window closed; a payload that says
+        // otherwise is refused on its own, which the missed-route test below covers.
+        missedRuleIds: [blocking.ruleId as string],
+      },
     });
 
     // Each crossing in turn: a value the NAMED route does not publish.
@@ -426,6 +432,62 @@ describe("loadPlan", () => {
         ok: true,
       });
     }
+  });
+
+  /**
+   * #252 review: A BLOCKER MUST NAME A ROUTE WHOSE WINDOW CLOSED.
+   *
+   * The panel's whole sentence is that this route's deadline was missed. Comparing only the tuple,
+   * the sources and the summary, a response could list route B in `missedRuleIds` and hand over a
+   * perfectly valid narrowed tuple for on-track route A — and the panel would state a miss for a
+   * route that has none.
+   */
+  it("refuses a widened blocker naming a route that is not missed", async () => {
+    const finding = mergedFinding("true");
+    const routes = finding.routes as Record<string, unknown>[];
+    const onTrack = routes[0] as Record<string, unknown>;
+    const missed = routes[1] as Record<string, unknown>;
+    const blockerFor = (route: Record<string, unknown>) => ({
+      ruleIds: [route.ruleId as string],
+      name: route.name as string,
+      agency: route.agency as string,
+      disposition: route.disposition as string,
+      deadlineDisplay: route.deadlineDisplay as string | null,
+      latestApplyDate: route.latestApplyDate as string | null,
+      deadlineStatus: route.deadlineStatus as string,
+      feeDisplay: route.feeDisplay as string | null,
+      portalName: route.portalName as string | null,
+      portalUrl: route.portalUrl as string | null,
+      portalInstructions: route.portalInstructions as string | null,
+      // The route's OWN citations, so this blocker is valid in every other respect and the only
+      // thing that can refuse it is that its route's window is not missed.
+      sources: (finding.sources as { ruleId: string }[]).filter(
+        (source) => source.ruleId === route.ruleId,
+      ),
+      userSummary: null,
+    });
+    const planWith = (blockingFinding: unknown) => ({
+      ...storedPlan,
+      verdict: "INFEASIBLE",
+      findings: [finding],
+      verdictDetail: {
+        ...storedPlan.verdictDetail,
+        blockingFinding,
+        missedRuleIds: [missed.ruleId as string],
+      },
+    });
+
+    // A valid tuple for the route that is NOT among the missed ids.
+    stubFetch(async () => jsonResponse(200, planWith(blockerFor(onTrack))));
+    await expect(loadPlan("https://api.example.com", "event-1")).resolves.toMatchObject({
+      ok: false,
+    });
+
+    // Not vacuous: the same shape for the route that IS missed reads.
+    stubFetch(async () => jsonResponse(200, planWith(blockerFor(missed))));
+    await expect(loadPlan("https://api.example.com", "event-1")).resolves.toMatchObject({
+      ok: true,
+    });
   });
 
   /**
@@ -460,7 +522,13 @@ describe("loadPlan", () => {
       ...storedPlan,
       verdict: "INFEASIBLE",
       findings: [finding],
-      verdictDetail: { ...storedPlan.verdictDetail, blockingFinding },
+      verdictDetail: {
+        ...storedPlan.verdictDetail,
+        blockingFinding,
+        // The route the blocker names has to be one whose window closed; a payload that says
+        // otherwise is refused on its own, which the missed-route test below covers.
+        missedRuleIds: [blocking.ruleId as string],
+      },
     });
 
     for (const crossed of [
