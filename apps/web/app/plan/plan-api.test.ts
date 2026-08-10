@@ -373,6 +373,62 @@ describe("loadPlan", () => {
   });
 
   /**
+   * #252 review: THE THIRD TUPLE VALIDATED FOR PRESENCE RATHER THAN FOR AGREEMENT.
+   *
+   * `blockerView` narrows the merged line to the route whose window closed, so every widened field
+   * is that route's. Nothing compared them, so a payload could name one route in `ruleIds` and carry
+   * another's date, fee or portal — and `VerdictDetailPanel` reads a widened blocker and turns the
+   * legacy fallback OFF, so the crossed tuple reaches the INFEASIBLE panel with nothing behind it.
+   */
+  it("refuses a widened blocker whose values are not its own route's", async () => {
+    const finding = mergedFinding("true");
+    const routes = finding.routes as Record<string, unknown>[];
+    const blocking = routes[1] as Record<string, unknown>;
+    const whole = {
+      ruleIds: [blocking.ruleId as string],
+      name: blocking.name as string,
+      agency: blocking.agency as string,
+      disposition: blocking.disposition as string,
+      deadlineDisplay: blocking.deadlineDisplay as string | null,
+      latestApplyDate: blocking.latestApplyDate as string | null,
+      deadlineStatus: blocking.deadlineStatus as string,
+      feeDisplay: blocking.feeDisplay as string | null,
+      portalName: blocking.portalName as string | null,
+      portalUrl: blocking.portalUrl as string | null,
+      portalInstructions: blocking.portalInstructions as string | null,
+      sources: [],
+      userSummary: null,
+    };
+    const planWith = (blockingFinding: unknown) => ({
+      ...storedPlan,
+      verdict: "INFEASIBLE",
+      findings: [finding],
+      verdictDetail: { ...storedPlan.verdictDetail, blockingFinding },
+    });
+
+    // Each crossing in turn: a value the NAMED route does not publish.
+    for (const crossed of [
+      { name: (routes[0] as Record<string, unknown>).name },
+      { latestApplyDate: "2026-09-30" },
+      { feeDisplay: "$1,050" },
+      { portalUrl: "https://example.test/elsewhere" },
+    ]) {
+      stubFetch(async () => jsonResponse(200, planWith({ ...whole, ...crossed })));
+      await expect(loadPlan("https://api.example.com", "event-1")).resolves.toMatchObject({
+        ok: false,
+      });
+    }
+
+    // Not vacuous: the route's own values read, and so does a plan stored before the narrowing.
+    for (const legal of [whole, { ruleIds: whole.ruleIds, name: whole.name }]) {
+      stubFetch(async () => jsonResponse(200, planWith(legal)));
+      await expect(loadPlan("https://api.example.com", "event-1")).resolves.toMatchObject({
+        ok: true,
+      });
+    }
+  });
+
+  /**
    * #252 review: THE WIDENED BLOCKER KEYS ARE A VERSION, SO A PARTIAL SET IS NOT A VERSION.
    *
    * `verdict-detail.tsx` turns the legacy fallback off as soon as ANY of them is present, on the

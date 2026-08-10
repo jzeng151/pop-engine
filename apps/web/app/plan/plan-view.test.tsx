@@ -1806,9 +1806,13 @@ describe("F-102 · CONDITIONAL branch table and INFEASIBLE rescope ladder", () =
       plan({
         verdict: "INFEASIBLE",
         findings: [
+          // The blocker below narrows to this line's own route, so every value it carries is this
+          // finding's: a fixture whose blocker names another agency is a payload the api cannot
+          // serve, and the boundary now refuses it.
           finding({
             ruleIds: ["SAPO-STREET-LARGE-001"],
             name: "Street Activity Permit — Large",
+            agency: "SAPO (CECM)",
             deadlineDisplay: "submit by December 31 of the prior year",
             deadlineStatus: "published_deadline_missed",
             latestApplyDate: "2025-12-31",
@@ -1999,8 +2003,15 @@ describe("F-102 · CONDITIONAL branch table and INFEASIBLE rescope ladder", () =
           finding({
             ruleIds: ["NYPD-SOUND-001"],
             name: "Sound Device Permit",
+            agency: "NYPD",
+            disposition: "required",
+            deadlineDisplay: "File at the precinct no fewer than five days before use",
             deadlineStatus: "published_deadline_missed",
             latestApplyDate: "2026-07-12",
+            feeDisplay: "$45 per sound device for the first day",
+            portalName: "NYPD precinct",
+            portalUrl: null,
+            portalInstructions: "File in person at the precinct",
           }),
         ],
         verdictDetail: {

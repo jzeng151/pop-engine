@@ -29,6 +29,7 @@ import { CREDENTIALED } from "../intake/events-api";
 import {
   HEADLINE_MODES,
   ROUTE_CHECKS,
+  agreesWithRoute,
   routeContractHolds,
   type ConsumedRoute,
 } from "../plan/plan-api";
@@ -504,9 +505,10 @@ const publishesNoFilingFields = (context: PlanContext): boolean =>
   FILED_FIELDS.every((field) => field === "deadlineStatus" || context[field] === null) &&
   noRouteSuppliesScalars((context.routes ?? []) as readonly FindingRoute[]);
 
+/** `agreesWithRoute` is the plan boundary's, shared so the three tuples cannot drift on what
+ * "agrees" means; the route SELECTION stays here, because this one is named by the row. */
 const matchesRoute = (context: PlanContext, route: ConsumedRoute): boolean =>
-  (context.deadline?.type ?? null) === (route.deadline?.type ?? null) &&
-  FILED_FIELDS.every((field) => context[field] === route[field]);
+  agreesWithRoute(context, route, FILED_FIELDS);
 
 /**
  * THE ROW'S IDENTITY IS ITS BINDING ROUTE'S, WHATEVER ROUTE ITS FILING FIELDS CAME FROM.

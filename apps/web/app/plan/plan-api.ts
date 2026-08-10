@@ -556,6 +556,38 @@ const HEADLINE_SCALARS = [
  * state rather than restated here: a second copy of a rule this specific would drift, and a drifted
  * copy of THIS rule reads as enforcement while allowing the thing it forbids.
  */
+/**
+ * ONE NOTION OF "AGREES WITH A ROUTE", shared by every tuple that claims to come from one.
+ *
+ * Three boundaries now validate a tuple against a route: the merged headline against `routes[0]`,
+ * the checklist row's filing fields against the route it names, and the narrowed blocker against the
+ * route its own `ruleIds` identify. What they share is only this comparison. What they do NOT share
+ * is stated where each calls it, because pretending otherwise is how a fourth tuple gets the wrong
+ * one: the ROUTE SELECTION differs (positional, self-naming with a positional fallback, and named by
+ * the tuple's own ids against a different object), the FIELD NAMES differ (`permitName` on a
+ * checklist row, `name` everywhere else), the FIELD SETS differ, and each has its own exception —
+ * the scalar-free condition for two of them, versioned absence for the third.
+ *
+ * So the comparison is factored and the selection is not. What that makes impossible is a boundary
+ * inventing a looser notion of agreement: `??`-style null tolerance, or comparing `deadline` by
+ * identity rather than by its published type, which is the only part of it either side carries.
+ * What it cannot prevent is a caller choosing the wrong route, or omitting the check.
+ */
+export const agreesWithRoute = <Carrier extends object>(
+  record: Carrier,
+  route: ConsumedRoute,
+  fields: readonly (keyof Carrier & keyof ConsumedRoute)[],
+): boolean => {
+  // `deadline` is compared by its published TYPE, which is the only part of it either side carries,
+  // and only where the carrier has one at all: `ConsumedBlockingFinding` does not, because
+  // `VerdictDetail` never widened to include it.
+  const carried = (record as { readonly deadline?: ConsumedDeadline | null }).deadline;
+  if (carried !== undefined && (carried?.type ?? null) !== (route.deadline?.type ?? null)) {
+    return false;
+  }
+  return fields.every((field) => (record[field] as unknown) === (route[field] as unknown));
+};
+
 const publishesNoScalars = (finding: ConsumedFinding): boolean =>
   finding.deadlineStatus === "not_calculable" &&
   finding.deadline === null &&
@@ -566,10 +598,7 @@ const headlineMatchesBinding = (finding: ConsumedFinding): boolean => {
   const binding = finding.routes?.[0];
   if (binding === undefined) return true;
   if (publishesNoScalars(finding)) return true;
-  return (
-    (finding.deadline?.type ?? null) === (binding.deadline?.type ?? null) &&
-    HEADLINE_SCALARS.every((field) => finding[field] === binding[field])
-  );
+  return agreesWithRoute(finding, binding, HEADLINE_SCALARS);
 };
 
 /**
@@ -790,9 +819,65 @@ function normalizePlan(plan: PlanResponse): PlanResponse {
   };
 }
 
+/**
+ * The widened blocker's values, checked against the route its own `ruleIds` name.
+ *
+ * THE THIRD TUPLE VALIDATED FOR PRESENCE RATHER THAN FOR AGREEMENT, and the one where it costs
+ * most. `blockerView` narrows the merged line to the route whose window closed, so every field the
+ * wire carries is that route's; nothing compared them, so a payload could name one route in
+ * `ruleIds` and carry another's date, fee and portal. `VerdictDetailPanel` reads a widened blocker
+ * and DELIBERATELY turns the legacy fallback off, so a crossed tuple reaches the INFEASIBLE panel
+ * with nothing behind it to catch the crossing (#252 review).
+ *
+ * CROSS-OBJECT, which is why it runs here rather than inside `BLOCKING_FINDING_CHECKS`: the route
+ * lives on a finding and the blocker lives on `verdictDetail`, so the whole body has to be readable
+ * first. `sources`, `userSummary` and `ruleIds` are deliberately not compared — `blockerView`
+ * FILTERS the sources to the route's rule, nulls a merged summary rather than reattributing it, and
+ * rewrites `ruleIds` to the single route — so none of the three is a value the route publishes.
+ *
+ * SKIPPED, NEVER REFUSED, in two states that are not crossings: a blocker with none of the widened
+ * keys, which is a plan stored before the narrowing and carries no values to check; and one whose
+ * route is not among the plan's findings, which is a rescoped or replayed plan whose blocking line
+ * is gone — the same state the panel's own last-resort reference exists for.
+ */
+const BLOCKER_ROUTE_FIELDS = [
+  "name",
+  "agency",
+  "disposition",
+  "deadlineDisplay",
+  "latestApplyDate",
+  "deadlineStatus",
+  "feeDisplay",
+  "portalName",
+  "portalUrl",
+  "portalInstructions",
+] as const satisfies readonly (keyof ConsumedBlockingFinding & keyof ConsumedRoute)[];
+
+const blockerAgreesWithItsRoute = (plan: PlanResponse): boolean => {
+  const blocker = plan.verdictDetail.blockingFinding;
+  if (blocker === null) return true;
+  if (!WIDENED_BLOCKER_KEYS.some((key) => key in blocker)) return true;
+  const ruleId = blocker.ruleIds[0];
+  if (ruleId === undefined) return true;
+  const finding = plan.findings.find((entry) => entry.ruleIds.includes(ruleId));
+  if (finding === undefined) return true;
+  // An unmerged finding is its own route and the narrowing read its own values, so it is compared
+  // as the route it is. A merged one is compared against the entry the blocker names.
+  const route = (finding.routes ?? []).find((entry) => entry.ruleId === ruleId);
+  if (route === undefined) {
+    return finding.routes == null
+      ? BLOCKER_ROUTE_FIELDS.every(
+          (field) => (blocker[field] as unknown) === (finding[field] as unknown),
+        )
+      : false;
+  }
+  return agreesWithRoute(blocker, route, BLOCKER_ROUTE_FIELDS);
+};
+
 const readPlan = (body: unknown): PlanResponse | null => {
   const plan = readChecked(PLAN_CHECKS, body);
-  return plan === null ? null : normalizePlan(plan);
+  if (plan === null) return null;
+  return blockerAgreesWithItsRoute(plan) ? normalizePlan(plan) : null;
 };
 
 /** The plan a set of findings was generated as (`GET /api/events/:id/plan`). */
