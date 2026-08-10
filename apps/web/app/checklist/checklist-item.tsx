@@ -60,11 +60,17 @@ const displayName = (context: PlanContext): string =>
  * route publishes no name of its own: the rule ids. That composes no new copy. What it does NOT do
  * is give the row a settled name, and it cannot: the whole point is that the answers have not
  * decided which permit this task is. Naming it would be a copy decision this lane does not hold.
+ *
+ * `permitName` IS NOT A FALLBACK HERE, AND THE ROUND THAT USED IT AS ONE WAS WRONG. On a candidate
+ * row that is not scalar-free, `permitName` is the BINDING route's name — one candidate of several
+ * — so labelling the controls with it named the row after one route while the heading beside it
+ * said the answers do not decide which. The previous round narrowed the heading and left the
+ * ACCESSIBLE NAME saying the old thing, so a screen-reader user was given a settled attribution a
+ * sighted user was not, on controls that update the COMBINED item (#252 review). The rule ids name
+ * every contributing rule and prefer none, which is what the controls act on.
  */
 const trackingLabel = (context: PlanContext): string =>
-  isCandidateRow(context)
-    ? (context.permitName ?? context.ruleIds.join(", "))
-    : displayName(context);
+  isCandidateRow(context) ? context.ruleIds.join(", ") : displayName(context);
 
 /**
  * Whether this row has anything to say about timing. `deadlineStatus` is always set, so
@@ -175,11 +181,30 @@ export function PlanContextBody({
 }) {
   const [primarySource, ...furtherSources] = context.sources;
   const [detailsOpen, setDetailsOpen] = useState(false);
-  const filingRoute =
+  /**
+   * The route the filing date, fee and filing details above belong to, whenever the row does not
+   * name it somewhere else.
+   *
+   * TWO WAYS A ROW CAN CARRY ONE ROUTE'S SCALARS. `filingRouteRuleId` names the route where the
+   * line publishes no window of its own. Where it DOES publish one, the scalars are the binding
+   * route's, `routes[0]`, and the row said so through its heading — until the heading became the
+   * deciding question. On a candidate row that leaves an agency, an apply-by date, a fee and a
+   * portal under a generic question with nothing naming which rule published them, which is worse
+   * than the attribution it replaced: those values went from belonging to a permit that might not
+   * apply to belonging to nothing at all (#252 review).
+   *
+   * So the sentence below is rendered for both, and it is the SAME sentence: the heading no longer
+   * carries the attribution, so the paragraph that already existed for the one case carries it for
+   * the other. A row that is not a candidate is unchanged, because its heading still names the
+   * permit.
+   */
+  const namedFilingRoute =
     context.filingRouteRuleId == null
       ? null
       : ((context.routes ?? []).find((route) => route.ruleId === context.filingRouteRuleId) ??
         null);
+  const filingRoute =
+    namedFilingRoute ?? (isCandidateRow(context) ? ((context.routes ?? [])[0] ?? null) : null);
   // THE QUESTION THAT WOULD DECIDE IT, on the surface the organizer works the item on.
   //
   // The conditionality already reached this row — the disposition badge above reads "may be
@@ -328,8 +353,9 @@ export function PlanContextBody({
           from the binding route, and where that route publishes no window the filing date, fee and
           portal above come from another route of the same requirement. Saying so is what keeps a
           checklist row from naming one rule and dating another: the values are all one route's,
-          and this names it. Rendered only when the line publishes no window of its own, which is
-          the only case anything above was read off a different rule. */}
+          and this names it. Rendered for the two cases `filingRoute` covers: a line publishing no
+          window of its own, and a CANDIDATE row, whose heading is the deciding question and so no
+          longer names the binding route the scalars above belong to. */}
       {filingRoute !== null && (
         <p className="check-item__text">
           The published rules give this requirement {(context.routes ?? []).length} routes. The

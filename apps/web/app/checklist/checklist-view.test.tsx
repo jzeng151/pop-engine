@@ -2739,6 +2739,79 @@ describe("a checklist row whose window comes from another route (#252)", () => {
     );
   });
 
+  /**
+   * A candidate group that is NOT scalar-free: the binding route resolved and contributes the
+   * merged disposition, so the line publishes its own window and `filingRouteRuleId` is null. That
+   * is the shape whose attribution the heading used to carry.
+   */
+  const DATED_BINDING = {
+    ...TALL_ROUTE,
+    disposition: "required",
+    latestApplyDate: "2026-08-26",
+    deadlineStatus: "on_track",
+    feeDisplay: "$150 filing fee",
+  };
+
+  /**
+   * #252 review: THE HEADING FIX CHANGED WHAT SIGHTED USERS SEE AND LEFT THE ACCESSIBLE NAME SAYING
+   * THE OLD THING. On a candidate row that is not scalar-free, `permitName` is the BINDING route's
+   * name, so labelling the controls with it named the row after one candidate while the heading
+   * said the answers do not decide which — and those controls update the COMBINED item.
+   */
+  it("labels a candidate row's controls after no single route", async () => {
+    stubApi({
+      [GET_CHECKLIST]: checklistOf({
+        created: true,
+        items: [
+          trackedItem(STREET_MEDIUM, {
+            routes: [DATED_BINDING, TENT_ROUTE],
+            headlineMode: "candidate",
+            filingRouteRuleId: null,
+          }),
+        ],
+      }),
+    });
+    await renderView();
+
+    const row = candidateRow();
+    for (const control of [within(row).getByRole("combobox"), within(row).getByRole("textbox")]) {
+      const label = control.getAttribute("aria-label") ?? "";
+      expect(label).not.toContain(nameOf(STREET_MEDIUM));
+      expect(label).not.toContain(DATED_BINDING.name);
+      expect(label).not.toContain(TENT_ROUTE.name);
+      // Every contributing rule, preferring none: what the controls actually act on.
+      expect(label).toContain("DOB-TALL-STRUCTURE-001");
+      expect(label).toContain("DOB-TENT-001");
+    }
+  });
+
+  /**
+   * #252 review: AND THE ATTRIBUTION THE HEADING USED TO CARRY. On a candidate group whose binding
+   * route publishes a window, `filingRouteRuleId` is null, so the paragraph naming whose values
+   * these are did not render — and the heading that used to name them is now the question. The
+   * agency, date, fee and portal were left attributed to nothing at all.
+   */
+  it("names the route a candidate row's filing details belong to", async () => {
+    stubApi({
+      [GET_CHECKLIST]: checklistOf({
+        created: true,
+        items: [
+          trackedItem(STREET_MEDIUM, {
+            routes: [DATED_BINDING, TENT_ROUTE],
+            headlineMode: "candidate",
+            filingRouteRuleId: null,
+          }),
+        ],
+      }),
+    });
+    await renderView();
+
+    const row = candidateRow();
+    expect(
+      within(row).getByText(/The filing date, fee and filing details above are/).textContent,
+    ).toContain(DATED_BINDING.name);
+  });
+
   it("names the question that would decide a candidate row", async () => {
     stubApi({
       [GET_CHECKLIST]: checklistOf({
