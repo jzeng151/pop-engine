@@ -796,6 +796,48 @@ describe("the routes of a merged dedupe line", () => {
     return within(await screen.findByRole("article"));
   };
 
+  /**
+   * #252 review: THE ANNOUNCED NAME AND THE VISIBLE ONE DISAGREED, on the surface where only the
+   * announced one names anything.
+   *
+   * `name` is the BINDING route's — the merged summary's heading, or `finding.name` — and the
+   * disclosure holds the whole group's rule ids, notes and sources. Where a summary exists the
+   * visible label is route-neutral ("Legal details and all sources") and only the accessible name
+   * carried the permit, so a screen-reader user heard one unsettled candidate stated as the
+   * requirement and a sighted user did not. The heading above it is the deciding question.
+   *
+   * The same divergence, same cause, was fixed on the checklist controls one round earlier.
+   */
+  it("labels a candidate line's disclosure after no single route", async () => {
+    const ruleIds = ["DOB-TENT-001", "DOB-TALL-STRUCTURE-001"];
+    for (const userSummary of [
+      {
+        heading: "Tent permit",
+        points: [{ kind: "overview" as const, text: "what this means", sources: [] }],
+      },
+      null,
+    ]) {
+      cleanup();
+      await lineWith({
+        ruleIds,
+        name: "Tent permit",
+        headlineMode: "candidate",
+        ...(userSummary === null ? {} : { userSummary }),
+        routes: [
+          route({ ruleId: "DOB-TENT-001", triggerResult: "unknown", unknownFields: ["tent_area"] }),
+          route({ ruleId: "DOB-TALL-STRUCTURE-001", name: "Tall structure permit" }),
+        ],
+      });
+
+      // NOT VACUOUS: the control is found by role, so a label that named the binding route would
+      // match `/Tent permit/` and fail the assertion below rather than fail to find anything.
+      const disclosure = screen.getByRole("button", { name: /details|Legal details/i });
+      const announced = disclosure.getAttribute("aria-label") ?? disclosure.textContent ?? "";
+      expect(announced).not.toContain("Tent permit");
+      for (const ruleId of ruleIds) expect(announced).toContain(ruleId);
+    }
+  });
+
   it("renders nothing extra when the routes publish the same thing", async () => {
     // Three of the nine multi-member groups in the v2 full draft are byte-identical and are the
     // ones that merge most often. A block listing one permit twice under "both of these have their

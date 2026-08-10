@@ -570,10 +570,17 @@ export function PlanLine({ finding }: { finding: ConsumedFinding }) {
   const hasUserSummary = userSummary !== null;
   const name = userSummary?.heading ?? finding.name ?? ruleIds;
   // THE HEADING AND WHAT LEADS THE LINE ARE CHOSEN BY `headlineMode`, not decorated afterwards
-  // (design §5.3, #252 review). `name` is still what the disclosure labels this requirement by,
-  // because a control's label has to name the thing it opens; the heading is the question.
+  // (design §5.3, #252 review).
   const isCandidate = candidateRoutesOf(finding) !== null;
   const heading = isCandidate ? CANDIDATE_HEADING : name;
+  // WHAT THE DISCLOSURE IS LABELLED BY, which is not `name` on a candidate line. `name` is the
+  // BINDING route's — the merged summary's heading, or `finding.name` — and what the panel holds is
+  // the whole group's rule ids, notes and sources. Labelling it "for <one permit>" states the very
+  // attribution the heading above refuses to make, and where a summary exists the visible label is
+  // route-neutral while only the announced one carried the permit, so a screen-reader user heard a
+  // settled attribution a sighted user did not. `trackingLabel` in `checklist-item.tsx` is the same
+  // value for the same reason, decided one round earlier on the other surface (#252 review).
+  const labelledBy = isCandidate ? ruleIds : name;
   const [primarySource, ...furtherSources] = finding.sources;
   const deadlineSources = [
     ...new Map(
@@ -723,8 +730,8 @@ export function PlanLine({ finding }: { finding: ConsumedFinding }) {
           always means no field moved into it can disappear with it, for any finding shape, rather
           than that one hole being patched. */}
       <Disclosure
-        label={hasUserSummary ? "Legal details and all sources" : `Details for ${name}`}
-        ariaLabel={hasUserSummary ? `Legal details and all sources for ${name}` : undefined}
+        label={hasUserSummary ? "Legal details and all sources" : `Details for ${labelledBy}`}
+        ariaLabel={hasUserSummary ? `Legal details and all sources for ${labelledBy}` : undefined}
         className="line__detail"
         onOpenChange={setDetailsOpen}
       >
@@ -739,7 +746,12 @@ export function PlanLine({ finding }: { finding: ConsumedFinding }) {
         {hasUserSummary && finding.feeDisplay !== null && (
           <p className="line__fee">{finding.feeDisplay}</p>
         )}
-        {hasUserSummary && finding.name !== null && finding.name !== name && (
+        {/* NOT ON A CANDIDATE LINE, where `finding.name` is the binding route's permit name and this
+            paragraph renders it alone, unattributed, as what the requirement is called. The routes
+            block above already lists every contributing route's name against its own entry, so
+            nothing published is lost by withholding it here and the one unattributed statement of a
+            single candidate's name goes with it (#252 review). */}
+        {hasUserSummary && !isCandidate && finding.name !== null && finding.name !== name && (
           <p className="line__note">{finding.name}</p>
         )}
 
