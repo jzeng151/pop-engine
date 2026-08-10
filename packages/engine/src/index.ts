@@ -66,4 +66,14 @@ export {
   DEPENDENCY_SEQUENCING_BINDINGS,
   UNKNOWN_TRIGGER_DISPOSITION,
 } from "./proposals";
+// The answer key's scenario intakes, exported so a CONSUMER can run its own boundary over what
+// `evaluate` actually emits rather than over payloads a test author wrote. Three guards on
+// `apps/web`'s plan boundary have refused valid engine output, each found by review rather than by
+// a test, because every fixture the boundary had ever seen was hand-built (#252 review).
+export {
+  FIXTURE_TODAY,
+  SCENARIO_INTAKE_FIXTURES,
+  fixtureSubmission,
+  type ScenarioIntakeFixture,
+} from "./intake/scenario-intake-fixtures";
 export * from "./types";

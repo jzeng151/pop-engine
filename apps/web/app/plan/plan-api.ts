@@ -1067,6 +1067,60 @@ const blockerIsANarrowedMissedRoute = (plan: PlanResponse): boolean => {
   //    the route to read it off has been selected.
   if (!plan.verdictDetail.missedRuleIds.includes(ruleId)) return false;
 
+  // TWO SHAPES THE ENGINE PRODUCES, AND ONLY ONE OF THEM IS THE RETURNED FINDING.
+  //
+  // `evaluateConditional` promotes a blocker OUT OF A BRANCH: it blocks on a finding that misses in
+  // every branch of an unanswered field while returning the unresolved BASE line, so the plan
+  // carries the branch's dated, resolved blocker beside a base finding whose own trigger came back
+  // `unknown` and whose disposition is demoted accordingly. Every condition below reads the base
+  // finding, so the blocker's own values legitimately differ from it, and refusing on that
+  // difference refused a plan the engine itself produced — which here means refusing the WHOLE
+  // plan, so an organizer could not see their INFEASIBLE plan at all (#252 review).
+  //
+  // SO THE NARROWED CHECK IS TRIED FIRST AND THE PROMOTION IS THE FALLBACK, rather than a guess up
+  // front about which shape this is. A promoted blocker can also satisfy the narrowed conditions —
+  // the base line's window is missed too when the miss does not depend on the unanswered field —
+  // and one that does needs no special case.
+  if (narrowedBlockerHolds(plan, blocker, finding, ruleId)) return true;
+
+  // WHAT A PROMOTED BLOCKER CAN BE CHECKED AGAINST, which is not the base tuple. The branch
+  // findings are not on the wire: `missingFacts[].branches[]` carries a value, a verdict and a
+  // reason, not a finding. So two things are checkable and both are checked.
+  //
+  //   • A BRANCH READS INFEASIBLE. This is what makes the shape a promotion rather than a crossing:
+  //     the engine only promotes when the branches close the plan, and that verdict is per branch
+  //     on the wire.
+  //   • THE VALUES A BRANCH CANNOT MOVE. A branch answers an intake field, so it can change the
+  //     disposition, the window, the date and the status, and it cannot change what the rule
+  //     PUBLISHES about itself. The identity, the fee and the filing path are compared; the four a
+  //     branch owns are not.
+  //
+  // WHAT IS THEREFORE NOT CHECKED, named rather than left implicit: a payload that sets a branch
+  // verdict to INFEASIBLE and hands over a plausible timing tuple for a rule on the plan is
+  // accepted. Closing that needs the branch findings on the wire, which is a `VerdictDetail`
+  // widening and a product decision about what a stored plan carries.
+  const someBranchBlocks = plan.verdictDetail.missingFacts.some((fact) =>
+    fact.branches.some((branch) => branch.verdict === "INFEASIBLE"),
+  );
+  if (!someBranchBlocks) return false;
+  const published = ["name", "agency", "feeDisplay", "portalName", "portalUrl"] as const;
+  if (
+    published.some((field) => blocker[field] !== undefined && blocker[field] !== finding[field])
+  ) {
+    return false;
+  }
+  // Its citations are the plan's own rules', which is weaker than the set equality the narrowed
+  // path applies and is all a promoted blocker supports: a branch may merge differently.
+  return (blocker.sources ?? []).every((source) => finding.ruleIds.includes(source.ruleId));
+};
+
+/** Conditions 4 to 7: the blocker IS the returned finding, narrowed to the route it names. */
+const narrowedBlockerHolds = (
+  plan: PlanResponse,
+  blocker: ConsumedBlockingFinding,
+  finding: ConsumedFinding,
+  ruleId: string,
+): boolean => {
   // 4. Its citations are that rule's. `blockerView` filters rather than copies, so this is set
   //    equality against the finding's own sources for that rule.
   if (blocker.sources !== undefined) {
