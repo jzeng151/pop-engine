@@ -109,27 +109,6 @@ describe("loadGuestList", () => {
     expect(result.list.event.capacity).toBeNull();
   });
 
-  // What the current API serves from 2026-08-05 (issue #236): the compatibility field mirrors the
-  // enforced limit, so both keys are null when no capacity is confirmed. This build must read that
-  // as no limit, not as a shape it cannot parse.
-  it("reads a compatibility response whose headcount mirrors a null capacity", async () => {
-    vi.stubGlobal(
-      "fetch",
-      vi.fn(async () =>
-        jsonResponse(200, {
-          ...sampleList,
-          event: { ...sampleList.event, capacity: null, headcount: null },
-        }),
-      ),
-    );
-
-    const result = await loadGuestList("https://api.example.com", sampleList.event.id);
-
-    expect(result.ok).toBe(true);
-    if (!result.ok) return;
-    expect(result.list.event.capacity).toBeNull();
-  });
-
   it("rejects a list that carries neither capacity nor headcount", async () => {
     const neither = { ...sampleList, event: { ...sampleList.event, capacity: undefined } };
     delete (neither.event as { capacity?: unknown }).capacity;

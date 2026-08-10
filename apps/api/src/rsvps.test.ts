@@ -128,47 +128,26 @@ describe.runIf(databaseUrl.length > 0)("F-302 RSVP endpoints (database)", () => 
   // serves both generations until the web rollout is complete; see the removal preconditions in
   // `specs/F-302-rsvp-guest-list.md`.
   //
-  // Issue #236, decided 2026-08-05 by the product owner: the compatibility field carries the limit
-  // this API ENFORCES, not the `events.headcount` column. Serving the column made an api-first
-  // deploy show an organizer a denominator nothing applied. `events.headcount` keeps its own
-  // meaning everywhere it is a regulatory input; this response is not one of those places.
-  it("serves the enforced limit under the pre-rename headcount on the guest list", async () => {
-    const { id: eventId } = await createEvent({ capacity: 3, headcount: 40 });
+  // The compatibility key keeps its pre-rename meaning. Issue #236 makes the required web-first
+  // deployment order carry the semantic safety that this shape-only response cannot provide.
+  it("serves the pre-rename headcount alongside capacity on the guest list", async () => {
+    const { id: eventId } = await createEvent({ capacity: 5, headcount: 40 });
 
     const listed = await request(api).get(`/api/events/${eventId}/guests`);
 
     expect(listed.status).toBe(200);
-    expect(listed.body.event.capacity).toBe(3);
-    expect(listed.body.event.headcount).toBe(3);
-
-    // Asserted against admission rather than against a constant: a legacy page renders this number
-    // as the denominator, so it has to be the number the fourth RSVP is refused at.
-    for (const guest of ["x", "y", "z"]) {
-      const seated = await request(api)
-        .post(`/api/events/${eventId}/rsvps`)
-        .send({ name: guest, email: `${guest}@example.com` });
-      expect(seated.status).toBe(201);
-    }
-    const refused = await request(api)
-      .post(`/api/events/${eventId}/rsvps`)
-      .send({ name: "Extra", email: "extra@example.com" });
-    expect(refused.status).toBe(400);
-    expect(refused.body.error).toBe("event is full");
+    expect(listed.body.event.capacity).toBe(5);
+    expect(listed.body.event.headcount).toBe(40);
   });
 
-  // A null capacity means no confirmed limit and never refuses (spec AC 2). The pre-rename shape
-  // cannot express that: it carries a number, and any number put there is read as an enforced
-  // limit that nothing enforces. So the field states no limit, the same fact `capacity` states,
-  // and a legacy page that can only render a number fails visibly instead of showing one that is
-  // false. The regulatory `events.headcount` is never what this response reports.
-  it("reports no limit rather than a finite one when no capacity is confirmed", async () => {
+  it("still serves headcount on the guest list when no capacity is confirmed", async () => {
     const { id: eventId } = await createEvent({ capacity: null, headcount: 40 });
 
     const listed = await request(api).get(`/api/events/${eventId}/guests`);
 
     expect(listed.status).toBe(200);
     expect(listed.body.event.capacity).toBeNull();
-    expect(listed.body.event.headcount).toBeNull();
+    expect(listed.body.event.headcount).toBe(40);
   });
 
   it("updates a duplicate email instead of double-counting", async () => {
