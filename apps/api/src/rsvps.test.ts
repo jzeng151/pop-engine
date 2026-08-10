@@ -515,17 +515,12 @@ describe("DOHMH findings do not move with headcount (#235)", () => {
     });
     const rule = scoped.rules[0] as EngineRule;
     expect(triggerFields(rule.trigger), "the trigger names one field").toEqual(["tent_area_sqft"]);
-    const owners = new Map(
-      scoped.intakeFields.map((field) => [
-        field.field,
-        (field.askedWhenClauses ?? []).map((clause) => clause.field),
-      ]),
-    );
-    const fields = new Set(triggerFields(rule.trigger));
-    for (const field of fields) for (const owner of owners.get(field) ?? []) fields.add(owner);
+    // THE SHARED HELPER, not a copy of it. A case that reimplements the traversal passes while the
+    // traversal is broken, and the published rules carry no member chain to fail the assertion
+    // above, so both would stay green together.
     expect(
-      [...fields],
-      "tent_canopy resolves to structure_types, which is scoped on the count",
+      [...dependsOn(rule, scopingOf(scoped.intakeFields))],
+      "tent_canopy resolves to structure_types, which the registry scopes on the count",
     ).toContain(COUNT_FIELD);
   });
 
