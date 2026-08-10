@@ -563,18 +563,24 @@ trigger reads, so it adds the field to `missingFacts` and evaluates its branches
 assembly-approval PORTION OF THE DATA F-102 Acceptance Criterion 6 would render. This spec produces
 it; it does not render it, does not test its rendering, and states no criterion about it.
 
-**The cost of the alternative, reported rather than used to decide.** PR #170 established that
-Acceptance Criterion 6 is an approved criterion never implemented, and that the missing work is
-widening `ConsumedVerdictDetail` and `MISSING_FACT_CHECKS` in `apps/web/app/plan/plan-api.ts` plus a
-component, with no API or persistence change. So folding it in is smaller than "implement an
-unimplemented acceptance criterion" sounds. It is still declined here for two reasons that are not
-about size: it is a different feature's approved criterion, so implementing it inside this one puts
-F-102's acceptance under this spec's approval; and it would widen the footprint to the web lane,
-which this feature otherwise does not touch at all.
+**The cost of the alternative, reported rather than used to decide.** Rendering the branch data here
+would mean widening `ConsumedVerdictDetail` and `MISSING_FACT_CHECKS` in
+`apps/web/app/plan/plan-api.ts` and adding a component, with no API or persistence change. It is
+declined for two reasons that are not about size: the rendering is a different feature's approved
+criterion, so doing it inside this one puts F-102's acceptance under this spec's approval; and it
+would widen the footprint to the web lane, which this feature otherwise does not touch at all.
 
-**Consequence to state plainly:** until Acceptance Criterion 6 is implemented, the branch data this
-feature produces is served by the API and not shown to the operator. The finding itself renders
-normally, because it is an ordinary finding.
+**This document states no implementation status for F-102's criteria.** Two sentences here did, both
+sourced to PR #170: that Acceptance Criterion 6 is an approved criterion never implemented, and that
+the branch data would not be shown to an operator until it was. Approval Blocker 4 below already
+says the opposite about the same subject, that "the status of another spec's criteria is not
+asserted here", so the two could not both stand and the blocker is the one that is right. Which
+criteria of F-102 are implemented is F-102's to state and a reader's to check in the tree, not a
+fact this spec carries into its own approval.
+
+**Consequence to state plainly:** this feature produces the assembly-approval branch data and
+renders none of it. Where that data is shown, and when, is F-102's question. The finding itself
+renders normally, because it is an ordinary finding.
 
 Accessibility requirement inherited rather than restated: any status this introduces must be
 distinguishable without colour alone, matching the treatment F-206 uses for verification statuses.
@@ -1251,10 +1257,9 @@ The first draft permitted only `packages/engine/src/ruleset.ts` under the engine
 feature **unimplementable**.
 
 Must not touch: `specs/F-102`, the plan view, the checklist, or any file owned by an in-flight core
-feature. Coordination point: F-102's Acceptance Criterion 6 is already unimplemented, and
-DOB-ASSEMBLY-001's note records that its coverage confirmation "blocks F-102 AC 6". This feature
-produces the data that criterion would render and does not render it, per the UI section; the two
-remain separate approvals.
+feature. Coordination point: this feature produces assembly-coverage data that no criterion in this
+spec renders, and it renders none of it, per the UI section. What another feature's criteria do with
+that data is that feature's call; the two remain separate approvals.
 
 ## Rollout and Fallback
 
@@ -1409,10 +1414,10 @@ of work are already promised the next ruleset version, and a fourth wants a publ
    named confirmation for it is regulatory publication, so it is the product owner's approval under
    `docs/DOCUMENTATION-GOVERNANCE.md` §6, and that is the whole requirement even where the product
    owner authored it.
-4. **DEPENDENCY. DOB-ASSEMBLY-001's coverage confirmation is unimplemented**, and its note records that
-   it blocks F-102 Acceptance Criterion 6. That criterion is another feature's and this footprint
-   excludes it, per the UI section: this feature produces the data it would render and does not render
-   it. No action is owed here.
+4. **DEPENDENCY. DOB-ASSEMBLY-001's coverage confirmation is unimplemented.** This feature produces
+   assembly-coverage data that no criterion in this spec renders, and it renders none of it, per the
+   UI section. Rendering it would sit in another feature's footprint, which this one excludes, and
+   the status of another spec's criteria is not asserted here. No action is owed here.
 5. **PREREQUISITE, product owner. Verification research** on whether an existing venue approval
    removes the temporary filing, per
    Fixtures and Verification above. Not established; the rule asserts no exemption in either
@@ -1678,3 +1683,16 @@ approval.**
     line-number citations had all shifted within a day of being written. All three are re-derived against
     the rebased tree, and the reconciliation that wanted the next ruleset version is now a merged
     document on main rather than a pending PR.
+
+**Round 14.** **A blocker that removed a claim from one section and left it standing in another.**
+    Round 4 resolved the contradiction between forbidding F-102 Acceptance Criterion 6 and claiming
+    to populate its branch table, and Approval Blocker 4 records the result in the form "the status
+    of another spec's criteria is not asserted here". The UI section went on asserting it twice, on
+    PR #170's finding: that the criterion is approved and never implemented, and that the branch
+    data is not shown to an operator until it is. So the correction reached the blocker list and not
+    the prose the blocker is about, which left this document contradicting its own resolved blocker
+    at the point where a reader would act on it. Both sentences are removed and the section now says
+    what this feature does, which is that it produces the branch data and renders none of it.
+    Recorded because the defect is the shape of the fix rather than the finding: a blocker that
+    states a conclusion does not sweep the document for the sentences that state the opposite, and
+    round 3 recorded the same lesson about a narrowing whose consequence was not carried through.
