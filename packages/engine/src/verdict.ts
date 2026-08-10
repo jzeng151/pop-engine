@@ -550,6 +550,23 @@ function longestLeadBlocker(blockers: readonly Finding[]): Finding | null {
   );
 }
 
+/**
+ * Whether the branch verdicts alone close the plan, which is the condition under which a blocker is
+ * PROMOTED out of the branches while the unresolved base line is returned.
+ *
+ * EVERY branch, and at least one. `every` on an empty array is vacuously true, so the length test
+ * is the rule rather than a guard around it: a plan with no enumerable unknown has no branch that
+ * says anything, and a blocker promoted on that basis was promoted on nothing.
+ *
+ * EXPORTED BECAUSE THE BOUNDARY WAS ABOUT TO RESTATE IT, and restating it went wrong the first
+ * time: `plan-api.ts` accepted a promoted blocker when SOME branch read INFEASIBLE, which is weaker
+ * than this and let a payload with one infeasible branch beside a feasible one bypass every
+ * narrowed check (#252 review). Fourth engine rule shared this way, after `canBlockWhenMissed`,
+ * `bindingRouteOf` and `offersAFilingAction`, and for the same reason each of those was extracted.
+ */
+export const branchesForceInfeasible = (pathVerdicts: readonly Verdict[]): boolean =>
+  pathVerdicts.length > 0 && pathVerdicts.every((verdict) => verdict === "INFEASIBLE");
+
 function resolveVerdict({
   window,
   pathVerdicts,
@@ -565,9 +582,7 @@ function resolveVerdict({
 }): Verdict {
   // A closed published window is not softened by an unknown that cannot reopen it: when every
   // path misses, the plan misses. This only ever makes a verdict worse, so it cannot overclaim.
-  if (pathVerdicts.length > 0 && pathVerdicts.every((verdict) => verdict === "INFEASIBLE")) {
-    return "INFEASIBLE";
-  }
+  if (branchesForceInfeasible(pathVerdicts)) return "INFEASIBLE";
   if (window.verdict === "INFEASIBLE" && pathVerdicts.length === 0) return "INFEASIBLE";
   // An unknown that moves the finding set or the timeline, one the registry cannot enumerate, or a
   // published window we cannot date, all leave the outcome genuinely undetermined.

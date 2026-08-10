@@ -734,6 +734,130 @@ describe("loadPlan", () => {
   });
 
   /**
+   * #252 review: A PROMOTED BLOCKER NAMING A NON-HEADLINE ROUTE, AND THE PROMOTION RULE ITSELF.
+   *
+   * `evaluateConditional` promotes a blocker out of the branches while returning the unresolved
+   * base line, so the blocker's values are the branch's and the base tuple is the wrong thing to
+   * compare them to. Two ways that went wrong, both here:
+   *
+   *   • The comparison used the merged HEADLINE, which is the binding route's. A promoted blocker
+   *     can name a different route of the same group — reachable the moment two routes both
+   *     publish windows, since an OPEN window binds ahead of a closed one and the missed route is
+   *     therefore the non-binding one — and its published name, agency, fee and portal
+   *     legitimately differ from the headline's.
+   *   • The branch test asked whether SOME branch was infeasible. `resolveVerdict` promotes only
+   *     when EVERY path verdict is, so the weaker test let a payload with one infeasible branch
+   *     beside a feasible one bypass every narrowed check.
+   *
+   * NEITHER SHAPE IS REACHABLE ON `nyc-rules.v2.11`, which is why the acceptance sweep does not
+   * cover them and this test is hand-built: the file's only multi-member dedupe group has exactly
+   * one route publishing a window, and that route therefore always binds.
+   */
+  it("accepts a promoted blocker naming a non-headline route, on the engine's own promotion rule", async () => {
+    const route = (overrides: Record<string, unknown>) => ({
+      ruleId: "PARKS-EVENT-001",
+      triggerResult: "true",
+      disposition: "required",
+      unknownFields: [] as string[],
+      name: "Special Event Permit",
+      agency: "NYC Parks",
+      deadline: { type: "before_issuance" },
+      deadlineDisplay: null,
+      latestApplyDate: "2026-09-01",
+      applyAfterDate: null,
+      deadlineStatus: "on_track",
+      feeDisplay: null,
+      portalName: null,
+      portalUrl: null,
+      portalInstructions: null,
+      ...overrides,
+    });
+    // The OPEN route binds; the closed one is the blocker and publishes its own name and fee.
+    const binding = route({});
+    // THE BASE LINE'S OWN ROUTE, which is what the plan returns: its trigger did not resolve, so
+    // the engine could not date it. The blocker below is the BRANCH's version of the same rule,
+    // dated and missed, which is exactly why the narrowed comparison cannot be the one that
+    // accepts it.
+    const closed = route({
+      ruleId: "SAPO-PERMIT-001",
+      name: "SAPO permit",
+      agency: "SAPO (CECM)",
+      feeDisplay: "$25 processing fee",
+      triggerResult: "unknown",
+      unknownFields: ["sapo_event_type"],
+      disposition: "may_be_required",
+      deadline: null,
+      latestApplyDate: null,
+      deadlineStatus: "not_applicable",
+    });
+    const planWith = (branchVerdicts: string[]) => ({
+      ...storedPlan,
+      verdict: "INFEASIBLE",
+      findings: [
+        {
+          ...storedFinding,
+          ruleIds: [binding.ruleId, closed.ruleId],
+          headlineMode: "candidate",
+          name: binding.name,
+          agency: binding.agency,
+          deadline: binding.deadline,
+          latestApplyDate: binding.latestApplyDate,
+          deadlineStatus: binding.deadlineStatus,
+          routes: [binding, closed],
+        },
+      ],
+      verdictDetail: {
+        ...storedPlan.verdictDetail,
+        // The BRANCH's finding: resolved, dated and missed, unlike the base line above it.
+        blockingFinding: {
+          ruleIds: [closed.ruleId],
+          name: closed.name,
+          agency: closed.agency,
+          disposition: "required",
+          deadlineDisplay: null,
+          latestApplyDate: "2026-03-01",
+          deadlineStatus: "published_deadline_missed",
+          feeDisplay: closed.feeDisplay,
+          portalName: null,
+          portalUrl: null,
+          portalInstructions: null,
+          sources: [],
+          userSummary: null,
+        },
+        missedRuleIds: [closed.ruleId],
+        missingFacts: [
+          {
+            field: "sapo_event_type",
+            thresholds: null,
+            branches: branchVerdicts.map((verdict, index) => ({
+              value: `option ${index}`,
+              verdict,
+              reason: "the SAPO window has closed on this path",
+            })),
+          },
+        ],
+      },
+    });
+
+    // Every recorded branch closes the plan, and the blocker's published values are the NAMED
+    // route's rather than the headline's.
+    stubFetch(async () => jsonResponse(200, planWith(["INFEASIBLE", "INFEASIBLE"])));
+    stubFetch(async () => jsonResponse(200, planWith(["INFEASIBLE", "INFEASIBLE"])));
+    await expect(loadPlan("https://api.example.com", "event-1")).resolves.toMatchObject({
+      ok: true,
+    });
+
+    // NOT VACUOUS, on the promotion rule: one branch that does not close the plan means the engine
+    // would not have promoted anything, so the payload describes a blocker it could not produce.
+    for (const verdicts of [["INFEASIBLE", "CONDITIONAL"], ["INFEASIBLE", "FEASIBLE"], []]) {
+      stubFetch(async () => jsonResponse(200, planWith(verdicts)));
+      await expect(loadPlan("https://api.example.com", "event-1")).resolves.toMatchObject({
+        ok: false,
+      });
+    }
+  });
+
+  /**
    * #252 review: THE EXCEPTION WAS THE CASE THE ARGUMENT WAS PROTECTING.
    *
    * The previous round left the unmerged trigger result unchecked and argued the gap was narrow,

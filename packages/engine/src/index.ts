@@ -43,7 +43,7 @@ export {
   subtractBusinessDays,
 } from "./calendar";
 export { CONFIRM_WITH_AGENCY } from "./deadlines";
-export { computeWindowVerdict, windowIsMissed } from "./verdict";
+export { branchesForceInfeasible, computeWindowVerdict, windowIsMissed } from "./verdict";
 // The one correct fallback for a finding that carries no route list: an unmerged finding, or a
 // replayed artifact stored before the field existed, is its own single route.
 // `canBlockWhenMissed` is the third rule exported so a boundary can RECOMPUTE it rather than

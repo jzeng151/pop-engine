@@ -27,6 +27,7 @@ import type {
 } from "@pop-engine/engine";
 import {
   bindingRouteOf,
+  branchesForceInfeasible,
   canBlockWhenMissed,
   mergedDispositionOf,
   noRouteSuppliesScalars,
@@ -1087,25 +1088,37 @@ const blockerIsANarrowedMissedRoute = (plan: PlanResponse): boolean => {
   // findings are not on the wire: `missingFacts[].branches[]` carries a value, a verdict and a
   // reason, not a finding. So two things are checkable and both are checked.
   //
-  //   • A BRANCH READS INFEASIBLE. This is what makes the shape a promotion rather than a crossing:
-  //     the engine only promotes when the branches close the plan, and that verdict is per branch
-  //     on the wire.
+  //   • EVERY RECORDED BRANCH READS INFEASIBLE. This is what makes the shape a promotion rather
+  //     than a crossing, and it is `branchesForceInfeasible`, the engine's own promotion rule,
+  //     rather than a restatement of it. The first version asked whether SOME branch was
+  //     infeasible, which is weaker than the rule it was encoding: a payload with one infeasible
+  //     branch beside a feasible one then bypassed every narrowed route check and supplied its own
+  //     disposition, window and status to the panel (#252 review). Moving a condition from the
+  //     finding to the branch table and weakening it on the way is the same class as the bypass
+  //     that used to sit in front of the six conditions.
   //   • THE VALUES A BRANCH CANNOT MOVE. A branch answers an intake field, so it can change the
   //     disposition, the window, the date and the status, and it cannot change what the rule
   //     PUBLISHES about itself. The identity, the fee and the filing path are compared; the four a
   //     branch owns are not.
   //
-  // WHAT IS THEREFORE NOT CHECKED, named rather than left implicit: a payload that sets a branch
-  // verdict to INFEASIBLE and hands over a plausible timing tuple for a rule on the plan is
+  // AGAINST THE ROUTE THE BLOCKER NAMES, NOT THE MERGED HEADLINE. A merged base finding's headline
+  // is its binding route's, and a promoted blocker may name a different route of the same group.
+  // That is reachable the moment two routes of one group both publish windows, because an OPEN
+  // window binds ahead of a closed one, so the missed route is the non-binding one; comparing the
+  // blocker's name, agency, fee and portal against the headline refuses it (#252 review).
+  //
+  // WHAT IS THEREFORE NOT CHECKED, named rather than left implicit: a payload whose every recorded
+  // branch says INFEASIBLE and which hands over a plausible timing tuple for a rule on the plan is
   // accepted. Closing that needs the branch findings on the wire, which is a `VerdictDetail`
   // widening and a product decision about what a stored plan carries.
-  const someBranchBlocks = plan.verdictDetail.missingFacts.some((fact) =>
-    fact.branches.some((branch) => branch.verdict === "INFEASIBLE"),
+  const branchVerdicts = plan.verdictDetail.missingFacts.flatMap((fact) =>
+    fact.branches.map((branch) => branch.verdict),
   );
-  if (!someBranchBlocks) return false;
+  if (!branchesForceInfeasible(branchVerdicts)) return false;
+  const publisher = (finding.routes ?? []).find((entry) => entry.ruleId === ruleId) ?? finding;
   const published = ["name", "agency", "feeDisplay", "portalName", "portalUrl"] as const;
   if (
-    published.some((field) => blocker[field] !== undefined && blocker[field] !== finding[field])
+    published.some((field) => blocker[field] !== undefined && blocker[field] !== publisher[field])
   ) {
     return false;
   }
