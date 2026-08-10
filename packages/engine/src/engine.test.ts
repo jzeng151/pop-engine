@@ -10,6 +10,7 @@ import {
   addCalendarDays,
   countBusinessDays,
   differenceInCalendarDays,
+  bindingRouteOf,
   evaluate,
   parseEngineRuleset,
   subtractBusinessDays,
@@ -408,6 +409,74 @@ describe("dedupe field merge (#239)", () => {
       "structure_height_ft",
     );
     expect(plan.verdict).toBe("CONDITIONAL");
+  });
+
+  /**
+   * #252 review: THE MERGE'S OWN CHOICE AND THE ONE A CONSUMER RECOMPUTES ARE ONE CHOICE.
+   *
+   * `mergeGroup` sorts findings and `bindingRouteOf` sorts route entries, because the two callers
+   * hold different shapes: the merge has not built the routes yet when it picks, and a boundary has
+   * nothing else. They share `compareBindingCandidates` and `routeContributions`, so the ordering
+   * and the pool cannot drift; what this pins is that the two ENTRY POINTS agree, over every group
+   * the other tests in this file construct plus the published ruleset's own.
+   *
+   * `routes[0]` is the binding route on every merged line, including a scalar-free one: the line
+   * withholds that route's values there, it does not stop being the route the list is ordered by.
+   */
+  it("agrees with bindingRouteOf on which route binds", () => {
+    const groups = [
+      // Window availability decides: a dated route over an undated one, whatever the file order.
+      [
+        disposedRule("RULE-Z", "REQUIRED", undefined, { permit_name: "no window" }),
+        disposedRule("RULE-A", "REQUIRED", calendarWindow(45), { permit_name: "dated" }),
+      ],
+      // Availability ties, so the earlier published date decides.
+      [
+        disposedRule("RULE-A", "REQUIRED", calendarWindow(20), { permit_name: "later" }),
+        disposedRule("RULE-B", "REQUIRED", calendarWindow(60), { permit_name: "earlier" }),
+      ],
+      // Both tie, so the rule id decides.
+      [
+        disposedRule("RULE-Z", "REQUIRED", calendarWindow(45), { permit_name: "z" }),
+        disposedRule("RULE-A", "REQUIRED", calendarWindow(45), { permit_name: "a" }),
+      ],
+      // The pool, not the whole group: the barred route contributes the merged disposition and the
+      // required one does not, so the required route's tighter window cannot bind.
+      [
+        disposedRule("RULE-A", "REQUIRED", calendarWindow(60), { permit_name: "permit route" }),
+        disposedRule("RULE-B", "PROHIBITED_OR_INELIGIBLE", undefined, { permit_name: "barred" }),
+      ],
+    ];
+    for (const rules of groups) {
+      const merged = mergedGroup(rules);
+      const routes = merged?.routes ?? [];
+      expect(routes.length).toBeGreaterThan(1);
+      // NOT VACUOUS: each group above is ordered so that the declared-first rule is NOT the one
+      // that binds, so an implementation returning `routes[0]` unconditionally would still have to
+      // agree with a merge that put the right route there.
+      expect(bindingRouteOf(routes)?.ruleId).toBe(routes[0]?.ruleId);
+      expect(routes[0]?.ruleId).not.toBe(rules[0]?.id);
+    }
+
+    // And over every merged line the published ruleset produces, on the intake that reaches them.
+    const plan = evaluate(
+      {
+        ...parkIntake,
+        event_date: "2026-12-04",
+        structure_types: ["tent_canopy"],
+        tent_area_sqft: 500,
+        tent_days_in_place: 2,
+        structure_over_10ft_tall: "yes",
+      } as EventIntake,
+      ruleset,
+      TODAY,
+      calendar,
+    );
+    const merged = plan.findings.filter((finding) => (finding.routes?.length ?? 0) > 1);
+    expect(merged.length).toBeGreaterThan(0);
+    for (const finding of merged) {
+      expect(bindingRouteOf(finding.routes ?? [])?.ruleId).toBe(finding.routes?.[0]?.ruleId);
+    }
   });
 
   it("reads identity and timeline off one route, and keeps the other route's window", () => {

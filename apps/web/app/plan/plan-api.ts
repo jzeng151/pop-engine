@@ -26,6 +26,7 @@ import type {
   VerificationStatus,
 } from "@pop-engine/engine";
 import {
+  bindingRouteOf,
   canBlockWhenMissed,
   mergedDispositionOf,
   noRouteSuppliesScalars,
@@ -661,6 +662,27 @@ const publishesNoScalars = (finding: ConsumedFinding): boolean =>
   HEADLINE_SCALARS.every((field) => field === "deadlineStatus" || finding[field] === null) &&
   noRouteSuppliesScalars((finding.routes ?? []) as readonly FindingRoute[]);
 
+/**
+ * `routes[0]` IS THE BINDING ROUTE, WHICH WAS ASSUMED AND IS NOW CHECKED.
+ *
+ * Every other check on this line hangs off that position: the headline is compared against it, and
+ * `plan.ts`'s `filingRouteOf` takes the first route publishing a window precisely because the list
+ * arrives in binding order. So a body ordering a later or less available route first and copying
+ * that route's tuple into the headline passed every per-field comparison, and `PlanLine` rendered
+ * that route's name and its later apply-by date as the line, understating the filing urgency
+ * (#252 review).
+ *
+ * `bindingRouteOf` is the engine's own selection, exported from beside the merge that makes it, so
+ * the pool — the routes contributing the merged disposition, intersected with the resolved ones —
+ * and the ordering within it are recomputed rather than restated here. The third rule read off the
+ * route list this way, after the merged disposition and the scalar-free test.
+ */
+const bindsWhereTheEngineWouldBind = (finding: ConsumedFinding): boolean => {
+  const routes = (finding.routes ?? []) as readonly FindingRoute[];
+  const binding = bindingRouteOf(routes);
+  return binding === null || binding.ruleId === routes[0]?.ruleId;
+};
+
 const headlineMatchesBinding = (finding: ConsumedFinding): boolean => {
   const binding = finding.routes?.[0];
   if (binding === undefined) return true;
@@ -691,6 +713,7 @@ const isConsumedFinding = (value: unknown): value is ConsumedFinding =>
   shapedLike(FINDING_CHECKS)(value) &&
   routeContractHolds(value) &&
   dispositionFollowsFromRoutes(value) &&
+  bindsWhereTheEngineWouldBind(value) &&
   headlineMatchesBinding(value);
 
 const BRANCH_OUTCOME_CHECKS: FieldChecks<ConsumedBranchOutcome> = {

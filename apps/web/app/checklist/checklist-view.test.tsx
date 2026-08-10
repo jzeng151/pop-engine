@@ -2753,6 +2753,50 @@ describe("a checklist row whose window comes from another route (#252)", () => {
   };
 
   /**
+   * #252 review: THE PROMOTED CITATION IS AN ATTRIBUTION, NOT A RANKING, ONCE A ROUTE IS NAMED.
+   *
+   * `PlanContextBody` lifts `sources[0]` out of the disclosure and renders it directly beneath the
+   * sentence saying the date, fee and portal above belong to the selected filing route. The merged
+   * list concatenates in CONTRIBUTING order, so a group whose first contributing rule is not the
+   * filing route presented another rule's official page as the support for that filing tuple.
+   */
+  it("leads a row's citations with the filing route's own", async () => {
+    const source = (ruleId: string, citation: string, url: string) => ({
+      ruleId,
+      citation,
+      urls: [url],
+    });
+    stubApi({
+      [GET_CHECKLIST]: checklistOf({
+        created: true,
+        items: [
+          trackedItem(STREET_MEDIUM, {
+            latestApplyDate: "2026-08-26",
+            routes: [TALL_ROUTE, TENT_ROUTE],
+            headlineMode: "candidate",
+            // The filing route is the SECOND contributing rule, which is the whole shape.
+            filingRouteRuleId: "DOB-TENT-001",
+            sources: [
+              source("DOB-TALL-STRUCTURE-001", "Tall structure page", "https://example.test/tall"),
+              source("DOB-TENT-001", "Tent permit page", "https://example.test/tent"),
+            ],
+          }),
+        ],
+      }),
+    });
+    await renderView();
+
+    // NOT VACUOUS: before this the promoted citation was the tall route's, which is the one still
+    // present further down inside the disclosure.
+    const row = candidateRow();
+    const promoted = row.querySelector(".check-item__citations a") as HTMLAnchorElement;
+    expect(promoted.getAttribute("href")).toBe("https://example.test/tent");
+    // And nothing is dropped: the sibling still renders behind the expand.
+    const expanded = await expandRow(row);
+    expect(expanded.querySelector('a[href="https://example.test/tall"]')).not.toBeNull();
+  });
+
+  /**
    * #252 review: THE FOURTH SURFACE FOR THE SAME FIELD.
    *
    * `mergeGroup` does not concatenate `conflictText`: it falls back through the routes in binding

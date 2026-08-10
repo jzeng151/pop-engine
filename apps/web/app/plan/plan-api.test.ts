@@ -270,9 +270,12 @@ describe("loadPlan", () => {
     // THE CONDITION, NOT THE SHAPE: a resolved route BELOW `required`, so the unresolved-route
     // ceiling does not bite and the unknown route alone carries the group to `may_be_required`.
     // That is the one case §4.3 publishes no scalars for, and it is what the routes have to show.
+    // IN BINDING ORDER, which on this shape is the unresolved route: it is the only one
+    // contributing the merged `may_be_required`, so the pool is that route alone even though it is
+    // the one whose trigger did not resolve. The line still publishes none of its values.
     const routes = [
-      { ...(finding.routes[0] as Record<string, unknown>), disposition: "advisory" },
       { ...(finding.routes[1] as Record<string, unknown>), disposition: "may_be_required" },
+      { ...(finding.routes[0] as Record<string, unknown>), disposition: "advisory" },
     ];
     stubFetch(async () =>
       jsonResponse(200, {
@@ -648,6 +651,83 @@ describe("loadPlan", () => {
     // NOT VACUOUS: the same payload with a resolved `required` route on a non-conflict rule reads,
     // so the three refusals are the seventh condition and not some other field of these fixtures.
     stubFetch(async () => jsonResponse(200, planWith(blockingRoute, "SOURCE_CONFIRMED")));
+    await expect(loadPlan("https://api.example.com", "event-1")).resolves.toMatchObject({
+      ok: true,
+    });
+  });
+
+  /**
+   * #252 review: `routes[0]` WAS THE DEFINITION OF THE BINDING ROUTE RATHER THAN A CLAIM ABOUT IT.
+   *
+   * Every other check on a merged line hangs off that position — the headline is compared against
+   * it, and `plan.ts`'s `filingRouteOf` takes the first route publishing a window BECAUSE the list
+   * arrives in binding order. So a body ordering a later or less available route first and copying
+   * its tuple into the headline satisfied every per-field comparison, and the line rendered that
+   * route's name and its later apply-by date, understating the filing urgency.
+   *
+   * `bindingRouteOf` is the engine's own selection, exported from beside the merge.
+   */
+  it("refuses a merged finding whose routes are not in binding order", async () => {
+    const route = (overrides: Record<string, unknown>) => ({
+      ruleId: "PARKS-EVENT-001",
+      triggerResult: "true",
+      disposition: "required",
+      unknownFields: [] as string[],
+      name: "Special Event Permit",
+      agency: "NYC Parks",
+      deadline: { type: "before_issuance" },
+      deadlineDisplay: null,
+      latestApplyDate: null,
+      applyAfterDate: null,
+      deadlineStatus: "on_track",
+      feeDisplay: null,
+      portalName: null,
+      portalUrl: null,
+      portalInstructions: null,
+      ...overrides,
+    });
+    // The engine binds the EARLIER published date where availability ties, so this is the order a
+    // served plan carries.
+    const tight = route({
+      ruleId: "SAPO-PERMIT-001",
+      name: "SAPO permit",
+      latestApplyDate: "2026-03-01",
+    });
+    const loose = route({ latestApplyDate: "2026-09-01" });
+    const planWith = (routes: unknown[], headline: Record<string, unknown>) => ({
+      ...storedPlan,
+      findings: [
+        {
+          ...storedFinding,
+          ruleIds: routes.map((entry) => (entry as { ruleId: string }).ruleId),
+          headlineMode: "applies_together",
+          deadline: { type: "before_issuance" },
+          deadlineStatus: "on_track",
+          ...headline,
+          routes,
+        },
+      ],
+    });
+
+    // The later route first, with the headline copied off it, so every per-field check passes.
+    stubFetch(async () =>
+      jsonResponse(
+        200,
+        planWith([loose, tight], { name: loose.name, latestApplyDate: loose.latestApplyDate }),
+      ),
+    );
+    await expect(loadPlan("https://api.example.com", "event-1")).resolves.toMatchObject({
+      ok: false,
+    });
+
+    // NOT VACUOUS: the same two routes in the order the engine produces read, and the headline is
+    // then the tighter route's.
+    stubFetch(async () =>
+      jsonResponse(
+        200,
+        planWith([tight, loose], { name: tight.name, latestApplyDate: tight.latestApplyDate }),
+      ),
+    );
     await expect(loadPlan("https://api.example.com", "event-1")).resolves.toMatchObject({
       ok: true,
     });

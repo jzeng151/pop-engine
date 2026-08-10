@@ -812,7 +812,7 @@ describe("the routes of a merged dedupe line", () => {
     const ruleIds = ["DOB-TENT-001", "DOB-TALL-STRUCTURE-001"];
     for (const userSummary of [
       {
-        heading: "Tent permit",
+        heading: "Tall structure permit",
         points: [{ kind: "overview" as const, text: "what this means", sources: [] }],
       },
       null,
@@ -820,12 +820,14 @@ describe("the routes of a merged dedupe line", () => {
       cleanup();
       await lineWith({
         ruleIds,
-        name: "Tent permit",
+        name: "Tall structure permit",
         headlineMode: "candidate",
         ...(userSummary === null ? {} : { userSummary }),
+        // In binding order: the resolved route is the only one contributing the merged
+        // `required`, so it binds and the unresolved candidate follows it.
         routes: [
-          route({ ruleId: "DOB-TENT-001", triggerResult: "unknown", unknownFields: ["tent_area"] }),
           route({ ruleId: "DOB-TALL-STRUCTURE-001", name: "Tall structure permit" }),
+          route({ ruleId: "DOB-TENT-001", triggerResult: "unknown", unknownFields: ["tent_area"] }),
         ],
       });
 
@@ -833,7 +835,7 @@ describe("the routes of a merged dedupe line", () => {
       // match `/Tent permit/` and fail the assertion below rather than fail to find anything.
       const disclosure = screen.getByRole("button", { name: /details|Legal details/i });
       const announced = disclosure.getAttribute("aria-label") ?? disclosure.textContent ?? "";
-      expect(announced).not.toContain("Tent permit");
+      expect(announced).not.toContain("Tall structure permit");
       for (const ruleId of ruleIds) expect(announced).toContain(ruleId);
     }
   });
@@ -859,7 +861,7 @@ describe("the routes of a merged dedupe line", () => {
    */
   it("renders a candidate line that publishes no scalars of its own", async () => {
     const line = await lineWith({
-      ruleIds: ["DOT-SIDEWALK-ADVISORY-001", "DOT-SIDEWALK-CAFE-001"],
+      ruleIds: ["DOT-SIDEWALK-CAFE-001", "DOT-SIDEWALK-ADVISORY-001"],
       name: null,
       agency: null,
       deadline: null,
@@ -872,18 +874,10 @@ describe("the routes of a merged dedupe line", () => {
       portalUrl: null,
       portalInstructions: null,
       headlineMode: "candidate",
+      // IN BINDING ORDER, which on a scalar-free line is the unresolved route: it is the only one
+      // contributing the merged `may_be_required`, so it is the whole pool. The line withholds its
+      // values rather than publishing them, which is what makes the shape scalar-free.
       routes: [
-        route({
-          ruleId: "DOT-SIDEWALK-ADVISORY-001",
-          name: "Sidewalk clearance advisory",
-          agency: "DOT",
-          disposition: "advisory",
-          latestApplyDate: "2026-08-26",
-          deadlineStatus: "on_track",
-          feeDisplay: "No fee",
-          portalName: "DOT sidewalk desk",
-          portalUrl: "https://example.test/dot",
-        }),
         route({
           ruleId: "DOT-SIDEWALK-CAFE-001",
           name: "Sidewalk cafe licence",
@@ -896,6 +890,17 @@ describe("the routes of a merged dedupe line", () => {
           feeDisplay: "$1,050 licence fee",
           portalName: "DCWP licence centre",
           portalUrl: "https://example.test/dcwp",
+        }),
+        route({
+          ruleId: "DOT-SIDEWALK-ADVISORY-001",
+          name: "Sidewalk clearance advisory",
+          agency: "DOT",
+          disposition: "advisory",
+          latestApplyDate: "2026-08-26",
+          deadlineStatus: "on_track",
+          feeDisplay: "No fee",
+          portalName: "DOT sidewalk desk",
+          portalUrl: "https://example.test/dot",
         }),
       ],
     });
@@ -956,7 +961,12 @@ describe("the routes of a merged dedupe line", () => {
    * route now, so these two cases are one test rather than two, and a third field needs no third.
    */
   it("keeps a group whose routes differ only in a value the entry renders", async () => {
-    const cases: { field: string; overrides: Partial<FindingRoute>; shown: string }[] = [
+    const cases: {
+      field: string;
+      overrides: Partial<FindingRoute>;
+      headline?: Partial<Finding>;
+      shown: string;
+    }[] = [
       {
         field: "conflictText",
         overrides: { conflictText: "two published readings of the same threshold" },
@@ -965,24 +975,34 @@ describe("the routes of a merged dedupe line", () => {
       {
         field: "deadline type",
         overrides: { deadline: { type: "before_issuance" } as FindingRoute["deadline"] },
+        // The headline is the binding route's, and a published deadline is one of its values.
+        headline: { deadline: { type: "before_issuance" } as Finding["deadline"] },
         shown: "before issuance",
       },
     ];
-    for (const { overrides, shown } of cases) {
+    // THE VARYING VALUE SITS ON THE BINDING ROUTE, which is where the payload can put it. A
+    // published window makes a route MORE available, so the route carrying the typed deadline is
+    // the one the engine binds; and where the two tie, the rule id decides and
+    // DOB-TALL-STRUCTURE-001 sorts first. Listing the other route first is an order the api cannot
+    // serve, which the boundary now refuses.
+    for (const { overrides, headline, shown } of cases) {
       cleanup();
       const line = await lineWith({
-        ruleIds: ["DOB-TENT-001", "DOB-TALL-STRUCTURE-001"],
+        ruleIds: ["DOB-TALL-STRUCTURE-001", "DOB-TENT-001"],
         headlineMode: "applies_together",
+        ...(headline ?? {}),
         routes: [
-          route({ ruleId: "DOB-TENT-001" }),
           route({ ruleId: "DOB-TALL-STRUCTURE-001", ...overrides }),
+          route({ ruleId: "DOB-TENT-001" }),
         ],
       });
 
       // NOT VACUOUS: the two routes are identical in every other rendered field, including the
       // name, so the one value under test is all that keeps the block on screen.
       expect(screen.getByRole("article").querySelectorAll(".line__route")).toHaveLength(2);
-      expect(line.getByText(shown)).toBeDefined();
+      // `getAllBy`: the line renders the binding route's typed deadline in its own timing block
+      // too, so the value under test legitimately appears twice on the deadline case.
+      expect(line.getAllByText(shown).length).toBeGreaterThan(0);
     }
   });
 
@@ -998,21 +1018,25 @@ describe("the routes of a merged dedupe line", () => {
    */
   it("renders a route's typed-only deadline and does not collapse the group over it", async () => {
     const line = await lineWith({
-      ruleIds: ["DOB-TENT-001", "DOB-TALL-STRUCTURE-001"],
+      ruleIds: ["DOB-TALL-STRUCTURE-001", "DOB-TENT-001"],
       headlineMode: "applies_together",
+      // On the binding route, because a published window is what makes a route bind.
+      deadline: { type: "before_issuance" } as Finding["deadline"],
       routes: [
-        route({ ruleId: "DOB-TENT-001" }),
         route({
           ruleId: "DOB-TALL-STRUCTURE-001",
           deadline: { type: "before_issuance" } as FindingRoute["deadline"],
         }),
+        route({ ruleId: "DOB-TENT-001" }),
       ],
     });
     // NOT VACUOUS: the two routes are identical in every other rendered field, including the name,
     // so the typed deadline is the only thing keeping the block on screen. Asserted on the block
     // rather than on its leading sentence, whose wording is a separate open thread.
     expect(screen.getByRole("article").querySelectorAll(".line__route")).toHaveLength(2);
-    expect(line.getByText("before issuance")).toBeDefined();
+    // Twice: the line's own timing block reads the binding route's published type, and the entry
+    // beneath it reads the same route's. Both are that route's own value.
+    expect(line.getAllByText("before issuance").length).toBe(2);
   });
 
   /**
@@ -1144,37 +1168,44 @@ describe("the routes of a merged dedupe line", () => {
 
   it("keeps the permit heading when the routes apply together", async () => {
     const line = await lineWith({
-      ruleIds: ["NYPD-SOUND-PUBLIC-001", "NYPD-SOUND-PROHIBITED-001"],
-      name: "Sound Device Permit",
+      ruleIds: ["NYPD-SOUND-PROHIBITED-001", "NYPD-SOUND-PUBLIC-001"],
+      // The binding route's name, which on this group is the barred route's: it is the only route
+      // contributing the merged `prohibited_or_ineligible`, so it is the only one in the pool.
+      name: "Commercial advertising by sound device",
+      disposition: "prohibited_or_ineligible",
       headlineMode: "applies_together",
       routes: [
-        route({ ruleId: "NYPD-SOUND-PUBLIC-001", name: "Sound Device Permit" }),
         route({
           ruleId: "NYPD-SOUND-PROHIBITED-001",
           name: "Commercial advertising by sound device",
           disposition: "prohibited_or_ineligible",
         }),
+        route({ ruleId: "NYPD-SOUND-PUBLIC-001", name: "Sound Device Permit" }),
       ],
     });
-    expect(line.getByRole("heading").textContent).toBe("Sound Device Permit");
+    // The heading is a NAME rather than the candidate question, which is what this pins.
+    expect(line.getByRole("heading").textContent).toBe("Commercial advertising by sound device");
   });
 
   it("says both apply, and names each route's own window and fee, when every trigger resolved", async () => {
     const line = await lineWith({
-      ruleIds: ["NYPD-SOUND-PUBLIC-001", "NYPD-SOUND-PROHIBITED-001"],
+      ruleIds: ["NYPD-SOUND-PROHIBITED-001", "NYPD-SOUND-PUBLIC-001"],
+      // The barred route binds, so the line carries its name and its empty window.
+      name: "Commercial advertising by sound device",
+      disposition: "prohibited_or_ineligible",
       headlineMode: "applies_together",
       routes: [
+        route({
+          ruleId: "NYPD-SOUND-PROHIBITED-001",
+          name: "Commercial advertising by sound device",
+          disposition: "prohibited_or_ineligible",
+        }),
         route({
           ruleId: "NYPD-SOUND-PUBLIC-001",
           name: "Sound Device Permit",
           latestApplyDate: "2026-11-29",
           deadlineStatus: "on_track",
           feeDisplay: "$45 per sound device for the first day",
-        }),
-        route({
-          ruleId: "NYPD-SOUND-PROHIBITED-001",
-          name: "Commercial advertising by sound device",
-          disposition: "prohibited_or_ineligible",
         }),
       ],
     });
@@ -1186,7 +1217,9 @@ describe("the routes of a merged dedupe line", () => {
     // Twice: the heading is the binding route's name, and the entry names it again. That is what a
     // served plan carries, since the merged line's scalars ARE `routes[0]`'s.
     expect(line.getAllByText("Sound Device Permit").length).toBeGreaterThan(0);
-    expect(line.getByText("Commercial advertising by sound device")).toBeDefined();
+    // Twice: the heading is the binding route's name and its entry names it again, which is what a
+    // served plan carries, since the merged line's scalars ARE `routes[0]`'s.
+    expect(line.getAllByText("Commercial advertising by sound device").length).toBeGreaterThan(0);
     // The permit's window and fee are on the permit's entry, not on the barred line's headline.
     expect(line.getAllByText(/apply by 2026-11-29/).length).toBeGreaterThan(0);
     expect(line.getAllByText(/\$45 per sound device/).length).toBeGreaterThan(0);
@@ -1277,7 +1310,7 @@ describe("the routes of a merged dedupe line", () => {
    * the binding route's fields (`packages/engine/src/findings.ts:481`), so the binding route's
    * portal is also the finding's portal, and neutralizing the route entries left the disclosure
    * still saying "apply at DOB NOW" for the very route the entry above had stopped saying it for.
-   * This is the published DOB candidate shape: the tent route binds.
+   * This is the published DOB candidate shape, with the resolved route binding.
    */
   it("names the binding route's portal in the disclosure rather than telling an organizer to apply at it", async () => {
     const line = await lineWith({
@@ -1288,15 +1321,20 @@ describe("the routes of a merged dedupe line", () => {
       portalUrl: "https://example.test/dob-now",
       portalInstructions: "Select the temporary structure application.",
       routes: [
+        // The binding route is the RESOLVED one: it is the only route contributing the merged
+        // `required`, since the unresolved tent route is capped at `may_be_required` beside it.
         route({
-          ruleId: "DOB-TENT-001",
-          triggerResult: "unknown",
-          unknownFields: ["tent_area_sqft"],
+          ruleId: "DOB-STAGE-001",
+          name: "Stage permit",
           portalName: "DOB NOW: Build",
           portalUrl: "https://example.test/dob-now",
           portalInstructions: "Select the temporary structure application.",
         }),
-        route({ ruleId: "DOB-STAGE-001", name: "Stage permit" }),
+        route({
+          ruleId: "DOB-TENT-001",
+          triggerResult: "unknown",
+          unknownFields: ["tent_area_sqft"],
+        }),
       ],
     });
 
@@ -2428,6 +2466,10 @@ describe("F-102 · CONDITIONAL branch table and INFEASIBLE rescope ladder", () =
             portalName: "DOB NOW",
             portalUrl: "https://example.gov/dobnow",
             headlineMode: "applies_together",
+            // Both routes publish a window and only one is still open, so the open one binds and
+            // the line reads it. Without a published window on either, the CLOSED route's earlier
+            // date would decide the order and the headline here would be the missed route's.
+            deadline: { type: "before_issuance" } as Finding["deadline"],
             sources: [
               { ruleId: "DOB-TENT-001", citation: "Tent FAQ", urls: ["https://example.gov/tent"] },
               {
@@ -2444,7 +2486,7 @@ describe("F-102 · CONDITIONAL branch table and INFEASIBLE rescope ladder", () =
                 unknownFields: [],
                 name: "Temporary structure filing",
                 agency: "DOB",
-                deadline: null,
+                deadline: { type: "before_issuance" } as FindingRoute["deadline"],
                 deadlineDisplay: null,
                 latestApplyDate: "2026-07-20",
                 applyAfterDate: null,
@@ -2462,7 +2504,7 @@ describe("F-102 · CONDITIONAL branch table and INFEASIBLE rescope ladder", () =
                 unknownFields: [],
                 name: "Tall structure permit",
                 agency: "DOB",
-                deadline: null,
+                deadline: { type: "before_issuance" } as FindingRoute["deadline"],
                 deadlineDisplay: null,
                 latestApplyDate: "2026-07-01",
                 applyAfterDate: null,
@@ -2529,14 +2571,15 @@ describe("F-102 · CONDITIONAL branch table and INFEASIBLE rescope ladder", () =
         findings: [
           finding({
             ruleIds: ["DOB-TENT-001", "DOB-TALL-STRUCTURE-001"],
-            name: "Tent permit",
+            // The binding route's, which is the RESOLVED one: both routes contribute the merged
+            // `may_be_required` and the pool narrows to the routes known to apply.
+            name: "Tall structure permit",
             deadlineStatus: "published_deadline_missed",
             latestApplyDate: "2026-07-01",
-            portalName: "DOB NOW",
-            portalUrl: "https://example.gov/dobnow",
+            portalName: "DOB tall structures",
+            portalUrl: "https://example.gov/tall-portal",
             headlineMode: "candidate",
             routes: [
-              route({}),
               route({
                 ruleId: "DOB-TALL-STRUCTURE-001",
                 name: "Tall structure permit",
@@ -2545,6 +2588,7 @@ describe("F-102 · CONDITIONAL branch table and INFEASIBLE rescope ladder", () =
                 portalName: "DOB tall structures",
                 portalUrl: "https://example.gov/tall-portal",
               }),
+              route({}),
             ],
           }),
         ],
@@ -2631,10 +2675,11 @@ describe("F-102 · CONDITIONAL branch table and INFEASIBLE rescope ladder", () =
       ruleId: "DOB-TENT-001",
       triggerResult: "true",
       disposition: "required",
+      // A published window on both routes, which is what makes the OPEN one bind.
       unknownFields: [],
       name: "Tent permit",
       agency: "DOB",
-      deadline: null,
+      deadline: { type: "before_issuance" } as FindingRoute["deadline"],
       deadlineDisplay: null,
       latestApplyDate: "2026-09-01",
       applyAfterDate: null,
@@ -2653,6 +2698,10 @@ describe("F-102 · CONDITIONAL branch table and INFEASIBLE rescope ladder", () =
           finding({
             ruleIds: ["DOB-TENT-001", "DOB-TALL-STRUCTURE-001"],
             headlineMode: "applies_together",
+            // The headline is the binding route's: both routes publish a window, and an open one
+            // binds ahead of a closed one, so the on-track tent route reads the line while the
+            // missed tall route is the blocker below.
+            deadline: { type: "before_issuance" } as Finding["deadline"],
             routes: [
               route({}),
               route({

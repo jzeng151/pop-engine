@@ -49,6 +49,7 @@ export { computeWindowVerdict, windowIsMissed } from "./verdict";
 // `canBlockWhenMissed` is the third rule exported so a boundary can RECOMPUTE it rather than
 // restate it in prose, after the merged disposition and the scalar-free test.
 export {
+  bindingRouteOf,
   canBlockWhenMissed,
   mergedDispositionOf,
   noRouteSuppliesScalars,

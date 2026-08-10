@@ -164,6 +164,39 @@ const conflictReadings = (
   }));
 };
 
+/**
+ * The row's citations with the filing route's own first, because the first one is PROMOTED.
+ *
+ * `PlanContextBody` lifts `sources[0]` out of the disclosure and renders it directly beneath the
+ * sentence attributing the date, fee and portal above it to the selected filing route. The merged
+ * list concatenates in CONTRIBUTING order, which is where the rules sit in the published file, so a
+ * group whose first contributing rule is not the filing route presented another rule's official
+ * page as the support for the filing tuple beside it (#252 review).
+ *
+ * WHY THIS IS NOT THE RESIDUAL #263 RECORDED. That entry says `sources[0]` is a ranking rather than
+ * an attribution and that changing it would mean picking a preferred rule. True while nothing named
+ * a route; `filingRouteRuleId` names one, and the row states in words that the values above belong
+ * to it, so the choice is made by the payload rather than by this component. Where no filing route
+ * is named the order is untouched, and that residual stands for those rows.
+ *
+ * Every citation still renders and none is dropped: the rest follow in their original order inside
+ * the disclosure, each carrying its own `ruleId` as it always did.
+ */
+const citationsLedByFilingRoute = (
+  context: PlanContext,
+): { lead: PlanContext["sources"][number] | undefined; rest: PlanContext["sources"] } => {
+  const ruleId = context.filingRouteRuleId;
+  const [first, ...others] = context.sources;
+  if (ruleId == null) return { lead: first, rest: others };
+  const own = context.sources.filter((source) => source.ruleId === ruleId);
+  const siblings = context.sources.filter((source) => source.ruleId !== ruleId);
+  // A filing route whose rule publishes no source of its own promotes NOTHING rather than a
+  // sibling's page: `ruleSources` returns `[]` for a rule with no `source` block. The siblings
+  // still render inside the disclosure, so no published citation is dropped either way.
+  const [leadOwn, ...furtherOwn] = own;
+  return { lead: leadOwn, rest: [...furtherOwn, ...siblings] };
+};
+
 /** Two snapshot pairs are the same pair, so the row has nothing the banner has not already said. */
 const samePlan = (left: SourcePlan, right: SourcePlan): boolean =>
   left.rulesetVersion === right.rulesetVersion && left.snapshotDate === right.snapshotDate;
@@ -215,7 +248,7 @@ export function PlanContextBody({
    */
   currentPlan: SourcePlan;
 }) {
-  const [primarySource, ...furtherSources] = context.sources;
+  const { lead: primarySource, rest: furtherSources } = citationsLedByFilingRoute(context);
   const [detailsOpen, setDetailsOpen] = useState(false);
   /**
    * The route the filing date, fee and filing details above belong to, whenever the row does not

@@ -19,6 +19,7 @@ import type {
   FindingKind,
   FindingRoute,
   FindingSource,
+  Deadline,
   DeadlineStatus,
   Disposition,
   HeadlineMode,
@@ -362,10 +363,10 @@ function strongestDisposition(dispositions: readonly Disposition[]): Disposition
  * 3. no published window at all. Such a route says nothing about when the requirement must be
  *    filed, so it cannot decide the group's timeline.
  */
-function windowAvailability(finding: Finding): number {
-  if (finding.deadline === null) return 3;
-  if (finding.deadlineStatus === "published_deadline_missed") return 1;
-  return finding.latestApplyDate === null ? 2 : 0;
+function windowAvailability(candidate: BindingCandidate): number {
+  if (candidate.deadline === null) return 3;
+  if (candidate.deadlineStatus === "published_deadline_missed") return 1;
+  return candidate.latestApplyDate === null ? 2 : 0;
 }
 
 /**
@@ -383,7 +384,26 @@ function windowAvailability(finding: Finding): number {
  * A total order over the group, so which member wins does not depend on the order they arrive in,
  * which is the whole point (#239).
  */
-function compareBinding(a: Finding, b: Finding): number {
+/**
+ * The four published values the binding order is decided on, which a `Finding` and a `FindingRoute`
+ * both carry. Stated as a shape so the comparator has ONE body: `mergeGroup` sorts findings and
+ * `bindingRouteOf` sorts route entries, and a comparator written twice is a rule that drifts.
+ */
+type BindingCandidate = {
+  readonly ruleId: string;
+  readonly deadline: Deadline | null;
+  readonly deadlineStatus: DeadlineStatus;
+  readonly latestApplyDate: string | null;
+};
+
+const bindingCandidateOf = (finding: Finding): BindingCandidate => ({
+  ruleId: finding.ruleIds[0] ?? "",
+  deadline: finding.deadline,
+  deadlineStatus: finding.deadlineStatus,
+  latestApplyDate: finding.latestApplyDate,
+});
+
+function compareBindingCandidates(a: BindingCandidate, b: BindingCandidate): number {
   const available = windowAvailability(a) - windowAvailability(b);
   if (available !== 0) return available;
   if (
@@ -393,7 +413,49 @@ function compareBinding(a: Finding, b: Finding): number {
   ) {
     return a.latestApplyDate < b.latestApplyDate ? -1 : 1;
   }
-  return (a.ruleIds[0] ?? "") <= (b.ruleIds[0] ?? "") ? -1 : 1;
+  return a.ruleId <= b.ruleId ? -1 : 1;
+}
+
+function compareBinding(a: Finding, b: Finding): number {
+  return compareBindingCandidates(bindingCandidateOf(a), bindingCandidateOf(b));
+}
+
+/**
+ * Which route a merged line's identity and timeline come from, recomputed from the route entries.
+ *
+ * THE THIRD RULE READ OFF THE ROUTE LIST ALONE, after `mergedDispositionOf` and
+ * `noRouteSuppliesScalars`, and exported for the same reason: a consumer that needs it was
+ * ASSUMING it. `plan-api.ts` defined the binding route as `routes[0]` and checked the headline
+ * against that, so a body ordering a later route first and copying its tuple into the headline
+ * passed every per-field check while the page understated the filing urgency; and `plan.ts`'s
+ * `filingRouteOf` takes the first route publishing a window, which is only the right route because
+ * the list arrives in binding order — a premise it depends on and does not itself establish
+ * (#252 review).
+ *
+ * THE SELECTION IS §4.3's, recomputed and not approximated. The pool is the routes CONTRIBUTING the
+ * merged disposition, intersected with the resolved ones where any of those resolved, skipped where
+ * that intersection is empty. `routeContributions` is the same function `mergedDispositionOf` reads,
+ * so the cap on an unresolved route is part of it here too. The order within the pool is
+ * `compareBindingCandidates`: window availability, then the earlier published date, then the rule id.
+ *
+ * It returns a route even where the line publishes no scalars off it. `noRouteSuppliesScalars` is
+ * the separate question of whether that route's values may be COPIED to the headline; the route
+ * list is still in binding order there, and the single-valued texts still fall back through it.
+ *
+ * Null for a list of fewer than two, which is not a merged line and has no binding route.
+ */
+export function bindingRouteOf(routes: readonly FindingRoute[]): FindingRoute | null {
+  if (routes.length < 2) return null;
+  const contributed = routeContributions(routes);
+  const disposition = strongestDisposition(routes.map(contributed));
+  const contributing = routes.filter((route) => contributed(route) === disposition);
+  const resolved = contributing.filter(routeResolved);
+  const pool = resolved.length > 0 ? resolved : contributing;
+  return (
+    [...pool].sort((a, b) =>
+      compareBindingCandidates({ ...a, ruleId: a.ruleId }, { ...b, ruleId: b.ruleId }),
+    )[0] ?? null
+  );
 }
 
 /**
