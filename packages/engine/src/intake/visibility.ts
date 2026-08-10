@@ -1,9 +1,4 @@
 // Which intake questions this event actually gets asked.
-//
-// Visibility is two-state on purpose: a question is either put to the organizer or it is
-// not. Tri-state evaluation belongs to the rules engine (F-201), which reads the stored
-// answers. An unanswered trigger keeps its dependent question hidden — the organizer
-// answers the trigger first.
 
 import type { AskedWhenClause } from "../types";
 import type { IntakeField, IntakeRegistry } from "./registry";
@@ -32,14 +27,7 @@ function termHolds(term: AskedWhenClause, answer: IntakeValue): boolean {
   }
 }
 
-/**
- * The questions this event is asked, in registry order.
- *
- * An answer only counts toward another question's condition when its own question was
- * asked, so a stale answer left behind by an edit (a SAPO class kept after the location
- * moved to a park) cannot revive the questions below it. Conditions reference other
- * fields, so the asked set is grown to a fixed point rather than resolved in one pass.
- */
+/** The questions this event is asked, in registry order. */
 export function askedFields(registry: IntakeRegistry, answers: IntakeAnswers): IntakeField[] {
   const asked = new Set<string>();
   for (let pass = 0; pass <= registry.length; pass += 1) {

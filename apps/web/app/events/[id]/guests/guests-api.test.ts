@@ -47,11 +47,6 @@ describe("loadGuestList", () => {
     );
   });
 
-  // `docs/ARCHITECTURE.md:9` rolls web and API independently, so this build can be talking to an
-  // API that predates the `headcount` to `capacity` rename. Rejecting that response would empty
-  // the guest list and take the cancel controls with it until the API deployment lands. The limit
-  // an old API serves under `headcount` is the limit that API actually enforces, so it is read as
-  // the limit rather than discarded.
   it("reads the pre-rename headcount as the limit when the API sends no capacity", async () => {
     const legacy = {
       ...sampleList,
@@ -70,10 +65,6 @@ describe("loadGuestList", () => {
     expect(result.list.event.capacity).toBe(40);
   });
 
-  // Both generations at once is what a mid-rollout API serves. `capacity` is this contract's
-  // field and `headcount` is the compatibility copy for pre-rename pages, so the newer field wins
-  // and the older one is ignored rather than merged. Values that disagree are what a pre-rename
-  // API would send, and this client must keep reading `capacity` there too.
   it("prefers capacity over headcount when the API serves both", async () => {
     vi.stubGlobal(
       "fetch",
@@ -89,8 +80,6 @@ describe("loadGuestList", () => {
     expect(result.list.event.capacity).toBe(5);
   });
 
-  // A null capacity is a stated fact from a current API: no confirmed limit. It is not the same
-  // as an absent one, and the fallback must not turn it into the regulatory headcount.
   it("keeps a stated null capacity even when headcount is also served", async () => {
     vi.stubGlobal(
       "fetch",

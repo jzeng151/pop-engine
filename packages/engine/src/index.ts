@@ -1,14 +1,8 @@
 // pop-engine rules engine.
-//
-// PURE module (AGENTS.md "Engine invariants"): no database, HTTP, environment reads,
-// randomness, or system clock. `today`, the ruleset, and the holiday calendar are always
-// explicit inputs. `evaluate(intake, ruleset, today, calendar)` is the entry point (F-201).
 
 export const ENGINE_NAME = "pop-engine-engine";
 
-// The intake contract (F-101): the ruleset's field registry, the asked-when conditions,
-// and submission validation. Shared by apps/api and apps/web (AD-8) so the contract has
-// exactly one implementation.
+// The intake contract (F-101): the ruleset's field registry, the asked-when conditions, and submission validation.
 export type {
   IntakeContract,
   IntakeField,
@@ -44,10 +38,7 @@ export {
 } from "./calendar";
 export { CONFIRM_WITH_AGENCY } from "./deadlines";
 export { branchesForceInfeasible, computeWindowVerdict, windowIsMissed } from "./verdict";
-// The one correct fallback for a finding that carries no route list: an unmerged finding, or a
-// replayed artifact stored before the field existed, is its own single route.
-// `canBlockWhenMissed` is the third rule exported so a boundary can RECOMPUTE it rather than
-// restate it in prose, after the merged disposition and the scalar-free test.
+// The one correct fallback for a finding that carries no route list: an unmerged finding, or a replayed artifact stored before the field existed, is its own single route.
 export {
   FILING_DISPOSITIONS,
   PUBLISHED_ROUTE_FIELDS,
@@ -63,16 +54,11 @@ export {
 export { UNKNOWN_ANSWER } from "./conditions";
 export {
   DEFAULT_DISPOSITION_BY_RULE_KIND,
-  // F-203 names the dependency in `dependency_unlocked` copy, which means naming the upstream
-  // requirement a gated finding waits on. The binding is what links the two rule ids; without it
-  // the api would have to re-derive the link from prose.
+  // F-203 names the dependency in `dependency_unlocked` copy, which means naming the upstream requirement a gated finding waits on.
   DEPENDENCY_SEQUENCING_BINDINGS,
   UNKNOWN_TRIGGER_DISPOSITION,
 } from "./proposals";
-// The answer key's scenario intakes, exported so a CONSUMER can run its own boundary over what
-// `evaluate` actually emits rather than over payloads a test author wrote. Three guards on
-// `apps/web`'s plan boundary have refused valid engine output, each found by review rather than by
-// a test, because every fixture the boundary had ever seen was hand-built (#252 review).
+// The answer key's scenario intakes, exported so a CONSUMER can run its own boundary over what `evaluate` actually emits rather than over payloads a test author wrote.
 export {
   FIXTURE_TODAY,
   SCENARIO_INTAKE_FIXTURES,

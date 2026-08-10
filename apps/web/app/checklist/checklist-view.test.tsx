@@ -31,14 +31,6 @@ import {
   trackedItem,
 } from "./checklist-fixtures";
 
-// One test per acceptance criterion and per edge case, driven through the rendered view: what is
-// pinned is what an organizer can do and what they are told, not the shape of the state machine.
-//
-// Every regulatory value asserted below is read from the published ruleset through the fixtures,
-// never written out here. A test that spells out a permit name or a fee is asserting that the page
-// renders a string the test itself invented, which is how the first round of this suite passed 107
-// times against a fee that was wrong by three orders of magnitude.
-
 const API = "https://api.example.com";
 const EVENT = "event-1";
 
@@ -47,7 +39,6 @@ type Route = { method: string; url: string };
 const jsonResponse = (status: number, body: unknown): Response =>
   new Response(JSON.stringify(body), { status, headers: { "Content-Type": "application/json" } });
 
-/** A stubbed api. Each entry answers one `METHOD /path` suffix; the calls made are recorded. */
 function stubApi(routes: Record<string, () => Response>) {
   const calls: Route[] = [];
   const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
@@ -57,9 +48,6 @@ function stubApi(routes: Record<string, () => Response>) {
     const route = Object.entries(routes).find(
       ([key]) => key === `${method} ${url.slice(API.length)}`,
     );
-    // Every render reads the live ruleset for the banner's live-versus-pinned comparison. Tests
-    // that do not care about it get the checklist's own version back, which compares as "same"
-    // and renders nothing extra.
     if (route === undefined && `${method} ${url.slice(API.length)}` === GET_META) {
       return jsonResponse(200, {
         ruleset_version: PUBLISHED_SNAPSHOT.rulesetVersion,
@@ -79,18 +67,12 @@ const POST_CHECKLIST = `POST /api/events/${EVENT}/checklist`;
 const itemRoute = (method: string, ruleId: string, suffix = "") =>
   `${method} /api/checklist-items/item-${ruleId}${suffix}`;
 
-/** Checklist reads only: the banner's `/api/rules/meta` lookup is not a re-read of the list. */
 const checklistReads = (calls: Route[]): Route[] =>
   calls.filter((call) => call.method === "GET" && call.url.endsWith("/checklist"));
 
 const checklistOf = (overrides: Record<string, unknown>) => () =>
   jsonResponse(200, checklistBody(overrides));
 
-/**
- * A rollup as the api counts it: current-plan rows only. Written here so a test states the
- * SERVER's answer and the page is asserted against it, rather than against a second
- * implementation of the counting rule living in the client (AC 2).
- */
 const rollupOf = (counts: Record<string, number>) => ({
   not_started: 0,
   in_progress: 0,
@@ -105,32 +87,16 @@ const renderView = async () => {
   await waitFor(() => expect(screen.queryByRole("status")).toBeNull());
 };
 
-/** The row for a named requirement, so multi-row assertions cannot read the wrong card. */
 const rowFor = (ruleId: string) => screen.getByRole("article", { name: nameOf(ruleId) });
 
-/**
- * A CANDIDATE row is not headed by a permit name, so it cannot be found by one. Design §5.3 makes
- * the heading the deciding question on this surface as on the plan line, so that is what names the
- * card (#252 review).
- */
 const candidateRow = () => screen.getByRole("article", { name: CANDIDATE_HEADING });
 
-/**
- * One row with its detail expanded when it has any.
- *
- * The row is progressively disclosed: the summary carries the status badge, agency, disposition,
- * the deadline including `apply_after_date` (F-202 AC 5 requires it here even though the plan line
- * keeps it behind the expand), the fee, the verification badge and the primary citation. These
- * cases assert a field renders with the right content, which the split does not change, so the
- * helper opens the panel first.
- */
 const expandRow = async (row: HTMLElement): Promise<HTMLElement> => {
   const toggle = within(row).queryByRole("button", { name: /^Details for/ });
   if (toggle !== null) await userEvent.click(toggle);
   return row;
 };
 
-/** A candidate row expanded, found by the question that heads it rather than by a permit name. */
 const expandedCandidateRow = async (): Promise<HTMLElement> => expandRow(candidateRow());
 
 const expandedRowFor = async (ruleId: string): Promise<HTMLElement> => {
@@ -140,17 +106,9 @@ const expandedRowFor = async (ruleId: string): Promise<HTMLElement> => {
   return row;
 };
 
-/**
- * The status badge on a row. Read by class rather than by text: the status control lists every
- * status as an option, so "submitted" as text matches the badge and the option alike.
- */
 const badgeOf = (row: HTMLElement): string | undefined =>
   row.querySelector(".check-item__status")?.textContent ?? undefined;
 
-/**
- * A stand-in for the tab a download opens. `window.open` is not implemented in jsdom, and the
- * handle is the whole point of the fix: the page has to navigate the tab it opened.
- */
 function stubWindowOpen(opened: { closed?: boolean } | null = { closed: false }) {
   const target =
     opened === null
@@ -279,8 +237,6 @@ describe("AC 2 · statuses, any transition, and the api's rollup", () => {
     expect((select as HTMLSelectElement).value).toBe("approved");
   });
 
-  // The rollup is the api's count, re-read after the write, so the counts and the rows on screen
-  // always come from one response and one implementation of the rule.
   it("saves a backwards transition and shows the reloaded row and count", async () => {
     let current = checklistBody({
       created: true,
@@ -311,7 +267,6 @@ describe("AC 2 · statuses, any transition, and the api's rollup", () => {
 
     await waitFor(() => expect(badgeOf(rowFor(STREET_MEDIUM))).toBe("in progress"));
     expect(document.querySelector(".checklist__rollup")?.textContent).toBe("1 in progress");
-    // One PATCH, then one re-read: the page never counts the rows itself.
     expect(calls.filter((call) => call.method === "PATCH")).toHaveLength(1);
     expect(checklistReads(calls)).toHaveLength(2);
   });
@@ -320,8 +275,6 @@ describe("AC 2 · statuses, any transition, and the api's rollup", () => {
     stubApi({
       [GET_CHECKLIST]: checklistOf({
         created: true,
-        // Deliberately not derivable from the rows below: what is on screen is the server's
-        // answer, so a client that recomputed it would fail this.
         statusRollup: rollupOf({ submitted: 2, approved: 1 }),
         items: [trackedItem(STREET_MEDIUM, { status: "not_started" })],
       }),
@@ -347,8 +300,6 @@ describe("AC 2 · statuses, any transition, and the api's rollup", () => {
     });
     await renderView();
 
-    // The third row is visible below and accounted for here, so the rollup never reads as though
-    // it had dropped a row the organizer can see.
     expect(document.querySelector(".checklist__rollup")?.textContent).toBe(
       "1 submitted · 1 approved · plus 1 retained from an earlier plan, not counted above",
     );
@@ -389,8 +340,6 @@ describe("AC 2 · statuses, any transition, and the api's rollup", () => {
     expect(badgeOf(row)).toBe("not started");
   });
 
-  // The write landed; only the re-read did not. Reporting it as a failed save would be wrong
-  // about what happened, and saying nothing would leave stale counts looking current.
   it("says the change was saved when only the reload failed", async () => {
     let reloads = 0;
     stubApi({
@@ -446,9 +395,6 @@ describe("AC 3 · documents upload and download", () => {
     expect(await screen.findByText("permit.pdf")).toBeDefined();
   });
 
-  // The tab is opened on the click and navigated when the URL arrives. Opening it after the await
-  // is refused once the click's transient activation has expired, and `noopener` makes
-  // `window.open` return null unconditionally — both leave the button doing nothing.
   it("opens the tab on the click and navigates it to the signed URL", async () => {
     const { open, target } = stubWindowOpen();
     stubApi({
@@ -466,8 +412,6 @@ describe("AC 3 · documents upload and download", () => {
     await userEvent.click(screen.getByRole("button", { name: "Download" }));
 
     await waitFor(() => expect(target?.location.href).toBe("https://storage.example.com/signed"));
-    // Opened with a real handle, and the back-reference severed by hand, which is what
-    // `noopener` would have done had it not also thrown the handle away.
     expect(open).toHaveBeenCalledWith("", "_blank");
     expect(target?.opener).toBeNull();
   });
@@ -533,8 +477,6 @@ describe("AC 3 · documents upload and download", () => {
     expect(target?.location.href).toBe("");
   });
 
-  // Edge case: upload failure keeps the item's state and leaves no orphan metadata, so the same
-  // file stays selected and the error says the upload can be tried again.
   it("keeps the item and the chosen file when the api stored nothing", async () => {
     stubApi({
       [GET_CHECKLIST]: checklistOf({
@@ -556,7 +498,6 @@ describe("AC 3 · documents upload and download", () => {
     expect((await within(row).findByRole("alert")).textContent).toBe(
       "document storage is unavailable Nothing was stored, so the file is still selected.",
     );
-    // The item is untouched: same status, and no document appeared.
     expect(badgeOf(row)).toBe("submitted");
     expect(within(row).queryByRole("button", { name: "Download" })).toBeNull();
     expect(within(row).getByRole("button", { name: "Upload" }).hasAttribute("disabled")).toBe(
@@ -564,9 +505,6 @@ describe("AC 3 · documents upload and download", () => {
     );
   });
 
-  // The connection dropped with no response. That is NOT the same as nothing being stored: the
-  // request may have been processed and committed before the drop, and the api mints a fresh
-  // document id and storage key per request, so a one-click resend would store a second copy.
   it("refreshes the checklist and keeps the file when an upload never completed", async () => {
     let attempts = 0;
     const calls = stubApi({
@@ -591,12 +529,7 @@ describe("AC 3 · documents upload and download", () => {
         "The file is still selected — uploading it again is safe, because the same file cannot be " +
         "stored twice on this item.",
     );
-    // Reconciled rather than guessed: the list itself is the answer, and it is re-read.
     expect(checklistReads(calls)).toHaveLength(2);
-    // The file stays selected and Upload stays live, which is now the RIGHT affordance rather
-    // than a hazard: the api derives the document id from the upload key, so sending the same
-    // file again is the same document. Clearing it used to be the guard; the guard moved to the
-    // write, where a client that cannot observe its own request no longer has to.
     expect(within(row).getByRole("button", { name: "Upload" }).hasAttribute("disabled")).toBe(
       false,
     );
@@ -622,7 +555,6 @@ describe("AC 3 · documents upload and download", () => {
     expect(screen.getByRole("button", { name: "Upload" }).hasAttribute("disabled")).toBe(true);
   });
 
-  // The document is stored; only the re-read failed. Inviting a retry would store a second copy.
   it("does not invite a retry when the upload landed and the reload did not", async () => {
     let reloads = 0;
     stubApi({
@@ -662,8 +594,6 @@ describe("AC 3 · documents upload and download", () => {
     );
     await userEvent.click(screen.getByRole("button", { name: "Upload" }));
 
-    // Nothing stored, so the file stays selected — but the copy does not invite a retry that
-    // would be refused identically. It states what happened and leaves the decision alone.
     expect((await screen.findByRole("alert")).textContent).toBe(
       "document must be 10485760 bytes or smaller Nothing was stored, so the file is still selected.",
     );
@@ -675,8 +605,6 @@ describe("AC 3 · documents upload and download", () => {
     });
     await renderView();
 
-    // The picker's `accept` already filters this out in a browser; the check is asserted here
-    // because the file input is not the only way a file can arrive, and the api refuses it too.
     await userEvent.upload(
       screen.getByLabelText(`Add a document to ${nameOf(STREET_MEDIUM)}`),
       new File(["x"], "notes.txt", { type: "text/plain" }),
@@ -800,13 +728,6 @@ describe("AC 5 · deadline context lives where the work happens", () => {
     expect(within(row).getByText(/deadline approaching/)).toBeDefined();
   });
 
-  /**
-   * #252: the gate belongs to a NON-BINDING route of a merged item whose binding route publishes
-   * its own window. The engine sequences the gated route and leaves the headline scalars to the
-   * binding route deliberately, so `applyAfterDate` on the row is null and `filingRouteOf` declines
-   * the row because it already has a window. The start date AC 5 requires was on the response the
-   * whole time, on the route that carries it, and nothing read it.
-   */
   it("shows a gate carried by a route the row's own dates are not read off", async () => {
     const route = (ruleId: string, name: string, applyAfterDate: string | null) => ({
       ruleId,
@@ -815,8 +736,6 @@ describe("AC 5 · deadline context lives where the work happens", () => {
       unknownFields: [],
       name,
       agency: "NYC",
-      // A published window on the route the row reads, which is what makes it bind: without one
-      // the two routes tie on availability and the rule id decides, the other way round.
       deadline: ruleId === "STREET-MEDIUM-001" ? { type: "before_issuance" } : null,
       deadlineDisplay: null,
       latestApplyDate: "2026-08-01",
@@ -833,7 +752,6 @@ describe("AC 5 · deadline context lives where the work happens", () => {
         items: [
           trackedItem(STREET_MEDIUM, {
             latestApplyDate: "2026-08-01",
-            // The binding route is not gated, and the row says so.
             applyAfterDate: null,
             deadlineStatus: "on_track",
             headlineMode: "applies_together",
@@ -849,22 +767,12 @@ describe("AC 5 · deadline context lives where the work happens", () => {
     await renderView();
 
     const row = rowFor(STREET_MEDIUM);
-    // Named for the route that carries it, never attributed to the binding filing.
     expect(
       within(row).getByText(/earliest realistic filing for Sound device permit 2026-07-20/),
     ).toBeDefined();
     expect(within(row).queryByText(/earliest realistic filing 2026-07-20/)).toBeNull();
   });
 
-  /**
-   * #252 review: THE SAME AC 5 START DATE, LOST THE OTHER WAY ROUND. Where the binding route
-   * publishes a gate but no window of its own and a sibling publishes the window, the checklist
-   * response fills the row's whole timing block from that sibling, gate included, so the row reads
-   * `applyAfterDate: null`. Skipping `routes[0]` here on the assumption that the row's scalar is
-   * the binding route's then skipped the only route carrying a gate, and the date was on neither
-   * surface. The route skipped is the one the scalar came from, which is the filing route whenever
-   * there is one.
-   */
   it("shows the binding route's gate when the row's dates come from a filing route", async () => {
     const route = (
       ruleId: string,
@@ -878,8 +786,6 @@ describe("AC 5 · deadline context lives where the work happens", () => {
       unknownFields: [],
       name,
       agency: "NYC",
-      // Same reason as the test above: the binding route publishes a window TYPE and no date, so
-      // it is more available than a route publishing no window at all and binds ahead of it.
       deadline: ruleId === "STREET-MEDIUM-001" ? { type: "before_issuance" } : null,
       deadlineDisplay: null,
       latestApplyDate,
@@ -895,8 +801,6 @@ describe("AC 5 · deadline context lives where the work happens", () => {
         created: true,
         items: [
           trackedItem(STREET_MEDIUM, {
-            // The binding route publishes no window, so the row's dates are the filing route's,
-            // and its gate is null.
             latestApplyDate: "2026-08-01",
             applyAfterDate: null,
             deadlineStatus: "on_track",
@@ -924,8 +828,6 @@ describe("AC 5 · deadline context lives where the work happens", () => {
     });
     await renderView();
 
-    // PARKS-TUA-001 publishes its own `display`; the row shows the published words, not a
-    // sentence this page composed from the day count.
     expect(
       within(rowFor(PARKS_TUA)).getByText("submit vendor info at least two weeks prior"),
     ).toBeDefined();
@@ -937,7 +839,6 @@ describe("AC 5 · deadline context lives where the work happens", () => {
     });
     await renderView();
 
-    // SAPO-INSURANCE-001 publishes `{type: "before_issuance"}` and no date, prose or portal.
     expect(within(rowFor(INSURANCE)).getByText("before issuance")).toBeDefined();
   });
 
@@ -960,9 +861,7 @@ describe("AC 5 · deadline context lives where the work happens", () => {
     const row = await expandedRowFor(SOUND_DEPENDENCY);
     expect(within(row).getByText("the processing time is not published")).toBeDefined();
     expect(within(row).getByText("depends on: structure types")).toBeDefined();
-    // The dependency rule's published note is what says the sequencing is unconfirmed.
     expect(within(row).getByText(noteTextOf(SOUND_DEPENDENCY) as string)).toBeDefined();
-    // A line with no located primary source says so on the row, not in a tooltip.
     expect(within(row).getByRole("note").textContent).toContain("agency");
   });
 
@@ -1025,8 +924,6 @@ describe("AC 5 · deadline context lives where the work happens", () => {
     stubApi({ [GET_CHECKLIST]: checklistOf({ created: true, items: [trackedItem(SOUND)] }) });
     await renderView();
 
-    // NYPD-SOUND-001 publishes a precinct and a form number instead of a URL, and that text is
-    // the entire filing route for the row (F-204 AC 1).
     const row = await expandedRowFor(SOUND);
     const portalName = portalNameOf(SOUND) as string;
     expect(portalUrlOf(SOUND)).toBeNull();
@@ -1075,7 +972,6 @@ describe("AC 5 · deadline context lives where the work happens", () => {
     });
     await renderView();
 
-    // SAPO-STREET-MEDIUM-001 publishes two source pages; each gets its own numbered link.
     expect(screen.getByRole("link", { name: "source 1" })).toBeDefined();
     expect(screen.getByRole("link", { name: "source 2" })).toBeDefined();
   });
@@ -1108,9 +1004,7 @@ describe("F-206 AC 2 · every row shows its verification status", () => {
 
     const row = await expandedRowFor(PARKS_TUA);
     expect(within(row).getByTestId("verification-status").textContent).toBe("OFFICIAL CONFLICT");
-    // Both readings, verbatim, never resolved to one.
     expect(within(row).getByText(noteTextOf(PARKS_TUA) as string)).toBeDefined();
-    // And every page the two readings come from.
     expect(within(row).getAllByRole("link", { name: /^source \d$/ })).toHaveLength(4);
   });
 
@@ -1123,8 +1017,6 @@ describe("F-206 AC 2 · every row shows its verification status", () => {
     });
     await renderView();
 
-    // ADV-ALCOHOL-PUBLIC-001 publishes no `source` at all; COVERAGE_GAP means the combination is
-    // not modeled (published legend), not that a source search failed.
     const row = rowFor(ALCOHOL_ADVISORY);
     expect(within(row).getByTestId("verification-status").textContent).toBe("COVERAGE GAP");
     expect(within(row).getByText(NOT_COVERED_BY_RULESET)).toBeDefined();
@@ -1137,8 +1029,6 @@ describe("F-206 AC 5 · the stored verification date, and only when it was store
     stubApi({
       [GET_CHECKLIST]: checklistOf({
         created: true,
-        // No published rule carries `verification.last_verified_date`, so the fixture states one
-        // explicitly: this is a per-plan-item stored value, and the render is what is under test.
         items: [trackedItem(STREET_MEDIUM, { lastVerifiedDate: "2026-07-01" })],
         contextItems: [planContext(NOISE_ADVISORY, { lastVerifiedDate: "2026-06-15" })],
       }),
@@ -1146,7 +1036,6 @@ describe("F-206 AC 5 · the stored verification date, and only when it was store
     await renderView();
 
     expect(within(rowFor(STREET_MEDIUM)).getByText("last verified 2026-07-01")).toBeDefined();
-    // Context rows carry it too: it is a property of the plan item, not of being trackable.
     expect(within(rowFor(NOISE_ADVISORY)).getByText("last verified 2026-06-15")).toBeDefined();
   });
 
@@ -1162,9 +1051,6 @@ describe("F-206 AC 5 · the stored verification date, and only when it was store
 
     const row = rowFor(STREET_MEDIUM);
     expect(within(row).queryByText(/last verified/)).toBeNull();
-    // And specifically not the snapshot's publication date: a snapshot date means published-on,
-    // never all-facts-verified-on, so standing it in here would state a verification that never
-    // happened.
     expect(within(row).queryByText(/2026-07-26/)).toBeNull();
   });
 });
@@ -1194,7 +1080,6 @@ describe("AC 6 · a regenerated plan is reviewed, never silently applied", () =>
     const dropped = rowFor(STREET_LARGE);
     expect(dropped.className).toContain("check-item--dropped");
     expect(within(dropped).getByRole("note").textContent).toContain("earlier task has ended");
-    // Nothing was deleted: the status, the note and the document are all still on the row.
     expect(badgeOf(dropped)).toBe("submitted");
     expect((within(dropped).getByRole("textbox") as HTMLTextAreaElement).value).toBe(
       "filed on the 3rd",
@@ -1225,27 +1110,20 @@ describe("AC 6 · a regenerated plan is reviewed, never silently applied", () =>
       screen.getByRole("button", { name: "Review items against the current plan" }),
     );
 
-    // The new requirement is appended and the dropped one is still there, struck through.
     expect(await screen.findByRole("heading", { name: nameOf(SOUND) })).toBeDefined();
     expect(rowFor(STREET_LARGE).className).toContain("check-item--dropped");
     expect(screen.queryByText(/The plan has changed/)).toBeNull();
     expect(calls.filter((call) => call.method === "POST")).toHaveLength(1);
   });
 
-  // The review button and the item controls are both live while planChanged is true, so a status
-  // change can commit and render while the conversion POST is in flight. Installing that POST's
-  // own body put the status it read BEFORE the update, and the counts that went with it, back on
-  // screen. The conversion now goes through the same epoch-ordered re-read as every other write.
   it("does not install the conversion's own response over a newer item update", async () => {
     const calls = stubApi({
-      // What the server holds now: the organizer's status change has already landed.
       [GET_CHECKLIST]: checklistOf({
         created: true,
         planChanged: true,
         statusRollup: rollupOf({ submitted: 1 }),
         items: [trackedItem(STREET_MEDIUM, { status: "submitted" })],
       }),
-      // What the conversion answers with: assembled before that change, so it is already stale.
       [POST_CHECKLIST]: () =>
         jsonResponse(
           201,
@@ -1262,10 +1140,8 @@ describe("AC 6 · a regenerated plan is reviewed, never silently applied", () =>
       screen.getByRole("button", { name: "Review items against the current plan" }),
     );
 
-    // The symptom first: the organizer's status must not revert to what the conversion read.
     await waitFor(() => expect(badgeOf(rowFor(STREET_MEDIUM))).toBe("submitted"));
     expect(document.querySelector(".checklist__rollup")?.textContent).toBe("1 submitted");
-    // And the mechanism: the conversion re-read rather than installing its own body.
     expect(checklistReads(calls)).toHaveLength(2);
   });
 
@@ -1318,9 +1194,6 @@ describe("AC 6 · a regenerated plan is reviewed, never silently applied", () =>
 
 describe("F-203 · the alert contact stays correctable after the checklist exists", () => {
   it("still offers the contact fields and a save on a current checklist", async () => {
-    // The case that was broken: nothing to convert, so the inputs and the only button that
-    // submits them were both gone. An organizer who mistyped an address had no product flow to
-    // correct it, and the alerts already scheduled kept retrying the unusable one.
     stubApi({
       [GET_CHECKLIST]: checklistOf({
         created: true,
@@ -1332,11 +1205,9 @@ describe("F-203 · the alert contact stays correctable after the checklist exist
 
     await renderView();
 
-    // Seeded from the store, so the organizer edits what is actually on file.
     expect(screen.getByLabelText<HTMLInputElement>("Email for deadline reminders").value).toBe(
       "typo@example.test",
     );
-    // Named for what pressing it does here: there is nothing to review.
     expect(screen.getByRole("button", { name: "Save contact details" })).toBeDefined();
   });
 
@@ -1376,10 +1247,6 @@ describe("F-203 · the alert contact stays correctable after the checklist exist
   });
 
   it("shows a delivery failure that only happened after the page was rendered", async () => {
-    // THE ENTRY POINT TO EVERYTHING THE CONTACT WORK BUILT. The POST's response is assembled
-    // before the alerts it just scheduled have been attempted, so the poller can only record a
-    // failure after that state is on screen. With no reload path the warning never appeared, and
-    // an organizer who is never told there is a problem never corrects the address that caused it.
     let failures: unknown[] = [];
     const body = () =>
       checklistBody({
@@ -1399,7 +1266,6 @@ describe("F-203 · the alert contact stays correctable after the checklist exist
       await userEvent.click(screen.getByRole("button", { name: "Save contact details" }));
       await waitFor(() => expect(screen.queryByText(/not been confirmed as delivered/)).toBeNull());
 
-      // The poller runs and the send fails, which happens entirely after the render above.
       failures = [{ channel: "email", failedCount: 1, heldForReview: false }];
       await vi.advanceTimersByTimeAsync(61_000);
 
@@ -1414,9 +1280,6 @@ describe("F-203 · the alert contact stays correctable after the checklist exist
   });
 
   it("does not keep re-reading when there is no contact for an alert to go to", async () => {
-    // With no address the api schedules nothing and says so, so there is no later delivery whose
-    // failure could arrive. Re-reading anyway would be this page polling for a fact that cannot
-    // change, which is the general behaviour the bounded version was chosen over.
     stubApi({
       [GET_CHECKLIST]: checklistOf({
         created: true,
@@ -1453,10 +1316,6 @@ describe("F-203 · the alert contact stays correctable after the checklist exist
   });
 
   it("does not promise email reminders to a contact that has no email", async () => {
-    // Both contact columns are nullable and the scheduler only takes channels that have a
-    // destination, so phone-only is a supported configuration in which NO email alert is scheduled.
-    // The unconditional sentence reassured that organizer about a delivery path they do not have,
-    // which is the worst version of it: read by exactly the person for whom it is false.
     stubApi({
       [GET_CHECKLIST]: checklistOf({
         created: true,
@@ -1473,7 +1332,6 @@ describe("F-203 · the alert contact stays correctable after the checklist exist
       "Text messages are not being sent yet, and no email address is set, so no deadline " +
         "reminders will be delivered. Add an email address to receive them.",
     );
-    // The number is still stored rather than refused, because the schema permits phone-only.
     expect(lede.textContent).toContain("stored for when text sending is switched on");
     expect((screen.getByLabelText("Mobile number (optional)") as HTMLInputElement).value).toBe(
       "+15550000000",
@@ -1481,8 +1339,6 @@ describe("F-203 · the alert contact stays correctable after the checklist exist
   });
 
   it("says where reminders are addressed without promising they arrive", async () => {
-    // The other half, so the fix cannot be written as "never mention email". This is the sentence
-    // the phone field exists to qualify, and it is true whenever an address is set.
     stubApi({
       [GET_CHECKLIST]: checklistOf({
         created: true,
@@ -1493,10 +1349,6 @@ describe("F-203 · the alert contact stays correctable after the checklist exist
 
     await renderView();
 
-    // ROUTING, NOT ARRIVAL. The page cannot see whether Resend is configured — the checklist
-    // response reports contacts and rows and nothing about provider credentials — so a promise that
-    // reminders GO to the email is one it cannot keep in the supported unconfigured configuration.
-    // Where they are ADDRESSED is settled by the contacts alone.
     expect(screen.getByText(/addressed to your email/).textContent).toContain(
       "Text messages are not being sent yet, so deadline reminders are addressed to your email",
     );
@@ -1518,8 +1370,6 @@ describe("F-203 · the alert contact stays correctable after the checklist exist
 
 describe("F-203 · a channel that failed to deliver is reported to the organizer", () => {
   it("says how many failed, on which channel, and what the organizer can do", async () => {
-    // F-203 exists so a filing deadline does not pass unnoticed. An alert failing silently is
-    // exactly that failure, and until this nothing on any surface said so.
     stubApi({
       [GET_CHECKLIST]: checklistOf({
         created: true,
@@ -1537,21 +1387,10 @@ describe("F-203 · a channel that failed to deliver is reported to the organizer
         "alerts that have not gone out.",
     );
     expect(notice.getAttribute("role")).toBe("alert");
-    // The action it points at is really there, because contacts stay editable on a current
-    // checklist.
     expect(screen.getByLabelText("Email for deadline reminders")).toBeDefined();
   });
 
   it("does not claim retries are running while the plan is stale", async () => {
-    // Round 14 made the api HOLD alerts whose plan the event has been edited past, so it cannot
-    // send a filing date the current event does not have. The count still reports those rows, and
-    // the notice went on saying PopEngine keeps retrying them, which stopped being true for as
-    // long as the organizer takes to regenerate.
-    //
-    // Qualified rather than hidden: dropping the rows would leave an organizer with failed alerts
-    // and no sign of them, which is the silence this notice exists to break. Correcting the
-    // address, which the ordinary sentence points at, does nothing until the plan is current, so
-    // the paused version names the action that actually resumes delivery.
     stubApi({
       [GET_CHECKLIST]: checklistOf({
         created: true,
@@ -1573,12 +1412,6 @@ describe("F-203 · a channel that failed to deliver is reported to the organizer
   });
 
   it("does not promise the review restarts an alert whose outcome was never observed", async () => {
-    // The paused sentence names regeneration and review as the action that starts these again,
-    // and for an ordinary stale failure it does. For one carrying an attempt nobody saw the end
-    // of it does not: the scheduler upserts the failed row in place, a review supersedes an
-    // attempt only on a row revived from cancelled, and the refreshed row becomes a reconciliation hold
-    // instead of a retry. Sending an organizer to do a thing that will not work is worse than
-    // saying nothing, because it is the one action they believe is left.
     stubApi({
       [GET_CHECKLIST]: checklistOf({
         created: true,
@@ -1599,12 +1432,6 @@ describe("F-203 · a channel that failed to deliver is reported to the organizer
   });
 
   it("does not turn an unknown delivery outcome into a definite non-delivery", async () => {
-    // A provider timeout or a lost response is recorded as failed while the message MAY have
-    // arrived, which is the whole reason this feature hands the provider an idempotency key and
-    // retries. Saying the alerts "failed to send" and "have not gone out" converted an unknown
-    // outcome into a definite one. The page cannot tell a rejection from a lost answer, because
-    // the reason lives in payload.last_error and is deliberately never sent to a client, so
-    // unconfirmed is the strongest thing that is true here.
     stubApi({
       [GET_CHECKLIST]: checklistOf({
         created: true,
@@ -1622,9 +1449,6 @@ describe("F-203 · a channel that failed to deliver is reported to the organizer
   });
 
   it("reads the paused state from the failed rows rather than the latest plan", async () => {
-    // planStale describes the NEWEST plan. Between a regeneration and a review that is false while
-    // the failed rows still point at the old revision and stay unclaimable, so the copy promised
-    // retries that were paused. The api answers it from the plans those rows hang off.
     stubApi({
       [GET_CHECKLIST]: checklistOf({
         created: true,
@@ -1657,9 +1481,6 @@ describe("F-203 · a channel that failed to deliver is reported to the organizer
   });
 
   it("says nothing at all when no failure was observed", async () => {
-    // An empty count is not evidence the channel works: nothing may have been attempted. This is
-    // the same overclaim as the "email is fine" line that was removed, so it must not come back
-    // as a positive rendered from an absence.
     stubApi({ [GET_CHECKLIST]: checklistOf({ created: true, failedAlertDeliveries: [] }) });
 
     await renderView();
@@ -1669,11 +1490,6 @@ describe("F-203 · a channel that failed to deliver is reported to the organizer
   });
 
   it("tells the organizer when delivery has stopped rather than paused or continued", async () => {
-    // THE DISTINCTION THIS PAGE COULD NOT DRAW. An alert the poller has permanently stopped on
-    // reached the organizer either as nothing at all (a crash leaves it pending) or as an ordinary
-    // failure under copy saying PopEngine keeps retrying it. Both told them delivery was in hand.
-    // The one thing this notice has to make possible is telling "still trying" from "stopped, and
-    // a person has to do something", so the words say which of those it is and name the action.
     stubApi({
       [GET_CHECKLIST]: checklistOf({
         created: true,
@@ -1695,18 +1511,10 @@ describe("F-203 · a channel that failed to deliver is reported to the organizer
         "do not count on them to remind you of the filing dates they cover.",
     );
     expect(notice.getAttribute("role")).toBe("alert");
-    // The claim that broke this: nothing here may promise a retry that is not going to happen.
     expect(notice.textContent).not.toContain("keeps retrying");
   });
 
   it("does not promise a held alert can never be sent again", async () => {
-    // WHAT THIS NOTICE IS NOT ENTITLED TO SAY. A held alert is cancelled by a regeneration and
-    // revived by the next review as a FRESH schedule: the revival supersedes the unresolved
-    // attempt, and the poller then sends the same alert again — which may be the second copy of a
-    // delivery nobody ever observed. Told flatly that these alerts "will not be sent again", an
-    // organizer who regenerates their plan gets exactly the duplicate the sentence ruled out. The
-    // page cannot see whether a regeneration is coming, so it says what it can see: the schedule
-    // these alerts are on now is not going to send them.
     stubApi({
       [GET_CHECKLIST]: checklistOf({
         created: true,
@@ -1722,13 +1530,6 @@ describe("F-203 · a channel that failed to deliver is reported to the organizer
   });
 
   it("does not rule out a send that reconciliation can release", async () => {
-    // THE EXIT FROM THE HOLD, which this notice was writing as if it did not exist. Checking with
-    // the sending service is the action the last sentence asks for, and one of its two answers is
-    // that no message is there: the operator then clears or resolves the unresolved attempt, and
-    // the alert — still pending or failed, still on the same send_at — is sent by the next poll.
-    // No cancellation and no regeneration are involved, so "nothing on their current schedule will
-    // send them again" was false about the very outcome the notice is steering towards. It is true
-    // only while the attempt stays as it is, and the copy has to say which.
     stubApi({
       [GET_CHECKLIST]: checklistOf({
         created: true,
@@ -1742,25 +1543,12 @@ describe("F-203 · a channel that failed to deliver is reported to the organizer
     expect(notice.textContent).toContain(
       "nothing on their current schedule sends them again for now",
     );
-    // And the check is named as what can change that, rather than only as an errand.
     expect(notice.textContent).toMatch(/what that check records decides whether/);
-    // The promise this notice may not make in an unqualified form.
     expect(notice.textContent).not.toMatch(/will send them again\./);
-    // Nor may "for now" be left to do the work on its own: the hold ends by itself under the
-    // 2026-08-04 bound, and an organizer who is not told that can receive the second copy the
-    // rest of this notice is about after being told delivery had stopped.
     expect(notice.textContent).toMatch(/tries once more when the pause ends/);
   });
 
   it("does not assert a handoff it cannot prove happened", async () => {
-    // THE WEAKEST CASE THIS ONE STRING HAS TO BE TRUE OF. The attempt is recorded BEFORE the
-    // provider is called, on its own connection, precisely so a process that dies mid-send leaves
-    // evidence. A process that dies just after that record and before the sender runs leaves the
-    // same evidence with nothing handed over at all, and after downtime longer than the dedup
-    // window that row becomes a hold. Told flatly that the alert was handed to the sending
-    // service, an organizer goes to reconcile a message the provider may never have seen — and on
-    // a filing deadline that is a claim the page has no evidence for. Every clause has to hold in
-    // that case, not only in the one where the send really did go out.
     stubApi({
       [GET_CHECKLIST]: checklistOf({
         created: true,
@@ -1773,8 +1561,6 @@ describe("F-203 · a channel that failed to deliver is reported to the organizer
     const notice = screen.getByText(/no outcome ever came back/);
     expect(notice.textContent).not.toMatch(/(was|were) handed to the sending service/);
     expect(notice.textContent).toMatch(/attempted send/);
-    // Nor may the action presume the message reached anybody: what a person checks is whether
-    // anything went out, which is the question this state leaves open.
     expect(notice.textContent).not.toMatch(/whether (it|they) arrived/);
   });
 
@@ -1801,8 +1587,6 @@ describe("F-203 · a channel that failed to deliver is reported to the organizer
   });
 
   it("says nothing when no alert is stopped", async () => {
-    // Same rule as every other notice on this page: an absence is not evidence of health, so
-    // nothing is rendered from one.
     stubApi({ [GET_CHECKLIST]: checklistOf({ created: true, alertsHeldForReconciliation: [] }) });
 
     await renderView();
@@ -1811,9 +1595,6 @@ describe("F-203 · a channel that failed to deliver is reported to the organizer
   });
 
   it("keeps a stopped alert and a retrying failure as separate statements", async () => {
-    // The two can be true of one event at once, on the same channel: one alert lost its answer a
-    // day ago and another failed a minute ago. Collapsing them would put the wrong sentence on
-    // one of the two, which is the defect this notice exists to correct.
     stubApi({
       [GET_CHECKLIST]: checklistOf({
         created: true,
@@ -1832,8 +1613,6 @@ describe("F-203 · a channel that failed to deliver is reported to the organizer
   });
 
   it("keeps a switched-off channel and a failing channel as separate statements", async () => {
-    // "Not switched on yet" and "tried and did not arrive" are different facts. Collapsing them
-    // would misreport both.
     stubApi({
       [GET_CHECKLIST]: checklistOf({
         created: true,
@@ -1847,7 +1626,6 @@ describe("F-203 · a channel that failed to deliver is reported to the organizer
     const simulated = screen.getByText(/No text messages have been sent\./);
     const failed = screen.getByText(/not been confirmed as delivered/);
     expect(simulated).not.toBe(failed);
-    // Neither sentence borrows the other's claim.
     expect(simulated.textContent).not.toContain("not been confirmed as delivered");
     expect(failed.textContent).not.toContain("not switched on yet");
   });
@@ -1868,18 +1646,12 @@ describe("F-203 AC 5 · a simulated alert is labelled where the organizer reads 
 
     await renderView();
 
-    // The organizer's version of the fact, not the operator's: no provider name, no open-question
-    // id, and the correction first — what they were counting on did not arrive.
     const notice = screen.getByText(/No text messages have been sent\./);
     expect(notice.textContent).toBe(
       "No text messages have been sent. PopEngine recorded 2 text message alerts for this event, " +
         "but text message sending is not switched on yet, so nothing was delivered.",
     );
-    // And no "email is fine" reassurance: nothing in this response says whether it is, and email
-    // is only live when Resend is configured. Pointing at a second channel that may be equally
-    // silent is the same overclaim as calling the simulated one delivered.
     expect(notice.textContent).not.toContain("Email alerts are sent normally");
-    // Loud enough not to be missed, like the other things that change what can be relied on.
     expect(notice.getAttribute("role")).toBe("alert");
   });
 
@@ -1893,7 +1665,6 @@ describe("F-203 AC 5 · a simulated alert is labelled where the organizer reads 
 
     expect(screen.queryByText(/have been sent\./)).toBeNull();
     expect(screen.queryByText(/not switched on yet/)).toBeNull();
-    // A real delivery must not pick up a "nothing was delivered" caveat by accident.
     expect(screen.queryByText(/nothing was delivered/)).toBeNull();
   });
 
@@ -1915,8 +1686,6 @@ describe("F-203 AC 5 · a simulated alert is labelled where the organizer reads 
     await renderView();
 
     expect(screen.getByText(/1 text message alert for this event/)).toBeDefined();
-    // An unrecognised channel still has to be reported: the point of the notice is that something
-    // did not arrive, and silence about it is the one answer that cannot be right.
     expect(screen.getByText(/3 carrier_pigeon alerts for this event/)).toBeDefined();
   });
 });
@@ -1983,8 +1752,6 @@ describe("AC 7 · the demo path", () => {
 });
 
 describe("AC 8 · each row is attributed to the plan its values came from", () => {
-  // F-206 AC 4, as amended for SPEC-CONFLICT #115. The api decides which plan a row reads; what
-  // is pinned here is that the pair is rendered off the row and never assembled from two sources.
   it("does not repeat the banner's snapshot on a row that came from it", async () => {
     stubApi({
       [GET_CHECKLIST]: checklistOf({ created: true, items: [trackedItem(STREET_MEDIUM)] }),
@@ -2004,7 +1771,6 @@ describe("AC 8 · each row is attributed to the plan its values came from", () =
         items: [
           trackedItem(STREET_LARGE, {
             struckThrough: true,
-            // A superseded published version, paired with the date that version carried.
             sourcePlan: { rulesetVersion: "nyc.v2.5", snapshotDate: "2026-06-01" },
           }),
         ],
@@ -2012,8 +1778,6 @@ describe("AC 8 · each row is attributed to the plan its values came from", () =
     });
     await renderView();
 
-    // The pair travels together: this version beside the banner's date would be a combination
-    // that never existed on any artifact.
     expect(
       within(rowFor(STREET_LARGE)).getByText(
         "Dates from rules snapshot nyc.v2.5 · published June 1, 2026",
@@ -2042,9 +1806,6 @@ describe("AC 8 · each row is attributed to the plan its values came from", () =
     ).toBeDefined();
   });
 
-  // The live rules file is read, for one thing only: how the live ruleset stands against the one
-  // this checklist's plan pinned (F-206 AC 4 — `/api/rules/meta` "is not the plan banner's
-  // source"). None of the displayed provenance values may come from it.
   it("never lets the live rules file supply a displayed version or date", async () => {
     const calls = stubApi({
       [GET_CHECKLIST]: checklistOf({
@@ -2064,13 +1825,10 @@ describe("AC 8 · each row is attributed to the plan its values came from", () =
     await renderView();
 
     const banner = await screen.findByLabelText("Rules snapshot");
-    // The pair is the plan's, paired with each other and with nothing else.
     expect(banner.textContent).toContain("Rules snapshot nyc.v2.5");
     expect(banner.textContent).toContain("published June 1, 2026");
     expect(banner.textContent).not.toContain("December 31, 2026");
-    // The row's own provenance is the row's, not the live file's.
     expect(screen.getByText(/Dates from rules snapshot nyc\.v2\.1/)).toBeDefined();
-    // The live version appears only where it belongs: naming the newer ruleset that exists.
     await waitFor(() => expect(banner.textContent).toContain("a newer ruleset (nyc.v9.9) exists"));
     expect(calls.some((call) => call.url.includes("/api/rules/meta"))).toBe(true);
   });
@@ -2083,8 +1841,6 @@ describe("AC 8 · each row is attributed to the plan its values came from", () =
     });
     await renderView();
 
-    // The banner says "regenerate to update" and regenerating is the plan view's action, so the
-    // page says where it lives rather than leaving an organizer to find it.
     expect(
       (await screen.findByRole("link", { name: "Regenerate the plan" })).getAttribute("href"),
     ).toBe(`/events/${EVENT}/plan`);
@@ -2116,7 +1872,6 @@ describe("edge cases", () => {
     expect(
       await screen.findByText("Nothing to track; keep confirmation notes here if you like."),
     ).toBeDefined();
-    // The context is there, read-only: no status, no notes, no upload.
     const context = rowFor(ALCOHOL_ADVISORY);
     expect(within(context).queryByRole("combobox")).toBeNull();
     expect(within(context).queryByRole("textbox")).toBeNull();
@@ -2138,9 +1893,6 @@ describe("edge cases", () => {
     expect(within(rowFor(STREET_MEDIUM)).getByRole("combobox")).toBeDefined();
   });
 
-  // Edge case: created twice is idempotent. Two ways round: the api answers the second call 200
-  // with the checklist that already exists, and the page cannot send a second call while the
-  // first is in flight.
   it("converting a second time returns the existing checklist without duplicating a row", async () => {
     const existing = checklistBody({
       created: true,
@@ -2164,9 +1916,6 @@ describe("edge cases", () => {
   });
 
   it("re-presents the newer plan when the one on screen was superseded, and says nothing was recorded", async () => {
-    // The stale tab, from the organizer's side. This page rendered plan-2 and the api refuses the
-    // review because plan-3 arrived meanwhile. The refusal must not read as "your click failed":
-    // nothing was recorded, and the plan they now have to review has to be the one on screen.
     const shown = checklistBody({
       created: true,
       planChanged: true,
@@ -2182,7 +1931,6 @@ describe("edge cases", () => {
     stubApi({
       [GET_CHECKLIST]: () => jsonResponse(200, current),
       [POST_CHECKLIST]: () => {
-        // The regeneration lands: from here the page reads the newer plan.
         current = newer;
         return jsonResponse(409, {
           error: "plan plan-2 is no longer the latest plan for event event-1",
@@ -2197,12 +1945,9 @@ describe("edge cases", () => {
       screen.getByRole("button", { name: "Review items against the current plan" }),
     );
 
-    // Told plainly that the click filed nothing, rather than being left to assume it did.
     await waitFor(() => expect(screen.getByText(/nothing was recorded/i)).toBeTruthy());
-    // And looking at the plan they are being asked to review, not the one that was refused.
     expect(screen.getAllByRole("heading", { name: nameOf(STREET_LARGE) })).toHaveLength(1);
     expect(screen.queryByRole("heading", { name: nameOf(STREET_MEDIUM) })).toBeNull();
-    // The review button is still there: this is a retry, not a dead end.
     expect(
       screen.getByRole("button", { name: "Review items against the current plan" }),
     ).toBeTruthy();
@@ -2247,7 +1992,6 @@ describe("edge cases", () => {
     });
     await renderView();
 
-    // A portal with a URL but no published name is linked by its URL rather than left unlinked.
     expect(
       within(rowFor(SOUND)).queryByRole("link", { name: portalUrlOf(SOUND) ?? "" }),
     ).toBeNull();
@@ -2292,7 +2036,6 @@ describe("edge cases", () => {
     );
 
     await waitFor(() => expect(screen.queryByRole("status")).toBeNull());
-    // The first event's checklist must never be read under the second event's id.
     expect(screen.queryByRole("heading", { name: nameOf(STREET_MEDIUM) })).toBeNull();
   });
 
@@ -2331,9 +2074,6 @@ describe("edge cases", () => {
 });
 
 describe("reaching the checklist at all", () => {
-  // AC 1's "one click" needs somewhere to click from, and after generating a plan the organizer
-  // is on the plan route. Before this, nothing in `apps/web/app` linked to the checklist, so the
-  // conversion step and the Scenario A demo path were reachable only by typing the URL.
   it("links to the checklist from the plan route", async () => {
     vi.stubEnv("NEXT_PUBLIC_API_BASE_URL", API);
     vi.stubEnv("RULES_FILE", publishedRulesFileIn("rules"));
@@ -2391,10 +2131,6 @@ describe("the checklist route", () => {
 
 describe("a fee stated only where the ruleset states one", () => {
   it("renders no fee row when the row carries no amount, whatever the row is", async () => {
-    // Neither an advisory nor a permit is captioned for a null fee. A finding cannot tell "this
-    // filing has no fee" from "the amount was not published" — both arrive as null — and reading it
-    // off the row's KIND only relocates the guess to what other rules of that kind publish. So the
-    // row says nothing, which is the one thing the data supports.
     stubApi({
       [GET_CHECKLIST]: checklistOf({
         created: true,
@@ -2412,7 +2148,6 @@ describe("a fee stated only where the ruleset states one", () => {
   });
 
   it("renders the published amount when the ruleset publishes one", async () => {
-    // The withdrawal is of the CAPTION, not of the fee: an amount that exists still renders.
     stubApi({
       [GET_CHECKLIST]: checklistOf({ created: true, items: [trackedItem(STREET_MEDIUM)] }),
     });
@@ -2445,8 +2180,6 @@ describe("a fee stated only where the ruleset states one", () => {
 
 describe("the checklist's expand control matches what is behind it", () => {
   it("offers no expand on a row whose only extra fact is stated in its summary", async () => {
-    // `lastVerifiedDate` renders in the row's SUMMARY, so it must not open the panel: it used to be
-    // listed as detail, and a row carrying only that date rendered a control over an empty panel.
     stubApi({
       [GET_CHECKLIST]: checklistOf({
         created: true,
@@ -2470,7 +2203,7 @@ describe("the checklist's expand control matches what is behind it", () => {
 
     const row = rowFor(NOISE_ADVISORY);
     expect(within(row).queryByRole("button", { name: /^Details for/ })).toBeNull();
-    // And the date it carries is on the row regardless, not lost with the control.
+
     expect(within(row).getByText("last verified 2026-06-15")).toBeDefined();
     expect(row.textContent).not.toContain(NOISE_ADVISORY);
   });
@@ -2605,12 +2338,6 @@ describe("F-202 AC 9 · moved-deadline notice", () => {
   });
 });
 
-/**
- * #252. A merged dedupe line reads as its binding route, and where that route publishes no window
- * the api reads the filing date, status, fee and filing details off another route of the same
- * requirement. The row has to say whose they are: naming one rule and dating another is exactly
- * the crossover the route list exists to remove, and it would arrive here instead.
- */
 describe("a checklist row whose window comes from another route (#252)", () => {
   const TENT_ROUTE = {
     ruleId: "DOB-TENT-001",
@@ -2636,23 +2363,13 @@ describe("a checklist row whose window comes from another route (#252)", () => {
     disposition: "may_be_required",
     unknownFields: [],
     name: "DOB permit — structure over 10 feet tall",
-    // The published rule states no deadline of any kind, which is why the tent route's window is
-    // what the row ends up reading.
+
     deadline: null,
     latestApplyDate: null,
     deadlineStatus: "not_applicable",
     feeDisplay: null,
   };
 
-  /**
-   * The binding route with the row's own portal on it, which is what a real payload carries: a null
-   * `filingRouteRuleId` says the values above are the line's own, and a merged line's own values are
-   * its binding route's. DOB-TALL-STRUCTURE-001 publishes no portal, so a row rendering one while
-   * naming that route as its binding route is a shape the api cannot produce and the boundary now
-   * refuses.
-   */
-  // Built on the TENT route because that is the one that BINDS: it is the only route contributing
-  // the merged `required`, so the row's own portal is its portal.
   const BINDING_WITH_PORTAL = {
     ...TENT_ROUTE,
     portalName: portalNameOf(STREET_MEDIUM),
@@ -2702,21 +2419,6 @@ describe("a checklist row whose window comes from another route (#252)", () => {
     expect(within(row).queryByTestId("deciding-question")).toBeNull();
   });
 
-  /**
-   * #252: THE DECIDING QUESTION REACHES THE SURFACE THE ORGANIZER WORKS THE ITEM ON.
-   *
-   * `headlineMode` was served on this response and read by nothing. The plan page said "the
-   * answers so far do not say which of these applies, answering tent area would decide it" and the
-   * checklist, which `checklist-item.tsx`'s own comment calls the place the organizer works the
-   * item, said only "may be required". The conditionality survived to it; the question that would
-   * settle it did not, and all 56 affected plans are `candidate`.
-   */
-  /**
-   * #252 review: THE HEADING IS THE QUESTION ON THIS SURFACE TOO (design §5.3). The checklist
-   * inherited the MERGED `userSummary.heading`, which `mergeUserSummary` takes from the first route
-   * in binding order that publishes one, so the row an organizer works was titled with one
-   * candidate's permit name while the plan line asked the question.
-   */
   it("heads a candidate row with the deciding question, not with a candidate's name", async () => {
     stubApi({
       [GET_CHECKLIST]: checklistOf({
@@ -2735,8 +2437,7 @@ describe("a checklist row whose window comes from another route (#252)", () => {
     const row = candidateRow();
     expect(within(row).getByRole("heading").textContent).toBe(CANDIDATE_HEADING);
     expect(within(row).queryByText(nameOf(STREET_MEDIUM))).toBeNull();
-    // The CONTROLS take a noun rather than the question, and not the merged heading either: they
-    // fall back the way every other surface does when no name is settled.
+
     expect(within(row).getByRole("combobox").getAttribute("aria-label")).not.toContain(
       CANDIDATE_HEADING,
     );
@@ -2745,11 +2446,6 @@ describe("a checklist row whose window comes from another route (#252)", () => {
     );
   });
 
-  /**
-   * A candidate group that is NOT scalar-free: the binding route resolved and contributes the
-   * merged disposition, so the line publishes its own window and `filingRouteRuleId` is null. That
-   * is the shape whose attribution the heading used to carry.
-   */
   const DATED_BINDING = {
     ...TALL_ROUTE,
     disposition: "required",
@@ -2758,14 +2454,6 @@ describe("a checklist row whose window comes from another route (#252)", () => {
     feeDisplay: "$150 filing fee",
   };
 
-  /**
-   * #252 review: THE SAME PROMOTION, ON THE BRANCH WHERE NO FILING ROUTE IS NAMED.
-   *
-   * `filingRouteRuleId` is null on a candidate row whose binding route publishes its own window, so
-   * the attribution paragraph names `routes[0]` instead — and the citation promotion read the id
-   * alone, fell through to contributing order, and promoted whichever rule the published file lists
-   * first. One route's dates under another route's citation, one branch over from the fix.
-   */
   it("leads a candidate row's citations with the route its paragraph names", async () => {
     stubApi({
       [GET_CHECKLIST]: checklistOf({
@@ -2774,7 +2462,7 @@ describe("a checklist row whose window comes from another route (#252)", () => {
           trackedItem(STREET_MEDIUM, {
             routes: [DATED_BINDING, TENT_ROUTE],
             headlineMode: "candidate",
-            // No filing route is NAMED, so the row's values are the binding route's.
+
             filingRouteRuleId: null,
             sources: [
               {
@@ -2795,22 +2483,13 @@ describe("a checklist row whose window comes from another route (#252)", () => {
     await renderView();
 
     const row = candidateRow();
-    // The paragraph names the binding route, so the promoted citation is that route's.
+
     expect(row.textContent).toContain(DATED_BINDING.name);
     const promoted = row.querySelector(".check-item__citations a") as HTMLAnchorElement;
-    // NOT VACUOUS: the tent route's citation is FIRST in contributing order, which is what the
-    // old code promoted.
+
     expect(promoted.getAttribute("href")).toBe("https://example.test/tall");
   });
 
-  /**
-   * #252 review: A NARROWING WHOSE VISIBILITY CHECK WAS LEFT ON THE PRE-NARROWING VALUE.
-   *
-   * Where the filing route publishes no source of its own, the promotion moves every citation into
-   * the disclosure. `hasContextDetail` still counted the ORIGINAL list and opened the disclosure
-   * only above one, so a row with exactly one sibling citation showed no promoted citation and no
-   * control to open the one it had: a published citation became unreachable.
-   */
   it("keeps a lone sibling citation reachable when the filing route publishes none", async () => {
     stubApi({
       [GET_CHECKLIST]: checklistOf({
@@ -2820,8 +2499,7 @@ describe("a checklist row whose window comes from another route (#252)", () => {
             routes: [DATED_BINDING, TENT_ROUTE],
             headlineMode: "candidate",
             filingRouteRuleId: null,
-            // The route the row's values are attributed to publishes no source of its own, and
-            // exactly one sibling citation exists.
+
             sources: [
               {
                 ruleId: "DOB-TENT-001",
@@ -2829,7 +2507,7 @@ describe("a checklist row whose window comes from another route (#252)", () => {
                 urls: ["https://example.test/tent"],
               },
             ],
-            // Nothing else would open the disclosure on its own.
+
             publishedNotes: [],
             noteText: null,
             conflictText: null,
@@ -2845,22 +2523,13 @@ describe("a checklist row whose window comes from another route (#252)", () => {
     await renderView();
 
     const row = candidateRow();
-    // Nothing is promoted, which is correct: the attributed route cites nothing of its own.
+
     expect(row.querySelector(".check-item__citations")).toBeNull();
-    // NOT VACUOUS: before this the disclosure was gated on the original count and never opened,
-    // so the sibling's page was on no surface at all.
+
     const expanded = await expandRow(row);
     expect(expanded.querySelector('a[href="https://example.test/tent"]')).not.toBeNull();
   });
 
-  /**
-   * #252 review: THE PROMOTED CITATION IS AN ATTRIBUTION, NOT A RANKING, ONCE A ROUTE IS NAMED.
-   *
-   * `PlanContextBody` lifts `sources[0]` out of the disclosure and renders it directly beneath the
-   * sentence saying the date, fee and portal above belong to the selected filing route. The merged
-   * list concatenates in CONTRIBUTING order, so a group whose first contributing rule is not the
-   * filing route presented another rule's official page as the support for that filing tuple.
-   */
   it("leads a row's citations with the filing route's own", async () => {
     const source = (ruleId: string, citation: string, url: string) => ({
       ruleId,
@@ -2875,7 +2544,7 @@ describe("a checklist row whose window comes from another route (#252)", () => {
             latestApplyDate: "2026-08-26",
             routes: [TENT_ROUTE, TALL_ROUTE],
             headlineMode: "candidate",
-            // The filing route is the SECOND contributing rule, which is the whole shape.
+
             filingRouteRuleId: "DOB-TENT-001",
             sources: [
               source("DOB-TALL-STRUCTURE-001", "Tall structure page", "https://example.test/tall"),
@@ -2887,24 +2556,14 @@ describe("a checklist row whose window comes from another route (#252)", () => {
     });
     await renderView();
 
-    // NOT VACUOUS: before this the promoted citation was the tall route's, which is the one still
-    // present further down inside the disclosure.
     const row = candidateRow();
     const promoted = row.querySelector(".check-item__citations a") as HTMLAnchorElement;
     expect(promoted.getAttribute("href")).toBe("https://example.test/tent");
-    // And nothing is dropped: the sibling still renders behind the expand.
+
     const expanded = await expandRow(row);
     expect(expanded.querySelector('a[href="https://example.test/tall"]')).not.toBeNull();
   });
 
-  /**
-   * #252 review: THE FOURTH SURFACE FOR THE SAME FIELD.
-   *
-   * `mergeGroup` does not concatenate `conflictText`: it falls back through the routes in binding
-   * order and takes the first that publishes any. So a merged row rendered exactly one rule's two
-   * readings and dropped the sibling's official reading entirely, on the disclosure whose whole
-   * purpose is that a conflict is never resolved to one reading silently.
-   */
   it("renders every route's official reading on a merged row, each named", async () => {
     const withConflict = (route: Record<string, unknown>, text: string) => ({
       ...route,
@@ -2916,7 +2575,7 @@ describe("a checklist row whose window comes from another route (#252)", () => {
         items: [
           trackedItem(STREET_MEDIUM, {
             verificationStatus: "OFFICIAL_CONFLICT",
-            // What the merge leaves on the line: the first publisher in binding order.
+
             conflictText: "the tall route reads the threshold as 10 feet",
             routes: [
               withConflict(DATED_BINDING, "the tall route reads the threshold as 10 feet"),
@@ -2931,34 +2590,20 @@ describe("a checklist row whose window comes from another route (#252)", () => {
     await renderView();
 
     const details = await expandedCandidateRow();
-    // NOT VACUOUS: the second is the one the merged scalar dropped, and the first proves the row
-    // did not simply stop rendering conflicts.
+
     expect(details.textContent).toContain("the tall route reads the threshold as 10 feet");
     expect(details.textContent).toContain("the tent route reads the same threshold as 400 sq ft");
-    // Each is attributed, because two rules' readings run together read as four readings of one.
+
     expect(details.textContent).toContain(DATED_BINDING.name);
     expect(details.textContent).toContain(TENT_ROUTE.name);
   });
 
-  /**
-   * #252 review: THE GATE VANISHED ON A ROW THAT PUBLISHES NOTHING TO HANG IT ON.
-   *
-   * `gatedRoutesOf` skips one route so a gate the row's own scalar already shows is not repeated,
-   * and it found that route at `routes[0]` whenever `filingRouteRuleId` was null. On a scalar-free
-   * row that is exactly wrong: the line publishes NO headline scalars by construction, so there is
-   * no gate on the row and `filingRouteRuleId` is null because nothing was selected rather than
-   * because the binding route was. The binding route's own start date was skipped as already
-   * rendered and appeared nowhere, which is F-202 AC 5 lost on the one row shape that can only ever
-   * show it here. `routes[0]`-as-binding again, in a place the #263 enumeration did not list.
-   */
   it("shows a scalar-free row's gate, which no scalar above it carries", async () => {
     stubApi({
       [GET_CHECKLIST]: checklistOf({
         created: true,
         items: [
           trackedItem(STREET_MEDIUM, {
-            // Scalar-free: `TALL_ROUTE` resolved and `TENT_ROUTE` did not, and the resolved one
-            // does not contribute the merged `required`, so the line publishes nothing of its own.
             permitName: null,
             agency: null,
             deadline: null,
@@ -2980,19 +2625,12 @@ describe("a checklist row whose window comes from another route (#252)", () => {
     await renderView();
 
     const row = candidateRow();
-    // Substring rather than a RegExp: the published name contains "30+ days", and `+` is a
-    // quantifier.
+
     expect(row.textContent).toContain(
       `earliest realistic filing for ${TENT_ROUTE.name} 2026-07-20`,
     );
   });
 
-  /**
-   * #252 review: THE HEADING FIX CHANGED WHAT SIGHTED USERS SEE AND LEFT THE ACCESSIBLE NAME SAYING
-   * THE OLD THING. On a candidate row that is not scalar-free, `permitName` is the BINDING route's
-   * name, so labelling the controls with it named the row after one candidate while the heading
-   * said the answers do not decide which — and those controls update the COMBINED item.
-   */
   it("labels a candidate row's controls after no single route", async () => {
     stubApi({
       [GET_CHECKLIST]: checklistOf({
@@ -3014,18 +2652,11 @@ describe("a checklist row whose window comes from another route (#252)", () => {
       expect(label).not.toContain(nameOf(STREET_MEDIUM));
       expect(label).not.toContain(DATED_BINDING.name);
       expect(label).not.toContain(TENT_ROUTE.name);
-      // Every contributing rule, preferring none: what the controls actually act on.
       expect(label).toContain("DOB-TALL-STRUCTURE-001");
       expect(label).toContain("DOB-TENT-001");
     }
   });
 
-  /**
-   * #252 review: AND THE ATTRIBUTION THE HEADING USED TO CARRY. On a candidate group whose binding
-   * route publishes a window, `filingRouteRuleId` is null, so the paragraph naming whose values
-   * these are did not render — and the heading that used to name them is now the question. The
-   * agency, date, fee and portal were left attributed to nothing at all.
-   */
   it("names the route a candidate row's filing details belong to", async () => {
     stubApi({
       [GET_CHECKLIST]: checklistOf({
@@ -3064,23 +2695,12 @@ describe("a checklist row whose window comes from another route (#252)", () => {
     await renderView();
 
     const row = await expandedCandidateRow();
-    // TALL_ROUTE's trigger resolved, so the requirement IS reached and what is open is which of
-    // its routes reach it. The sentence must not say the requirement itself may not apply.
     expect(within(row).getByTestId("deciding-question").textContent).toBe(
       "The answers so far do not say which of the published routes to this requirement apply." +
         " Answering tent area sqft would decide it.",
     );
   });
 
-  /**
-   * #252 review: THE DECIDING QUESTION LEADS THE ROW, ahead of the scalars it qualifies.
-   *
-   * `PlanContextBody` rendered the named permit's apply-by date, its gate, its fee and the filing
-   * attribution first and reached this sentence only afterwards, so a row whose routes are not
-   * known to apply opened as one route's filing work and corrected itself below. The plan line
-   * already renders its routes block before the scalars it qualifies; this pins the same order
-   * here.
-   */
   it("puts the deciding question ahead of the candidate route's scalars", async () => {
     stubApi({
       [GET_CHECKLIST]: checklistOf({
@@ -3134,19 +2754,11 @@ describe("a checklist row whose window comes from another route (#252)", () => {
 
     const row = await expandedCandidateRow();
     expect(within(row).getByTestId("deciding-question").textContent).toBe(
-      // The fields arrive in ROUTE order and the routes are in binding order, so the unresolved
-      // route that binds names its own field first.
       "The answers so far do not say whether this requirement applies." +
         " Answering tent area sqft, structure over 10ft tall would decide it.",
     );
   });
 
-  /**
-   * #252 review: THE DECIDING QUESTION IS BOTH SETS OF UNKNOWNS, here for the same reason as on
-   * the plan line. A route's `unknownFields` are its trigger's, and a candidate row whose filing
-   * timeline also waits on an answer was told a shorter list of fields "would decide it" than
-   * actually does (design §5.3).
-   */
   it("names the deadline unknowns alongside the trigger unknowns", async () => {
     stubApi({
       [GET_CHECKLIST]: checklistOf({
@@ -3171,24 +2783,11 @@ describe("a checklist row whose window comes from another route (#252)", () => {
     );
   });
 
-  /**
-   * #252 review: A CANDIDATE ROW MUST NOT OFFER A FILING ACTION, the same rule the plan line's
-   * route entries already carry (design §5.3), on the independent checklist path. The row states
-   * that the answers do not decide which route applies and then its details said "apply at" the
-   * filing route's portal, so the working surface presented the requirement as unresolved and
-   * offered the filing in the same disclosure.
-   */
   it("names the portal on a candidate row rather than telling an organizer to apply at it", async () => {
     stubApi({
       [GET_CHECKLIST]: checklistOf({
         created: true,
         items: [
-          // The row publishes its own window here, so nothing is attributed elsewhere and the
-          // portal below is the row's own. DOB-TENT-001 publishes no portal at all, so naming it
-          // as the filing route would leave this row with none to render — and would be the
-          // crossed attribution the boundary now refuses (#252 review).
-          // No date override: with a null filing id the row's window is its binding route's, and
-          // this one publishes none. The date is not what this test is about.
           trackedItem(STREET_MEDIUM, {
             routes: [BINDING_WITH_PORTAL, TALL_ROUTE],
             headlineMode: "candidate",
@@ -3202,7 +2801,6 @@ describe("a checklist row whose window comes from another route (#252)", () => {
     const row = await expandedCandidateRow();
     expect(within(row).getByTestId("deciding-question")).toBeDefined();
     expect(within(row).queryByText(/apply at/)).toBeNull();
-    // Published, so still named and still linked. Only the instruction to file is withheld.
     expect(within(row).getByText(/portal:/)).toBeDefined();
     expect(
       within(row)
@@ -3216,7 +2814,6 @@ describe("a checklist row whose window comes from another route (#252)", () => {
       [GET_CHECKLIST]: checklistOf({
         created: true,
         items: [
-          // The row's own portal, for the reason given on the candidate case above.
           trackedItem(STREET_MEDIUM, {
             routes: [
               { ...BINDING_WITH_PORTAL, triggerResult: "true", unknownFields: [] },
@@ -3235,8 +2832,6 @@ describe("a checklist row whose window comes from another route (#252)", () => {
   });
 
   it("renders no deciding question when every route resolved", async () => {
-    // `applies_together`: the routes are triggered, so there is nothing left to decide and a
-    // sentence saying otherwise would be false.
     stubApi({
       [GET_CHECKLIST]: checklistOf({
         created: true,
@@ -3256,15 +2851,6 @@ describe("a checklist row whose window comes from another route (#252)", () => {
     expect(within(row).queryByTestId("deciding-question")).toBeNull();
   });
 
-  /**
-   * #252: `routes: []` PASSED THE VALIDATOR AND ANSWERED EVERY QUESTION ASKED OF IT.
-   *
-   * `every` is vacuously true on an empty array, so an empty route list is not a harmless
-   * degenerate case: it is the one value that agrees with anything. On the plan page it made
-   * `hasOnlyUndatedDeadlines` print "No dated deadlines identified." on a FEASIBLE plan beside a
-   * dated line. The wire contract says the field is null-or-non-empty, and the validator now says
-   * so too rather than documenting it.
-   */
   it("refuses a checklist response whose route list is empty", async () => {
     stubApi({
       [GET_CHECKLIST]: checklistOf({
@@ -3277,13 +2863,6 @@ describe("a checklist row whose window comes from another route (#252)", () => {
     expect(screen.queryByText(STREET_MEDIUM)).toBeNull();
   });
 
-  /**
-   * #252: a one-entry list is the same defect one entry later. `routes` is published only for a line
-   * that MERGED, and this row's own guards read `length >= 2` before treating it as merged, so a
-   * one-entry list was accepted and then read as unmerged — an incomplete route set rendered as a
-   * complete line, and "The published rules give this requirement 1 routes" if it reached that
-   * sentence.
-   */
   it("refuses a checklist response whose route list is shorter than a merge", async () => {
     stubApi({
       [GET_CHECKLIST]: checklistOf({

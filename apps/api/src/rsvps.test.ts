@@ -82,7 +82,7 @@ describe.runIf(databaseUrl.length > 0)("F-302 RSVP endpoints (database)", () => 
     expect(response.status).toBe(201);
     const id: string = response.body.event.id;
     createdEventIds.push(id);
-    // Public RSVP requires F-301 publish; publish by default so capacity tests stay focused.
+
     const published = await request(api)
       .patch(`/api/events/${id}/public-page`)
       .send({ public_page_published: true });
@@ -121,15 +121,6 @@ describe.runIf(databaseUrl.length > 0)("F-302 RSVP endpoints (database)", () => 
     expect(listed.body.rsvps).toHaveLength(1);
   });
 
-  // `docs/ARCHITECTURE.md:9` rolls web and API independently, so between the two deployments one
-  // side speaks the pre-rename contract. A web build that predates this change reads
-  // `event.headcount` and rejects the whole response without it, which takes the guest list and
-  // its cancel controls down until the second deployment finishes. The guest list therefore
-  // serves both generations until the web rollout is complete; see the removal preconditions in
-  // `specs/F-302-rsvp-guest-list.md`.
-  //
-  // The compatibility key keeps its pre-rename meaning. Issue #236 makes the required web-first
-  // deployment order carry the semantic safety that this shape-only response cannot provide.
   it("serves the pre-rename headcount alongside capacity on the guest list", async () => {
     const { id: eventId } = await createEvent({ capacity: 5, headcount: 40 });
 
@@ -186,10 +177,7 @@ describe.runIf(databaseUrl.length > 0)("F-302 RSVP endpoints (database)", () => 
     expect(full.body.error).toBe("event is full");
   });
 
-  // SPEC-CONFLICT #209, resolved 2026-08-03: admission is `capacity`, and a null capacity
-  // means no enforced limit. `headcount` is a regulatory input — it drives the 75+ assembly gate
-  // and the Parks exactly-20 conflict — so admitting against it would let a marketing decision
-  // move a permit finding.
+  // SPEC-CONFLICT #209: null capacity means unlimited; headcount remains regulatory input.
   it("does not cap RSVPs when no capacity is confirmed", async () => {
     const { id: eventId, capacity } = await createEvent({ capacity: null, headcount: 1 });
     expect(capacity).toBeNull();
@@ -200,7 +188,6 @@ describe.runIf(databaseUrl.length > 0)("F-302 RSVP endpoints (database)", () => 
     expect(first.status).toBe(201);
     expect(first.body.capacity).toBeNull();
 
-    // Past `headcount`, which must not be the limit.
     const second = await request(api)
       .post(`/api/events/${eventId}/rsvps`)
       .send({ name: "Two", email: "two@example.com" });
@@ -245,7 +232,6 @@ describe.runIf(databaseUrl.length > 0)("F-302 RSVP endpoints (database)", () => 
   });
 
   it("refuses RSVPs after the event date", async () => {
-    // Intake refuses a past event_date at create time, so move the stored date after insert.
     const { id: eventId } = await createEvent({ capacity: 10 });
     await database.query("UPDATE events SET event_date = $2 WHERE id = $1", [
       eventId,
@@ -339,32 +325,12 @@ describe.runIf(databaseUrl.length > 0)("F-302 RSVP endpoints (database)", () => 
   });
 });
 
-// THE REGRESSION TEST FOR THE FACT ISSUE #235 CORRECTED, and nothing wider. #235 removed an
-// invented DOHMH headcount trigger, so what must not come back is that: no published city health
-// rule may READ the attendee count, and the DOHMH findings an organizer sees must not move when
-// the count does, unknown included. Whether any PROSE here states an unsupported claim is issue
-// #256's, split out of this branch on 2026-08-09.
-//
-// IT READS THE ENGINE'S OWN PARSE AND MATCHES NOTHING. Four rounds were one defect: an operand
-// type, an agency spelling, a registry field reference, and a bare enum member owned by another
-// field. Each fix widened what a walk over names and text MATCHED, and each time a form it did
-// not match reopened it. There is no walk over text now: `triggerFields` is the engine's reader
-// for the fields a trigger names, and `askedWhenClauses` is the registry's scoping AS PARSED, in
-// which a member clause already carries its owning field. What that makes impossible: this test
-// and the engine cannot disagree about what a rule reads, because there is one reading. A form
-// the engine accepts is traversed, a form it rejects fails at `parseEngineRuleset` before any
-// assertion runs, and a clause kind added without a `field` fails to compile here. Stated
-// narrowing: a rule that only MENTIONS the count in prose is no longer reported, which is the
-// correction record's and #256's ground, not this one's.
 describe("DOHMH findings do not move with headcount (#235)", () => {
   const ruleset = parseEngineRuleset(JSON.parse(readFileSync(publishedRulesFile(), "utf8")));
   const calendar: HolidayCalendar = { id: ruleset.calendarId, holidays: [] };
   const declared = new Set(ruleset.intakeFields.map((field) => field.field));
   const COUNT_FIELD = "headcount";
 
-  // `agency` is free text, not an enum, so the labels are PARTITIONED below rather than matched: a
-  // regex over today's spellings silently excludes the next one, and "Health Department", which
-  // `docs/PRD.md` writes, was one of them.
   const CITY_HEALTH =
     /DOHMH|Health and Mental Hygiene|(?:NYC |City )?Health Department|NYC Health/i;
   const cityHealth = ruleset.rules.filter(
@@ -372,16 +338,6 @@ describe("DOHMH findings do not move with headcount (#235)", () => {
   );
   const cityHealthIds = new Set(cityHealth.map((rule) => rule.id));
 
-  /**
-   * Every field a rule's FIRING depends on: the fields its trigger names, closed over the
-   * registry's scoping, since a field the registry only asks under a condition carries that
-   * condition's fields into the rule that reads it.
-   *
-   * Both halves are the engine's: `triggerFields` is the reader `packages/engine/src/ruleset.ts`
-   * uses, and `askedWhenClauses` is the parsed scoping every clause kind of which carries the
-   * field it constrains, a bare member resolved to its owner by `conditions.ts:154-173`. A Set
-   * iterator visits entries added while it runs, so the loop closes transitively.
-   */
   const scopingOf = (fields: readonly IntakeFieldDefinition[]) =>
     new Map(
       fields.map((field) => [
@@ -396,13 +352,6 @@ describe("DOHMH findings do not move with headcount (#235)", () => {
     return fields;
   };
 
-  /**
-   * WHAT A BOUNDARY IS: a value the artifact compares THE COUNT against, so the sweep can run
-   * below, at and above it. It is the operand OF A CONDITION ON THE COUNT, never a numeral near
-   * one, which is what `headcount gte 75 AND tent_area_sqft gte 400` publishing only 75 means.
-   * The operands are whatever numbers the parsed condition or clause carries, so no operator or
-   * clause kind is enumerated here.
-   */
   const conditionsOn = (node: TriggerNode, into: Condition[] = []) => {
     if ("field" in node) into.push(node);
     else for (const child of "all" in node ? node.all : node.any) conditionsOn(child, into);
@@ -419,8 +368,6 @@ describe("DOHMH findings do not move with headcount (#235)", () => {
     .filter((compared) => compared.field === COUNT_FIELD)
     .flatMap(operandsOf);
 
-  // `null` is the unknown answer: an absent or null key is "asked, not answered"
-  // (`packages/engine/src/types.ts:8-11`), and a numeric field has no other way to be unknown.
   const cityHealthFindings = (fixture: ScenarioIntakeFixture, headcount: number | null) => {
     const answers = { ...fixtureSubmission(fixture), headcount };
     const intake = Object.fromEntries(
@@ -432,8 +379,6 @@ describe("DOHMH findings do not move with headcount (#235)", () => {
   };
 
   it("classifies every agency label the published ruleset carries", () => {
-    // Pinned, so a label added later fails HERE until somebody classifies it, rather than being
-    // silently excluded by a regex written before it existed.
     const labels = [...new Set(ruleset.rules.map((rule) => rule.agency).filter(Boolean))];
     expect(
       labels.filter((label) => CITY_HEALTH.test(label ?? "")),
@@ -464,10 +409,6 @@ describe("DOHMH findings do not move with headcount (#235)", () => {
     }
   });
 
-  // The dependency the four rounds of this finding were about, through the longest form the
-  // registry can write it: a rule triggered on a field the registry asks only for a bare enum
-  // member, whose OWNING field is scoped on the count. Built through the engine's own parser, so
-  // what is asserted is that the traversal follows what the engine resolved.
   it("follows a bare member clause to the field that owns it", () => {
     const scoped = parseEngineRuleset({
       ...JSON.parse(readFileSync(publishedRulesFile(), "utf8")),
@@ -494,17 +435,12 @@ describe("DOHMH findings do not move with headcount (#235)", () => {
     });
     const rule = scoped.rules[0] as EngineRule;
     expect(triggerFields(rule.trigger), "the trigger names one field").toEqual(["tent_area_sqft"]);
-    // THE SHARED HELPER, not a copy of it. A case that reimplements the traversal passes while the
-    // traversal is broken, and the published rules carry no member chain to fail the assertion
-    // above, so both would stay green together.
     expect(
       [...dependsOn(rule, scopingOf(scoped.intakeFields))],
       "tent_canopy resolves to structure_types, which the registry scopes on the count",
     ).toContain(COUNT_FIELD);
   });
 
-  // Below, at and above every boundary, per AGENTS.md 59-60, with 500 far above and `null`
-  // unknown.
   const ascending = (a: number, b: number) => a - b;
   const boundaries = [...new Set(countBoundaries)].sort(ascending);
   const COMPARED = [...new Set([...boundaries.flatMap((at) => [at - 1, at, at + 1]), 500])].sort(
@@ -512,8 +448,6 @@ describe("DOHMH findings do not move with headcount (#235)", () => {
   );
 
   it("returns the same findings below, at, above and without a published headcount", () => {
-    // Pinned, so a derivation that stopped reading the artifact fails here rather than running
-    // over a shorter list. 20 is the Parks threshold, 75 the place-of-assembly one.
     expect(boundaries, "the published headcount boundaries").toEqual([20, 75]);
     expect(COMPARED).toEqual([19, 20, 21, 74, 75, 76, 500]);
     for (const fixture of SCENARIO_INTAKE_FIXTURES) {
@@ -527,8 +461,6 @@ describe("DOHMH findings do not move with headcount (#235)", () => {
     }
   });
 
-  // What makes the comparison worth running: a rule no scenario reaches is one it says nothing
-  // about, while looking green.
   it("reaches every published city health rule across the compared scenarios", () => {
     const reached = new Set(
       SCENARIO_INTAKE_FIXTURES.flatMap((fixture) =>

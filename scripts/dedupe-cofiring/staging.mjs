@@ -1,8 +1,4 @@
 // Section 3.1: why the draft does not load through `parseEngineRuleset`, one error at a time.
-//
-// Each adaptation is applied to an in-memory clone and the parser is run again, so the table in the
-// document is the parser's own sequence of messages rather than a reading of the schema. The file
-// in `rules/` is never written.
 
 import { parseEngineRuleset } from "../../packages/engine/src/ruleset.ts";
 import { loadControl } from "./harness.mjs";
@@ -11,21 +7,7 @@ const clone = (value) => JSON.parse(JSON.stringify(value));
 
 const allRules = (ruleset) => [...ruleset.rules, ...ruleset.advisories];
 
-/**
- * Ask the engine's parser one question, by putting it to the parser.
- *
- * Three of this file's adaptations turn on what vocabulary the engine declares: deadline types, rule
- * kinds and verification statuses. None of those tables is exported, and `parseDeadline`, `RULE_KINDS`
- * and `VERIFICATION_STATUSES` are all module-private, so the only way to ask is to publish the value
- * on a rule of the control, which parses cleanly, and run `parseEngineRuleset` over the result. The
- * answer is the parser's own message, or `null` where it accepted the value.
- *
- * Restating any of the three as a literal set here would go stale in the one direction that matters:
- * the first error in section 3.1's table is raised by an earlier `conditional` deadline, so the
- * engine gaining a case for a later type, kind or status leaves every error in that table unchanged
- * while a stale set kept adapting a value the engine could now read, and the document claimed a
- * parser gap that had closed.
- */
+/** Ask the engine's parser one question, by putting it to the parser. */
 const probeCache = new Map();
 
 function probeControl(key, publish) {
@@ -56,14 +38,7 @@ export function probeDeadline(deadline) {
   };
 }
 
-/**
- * Whether the engine declares a rule kind or a verification status.
- *
- * The probe rule sits in a dedupe group, so publishing a status on it can fail the load on
- * `rejectMixedDedupeVerificationStatuses` rather than on the vocabulary. The question asked is
- * therefore the specific one: did the parser reject this value as undeclared? Any other complaint
- * means the value itself was accepted.
- */
+/** Whether the engine declares a rule kind or a verification status. */
 const declares = (label, key, value, publish) =>
   !(probeControl(`${key}:${value}`, publish) ?? "").includes(
     `${label} has unsupported value "${value}"`,
@@ -217,11 +192,7 @@ export const ADAPTATIONS = [
       };
       for (const rule of allRules(ruleset)) collect(rule.trigger);
       for (const name of read) {
-        // Only a name the draft publishes under `derived_values` is a derived value. Anything else
-        // a trigger reads and no `intake_fields` entry declares is a raw-field typo, and declaring
-        // it here as a nullable number would adapt it away: the load would go on to fail on a later
-        // error, this step's row would still read "the 3 derived values", and the document would
-        // have counted a fabricated intake field among them (#251 review).
+        // Only a name the draft publishes under `derived_values` is a derived value.
         if (!publishedAsDerived.has(name)) {
           throw new Error(
             `rule triggers read "${name}", which the draft declares neither as an intake field nor ` +
@@ -241,16 +212,7 @@ export const ADAPTATIONS = [
   },
 ];
 
-/**
- * Apply each adaptation in turn and record the parser's next complaint, plus what the adaptation
- * touched.
- *
- * `changed` is what section 3.1's left column counts: how many deadlines were dropped and why, how
- * many rules carry a verification status or a kind the engine does not declare, and how many leaves
- * each undeclared operator was rewritten on. It is returned rather than written into the document by
- * hand so that a draft that gains one more `conditional_requirement`, or one more `is_null` leaf,
- * fails the suite instead of quietly making the published count stale.
- */
+/** Apply each adaptation in turn and record the parser's next complaint, plus what the adaptation touched. */
 export function stagingSequence(draft) {
   const staged = clone(draft);
   return ADAPTATIONS.map((adaptation) => {

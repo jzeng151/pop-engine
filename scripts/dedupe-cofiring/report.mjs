@@ -1,8 +1,4 @@
 // One call that produces every table in `docs/research/draft-dedupe-cofiring.md`.
-//
-// `cofiring.test.mjs` asserts the document's published figures against what this returns, and
-// prints the tables when `PRINT_TABLES=1` is set, so a reader can diff the document against the
-// run rather than trusting it.
 
 import { parseEngineRuleset } from "../../packages/engine/src/ruleset.ts";
 import {

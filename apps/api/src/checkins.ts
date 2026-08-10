@@ -3,9 +3,6 @@ import { Router, type Request, type Response } from "express";
 import type { Pool, QueryResult, QueryResultRow } from "pg";
 
 // F-401 app-less QR check-in (ARCHITECTURE.md API Surface + checkins schema).
-// Walk-ins work without F-302; an RSVP match is enrichment when the contact hits
-// the guest list for the same event. Contact is the identity key (UNIQUE event_id,
-// contact) — same name with a different contact is a different attendee.
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 

@@ -48,21 +48,7 @@ function failureMessage(body: unknown, fallback: string): string {
   return typeof error === "string" && error.length > 0 ? error : fallback;
 }
 
-/**
- * The admission limit, read from whichever contract generation the API speaks.
- *
- * `docs/ARCHITECTURE.md:9` rolls web and API independently, so this build can be talking to an
- * API that predates the `headcount` to `capacity` rename. Requiring `capacity` would reject that
- * response outright, emptying the guest list and taking the cancel controls with it until the API
- * deployment lands. The limit a pre-rename API serves under `headcount` is the limit that API
- * actually enforces, so it is read as the limit rather than discarded.
- *
- * A PRESENT `capacity` always wins, including when it is null: null is a current API stating that
- * no limit is confirmed, which is a different fact from an old API not having the field at all.
- * Only an absent `capacity` falls back. `undefined` signals a shape this page cannot read.
- *
- * `specs/F-302-rsvp-guest-list.md` records what removing this fallback needs.
- */
+/** The admission limit, read from whichever contract generation the API speaks. */
 function readLimit(event: Record<string, unknown>): number | null | undefined {
   if ("capacity" in event) {
     return typeof event.capacity === "number" || event.capacity === null

@@ -12,13 +12,6 @@ import { IntakeForm } from "./intake-form";
 const router = vi.hoisted(() => ({ push: vi.fn() }));
 vi.mock("next/navigation", () => ({ useRouter: () => router }));
 
-// Component tests for the questionnaire. The contract is parsed from the published
-// ruleset, not a stub, so a registry change moves these tests the same way it moves the
-// screen. Only `fetch` is faked: the api's own behavior is covered by the integration
-// suite in apps/api.
-
-// Resolved from the repo root, which is vitest's working directory: under jsdom
-// `import.meta.url` is the document's http URL, not a file one.
 const contract = parseIntakeContract(
   JSON.parse(readFileSync(resolve(publishedRulesFileIn("rules")), "utf8")),
 );
@@ -32,11 +25,6 @@ const savedEvent = (overrides: Record<string, unknown> = {}) => ({
   plan_stale: false,
 });
 
-/**
- * The api answers a save with the row it stored, which is the submission plus the
- * lifecycle columns. Echoing the request keeps the fake honest about the one thing
- * these tests turn on: a field the submission cleared comes back null.
- */
 const echoSavedEvent = (
   status: number,
   init: RequestInit,
@@ -46,7 +34,6 @@ const echoSavedEvent = (
     ...savedEvent({ ...JSON.parse(String(init.body)), ...overrides }),
   });
 
-/** The questions on screen, by their legend label, in the order they are asked. */
 const questionsOnScreen = (): string[] =>
   screen
     .getAllByRole("group")
@@ -65,7 +52,6 @@ const renderForm = (eventId?: string, activeContract = contract) => {
   return user;
 };
 
-/** Answer a radio question by its field name and the value the registry declares. */
 const chooseOption = async (
   user: ReturnType<typeof userEvent.setup>,
   field: string,
@@ -89,7 +75,6 @@ const fillField = async (
   await user.type(input, value);
 };
 
-/** Fill in a minimal park event: every always-asked question, nothing conditional. */
 const answerParkEvent = async (user: ReturnType<typeof userEvent.setup>) => {
   await fillField(user, "name", "Prospect Park Community Day");
   await chooseOption(user, "borough", "brooklyn");
@@ -333,7 +318,6 @@ describe("'I don't know' is a real answer (spec #3)", () => {
   it("keeps a quantity that was typed and then cleared out of the submission", async () => {
     const user = renderForm();
     await answerParkEvent(user);
-    // The kWh question is only on screen once the battery question is answered yes (nyc.v2.5).
     await chooseOption(user, "battery_present", "true");
     await fillField(user, "battery_system_kwh", "20.5");
     await fillField(user, "capacity", "400");
@@ -397,9 +381,7 @@ describe("loading a saved event to edit it", () => {
       document.querySelector<HTMLInputElement>('input[name="location_type"][value="park"]')
         ?.checked,
     ).toBe(true);
-    // Columns the form does not ask about are left where they are.
     expect(document.querySelector('input[name="status"]')).toBeNull();
-    // A park is not asked the SAPO questions, so the null column stays unanswered.
     expect(questionsOnScreen()).not.toContain("Obstructs public way");
   });
 
@@ -462,8 +444,6 @@ describe("loading a saved event to edit it", () => {
     cleanup();
 
     releaseEvent(jsonResponse(200, { event: storedEvent, plan_stale: false }));
-    // Nothing to assert on screen: the point is that the late answer updates no state
-    // and the test does not blow up on an unmounted component.
     await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
     expect(screen.queryByRole("status")).toBeNull();
   });
@@ -473,7 +453,6 @@ describe("loading a saved event to edit it", () => {
     renderForm("missing");
 
     expect((await screen.findByRole("alert")).textContent).toBe("event not found");
-    // Saving here would create a second event instead of editing the one asked for.
     expect(screen.queryByRole("button", { name: /^Save/ })).toBeNull();
   });
 });
@@ -513,8 +492,6 @@ describe("clearing an optional answer on an edit", () => {
     await save(user);
 
     await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
-    // Omitting them would leave the stored values in place: the api merges omissions
-    // with the stored row, so a cleared optional has to be said out loud.
     const edit = requestBody(fetchMock, 1);
     expect(edit).toHaveProperty("location_name", null);
     expect(edit).toHaveProperty("capacity", null);
@@ -657,7 +634,6 @@ describe("inline warnings render the published text (spec #4, #5)", () => {
     const warning = screen.getByRole("status");
     expect(warning.textContent).toContain(contract.alcoholInPublicSpaceNotice.text);
     expect(warning.textContent).toContain("ADV-ALCOHOL-PUBLIC-001");
-    // The status must stay visible: an uncovered area may not read as an evaluated one.
     expect(warning.textContent).toContain("COVERAGE_GAP");
   });
 
@@ -774,7 +750,6 @@ describe("saving and per-field errors", () => {
 });
 
 describe("editing a saved event", () => {
-  /** A selling street event, classified all the way down to its SAPO size. */
   const answerSellingStreetEvent = async (
     user: ReturnType<typeof userEvent.setup>,
     sapoEventType = "street_event",
@@ -816,7 +791,6 @@ describe("editing a saved event", () => {
     const [url, init] = fetchMock.mock.calls[1] as [string, RequestInit];
     expect(url).toBe("https://api.example.com/api/events/event-1");
     expect(init.method).toBe("PATCH");
-    // The hidden answers go out as explicit nulls rather than being left behind.
     const edit = requestBody(fetchMock, 1);
     expect(edit.location_type).toBe("park");
     expect(edit.obstructs_public_way).toBeNull();
@@ -826,9 +800,6 @@ describe("editing a saved event", () => {
   });
 
   it("drops a warning as soon as its answer stops applying, before any save", async () => {
-    // A published regulatory notice must not stand against a scope the event no longer
-    // has. The organizer sees the rescope take effect immediately; waiting for a
-    // successful save would leave a block-party notice on a park event in between.
     const user = renderForm();
     await answerSellingStreetEvent(user, "block_party");
     expect(screen.getByRole("status").textContent).toContain(
@@ -842,8 +813,6 @@ describe("editing a saved event", () => {
   });
 
   it("drops a warning whose answers the save cleared", async () => {
-    // The stored row is what the plan will be built from, so a warning about answers
-    // the row no longer holds is a false alarm the organizer cannot act on.
     const user = renderForm();
     await answerSellingStreetEvent(user, "block_party");
     await save(user);
@@ -864,8 +833,6 @@ describe("editing a saved event", () => {
   });
 
   it("keeps what was typed while the save was in flight", async () => {
-    // The rebuild from the stored row must not roll back edits the organizer made
-    // after pressing Save: those answers are newer than the response.
     const user = renderForm();
     await answerParkEvent(user);
     await fillField(user, "capacity", "400");
@@ -881,7 +848,6 @@ describe("editing a saved event", () => {
     );
     await save(user);
 
-    // Still editing while the request is open: one answer changed, one cleared.
     await fillField(user, "headcount", "175");
     await fillField(user, "location_name", "Long Meadow");
     await user.clear(document.querySelector<HTMLInputElement>('input[name="capacity"]')!);
@@ -892,10 +858,8 @@ describe("editing a saved event", () => {
     expect(document.querySelector<HTMLInputElement>('input[name="location_name"]')?.value).toBe(
       "Long Meadow",
     );
-    // The response carried capacity 400; clearing it after the submission wins.
     expect(document.querySelector<HTMLInputElement>('input[name="capacity"]')?.value).toBe("");
 
-    // And the next save sends the newer answers, not the ones the response carried.
     await save(user);
     await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
     expect(requestBody(fetchMock, 1).headcount).toBe(175);
@@ -919,7 +883,6 @@ describe("editing a saved event", () => {
     await save(user);
     await fillField(user, "headcount", "80");
 
-    // The api normalises an answer the organizer did not touch during the request.
     releaseSave(
       echoSavedEvent(201, submitted as RequestInit, { name: "Bushwick Street Activation (SAPO)" }),
     );
@@ -944,8 +907,6 @@ describe("editing a saved event", () => {
     await save(user);
     await waitFor(() => expect(screen.getByText(/Saved as revision 2/)).toBeDefined());
 
-    // Back to a street event: the SAPO questions return unanswered, because the row
-    // they were cleared from is the answer of record.
     await chooseOption(user, "location_type", "street");
     expect(
       document.querySelector<HTMLInputElement>('input[name="obstructs_public_way"][value="yes"]')
@@ -958,7 +919,6 @@ describe("editing a saved event", () => {
         ?.checked,
     ).toBe(false);
 
-    // And the next edit cannot resurrect the value the database cleared.
     fetchMock.mockImplementationOnce(async (_url: string, init: RequestInit) =>
       echoSavedEvent(200, init, { revision_counter: 3 }),
     );
@@ -967,9 +927,3 @@ describe("editing a saved event", () => {
     expect(requestBody(fetchMock, 2).street_event_size).toBeNull();
   });
 });
-
-// The spec #8 regenerate control moved to the event overview when the intake save began
-// redirecting there; its coverage lives in
-// apps/web/app/events/[id]/plan-stale-notice.test.tsx. One case did not move: a plan that
-// lands after a *concurrent save* has advanced the revision. That race needed a save and a
-// regeneration on one screen, and the overview has no save on it.

@@ -1,52 +1,3 @@
-// The plan boundary, run over what `evaluate` ACTUALLY EMITS.
-//
-// WHY THIS FILE EXISTS. Every other test of this boundary hands it a payload written by a test
-// author, and most of them were written to be REJECTED. A validator exercised only on invalid input
-// has never been shown to accept valid input, and three guards on this branch went out having been
-// shown exactly that: the identity check made `loadChecklist` report a whole checklist unreadable,
-// the widened-blocker path refused a stored plan whose blocker was promoted out of a branch, and
-// each was found by a reviewer rather than by a test (#252 review). Refusal here is not a degraded
-// page: `readPlan` returns null and the organizer sees no plan at all.
-//
-// SO THE ASSERTION IS THE WHOLE POINT AND IT IS ONE SENTENCE: for every scenario the engine can
-// produce, the boundary accepts it. No expected values, nothing pinned about the plan's content —
-// the acceptance suite already owns that. This owns the property that the two sides agree at all.
-//
-// THE CLOCKS ARE PART OF THE SWEEP. A fixture set evaluated at one date reaches one set of
-// deadline states, and the guards that failed were all about missed windows, promoted blockers and
-// undatable ones. So every scenario runs at the answer key's own clock, at a day inside each
-// published lead time, and past the event, which is what reaches `published_deadline_missed`,
-// INFEASIBLE and the branch promotion.
-//
-// WHAT THIS DOES NOT PROVE, AND THE LIMIT IS THE RULESET'S RATHER THAN THIS FILE'S. The sweep
-// covers every shape the PUBLISHED ruleset can emit, and that is a smaller set than the boundary
-// can be handed. `nyc-rules.v2.11.json` has one multi-member dedupe group, `dob-structure`, and
-// exactly one of its two routes publishes a window; publishing a window is what makes a route BIND,
-// since availability orders the pool before the date or the rule id are read. So on this file the
-// missed route of a merged group is ALWAYS the headline route, and a whole family of shapes is
-// unreachable here rather than merely absent:
-//
-//   • a blocker naming a non-headline route of a merged group, and any route-versus-route
-//     comparison that needs two dated routes in one group
-//   • a dated `advisory` or `no_new_requirement` route, so the non-filing copy branches
-//   • a `prohibited_or_ineligible` rule with a published deadline, so a barred blocker
-//   • a scalar-free merged line, which needs a resolved route that does not contribute the merged
-//     disposition
-//   • a replayed plan whose blocking rule is no longer among its findings, since this evaluates
-//     fresh plans only
-//
-// Those are covered by hand-built tests, which is the honest arrangement and not a substitute: a
-// hand-built test proves the boundary does what its author expected, and this file proves the
-// boundary and the engine agree. `rules/proposals/nyc-rules.v2-full-draft.json` would reach most of
-// them — six of its nine multi-member groups have two or more routes publishing deadlines — and
-// `parseEngineRuleset` cannot read it yet (`deadline.type: "conditional"`). Recorded as #269
-// rather than worked around here. This file resolves the ruleset by PATTERN, so the day
-// those shapes land in a published file they are swept with no edit.
-//
-// THE CALENDAR IS TOO. Production publishes NO holiday list (`apps/api/src/calendar.ts`), so
-// `business_days_minimum` windows evaluate `not_calculable` there and datable in tests. Both are
-// real deployments of this engine and both are swept.
-
 import { readFileSync, readdirSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -63,11 +14,7 @@ import { loadPlan } from "./plan-api";
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../../..");
 const rulesDirectory = path.join(repoRoot, "rules");
-/**
- * The published ruleset, found rather than named. `scripts/check-baseline-drift.mjs` fails any
- * source file that spells the artifact's version, so that a publish is one file rename and not a
- * sweep through the tree; this resolves it the same way `packages/engine/src/__fixtures__` does.
- */
+
 const published = readdirSync(rulesDirectory).filter((entry) =>
   /^nyc-rules\.v[\d.]+\.json$/.test(entry),
 );
@@ -78,30 +25,13 @@ const ruleset = parseEngineRuleset(
   JSON.parse(readFileSync(path.join(rulesDirectory, published[0] as string), "utf8")),
 );
 
-/** The two calendars this engine is deployed with: the published empty list, and none at all. */
 const CALENDARS: readonly PublishedHolidayCalendar[] = [
   { id: ruleset.calendarId, holidays: [] },
-  // What production deploys: the list itself is still RESEARCH_REQUIRED, so business-day windows
-  // evaluate `not_calculable` there (`apps/api/src/calendar.ts`).
   { id: ruleset.calendarId, holidays: null as unknown as readonly string[] },
 ];
 
-/**
- * Clocks that reach different deadline states for the same intake. The answer key's own day, one
- * inside the published lead times, and one past every fixture event date.
- */
 const CLOCKS = [FIXTURE_TODAY, "2026-08-20", "2026-12-01"] as const;
 
-/**
- * The api's storage envelope around the engine's plan, which is what the browser is served.
- *
- * ONE FIELD IS RESTATED FROM `plan.ts` AND IT IS THE ONLY ONE. The engine omits
- * `lastVerifiedDate` on a rule that publishes none, to keep historical finding shapes byte-stable;
- * `plan.ts` reads it out of a column and therefore always emits it, null included, which is why the
- * wire type requires it. Everything else here is the engine's own object, untouched. If the api
- * ever normalizes a second field, this sweep stops modelling it and that is a real limit of the
- * check, stated rather than hidden.
- */
 const served = (plan: PermitPlan) => ({
   ...plan,
   findings: plan.findings.map((finding) => ({
@@ -132,19 +62,6 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
-/**
- * THE FIXTURES ANSWER EVERYTHING, AND THAT IS THE GAP. Every scenario in the answer key is
- * specified completely — `inferred` has been empty for all six since v4 — so no fixture leaves an
- * intake field unanswered, `evaluateTrigger` never returns `unknown`, `evaluateConditional` never
- * branches, and the whole family of shapes that only exists behind a branch is unreachable from
- * them: `missingFacts` with branch tables, a CONDITIONAL verdict reached by divergence, and the
- * blocker PROMOTED out of a branch that this file was written for.
- *
- * So the sweep also runs each scenario with one answer REMOVED. That is not a synthetic payload: it
- * is what an intake looks like before an organizer has finished it, the engine's own tri-state path
- * handles it, and the plan the engine returns for it is one the api will serve. The fields listed
- * are the ones the published ruleset branches on.
- */
 const UNANSWERED_FIELDS = [
   "sapo_event_type",
   "street_event_size",
@@ -171,8 +88,6 @@ describe("the plan boundary over real engine output", () => {
           stubFetch(served(plan));
 
           const result = await loadPlan("https://api.example.com", "event-1");
-          // The message is included because a bare `false` says nothing about WHICH guard refused,
-          // and the whole failure mode this file exists for is a guard nobody expected to fire.
           expect(result.ok ? null : result.message).toBeNull();
         });
       }
@@ -185,8 +100,6 @@ describe("the plan boundary over real engine output", () => {
       if (!(field in submitted)) continue;
       for (const [index, calendar] of CALENDARS.entries()) {
         it(`accepts scenario ${fixture.scenario} with ${field} unanswered (calendar ${index})`, async () => {
-          // The late clock, because a branch that closes the plan is what promotes a blocker out of
-          // it, and that needs a published window already past.
           const plan = evaluate(
             { ...submitted, [field]: null } as unknown as EventIntake,
             ruleset,

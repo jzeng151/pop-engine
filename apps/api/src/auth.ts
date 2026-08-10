@@ -32,6 +32,7 @@ export function createAccessTokenVerifier(
       });
       if (!response.ok) return null;
       const settings: unknown = await response.json();
+      // Fail closed unless email auto-confirm is disabled; authenticated sessions still require verification.
       if (
         typeof settings !== "object" ||
         settings === null ||

@@ -12,39 +12,7 @@ import type { ConsumedFinding, ConsumedRoute } from "./plan-api";
 import type { HeadlineMode } from "@pop-engine/engine";
 import { offersAFilingAction } from "@pop-engine/engine";
 
-// F-206 AC 2 and AC 3: every plan line carries its citation and its verification status, both
-// visible. Every string an organizer reads is either published in the rules artifact and carried
-// through the plan, one of the schema's own status/kind tokens, or approved copy that adds no
-// regulatory value of its own. There is one of the last: `businessDayNotice`, whose copy is approved
-// as regulatory content (product owner, 2026-08-08; recorded in `docs/BASELINE.md`) and which states
-// no deadline, no count and no agency practice, only the agency's published name.
-//
-// PROGRESSIVE DISCLOSURE, and nothing is removed. A line renders twenty-three distinct blocks, and
-// Scenario F renders eight lines, which is a page an organizer scrolls past rather than reads. The
-// split below is only between what is visible before an interaction and what is one interaction
-// away; every field this file rendered before still renders.
-//
-// WHAT IS IN THE SUMMARY, and why each thing that is not obvious is there:
-//
-//   • name, agency, fee, the deadline, the verification badge and the citation — what the organizer
-//     came for: what is required, what it costs, when, and on whose authority.
-//   • DISPOSITION, which no brief listed and which belongs here more than most: "required" versus
-//     "may be required" versus "prohibited or ineligible" is the answer to "what do I actually have
-//     to do", and a summary that omits it makes eight lines look alike.
-//   • deadlineDisplay and the deadline TYPE label, because they are part of the deadline rather
-//     than decoration on it. A NOT_CALCULABLE line has no computed date, so the published prose is
-//     the only timing it has; SAPO-INSURANCE-001 has neither prose nor date and its type label
-//     ("before issuance") is its whole timing requirement. Hiding those leaves a line that states
-//     no deadline at all, which is the one thing the summary exists to state.
-//   • the RESEARCH_REQUIRED and COVERAGE_GAP lines, because each explains an ABSENCE the summary
-//     would otherwise show as an empty cell. A citation slot with nothing in it reads as a
-//     rendering fault; "confirm with the agency" reads as the finding it is.
-//
-// Everything else is in the panel: the sources beyond the first, the rule ids, the last-verified
-// date, the notes and note text, the portal block, the conflict text, the earliest-realistic-filing
-// date, and the two timeline explanations. The conflict text sits there while the badge saying
-// OFFICIAL CONFLICT stays in the summary, so the caveat is signalled where it is scannable and
-// stated in full one interaction away.
+// F-206 AC 2 and AC 3: every plan line carries its citation and its verification status, both visible.
 
 const humanize = (token: string): string => token.replace(/_/g, " ");
 
@@ -75,17 +43,7 @@ type PublishedTiming = Pick<
   "deadline" | "deadlineDisplay" | "latestApplyDate" | "applyAfterDate" | "deadlineStatus"
 >;
 
-/**
- * The published deadline's own type, for a rule that states a kind of deadline but no prose and
- * no computable date. SAPO-INSURANCE-001 publishes `{type: "before_issuance"}` and nothing else:
- * "before issuance" is the whole timing requirement, and dropping it leaves the line silent about
- * when the insurance has to exist.
- *
- * A ROUTE PUBLISHES THAT SHAPE TOO. A non-binding route in it has `deadlineStatus: "not_applicable"`
- * and no dates, so the route entry's timing block was suppressed whole and the type went with it,
- * on the one surface a merged line has for a non-binding route's window (#252 review). Same rule,
- * same copy, read off whichever of the two is asking.
- */
+/** The published deadline's own type, for a rule that states a kind of deadline but no prose and no computable date. */
 const deadlineTypeLabel = (timing: PublishedTiming): string | null =>
   timing.deadlineDisplay === null &&
   timing.latestApplyDate === null &&
@@ -105,23 +63,7 @@ function VerificationBadge({ status }: { status: ConsumedFinding["verificationSt
   );
 }
 
-/**
- * Report EVERY source that has no resolved URL, whether or not its citation is currently on screen.
- *
- * F-206's Edge Cases pair the text-only fallback below with "log loudly", and loudly is the
- * operative half. The state should be unreachable — every rule in the published ruleset carries at
- * least one URL on its source — so reaching it means a stored plan has lost its click-through, and
- * a plan row is immutable with nothing re-deriving it, so no later read repairs or reports it. The
- * log is the only way an operator finds out. Not surfaced to the organizer: they can do nothing
- * with it, and the citation text they see is still correct.
- *
- * ON THE LINE RATHER THAN INSIDE `Citation`, which is where it used to be. Every source past the
- * first renders inside the disclosure, and the disclosure is UNMOUNTED while collapsed, so an
- * effect inside the citation never ran for them: a second source that had lost its URL was reported
- * only if an operator happened to expand that one line, which is not a check. The line is mounted
- * whatever the disclosure is doing, so the audit sees all of `finding.sources` and the panel can
- * stay unmounted.
- */
+/** Report EVERY source that has no resolved URL, whether or not its citation is currently on screen. */
 function useSourceUrlAudit(sources: readonly FindingSource[]): void {
   useEffect(() => {
     for (const source of sources) {
@@ -184,29 +126,7 @@ function SummarySources({ sources }: { sources: readonly SummarySourceLink[] }) 
   );
 }
 
-/**
- * The published values a reader compares two routes on. Two routes "publish the same thing" when
- * every one of these is equal, which is a comparison of published values rather than a judgement.
- *
- * `triggerResult` IS ONE OF THEM, and leaving it out made the whole candidate block vanish on the
- * plan a candidate block exists for. Two routes alike in name, window and fee but differing in
- * whether their trigger resolved are not two renderings of one permit: one is triggered and the
- * other is the open question, the entries below label them differently, and the introduction is
- * built out of exactly that difference. Collapsed to one signature, `Routes` returned null and the
- * plan page said nothing while `checklist-item.tsx` rendered its deciding question off the same
- * payload — two surfaces disagreeing on one plan (#252 review).
- *
- * READ ONLY IN `applies_together` MODE, which is the other half of that same defect and is enforced
- * at the call rather than by a further field here. See `Routes`.
- */
-/**
- * The deciding question a candidate line is headed by, which is the approved route-list design
- * §5.3: "the heading is the question, not a permit". A candidate group has not settled which of
- * its published routes applies, so the heading a line would otherwise carry — the summary heading
- * or the binding route's permit name — states one unresolved candidate as the requirement. The
- * same sentence the routes block used to lead with, moved to where the design puts it and rendered
- * once.
- */
+/** The deciding question a candidate line is headed by, which is the approved route-list design §5.3: "the heading is the question, not a permit". */
 export const CANDIDATE_HEADING = "The answers so far do not say which of these applies.";
 
 /**
@@ -219,41 +139,7 @@ const candidateRoutesOf = (finding: ConsumedFinding): readonly ConsumedRoute[] |
   return routes;
 };
 
-/**
- * EXACTLY WHAT THE ENTRY DISPLAYS, as the values it displays, so that rendering and comparing read
- * one list instead of two.
- *
- * THREE ROUNDS OF THE SAME DEFECT, AND THE THIRD POINTED THE OTHER WAY. A hand-listed signature
- * missed the typed deadline when entries started rendering it, then `conflictText` the round it was
- * added: both collapsed a group whose entries differ and dropped a sibling's published value. So
- * the signature was derived from the whole route instead — and that admitted `notes` and
- * `unknownFields`, which the entry does NOT render, so two entries displaying the same twelve
- * values signed differently and the block listed one permit twice under a heading saying two routes
- * were triggered. Design §5.1 forbids exactly that (#252 review).
- *
- * I ARGUED THE SECOND DIRECTION WAS SAFE AND IT IS NOT. The reasoning was that showing two
- * identical-looking entries is a rendering fault while dropping a published value is a regulatory
- * one, so failing towards the first was the cheap trade. It is not a trade §5.1 permits: three of
- * the draft's nine multi-member groups publish byte-identical outputs and are the ones that merge
- * most often, so the "rendering fault" is the common case for the very groups the collapse exists
- * for, and a block listing one permit twice under "both of these have their conditions met" is a
- * rendering fault presented as regulatory content.
- *
- * NEITHER LIST CAN DRIFT NOW, BECAUSE THERE IS ONE. `Route` renders from this object, field by
- * field, and `routeSignature` stringifies the same object. A value the entry stops displaying
- * leaves the signature by deletion; a value it starts displaying has to be added here to render at
- * all. That is what makes this different from widening or narrowing the old list again: the two
- * were separate maintenance tasks, and every round one of them was forgotten.
- *
- * WHAT IS DELIBERATELY ABSENT, and why each is not a value this entry displays:
- *
- *   • `ruleId` on its own. It appears only as the name's fallback, which `name` below carries.
- *     Comparing the id itself would collapse nothing at all, since it differs on every pair.
- *   • `notes` and `unknownFields`. The merged disclosure renders the first and the candidate
- *     introduction reads the second; neither is on the entry, and both are still on the page.
- *   • `slackDays`, `triggerResult` beyond the label, and the deadline beyond its published type.
- *     None reaches the entry as a value a reader sees.
- */
+/** EXACTLY WHAT THE ENTRY DISPLAYS, as the values it displays, so that rendering and comparing read one list instead of two. */
 const entryValues = (route: ConsumedRoute, mode: HeadlineMode) => ({
   label:
     mode === "candidate" ? (route.triggerResult === "true" ? "Conditions met" : "May apply") : null,
@@ -277,23 +163,7 @@ const entryValues = (route: ConsumedRoute, mode: HeadlineMode) => ({
 const routeSignature = (route: ConsumedRoute, mode: HeadlineMode): string =>
   JSON.stringify(entryValues(route, mode));
 
-/**
- * One contributing route of a merged line, with its own name, window and fee.
- *
- * `Conditions met` prefixes a resolved entry rather than restating the disposition in a second
- * voice: in a candidate list an organizer has to be able to tell, per entry, which routes' own
- * conditions the recorded answers meet. It does not say "Applies", because those are different
- * claims and only the first is one this label can make: a route whose trigger resolved can still
- * publish `MAY_BE_REQUIRED`, and DOB-TALL-STRUCTURE-001 does. What the route then requires is the
- * disposition beside it, in the rule's own words. `May apply` is unchanged.
- *
- * THIS WORDING IS APPROVED COPY, amended into design §5.3 on 2026-08-09 by a product-owner decision
- * recorded in `docs/BASELINE.md`. The section as approved said `Applies`, and an earlier revision of
- * this branch substituted `Triggered` on the reasoning above, which was the right diagnosis and not
- * this lane's decision to act on (#252 review). The amendment settles it in neither word: `Applies`
- * overstates what a resolved trigger asserts, and `Triggered` is engine vocabulary in copy an
- * organizer reads.
- */
+/** One contributing route of a merged line, with its own name, window and fee. */
 function Route({ route, mode }: { route: ConsumedRoute; mode: HeadlineMode }) {
   // EVERY VALUE THIS ENTRY DISPLAYS, read once. `routeSignature` stringifies the same object, so
   // the collapse test cannot compare a field this does not render or miss one it does.
@@ -380,34 +250,7 @@ function Route({ route, mode }: { route: ConsumedRoute; mode: HeadlineMode }) {
   );
 }
 
-/**
- * The contributing routes of a merged dedupe line, and why they arrived on one line.
- *
- * NOTHING RENDERS WHEN THE ROUTES PUBLISH THE SAME THING, AND ONLY WHEN THEY ALSO APPLY TOGETHER.
- * Three of the nine multi-member groups in the v2 full draft publish byte-identical outputs and are
- * the ones that merge most often (`docs/research/draft-dedupe-cofiring.md` §5.2, §5.7, §5.8), and
- * listing one permit twice under a heading saying two routes were triggered would be a rendering
- * fault presented as regulatory content. That argument is entirely about the `applies_together`
- * heading, and applying it to a candidate list deleted the only surface that carries the question.
- *
- * A CANDIDATE INTRODUCTION IS NOT A SECOND COPY OF THE ENTRIES. It says how many published routes
- * are open, how many are triggered so far, and WHICH ANSWERS WOULD DECIDE IT — none of which is on
- * an entry, and the last of which is the organizer's way out of the unresolved state. Where every
- * route is unresolved and the outputs match, every signature is equal (`unknownFields` is not one of
- * them and every `triggerResult` is "unknown"), so the collapse threw all of that away and the plan
- * page said nothing while `checklist-item.tsx` rendered the deciding question off the same payload:
- * the same two-surface disagreement, one case further on (#252 review).
- *
- * NOT REPAIRED BY WIDENING THE SIGNATURE, which is the tempting version. Adding `unknownFields`
- * leaves the case reported intact whenever the routes are open on the SAME answers, which is the
- * commonest candidate group there is. The mode is what decides whether the collapse is sound at all,
- * so the mode is where the test belongs.
- *
- * A CANDIDATE LIST MUST NOT READ AS A LIST OF REQUIREMENTS. Three things keep it from doing so: the
- * introduction says the answers do not decide it, every unresolved entry is prefixed "May apply",
- * and no entry is rendered as an action. Nothing here composes a regulatory claim: every value is a
- * route's own published value, and the only sentences are the fixed ones below.
- */
+/** The contributing routes of a merged dedupe line, and why they arrived on one line. */
 function Routes({ finding }: { finding: ConsumedFinding }) {
   const routes = finding.routes ?? null;
   const mode = finding.headlineMode ?? null;
@@ -419,13 +262,7 @@ function Routes({ finding }: { finding: ConsumedFinding }) {
     return null;
   }
 
-  // BOTH SETS OF UNKNOWNS, which is what the approved copy asks for: "the `deadlineUnknownFields`
-  // and trigger fields the unresolved routes' triggers left open" (design §5.3). A route's
-  // `unknownFields` are only its trigger's. A candidate group can also have an unanswered field
-  // that its filing timeline depends on, and listing only the trigger fields told the organizer
-  // that answering those "would decide it" while the dates stayed unresolved on an answer the
-  // sentence never named (#252 review). `deadlineUnknownFields` is the finding's, concatenated
-  // over every route, because a deadline unknown is not per route on the merged line.
+  // BOTH SETS OF UNKNOWNS, which is what the approved copy asks for: "the `deadlineUnknownFields` and trigger fields the unresolved routes' triggers left open" (design §5.3).
   const deciding = [
     ...new Set([
       ...routes.flatMap((route) => route.unknownFields),
@@ -433,27 +270,14 @@ function Routes({ finding }: { finding: ConsumedFinding }) {
     ]),
   ];
   const applying = routes.filter((route) => route.triggerResult === "true").length;
-  // The last entry an organizer can act on, and what still hangs over it: the unsettled routes by
-  // their own published names, and the fields THEIR triggers left open, which are not the whole
-  // group's `deciding` list. Rendered only in candidate mode and only where there is a settled entry
-  // to sit beneath; in candidate mode there is always at least one unsettled route.
+  // The last entry an organizer can act on, and what still hangs over it: the unsettled routes by their own published names, and the fields THEIR triggers left open, which are not the whole group's `deciding` list.
   const unsettled = routes.filter((route) => route.triggerResult === "unknown");
   const lastSettled = routes.reduce(
     (last, route, index) => (route.triggerResult === "true" ? index : last),
     -1,
   );
   const unsettledFields = [...new Set(unsettled.flatMap((route) => route.unknownFields))];
-  // INTERROGATIVE, NOT PREDICTIVE, and that is the whole point of the sentence's shape. An
-  // unknown-triggered `required` rule is demoted to `may_be_required` by `resolveDisposition`, so
-  // the unsettled route's own entry one line below reads "May apply" beside `may be required`.
-  // "X would also be required" promoted it back to a definite requirement, contradicting its own
-  // entry one line apart and reinstating exactly the claim `Applies` was amended away for
-  // (product owner, 2026-08-09, correcting the same day's own amendment). "Whether X also applies"
-  // asserts nothing about X: it names the open question, which is what the routes already say.
-  //
-  // No fields, no sentence: there would be nothing to name as the thing it turns on, and
-  // `routeContractHolds` refuses an unresolved route that names no field, so in candidate mode
-  // there is always at least one.
+  // INTERROGATIVE, NOT PREDICTIVE, and that is the whole point of the sentence's shape.
   const unsettledSentence =
     mode !== "candidate" ||
     lastSettled === -1 ||
@@ -579,13 +403,7 @@ export function PlanLine({ finding }: { finding: ConsumedFinding }) {
   // (design §5.3, #252 review).
   const isCandidate = candidateRoutesOf(finding) !== null;
   const heading = isCandidate ? CANDIDATE_HEADING : name;
-  // WHAT THE DISCLOSURE IS LABELLED BY, which is not `name` on a candidate line. `name` is the
-  // BINDING route's — the merged summary's heading, or `finding.name` — and what the panel holds is
-  // the whole group's rule ids, notes and sources. Labelling it "for <one permit>" states the very
-  // attribution the heading above refuses to make, and where a summary exists the visible label is
-  // route-neutral while only the announced one carried the permit, so a screen-reader user heard a
-  // settled attribution a sighted user did not. `trackingLabel` in `checklist-item.tsx` is the same
-  // value for the same reason, decided one round earlier on the other surface (#252 review).
+  // WHAT THE DISCLOSURE IS LABELLED BY, which is not `name` on a candidate line.
   const labelledBy = isCandidate ? ruleIds : name;
   const [primarySource, ...furtherSources] = finding.sources;
   const deadlineSources = [

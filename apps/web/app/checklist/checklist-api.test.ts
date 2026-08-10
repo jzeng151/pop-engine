@@ -14,11 +14,7 @@ import {
 } from "./checklist-api";
 import { checklistBody, planContext, STREET_MEDIUM, trackedItem } from "./checklist-fixtures";
 
-/** An event nobody has given a contact for, which is what the store answers by default. */
 const NO_CONTACT = { email: null, phone: null };
-
-// `fetch` is stubbed; the api's own behavior is covered by apps/api. What is pinned here is the
-// request this page makes and how each answer is reported.
 
 const jsonResponse = (status: number, body: unknown): Response =>
   new Response(JSON.stringify(body), { status, headers: { "Content-Type": "application/json" } });
@@ -106,8 +102,6 @@ describe("loadChecklist", () => {
     });
   });
 
-  // The point of the consumed-type discipline: a field this page reads cannot go unvalidated.
-  // Dropping any one of them has to be refused, whichever it is.
   it.each(CONSUMED_ITEM_FIELDS)("refuses a checklist row missing %s", async (field) => {
     stubFetch(async () =>
       jsonResponse(200, checklistBody({ items: [omit(trackedItem(), field)] })),
@@ -120,11 +114,6 @@ describe("loadChecklist", () => {
   });
 
   it("reads a checklist from an API that has not deployed the reconciliation notice yet", async () => {
-    // Web and api are deployed separately, so a web-first rollout meets an api that does not send
-    // `alertsHeldForReconciliation` yet. Refusing the body over it replaces the organizer's whole
-    // checklist with "this page cannot read it" for the length of the rollout, to withhold a
-    // notice that has nothing to report until the api can report it. Absent is read as none —
-    // which is what it is — and every other field stays as strictly checked as before.
     const body = checklistBody({ created: true, items: [trackedItem()] }) as Record<
       string,
       unknown
@@ -138,10 +127,6 @@ describe("loadChecklist", () => {
   });
 
   it("reads a failed delivery from an API that does not qualify the paused notice yet", async () => {
-    // Same rollout, one field further in: web goes first, so this page meets an api whose failed
-    // deliveries carry no `attemptedWithoutOutcome`. Refusing the body would cost the organizer
-    // the whole checklist over a qualification, and inventing `false` would be a claim the api did
-    // not make. Absent stays absent and the notice says what it said before.
     stubFetch(async () =>
       jsonResponse(
         200,
@@ -162,8 +147,6 @@ describe("loadChecklist", () => {
   });
 
   it("refuses a failed delivery whose qualification is not a boolean", async () => {
-    // Optional is not unchecked: a field this page reads still has to prove its type when it is
-    // there, which is the consumed-type discipline the rest of this suite pins.
     stubFetch(async () =>
       jsonResponse(
         200,
@@ -233,14 +216,6 @@ describe("loadChecklist", () => {
     });
   });
 
-  /**
-   * #252: the checklist serves `routes` and `headlineMode` exactly as the plan endpoint does, and
-   * until now applied none of the plan boundary's cross-field rules to them. `PlanContextBody`
-   * reads routes only in `candidate` mode, so a row claiming `applies_together` over a route whose
-   * own trigger is `unknown` had the deciding question suppressed on the surface the organizer
-   * works the item through: a material unknown disappearing, which is what the engine invariants
-   * forbid. The row and the context line are both checked, and both halves of the presence rule.
-   */
   const mergedRoutes = (triggerResult: string) => [
     {
       ruleId: "PARKS-EVENT-001",
@@ -263,8 +238,7 @@ describe("loadChecklist", () => {
     {
       ruleId: "SAPO-PERMIT-001",
       triggerResult,
-      // The pair the engine produces: an unresolved trigger always names the field it stopped on,
-      // and a resolved one names none, which the boundary now reads rather than assumes.
+
       unknownFields: triggerResult === "unknown" ? ["sapo_event_type"] : [],
       disposition: "required",
       name: "SAPO permit",
@@ -334,20 +308,13 @@ describe("loadChecklist", () => {
     }
   });
 
-  /**
-   * #252 review: the same invariant the plan boundary applies, at the door the organizer works the
-   * item through. `routes` and `ruleIds` are built from one group, so a row repeating one rule's
-   * route, or carrying a route for a rule the row does not name, renders the duplicate while the
-   * other rule's window, fee and portal are absent from a row that names it.
-   */
   it("refuses a row whose routes do not match its own rule ids", async () => {
     const routes = mergedRoutes("true");
     const rows = [
-      // Two routes, both the same rule.
       { routes: [routes[0], { ...routes[1], ruleId: "PARKS-EVENT-001" }] },
-      // A route for a rule the row does not name.
+
       { routes, ruleIds: ["PARKS-EVENT-001", "DOB-TENT-001"] },
-      // A third rule named with no route of its own.
+
       { routes, ruleIds: ["PARKS-EVENT-001", "SAPO-PERMIT-001", "DOB-TENT-001"] },
     ];
     for (const row of rows) {
@@ -372,19 +339,11 @@ describe("loadChecklist", () => {
     }
   });
 
-  /**
-   * #252 review: the sibling invariant, on the one field only this boundary carries.
-   * `filingRouteRuleId` names the route the window, status, fee and filing details were read off,
-   * and the api sets it from a route of the row's own list. Named as anything else, `PlanContextBody`
-   * resolves no route, drops the attribution sentence and leaves the alternate route's date, fee and
-   * portal rendered under the binding permit's heading — crossed values reading as a complete row.
-   */
   it("refuses a filing-route id that is not one of the row's own routes", async () => {
     const routes = mergedRoutes("true");
     const rows = [
-      // A rule the row does not carry a route for.
       { routes, headlineMode: "applies_together", filingRouteRuleId: "DOB-TENT-001" },
-      // No route list at all, so the id names nothing.
+
       { filingRouteRuleId: "PARKS-EVENT-001" },
     ];
     for (const row of rows) {
@@ -398,13 +357,6 @@ describe("loadChecklist", () => {
     }
   });
 
-  /**
-   * #252 review: the sibling of the plan boundary's widened-blocker group. The api writes `routes`,
-   * `headlineMode` and `filingRouteRuleId` in one object literal, so a row carrying some of them is
-   * one no deployment produces, and the missing field is not read as missing: `gatedRoutesOf` falls
-   * back to `routes[0]` when `filingRouteRuleId` is absent, so the row silently treats the first
-   * route as the one its scalars came from and skips that route's gate.
-   */
   it("refuses a row carrying only part of the route group", async () => {
     const routes = mergedRoutes("true");
     const partials = [
@@ -425,7 +377,6 @@ describe("loadChecklist", () => {
     }
   });
 
-  /** Absence of all three is the api deployed before the checklist served routes, and still reads. */
   it("reads a row from an api that serves none of the route group", async () => {
     const item = trackedItem() as Record<string, unknown>;
     for (const field of ["routes", "headlineMode", "filingRouteRuleId"]) delete item[field];
@@ -436,12 +387,6 @@ describe("loadChecklist", () => {
     });
   });
 
-  /**
-   * #252 review: NAMING THE RIGHT ROUTE IS NOT THE SAME AS CARRYING ITS VALUES. Membership alone
-   * still accepted a row whose date, status, fee or portal came from a different route than the one
-   * it names, and `PlanContextBody` states in as many words that the filing details above belong to
-   * the named route — so the row asserts an attribution that is false rather than dropping one.
-   */
   it("refuses a row whose filing fields are not the named route's", async () => {
     const routes = mergedRoutes("true");
     const named = routes[1] as Record<string, unknown>;
@@ -474,12 +419,6 @@ describe("loadChecklist", () => {
     }
   });
 
-  /**
-   * #252 review: a null filing id is a claim too. It says the values above are the line's OWN, and a
-   * merged line's own values are its binding route's — `routes[0]`. A row carrying the SECOND
-   * route's date, fee or portal beside a null id asserts that about values no route publishes as
-   * the line's, which is the same crossing the named-route branch refuses, on the normal case.
-   */
   it("refuses a row whose own filing fields are not its binding route's", async () => {
     const routes = mergedRoutes("true");
     const crossed = [
@@ -510,15 +449,6 @@ describe("loadChecklist", () => {
     }
   });
 
-  /**
-   * #252 review: THE IDENTITY IS THE BINDING ROUTE'S TOO, and it is not part of the filing tuple.
-   *
-   * `permitName` and `agency` are not attributed by `filingRouteRuleId`: the api reads them off the
-   * row's own columns, which on a merged line are `routes[0]`'s. Unchecked, a row could take its
-   * name from one route and its date, fee and portal from another and clear every check, and
-   * `displayName()` heads the row and the disclosure with that name while the metadata row prints
-   * that agency — one permit's identity over another permit's filing.
-   */
   it("refuses a row whose permit name or agency is not its binding route's", async () => {
     const routes = mergedRoutes("true");
     const binding = routes[0] as Record<string, unknown>;
@@ -532,8 +462,7 @@ describe("loadChecklist", () => {
               trackedItem(STREET_MEDIUM, {
                 routes,
                 headlineMode: "applies_together",
-                // Named, so the FILING fields are legitimately the second route's while the identity
-                // above them must still be the binding route's. Both halves of the row are checked.
+
                 filingRouteRuleId: (routes[0] as Record<string, unknown>).ruleId,
                 ...override,
               }),
@@ -547,7 +476,6 @@ describe("loadChecklist", () => {
       });
     }
 
-    // Not vacuous: the same row with the binding route's own identity reads.
     stubFetch(async () =>
       jsonResponse(
         200,
@@ -569,29 +497,9 @@ describe("loadChecklist", () => {
     });
   });
 
-  /**
-   * #252 review: THE IDENTITY EXCEPTION AND THE FILING-TUPLE EXCEPTION ARE NOT ONE EXCEPTION.
-   *
-   * On the approved scalar-free shape the engine nulls the identity, and `filingRouteOf` then fills
-   * the filing tuple from a route that publishes a window and names it. So the filed fields are NOT
-   * null, the all-null exception does not apply, and the identity was compared against `routes[0]`
-   * — which has a name. The row the api itself serves was rejected and the organizer's whole
-   * checklist read as unreadable, which is worse than any crossing the check prevents.
-   */
-  /**
-   * #252 review: THE THIRD BOUNDARY TO DEFINE THE BINDING ROUTE RATHER THAN CHECK IT.
-   *
-   * Everything `filingRouteIsCarried` does rests on `routes[0]`: the identity and the filing tuple
-   * are compared against it wherever the row names no filing route, and `attributedRouteOf` names
-   * that route in words on a candidate row. So a reordered payload that copies the new first
-   * route's identity and tuple satisfied every comparison and the row named the wrong rule.
-   *
-   * `bindingRouteOf` is the engine's own selection, exported on this PR for the plan boundary and
-   * used unchanged here rather than written a third time.
-   */
   it("refuses a row whose routes are not in binding order", async () => {
     const [first, second] = mergedRoutes("true") as Record<string, unknown>[];
-    // Availability ties, so the engine binds the EARLIER published date.
+
     const tight = { ...second, latestApplyDate: "2026-03-01", deadlineStatus: "on_track" };
     const loose = { ...first, latestApplyDate: "2026-09-01", deadlineStatus: "on_track" };
     const rowWith = (routes: Record<string, unknown>[]) => {
@@ -620,7 +528,6 @@ describe("loadChecklist", () => {
       ok: false,
     });
 
-    // NOT VACUOUS: the same two routes in the order the engine produces read.
     stubFetch(async () => jsonResponse(200, rowWith([tight, loose])));
     await expect(loadChecklist("https://api.example.com", "event-1")).resolves.toMatchObject({
       ok: true,
@@ -628,9 +535,6 @@ describe("loadChecklist", () => {
   });
 
   it("reads a scalar-free row whose filing fields are attributed to a route", async () => {
-    // IN BINDING ORDER: the unresolved route is the only one contributing the merged
-    // `may_be_required`, so it binds even though its own trigger has not resolved. That is exactly
-    // what makes the row scalar-free, and the filing tuple is then attributed to it by name.
     const routes = [
       {
         ...(mergedRoutes("unknown")[1] as object),
@@ -650,8 +554,7 @@ describe("loadChecklist", () => {
               routes,
               disposition: "may_be_required",
               headlineMode: "candidate",
-              // What `planContext` serves: no identity of its own, and the filing tuple attributed
-              // to the route that publishes the window.
+
               filingRouteRuleId: (routes[1] as Record<string, unknown>).ruleId,
             }),
           ],
@@ -664,11 +567,6 @@ describe("loadChecklist", () => {
     });
   });
 
-  /**
-   * The approved state where the row's filing fields are nobody's: no resolved route contributes the
-   * merged disposition, so the line publishes none of them (design §4.3, amended 2026-08-09). It
-   * must not be read as a crossed row.
-   */
   it("reads a row that publishes no filing fields of its own", async () => {
     stubFetch(async () =>
       jsonResponse(
@@ -676,10 +574,6 @@ describe("loadChecklist", () => {
         checklistBody({
           items: [
             trackedItem(STREET_MEDIUM, {
-              // THE CONDITION, NOT THE SHAPE: a resolved route BELOW `required`, so the ceiling
-              // does not bite and the unknown route alone carries the group to `may_be_required`.
-              // IN BINDING ORDER, which here is the UNRESOLVED route: it is the only one
-              // contributing the merged `may_be_required`, so it is the whole pool.
               routes: [
                 { ...(mergedRoutes("unknown")[1] as object), disposition: "may_be_required" },
                 { ...(mergedRoutes("true")[0] as object), disposition: "advisory" },
@@ -687,8 +581,7 @@ describe("loadChecklist", () => {
               disposition: "may_be_required",
               headlineMode: "candidate",
               filingRouteRuleId: null,
-              // The identity goes with the rest: on this shape no route supplies the line's values,
-              // so the row publishes no name or agency of its own either.
+
               permitName: null,
               agency: null,
               deadline: null,
@@ -711,11 +604,6 @@ describe("loadChecklist", () => {
     });
   });
 
-  /**
-   * #252 review: the sibling of the plan boundary's disposition invariant, on the row that renders
-   * the same value as a badge. It is the one headline value that is legitimately not `routes[0]`'s,
-   * so it sits outside every comparison `filingRouteIsCarried` makes and was checked by nothing.
-   */
   it("refuses a row whose disposition no route contributes", async () => {
     const routes = mergedRoutes("true");
     for (const disposition of ["prohibited_or_ineligible", "advisory"]) {
@@ -741,12 +629,6 @@ describe("loadChecklist", () => {
     }
   });
 
-  /**
-   * #252 review: the sibling of the plan boundary's scalar-free condition. Accepting the SHAPE let
-   * any merged row null its identity and filing tuple and skip every comparison, and the checklist
-   * renders no route list, so such a row loses the permit name, the date, the fee and the portal
-   * with nothing on screen to recover them from.
-   */
   it("refuses an ordinary merged row that nulls its identity and filing fields", async () => {
     stubFetch(async () =>
       jsonResponse(
@@ -754,8 +636,6 @@ describe("loadChecklist", () => {
         checklistBody({
           items: [
             trackedItem(STREET_MEDIUM, {
-              // Both routes resolved and `required`: a resolved route contributes the merged
-              // disposition, so this row has a binding route to read and its values are not nobody's.
               routes: mergedRoutes("true"),
               headlineMode: "applies_together",
               filingRouteRuleId: null,
@@ -781,7 +661,6 @@ describe("loadChecklist", () => {
     });
   });
 
-  /** The other half, so the check cannot be written as "a filing route id is never accepted". */
   it("reads a row whose filing-route id names one of its own routes", async () => {
     stubFetch(async () =>
       jsonResponse(
@@ -853,19 +732,13 @@ describe("createChecklist", () => {
       expect.objectContaining({
         method: "POST",
         credentials: "include",
-        // The plan the page was showing rides on the request. Without it the api has no way to
-        // tell a review of THIS plan from a review of whatever arrived while the page was open.
-        // The contact rides with it because converting is what schedules the alerts (F-203), and
-        // an event nobody has given one for states that as null rather than omitting the field.
+
         body: JSON.stringify({ planId: "plan-1", contactEmail: null, contactPhone: null }),
       }),
     );
   });
 
   it("sends the contact with the conversion, because that is what schedules the alerts", async () => {
-    // This call used to carry no body at all, so the api parsed no contacts, resolved no channel
-    // and scheduled nothing: F-203 was unreachable from the product and only a direct API caller
-    // could exercise it.
     const fetchMock = stubFetch(async () => jsonResponse(201, checklistBody({ created: true })));
 
     await createChecklist("https://api.example.com", "event-1", "plan-1", {
@@ -890,8 +763,7 @@ describe("createChecklist", () => {
     });
 
     const [, init] = fetchMock.mock.calls[0] as [string, RequestInit];
-    // "" is a browser form reporting a field the organizer cleared, and null is the api's word
-    // for that. Sending "" would be refused as not a phone number.
+
     expect(JSON.parse(String(init.body))).toEqual({
       planId: "plan-1",
       contactEmail: "a@b.test",
@@ -899,8 +771,6 @@ describe("createChecklist", () => {
     });
   });
 
-  // Edge case: created twice is idempotent. The api answers 200 with the checklist that already
-  // exists rather than 201 with a second one, and the client treats both as the current checklist.
   it("takes a 200 as the existing checklist, not as a second one", async () => {
     const existing = checklistBody({
       created: true,
@@ -1084,9 +954,6 @@ describe("uploadDocument", () => {
     });
   });
 
-  // A header value is a ByteString, so assigning a name outside it throws while the request is
-  // being constructed — before a byte is sent — and the throw lands in the same catch as a network
-  // failure. A valid PDF was unuploadable and the organizer was told the api was unreachable.
   it.each([
     ["Chinese", "\u6587\u4ef6.pdf", "%E6%96%87%E4%BB%B6.pdf"],
     ["emoji", "\ud83d\ude00.pdf", "%F0%9F%98%80.pdf"],
@@ -1096,9 +963,6 @@ describe("uploadDocument", () => {
       "%D0%B7%D0%B0%D1%8F%D0%B2%D0%BA%D0%B0.pdf",
     ],
   ])("sends a %s filename percent-encoded rather than throwing", async (_label, name, encoded) => {
-    // The stub builds a `Headers` from the init the way a real `fetch` does, so an unencodable
-    // value throws here exactly as it would in a browser. Without that step this test would assert
-    // the workaround while the bug it exists for went unreproduced.
     const fetchMock = stubFetch(async (_input, init) => {
       new Headers(init?.headers);
       return jsonResponse(201, { id: "doc-1", filename: name });
@@ -1112,24 +976,20 @@ describe("uploadDocument", () => {
     );
   });
 
-  // The key has to survive a page reload, because the case it exists for is an organizer whose
-  // upload was interrupted, who refreshes and picks the same file again. Nothing is stored to
-  // achieve that: the key is a function of the file, so re-selecting it reproduces the key in a
-  // new tab, a new session, or a restarted browser.
   it("derives an upload key that a fresh File object reproduces", () => {
     const bytes = new Uint8Array(8);
     const picked = new File([bytes], "\u7533\u8bf7\u4e66.pdf", {
       type: "application/pdf",
       lastModified: 1769472000000,
     });
-    // The same file, chosen again after a reload: a different object, same attributes.
+
     const repicked = new File([bytes], "\u7533\u8bf7\u4e66.pdf", {
       type: "application/pdf",
       lastModified: 1769472000000,
     });
 
     expect(uploadKey(repicked)).toBe(uploadKey(picked));
-    // ASCII by construction, so it is a legal header value with no encoding step of its own.
+
     expect([...uploadKey(picked)].every((character) => character.charCodeAt(0) <= 0x7f)).toBe(true);
   });
 
@@ -1143,7 +1003,6 @@ describe("uploadDocument", () => {
       lastModified: 1769558400000,
     });
 
-    // Replacing a filed application is a new document, not a repeat of the old one.
     expect(uploadKey(corrected)).not.toBe(uploadKey(original));
   });
 
@@ -1162,11 +1021,6 @@ describe("uploadDocument", () => {
   });
 
   it("refuses to let an unencodable filename be reported as the api being unreachable", () => {
-    // The defect, pinned as platform behaviour rather than described: a header value is a
-    // ByteString, so this is what the old code did while constructing the request — before a byte
-    // was sent — and the throw landed in the same catch as a network failure.
-    // Matched on the message, not `instanceof TypeError`: jsdom throws from its own realm, so the
-    // constructor identity differs from this file's global.
     expect(() => new Headers({ "X-Filename": "\u6587\u4ef6.pdf" })).toThrow(
       /not a valid ByteString/,
     );
@@ -1175,8 +1029,6 @@ describe("uploadDocument", () => {
     ).not.toThrow();
   });
 
-  // The api stored nothing and said so: a storage failure keeps the item's state and writes no
-  // metadata row, and a refusal never reached storage. Both are safe to resend.
   it.each([
     [
       503,
@@ -1199,10 +1051,6 @@ describe("uploadDocument", () => {
     });
   });
 
-  // The defect this replaced: `fetch` rejects for every failure that leaves no response, which
-  // includes a connection dropped AFTER the body was sent, processed and committed. The old branch
-  // claimed nothing had been stored and invited a retry, and the api mints a fresh document id and
-  // storage key per request, so that retry stored a second copy.
   it("reports a request that never completed as an unknown outcome, not a safe retry", async () => {
     stubFetch(async () => {
       throw new TypeError("network down");
@@ -1215,9 +1063,6 @@ describe("uploadDocument", () => {
     });
   });
 
-  // The api can answer AND still not know. When the metadata insert's result is lost and the
-  // lookup that would settle it also fails, it keeps the object and says so on the wire; reading
-  // that 500 as a safe retry is what duplicates a committed row.
   it("carries the api's own unknown outcome rather than flattening it into a safe retry", async () => {
     stubFetch(async () =>
       jsonResponse(500, {
@@ -1234,8 +1079,6 @@ describe("uploadDocument", () => {
   });
 
   it("still treats an unmarked failure as having stored nothing", async () => {
-    // The api marks only the case it cannot settle; everything else it either refused before
-    // storage or compensated by deleting the object.
     stubFetch(async () => jsonResponse(500, { error: "checklist request failed" }));
 
     await expect(uploadDocument("https://api.example.com", "item-1", pdf())).resolves.toMatchObject(

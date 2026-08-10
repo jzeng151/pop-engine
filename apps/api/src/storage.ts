@@ -1,10 +1,4 @@
-// F-202 document storage. The api never stores bytes in Postgres (spec AC 3): the object
-// lands in an S3-compatible bucket and only its metadata is persisted.
-//
-// The seam is the `DocumentStorage` type, not the SDK. ARCHITECTURE AD-3 requires this code
-// to stay vendor-neutral, and the provider baseline (Supabase Storage over its S3-compatible
-// endpoint, SigV4 signed URLs — DEPLOY.md §1) is reached through the standard S3 client, so
-// swapping providers is a change of endpoint and credentials, not of callers.
+// F-202 document storage.
 
 import type { Readable } from "node:stream";
 import {
@@ -28,12 +22,7 @@ export class DocumentStorageError extends Error {
 }
 
 export type DocumentStorage = {
-  /**
-   * Streams `body` to the object at `key`, replacing anything already there. `sizeBytes` is the
-   * declared length: S3 needs it up front to sign a single-part PUT, and it is what makes this a
-   * stream rather than a buffer — the api never holds the whole file (ARCHITECTURE API Surface,
-   * "the api streams to S3").
-   */
+  /** Streams `body` to the object at `key`, replacing anything already there. */
   put(key: string, body: Readable, contentType: string, sizeBytes: number): Promise<void>;
   /**
    * A URL that grants read access to `key` for `expiresInSeconds` and no longer, and that
@@ -45,15 +34,7 @@ export type DocumentStorage = {
   remove(key: string): Promise<void>;
 };
 
-/**
- * A `Content-Disposition` that saves the file under its stored name.
- *
- * Two forms, because one cannot carry both. `filename=` is a quoted ASCII fallback for anything
- * that does not read RFC 5987, with the quote and backslash escaped so the header cannot be broken
- * out of, and non-ASCII replaced rather than dropped so the fallback is never empty. `filename*=`
- * carries the real name UTF-8 percent-encoded, which is what a current browser uses — and it
- * matters here because the api deliberately keeps filenames in any script.
- */
+/** A `Content-Disposition` that saves the file under its stored name. */
 export function attachmentDisposition(filename: string): string {
   const ascii = filename.replace(/[^\x20-\x7e]/g, "_").replace(/["\\]/g, "_");
   return `attachment; filename="${ascii}"; filename*=UTF-8''${encodeURIComponent(filename)}`;
@@ -67,12 +48,7 @@ export type S3StorageSettings = {
   readonly bucket: string;
 };
 
-/**
- * The S3 settings from the environment, or null when any of them is missing. Returning null
- * rather than throwing keeps the api bootable without cloud credentials (DEPLOY.md: the
- * scaffold runs locally with no accounts); the routes then answer 503 instead of pretending
- * an upload succeeded.
- */
+/** The S3 settings from the environment, or null when any of them is missing. */
 export function s3SettingsFromEnv(env: NodeJS.ProcessEnv): S3StorageSettings | null {
   const { S3_ENDPOINT, S3_REGION, S3_ACCESS_KEY_ID, S3_SECRET_ACCESS_KEY, S3_BUCKET } = env;
   if (!S3_ENDPOINT || !S3_REGION || !S3_ACCESS_KEY_ID || !S3_SECRET_ACCESS_KEY || !S3_BUCKET) {
@@ -139,9 +115,7 @@ export function createS3DocumentStorage(client: S3Client, bucket: string): Docum
           new GetObjectCommand({
             Bucket: bucket,
             Key: key,
-            // Every accepted type — PDF, PNG, JPEG — is one a browser renders inline, so a plain
-            // signed GET previews the document under a control labelled Download. The disposition
-            // is signed with the URL, so it cannot be stripped by whoever holds the link.
+            // Every accepted type — PDF, PNG, JPEG — is one a browser renders inline, so a plain signed GET previews the document under a control labelled Download.
             ResponseContentDisposition: attachmentDisposition(filename),
           }),
           { expiresIn: expiresInSeconds },

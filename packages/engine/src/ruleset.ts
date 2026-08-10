@@ -1,7 +1,4 @@
 // Narrows the published ruleset JSON into the typed shape the engine evaluates.
-// Pure: the caller reads the file (apps/api at boot) and hands over parsed JSON.
-// Anything malformed throws — an evaluation input the engine cannot read is an error,
-// never a quiet "no requirement" (AC 5).
 
 import { parseAskedWhen } from "./conditions";
 import { EVENT_DATE_FIELD, EvaluationError } from "./types";
@@ -104,34 +101,7 @@ function optionalStringArray(container: JsonObject, key: string, label: string):
   return asArray(value, label).map((entry, index) => asString(entry, `${label}[${index}]`));
 }
 
-/**
- * A threshold whose exact value is unresolved rather than below the line.
- *
- * Only an ordering comparison against a number can carry one: "exactly on the boundary" means
- * nothing for an equality or a set membership, so a rule declaring it there is an authoring
- * mistake rather than something to ignore. Published per condition because it is a fact about
- * that threshold — FDNY-GENERATOR-001's 2.5 gallons and DOB-STAGE-001's 2 feet exclude their
- * exact values, and say so by declaring nothing.
- */
-/**
- * What a published ruleset from before nyc.v2.4 relied on the engine to supply.
- *
- * These are not defaults. A version reaches this table only by having already shipped without
- * publishing the facts: from nyc.v2.4 on every ruleset declares them itself and fails to load
- * otherwise, so the table can never cover a version that had the option to publish. It exists
- * because a plan pins its `ruleset_version` and `intake_snapshot` in order to be re-evaluated
- * later (AD-7 "history is reproducible even after rules change", AD-13 version coexistence,
- * DOCUMENTATION-GOVERNANCE §9 "verify historical replay"). Refusing the artifact would make
- * every plan generated before this bump unreproducible; guessing the facts from the artifact
- * would be the inference the bump exists to delete. Recording what the engine of that era
- * actually did is neither.
- *
- * Closed set. A new entry is only ever wrong: a new ruleset can publish.
- *
- * nyc.v1 is deliberately absent — it predates the corrected subset and its own artifact is not
- * known to parse under this engine at all, so listing it would assert a replay guarantee that
- * has not been demonstrated.
- */
+/** What a published ruleset from before nyc.v2.4 relied on the engine to supply. */
 type PrePublicationFacts = {
   readonly levelBinding: { readonly levelField: string; readonly multiBlockField: string };
   /** Thresholds whose exact value these versions treated as unresolved, by rule and field. */
@@ -213,12 +183,7 @@ const BOUNDED_DEADLINE_TYPES = new Set([
   "composite",
 ]);
 
-/**
- * Whether the published number is an inclusive or exclusive bound. Absent means inclusive, which
- * is what every rule that says "at least N days" means. Only the types that date a deadline by
- * counting back from the event carry one; declaring a boundary on any other type is a ruleset
- * error rather than something to ignore quietly.
- */
+/** Whether the published number is an inclusive or exclusive bound. */
 function parseBoundary(deadline: JsonObject, type: string, label: string): DeadlineBoundary {
   const declared = deadline.boundary;
   if (declared === undefined) return "inclusive";
@@ -231,14 +196,7 @@ function parseBoundary(deadline: JsonObject, type: string, label: string): Deadl
   return declared;
 }
 
-/**
- * The intake fields a by-level deadline keys on, as the rule declares them.
- *
- * Published data since nyc.v2.4 rather than supplied out of band. Both halves are validated
- * against the registry, because a binding naming a field the evaluator cannot read is a deadline
- * it cannot date: the level field must offer every published level, and the multi-block field must
- * be the boolean that chooses between a level's two windows.
- */
+/** The intake fields a by-level deadline keys on, as the rule declares them. */
 function parseLevelBinding(
   deadline: JsonObject,
   levels: Record<string, { calendarDays: number; multiBlockDays: number | null }>,
@@ -256,10 +214,7 @@ function parseLevelBinding(
     intakeFields,
     `${label}.level_field`,
   );
-  // The resolver reads the answer as a single level (`deadline.levels[answer]`), so a field that
-  // can answer with several has no level to resolve. It would take the unresolvable path, which
-  // reports NOT_CALCULABLE without naming a blocking fact, and a plan can read FEASIBLE around an
-  // undated permit. Rejecting the artifact is the loud half of the same check.
+  // The resolver reads the answer as a single level (`deadline.levels[answer]`), so a field that can answer with several has no level to resolve.
   if (levelField.type !== "enum") {
     fail(
       `${label}.level_field "${levelField.field}" is a ${levelField.type} field; ` +
@@ -285,11 +240,7 @@ function parseLevelBinding(
         `choosing between a level's two windows needs a boolean`,
     );
   }
-  // Same rule again, on the other half: the resolver must be able to honour every level the rule
-  // publishes. An out-of-scope field is not unanswered — `isUnanswered` reports false for it — so
-  // the flag reads as "no" and the shorter single-block window is applied silently, which can
-  // present an already-missed multi-block deadline as on track. That is the exact failure the
-  // resolver guards against for an *unanswered* flag; scoping is the way around that guard.
+  // Same rule again, on the other half: the resolver must be able to honour every level the rule publishes.
   const unreachable = Object.entries(levels)
     .filter(([, entry]) => entry.multiBlockDays !== null)
     .map(([level]) => level)
@@ -565,12 +516,7 @@ function parseIntakeField(value: unknown, label: string): IntakeFieldDefinition 
   };
 }
 
-/**
- * Validate every `asked_when` expression while the ruleset loads, so a malformed one aborts boot
- * instead of quietly putting a field out of scope. A scoping typo is silent by nature: the clause
- * reads false, the field and every rule depending on it drop out, and the plan omits requirements
- * with no error at all.
- */
+/** Validate every `asked_when` expression while the ruleset loads, so a malformed one aborts boot instead of quietly putting a field out of scope. */
 function withParsedScoping(
   fields: readonly IntakeFieldDefinition[],
 ): readonly IntakeFieldDefinition[] {
@@ -589,12 +535,7 @@ function withParsedScoping(
   return parsed;
 }
 
-/**
- * A scoping cycle parses one clause at a time perfectly well, so it only surfaces when evaluation
- * first resolves one of the fields involved — by which point the api has started and every plan
- * request fails instead of the artifact being refused. The graph is walked here so a cyclic
- * ruleset never boots.
- */
+/** A scoping cycle parses one clause at a time perfectly well, so it only surfaces when evaluation first resolves one of the fields involved — by which point the api has started and every plan request fails instead of the artifact being refused. */
 function rejectScopingCycles(fields: readonly IntakeFieldDefinition[]): void {
   const dependencies = new Map(
     fields.map((field) => [
@@ -677,21 +618,7 @@ function rejectMixedDedupeVerificationStatuses(published: readonly EngineRule[])
   }
 }
 
-/**
- * Intake fields the ruleset declares but nothing consumes: questions an organizer is asked whose
- * answer changes no output.
- *
- * Boot already refused a trigger naming an undeclared field. The reverse went unchecked, which is
- * how seven declared-but-unconsumed fields stayed invisible until someone counted by hand. A field
- * counts as consumed when a rule trigger reads it, when a deadline resolves against it, or when it
- * scopes another question whose answer is itself consumed.
- *
- * Everything else needs a reason here. Each entry is a field the published ruleset declares and no
- * rule acts on, recorded rather than deleted: removing a published intake field is the product
- * owner's change under governance §6, whose approval is the whole requirement even where the
- * product owner authored it, and one of these is an open product question. A NEW
- * unconsumed field fails the load.
- */
+/** Intake fields the ruleset declares but nothing consumes: questions an organizer is asked whose answer changes no output. */
 export const UNCONSUMED_INTAKE_FIELDS: Readonly<Record<string, string>> = {
   borough: "Display and future jurisdiction routing (F-207). No NYC rule varies by borough today.",
   venue_paco_covers_exact_event:
@@ -702,9 +629,7 @@ export const UNCONSUMED_INTAKE_FIELDS: Readonly<Record<string, string>> = {
     "a current FDNY Public Assembly Permit removes a temporary filing.",
 };
 
-// Replay keeps the intake contract a plan originally stored. Every corrected-subset publication
-// from v2.1 through v2.8 declared both fields; v2.9 retired them. Both sets are closed so a new
-// artifact cannot opt into the allowance merely by publishing another version.
+// Replay keeps the intake contract a plan originally stored.
 const RETIRED_UNCONSUMED_INTAKE_FIELDS = new Set([
   "food_affinity_private_exception_claimed",
   "venue_has_assembly_approval",
@@ -720,16 +645,7 @@ const RULESET_VERSIONS_WITH_RETIRED_INTAKE_FIELDS = new Set([
   "nyc.v2.8",
 ]);
 
-/**
- * The intake fields the published deadlines read.
- *
- * Reads the binding rather than inferring one. Since nyc.v2.4 a by-level deadline names the fields
- * it keys on, and for the superseded versions that did not the loader supplies them from its closed
- * compatibility record; either way `parseRule` has already resolved and validated the pair before
- * this guard runs. Inferring it a second time here would be a second answer that can drift from the
- * one the evaluator uses, which is how a loader comes to accept an artifact the evaluator cannot
- * run.
- */
+/** The intake fields the published deadlines read. */
 function deadlineConsumedFields(published: readonly EngineRule[]): Set<string> {
   // Every backward date is counted from the event date, whatever the deadline type.
   const consumed = new Set<string>([EVENT_DATE_FIELD]);

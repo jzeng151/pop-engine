@@ -1,24 +1,4 @@
-// Checklist bodies as `apps/api`'s `checklistView` serves them, shared by this feature's two
-// suites.
-//
-// EVERY regulatory value here is READ FROM THE PUBLISHED RULESET, never written by hand. The
-// first version of this file hand-wrote them, and every one was wrong: a $25 fee for a rule that
-// publishes "$11,000 per location per day + $25 nonrefundable processing fee", a guessed portal
-// URL for a rule that publishes E-Apply's, a permit name for a rule called "Street Event Permit
-// (Medium)", and a `deadline.type` the schema does not define. 107 tests passed against it, which
-// is the whole problem: a fixture carrying invented regulatory data makes a green suite read as
-// verification of values no artifact ever published. AGENTS.md's authority order (published rule →
-// engine output → UI copy) applies to test data too.
-//
-// So the projection below is the engine's own. `parseEngineRuleset` produces the same `EngineRule`
-// the evaluator builds findings from, and each field is taken off it exactly where
-// `packages/engine/src/findings.ts` takes it. A rule renamed or repriced upstream changes these
-// fixtures with it; nothing here can drift from the artifact, because nothing here restates it.
-//
-// The exception, stated rather than hidden: the per-event fields an evaluation COMPUTES —
-// `latestApplyDate`, `applyAfterDate`, `deadlineStatus`, `deadlineUnknownFields`,
-// `timelineUnresolvedReason` — are not published values and depend on an event's date and today's
-// date. They default to the "nothing computed" answer and are set per test through `computed`.
+// Checklist bodies as `apps/api`'s `checklistView` serves them, shared by this feature's two suites.
 
 import { readFileSync } from "node:fs";
 import {
@@ -30,12 +10,7 @@ import {
 } from "@pop-engine/engine";
 import { rulesFileIn } from "../rules-file";
 
-/**
- * The published ruleset, found rather than named — the resolver #138 added here, now shared with
- * the rest of this app rather than living only in the file that happened to break first.
- * `RULES_FILE` still overrides, because `apps/web/app/pages.test.tsx` sets it; the override's
- * precedence, including what an empty one means, is decided in one place rather than here.
- */
+/** The published ruleset, found rather than named — the resolver #138 added here, now shared with the rest of this app rather than living only in the file that happened to break first. */
 const RULES_FILE = rulesFileIn("rules");
 
 const RULESET = parseEngineRuleset(JSON.parse(readFileSync(RULES_FILE, "utf8")));
@@ -86,23 +61,13 @@ export const citationOf = (ruleId: string): string => {
   return source.citation;
 };
 
-/**
- * The regulatory half of a row: `planContext` in `apps/api/src/checklist.ts`, projected off the
- * published rule exactly as `buildFinding` projects it.
- *
- * `computed` sets the fields an evaluation produces for a particular event, and `overrides` is for
- * the few cases a test needs a value the artifact does not publish for this rule (a checklist row
- * whose plan pinned an older snapshot, for instance).
- */
+/** The regulatory half of a row: `planContext` in `apps/api/src/checklist.ts`, projected off the published rule exactly as `buildFinding` projects it. */
 export const planContext = (
   ruleId: string,
   overrides: Record<string, unknown> = {},
 ): Record<string, unknown> => {
   const rule = ruleOf(ruleId);
-  // A merged row names every rule it merged, one per route: `mergeGroup()` builds `ruleIds` and
-  // `routes` from one group, and the boundary refuses a row where the two disagree. A fixture that
-  // overrides `routes` therefore gets the matching ids rather than the single rule's, unless it
-  // overrides `ruleIds` too, which is how a test asks for the mismatch on purpose.
+  // A merged row names every rule it merged, one per route: `mergeGroup()` builds `ruleIds` and `routes` from one group, and the boundary refuses a row where the two disagree.
   const routes = overrides.routes;
   return {
     ruleIds: Array.isArray(routes)
@@ -139,22 +104,12 @@ export const planContext = (
     sourceUrl: rule.source?.urls[0] ?? null,
     sourcePlan: { ...PUBLISHED_SNAPSHOT },
     ...overrides,
-    // THE FILED FIELDS ARE THE NAMED ROUTE'S, which is what the api serves: `planContext` in
-    // `apps/api/src/checklist.ts` reads every one of them off the filing route through
-    // `fromFilingRoute`, and the boundary refuses a row where they disagree with the route it
-    // names. A fixture that sets `filingRouteRuleId` therefore gets that route's values, unless it
-    // also overrides one of them, which is how a test asks for the mismatch on purpose.
+    // THE FILED FIELDS ARE THE NAMED ROUTE'S, which is what the api serves: `planContext` in `apps/api/src/checklist.ts` reads every one of them off the filing route through `fromFilingRoute`, and the boundary refuses a row.
     ...filedFrom(overrides),
   };
 };
 
-/**
- * The fields the api attributes to a route: the one `filingRouteRuleId` names, or `routes[0]` where
- * it names none. A null filing id says the values above are the line's OWN, and a merged line's own
- * values are its binding route's, which `mergeGroup()` puts first in the list. Both branches read
- * off a route, because the boundary refuses a row whose filed fields disagree with the route it
- * attributes them to.
- */
+/** The fields the api attributes to a route: the one `filingRouteRuleId` names, or `routes[0]` where it names none. */
 const filedFrom = (overrides: Record<string, unknown>): Record<string, unknown> => {
   const named = overrides.filingRouteRuleId;
   const routes = overrides.routes;
@@ -166,11 +121,7 @@ const filedFrom = (overrides: Record<string, unknown>): Record<string, unknown> 
   ) as Record<string, unknown> | undefined;
   if (route === undefined) return {};
   const binding = routes[0] as Record<string, unknown>;
-  // Identity is the BINDING route's whatever route the filing fields came from: the api reads
-  // `permitName` and `agency` off the row's own columns, which on a merged line are `routes[0]`'s.
-  // Except on the shape where no route can supply the line's scalars, where the engine nulls the
-  // identity and `filingRouteOf` still fills the filing tuple from a route that publishes a window
-  // — the row the boundary must accept with a null name beside an attributed date.
+  // Identity is the BINDING route's whatever route the filing fields came from: the api reads `permitName` and `agency` off the row's own columns, which on a merged line are `routes[0]`'s.
   const scalarFree = noRouteSuppliesScalars(routes as readonly FindingRoute[]);
   const filed: Record<string, unknown> = {
     permitName: scalarFree ? null : binding.name,

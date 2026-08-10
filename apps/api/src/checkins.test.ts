@@ -12,9 +12,6 @@ import { createApp } from "./app";
 import { createCheckinsRouter, normalizeContact, recordCheckin, type CheckinRow } from "./checkins";
 import { loadRuleset } from "./ruleset";
 
-// F-401 acceptance criteria as tests. Pure normalize/record paths always run; the
-// schema-backed suite runs when DATABASE_URL is set (CI migrates first).
-
 const databaseUrl = process.env.DATABASE_URL ?? "";
 
 const scenarioA = (): Record<string, unknown> => {
@@ -25,7 +22,6 @@ const scenarioA = (): Record<string, unknown> => {
 
 type ScriptedRow = QueryResultRow;
 
-/** Minimal Queryable that answers by SQL shape so recordCheckin can be tested without Postgres. */
 function scriptedDatabase(
   handlers: Array<{
     when: (sql: string, values: unknown[] | undefined) => boolean;
@@ -488,9 +484,6 @@ describe.runIf(databaseUrl.length > 0)("F-401 check-in endpoints (database)", ()
   });
 
   it("still records when the event is already over capacity or headcount", async () => {
-    // F-402 owns which field gauges capacity (OPEN capacity-vs-headcount conflict).
-    // F-401 only promises the door still records — both fields are set low here so
-    // either reading of "at capacity" is already exceeded before the third check-in.
     const { id: eventId } = await createEvent({ capacity: 1, headcount: 1 });
     for (const contact of ["a@example.com", "b@example.com", "c@example.com"]) {
       const response = await request(api)

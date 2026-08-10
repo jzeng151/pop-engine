@@ -1,6 +1,4 @@
-// Calendar arithmetic. Dates are ISO `YYYY-MM-DD` strings throughout and every computation
-// is UTC, so a deploy's timezone cannot move a deadline. The holiday list is injected
-// (AD-11); the engine never derives holidays and never reads the clock.
+// Calendar arithmetic.
 
 import { EvaluationError } from "./types";
 import type { PublishedHolidayCalendar } from "./types";
@@ -17,18 +15,7 @@ function toEpochDay(date: string): number {
   return parsed / MILLISECONDS_PER_DAY;
 }
 
-/**
- * `toISOString` switches to an extended year outside 0000–9999, so `.slice(0, 10)` would truncate
- * `-000001-12-31T…` to `"-000001-12"` — ten characters that are not a date, returned with no error.
- *
- * `ISO_DATE` is the guard. A round-trip compare like `toEpochDay`'s above is NOT: the truncated
- * string reparses to the same instant, so `"-000001-12"` and `"+275760-09"` each compare equal to
- * themselves and the check passes. `toEpochDay`'s three guards catch different things and only the
- * first applies here — `ISO_DATE` rejects a malformed shape, the `Number.isNaN` check rejects an
- * unparseable one, and the round-trip catches an overflow date like `2026-02-31` normalising to
- * `2026-03-03`. Past ±8.64e15 ms `toISOString` throws `RangeError` on its own; this covers the much
- * wider band below that where it returns a wrong answer instead.
- */
+/** `toISOString` switches to an extended year outside 0000–9999, so `.slice(0, 10)` would truncate `-000001-12-31T…` to `"-000001-12"` — ten characters that are not a date, returned with no error. */
 function fromEpochDay(epochDay: number): string {
   const date = new Date(epochDay * MILLISECONDS_PER_DAY).toISOString().slice(0, 10);
   if (!ISO_DATE.test(date)) {

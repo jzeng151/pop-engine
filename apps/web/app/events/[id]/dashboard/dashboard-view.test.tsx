@@ -35,7 +35,6 @@ const stats = (overrides: Partial<EventStats> = {}): EventStats => ({
   ...overrides,
 });
 
-/** Stats-only stub — F-402 polls `/stats`; no intake identity fetch on this page. */
 const stubDashboardFetch = (
   options: {
     stats?: EventStats | (() => Promise<Response>);
@@ -313,7 +312,6 @@ describe("DashboardView", () => {
   });
 
   it("labels every rendered check-in count as check-ins, never occupancy or foot traffic", async () => {
-    // AC 3: honest telemetry — labels must say check-ins; presence claims need F-410.
     stubDashboardFetch({
       stats: stats({
         checkins_total: 4,

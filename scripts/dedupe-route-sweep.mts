@@ -1,17 +1,4 @@
-// Measurement harness for PR #252's route-list review. NOT part of the build; run by hand:
-//
-//   node_modules/.pnpm/node_modules/.bin/vite-node scripts/dedupe-route-sweep.mts -- <engine-src-dir> <out.json>
-//
-// It evaluates one control sweep of 3,200 intakes against a given engine source tree and writes,
-// for every intake, what the dedupe group's merged line would put in front of an organizer: the
-// filing date, the fee, the deadline status and how many `deadline_reminder` alerts the F-203
-// scheduler would write. Pointed at this branch's engine and at origin/main's, the two files are
-// directly comparable, which is what the review asked for.
-//
-// THE CONSUMER LOGIC IS IMPORTED, NEVER RESTATED. `filingRouteOf` is the api's own function and the
-// reminder count is `reminderDaysBefore.length` per route the scheduler would schedule, which is
-// the same rule `plannedAlerts` applies. The 64-intake end-to-end check runs the real API against a
-// real Postgres; this exists because 3,200 of those is not a sweep anyone will re-run.
+// Measurement harness for PR #252's route-list review.
 
 import { readFileSync } from "node:fs";
 import path from "node:path";
@@ -33,9 +20,7 @@ const { evaluate, parseEngineRuleset } = engine;
 const RULES = path.resolve(process.cwd(), "rules/nyc-rules.v2.11.json");
 const ruleset = parseEngineRuleset(JSON.parse(readFileSync(RULES, "utf8")));
 /** The ruleset's own pinned calendar, with no published holiday list, as `pinnedCalendar` gives. */
-// `HOLIDAYS=published` runs the sweep against a published (empty) holiday list, which is what the
-// api's own suites inject; unset runs it against production's, where none is published and a
-// business-day window is NOT_CALCULABLE. Both are measured, because the loss looks different.
+// `HOLIDAYS=published` runs the sweep against a published (empty) holiday list, which is what the api's own suites inject; unset runs it against production's, where none is published and a business-day window is.
 const calendar = {
   id: ruleset.calendarId,
   holidays: process.env.HOLIDAYS === "published" ? [] : null,
@@ -44,14 +29,7 @@ const calendar = {
 const TODAY = "2026-07-22";
 const EVENT_DATE = "2026-09-19";
 
-// The proposal's own section 4.3 / 9.1 dimensions: the power set of `structure_types` by
-// `tent_area_sqft` by `tent_days_in_place` by `structure_over_10ft_tall`. 32 x 5 x 5 x 4 = 3,200.
-//
-// THE SAME DIMENSIONS, NOT THE SAME SWEEP, and the counts are NOT comparable with the 64 that
-// section 9.1 used to record. That sweep left the other collected fields open and its base intake
-// was never recorded; this one answers them (see the comment at the loop below), which is a
-// different population. The 64 is withdrawn for exactly that reason and section 9.1 now records
-// what this file produces: 56 of 3,200, `permitName` and nothing else.
+// The proposal's own section 4.3 / 9.1 dimensions: the power set of `structure_types` by `tent_area_sqft` by `tent_days_in_place` by `structure_over_10ft_tall`.
 const STRUCTURE_VALUES = [
   "tent_canopy",
   "stage_platform_scaffold",
@@ -131,9 +109,7 @@ for (const structures of STRUCTURE_SETS) {
       for (const days of TENT_DAYS) {
         {
           id += 1;
-          // EVERY OTHER COLLECTED FIELD IS ANSWERED, so the only unknowns in the sweep are the
-          // four dimensions it varies. An unanswered field expands into branches, and leaving the
-          // rest open made the sweep about branch arithmetic rather than about the dedupe group.
+          // EVERY OTHER COLLECTED FIELD IS ANSWERED, so the only unknowns in the sweep are the four dimensions it varies.
           const intake: Record<string, unknown> = {
             borough: "manhattan",
             location_type: "street",

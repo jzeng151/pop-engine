@@ -18,9 +18,7 @@ import type {
   PermitPlan,
 } from "@pop-engine/engine";
 
-// The optional engine fields are normalized to explicit nulls on the wire, following
-// `userSummary`: a client reading a stored plan gets the same key set whether the plan predates
-// the field or the finding simply has no value for it.
+// The optional engine fields are normalized to explicit nulls on the wire, following `userSummary`: a client reading a stored plan gets the same key set whether the plan predates the field or the finding simply has no.
 type StoredFinding = Omit<Finding, "routes" | "headlineMode"> & {
   readonly lastVerifiedDate: string | null;
   readonly routes: readonly FindingRoute[] | null;
@@ -46,16 +44,7 @@ export class EventNotFoundError extends Error {
   }
 }
 
-/**
- * A generation that would rebuild a plan from a ruleset older than the one the plan it supersedes
- * pinned (F-201 AC 12). The superseded plan was shown to an organizer, so a requirement that only
- * the newer ruleset publishes would disappear from a replacement that looks internally consistent
- * and says nothing about its basis having got worse.
- *
- * Both versions and the direction ride on the error rather than only in prose: an endpoint that
- * fails closed and cannot be diagnosed is its own harm, and the one thing an operator needs to know
- * is which two rulesets are involved and which way round they stand.
- */
+/** A generation that would rebuild a plan from a ruleset older than the one the plan it supersedes pinned (F-201 AC 12). */
 export class PlanRulesetDowngradeError extends Error {
   constructor(
     readonly rulesetVersion: string,
@@ -89,13 +78,7 @@ export type StoredPlan = {
   readonly eventId: string;
   readonly eventRevision: number;
   readonly rulesetVersion: string;
-  /**
-   * The publication date of the ruleset that produced this plan, pinned with the version at
-   * generation (F-206 AC 4). The two travel together: the banner states this date, never the live
-   * file's, because a pinned version beside the live file's date is a pair that never existed.
-   * Null on plans generated before migration 002 added the column, and left null — no derivation
-   * can witness which artifact those plans read.
-   */
+  /** The publication date of the ruleset that produced this plan, pinned with the version at generation (F-206 AC 4). */
   readonly snapshotDate: string | null;
   readonly verdict: PermitPlan["verdict"];
   readonly verdictDetail: PermitPlan["verdictDetail"];
@@ -110,12 +93,7 @@ export type PlanService = {
   latest(eventId: string): Promise<StoredPlan | null>;
 };
 
-/**
- * node-postgres materializes a PostgreSQL `date` at LOCAL midnight. `toISOString()` on that value
- * shifts it to the previous calendar day anywhere east of UTC, which would move every computed
- * deadline by a day and can turn an on-track window into a missed one. Read the local calendar
- * components instead, which recover the stored `YYYY-MM-DD` in any timezone.
- */
+/** node-postgres materializes a PostgreSQL `date` at LOCAL midnight. */
 const pad = (value: number): string => String(value).padStart(2, "0");
 
 export function calendarDateFrom(value: Date | string): string {
@@ -140,13 +118,7 @@ function intakeFromEventRow(row: Record<string, unknown>, ruleset: EngineRuleset
   return intake;
 }
 
-/**
- * Per-finding text the plan-item table has no column for: the published notes, an
- * OFFICIAL_CONFLICT rule's two readings, and the deadline's display string. AC 2 requires all
- * three to render on every read, migration 001 is merged and immutable, and a feature branch
- * does not add columns (AGENTS.md), so they ride in the plan's verdict_detail and are zipped
- * back onto the items by rule ids. Reported on the PR as a schema gap for a later migration.
- */
+/** Per-finding text the plan-item table has no column for: the published notes, an OFFICIAL_CONFLICT rule's two readings, and the deadline's display string. */
 export type FindingRendering = {
   rule_ids: readonly string[];
   notes: readonly string[];
@@ -159,12 +131,7 @@ export type FindingRendering = {
   portal_instructions: string | null;
   /** Absent on plans stored before organizer summaries were introduced. */
   user_summary?: Finding["userSummary"];
-  /**
-   * Every contributing route of a merged dedupe line, with its own name, window and fee. Absent on
-   * plans stored before the route list was introduced, and null there on read: `null` means "this
-   * plan predates the field", never "this line has no routes". A merged line always has two or
-   * more and an unmerged one carries none, so `[]` is never written.
-   */
+  /** Every contributing route of a merged dedupe line, with its own name, window and fee. */
   routes?: readonly FindingRoute[] | null;
   /** Present exactly when `routes` is, and absent on the same stored plans. */
   headline_mode?: HeadlineMode | null;
@@ -187,12 +154,7 @@ const renderingOf = (finding: Finding): FindingRendering => ({
 
 export const renderingKey = (ruleIds: readonly string[]): string => ruleIds.join(",");
 
-/**
- * The columns of a stored plan item that a route is read from or synthesized out of. Structural
- * rather than a named row type because `checklist.ts` and `alerts.ts` select different column sets
- * and both need this, and duplicating the fallback in each is exactly how a consumer stops seeing a
- * route's window.
- */
+/** The columns of a stored plan item that a route is read from or synthesized out of. */
 export type StoredPlanItem = {
   readonly rule_ids: readonly string[];
   readonly permit_name: string | null;
@@ -210,16 +172,7 @@ export type StoredPlanItem = {
 const storedDate = (value: Date | string | null): string | null =>
   value === null ? null : calendarDateFrom(value);
 
-/**
- * Every route of a stored plan item: the persisted counterpart of the engine's `routesOf`, and the
- * ONE correct fallback for a row that carries none. An unmerged item is its own single route, and
- * so is a row from a plan stored before the field existed.
- *
- * This exists because the plan-item table has one window, one fee and one name per row while a
- * merged dedupe line has one per ROUTE, and `checklist.ts` and `alerts.ts` read the table. Reading
- * only the columns is what deleted an organizer's filing date, fee and both reminders on every
- * merged line whose binding route publishes no window (#252 review).
- */
+/** Every route of a stored plan item: the persisted counterpart of the engine's `routesOf`, and the ONE correct fallback for a row that carries none. */
 export function storedRoutes(
   item: StoredPlanItem,
   rendering: FindingRendering | undefined,
@@ -248,40 +201,7 @@ export function storedRoutes(
   ];
 }
 
-/**
- * The route a consumer with exactly one window to show must read, or null when the row's own
- * columns already carry one.
- *
- * A merged line takes its identity and timeline from ONE route, the binding route, so that a line
- * can never name one route and date another. Where that route publishes no window the line has
- * none, and the columns say so: no `deadline`, no `latest_apply_date`,
- * `deadline_status = 'not_applicable'`, no `fee_display`. The requirement's published window did
- * not stop existing; it is on another route.
- *
- * THE TEST IS A PUBLISHED WINDOW, NOT A COMPUTED DATE. A rule can publish a window the engine
- * cannot turn into a date — a business-day count with no published holiday list, which is what
- * DOB-TENT-001 is in production — and that line reads `not_calculable` with a fee and a published
- * deadline type. Keying this on `latest_apply_date` alone dropped exactly those: measured over the
- * 3,200-intake control sweep with no holiday list published, 56 lines lost the tent route's TUP fee
- * and reported `not_applicable` where the same rules unmerged report `not_calculable`.
- *
- * `routes` arrives in binding order, so the first entry publishing a window is the tightest one the
- * merged disposition still rests on. It supplies the window, the status AND the fee together, from
- * one route, which is what keeps this from re-creating the crossover the route list exists to
- * remove: the values a reader sees are all one rule's, and `routes` says which rule.
- */
-/**
- * A FILING ROUTE, NOT MERELY A DATED ONE. The row labels whatever this returns as its filing date,
- * fee and filing details, and `PortalBlock` renders that route's portal as "apply at" on a row
- * whose routes apply together. A dated `advisory` or `no_new_requirement` route selected purely
- * because it carries a date therefore became an instruction to file something the ruleset does not
- * say is required — the same conversion the alert scheduler makes at its own boundary, one door
- * over (#252 review). The rules schema permits those kinds to publish a deadline, so the date test
- * alone was never sufficient.
- *
- * Mirrored in `FILING_ORDER_JOIN` below, which orders rows by the same choice. A predicate fixed in
- * TypeScript and left in SQL is a guard that disagrees with itself.
- */
+/** Filing route to render when the row's own columns carry no window. */
 
 export function filingRouteOf(
   item: StoredPlanItem,
@@ -299,31 +219,7 @@ export function filingRouteOf(
   );
 }
 
-/**
- * `filingRouteOf` in SQL, so a plan item can be ORDERED by the window it actually renders.
- *
- * THE ORDER THE WORK HAPPENS IN IS THE ORDER OF THE DATE THE ROW SHOWS. `latest_apply_date NULLS
- * LAST` reads a column that a merged dedupe line leaves NULL whenever its binding route publishes
- * no window, and that line still renders "apply by <a date>" off its filing route. Sorted on the
- * column alone, 42 of the 3,200 intakes in `scripts/checklist-order-sweep.mts` reorder under a
- * published holiday list, with the only DATED requirement sorted BEHIND a research-required one
- * (#252 review). Under the deployed `holidays: null` the same sweep reorders 0, because a
- * business-day window nothing can date is not a window that can sort ahead of anything. Every one
- * of the 42 has `structure_over_10ft_tall: "yes"`. `materialize` then freezes whichever order it
- * got into `cohort_position`, which migration 007 exists to make permanent, so a later
- * regeneration does not correct it.
- *
- * IN SQL RATHER THAN IN TYPESCRIPT, deliberately. The order's other two keys are `permit_name` and
- * `rule_ids`, and a text comparison moved out of the database is a text comparison under a
- * different collation. Sorting the date here and the ties there would decide a tie by one rule in
- * one place and another rule in the next.
- *
- * The join condition is `filingRouteOf`'s own first test: a row publishing its own window is never
- * looked up. The route list is written only for a merged line, so no unmerged row matches and no
- * plan stored before the field existed does either — both fall through to the column, which is
- * theirs. Joined on the plan through `item.plan_id` so this needs no table the caller does not
- * already have.
- */
+/** `filingRouteOf` in SQL, so a plan item can be ORDERED by the window it actually renders. */
 export const FILING_ORDER_JOIN = `LEFT JOIN LATERAL (
          SELECT (route->>'latestApplyDate')::date AS latest_apply_date
            FROM permit_plans AS ordering_plan
@@ -335,25 +231,10 @@ export const FILING_ORDER_JOIN = `LEFT JOIN LATERAL (
                   WITH ORDINALITY AS listed(route, route_position)
           WHERE ordering_plan.id = item.plan_id
             AND rendering->'rule_ids' = to_jsonb(item.rule_ids)
-            -- TWO ROUTES OR IT IS NOT A MERGED LINE, the same guard filingRouteOf, plan-line.tsx
-            -- and alertSubjects all make, and it was the one place that did not make it. A stored
-            -- rendering carrying a ONE-entry route list describes a line with a single route, whose
-            -- own columns are that route's; storedRoutes collapses it back to the row and every
-            -- TypeScript reader treats it as unmerged. Without this test the lateral read the lone
-            -- route's window instead and ordered the row by it, so the same plan sorted one way
-            -- through the API and another through SQL. One shape out of 32 exhaustive route-list
-            -- shapes disagreed, and it disagreed here.
             AND jsonb_array_length(
                   coalesce(nullif(rendering->'routes', 'null'::jsonb), '[]'::jsonb)) >= 2
-            -- A PUBLISHED WINDOW, NOT A COMPUTED DATE, which is the same test filingRouteOf makes
-            -- and for the same reason: a business-day count with no published holiday list is a
-            -- window the engine cannot date, and it is still the route this line files under.
             AND (route->'deadline' <> 'null'::jsonb OR route->'latestApplyDate' <> 'null'::jsonb)
-            -- A FILING ROUTE, the same test filingRouteOf makes and for the same reason: the row
-            -- labels this route's date as its filing date, so a dated advisory selected here would
-            -- order the row by a window nobody files against.
             AND route->>'disposition' IN ('required', 'may_be_required')
-          -- Binding order, so this is the same route the row reads its date and fee off.
           ORDER BY route_position
           LIMIT 1
        ) AS filing_route ON item.deadline IS NULL AND item.latest_apply_date IS NULL`;
@@ -371,23 +252,7 @@ async function insertPlan(
 ): Promise<{ id: string; generatedAt: string }> {
   const planId = randomUUID();
   const { rows } = await client.query<{ generated_at: Date }>(
-    // `generated_at` is written rather than defaulted, and clamped rather than trusted. Every
-    // reader treats this column as the plan order — `refuseRulesetDowngrade` and `latest` below
-    // both do — so an order that disagrees with insertion order lets AC 12 compare against a
-    // superseded plan and lets `GET` return one.
-    //
-    // The column default is `current_timestamp`, which PostgreSQL fixes at TRANSACTION START, so a
-    // generation that opened its transaction first and inserted last carried the earlier stamp.
-    // `clock_timestamp()` reads the clock at this statement instead, but a clock is not an order:
-    // two inserts serialized on the events row lock can read the same instant, and a backward step
-    // can hand the later insert an earlier one. `greatest` against the preceding plan's stamp is
-    // what makes this an order. The subquery runs while this generation holds the events row lock,
-    // which every generation for this event must take, so it sees every plan that can precede this
-    // one, and the stored value strictly exceeds all of them whatever the clock says. `greatest`
-    // ignores the null the subquery returns for a first plan, which then stores the clock reading.
-    //
-    // Microsecond is `timestamptz`'s own resolution, so it is the smallest step that is still a
-    // distinct value: the stamps stay readable as insertion times and cannot collide.
+    // `generated_at` is written rather than defaulted, and clamped rather than trusted.
     `INSERT INTO permit_plans
        (id, event_id, event_revision, ruleset_version, snapshot_date, verdict, verdict_detail,
         intake_snapshot, generated_at)
@@ -401,9 +266,7 @@ async function insertPlan(
       eventId,
       eventRevision,
       plan.rulesetVersion,
-      // Written with the version, not after it. A plan generated between this migration and the
-      // banner reading the column would otherwise store NULL permanently, and nothing later can
-      // recover which snapshot date it was evaluated against.
+      // Written with the version, not after it.
       snapshotDate,
       VERDICT_COLUMN_VALUE[plan.verdict],
       JSON.stringify({
@@ -453,43 +316,18 @@ async function insertPlan(
   return { id: planId, generatedAt: (rows[0]?.generated_at ?? new Date()).toISOString() };
 }
 
-/**
- * Serializes this generation against every other generation for the same event.
- *
- * The precondition below is a read followed by a write, so it is only a guard if nothing can
- * commit a plan in between, which is the exact defect it replaces, where the browser decided on
- * reads that had already returned. `permit_plans` has no row to lock (the offending row is the one
- * that does not exist yet) and a feature branch adds no constraint, so the lock goes on the parent
- * `events` row, which every generation for this event must take. Under READ COMMITTED a generation
- * that blocks here re-reads on a fresh snapshot once the holder commits, so the competing plan is
- * visible to the check below. SERIALIZABLE would also close it, at the cost of 40001 retries on an
- * endpoint that writes an immutable row, which is a worse trade for one lock on one row.
- */
+/** Serializes this generation against every other generation for the same event. */
 async function lockEventForGeneration(client: PoolClient, eventId: string): Promise<void> {
   await client.query("SELECT id FROM events WHERE id = $1 FOR UPDATE", [eventId]);
 }
 
-/**
- * F-201 AC 12. Refuses when this service's ruleset is older than the version the latest stored plan
- * pinned, or when the two cannot be ordered at all.
- *
- * Unorderable pairs (a second jurisdiction, an unparseable version) are refused rather than
- * allowed. Allowing them reopens the hole this exists to close, and the failure it prevents is
- * silently dropping a regulatory requirement an organizer was already shown. The cost is a lane
- * that fails closed after a jurisdiction rename until a plan is pinned to the new prefix, and that
- * cost is paid down by the error naming both versions and the direction rather than reading as a
- * generic failure.
- */
+/** F-201 AC 12. */
 async function refuseRulesetDowngrade(
   client: PoolClient,
   eventId: string,
   rulesetVersion: string,
 ): Promise<void> {
-  // `generated_at` is clamped at insert to strictly exceed every plan already stored for this
-  // event, so it is a total order here and this read has exactly one answer. The `id` tie-break is
-  // a uuid, which would settle a tie arbitrarily rather than by insertion order; it can no longer
-  // decide anything between plans written under the lock, and remains only so that two rows
-  // predating the clamp that share a transaction-start stamp still read back the same way twice.
+  // `generated_at` is clamped at insert to strictly exceed every plan already stored for this event, so it is a total order here and this read has exactly one answer.
   const { rows } = await client.query<{ ruleset_version: string }>(
     `SELECT ruleset_version FROM permit_plans WHERE event_id = $1
       ORDER BY generated_at DESC, id DESC LIMIT 1`,
@@ -508,9 +346,7 @@ async function refuseRulesetDowngrade(
 export function createPlanService(
   pool: Pool,
   ruleset: EngineRuleset,
-  // Resolved per generation so a plan always records the calendar state it actually evaluated
-  // against. When the pinned calendar has no published holiday list, the engine renders only the
-  // findings that need business-day math as NOT_CALCULABLE; the rest of the plan still computes.
+  // Resolved per generation so a plan always records the calendar state it actually evaluated against.
   resolveCalendar: (calendarId: string) => HolidayCalendar,
   today: () => string,
 ): PlanService {
@@ -611,9 +447,7 @@ export function createPlanService(
         eventId,
         eventRevision: planRow.event_revision,
         rulesetVersion: planRow.ruleset_version,
-        // Read off the plan's own row, beside the version it is paired with. `date` comes back as
-        // a Date at local midnight, so the same calendar-component read every other date here
-        // uses recovers the stored day in any timezone.
+        // Read off the plan's own row, beside the version it is paired with.
         snapshotDate: isoDate(planRow.snapshot_date),
         verdict: ENGINE_VERDICT[planRow.verdict],
         verdictDetail,

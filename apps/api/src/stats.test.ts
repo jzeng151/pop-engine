@@ -12,8 +12,6 @@ import { createApp } from "./app";
 import { loadRuleset } from "./ruleset";
 import { readEventStats } from "./stats";
 
-// F-402 acceptance criteria as tests. Schema-backed suite runs when DATABASE_URL is set.
-
 const databaseUrl = process.env.DATABASE_URL ?? "";
 
 const scenarioA = (): Record<string, unknown> => {

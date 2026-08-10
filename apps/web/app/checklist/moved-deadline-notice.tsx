@@ -2,9 +2,7 @@ import type { Deadline, DeadlineStatus } from "@pop-engine/engine";
 import type { DeadlineStateSide, MovedDeadlineNotice } from "./checklist-api";
 import { formatSnapshotDate } from "../plan/snapshot-banner";
 
-// F-202 AC 9: the moved-deadline notice. Copy is deliberately narrow — it states what PopEngine
-// computes and must not imply anything about a filed application (SPEC-CONFLICT #121). Previous
-// values carry their full provenance floor (verification, sources, conflict text, pinned pair).
+// F-202 AC 9: the moved-deadline notice.
 
 const humanize = (token: string): string => token.replace(/_/g, " ");
 

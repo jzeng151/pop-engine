@@ -12,13 +12,7 @@ import {
   type IntakeRecord,
 } from "@pop-engine/engine";
 
-// F-101 intake endpoints (ARCHITECTURE.md API Surface): create, read, and edit the one
-// event row every later module reads. All field rules come from the engine's intake
-// contract, which is parsed from the published ruleset — this file only moves rows.
-
-// Postgres returns `date` and `numeric` as driver-specific shapes: a Date in the server's
-// local zone (which can shift the calendar day) and a string. Intake stores plain
-// calendar dates and small decimals, so read them back as the JSON types they went in as.
+// F-101 intake endpoints (ARCHITECTURE.md API Surface): create, read, and edit the one event row every later module reads.
 const DATE_OID = 1082;
 const NUMERIC_OID = 1700;
 types.setTypeParser(DATE_OID, (value) => value);
@@ -86,19 +80,7 @@ async function eventResponse(
 
 const notFound: EventResponse = { status: 404, body: { error: "event not found" } };
 
-/**
- * Run an edit against an event with its row locked for the whole decision.
- *
- * Reading the row, deciding whether the edit changes anything, writing, and reading the
- * plan's revision all have to describe one moment. Without the lock a concurrent PATCH
- * can commit between the read and the response, and this request answers with a row
- * that no longer exists as described — an event rolled back to an older revision, or a
- * plan reported current against a revision the event has already passed.
- *
- * The response is built inside the transaction but returned for sending after the
- * commit: a client that reads back the moment it is answered must not be able to see a
- * state older than the one it was just told about.
- */
+/** Run an edit against an event with its row locked for the whole decision. */
 async function withLockedEvent(
   database: Pool,
   id: string,
@@ -211,24 +193,15 @@ export function createEventsRouter(dependencies: EventsDependencies): Router {
         return;
       }
 
-      // Every read this response is built from is taken under the row lock, so the
-      // event, the decision about whether anything changed, and the plan's revision all
-      // describe the same moment. A concurrent edit either lands entirely before this
-      // one or waits for it.
+      // Every read this response is built from is taken under the row lock, so the event, the decision about whether anything changed, and the plan's revision all describe the same moment.
       const response = await withLockedEvent(database, id, async (client, stored) => {
         if (stored === null) return notFound;
 
-        // The whole intake is re-validated after the edit is applied, so an edit cannot
-        // leave the row in a state the intake would have refused to create. Answers the
-        // edit hides are cleared by the merge, so a rescope (street event → park) saves
-        // without the client having to null out every SAPO answer by hand.
+        // The whole intake is re-validated after the edit is applied, so an edit cannot leave the row in a state the intake would have refused to create.
         const edited = mergeIntakeEdit(intakeContract, pickIntake(stored, columns), submission);
         const { values, errors, warnings } = validateIntake(intakeContract, edited, today());
         if (values === null) return { status: 400, body: { errors, warnings } };
-        // A save that changes no answer is not an edit (AD-13), so it leaves the revision
-        // counter alone. Bumping it would report a plan as stale against an intake it
-        // still matches exactly, forcing a regeneration that can only produce the same
-        // plan. Checked here rather than in the client so it holds for every caller.
+        // A save that changes no answer is not an edit (AD-13), so it leaves the revision counter alone.
         const event = isIntakeUnchanged(intakeContract, stored, values)
           ? stored
           : await update(client, stored.id, values);

@@ -1,8 +1,3 @@
-// F-202 storage seam. These run with no bucket and no network: SigV4 presigning is local
-// arithmetic over the request and the credentials, and the upload path is driven with the
-// client's `send` stubbed. What is asserted is what the api is responsible for — the object
-// key, the declared content type, the URL's lifetime, and that no SDK text escapes.
-
 import { Readable } from "node:stream";
 import { S3Client } from "@aws-sdk/client-s3";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -68,7 +63,7 @@ describe("S3-compatible document storage", () => {
     await storage.put("checklist-items/abc/def.pdf", body, "application/pdf", PDF.byteLength);
 
     expect(send).toHaveBeenCalledTimes(1);
-    // The stream is handed to the SDK as-is: the adapter never reads it into a buffer.
+
     expect(send.mock.calls[0]?.[0].input).toEqual({
       Bucket: SETTINGS.bucket,
       Key: "checklist-items/abc/def.pdf",
@@ -85,24 +80,19 @@ describe("S3-compatible document storage", () => {
       await storage.signedDownloadUrl("checklist-items/abc/def.pdf", 300, "permit.pdf"),
     );
 
-    // Supabase serves one bucket path under a fixed project host, so the bucket must be in
-    // the path rather than the hostname.
     expect(url.origin).toBe("https://project-ref.supabase.co");
     expect(url.pathname).toBe("/storage/v1/s3/pop-engine-documents/checklist-items/abc/def.pdf");
     expect(url.searchParams.get("X-Amz-Expires")).toBe("300");
     expect(url.searchParams.get("X-Amz-Signature")).toMatch(/^[0-9a-f]{64}$/);
-    // The signing key itself is never in the URL; only the key id, inside the credential scope.
+
     expect(url.search).not.toContain(SETTINGS.secretAccessKey);
-    // Signed, not merely appended: a disposition outside the signature could be stripped or
-    // swapped by whoever holds the link.
+
     expect(url.searchParams.get("response-content-disposition")).toBe(
       `attachment; filename="permit.pdf"; filename*=UTF-8''permit.pdf`,
     );
     expect(url.searchParams.get("X-Amz-SignedHeaders")).not.toBeNull();
   });
 
-  // The api keeps filenames in any script, so the header has to carry one. It cannot do that in
-  // `filename=` alone, which is why both forms are emitted.
   it.each([
     [
       "\u7533\u8bf7\u4e66.pdf",

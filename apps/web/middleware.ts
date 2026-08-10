@@ -11,6 +11,7 @@ export async function middleware(request: NextRequest) {
     cookies: {
       getAll: () => request.cookies.getAll(),
       setAll: (cookiesToSet, headers) => {
+        // Update this render's request view, then copy refreshed cookies and headers to its response.
         cookiesToSet.forEach(({ name, value }) => request.cookies.set(name, value));
         response = NextResponse.next({ request });
         cookiesToSet.forEach(({ name, value, options }) =>

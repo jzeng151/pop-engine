@@ -1,8 +1,4 @@
 // The engine entry point (ARCHITECTURE "Rules Engine").
-//
-// PURE (AGENTS.md "Engine invariants"): no database, HTTP, environment reads, randomness, or
-// system clock. `today`, the ruleset, and the holiday calendar are explicit inputs, so the
-// same intake + ruleset version + today + calendar always produces a byte-identical plan.
 
 import { differenceInCalendarDays } from "./calendar";
 import { computeVerdict } from "./verdict";

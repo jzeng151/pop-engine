@@ -112,7 +112,6 @@ describe.runIf(databaseUrl.length > 0)("F-301 public page endpoints (database)",
     expect(organizer.status).toBe(200);
     expect(organizer.body.infeasible_warning).toBe(true);
 
-    // Publishing is still the organizer's call — public page can go live.
     await request(api)
       .patch(`/api/events/${eventId}/public-page`)
       .send({ public_page_published: true });

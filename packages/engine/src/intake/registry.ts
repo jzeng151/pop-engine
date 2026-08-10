@@ -1,13 +1,4 @@
 // The intake contract, derived from the published ruleset.
-//
-// `rules/nyc-rules.v2.11.json` owns the field list, the enums, and the asked-when
-// conditions (AGENTS.md "Shared contracts"; ARCHITECTURE.md events table). Nothing here
-// restates them: this module parses the registry and the `asked_when` expressions into
-// a structure the API and the UI both consume, so there is exactly one copy of the
-// contract in the repository.
-//
-// Pure by construction (AGENTS.md "Engine invariants"): the caller supplies the parsed
-// ruleset; this module reads no file, clock, or environment.
 
 import { parseAskedWhen as parseAskedWhenExpression } from "../conditions";
 import type { AskedWhenClause } from "../types";
@@ -113,16 +104,7 @@ function parseField(entry: unknown, label: string): PartialField {
   };
 }
 
-/**
- * `asked_when` is parsed by the engine's parser, not a second one here.
- *
- * The questionnaire and the rules engine were each reading the same expression grammar with
- * their own code, which is how they came to disagree: the engine typed a comparison operand to
- * the field ("food_present = true" yields a boolean) while this side kept the raw string, so a
- * field the engine considered in scope was a question the questionnaire hid — the user unable to
- * answer something the engine expected an answer for. One parsed representation removes the class
- * rather than the instance.
- */
+/** `asked_when` is parsed by the engine's parser, not a second one here. */
 function parseAskedWhen(
   expression: unknown,
   fields: readonly PartialField[],
