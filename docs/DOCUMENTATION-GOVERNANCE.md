@@ -75,7 +75,7 @@ If any contributor or agent finds a disagreement:
 4. If the authoritative artifact is unclear, assign an owner and add a blocking item to `OPEN-QUESTIONS.md`.
 5. Resolve the source artifact first.
 6. Update all derived contracts/docs in the same reconciliation PR or explicitly track each follow-up.
-7. Add a regression test or validation rule against the contradiction returning, and state in it what it does and does not cover. A check that reads parsed structure, a machine contract or an enumeration holds absolutely, because the artifact has no wording to vary. A check that reads prose catches the phrasings its patterns match and no others, so it is a partial guard and must say so rather than be described as making the contradiction impossible.
+7. Add a regression test or validation rule so the contradiction cannot silently return.
 
 Contributors must not:
 
