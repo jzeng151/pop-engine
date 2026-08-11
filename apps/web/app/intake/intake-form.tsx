@@ -51,7 +51,7 @@ const optionLabel = (value: string): string =>
 const isBlank = (value: IntakeValue | undefined): boolean =>
   value === null ||
   value === undefined ||
-  value === "" ||
+  (typeof value === "string" && value.trim() === "") ||
   (Array.isArray(value) && value.length === 0);
 
 const isIntakeValue = (value: unknown): value is IntakeValue =>
@@ -214,7 +214,11 @@ export function IntakeForm({
       setParkSearching(false);
     }
     setAnswers((current) => ({ ...current, [field]: value }));
-    setErrors((current) => current.filter((error) => error.field !== field));
+    if (!isBlank(value)) {
+      setErrors((current) =>
+        current.filter((error) => error.field !== field || error.code !== "required"),
+      );
+    }
   };
 
   const searchParks = async () => {
