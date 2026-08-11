@@ -918,7 +918,6 @@ describe("saving and per-field errors", () => {
 
     expect(screen.getByRole("link", { name: /capacity must/ })).toBeDefined();
     await fillField(user, "event_date", "2000-01-01");
-    await save(user);
     expect(screen.getByRole("link", { name: /event_date must/ })).toBeDefined();
 
     await fillField(user, "capacity", "1");
@@ -962,8 +961,22 @@ describe("saving and per-field errors", () => {
   });
 
   it("does not require conditional children triggered by an invalid parent answer", async () => {
+    fetchMock.mockResolvedValueOnce(
+      jsonResponse(400, {
+        errors: [
+          {
+            field: "headcount",
+            code: "invalid_value",
+            message: "headcount must be a whole number",
+          },
+        ],
+        warnings: [],
+      }),
+    );
     const user = renderForm();
+    await answerParkEvent(user);
     await chooseOption(user, "location_type", "private_venue");
+    await chooseOption(user, "amplified_sound", "false");
     await fillField(user, "headcount", "75.5");
 
     expect(questionsOnScreen()).not.toContain("Venue paco covers exact event");
@@ -979,7 +992,17 @@ describe("saving and per-field errors", () => {
         name: /Venue fdny pa permit current for event space is required/,
       }),
     ).toBeNull();
-    expect(fetchMock).not.toHaveBeenCalled();
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("lets the server decide whether an event date is in the past", async () => {
+    const user = renderForm();
+    await answerParkEvent(user);
+    await fillField(user, "event_date", "2000-01-01");
+    await save(user);
+
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
+    expect(router.push).toHaveBeenCalledWith("/events/event-1");
   });
 
   it("shows an error the form has no field for at the form level", async () => {

@@ -313,17 +313,29 @@ export function IntakeForm({
       ...DESCRIPTIVE_QUESTIONS.map((question) => question.field),
       ...questions.map((question) => question.field),
     ];
-    const clientErrors = validateIntake(contract, submission(), nycToday()).errors.map((error) => {
-      if (error.code !== "required") return error;
-      const label =
-        DESCRIPTIVE_QUESTIONS.find((question) => question.field === error.field)?.label ??
-        humanize(error.field);
-      return { ...error, message: `${label} is required` };
-    });
+    const validationErrors = validateIntake(contract, submission(), nycToday()).errors;
+    const missing = validationErrors
+      .filter((error) => error.code === "required")
+      .map((error) => {
+        const label =
+          DESCRIPTIVE_QUESTIONS.find((question) => question.field === error.field)?.label ??
+          humanize(error.field);
+        return { ...error, message: `${label} is required` };
+      });
+    const clientErrors = [
+      ...errors.filter(
+        (error) =>
+          error.code !== "required" &&
+          (error.field === "body" ||
+            error.code === "unknown_field" ||
+            validationErrors.some((candidate) => candidate.field === error.field)),
+      ),
+      ...missing,
+    ];
     clientErrors.sort(
       (left, right) => fieldOrder.indexOf(left.field) - fieldOrder.indexOf(right.field),
     );
-    if (clientErrors.length > 0) {
+    if (missing.length > 0) {
       shouldFocusFirstError.current = true;
       setErrors(clientErrors);
       return;
