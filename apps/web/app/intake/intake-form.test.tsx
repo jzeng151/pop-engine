@@ -88,6 +88,7 @@ const answerParkEvent = async (user: ReturnType<typeof userEvent.setup>) => {
   await chooseOption(user, "structure_types", "none");
   await chooseOption(user, "open_flame_or_cooking", "none");
   await chooseOption(user, "generator_present", "false");
+  await chooseOption(user, "battery_present", "false");
   await chooseOption(user, "alcohol", "false");
 };
 
@@ -350,6 +351,7 @@ describe("loading a saved event to edit it", () => {
     structure_types: ["none"],
     open_flame_or_cooking: ["none"],
     generator_present: false,
+    battery_present: false,
     battery_system_kwh: null,
     alcohol: false,
     obstructs_public_way: null,
@@ -478,6 +480,7 @@ describe("clearing an optional answer on an edit", () => {
           structure_types: ["none"],
           open_flame_or_cooking: ["none"],
           generator_present: false,
+          battery_present: false,
           alcohol: false,
         },
         warnings: [],
@@ -646,6 +649,26 @@ describe("inline warnings render the published text (spec #4, #5)", () => {
 });
 
 describe("saving and per-field errors", () => {
+  it("lists every missing visible answer, focuses the first, and clears it when corrected", async () => {
+    const user = renderForm();
+    await save(user);
+
+    expect(fetchMock).not.toHaveBeenCalled();
+    const summary = screen.getByRole("region", { name: "Fix these answers before saving:" });
+    expect(within(summary).getByRole("link", { name: "Event name is required" })).toBeDefined();
+    expect(within(summary).getByRole("link", { name: "Borough is required" })).toBeDefined();
+    expect(within(summary).getByRole("link", { name: "Location type is required" })).toBeDefined();
+    expect(within(summary).queryByText(/Sapo event type is required/)).toBeNull();
+    await waitFor(() =>
+      expect(document.activeElement).toBe(
+        document.querySelector<HTMLInputElement>('input[name="name"]'),
+      ),
+    );
+
+    await fillField(user, "name", "Community Day");
+    expect(within(summary).queryByRole("link", { name: "Event name is required" })).toBeNull();
+  });
+
   it("posts the intake and opens its overview", async () => {
     const user = renderForm();
     await answerParkEvent(user);
@@ -770,6 +793,7 @@ describe("editing a saved event", () => {
     await chooseOption(user, "structure_types", "none");
     await chooseOption(user, "open_flame_or_cooking", "none");
     await chooseOption(user, "generator_present", "false");
+    await chooseOption(user, "battery_present", "false");
     await chooseOption(user, "alcohol", "false");
   };
 
@@ -894,7 +918,7 @@ describe("editing a saved event", () => {
     expect(document.querySelector<HTMLInputElement>('input[name="headcount"]')?.value).toBe("80");
   });
 
-  it("shows a re-revealed question as cleared, not as it was before the save", async () => {
+  it("shows a re-revealed question as cleared and requires it before another save", async () => {
     const user = renderForm();
     await answerSellingStreetEvent(user);
     await save(user);
@@ -919,11 +943,8 @@ describe("editing a saved event", () => {
         ?.checked,
     ).toBe(false);
 
-    fetchMock.mockImplementationOnce(async (_url: string, init: RequestInit) =>
-      echoSavedEvent(200, init, { revision_counter: 3 }),
-    );
     await save(user);
-    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(3));
-    expect(requestBody(fetchMock, 2).street_event_size).toBeNull();
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(screen.getByRole("alert").textContent).toBe("Street event size is required");
   });
 });

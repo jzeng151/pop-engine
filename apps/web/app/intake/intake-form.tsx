@@ -48,8 +48,11 @@ const humanize = (token: string): string =>
 const optionLabel = (value: string): string =>
   value === "unknown" ? "I don't know" : humanize(value);
 
-const isBlank = (value: IntakeValue): boolean =>
-  value === null || value === undefined || value === "";
+const isBlank = (value: IntakeValue | undefined): boolean =>
+  value === null ||
+  value === undefined ||
+  value === "" ||
+  (Array.isArray(value) && value.length === 0);
 
 const isIntakeValue = (value: unknown): value is IntakeValue =>
   value === null ||
@@ -190,6 +193,7 @@ export function IntakeForm({
       setParkSearching(false);
     }
     setAnswers((current) => ({ ...current, [field]: value }));
+    setErrors((current) => current.filter((error) => error.field !== field));
   };
 
   const searchParks = async () => {
@@ -235,8 +239,29 @@ export function IntakeForm({
   };
 
   const save = async () => {
-    setSaving(true);
     setFailure(null);
+    const missing = [
+      ...DESCRIPTIVE_QUESTIONS.filter(
+        (question) => question.required && isBlank(answers[question.field]),
+      ).map((question) => ({
+        field: question.field,
+        code: "required",
+        message: `${question.label} is required`,
+      })),
+      ...questions
+        .filter((question) => !question.nullable && isBlank(answers[question.field]))
+        .map((question) => ({
+          field: question.field,
+          code: "required",
+          message: `${humanize(question.field)} is required`,
+        })),
+    ];
+    if (missing.length > 0) {
+      setErrors(missing);
+      return;
+    }
+
+    setSaving(true);
     // The answers as they stand at the click, which the response is reconciled against.
     const answersAtSubmit = answers;
     try {
@@ -295,6 +320,7 @@ export function IntakeForm({
       <form
         ref={formRef}
         className="intake"
+        noValidate
         onSubmit={(event) => {
           event.preventDefault();
           void save();
@@ -307,6 +333,23 @@ export function IntakeForm({
           and &ldquo;I don&rsquo;t know&rdquo; is a real answer — it is stored as unknown and
           carried into your plan.
         </p>
+
+        {errors.some((error) => error.field !== "body" && error.code !== "unknown_field") && (
+          <section className="intake__error-summary" aria-labelledby="intake-error-summary-title">
+            <p id="intake-error-summary-title">
+              <strong>Fix these answers before saving:</strong>
+            </p>
+            <ul>
+              {errors
+                .filter((error) => error.field !== "body" && error.code !== "unknown_field")
+                .map((error) => (
+                  <li key={`${error.field}-${error.code}`}>
+                    <a href={`#intake-${error.field}`}>{error.message}</a>
+                  </li>
+                ))}
+            </ul>
+          </section>
+        )}
 
         {DESCRIPTIVE_QUESTIONS.map((question) => {
           const issue = errorFor(question.field);
@@ -528,6 +571,7 @@ function Question({
 
   return (
     <fieldset
+      id={`intake-${field.field}`}
       className="intake__question"
       aria-describedby={describedBy.length === 0 ? undefined : describedBy}
       aria-invalid={issue === undefined ? undefined : true}
