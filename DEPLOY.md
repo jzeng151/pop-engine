@@ -73,7 +73,7 @@ this command out of this file and signals it, so the two cannot drift apart.
 
 1. New Project, Deploy from GitHub repo, `jzeng151/pop-engine`.
 2. Add the two services with the commands above.
-3. Set env vars per service from `apps/api/.env.example` and `apps/web/.env.example`. Point `WEB_ORIGIN` (api) at the web URL, `NEXT_PUBLIC_API_BASE_URL` (web) at the api URL, and `NEXT_PUBLIC_SITE_URL` at the exact public web origin.
+3. Set env vars per service from `apps/api/.env.example` and `apps/web/.env.example`. Point `WEB_ORIGIN` (api) at the web URL, `NEXT_PUBLIC_API_BASE_URL` (web) at the api URL, and `NEXT_PUBLIC_SITE_URL` at the exact public web origin. For the portfolio demo, set `NEXT_PUBLIC_HIDE_PLANNED_MODULES=true` on the web service before its build; unset or `false` keeps the Planned group visible.
 4. Connect the deploy branch. The demo environment is seeded once and not redeployed after final rehearsal.
 
 ### Release order

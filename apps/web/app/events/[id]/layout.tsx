@@ -15,6 +15,7 @@ export default async function EventLayout({
     <EventWorkspace
       apiBaseUrl={process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:3001"}
       eventId={id}
+      hidePlannedModules={process.env.NEXT_PUBLIC_HIDE_PLANNED_MODULES === "true"}
     >
       {children}
     </EventWorkspace>
