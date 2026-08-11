@@ -13,6 +13,7 @@ import {
 } from "@pop-engine/engine";
 import {
   CREDENTIALED,
+  clearPendingCreateForEvent,
   isIntakeValue,
   loadEvent,
   loadPendingCreate,
@@ -162,6 +163,7 @@ export function IntakeForm({
   const [errors, setErrors] = useState<IntakeIssue[]>([]);
   const [saving, setSaving] = useState(false);
   const [failure, setFailure] = useState<string | null>(null);
+  const [canDiscardCreateRecovery, setCanDiscardCreateRecovery] = useState(false);
   const [loading, setLoading] = useState(eventId !== undefined);
   const [loadFailure, setLoadFailure] = useState<string | null>(null);
   const [parkSuggestions, setParkSuggestions] = useState<ParkSuggestion[] | null>(null);
@@ -205,6 +207,7 @@ export function IntakeForm({
         setSaved(result.loaded.event);
         setLoading(false);
         void loadPlan(apiBaseUrl, eventId).then((plan) => {
+          if (plan.ok) clearPendingCreateForEvent(apiBaseUrl, eventId);
           if (!abandoned) setInitialPlanReady(plan.ok);
         });
       } else {
@@ -414,6 +417,14 @@ export function IntakeForm({
       });
       const body = (await response.json()) as ApiResponse;
       if (!response.ok || body.event === undefined) {
+        if (
+          mounted.current &&
+          retry !== null &&
+          response.status === 400 &&
+          Array.isArray(body.errors)
+        ) {
+          setCanDiscardCreateRecovery(true);
+        }
         if (creating && isDefinitiveCreateRejection(response.status, body, retry !== null)) {
           pendingCreate.current = null;
           storePendingCreate(apiBaseUrl, null);
@@ -448,6 +459,7 @@ export function IntakeForm({
         }
         return;
       }
+      if (mounted.current) setCanDiscardCreateRecovery(false);
       // Rebuild from the stored row so answers cleared by hidden questions cannot linger locally.
       const stored = answersFromEvent(contract, body.event);
       let eventRecoveryStored = true;
@@ -522,6 +534,21 @@ export function IntakeForm({
     } finally {
       if (mounted.current) setSaving(false);
     }
+  };
+
+  const discardCreateRecovery = () => {
+    if (!storePendingCreate(apiBaseUrl, null)) {
+      setFailure(
+        "This browser could not discard the saved recovery information. Keep this tab open and try again.",
+      );
+      return;
+    }
+    pendingCreate.current = null;
+    setCanDiscardCreateRecovery(false);
+    setErrors([]);
+    setFailure(
+      "The previous recovery was discarded. Review the current answers, then save to create a new event.",
+    );
   };
 
   if (loading) {
@@ -726,6 +753,18 @@ export function IntakeForm({
           <p className="intake__error" role="alert">
             {failure}
           </p>
+        )}
+
+        {canDiscardCreateRecovery && (
+          <section className="intake__warning" aria-label="Create recovery options">
+            <p>
+              The earlier request may still finish. Check that it did not create an event before
+              discarding recovery, or a new save could create a duplicate.
+            </p>
+            <button className="intake__secondary" type="button" onClick={discardCreateRecovery}>
+              Discard recovery and start over
+            </button>
+          </section>
         )}
 
         <button className="intake__submit" type="submit" disabled={saving}>

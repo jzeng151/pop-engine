@@ -45,6 +45,19 @@ const storedPlan = {
   findings: [],
 };
 
+const pendingCreateStorageKey = "pop-engine.pending-event-create:https://api.example.com";
+
+const storeCreateRecovery = (eventId?: string) =>
+  sessionStorage.setItem(
+    pendingCreateStorageKey,
+    JSON.stringify({
+      key: "44f58390-9892-4e1b-b1ed-ecf00ea20967",
+      body: {},
+      answers: {},
+      ...(eventId === undefined ? {} : { eventId }),
+    }),
+  );
+
 const echoSavedEvent = (
   status: number,
   init: RequestInit,
@@ -424,6 +437,18 @@ describe("loading a saved event to edit it", () => {
     expect(screen.getByRole("link", { name: "Promote public page" }).getAttribute("href")).toBe(
       "/events/event-9/promote",
     );
+  });
+
+  it("clears matching create recovery after validating the saved event's plan", async () => {
+    storeCreateRecovery("event-9");
+    fetchMock.mockResolvedValueOnce(
+      jsonResponse(200, { event: storedEvent, warnings: [], plan_stale: false }),
+    );
+    fetchMock.mockResolvedValueOnce(jsonResponse(200, { ...storedPlan, eventId: "event-9" }));
+    renderForm("event-9");
+
+    await screen.findByRole("link", { name: "Promote public page" });
+    expect(sessionStorage.getItem(pendingCreateStorageKey)).toBeNull();
   });
 
   it("allows editing while the promotion-only plan lookup is pending", async () => {
@@ -972,6 +997,55 @@ describe("saving and per-field errors", () => {
       new Headers(createCalls[0]?.[1].headers).get("Idempotency-Key"),
     );
     expect(createCalls[2]?.[1].body).toBe(createCalls[0]?.[1].body);
+    expect(sessionStorage).toHaveLength(0);
+  });
+
+  it("lets the organizer discard a rejected replay before creating from current answers", async () => {
+    let createAttempts = 0;
+    fetchMock.mockImplementation(async (url: string, init: RequestInit) => {
+      if (url === "https://api.example.com/api/events") {
+        createAttempts += 1;
+        if (createAttempts === 1) throw new TypeError("response lost");
+        if (createAttempts === 2) {
+          return jsonResponse(400, {
+            errors: [
+              { field: "headcount", code: "must_be_positive", message: "headcount is invalid" },
+            ],
+          });
+        }
+        return echoSavedEvent(201, init);
+      }
+      if (url.endsWith("/plan")) {
+        return init.method === "POST" ? jsonResponse(201, {}) : jsonResponse(200, storedPlan);
+      }
+      throw new Error(`unexpected request ${url}`);
+    });
+    const user = renderForm();
+    await answerParkEvent(user);
+    await save(user);
+    await screen.findByRole("alert");
+
+    await save(user);
+    const discard = await screen.findByRole("button", {
+      name: "Discard recovery and start over",
+    });
+    expect(screen.getByText(/The earlier request may still finish/)).toBeDefined();
+    expect(sessionStorage).toHaveLength(1);
+
+    await user.click(discard);
+    expect(sessionStorage).toHaveLength(0);
+    await fillField(user, "headcount", "175");
+    await save(user);
+
+    await waitFor(() => expect(router.push).toHaveBeenCalledWith("/events/event-1/plan"));
+    const createCalls = fetchMock.mock.calls.filter(
+      ([url]) => url === "https://api.example.com/api/events",
+    ) as [string, RequestInit][];
+    expect(createCalls).toHaveLength(3);
+    expect(new Headers(createCalls[2]?.[1].headers).get("Idempotency-Key")).not.toBe(
+      new Headers(createCalls[0]?.[1].headers).get("Idempotency-Key"),
+    );
+    expect(JSON.parse(String(createCalls[2]?.[1].body)).headcount).toBe(175);
     expect(sessionStorage).toHaveLength(0);
   });
 
