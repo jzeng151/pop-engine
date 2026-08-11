@@ -444,7 +444,7 @@ describe.concurrent("round 7: the rules the parser made reachable", () => {
     const copies = [
       declared("scripts/check-baseline-drift.mjs"),
       declared("apps/api/src/ruleset.ts"),
-      declared("apps/web/app/rules-file.ts"),
+      declared("apps/web/app/_lib/rules-file.ts"),
       declared("packages/engine/src/__fixtures__/published-ruleset.ts"),
     ];
     expect(copies.every((copy) => copy !== null)).toBe(true);
@@ -795,8 +795,8 @@ describe.concurrent("round 11: a bump does not break the guard", () => {
 
   it("passes with the real rules-file.test.ts when the published artifact has moved on", async () => {
     const { status, output } = await afterTheBump({
-      "apps/web/app/rules-file.test.ts": readFileSync(
-        join(repo, "apps/web/app/rules-file.test.ts"),
+      "apps/web/app/_lib/rules-file.test.ts": readFileSync(
+        join(repo, "apps/web/app/_lib/rules-file.test.ts"),
         "utf8",
       ),
     });

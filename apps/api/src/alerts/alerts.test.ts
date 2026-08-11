@@ -24,7 +24,7 @@ import {
   type AlertChannel,
   type AlertSenders,
 } from "./alert-delivery";
-import { up as migration014 } from "../migrations/014_alert_send_attempts";
+import { up as migration014 } from "../../migrations/014_alert_send_attempts";
 import {
   simulatedDeliveries,
   alertDeliveryHealth,
@@ -46,11 +46,11 @@ import {
   type AlertScheduler,
   type AlertStatus,
 } from "./alerts";
-import { createApp } from "./app";
-import { instantAtLocalHour, todayInJurisdiction } from "./calendar";
-import { createPlanService } from "./plan";
-import { deadlineReminderOffsets, loadRuleset, rulesFilePath } from "./ruleset";
-import type { DocumentStorage } from "./storage";
+import { createApp } from "../app";
+import { instantAtLocalHour, todayInJurisdiction } from "../calendar";
+import { createPlanService } from "../planning/plan";
+import { deadlineReminderOffsets, loadRuleset, rulesFilePath } from "../ruleset";
+import type { DocumentStorage } from "../planning/storage";
 
 const databaseUrl = process.env.DATABASE_URL ?? "";
 

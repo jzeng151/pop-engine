@@ -1,6 +1,6 @@
 import { PlanView } from "../../../plan/plan-view";
 import type { FindingReference } from "../../../plan/verdict-detail";
-import { rulesFileIn } from "../../../rules-file";
+import { rulesFileIn } from "../../../_lib/rules-file";
 import { parseEngineRuleset } from "@pop-engine/engine";
 import type { Metadata } from "next";
 import { readFile } from "node:fs/promises";

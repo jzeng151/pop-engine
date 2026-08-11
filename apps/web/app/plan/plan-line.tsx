@@ -4,9 +4,9 @@ import {
   type FindingSource,
   type SummarySourceLink,
 } from "@pop-engine/engine";
-import { Disclosure } from "../disclosure";
-import { PortalBlock } from "../portal-block";
-import { includesAgencyConfirmation, NOT_COVERED_BY_RULESET } from "../verification-copy";
+import { Disclosure } from "../_components/disclosure";
+import { PortalBlock } from "../_components/portal-block";
+import { includesAgencyConfirmation, NOT_COVERED_BY_RULESET } from "../_lib/verification-copy";
 import { businessDayNotice } from "./business-day-notice";
 import type { ConsumedFinding, ConsumedRoute } from "./plan-api";
 import type { HeadlineMode } from "@pop-engine/engine";

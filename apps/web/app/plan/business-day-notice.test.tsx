@@ -12,7 +12,7 @@ import {
   type EventIntake,
   type Finding,
 } from "@pop-engine/engine";
-import { publishedRulesFileIn } from "../rules-file";
+import { publishedRulesFileIn } from "../_lib/rules-file";
 import { loadPlan } from "./plan-api";
 import { PlanLine } from "./plan-line";
 

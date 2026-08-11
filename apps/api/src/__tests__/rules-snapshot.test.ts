@@ -3,9 +3,9 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import request from "supertest";
 import { Pool } from "pg";
 import { parseEngineRuleset, parseIntakeContract, type EngineRuleset } from "@pop-engine/engine";
-import { createApp, type AppDependencies } from "./app";
-import { createPlanService } from "./plan";
-import { loadRuleset, rulesFilePath, VERIFICATION_STATUSES } from "./ruleset";
+import { createApp, type AppDependencies } from "../app";
+import { createPlanService } from "../planning/plan";
+import { loadRuleset, rulesFilePath, VERIFICATION_STATUSES } from "../ruleset";
 
 const published = await loadRuleset();
 

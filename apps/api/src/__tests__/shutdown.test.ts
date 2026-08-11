@@ -3,15 +3,15 @@ import { readFileSync } from "node:fs";
 import { connect, createServer, type AddressInfo } from "node:net";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
-import { rulesFilePath } from "./ruleset";
+import { rulesFilePath } from "../ruleset";
 
 const databaseUrl = process.env.DATABASE_URL ?? "";
-const repoRoot = fileURLToPath(new URL("../../..", import.meta.url));
+const repoRoot = fileURLToPath(new URL("../../../..", import.meta.url));
 
 const GIVE_UP_MS = 60_000;
 
 function deployedStartCommand(): string {
-  const runbook = readFileSync(new URL("../../../DEPLOY.md", import.meta.url), "utf8");
+  const runbook = readFileSync(new URL("../../../../DEPLOY.md", import.meta.url), "utf8");
   const command = /-\s+\*\*api\*\*:\s+start command\s+`([^`]+)`/.exec(runbook)?.[1];
   if (command === undefined) {
     throw new Error("DEPLOY.md no longer publishes an api start command this suite can run");

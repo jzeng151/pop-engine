@@ -3,8 +3,8 @@
 import { usePathname } from "next/navigation";
 import { useEffect, useState, type ReactNode } from "react";
 
-import { loadEvent } from "../../intake/events-api";
-import { ThemeToggle } from "../../theme-toggle";
+import { loadEvent } from "../../_lib/events-api";
+import { ThemeToggle } from "../../_components/theme-toggle";
 
 type EventWorkspaceProps = {
   apiBaseUrl: string;

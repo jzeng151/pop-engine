@@ -10,7 +10,7 @@ import {
   type IntakeIssue,
   type IntakeValue,
 } from "@pop-engine/engine";
-import { CREDENTIALED, loadEvent, type SavedEvent } from "./events-api";
+import { CREDENTIALED, loadEvent, type SavedEvent } from "../_lib/events-api";
 import { discoverParks, parksBoroughCode, type ParkSuggestion } from "./parks-api";
 
 // The intake questionnaire.

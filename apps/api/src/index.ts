@@ -1,18 +1,18 @@
 import { readFile } from "node:fs/promises";
 import { Client, Pool } from "pg";
 import { parseEngineRuleset, parseIntakeContract } from "@pop-engine/engine";
-import { sendersFromEnv } from "./alert-delivery";
-import { ALERT_POLLER_CONNECTIONS, createAlertPoller, createAlertScheduler } from "./alerts";
+import { sendersFromEnv } from "./alerts/alert-delivery";
+import { ALERT_POLLER_CONNECTIONS, createAlertPoller, createAlertScheduler } from "./alerts/alerts";
 import { createApp } from "./app";
 import { holidayCalendarWarning, pinnedCalendar, todayInJurisdiction } from "./calendar";
-import { createPlanService } from "./plan";
+import { createPlanService } from "./planning/plan";
 import { deadlineReminderOffsets, loadRuleset, rulesFilePath, syncPermitRules } from "./ruleset";
 import {
   createS3DocumentStorage,
   s3ClientFor,
   s3SettingsFromEnv,
   unconfiguredDocumentStorage,
-} from "./storage";
+} from "./planning/storage";
 import { supabaseAccessTokenVerifier } from "./auth";
 
 // Long-lived process (ARCHITECTURE.md AD-1).

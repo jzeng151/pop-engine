@@ -1,6 +1,6 @@
 import type { MigrationBuilder } from "node-pg-migrate";
 import { describe, expect, it, vi } from "vitest";
-import { down, up } from "../migrations/012_events_assembly_document_coverage";
+import { down, up } from "../../migrations/012_events_assembly_document_coverage";
 
 describe("migration 012", () => {
   it("adds both tri-states and backfills only qualifying drafts without reading the old column", () => {

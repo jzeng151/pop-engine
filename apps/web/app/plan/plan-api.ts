@@ -31,7 +31,7 @@ import {
   noRouteSuppliesScalars,
   windowIsMissed,
 } from "@pop-engine/engine";
-import { CREDENTIALED } from "../intake/events-api";
+import { CREDENTIALED } from "../_lib/events-api";
 import {
   absentOr,
   arrayOf,

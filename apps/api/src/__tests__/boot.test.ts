@@ -6,10 +6,10 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { Client } from "pg";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { rulesFilePath } from "./ruleset";
+import { rulesFilePath } from "../ruleset";
 
 const databaseUrl = process.env.DATABASE_URL ?? "";
-const apiDirectory = fileURLToPath(new URL("..", import.meta.url));
+const apiDirectory = fileURLToPath(new URL("../..", import.meta.url));
 const PROBE_DATABASE = "pop_engine_boot_probe";
 
 const probeUrl = (): string => {

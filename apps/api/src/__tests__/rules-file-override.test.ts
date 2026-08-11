@@ -21,7 +21,7 @@ async function withUnscannableRulesDirectory() {
       },
     };
   });
-  return import("./ruleset");
+  return import("../ruleset");
 }
 
 describe("RULES_FILE is honored before the rules directory is scanned", () => {

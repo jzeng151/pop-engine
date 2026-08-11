@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
-export { normalizeOptionalPhone } from "./contact";
-import { normalizeOptionalPhone } from "./contact";
+export { normalizeOptionalPhone } from "../contact";
+import { normalizeOptionalPhone } from "../contact";
 import { Router, type Request, type Response } from "express";
 import type { Pool, PoolClient, QueryResult, QueryResultRow } from "pg";
 

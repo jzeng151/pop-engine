@@ -1,6 +1,6 @@
 import { Client } from "pg";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { loadRuleset } from "./ruleset";
+import { loadRuleset } from "../ruleset";
 
 const databaseUrl = process.env.DATABASE_URL ?? "";
 

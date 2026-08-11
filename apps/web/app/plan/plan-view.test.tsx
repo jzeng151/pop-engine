@@ -11,12 +11,12 @@ import {
   type Finding,
   type FindingRoute,
 } from "@pop-engine/engine";
-import { publishedRulesFileIn } from "../rules-file";
+import { publishedRulesFileIn } from "../_lib/rules-file";
 import PlanPage from "../events/[id]/plan/page";
 import { PlanView } from "./plan-view";
 import { SnapshotBanner, compareToPinned, formatSnapshotDate } from "./snapshot-banner";
 import { verdictCopy } from "./verdict-copy";
-import { NOT_COVERED_BY_RULESET } from "../verification-copy";
+import { NOT_COVERED_BY_RULESET } from "../_lib/verification-copy";
 
 const publishedRuleset: {
   ruleset_version: string;

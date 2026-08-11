@@ -22,7 +22,7 @@ import {
   parseContacts,
   simulatedDeliveries,
   type AlertScheduler,
-} from "./alerts";
+} from "../alerts/alerts";
 import { movedDeadlineNotice, type NoticePlanItem } from "./moved-deadline-notice";
 import {
   calendarDateFrom,

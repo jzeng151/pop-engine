@@ -1,6 +1,6 @@
 import type { Verdict } from "@pop-engine/engine";
 import { offersAFilingAction } from "@pop-engine/engine";
-import { PortalBlock, type PortalFields } from "../portal-block";
+import { PortalBlock, type PortalFields } from "../_components/portal-block";
 import { WIDENED_BLOCKER_KEYS } from "./plan-api";
 import type { ConsumedFinding, ConsumedVerdictDetail } from "./plan-api";
 import { AT_RISK_BUFFER_NOTE, verdictCopy } from "./verdict-copy";

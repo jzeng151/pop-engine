@@ -51,8 +51,8 @@ As an attendee who found the event page, I RSVP with name and email in seconds; 
    deployment that carries this change has rolled out and no rollback target predating it remains
    selectable; (2) `readLimit` in `apps/web/app/events/[id]/guests/guests-api.ts` and its fallback
    tests are deleted, so the client requires `capacity`; (3) the `headcount` key is dropped from
-   `ListRsvpsResult` and from the response `listRsvps` builds in `apps/api/src/rsvps.ts`, and the
-   compatibility tests in `apps/api/src/rsvps.test.ts` go with it; (4) this window paragraph and its
+   `ListRsvpsResult` and from the response `listRsvps` builds in `apps/api/src/attendance/rsvps.ts`, and the
+   compatibility tests in `apps/api/src/attendance/rsvps.test.ts` go with it; (4) this window paragraph and its
    choice-A rollout constraint are removed and AC 2's response sentence returns to `capacity`
    alone. Deployment order does not constrain the removal itself: a client
    that still carries the fallback reads a response carrying only `capacity`, because a present

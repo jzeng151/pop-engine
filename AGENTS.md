@@ -20,7 +20,7 @@ If a required artifact is absent, unapproved, superseded, or contradictory: stop
 
 - Work on one approved F-id at a time; implement only the spec's acceptance criteria.
 - Do not add endpoints, tables, enum values, dependencies, abstractions, or UI options the spec doesn't require.
-- Do not rename or repurpose a feature ID; do not restructure the repo or move another lane's files.
+- Do not rename or repurpose a feature ID. The product-owner-approved web/API path-only reorganization recorded in `docs/BASELINE.md` on 2026-08-10 is the sole current restructuring exception; do not move anything outside its exact scope.
 - Unrelated defects become issues, not side-fixes in your branch.
 
 ## Regulatory safety (the non-negotiables)

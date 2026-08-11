@@ -1,19 +1,19 @@
 import express, { type Express, type Response } from "express";
 import { describeEngine, EvaluationError } from "@pop-engine/engine";
-import { createAlertsRouter, type AlertsDependencies } from "./alerts";
-import { createCheckinsRouter } from "./checkins";
-import { createChecklistRouter, type ChecklistDependencies } from "./checklist";
+import { createAlertsRouter, type AlertsDependencies } from "./alerts/alerts";
+import { createCheckinsRouter } from "./attendance/checkins";
+import { createChecklistRouter, type ChecklistDependencies } from "./planning/checklist";
 import { createEventsRouter, type EventsDependencies } from "./events";
 import {
   EventNotFoundError,
   PlanIntegrityError,
   PlanRulesetDowngradeError,
   type PlanService,
-} from "./plan";
+} from "./planning/plan";
 import { createParksRouter } from "./parks";
-import { createPublicPageRouter } from "./public-page";
-import { createRsvpsRouter } from "./rsvps";
-import { createStatsRouter } from "./stats";
+import { createPublicPageRouter } from "./attendance/public-page";
+import { createRsvpsRouter } from "./attendance/rsvps";
+import { createStatsRouter } from "./attendance/stats";
 import { requireSupabaseAuth, type VerifyAccessToken } from "./auth";
 
 /**

@@ -30,15 +30,15 @@ import {
   jurisdictionDayInSql,
   jurisdictionTimeZone,
   todayInJurisdiction,
-} from "./calendar";
-import { canonicalOptionalPhone } from "./contact";
+} from "../calendar";
+import { canonicalOptionalPhone } from "../contact";
 import {
   calendarDateFrom,
   FILING_ORDER_DATE,
   FILING_ORDER_JOIN,
   renderingKey,
   type FindingRendering,
-} from "./plan";
+} from "../planning/plan";
 
 /** Mirrors the `alerts.alert_type` CHECK in migration 001. */
 export const ALERT_TYPES = ["deadline_reminder", "slack_warning", "dependency_unlocked"] as const;

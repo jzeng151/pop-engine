@@ -72,7 +72,7 @@ Most of us build with AI. That's fine and expected; here's how to do it without 
 2. **You are the author.** Read and understand every line before you commit it. If you can't explain a line in review, don't ship it; ask the AI to explain it first, and simplify it if the explanation is complicated.
 3. **Reject scope creep.** AI output loves adding options, abstractions, extra endpoints, and "improvements." If it isn't in the spec, delete it before the PR.
 4. **Never accept regulatory content from an AI.** Permit names, lead times, fees: rules file only (Golden Rule 1).
-5. **Don't let it restructure.** The repo shape, schema, and API are decided (ARCHITECTURE). Prompt with "follow the existing structure"; reject output that moves files or renames established concepts.
+5. **Don't let it improvise a restructure.** The product-owner-approved web/API path-only move recorded in `docs/BASELINE.md` on 2026-08-10 is the sole current exception. Outside that exact scope, the repo shape, schema, and API remain decided (ARCHITECTURE); reject file moves and renamed concepts.
 6. **Tests are not optional AI output.** Ask for tests against the spec's acceptance criteria, then verify the tests actually assert the criteria, not just "it renders."
 
 ## When You're Stuck

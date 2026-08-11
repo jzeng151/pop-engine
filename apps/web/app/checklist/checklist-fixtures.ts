@@ -8,7 +8,7 @@ import {
   type Deadline,
   type FindingRoute,
 } from "@pop-engine/engine";
-import { rulesFileIn } from "../rules-file";
+import { rulesFileIn } from "../_lib/rules-file";
 
 /** The published ruleset, found rather than named — the resolver #138 added here, now shared with the rest of this app rather than living only in the file that happened to break first. */
 const RULES_FILE = rulesFileIn("rules");
@@ -61,7 +61,7 @@ export const citationOf = (ruleId: string): string => {
   return source.citation;
 };
 
-/** The regulatory half of a row: `planContext` in `apps/api/src/checklist.ts`, projected off the published rule exactly as `buildFinding` projects it. */
+/** The regulatory half of a row: `planContext` in `apps/api/src/planning/checklist.ts`, projected off the published rule exactly as `buildFinding` projects it. */
 export const planContext = (
   ruleId: string,
   overrides: Record<string, unknown> = {},
@@ -104,7 +104,7 @@ export const planContext = (
     sourceUrl: rule.source?.urls[0] ?? null,
     sourcePlan: { ...PUBLISHED_SNAPSHOT },
     ...overrides,
-    // THE FILED FIELDS ARE THE NAMED ROUTE'S, which is what the api serves: `planContext` in `apps/api/src/checklist.ts` reads every one of them off the filing route through `fromFilingRoute`, and the boundary refuses a row.
+    // THE FILED FIELDS ARE THE NAMED ROUTE'S, which is what the api serves: `planContext` in `apps/api/src/planning/checklist.ts` reads every one of them off the filing route through `fromFilingRoute`, and the boundary refuses a row.
     ...filedFrom(overrides),
   };
 };

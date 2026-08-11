@@ -72,7 +72,7 @@ API: none. Schema: none. Jobs: none. Providers: none. Privacy: the event name is
 
 ## Allowed File Footprint
 
-`apps/web/app/events/[id]/layout.tsx`, `apps/web/app/events/[id]/event-workspace.tsx`, `apps/web/app/events/[id]/page.tsx`, `apps/web/app/theme-toggle.tsx`, and their tests. Shared and requiring coordination: `apps/web/app/globals.css` (design-system tokens and chrome, `docs/DESIGN-SYSTEM.md`).
+`apps/web/app/events/[id]/layout.tsx`, `apps/web/app/events/[id]/event-workspace.tsx`, `apps/web/app/events/[id]/page.tsx`, `apps/web/app/_components/theme-toggle.tsx`, and their tests. Shared and requiring coordination: `apps/web/app/globals.css` (design-system tokens and chrome, `docs/DESIGN-SYSTEM.md`).
 
 ## Rollout and Fallback
 

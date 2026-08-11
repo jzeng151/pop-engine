@@ -1,10 +1,10 @@
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
-import { PROVIDER_DEDUP_WINDOW_HOURS } from "./alerts";
+import { PROVIDER_DEDUP_WINDOW_HOURS } from "../alerts/alerts";
 
 const repoFile = (relativePath: string): string =>
-  fileURLToPath(new URL(`../../../${relativePath}`, import.meta.url));
+  fileURLToPath(new URL(`../../../../${relativePath}`, import.meta.url));
 
 const read = (relativePath: string): string => readFileSync(repoFile(relativePath), "utf8");
 
@@ -13,7 +13,7 @@ const releaseOrder = runbook.slice(runbook.indexOf("### Release order"));
 
 describe("F-302 rollout constraint the runbook has to carry", () => {
   it("keeps the capacity rename web-first while the compatibility response is shape-only", () => {
-    const api = read("apps/api/src/rsvps.ts");
+    const api = read("apps/api/src/attendance/rsvps.ts");
     expect(api).toContain("SELECT id, name, capacity, headcount");
     expect(api).toContain("headcount: event.headcount");
 
@@ -33,7 +33,7 @@ describe("F-203 rollout constraints the runbook has to carry", () => {
   it("tells a deployer to stop the running api before migration 014's backfill lands", () => {
     const migration = read("apps/api/migrations/014_alert_send_attempts.ts");
     expect(migration).toContain("INSERT INTO alert_send_attempts");
-    expect(read("apps/api/src/alerts.ts")).toContain("FROM alert_send_attempts AS attempt");
+    expect(read("apps/api/src/alerts/alerts.ts")).toContain("FROM alert_send_attempts AS attempt");
 
     expect(releaseOrder).toContain("alert_send_attempts");
     expect(releaseOrder.replace(/\s+/g, " ")).toMatch(
@@ -51,7 +51,7 @@ describe("F-203 rollout constraints the runbook has to carry", () => {
   });
 
   it("does not ask the previous build for a drain that ships with this one", () => {
-    expect(read("apps/api/src/alerts.ts")).toContain("idempotencyKey: providerKey(row)");
+    expect(read("apps/api/src/alerts/alerts.ts")).toContain("idempotencyKey: providerKey(row)");
 
     const prose = releaseOrder.replace(/\s+/g, " ");
     expect(prose).toMatch(/predates (this|that|the) (drain|handler)/i);
@@ -59,7 +59,7 @@ describe("F-203 rollout constraints the runbook has to carry", () => {
   });
 
   it("empties the old build's queue before the stop instead of anchoring a hold to it", () => {
-    const alerts = read("apps/api/src/alerts.ts");
+    const alerts = read("apps/api/src/alerts/alerts.ts");
     expect(alerts).toContain(
       "AND (next_attempt_at IS NULL OR next_attempt_at <= statement_timestamp())",
     );
@@ -79,7 +79,7 @@ describe("F-203 rollout constraints the runbook has to carry", () => {
   });
 
   it("describes the attempt row as an intent rather than a completed handoff", () => {
-    expect(read("apps/api/src/alerts.ts")).toContain(
+    expect(read("apps/api/src/alerts/alerts.ts")).toContain(
       "Record that this alert is ABOUT to be handed",
     );
 
@@ -99,7 +99,7 @@ describe("F-203 rollout constraints the runbook has to carry", () => {
   });
 
   it("describes the hold as bounded and released from the first unresolved attempt", () => {
-    expect(read("apps/api/src/alerts.ts")).toContain("UNRESOLVED_ATTEMPT_HOLD_LIMIT_HOURS");
+    expect(read("apps/api/src/alerts/alerts.ts")).toContain("UNRESOLVED_ATTEMPT_HOLD_LIMIT_HOURS");
 
     const architecture = read("docs/ARCHITECTURE.md");
     const schemaSection = architecture.slice(
@@ -139,7 +139,7 @@ describe("F-203 rollout constraints the runbook has to carry", () => {
   });
 
   it("tells a deployer to deploy web before the api for the reconciliation notice", () => {
-    expect(read("apps/api/src/checklist.ts")).toContain("alertsHeldForReconciliation");
+    expect(read("apps/api/src/planning/checklist.ts")).toContain("alertsHeldForReconciliation");
     expect(read("apps/web/app/checklist/checklist-api.ts")).toContain("withRolloutDefaults");
 
     expect(releaseOrder).toContain("alertsHeldForReconciliation");
