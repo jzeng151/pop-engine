@@ -106,6 +106,30 @@ async function withLockedEvent(
   }
 }
 
+/** Same-key creates queue before replay lookup and current intake validation. */
+async function withLockedCreateKey(
+  database: Pool,
+  key: string,
+  create: (client: Queryable) => Promise<EventResponse>,
+): Promise<EventResponse> {
+  const client = await database.connect();
+  try {
+    await client.query("BEGIN");
+    await client.query(
+      "SELECT pg_advisory_xact_lock(hashtext('pop-engine-event-create'), hashtext($1))",
+      [key],
+    );
+    const response = await create(client);
+    await client.query("COMMIT");
+    return response;
+  } catch (error) {
+    await client.query("ROLLBACK");
+    throw error;
+  } finally {
+    client.release();
+  }
+}
+
 function readSubmission(req: Request, res: Response): Record<string, unknown> | null {
   const body: unknown = req.body;
   if (typeof body !== "object" || body === null || Array.isArray(body)) {
@@ -163,10 +187,11 @@ export function createEventsRouter(dependencies: EventsDependencies): Router {
   const router = Router();
 
   const readCreateReplay = async (
+    client: Queryable,
     key: string,
     requestBody: string,
   ): Promise<{ event: EventRow; matches: boolean } | null> => {
-    const { rows } = await database.query<CreateReplayRow>(
+    const { rows } = await client.query<CreateReplayRow>(
       `SELECT events.*, create_request_body = $2::jsonb AS create_request_matches
          FROM events
         WHERE create_idempotency_key = $1`,
@@ -179,12 +204,13 @@ export function createEventsRouter(dependencies: EventsDependencies): Router {
   };
 
   const insert = async (
+    client: Queryable,
     key: string,
     requestBody: string,
     values: IntakeRecord,
   ): Promise<EventRow | null> => {
     const id = randomUUID();
-    const { rows } = await database.query<EventRow>(
+    const { rows } = await client.query<EventRow>(
       `INSERT INTO events (id, create_idempotency_key, create_request_body, ${quoted(columns)})
        VALUES ($1, $2, $3::jsonb, ${columns.map((_column, index) => `$${index + 4}`).join(", ")})
        ON CONFLICT (create_idempotency_key) DO NOTHING
@@ -221,40 +247,37 @@ export function createEventsRouter(dependencies: EventsDependencies): Router {
       if (typeof rawBody !== "string") throw new Error("raw JSON body is unavailable");
       const requestBody = JSON.stringify(rawBody);
 
-      const replay = await readCreateReplay(key, requestBody);
-      if (replay !== null) {
-        if (!replay.matches) {
-          res.status(409).json({ error: "Idempotency-Key was already used with a different body" });
-          return;
+      const response = await withLockedCreateKey(database, key, async (client) => {
+        const replay = await readCreateReplay(client, key, requestBody);
+        if (replay !== null) {
+          if (!replay.matches) {
+            return {
+              status: 409,
+              body: { error: "Idempotency-Key was already used with a different body" },
+            };
+          }
+          return eventResponse(client, intakeContract, replay.event, 200);
         }
-        const response = await eventResponse(database, intakeContract, replay.event, 200);
-        res.status(response.status).json(response.body);
-        return;
-      }
 
-      const { values, errors, warnings } = validateIntake(intakeContract, submission, today());
-      if (values === null) {
-        res.status(400).json({ errors, warnings });
-        return;
-      }
+        const { values, errors, warnings } = validateIntake(intakeContract, submission, today());
+        if (values === null) return { status: 400, body: { errors, warnings } };
 
-      const inserted = await insert(key, requestBody, values);
-      const result =
-        inserted === null
-          ? await readCreateReplay(key, requestBody)
-          : { event: inserted, matches: true };
-      if (result === null) throw new Error("idempotent event create committed no readable result");
-      if (!result.matches) {
-        res.status(409).json({ error: "Idempotency-Key was already used with a different body" });
-        return;
-      }
-      const created = await eventResponse(
-        database,
-        intakeContract,
-        result.event,
-        inserted === null ? 200 : 201,
-      );
-      res.status(created.status).json(created.body);
+        const inserted = await insert(client, key, requestBody, values);
+        const result =
+          inserted === null
+            ? await readCreateReplay(client, key, requestBody)
+            : { event: inserted, matches: true };
+        if (result === null)
+          throw new Error("idempotent event create committed no readable result");
+        if (!result.matches) {
+          return {
+            status: 409,
+            body: { error: "Idempotency-Key was already used with a different body" },
+          };
+        }
+        return eventResponse(client, intakeContract, result.event, inserted === null ? 200 : 201);
+      });
+      res.status(response.status).json(response.body);
     }),
   );
 

@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import {
   clearPendingCreateForEvent,
   loadEvent,
+  loadPendingCreate,
   type LoadResult,
   type SavedEvent,
 } from "../_lib/events-api";
@@ -159,7 +160,13 @@ export function PlanView({
     setRegenerating(true);
     setRegenerationFailure(null);
 
-    const generated = await generatePlan(apiBaseUrl, eventId);
+    const recovery = loadPendingCreate(apiBaseUrl);
+    const generated = await generatePlan(
+      apiBaseUrl,
+      eventId,
+      recovery?.eventId === eventId ? recovery.key : undefined,
+    );
+    if (generated.ok || generated.stored) clearPendingCreateForEvent(apiBaseUrl, eventId);
     if (active.current !== requested) return;
     if (!generated.ok) {
       setRegenerationFailure(generated.message);

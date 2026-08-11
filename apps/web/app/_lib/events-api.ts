@@ -224,8 +224,9 @@ export async function regeneratePlan(
           ok: false,
           refused: false,
           outcomeKnown:
-            response.status < 500 ||
-            (response.status === 500 && asRecord(body)?.error === "plan generation failed"),
+            ![401, 403, 429].includes(response.status) &&
+            (response.status < 500 ||
+              (response.status === 500 && asRecord(body)?.error === "plan generation failed")),
           message,
         };
   }

@@ -254,6 +254,40 @@ describe("initial-create recovery", () => {
     await screen.findByRole("button", { name: "Generate the plan" });
     expect(sessionStorage.getItem(storageKey)).not.toBeNull();
   });
+
+  it("reuses the matching recovery key when generating the missing plan", async () => {
+    storeRecovery("event-1");
+    let generated = false;
+    const fetchMock = vi.fn(async (url: string, init?: RequestInit) => {
+      if (url.endsWith("/rules/meta")) return jsonResponse(200, liveMeta);
+      if (url.endsWith("/plan")) {
+        if (init?.method === "POST") {
+          generated = true;
+          return jsonResponse(200, plan());
+        }
+        return generated ? jsonResponse(200, plan()) : jsonResponse(404, {});
+      }
+      return jsonResponse(200, {
+        event: { id: "event-1", revision_counter: 1 },
+        warnings: [],
+        plan_stale: false,
+      });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    const user = userEvent.setup();
+    renderPlan();
+
+    await user.click(await screen.findByRole("button", { name: "Generate the plan" }));
+
+    await screen.findByRole("complementary", { name: "Rules snapshot" });
+    const planPost = fetchMock.mock.calls.find(
+      ([url, init]) => url.endsWith("/plan") && init?.method === "POST",
+    );
+    expect(new Headers(planPost?.[1]?.headers).get("Idempotency-Key")).toBe(
+      "44f58390-9892-4e1b-b1ed-ecf00ea20967",
+    );
+    expect(sessionStorage.getItem(storageKey)).toBeNull();
+  });
 });
 
 describe("the snapshot banner (AC 1)", () => {

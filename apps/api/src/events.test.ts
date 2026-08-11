@@ -149,6 +149,80 @@ describe.runIf(databaseUrl.length > 0)("F-101 event intake endpoints", () => {
       expect(copies[0]?.body.event.id).toBe(copies[1]?.body.event.id);
     });
 
+    it("queues a same-key replay before current validation while the first create commits", async () => {
+      let currentToday = "2026-07-22";
+      let delayFirstInsert = true;
+      let markFirstInsertReached: () => void = () => {};
+      const firstInsertReached = new Promise<void>((resolve) => {
+        markFirstInsertReached = resolve;
+      });
+      let releaseFirstInsert: () => void = () => {};
+      const firstInsertRelease = new Promise<void>((resolve) => {
+        releaseFirstInsert = resolve;
+      });
+      const delayedDatabase = {
+        connect: async () => {
+          const client = await database.connect();
+          return {
+            query: async (sql: string, values?: unknown[]) => {
+              if (delayFirstInsert && sql.startsWith("INSERT INTO events")) {
+                delayFirstInsert = false;
+                markFirstInsertReached();
+                await firstInsertRelease;
+              }
+              return client.query(sql, values);
+            },
+            release: () => client.release(),
+          };
+        },
+      } as unknown as Pool;
+      const replayApi = createApp({
+        database: delayedDatabase,
+        intakeContract: parseIntakeContract((await loadRuleset()).document),
+        today: () => currentToday,
+      });
+      const key = randomUUID();
+      const intake = { ...scenario("C"), event_date: "2026-07-23" };
+      const send = () =>
+        request(replayApi).post("/api/events").set("Idempotency-Key", key).send(intake);
+      const first = send().then((response) => response);
+      let replay: Promise<request.Response> | undefined;
+
+      try {
+        await firstInsertReached;
+        currentToday = "2026-07-24";
+        replay = send().then((response) => response);
+
+        const deadline = Date.now() + 10_000;
+        let replayQueued = false;
+        while (!replayQueued && Date.now() < deadline) {
+          const { rows } = await database.query(
+            `SELECT 1 FROM pg_stat_activity
+                WHERE datname = current_database()
+                  AND wait_event_type = 'Lock'
+                  AND query LIKE 'SELECT pg_advisory_xact_lock%'`,
+          );
+          replayQueued = rows.length > 0;
+          if (!replayQueued) await new Promise((resolve) => setTimeout(resolve, 25));
+        }
+        expect(
+          replayQueued,
+          "the retry did not queue on the create key before applying current validation",
+        ).toBe(true);
+
+        releaseFirstInsert();
+        const [created, recovered] = await Promise.all([first, replay]);
+
+        expect(created.status).toBe(201);
+        expect(recovered.status).toBe(200);
+        expect(recovered.body.event.id).toBe(created.body.event.id);
+        createdEventIds.push(created.body.event.id as string);
+      } finally {
+        releaseFirstInsert();
+        await Promise.allSettled([first, replay].filter((pending) => pending !== undefined));
+      }
+    }, 15_000);
+
     it("rejects reuse of a committed key with a different body", async () => {
       const key = randomUUID();
       const intake: Record<string, unknown> = {

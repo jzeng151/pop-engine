@@ -1203,6 +1203,28 @@ describe("saving and per-field errors", () => {
     },
   );
 
+  it.each([401, 403, 429])(
+    "retains plan recovery when an access-layer %i races a missing-plan read",
+    async (status) => {
+      fetchMock.mockImplementationOnce(async (_url: string, init: RequestInit) =>
+        echoSavedEvent(201, init),
+      );
+      fetchMock.mockResolvedValueOnce(jsonResponse(status, { error: "access refused" }));
+      fetchMock.mockResolvedValueOnce(jsonResponse(404, { error: "no plan generated" }));
+      const user = renderForm();
+      await answerParkEvent(user);
+      await save(user);
+
+      expect(
+        await screen.findByText(/it is not known whether its permit plan was generated/),
+      ).toBeDefined();
+      expect(sessionStorage).toHaveLength(1);
+      expect(
+        JSON.parse(sessionStorage.getItem(sessionStorage.key(0) as string) as string).eventId,
+      ).toBe("event-1");
+    },
+  );
+
   it("reports an unknown outcome when neither generation nor its recheck answers", async () => {
     fetchMock.mockImplementationOnce(async (_url: string, init: RequestInit) =>
       echoSavedEvent(201, init),

@@ -801,12 +801,17 @@ export async function loadPlan(apiBaseUrl: string, eventId: string): Promise<Pla
 export async function generatePlan(
   apiBaseUrl: string,
   eventId: string,
+  initialCreateKey?: string,
 ): Promise<PlanGenerationResult> {
   let response: Response;
   try {
     response = await fetch(`${apiBaseUrl}/api/events/${eventId}/plan`, {
       method: "POST",
       ...CREDENTIALED,
+      headers:
+        initialCreateKey === undefined
+          ? CREDENTIALED.headers
+          : { ...CREDENTIALED.headers, "Idempotency-Key": initialCreateKey },
     });
   } catch {
     return { ok: false, stored: false, message: UNREACHABLE };

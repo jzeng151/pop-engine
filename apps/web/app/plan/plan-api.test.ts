@@ -1074,6 +1074,19 @@ describe("generatePlan", () => {
     });
   });
 
+  it("sends the retained create key for an initial-plan retry", async () => {
+    const fetchMock = stubFetch(async () => jsonResponse(200, storedPlan));
+    const key = "44f58390-9892-4e1b-b1ed-ecf00ea20967";
+
+    await expect(generatePlan("https://api.example.com", "event-1", key)).resolves.toEqual({
+      ok: true,
+      plan: storedPlan,
+    });
+    expect(
+      new Headers((fetchMock.mock.calls[0]?.[1] as RequestInit).headers).get("Idempotency-Key"),
+    ).toBe(key);
+  });
+
   it("re-reads only when the POST's own body cannot be read", async () => {
     const fetchMock = stubFetch(async (_url, init) =>
       (init as RequestInit | undefined)?.method === "POST"
