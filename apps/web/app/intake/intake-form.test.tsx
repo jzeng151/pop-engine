@@ -1181,6 +1181,22 @@ describe("saving and per-field errors", () => {
     expect(sessionStorage).toHaveLength(0);
   });
 
+  it("retains recovery when a gateway failure races a missing-plan read", async () => {
+    fetchMock.mockImplementationOnce(async (_url: string, init: RequestInit) =>
+      echoSavedEvent(201, init),
+    );
+    fetchMock.mockResolvedValueOnce(jsonResponse(502, { error: "bad gateway" }));
+    fetchMock.mockResolvedValueOnce(jsonResponse(404, { error: "no plan generated" }));
+    const user = renderForm();
+    await answerParkEvent(user);
+    await save(user);
+
+    expect(
+      await screen.findByText(/it is not known whether its permit plan was generated/),
+    ).toBeDefined();
+    expect(sessionStorage).toHaveLength(1);
+  });
+
   it("reports an unknown outcome when neither generation nor its recheck answers", async () => {
     fetchMock.mockImplementationOnce(async (_url: string, init: RequestInit) =>
       echoSavedEvent(201, init),

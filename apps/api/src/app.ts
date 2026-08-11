@@ -61,7 +61,13 @@ export function createApp(dependencies: AppDependencies): Express {
     next();
   });
 
-  app.use(express.json());
+  app.use(
+    express.json({
+      verify: (req, _res, buffer) => {
+        Reflect.set(req, "rawJsonBody", buffer.toString("utf8"));
+      },
+    }),
+  );
 
   // Liveness probe for Railway / Cloudflare health checks. The `engine` field also
   // proves the @pop-engine/engine workspace package resolves end to end.

@@ -527,7 +527,7 @@ export function IntakeForm({
           const loaded = await loadPlan(apiBaseUrl, body.event.id);
           planStored = loaded.ok
             ? true
-            : loaded.missing && (generated.ok || generated.responseReceived)
+            : loaded.missing && (generated.ok || generated.outcomeKnown)
               ? false
               : null;
         }

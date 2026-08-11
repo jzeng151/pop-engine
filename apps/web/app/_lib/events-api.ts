@@ -35,7 +35,7 @@ export type PlanRegenerationResult =
    * the detail behind it, null when the body did not carry it in a form this can read.
    */
   | { ok: false; refused: true; refusal: RegenerationRefusal | null; message: string }
-  | { ok: false; refused: false; responseReceived: boolean; message: string };
+  | { ok: false; refused: false; outcomeKnown: boolean; message: string };
 
 const UNREACHABLE = "The API could not be reached.";
 
@@ -122,7 +122,7 @@ export async function regeneratePlan(
           : { ...CREDENTIALED.headers, "Idempotency-Key": initialCreateKey },
     });
   } catch {
-    return { ok: false, refused: false, responseReceived: false, message: UNREACHABLE };
+    return { ok: false, refused: false, outcomeKnown: false, message: UNREACHABLE };
   }
 
   const body = await readJson(response);
@@ -133,7 +133,7 @@ export async function regeneratePlan(
     );
     return response.status === 409
       ? { ok: false, refused: true, refusal: readRefusal(body), message }
-      : { ok: false, refused: false, responseReceived: true, message };
+      : { ok: false, refused: false, outcomeKnown: response.status <= 500, message };
   }
   return { ok: true };
 }

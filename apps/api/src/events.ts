@@ -217,7 +217,9 @@ export function createEventsRouter(dependencies: EventsDependencies): Router {
       if (key === null) return;
       const submission = readSubmission(req, res);
       if (submission === null) return;
-      const requestBody = JSON.stringify(submission);
+      const rawBody: unknown = Reflect.get(req, "rawJsonBody");
+      if (typeof rawBody !== "string") throw new Error("raw JSON body is unavailable");
+      const requestBody = JSON.stringify(rawBody);
 
       const replay = await readCreateReplay(key, requestBody);
       if (replay !== null) {
