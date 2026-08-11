@@ -699,6 +699,16 @@ describe("saving and per-field errors", () => {
     expect(document.querySelector('input[name="food_vendor_count"]')).toBeNull();
   });
 
+  it("treats a whitespace-only required name as missing", async () => {
+    const user = renderForm();
+    await answerParkEvent(user);
+    await fillField(user, "name", "   ");
+    await save(user);
+
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(screen.getByRole("link", { name: "Event name is required" })).toBeDefined();
+  });
+
   it("posts the intake and opens its overview", async () => {
     const user = renderForm();
     await answerParkEvent(user);
@@ -740,6 +750,26 @@ describe("saving and per-field errors", () => {
     expect(headcount.getAttribute("aria-invalid")).toBe("true");
     expect(headcount.getAttribute("aria-describedby")).toContain("intake-headcount-error");
     await waitFor(() => expect(document.activeElement).toBe(headcount));
+  });
+
+  it("keeps a server error when a field changes to another invalid value", async () => {
+    fetchMock.mockResolvedValueOnce(
+      jsonResponse(400, {
+        errors: [
+          { field: "headcount", code: "must_be_positive", message: "headcount must be at least 1" },
+        ],
+        warnings: [],
+      }),
+    );
+    const user = renderForm();
+    await answerParkEvent(user);
+    await save(user);
+
+    await fillField(user, "headcount", "-1");
+    expect(screen.getByRole("link", { name: "headcount must be at least 1" })).toBeDefined();
+    expect(screen.getByRole("spinbutton", { name: "Headcount" }).getAttribute("aria-invalid")).toBe(
+      "true",
+    );
   });
 
   it("shows an error the form has no field for at the form level", async () => {
