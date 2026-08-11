@@ -115,9 +115,9 @@ function readSubmission(req: Request, res: Response): Record<string, unknown> | 
     });
     return null;
   }
-  if (hasNonFiniteNumber(body)) {
+  if (hasUnsafeNumber(body)) {
     res.status(400).json({
-      errors: [{ field: "body", code: "invalid_body", message: "body numbers must be finite" }],
+      errors: [{ field: "body", code: "invalid_body", message: "body numbers must be safe" }],
       warnings: [],
     });
     return null;
@@ -125,12 +125,12 @@ function readSubmission(req: Request, res: Response): Record<string, unknown> | 
   return body as Record<string, unknown>;
 }
 
-function hasNonFiniteNumber(value: unknown): boolean {
-  if (typeof value === "number") return !Number.isFinite(value);
-  if (Array.isArray(value)) return value.some(hasNonFiniteNumber);
-  return (
-    typeof value === "object" && value !== null && Object.values(value).some(hasNonFiniteNumber)
-  );
+function hasUnsafeNumber(value: unknown): boolean {
+  if (typeof value === "number") {
+    return !Number.isFinite(value) || (Number.isInteger(value) && !Number.isSafeInteger(value));
+  }
+  if (Array.isArray(value)) return value.some(hasUnsafeNumber);
+  return typeof value === "object" && value !== null && Object.values(value).some(hasUnsafeNumber);
 }
 
 function readIdempotencyKey(req: Request, res: Response): string | null {

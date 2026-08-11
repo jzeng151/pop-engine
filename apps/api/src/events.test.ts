@@ -97,13 +97,16 @@ describe.runIf(databaseUrl.length > 0)("F-101 event intake endpoints", () => {
       expect(stored.rows[0]?.count).toBe("1");
     });
 
-    it("rejects non-finite JSON numbers before comparing a replay body", async () => {
+    it.each([
+      ["non-finite", "1e400"],
+      ["unsafe integer", "9007199254740993"],
+    ])("rejects a %s JSON number before comparing a replay body", async (_label, number) => {
       const key = randomUUID();
       const intake = { ...scenario("C"), generator_kw: null };
       const first = await post(intake, key);
       const lossyBody = JSON.stringify(intake).replace(
         '"generator_kw":null',
-        '"generator_kw":1e400',
+        `"generator_kw":${number}`,
       );
 
       const replay = await request(api)
