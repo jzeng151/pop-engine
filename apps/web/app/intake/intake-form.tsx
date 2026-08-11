@@ -54,6 +54,11 @@ const isBlank = (value: IntakeValue | undefined): boolean =>
   (typeof value === "string" && value.trim() === "") ||
   (Array.isArray(value) && value.length === 0);
 
+const correctionClears = (error: IntakeIssue, value: IntakeValue): boolean =>
+  error.code === "required"
+    ? !isBlank(value)
+    : error.code === "must_be_positive" && typeof value === "number" && value > 0;
+
 const isIntakeValue = (value: unknown): value is IntakeValue =>
   value === null ||
   typeof value === "string" ||
@@ -212,11 +217,9 @@ export function IntakeForm({
       setParkSearching(false);
     }
     setAnswers((current) => ({ ...current, [field]: value }));
-    if (!isBlank(value)) {
-      setErrors((current) =>
-        current.filter((error) => error.field !== field || error.code !== "required"),
-      );
-    }
+    setErrors((current) =>
+      current.filter((error) => error.field !== field || !correctionClears(error, value)),
+    );
   };
 
   const searchParks = async () => {

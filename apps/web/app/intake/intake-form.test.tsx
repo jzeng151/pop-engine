@@ -770,6 +770,12 @@ describe("saving and per-field errors", () => {
     expect(screen.getByRole("spinbutton", { name: "Headcount" }).getAttribute("aria-invalid")).toBe(
       "true",
     );
+
+    await fillField(user, "headcount", "1");
+    expect(screen.queryByRole("link", { name: "headcount must be at least 1" })).toBeNull();
+    expect(
+      screen.getByRole("spinbutton", { name: "Headcount" }).getAttribute("aria-invalid"),
+    ).toBeNull();
   });
 
   it("shows an error the form has no field for at the form level", async () => {
