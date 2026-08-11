@@ -30,6 +30,7 @@ const sample = {
   public_path: `/e/${EVENT_ID}`,
   map_url: "https://maps.google.com/?q=Lot",
   infeasible_warning: true,
+  plan_available: true,
 };
 
 describe("PromoteView", () => {
@@ -66,6 +67,27 @@ describe("PromoteView", () => {
     );
     render(<PromoteView eventId={EVENT_ID} apiBaseUrl="https://api.example.com" />);
     expect(await screen.findByText(`${window.location.origin}/e/${EVENT_ID}`)).toBeDefined();
+  });
+
+  it("explains and disables publication when no plan exists", async () => {
+    const fetchMock = vi.fn(async () => jsonResponse(200, { ...sample, plan_available: false }));
+    vi.stubGlobal("fetch", fetchMock);
+    render(
+      <PromoteView
+        eventId={EVENT_ID}
+        apiBaseUrl="https://api.example.com"
+        webOrigin="https://web.example.com"
+      />,
+    );
+
+    expect(await screen.findByText(/generate a permit plan before publishing/i)).toBeDefined();
+    expect(screen.getByRole("link", { name: "Open permit plan" }).getAttribute("href")).toBe(
+      `/events/${EVENT_ID}/plan`,
+    );
+    expect(screen.getByRole<HTMLButtonElement>("button", { name: "Publish page" }).disabled).toBe(
+      true,
+    );
+    expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 
   it("surfaces a friendly message when clipboard write is unavailable", async () => {

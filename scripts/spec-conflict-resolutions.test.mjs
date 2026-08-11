@@ -1,4 +1,4 @@
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import ts from "typescript";
@@ -267,13 +267,11 @@ describe("F-101 AC 8 restored on the overview, 2026-08-04", () => {
   const restoringSurface = "apps/web/app/events/[id]/plan-stale-notice.tsx";
 
   function currentBaselineRecord() {
-    const records = read("docs/BASELINE.md")
+    const record = read("docs/BASELINE.md")
       .split(/\n{2,}/)
-      .filter((p) => p.startsWith("**") && p.includes("F-101") && p.includes("regeneration"));
-    expect(records.length, "docs/BASELINE.md records F-101's regeneration at all").toBeGreaterThan(
-      0,
-    );
-    return records[0];
+      .find((paragraph) => paragraph.startsWith("**Record 2026-08-04 (F-101 lane, PR #242):**"));
+    expect(record, "docs/BASELINE.md keeps the PR #242 restoration record").toBeDefined();
+    return record;
   }
 
   it("the manifest's current record names the surface the criterion is met on", () => {
@@ -320,5 +318,20 @@ describe("T-8 F-601/F-109 dependency-graph row, resolved 2026-08-05", () => {
     expect(t8).toContain("RESOLVED 2026-08-05");
     expect(t8).toContain("AD-17");
     expect(read("docs/ARCHITECTURE-FUTURE.md")).toContain("| AD-17 |");
+  });
+});
+
+describe("SPEC-CONFLICT #268 stale assembly-coverage proposal", () => {
+  it("keeps the retired proposal out of the active spec set", () => {
+    expect(existsSync(resolve(repoRoot, "specs/host-guest-authorisation-coverage.md"))).toBe(false);
+  });
+
+  it("keeps the F-110 replacement fields in the active intake registry", () => {
+    const ruleset = JSON.parse(read("rules/nyc-rules.v2.11.json"));
+    const fields = ruleset.intake_fields.map(({ field }) => field);
+
+    expect(fields).toContain("venue_paco_covers_exact_event");
+    expect(fields).toContain("venue_fdny_pa_permit_current_for_event_space");
+    expect(fields).not.toContain("venue_has_assembly_approval");
   });
 });

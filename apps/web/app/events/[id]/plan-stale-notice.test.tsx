@@ -234,7 +234,7 @@ describe("the endpoint's downgrade refusal", () => {
     expect(screen.getByText(/edited since its plan was generated/)).toBeDefined();
   });
 
-  it("still withholds the retry when the refusal does not name the versions readably", async () => {
+  it("keeps retry available when a 409 does not match the refusal contract", async () => {
     respondWith({
       post: () =>
         new Response(JSON.stringify({ error: "plan generation refused: nyc.v2.11 vs nyc.v2.10" }), {
@@ -246,10 +246,10 @@ describe("the endpoint's downgrade refusal", () => {
     renderNotice();
     await clickRegenerate();
 
-    const refusal = await screen.findByText(/Your plan was not regenerated/);
-    expect(refusal.textContent).toContain("did not name the two ruleset versions");
-    expect(refusal.textContent).toContain("plan generation refused: nyc.v2.11 vs nyc.v2.10");
-    expect(regenerateButton()).toBeNull();
+    expect(
+      await screen.findByText("plan generation refused: nyc.v2.11 vs nyc.v2.10"),
+    ).toBeDefined();
+    expect(regenerateButton()).toBeDefined();
     expect(postCount()).toBe(1);
   });
 

@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import request from "supertest";
@@ -93,6 +94,7 @@ describe.runIf(databaseUrl.length > 0)("a plan's pinned ruleset version", () => 
   const planForAPark = async (): Promise<string> => {
     const created = await request(api)
       .post("/api/events")
+      .set("Idempotency-Key", randomUUID())
       .send({
         name: "Snapshot pinning",
         borough: "brooklyn",
@@ -128,6 +130,7 @@ describe.runIf(databaseUrl.length > 0)("a plan's pinned ruleset version", () => 
   it("returns the pinned pair from the generation call too, not only the read", async () => {
     const created = await request(api)
       .post("/api/events")
+      .set("Idempotency-Key", randomUUID())
       .send({
         name: "Snapshot pinning on generate",
         borough: "brooklyn",

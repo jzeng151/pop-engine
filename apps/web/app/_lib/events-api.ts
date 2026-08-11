@@ -1,5 +1,7 @@
 // The browser's calls to the events API.
 
+import type { IntakeValue } from "@pop-engine/engine";
+
 export const CREDENTIALED = {
   credentials: "include",
   headers: { "Content-Type": "application/json" },
@@ -10,6 +12,110 @@ export type SavedEvent = {
   revision_counter: number;
   [column: string]: unknown;
 };
+
+type Answers = Record<string, IntakeValue>;
+
+export type PendingCreate = {
+  key: string;
+  body: Answers;
+  answers: Answers;
+  eventId?: string;
+};
+
+const PENDING_CREATE_STORAGE = "pop-engine.pending-event-create";
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
+export const isIntakeValue = (value: unknown): value is IntakeValue =>
+  value === null ||
+  typeof value === "string" ||
+  typeof value === "number" ||
+  typeof value === "boolean" ||
+  (Array.isArray(value) && value.every((entry) => typeof entry === "string"));
+
+const isAnswers = (value: unknown): value is Answers =>
+  typeof value === "object" &&
+  value !== null &&
+  !Array.isArray(value) &&
+  Object.values(value).every(isIntakeValue);
+
+const pendingCreateStorageKey = (apiBaseUrl: string): string =>
+  `${PENDING_CREATE_STORAGE}:${apiBaseUrl}`;
+
+export type PendingCreateRead = { pending: PendingCreate | null; resolved: boolean };
+
+export function loadPendingCreate(apiBaseUrl: string): PendingCreateRead {
+  const storageKey = pendingCreateStorageKey(apiBaseUrl);
+  const discardUnreadable = (): PendingCreateRead => {
+    try {
+      sessionStorage.removeItem(storageKey);
+      return { pending: null, resolved: true };
+    } catch {
+      return { pending: null, resolved: false };
+    }
+  };
+  let stored: string | null;
+  try {
+    stored = sessionStorage.getItem(storageKey);
+  } catch {
+    return { pending: null, resolved: false };
+  }
+  if (stored === null) return { pending: null, resolved: true };
+  let value: unknown;
+  try {
+    value = JSON.parse(stored);
+  } catch {
+    return discardUnreadable();
+  }
+  const record =
+    typeof value === "object" && value !== null && !Array.isArray(value)
+      ? (value as Record<string, unknown>)
+      : null;
+  if (
+    record === null ||
+    typeof record.key !== "string" ||
+    !UUID.test(record.key) ||
+    !isAnswers(record.body) ||
+    !isAnswers(record.answers) ||
+    (record.eventId !== undefined && typeof record.eventId !== "string")
+  ) {
+    return discardUnreadable();
+  }
+  return {
+    pending: {
+      key: record.key,
+      body: record.body,
+      answers: record.answers,
+      ...(typeof record.eventId === "string" ? { eventId: record.eventId } : {}),
+    },
+    resolved: true,
+  };
+}
+
+export function storePendingCreate(apiBaseUrl: string, pending: PendingCreate | null): boolean {
+  try {
+    const storageKey = pendingCreateStorageKey(apiBaseUrl);
+    if (pending === null) sessionStorage.removeItem(storageKey);
+    else sessionStorage.setItem(storageKey, JSON.stringify(pending));
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+export const isPendingCreateForEvent = (
+  pending: PendingCreate | null,
+  eventId: string,
+): pending is PendingCreate & { eventId: string } =>
+  pending?.eventId?.toLowerCase() === eventId.toLowerCase();
+
+/** Clear only the recovery operation whose first plan this page has confirmed. */
+export function clearPendingCreateForEvent(apiBaseUrl: string, eventId: string): boolean {
+  const read = loadPendingCreate(apiBaseUrl);
+  return (
+    read.resolved &&
+    (!isPendingCreateForEvent(read.pending, eventId) || storePendingCreate(apiBaseUrl, null))
+  );
+}
 
 export type LoadedEvent = {
   event: SavedEvent;
@@ -109,12 +215,17 @@ function readRefusal(body: unknown): RegenerationRefusal | null {
 export async function regeneratePlan(
   apiBaseUrl: string,
   eventId: string,
+  initialCreateKey?: string,
 ): Promise<PlanRegenerationResult> {
   let response: Response;
   try {
     response = await fetch(`${apiBaseUrl}/api/events/${eventId}/plan`, {
       method: "POST",
       ...CREDENTIALED,
+      headers:
+        initialCreateKey === undefined
+          ? CREDENTIALED.headers
+          : { ...CREDENTIALED.headers, "Idempotency-Key": initialCreateKey },
     });
   } catch {
     return { ok: false, refused: false, message: UNREACHABLE };
@@ -126,9 +237,17 @@ export async function regeneratePlan(
       body,
       `The plan could not be regenerated (HTTP ${response.status}).`,
     );
-    return response.status === 409
-      ? { ok: false, refused: true, refusal: readRefusal(body), message }
-      : { ok: false, refused: false, message };
+    const refusal = response.status === 409 ? readRefusal(body) : null;
+    const createKeyMismatch =
+      response.status === 409 &&
+      asRecord(body)?.error === "initial plan key does not match the event create key";
+    return refusal !== null || createKeyMismatch
+      ? { ok: false, refused: true, refusal, message }
+      : {
+          ok: false,
+          refused: false,
+          message,
+        };
   }
   return { ok: true };
 }

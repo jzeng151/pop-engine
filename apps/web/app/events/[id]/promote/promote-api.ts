@@ -14,6 +14,7 @@ export type PromoteState = {
   public_path: string;
   map_url: string | null;
   infeasible_warning: boolean;
+  plan_available: boolean;
 };
 
 export type PromoteResult = { ok: true; state: PromoteState } | { ok: false; message: string };
@@ -45,7 +46,8 @@ function parseState(body: unknown): PromoteState | null {
     typeof record.event_id !== "string" ||
     typeof record.title !== "string" ||
     typeof record.public_path !== "string" ||
-    typeof record.public_page_published !== "boolean"
+    typeof record.public_page_published !== "boolean" ||
+    typeof record.plan_available !== "boolean"
   ) {
     return null;
   }

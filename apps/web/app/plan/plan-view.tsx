@@ -1,7 +1,14 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { loadEvent, type LoadResult, type SavedEvent } from "../_lib/events-api";
+import {
+  clearPendingCreateForEvent,
+  isPendingCreateForEvent,
+  loadEvent,
+  loadPendingCreate,
+  type LoadResult,
+  type SavedEvent,
+} from "../_lib/events-api";
 import {
   generatePlan,
   loadPlan,
@@ -19,6 +26,9 @@ import { type FindingReference, VerdictDetailPanel } from "./verdict-detail";
 import { type FieldChecks, isNumber, readChecked } from "./validated";
 
 // The plan view.
+
+const RECOVERY_CLEANUP_FAILURE =
+  "The plan is ready, but this browser could not clear its saved recovery information. Refresh this page to try again before creating another event.";
 
 /** What came back for the plan itself. */
 type PlanState =
@@ -100,6 +110,7 @@ export function PlanView({
   const [meta, setMeta] = useState<RulesMetaResponse | null>(null);
   const [regenerating, setRegenerating] = useState(false);
   const [regenerationFailure, setRegenerationFailure] = useState<string | null>(null);
+  const [generationOutcomeUnknown, setGenerationOutcomeUnknown] = useState(false);
 
   /**
    * Which event this page is currently showing. `generate()` runs outside the effect, so it
@@ -118,11 +129,14 @@ export function PlanView({
     setEventState({ status: "loading" });
     setMeta(null);
     setRegenerationFailure(null);
+    setGenerationOutcomeUnknown(false);
     // A generation belonging to the event we just left is no longer this page's business: its result is dropped by the guard in `generate`, and its in-flight label must not sit on the new event's button.
     setRegenerating(false);
 
     void loadPlan(apiBaseUrl, eventId).then((result) => {
+      const cleanupFailed = result.ok && !clearPendingCreateForEvent(apiBaseUrl, eventId);
       if (abandoned) return;
+      if (cleanupFailed) setRegenerationFailure(RECOVERY_CLEANUP_FAILURE);
       setPlanState(planStateFrom(result));
     });
 
@@ -153,18 +167,33 @@ export function PlanView({
     setRegenerating(true);
     setRegenerationFailure(null);
 
-    const generated = await generatePlan(apiBaseUrl, eventId);
+    const recovery = loadPendingCreate(apiBaseUrl);
+    if (!recovery.resolved) {
+      setRegenerationFailure(
+        "This browser could not safely read or clear the saved event recovery. Reload this page once session storage is available before generating a plan.",
+      );
+      setRegenerating(false);
+      return;
+    }
+    const initialCreateKey =
+      planState.status === "missing" && isPendingCreateForEvent(recovery.pending, eventId)
+        ? recovery.pending.key
+        : undefined;
+    const generated = await generatePlan(apiBaseUrl, eventId, initialCreateKey);
+    const cleanupFailed = generated.ok && !clearPendingCreateForEvent(apiBaseUrl, eventId);
     if (active.current !== requested) return;
     if (!generated.ok) {
+      if (generated.stored === null && initialCreateKey === undefined) {
+        setGenerationOutcomeUnknown(true);
+      }
       setRegenerationFailure(generated.message);
-      // A successful POST wrote an immutable plan even if its response was unreadable.
-      if (generated.stored) setPlanState({ status: "unavailable", message: generated.message });
       setRegenerating(false);
       return;
     }
 
     // The generation's own response IS the plan it stored, so it goes on screen here.
     setPlanState({ status: "ready", plan: generated.plan });
+    if (cleanupFailed) setRegenerationFailure(RECOVERY_CLEANUP_FAILURE);
     setRegenerating(false);
 
     // The revision this plan will be compared against is a separate question, and one this page no longer knows the answer to: the event may have been edited again while the generation ran, so the revision read before it is.
@@ -208,7 +237,7 @@ export function PlanView({
           standing,
           "the plan below",
         );
-  const canGenerate = wouldOffer && refusal === null;
+  const canGenerate = wouldOffer && refusal === null && !generationOutcomeUnknown;
 
   return (
     <main className="plan">

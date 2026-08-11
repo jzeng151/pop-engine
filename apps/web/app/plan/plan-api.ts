@@ -224,8 +224,8 @@ export type RulesMetaResult =
 
 export type PlanGenerationResult =
   | { ok: true; plan: PlanResponse }
-  /** `stored` says whether a plan row exists despite the failure. */
-  | { ok: false; stored: boolean; message: string };
+  /** `stored` is null when neither the response nor a follow-up read proves whether a row exists. */
+  | { ok: false; stored: boolean | null; message: string };
 
 const UNREACHABLE = "The API could not be reached.";
 
@@ -799,12 +799,17 @@ export async function loadPlan(apiBaseUrl: string, eventId: string): Promise<Pla
 export async function generatePlan(
   apiBaseUrl: string,
   eventId: string,
+  initialCreateKey?: string,
 ): Promise<PlanGenerationResult> {
   let response: Response;
   try {
     response = await fetch(`${apiBaseUrl}/api/events/${eventId}/plan`, {
       method: "POST",
       ...CREDENTIALED,
+      headers:
+        initialCreateKey === undefined
+          ? CREDENTIALED.headers
+          : { ...CREDENTIALED.headers, "Idempotency-Key": initialCreateKey },
     });
   } catch {
     return { ok: false, stored: false, message: UNREACHABLE };
@@ -825,7 +830,7 @@ export async function generatePlan(
   const reread = await loadPlan(apiBaseUrl, eventId);
   return reread.ok
     ? { ok: true, plan: reread.plan }
-    : { ok: false, stored: true, message: UNREADABLE_PLAN };
+    : { ok: false, stored: null, message: UNREADABLE_PLAN };
 }
 
 /**

@@ -182,7 +182,10 @@ describe.runIf(databaseUrl.length > 0)("plan API (F-201)", () => {
     const fixture = SCENARIO_INTAKE_FIXTURES.find(({ scenario }) => scenario === "F");
     if (fixture === undefined) throw new Error("Scenario F fixture is missing");
     const app = appWith();
-    const created = await request(app).post("/api/events").send(fixtureSubmission(fixture));
+    const created = await request(app)
+      .post("/api/events")
+      .set("Idempotency-Key", randomUUID())
+      .send(fixtureSubmission(fixture));
     expect(created.status).toBe(201);
     const eventId = created.body.event.id as string;
 
@@ -321,6 +324,96 @@ describe.runIf(databaseUrl.length > 0)("plan API (F-201)", () => {
     const latest = await request(app).get(`/api/events/${eventId}/plan`);
     expect(latest.status).toBe(200);
     expect(latest.body.id).toBe(second.body.id);
+  });
+
+  it("converges concurrent first-plan retries carrying the event create key", async () => {
+    const createKey = randomUUID();
+    const eventId = await insertEvent({
+      create_idempotency_key: createKey,
+      create_request_body: scenarioAEvent,
+    });
+    const app = appWith();
+
+    const responses = await Promise.all([
+      request(app)
+        .post(`/api/events/${eventId}/plan`)
+        .set("Idempotency-Key", createKey.toUpperCase()),
+      request(app).post(`/api/events/${eventId}/plan`).set("Idempotency-Key", createKey),
+    ]);
+
+    expect(responses.map(({ status }) => status).sort()).toEqual([200, 201]);
+    expect(responses[0]?.body.id).toBe(responses[1]?.body.id);
+    const { rows } = await pool.query("SELECT id FROM permit_plans WHERE event_id = $1", [eventId]);
+    expect(rows).toHaveLength(1);
+  });
+
+  it("returns the original first plan when a keyed retry follows manual regeneration", async () => {
+    const createKey = randomUUID();
+    const eventId = await insertEvent({
+      create_idempotency_key: createKey,
+      create_request_body: scenarioAEvent,
+    });
+    const app = appWith();
+
+    const first = await request(app)
+      .post(`/api/events/${eventId}/plan`)
+      .set("Idempotency-Key", createKey);
+    const regenerated = await request(app).post(`/api/events/${eventId}/plan`);
+    const retried = await request(app)
+      .post(`/api/events/${eventId}/plan`)
+      .set("Idempotency-Key", createKey);
+
+    expect(first.status).toBe(201);
+    expect(regenerated.status).toBe(201);
+    expect(retried.status).toBe(200);
+    expect(retried.body.id).toBe(first.body.id);
+    expect(retried.body.id).not.toBe(regenerated.body.id);
+  });
+
+  it("returns a stored keyed plan before consulting current evaluation dependencies", async () => {
+    const createKey = randomUUID();
+    const eventId = await insertEvent({
+      create_idempotency_key: createKey,
+      create_request_body: scenarioAEvent,
+    });
+    const first = await request(appWith())
+      .post(`/api/events/${eventId}/plan`)
+      .set("Idempotency-Key", createKey);
+    let calendarReads = 0;
+    const retry = await request(
+      appWith(() => {
+        calendarReads += 1;
+        throw new Error("current calendar is unavailable");
+      }),
+    )
+      .post(`/api/events/${eventId}/plan`)
+      .set("Idempotency-Key", createKey);
+
+    expect(first.status).toBe(201);
+    expect(retry.status).toBe(200);
+    expect(retry.body.id).toBe(first.body.id);
+    expect(calendarReads).toBe(0);
+  });
+
+  it("rejects malformed or unrelated first-plan keys without writing", async () => {
+    const createKey = randomUUID();
+    const eventId = await insertEvent({
+      create_idempotency_key: createKey,
+      create_request_body: scenarioAEvent,
+    });
+    const app = appWith();
+
+    const malformed = await request(app)
+      .post(`/api/events/${eventId}/plan`)
+      .set("Idempotency-Key", "not-a-uuid");
+    const unrelated = await request(app)
+      .post(`/api/events/${eventId}/plan`)
+      .set("Idempotency-Key", randomUUID());
+
+    expect(malformed.status).toBe(400);
+    expect(unrelated.status).toBe(409);
+    const { rows } = await pool.query("SELECT id FROM permit_plans WHERE event_id = $1", [eventId]);
+    expect(rows).toHaveLength(0);
   });
 
   it("round-trips a stored plan identically to the plan it returned at generation (AC 3)", async () => {
