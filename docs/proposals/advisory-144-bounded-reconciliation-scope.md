@@ -437,9 +437,10 @@ purpose defeats:**
   the point of shape 2 is a promoted A-1, which is `VERIFIED`. So merging would render one status and
   silently drop the other, and which one survives depends on array order. That is the defect this scope
   exists to fix, one layer down: a statement rendering under a status that is not its own.
-  **PR #171 reached the same conclusion independently**, in `specs/host-guest-authorisation-coverage.md`,
-  when it refused a shared key between a new rule and `DOB-ASSEMBLY-001` on exactly this ground and
-  measured the merge both ways. The two documents should not disagree, and they do not.
+  **PR #171's historical proposal reached the same conclusion independently** when it refused a
+  shared key between a new rule and `DOB-ASSEMBLY-001` on exactly this ground and measured the merge
+  both ways. Issue #268 later retired that proposal; this document retains the independently checked
+  conclusion rather than treating the retired proposal as current authority.
   The condition under which it becomes available is narrow and worth stating: if the owner promotes
   BOTH rules to `VERIFIED` in the same publication, the statuses match, nothing is dropped, and the
   merge is sound. That is a bigger promotion than shape 2 asks for.
@@ -650,20 +651,15 @@ promoted deadlines belong in rules rather than in an advisory.
 
 ### 5.1 Where this enumeration came from, and why it is reproduced rather than cited
 
-The enumeration below **originated in PR #171**, `specs/host-guest-authorisation-coverage.md`,
+The enumeration below **originated in PR #171's historical assembly-coverage proposal**, in its
 sections "Every constant coupled to the published artifact, enumerated once", "The pinned tests,
 DERIVED rather than listed", and "Category 5: COUNTS the publication moves, which the version sweep
-could not see". An earlier revision of this document cited it instead of reproducing it, to stop two
-accounts drifting apart.
+could not see". Issue #268 retired that proposal because its coarse assembly input conflicts with
+approved F-110. An active document must not depend on that superseded proposal, so this scope keeps
+the independently checked enumeration in place.
 
-**That citation is unresolvable.** The file exists only on #171's unmerged branch: it is absent from
-`main`, and a search of the repository's history finds no copy at any commit reachable from `main`.
-Someone executing this scope cannot open the source, so an abbreviated applies-and-does-not table
-citing it could not be checked against anything.
-
-**So it is reproduced, which is the lesser evil.** A duplicate account can at least be compared with
-its original; an unresolvable one cannot. **Every location below was re-verified against `main` and
-they all hold**, which is worth knowing on its own: the two accounts agree today.
+**So it remains reproduced.** **Every location below was re-verified against `main` and they all
+hold**, which lets this document stand on its own after the source proposal's retirement.
 
 **This reproduction is authoritative for this document, full stop.** An earlier revision said #171's
 copy stays authoritative where they differ, which was the same defect one level up: an executor cannot
@@ -671,11 +667,6 @@ open the supposed authority, so a precedence rule pointing at it is as unresolva
 replaced. **And an unapproved external branch cannot override the approved baseline in this tree
 anyway.** The first version of this section created an unresolvable citation and the second created an
 unresolvable precedence; this one has neither.
-
-**The dependency is a note, not a precedence rule.** #171 is where this enumeration originated and
-that is worth knowing. If #171 merges, the two accounts should be reconciled and the duplication
-collapsed, by whoever lands the second of them. Until then **this document governs its own contents**,
-and every location in it stands or falls against `main`, which is the only tree either reader has.
 
 ### 5.2 The enumeration, reproduced, with what an advisory-text-only change reaches
 
