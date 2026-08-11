@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { loadEvent } from "./events-api";
+import { loadEvent, regeneratePlan } from "./events-api";
 
 const jsonResponse = (status: number, body: unknown): Response =>
   new Response(JSON.stringify(body), {
@@ -104,4 +104,37 @@ describe("loadEvent", () => {
       message: "The API could not be reached.",
     });
   });
+});
+
+describe("regeneratePlan", () => {
+  it.each([
+    [
+      { error: "initial plan key does not match the event create key" },
+      true,
+      "the API key-mismatch contract",
+    ],
+    [
+      {
+        error: "plan generation refused",
+        rulesetVersion: "nyc.v2.10",
+        pinnedRulesetVersion: "nyc.v2.11",
+        standing: "older",
+      },
+      true,
+      "the API ruleset refusal contract",
+    ],
+    [{ error: "gateway conflict" }, false, "an unrecognized intermediary-shaped response"],
+  ])(
+    "classifies %s as definitive=%s (%s)",
+    async (body: Record<string, unknown>, refused: boolean, _case: string) => {
+      stubFetch(async () => jsonResponse(409, body));
+
+      await expect(
+        regeneratePlan("https://api.example.com", "event-1", crypto.randomUUID()),
+      ).resolves.toMatchObject({
+        ok: false,
+        refused,
+      });
+    },
+  );
 });

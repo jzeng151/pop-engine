@@ -166,10 +166,17 @@ export function PlanView({
     setRegenerationFailure(null);
 
     const recovery = loadPendingCreate(apiBaseUrl);
+    if (!recovery.resolved) {
+      setRegenerationFailure(
+        "This browser could not safely read or clear the saved event recovery. Reload this page once session storage is available before generating a plan.",
+      );
+      setRegenerating(false);
+      return;
+    }
     const generated = await generatePlan(
       apiBaseUrl,
       eventId,
-      isPendingCreateForEvent(recovery, eventId) ? recovery.key : undefined,
+      isPendingCreateForEvent(recovery.pending, eventId) ? recovery.pending.key : undefined,
     );
     const cleanupFailed = generated.ok && !clearPendingCreateForEvent(apiBaseUrl, eventId);
     if (active.current !== requested) return;

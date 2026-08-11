@@ -271,6 +271,28 @@ describe("initial-create recovery", () => {
     expect(sessionStorage.getItem(storageKey)).not.toBeNull();
   });
 
+  it("blocks generation while the recovery read is indeterminate", async () => {
+    storeRecovery("event-1");
+    const fetchMock = stubApi({}, liveMeta, 404);
+    vi.spyOn(Storage.prototype, "getItem").mockImplementation(() => {
+      throw new DOMException("storage disabled", "SecurityError");
+    });
+    vi.spyOn(Storage.prototype, "removeItem").mockImplementation(() => {
+      throw new DOMException("storage disabled", "SecurityError");
+    });
+    const user = userEvent.setup();
+    renderPlan();
+
+    await user.click(await screen.findByRole("button", { name: "Generate the plan" }));
+
+    expect(
+      await screen.findByText(
+        "This browser could not safely read or clear the saved event recovery. Reload this page once session storage is available before generating a plan.",
+      ),
+    ).toBeDefined();
+    expect(fetchMock.mock.calls.filter(([url]) => url.endsWith("/plan"))).toHaveLength(1);
+  });
+
   it("reuses the matching recovery key for a differently cased event path", async () => {
     storeRecovery("event-1");
     let generated = false;

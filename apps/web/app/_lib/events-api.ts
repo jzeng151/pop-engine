@@ -41,9 +41,9 @@ const isAnswers = (value: unknown): value is Answers =>
 const pendingCreateStorageKey = (apiBaseUrl: string): string =>
   `${PENDING_CREATE_STORAGE}:${apiBaseUrl}`;
 
-type PendingCreateRead = { pending: PendingCreate | null; resolved: boolean };
+export type PendingCreateRead = { pending: PendingCreate | null; resolved: boolean };
 
-function readPendingCreate(apiBaseUrl: string): PendingCreateRead {
+export function loadPendingCreate(apiBaseUrl: string): PendingCreateRead {
   const storageKey = pendingCreateStorageKey(apiBaseUrl);
   const discardUnreadable = (): PendingCreateRead => {
     try {
@@ -85,10 +85,6 @@ function readPendingCreate(apiBaseUrl: string): PendingCreateRead {
   }
 }
 
-export function loadPendingCreate(apiBaseUrl: string): PendingCreate | null {
-  return readPendingCreate(apiBaseUrl).pending;
-}
-
 export function storePendingCreate(apiBaseUrl: string, pending: PendingCreate | null): boolean {
   try {
     const storageKey = pendingCreateStorageKey(apiBaseUrl);
@@ -108,7 +104,7 @@ export const isPendingCreateForEvent = (
 
 /** Clear only the recovery operation whose first plan this page has confirmed. */
 export function clearPendingCreateForEvent(apiBaseUrl: string, eventId: string): boolean {
-  const read = readPendingCreate(apiBaseUrl);
+  const read = loadPendingCreate(apiBaseUrl);
   return (
     read.resolved &&
     (!isPendingCreateForEvent(read.pending, eventId) || storePendingCreate(apiBaseUrl, null))
@@ -235,8 +231,12 @@ export async function regeneratePlan(
       body,
       `The plan could not be regenerated (HTTP ${response.status}).`,
     );
-    return response.status === 409
-      ? { ok: false, refused: true, refusal: readRefusal(body), message }
+    const refusal = response.status === 409 ? readRefusal(body) : null;
+    const createKeyMismatch =
+      response.status === 409 &&
+      asRecord(body)?.error === "initial plan key does not match the event create key";
+    return refusal !== null || createKeyMismatch
+      ? { ok: false, refused: true, refusal, message }
       : {
           ok: false,
           refused: false,

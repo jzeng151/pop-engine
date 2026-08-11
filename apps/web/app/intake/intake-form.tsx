@@ -177,6 +177,7 @@ export function IntakeForm({
   const shouldFocusFirstError = useRef(false);
   const currentAnswers = useRef<Answers>({});
   const pendingCreate = useRef<PendingCreate | null>(null);
+  const pendingCreateReadFailed = useRef(false);
   const mounted = useRef(true);
 
   useEffect(() => {
@@ -189,10 +190,17 @@ export function IntakeForm({
   useEffect(() => {
     if (eventId !== undefined) return;
     const restored = loadPendingCreate(apiBaseUrl);
-    if (restored === null) return;
-    pendingCreate.current = restored;
-    currentAnswers.current = restored.answers;
-    setAnswers(restored.answers);
+    pendingCreateReadFailed.current = !restored.resolved;
+    if (!restored.resolved) {
+      setFailure(
+        "This browser could not safely read or clear an earlier event recovery. Reload this page once session storage is available before saving another event.",
+      );
+      return;
+    }
+    if (restored.pending === null) return;
+    pendingCreate.current = restored.pending;
+    currentAnswers.current = restored.pending.answers;
+    setAnswers(restored.pending.answers);
   }, [apiBaseUrl, eventId]);
 
   useEffect(() => {
@@ -349,6 +357,12 @@ export function IntakeForm({
   };
 
   const save = async () => {
+    if (pendingCreateReadFailed.current) {
+      setFailure(
+        "This browser could not safely read or clear an earlier event recovery. Reload this page once session storage is available before saving another event.",
+      );
+      return;
+    }
     setFailure(null);
     const retry = pendingCreate.current;
     const creating = saved === null || retry !== null;
@@ -481,11 +495,9 @@ export function IntakeForm({
       }
       if (creating) {
         if (!eventRecoveryStored) {
-          pendingCreate.current = null;
-          storePendingCreate(apiBaseUrl, null);
           if (mounted.current) {
             setFailure(
-              "Your event was saved, but its permit plan was not generated because this browser could not update its recovery information. Open the permit plan to generate it.",
+              "Your event was saved, but its permit plan was not generated because this browser could not update its recovery information. Keep this tab open and save again to retry safely.",
             );
           }
           return;

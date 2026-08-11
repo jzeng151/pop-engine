@@ -1076,17 +1076,59 @@ describe("saving and per-field errors", () => {
     await save(user);
 
     expect((await screen.findByRole("alert")).textContent).toBe(
-      "Your event was saved, but its permit plan was not generated because this browser could not update its recovery information. Open the permit plan to generate it.",
+      "Your event was saved, but its permit plan was not generated because this browser could not update its recovery information. Keep this tab open and save again to retry safely.",
     );
     expect(fetchMock).toHaveBeenCalledTimes(1);
     expect(screen.getByRole("button", { name: "Save changes" })).toBeDefined();
+    expect(sessionStorage).toHaveLength(1);
+
+    await save(user);
+
+    await waitFor(() => expect(router.push).toHaveBeenCalledWith("/events/event-1/plan"));
     expect(sessionStorage).toHaveLength(0);
+  });
+
+  it("blocks a new create while an earlier recovery read is indeterminate", async () => {
+    storeCreateRecovery();
+    let storageAvailable = false;
+    const getItem = Storage.prototype.getItem;
+    const removeItem = Storage.prototype.removeItem;
+    vi.spyOn(Storage.prototype, "getItem").mockImplementation(function (this: Storage, key) {
+      if (!storageAvailable) throw new DOMException("storage disabled", "SecurityError");
+      return getItem.call(this, key);
+    });
+    vi.spyOn(Storage.prototype, "removeItem").mockImplementation(function (this: Storage, key) {
+      if (!storageAvailable) throw new DOMException("storage disabled", "SecurityError");
+      removeItem.call(this, key);
+    });
+    const user = renderForm();
+
+    expect(
+      await screen.findByText(
+        "This browser could not safely read or clear an earlier event recovery. Reload this page once session storage is available before saving another event.",
+      ),
+    ).toBeDefined();
+    storageAvailable = true;
+    await save(user);
+
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(sessionStorage).toHaveLength(1);
   });
 
   it("retains confirmed create recovery until durable removal succeeds", async () => {
     const getItem = Storage.prototype.getItem;
     const removeItem = Storage.prototype.removeItem;
-    let storageAvailable = false;
+    let storageAvailable = true;
+    let failFirstCleanup = true;
+    fetchMock.mockImplementation(async (url: string, init: RequestInit) => {
+      if (!url.endsWith("/plan")) return echoSavedEvent(201, init);
+      if (init.method === "POST") return jsonResponse(201, {});
+      if (failFirstCleanup) {
+        failFirstCleanup = false;
+        storageAvailable = false;
+      }
+      return jsonResponse(200, storedPlan);
+    });
     vi.spyOn(Storage.prototype, "getItem").mockImplementation(function (this: Storage, key) {
       if (!storageAvailable) throw new DOMException("storage disabled", "SecurityError");
       return getItem.call(this, key);
@@ -1349,7 +1391,7 @@ describe("saving and per-field errors", () => {
     expect(sessionStorage).toHaveLength(0);
   });
 
-  it.each([500, 502])(
+  it.each([409, 500, 502])(
     "retains recovery when an ambiguous HTTP %i races a missing-plan read",
     async (status) => {
       fetchMock.mockImplementationOnce(async (_url: string, init: RequestInit) =>
