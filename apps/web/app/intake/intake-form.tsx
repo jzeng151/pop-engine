@@ -336,7 +336,7 @@ export function IntakeForm({
 
     setSaving(true);
     // The answers as they stand at the click, which the response is reconciled against.
-    const answersAtSubmit = answers;
+    const answersAtSubmit = currentAnswers.current;
     try {
       const creating = saved === null;
       const target = creating ? "/api/events" : `/api/events/${saved.id}`;
@@ -347,9 +347,20 @@ export function IntakeForm({
       });
       const body = (await response.json()) as ApiResponse;
       if (!response.ok || body.event === undefined) {
+        const responseErrors = (body.errors ?? []).filter(
+          (error) =>
+            error.field === "body" ||
+            error.code === "unknown_field" ||
+            sameAnswer(
+              currentAnswers.current[error.field] ?? null,
+              answersAtSubmit[error.field] ?? null,
+            ),
+        );
         shouldFocusFirstError.current = true;
-        setErrors(body.errors ?? []);
-        if ((body.errors ?? []).length === 0) setFailure("The event could not be saved.");
+        setErrors(responseErrors);
+        if (responseErrors.length === 0 && (body.errors ?? []).length === 0) {
+          setFailure("The event could not be saved.");
+        }
         return;
       }
       setErrors([]);
