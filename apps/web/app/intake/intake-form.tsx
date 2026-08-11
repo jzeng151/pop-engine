@@ -11,13 +11,8 @@ import {
   type IntakeIssue,
   type IntakeValue,
 } from "@pop-engine/engine";
-import {
-  CREDENTIALED,
-  loadEvent,
-  planExists,
-  regeneratePlan,
-  type SavedEvent,
-} from "../_lib/events-api";
+import { CREDENTIALED, loadEvent, regeneratePlan, type SavedEvent } from "../_lib/events-api";
+import { loadPlan } from "../plan/plan-api";
 import { discoverParks, parksBoroughCode, type ParkSuggestion } from "./parks-api";
 
 // The intake questionnaire.
@@ -371,7 +366,8 @@ export function IntakeForm({
         const generationMessage = generated.ok ? "" : generated.message;
         let planStored = generated.ok;
         if (!generated.ok && !generated.refused) {
-          const exists = await planExists(apiBaseUrl, body.event.id);
+          const loaded = await loadPlan(apiBaseUrl, body.event.id);
+          const exists = loaded.ok ? true : loaded.missing ? false : null;
           const changedWhileSaving = !sameAnswers(currentAnswers.current, stored);
           if (exists === null) {
             setFailure(

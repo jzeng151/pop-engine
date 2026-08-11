@@ -25,6 +25,26 @@ const savedEvent = (overrides: Record<string, unknown> = {}) => ({
   plan_stale: false,
 });
 
+const storedPlan = {
+  id: "plan-1",
+  eventId: "event-1",
+  eventRevision: 1,
+  rulesetVersion: "nyc.v2.11",
+  snapshotDate: "2026-08-05",
+  verdict: "CONDITIONAL",
+  verdictDetail: {
+    blockingFinding: null,
+    missedRuleIds: [],
+    minSlackDays: null,
+    missingFacts: [],
+    unresolvedTimelines: [],
+    rescopeSuggestions: [],
+  },
+  today: "2026-08-11",
+  generatedAt: "2026-08-11T12:00:00.000Z",
+  findings: [],
+};
+
 const echoSavedEvent = (
   status: number,
   init: RequestInit,
@@ -815,7 +835,7 @@ describe("saving and per-field errors", () => {
       echoSavedEvent(201, init),
     );
     fetchMock.mockRejectedValueOnce(new TypeError("connection reset"));
-    fetchMock.mockResolvedValueOnce(jsonResponse(200, {}));
+    fetchMock.mockResolvedValueOnce(jsonResponse(200, storedPlan));
     const user = renderForm();
     await answerParkEvent(user);
     await save(user);
@@ -830,7 +850,7 @@ describe("saving and per-field errors", () => {
       echoSavedEvent(201, init),
     );
     fetchMock.mockRejectedValueOnce(new TypeError("connection reset"));
-    fetchMock.mockResolvedValueOnce(jsonResponse(503, {}));
+    fetchMock.mockResolvedValueOnce(new Response("<html>Access challenge</html>", { status: 200 }));
     const user = renderForm();
     await answerParkEvent(user);
     await save(user);

@@ -132,15 +132,3 @@ export async function regeneratePlan(
   }
   return { ok: true };
 }
-
-/** Whether a plan exists after a generation response was lost; null means the read could not tell. */
-export async function planExists(apiBaseUrl: string, eventId: string): Promise<boolean | null> {
-  try {
-    const response = await fetch(`${apiBaseUrl}/api/events/${eventId}/plan`, {
-      ...CREDENTIALED,
-    });
-    return response.ok ? true : response.status === 404 ? false : null;
-  } catch {
-    return null;
-  }
-}
