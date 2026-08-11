@@ -165,4 +165,38 @@ describe("the event overview route", () => {
       ),
     );
   });
+
+  it("passes the demo planned-module flag into the workspace shell", async () => {
+    vi.stubEnv("NEXT_PUBLIC_HIDE_PLANNED_MODULES", "true");
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(() => new Promise<Response>(() => undefined)),
+    );
+
+    render(
+      await EventLayout({
+        children: <p>Current surface</p>,
+        params: Promise.resolve({ id: "event-9" }),
+      }),
+    );
+
+    expect(screen.queryByRole("heading", { name: "Planned" })).toBeNull();
+  });
+
+  it("keeps the planned group when the demo flag is false", async () => {
+    vi.stubEnv("NEXT_PUBLIC_HIDE_PLANNED_MODULES", "false");
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(() => new Promise<Response>(() => undefined)),
+    );
+
+    render(
+      await EventLayout({
+        children: <p>Current surface</p>,
+        params: Promise.resolve({ id: "event-9" }),
+      }),
+    );
+
+    expect(screen.getAllByRole("heading", { name: "Planned" }).length).toBeGreaterThan(0);
+  });
 });

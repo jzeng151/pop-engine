@@ -77,6 +77,23 @@ describe("the organizer event workspace", () => {
     }
   });
 
+  it("hides the entire planned group for the demo flag", () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(() => new Promise(() => undefined)),
+    );
+
+    render(
+      <EventWorkspace apiBaseUrl="https://api.example.com" eventId="event-9" hidePlannedModules>
+        <p>Current surface</p>
+      </EventWorkspace>,
+    );
+
+    expect(screen.queryByRole("heading", { name: "Planned" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Applications" })).toBeNull();
+    expect(screen.getAllByRole("link", { name: "Permit plan" }).length).toBeGreaterThan(0);
+  });
+
   it("keeps the shell navigable and invents no name when the event cannot be read", async () => {
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response("", { status: 500 })));
 

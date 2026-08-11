@@ -10,6 +10,7 @@ type EventWorkspaceProps = {
   apiBaseUrl: string;
   children: ReactNode;
   eventId: string;
+  hidePlannedModules?: boolean;
 };
 
 const navigationGroups = [
@@ -136,7 +137,15 @@ const plannedModules = [
   "Rules admin",
 ] as const;
 
-function WorkspaceNavigation({ eventId, pathname }: { eventId: string; pathname: string }) {
+function WorkspaceNavigation({
+  eventId,
+  hidePlannedModules,
+  pathname,
+}: {
+  eventId: string;
+  hidePlannedModules: boolean;
+  pathname: string;
+}) {
   return (
     <nav aria-label="Event lifecycle" className="riso-nav__groups">
       {navigationGroups.map((group) => (
@@ -163,25 +172,32 @@ function WorkspaceNavigation({ eventId, pathname }: { eventId: string; pathname:
         </section>
       ))}
 
-      <section className="riso-nav__group riso-nav__group--planned">
-        <h2>Planned</h2>
-        <ul>
-          {plannedModules.map((module) => (
-            <li key={module}>
-              {/* The PLANNED stamp is the group's, not each button's — `docs/DESIGN-SYSTEM.md`
+      {!hidePlannedModules && (
+        <section className="riso-nav__group riso-nav__group--planned">
+          <h2>Planned</h2>
+          <ul>
+            {plannedModules.map((module) => (
+              <li key={module}>
+                {/* The PLANNED stamp is the group's, not each button's — `docs/DESIGN-SYSTEM.md`
                   publishes one clipped insert stamped once, and F-705 AC 5 defers to it. */}
-              <button disabled type="button">
-                <span>{module}</span>
-              </button>
-            </li>
-          ))}
-        </ul>
-      </section>
+                <button disabled type="button">
+                  <span>{module}</span>
+                </button>
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
     </nav>
   );
 }
 
-export function EventWorkspace({ apiBaseUrl, children, eventId }: EventWorkspaceProps) {
+export function EventWorkspace({
+  apiBaseUrl,
+  children,
+  eventId,
+  hidePlannedModules = false,
+}: EventWorkspaceProps) {
   const pathname = usePathname();
   const [eventName, setEventName] = useState("Event workspace");
   const [loadState, setLoadState] = useState<"loading" | "ready" | "unavailable">("loading");
@@ -232,11 +248,19 @@ export function EventWorkspace({ apiBaseUrl, children, eventId }: EventWorkspace
             </span>
             <span aria-hidden="true">Menu</span>
           </summary>
-          <WorkspaceNavigation eventId={eventId} pathname={pathname} />
+          <WorkspaceNavigation
+            eventId={eventId}
+            hidePlannedModules={hidePlannedModules}
+            pathname={pathname}
+          />
         </details>
 
         <div className="riso-nav__desktop">
-          <WorkspaceNavigation eventId={eventId} pathname={pathname} />
+          <WorkspaceNavigation
+            eventId={eventId}
+            hidePlannedModules={hidePlannedModules}
+            pathname={pathname}
+          />
         </div>
       </aside>
 

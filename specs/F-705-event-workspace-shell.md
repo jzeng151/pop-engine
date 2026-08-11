@@ -2,7 +2,7 @@
 
 **Status:** APPROVED (2026-08-02, product-owner approved, one person currently holding every lane) · **Reviewer/approver:** product owner · **Owner:** the product owner, who currently holds every lane. This names the party accountable for this spec's changes and approvals under `docs/DOCUMENTATION-GOVERNANCE.md` §7; it assigns no delivery lane, which only `docs/DESIGN.md` can do · see `docs/BASELINE.md`.
 **Phase:** 1.5 (stretch track), per `docs/ROADMAP.md` · **Lane:** none. `docs/DESIGN.md` is the authority for lanes and assigns this feature to no dev; it is chrome that spans all four stages rather than one lane's feature · **Depends on:** the routes it links to (F-101, F-102/F-201, F-202, F-301, F-302, F-401, F-402) and `docs/DESIGN-SYSTEM.md` for tokens and chrome
-**Amended:** 2026-08-03, correcting two claims this spec made that its own sources do not carry. The Lane line assigned Dev 3, which `docs/DESIGN.md` never did; Acceptance Criterion 5 put the visible stamp on each button, while `docs/DESIGN-SYSTEM.md` publishes one stamp on the group and `apps/web/app/globals.css` has rendered it that way since 2026-07-29. Both are corrections of the lower-authority artifact under `docs/DOCUMENTATION-GOVERNANCE.md` §2, not new decisions: no lane is created, no visual decision is reopened, and the shell's behavior is unchanged. The Owner field is stated separately in the same amendment, because it had read "see Lane below" and the corrected Lane names no dev, leaving a scheduled feature with no accountable party against §7.
+**Amended:** 2026-08-03, correcting two claims this spec made that its own sources do not carry. The Lane line assigned Dev 3, which `docs/DESIGN.md` never did; Acceptance Criterion 5 put the visible stamp on each button, while `docs/DESIGN-SYSTEM.md` publishes one stamp on the group and `apps/web/app/globals.css` has rendered it that way since 2026-07-29. Both are corrections of the lower-authority artifact under `docs/DOCUMENTATION-GOVERNANCE.md` §2, not new decisions: no lane is created, no visual decision is reopened, and the shell's behavior is unchanged. The Owner field is stated separately in the same amendment, because it had read "see Lane below" and the corrected Lane names no dev, leaving a scheduled feature with no accountable party against §7. Amended 2026-08-10 by product-owner direction in issue #274 to let portfolio/demo deployments hide the entire Planned group with one public build-time flag.
 **Written:** 2026-08-02, after the fact. The shell shipped in the 2026-07-29 Riso Field Guide work under the design-system amendment, whose scope clause covers presentation and existing-route chrome and excludes new cross-feature navigation. Navigation across lifecycle stages is product scope, so it gets an ID and a spec rather than a wider design-system gate. Nothing here asks for new behavior; it states what exists so the criteria can be checked and so later changes have something to change.
 
 ## User Story
@@ -29,7 +29,7 @@ The `/events/[id]` route group's layout and its overview page:
 
 ## Inputs
 
-`eventId` from the route params; `NEXT_PUBLIC_API_BASE_URL`, the variable the deployment sets and the only one a client component can read; the event record via `loadEvent`, read for its `name` alone.
+`eventId` from the route params; `NEXT_PUBLIC_API_BASE_URL`; optional `NEXT_PUBLIC_HIDE_PLANNED_MODULES`, which hides the Planned group only when exactly `true`; the event record via `loadEvent`, read for its `name` alone.
 
 ## Outputs
 
@@ -54,7 +54,7 @@ The state is exposed as `data-load-state` so the distinction is testable rather 
 
 3. The masthead names the active event once loaded, announces the change politely (`aria-live="polite"`), and falls back to the placeholder in both non-ready states without inventing a name.
 4. The masthead states "Synthetic data demo" on every route, satisfying the capstone labeling rule in `AGENTS.md` for an environment carrying no real applications or attendee data.
-5. Planned modules render as `disabled` buttons inside a group headed "Planned". They are not links, do not navigate, and name no F-id, date, or commitment. The visible `PLANNED` stamp belongs to the group, not to each button: `docs/DESIGN-SYSTEM.md` is the authority for that treatment and publishes one clipped paper insert over the rail, stamped once.
+5. By default, Planned modules render as `disabled` buttons inside a group headed "Planned". They are not links, do not navigate, and name no F-id, date, or commitment. The visible `PLANNED` stamp belongs to the group, not to each button: `docs/DESIGN-SYSTEM.md` is the authority for that treatment and publishes one clipped paper insert over the rail, stamped once. When `NEXT_PUBLIC_HIDE_PLANNED_MODULES=true`, the entire group and all seven buttons are absent on desktop and mobile; unset, `false`, and every other value preserve the default.
 6. The theme toggle switches light and dark, reports state through `aria-pressed`, persists to `localStorage`, and follows a change made in another tab. When storage is unavailable it still applies the theme for the current page and does not fail.
 7. Keyboard and screen-reader access: a skip link reaches the content region, the navigation carries `aria-label="Event lifecycle"`, and the mobile disclosure is a native `<details>` element rather than scripted show/hide.
 8. The overview page links only to routes that exist and are reachable, and describes each in one sentence that promises no output the destination does not produce.
@@ -72,10 +72,10 @@ API: none. Schema: none. Jobs: none. Providers: none. Privacy: the event name is
 
 ## Allowed File Footprint
 
-`apps/web/app/events/[id]/layout.tsx`, `apps/web/app/events/[id]/event-workspace.tsx`, `apps/web/app/events/[id]/page.tsx`, `apps/web/app/_components/theme-toggle.tsx`, and their tests. Shared and requiring coordination: `apps/web/app/globals.css` (design-system tokens and chrome, `docs/DESIGN-SYSTEM.md`).
+`apps/web/app/events/[id]/layout.tsx`, `apps/web/app/events/[id]/event-workspace.tsx`, `apps/web/app/events/[id]/page.tsx`, `apps/web/app/_components/theme-toggle.tsx`, and their tests. Shared and requiring coordination: `apps/web/app/globals.css` (design-system tokens and chrome, `docs/DESIGN-SYSTEM.md`). The demo flag additionally permits `apps/web/.env.example` and `DEPLOY.md` for its deployment contract.
 
 ## Rollout and Fallback
 
-Already deployed. There is no flag: the shell either renders or the route group fails to render, which the existing route tests catch. Removing it means deleting the layout and the overview route.
+Already deployed. `NEXT_PUBLIC_HIDE_PLANNED_MODULES=true` hides only the Planned group in portfolio/demo builds; removing or setting it to `false` restores the group. The rest of the shell has no flag: it either renders or the route group fails to render, which the existing route tests catch.
 
 One dependency to re-home, and it is not yet on this branch. F-101 Acceptance Criterion 8's plan-stale notice and one-click regeneration are being moved onto the overview by the F-101 change stacked above this one; until that lands they still render on the intake form. Whoever removes the shell after it lands has to re-home them, and whoever removes it before does not. Stated this way because the earlier wording described the finished stack rather than this branch, and a maintainer following it here would go looking for an affordance the shell does not yet own.
