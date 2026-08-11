@@ -67,8 +67,18 @@ describe.runIf(databaseUrl.length > 0)("F-301 public page endpoints (database)",
     return id;
   };
 
+  const createPlan = async (eventId: string, verdict = "feasible") => {
+    await database.query(
+      `INSERT INTO permit_plans (
+         id, event_id, event_revision, ruleset_version, verdict, verdict_detail, intake_snapshot
+       ) VALUES ($1, $2, 1, 'nyc.v2.11', $3, '{}'::jsonb, '{}'::jsonb)`,
+      [randomUUID(), eventId, verdict],
+    );
+  };
+
   it("404s the public URL until published, then returns promotion fields only", async () => {
     const eventId = await createEvent();
+    await createPlan(eventId);
     const unpublished = await request(api).get(`/e/${eventId}`);
     expect(unpublished.status).toBe(404);
     expect(unpublished.body.error).toMatch(/not available/i);
@@ -104,16 +114,12 @@ describe.runIf(databaseUrl.length > 0)("F-301 public page endpoints (database)",
 
   it("shows an infeasible warning on the organizer view when the latest plan is infeasible", async () => {
     const eventId = await createEvent();
-    await database.query(
-      `INSERT INTO permit_plans (
-         id, event_id, event_revision, ruleset_version, verdict, verdict_detail, intake_snapshot
-       ) VALUES ($1, $2, 1, 'nyc.v2.3', 'infeasible', '{}'::jsonb, '{}'::jsonb)`,
-      [randomUUID(), eventId],
-    );
+    await createPlan(eventId, "infeasible");
 
     const organizer = await request(api).get(`/api/events/${eventId}/public-page`);
     expect(organizer.status).toBe(200);
     expect(organizer.body.infeasible_warning).toBe(true);
+    expect(organizer.body.plan_available).toBe(true);
 
     await request(api)
       .patch(`/api/events/${eventId}/public-page`)
@@ -123,6 +129,7 @@ describe.runIf(databaseUrl.length > 0)("F-301 public page endpoints (database)",
 
   it("accepts an RSVP from the public flow once the page is published", async () => {
     const eventId = await createEvent();
+    await createPlan(eventId);
     await request(api)
       .patch(`/api/events/${eventId}/public-page`)
       .send({ public_page_published: true, description: "Come through." });
@@ -135,6 +142,7 @@ describe.runIf(databaseUrl.length > 0)("F-301 public page endpoints (database)",
 
   it("updates only the fields supplied on PATCH so concurrent toggles cannot clobber each other", async () => {
     const eventId = await createEvent();
+    await createPlan(eventId);
     await request(api)
       .patch(`/api/events/${eventId}/public-page`)
       .send({ public_page_published: true, description: "Original copy." });
@@ -152,6 +160,29 @@ describe.runIf(databaseUrl.length > 0)("F-301 public page endpoints (database)",
     expect(publishOnly.status).toBe(200);
     expect(publishOnly.body.public_page_published).toBe(false);
     expect(publishOnly.body.description).toBe("Updated copy.");
+  });
+
+  it("refuses publication without a plan and writes none of the patch", async () => {
+    const eventId = await createEvent();
+
+    const refused = await request(api).patch(`/api/events/${eventId}/public-page`).send({
+      description: "Not saved with a refused publish.",
+      public_page_published: true,
+    });
+    expect(refused.status).toBe(409);
+    expect(refused.body.error).toBe("Generate a permit plan before publishing this page.");
+
+    const organizer = await request(api).get(`/api/events/${eventId}/public-page`);
+    expect(organizer.status).toBe(200);
+    expect(organizer.body.plan_available).toBe(false);
+    expect(organizer.body.public_page_published).toBe(false);
+    expect(organizer.body.description).toBeNull();
+
+    const descriptionOnly = await request(api)
+      .patch(`/api/events/${eventId}/public-page`)
+      .send({ description: "Draft promotion copy." });
+    expect(descriptionOnly.status).toBe(200);
+    expect(descriptionOnly.body.description).toBe("Draft promotion copy.");
   });
 
   it("returns friendly errors for malformed public ids", async () => {

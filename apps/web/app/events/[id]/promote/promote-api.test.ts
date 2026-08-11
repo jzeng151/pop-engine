@@ -23,6 +23,7 @@ const sample = {
   public_path: "/e/11111111-1111-4111-8111-111111111111",
   map_url: "https://maps.google.com/?q=Lot",
   infeasible_warning: false,
+  plan_available: true,
 };
 
 describe("promote-api", () => {

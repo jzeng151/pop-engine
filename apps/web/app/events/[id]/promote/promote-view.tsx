@@ -110,6 +110,13 @@ export function PromoteView({ eventId, apiBaseUrl, webOrigin }: PromoteViewProps
         </p>
       )}
 
+      {!state.plan_available && (
+        <p className="promote__warning" role="status">
+          Generate a permit plan before publishing this page.{" "}
+          <a href={`/events/${eventId}/plan`}>Open permit plan</a>
+        </p>
+      )}
+
       <label className="promote__field">
         <span className="promote__label">Description</span>
         <textarea
@@ -133,7 +140,7 @@ export function PromoteView({ eventId, apiBaseUrl, webOrigin }: PromoteViewProps
         <button
           type="button"
           className="promote__button promote__secondary"
-          disabled={saving}
+          disabled={saving || (!state.plan_available && !state.public_page_published)}
           onClick={() => {
             void persist({
               description: description.trim() === "" ? null : description.trim(),

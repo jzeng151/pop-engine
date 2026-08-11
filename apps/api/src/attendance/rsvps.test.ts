@@ -70,6 +70,7 @@ describe.runIf(databaseUrl.length > 0)("F-302 RSVP endpoints (database)", () => 
     if (createdEventIds.length > 0) {
       await database.query("DELETE FROM checkins WHERE event_id = ANY($1)", [createdEventIds]);
       await database.query("DELETE FROM rsvps WHERE event_id = ANY($1)", [createdEventIds]);
+      await database.query("DELETE FROM permit_plans WHERE event_id = ANY($1)", [createdEventIds]);
       await database.query("DELETE FROM events WHERE id = ANY($1)", [createdEventIds]);
     }
     await database.end();
@@ -83,6 +84,13 @@ describe.runIf(databaseUrl.length > 0)("F-302 RSVP endpoints (database)", () => 
     expect(response.status).toBe(201);
     const id: string = response.body.event.id;
     createdEventIds.push(id);
+
+    await database.query(
+      `INSERT INTO permit_plans (
+         id, event_id, event_revision, ruleset_version, verdict, verdict_detail, intake_snapshot
+       ) VALUES ($1, $2, 1, 'nyc.v2.11', 'feasible', '{}'::jsonb, '{}'::jsonb)`,
+      [randomUUID(), id],
+    );
 
     const published = await request(api)
       .patch(`/api/events/${id}/public-page`)
