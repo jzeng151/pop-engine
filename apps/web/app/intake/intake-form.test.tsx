@@ -812,7 +812,35 @@ describe("saving and per-field errors", () => {
       new Date(Date.now() + 86_400_000).toISOString().slice(0, 10),
     );
     expect(screen.queryByRole("link", { name: /capacity must/ })).toBeNull();
-    expect(screen.queryByRole("link", { name: /event_date must/ })).toBeNull();
+    expect(screen.getByRole("link", { name: /event_date must/ })).toBeDefined();
+
+    await save(user);
+    await waitFor(() => expect(screen.queryByRole("link", { name: /event_date must/ })).toBeNull());
+  });
+
+  it("replaces a stale field error when that field becomes required", async () => {
+    fetchMock.mockResolvedValueOnce(
+      jsonResponse(400, {
+        errors: [
+          {
+            field: "headcount",
+            code: "invalid_value",
+            message: "headcount must be a whole number",
+          },
+        ],
+        warnings: [],
+      }),
+    );
+    const user = renderForm();
+    await answerParkEvent(user);
+    await save(user);
+
+    await fillField(user, "headcount", "");
+    await save(user);
+
+    expect(screen.getByRole("link", { name: "Headcount is required" })).toBeDefined();
+    expect(screen.queryByRole("link", { name: "headcount must be a whole number" })).toBeNull();
+    expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 
   it("keeps an unresolved server error when another answer fails client validation", async () => {
