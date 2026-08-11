@@ -97,7 +97,7 @@ their contract transition; the conditions for dropping each are stated with it.
    `capacity`. With different numeric values it displays the wrong limit; with `capacity = null` it
    displays a finite limit enforced nowhere. Web-first removes that semantic window: the new web
    reads the old api's `headcount`, which that api enforces, then reads `capacity` after the api
-   deploys. `apps/api/src/deployment-order.test.ts` fails if this instruction disappears while the
+   deploys. `apps/api/src/__tests__/deployment-order.test.ts` fails if this instruction disappears while the
    shape-only response remains. Drop this F-302 constraint only after the rename is the oldest web
    build in service and no older rollback target is selectable.
 
