@@ -858,6 +858,43 @@ describe("saving and per-field errors", () => {
     ).toBeNull();
   });
 
+  it("clears invalid-value and past-date errors only after valid corrections", async () => {
+    fetchMock.mockResolvedValueOnce(
+      jsonResponse(400, {
+        errors: [
+          {
+            field: "capacity",
+            code: "invalid_value",
+            message: "capacity must be a positive whole number",
+          },
+          {
+            field: "event_date",
+            code: "in_the_past",
+            message: "event_date must be today or later",
+          },
+        ],
+        warnings: [],
+      }),
+    );
+    const user = renderForm();
+    await answerParkEvent(user);
+    await fillField(user, "capacity", "0");
+    await save(user);
+
+    expect(screen.getByRole("link", { name: /capacity must/ })).toBeDefined();
+    await fillField(user, "event_date", "2000-01-01");
+    expect(screen.getByRole("link", { name: /event_date must/ })).toBeDefined();
+
+    await fillField(user, "capacity", "1");
+    await fillField(
+      user,
+      "event_date",
+      new Date(Date.now() + 86_400_000).toISOString().slice(0, 10),
+    );
+    expect(screen.queryByRole("link", { name: /capacity must/ })).toBeNull();
+    expect(screen.queryByRole("link", { name: /event_date must/ })).toBeNull();
+  });
+
   it("shows an error the form has no field for at the form level", async () => {
     fetchMock.mockResolvedValueOnce(
       jsonResponse(400, {

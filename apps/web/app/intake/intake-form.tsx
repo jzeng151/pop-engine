@@ -5,6 +5,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import {
   askedFields,
   intakeWarnings,
+  validateIntake,
   type IntakeContract,
   type IntakeField,
   type IntakeIssue,
@@ -54,10 +55,20 @@ const isBlank = (value: IntakeValue | undefined): boolean =>
   (typeof value === "string" && value.trim() === "") ||
   (Array.isArray(value) && value.length === 0);
 
-const correctionClears = (error: IntakeIssue, value: IntakeValue): boolean =>
-  error.code === "required"
-    ? !isBlank(value)
-    : error.code === "must_be_positive" && typeof value === "number" && value > 0;
+const nycToday = (): string =>
+  new Intl.DateTimeFormat("en-CA", {
+    timeZone: "America/New_York",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(new Date());
+
+const CORRECTABLE_ERROR_CODES = new Set([
+  "required",
+  "invalid_value",
+  "must_be_positive",
+  "in_the_past",
+]);
 
 const isIntakeValue = (value: unknown): value is IntakeValue =>
   value === null ||
@@ -227,8 +238,14 @@ export function IntakeForm({
     const updatedAnswers = { ...currentAnswers.current, [field]: value };
     currentAnswers.current = updatedAnswers;
     setAnswers(updatedAnswers);
+    const remaining = validateIntake(contract, updatedAnswers, nycToday()).errors;
     setErrors((current) =>
-      current.filter((error) => error.field !== field || !correctionClears(error, value)),
+      current.filter(
+        (error) =>
+          error.field !== field ||
+          !CORRECTABLE_ERROR_CODES.has(error.code) ||
+          remaining.some((candidate) => candidate.field === error.field),
+      ),
     );
   };
 
