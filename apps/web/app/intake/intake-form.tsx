@@ -10,7 +10,7 @@ import {
   type IntakeIssue,
   type IntakeValue,
 } from "@pop-engine/engine";
-import { CREDENTIALED, loadEvent, type SavedEvent } from "../_lib/events-api";
+import { CREDENTIALED, loadEvent, regeneratePlan, type SavedEvent } from "../_lib/events-api";
 import { discoverParks, parksBoroughCode, type ParkSuggestion } from "./parks-api";
 
 // The intake questionnaire.
@@ -265,9 +265,10 @@ export function IntakeForm({
     // The answers as they stand at the click, which the response is reconciled against.
     const answersAtSubmit = answers;
     try {
-      const target = saved === null ? "/api/events" : `/api/events/${saved.id}`;
+      const creating = saved === null;
+      const target = creating ? "/api/events" : `/api/events/${saved.id}`;
       const response = await fetch(`${apiBaseUrl}${target}`, {
-        method: saved === null ? "POST" : "PATCH",
+        method: creating ? "POST" : "PATCH",
         ...CREDENTIALED,
         body: JSON.stringify(submission()),
       });
@@ -282,6 +283,17 @@ export function IntakeForm({
       const stored = answersFromEvent(contract, body.event);
       setAnswers((latest) => reconcileAnswers(latest, answersAtSubmit, stored));
       setSaved(body.event);
+      if (creating) {
+        const generated = await regeneratePlan(apiBaseUrl, body.event.id);
+        if (!generated.ok) {
+          setFailure(
+            `Your event was saved, but its permit plan could not be generated. ${generated.message}`,
+          );
+          return;
+        }
+        router.push(`/events/${body.event.id}/plan`);
+        return;
+      }
       router.push(`/events/${body.event.id}`);
     } catch {
       setFailure("The API could not be reached.");

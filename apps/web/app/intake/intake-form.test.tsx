@@ -97,13 +97,23 @@ const save = async (user: ReturnType<typeof userEvent.setup>) => {
 };
 
 const requestBody = (fetchMock: ReturnType<typeof vi.fn>, call = 0): Record<string, unknown> =>
-  JSON.parse(String((fetchMock.mock.calls[call]?.[1] as RequestInit).body));
+  JSON.parse(
+    String(
+      (
+        fetchMock.mock.calls.filter((entry) => (entry[1] as RequestInit).body !== undefined)[
+          call
+        ]?.[1] as RequestInit
+      ).body,
+    ),
+  );
 
 let fetchMock: ReturnType<typeof vi.fn>;
 
 beforeEach(() => {
   router.push.mockReset();
-  fetchMock = vi.fn(async (_url: string, init: RequestInit) => echoSavedEvent(201, init));
+  fetchMock = vi.fn(async (url: string, init: RequestInit) =>
+    url.endsWith("/plan") ? jsonResponse(201, {}) : echoSavedEvent(201, init),
+  );
   vi.stubGlobal("fetch", fetchMock);
 });
 
@@ -433,7 +443,7 @@ describe("loading a saved event to edit it", () => {
     const [url, init] = fetchMock.mock.calls[1] as [string, RequestInit];
     expect(url).toBe("https://api.example.com/api/events/event-9");
     expect(init.method).toBe("PATCH");
-    expect(requestBody(fetchMock, 1).headcount).toBe(151);
+    expect(requestBody(fetchMock).headcount).toBe(151);
     expect(router.push).toHaveBeenCalledWith("/events/event-9");
   });
 
@@ -495,7 +505,7 @@ describe("clearing an optional answer on an edit", () => {
     await save(user);
 
     await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
-    const edit = requestBody(fetchMock, 1);
+    const edit = requestBody(fetchMock);
     expect(edit).toHaveProperty("location_name", null);
     expect(edit).toHaveProperty("capacity", null);
   });
@@ -589,7 +599,7 @@ describe("NYC park-name suggestions", () => {
     await save(user);
 
     await waitFor(() => expect(screen.getByText(/Saved as revision 1/)).toBeDefined());
-    expect(requestBody(fetchMock, 1).location_name).toBe("My neighborhood green");
+    expect(requestBody(fetchMock).location_name).toBe("My neighborhood green");
   });
 
   it("explains the search limit without restricting manual location entry", async () => {
@@ -669,23 +679,47 @@ describe("saving and per-field errors", () => {
     expect(within(summary).queryByRole("link", { name: "Event name is required" })).toBeNull();
   });
 
-  it("posts the intake and opens its overview", async () => {
+  it("posts the intake, generates its first plan, and opens the plan", async () => {
     const user = renderForm();
     await answerParkEvent(user);
     await save(user);
 
     await waitFor(() => expect(screen.getByText(/Saved as revision 1/)).toBeDefined());
-    expect(router.push).toHaveBeenCalledWith("/events/event-1");
+    expect(router.push).toHaveBeenCalledWith("/events/event-1/plan");
     const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
     expect(url).toBe("https://api.example.com/api/events");
     expect(init.method).toBe("POST");
     expect(init.credentials).toBe("include");
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(fetchMock.mock.calls[1]?.[0]).toBe("https://api.example.com/api/events/event-1/plan");
+    expect((fetchMock.mock.calls[1]?.[1] as RequestInit).method).toBe("POST");
     expect(screen.getByRole("button", { name: "Save changes" })).toBeDefined();
     expect(screen.getByRole("link", { name: "Promote public page" }).getAttribute("href")).toBe(
       "/events/event-1/promote",
     );
     expect(screen.getByRole("link", { name: "Guest list" }).getAttribute("href")).toBe(
       "/events/event-1/guests",
+    );
+  });
+
+  it("keeps the saved event available when its first plan cannot be generated", async () => {
+    fetchMock.mockImplementationOnce(async (_url: string, init: RequestInit) =>
+      echoSavedEvent(201, init),
+    );
+    fetchMock.mockResolvedValueOnce(jsonResponse(500, { error: "planning unavailable" }));
+    const user = renderForm();
+    await answerParkEvent(user);
+    await save(user);
+
+    expect(
+      await screen.findByText(
+        "Your event was saved, but its permit plan could not be generated. planning unavailable",
+      ),
+    ).toBeDefined();
+    expect(router.push).not.toHaveBeenCalled();
+    expect(screen.getByRole("button", { name: "Save changes" })).toBeDefined();
+    expect(screen.getByRole("link", { name: "see its permit plan" }).getAttribute("href")).toBe(
+      "/events/event-1/plan",
     );
   });
 
@@ -811,8 +845,8 @@ describe("editing a saved event", () => {
     expect(questionsOnScreen()).not.toContain("Street event size");
     await save(user);
 
-    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
-    const [url, init] = fetchMock.mock.calls[1] as [string, RequestInit];
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(3));
+    const [url, init] = fetchMock.mock.calls[2] as [string, RequestInit];
     expect(url).toBe("https://api.example.com/api/events/event-1");
     expect(init.method).toBe("PATCH");
     const edit = requestBody(fetchMock, 1);
@@ -885,7 +919,7 @@ describe("editing a saved event", () => {
     expect(document.querySelector<HTMLInputElement>('input[name="capacity"]')?.value).toBe("");
 
     await save(user);
-    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(3));
     expect(requestBody(fetchMock, 1).headcount).toBe(175);
     expect(requestBody(fetchMock, 1).location_name).toBe("Long Meadow");
     expect(requestBody(fetchMock, 1).capacity).toBeNull();
@@ -944,7 +978,7 @@ describe("editing a saved event", () => {
     ).toBe(false);
 
     await save(user);
-    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(fetchMock).toHaveBeenCalledTimes(3);
     expect(screen.getByRole("alert").textContent).toBe("Street event size is required");
   });
 });
