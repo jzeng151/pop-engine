@@ -192,7 +192,7 @@ export type FailedAlertDelivery = {
   readonly attemptedWithoutOutcome?: boolean;
 };
 
-/** A channel with alerts the poller has permanently stopped on (F-203). */
+/** A channel with alerts under a bounded reconciliation hold (F-203). */
 export type ReconciliationHold = {
   readonly channel: string;
   readonly heldCount: number;

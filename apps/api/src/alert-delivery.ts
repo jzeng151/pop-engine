@@ -22,7 +22,7 @@ export type AlertDelivery = {
 
 /** A failed delivery remains eligible for a later tick. */
 export class AlertDeliveryError extends Error {
-  /** True when the provider reported an outcome; false when it may have accepted silently. */
+  /** True when the outcome is known, including a proven pre-handoff failure; false when acceptance is ambiguous. */
   readonly outcomeObserved: boolean;
 
   constructor(message: string, options: { readonly outcomeObserved?: boolean } = {}) {
