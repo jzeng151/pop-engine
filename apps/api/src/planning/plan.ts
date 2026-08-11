@@ -438,9 +438,13 @@ export function createPlanService(
       if (initialCreateKey !== undefined && row.create_idempotency_key !== initialCreateKey) {
         throw new PlanCreateKeyMismatchError();
       }
+      if (initialCreateKey !== undefined) {
+        const existing = await readPlan(pool, eventId, "first");
+        if (existing !== null) return { plan: existing, created: false };
+      }
       const intake = intakeFromEventRow(row, ruleset);
-      // Evaluation runs before the transaction opens: a rule-evaluation failure must surface
-      // as an error, never as a stored plan with no findings (AC 5).
+      // A new plan is evaluated before the transaction opens: failure must surface as an error,
+      // never as a stored plan with no findings (AC 5).
       const plan = evaluate(intake, ruleset, today(), resolveCalendar(ruleset.calendarId));
       const eventRevision = Number(row.revision_counter);
 

@@ -115,7 +115,22 @@ function readSubmission(req: Request, res: Response): Record<string, unknown> | 
     });
     return null;
   }
+  if (hasNonFiniteNumber(body)) {
+    res.status(400).json({
+      errors: [{ field: "body", code: "invalid_body", message: "body numbers must be finite" }],
+      warnings: [],
+    });
+    return null;
+  }
   return body as Record<string, unknown>;
+}
+
+function hasNonFiniteNumber(value: unknown): boolean {
+  if (typeof value === "number") return !Number.isFinite(value);
+  if (Array.isArray(value)) return value.some(hasNonFiniteNumber);
+  return (
+    typeof value === "object" && value !== null && Object.values(value).some(hasNonFiniteNumber)
+  );
 }
 
 function readIdempotencyKey(req: Request, res: Response): string | null {

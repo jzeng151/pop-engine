@@ -97,6 +97,26 @@ describe.runIf(databaseUrl.length > 0)("F-101 event intake endpoints", () => {
       expect(stored.rows[0]?.count).toBe("1");
     });
 
+    it("rejects non-finite JSON numbers before comparing a replay body", async () => {
+      const key = randomUUID();
+      const intake = { ...scenario("C"), generator_kw: null };
+      const first = await post(intake, key);
+      const lossyBody = JSON.stringify(intake).replace(
+        '"generator_kw":null',
+        '"generator_kw":1e400',
+      );
+
+      const replay = await request(api)
+        .post("/api/events")
+        .set("Idempotency-Key", key)
+        .set("Content-Type", "application/json")
+        .send(lossyBody);
+
+      expect(first.status).toBe(201);
+      expect(replay.status).toBe(400);
+      expect(errorCodes(replay.body)).toEqual({ body: "invalid_body" });
+    });
+
     it("serializes concurrent copies of one create request", async () => {
       const key = randomUUID();
       const intake = { ...scenario("C"), name: `concurrent-idempotent-${randomUUID()}` };

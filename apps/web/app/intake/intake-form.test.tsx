@@ -1149,6 +1149,38 @@ describe("saving and per-field errors", () => {
     expect(screen.queryByText(/could not be generated/)).toBeNull();
   });
 
+  it("retains recovery when a lost generation response races a missing-plan read", async () => {
+    fetchMock.mockImplementationOnce(async (_url: string, init: RequestInit) =>
+      echoSavedEvent(201, init),
+    );
+    fetchMock.mockRejectedValueOnce(new TypeError("connection reset"));
+    fetchMock.mockResolvedValueOnce(jsonResponse(404, { error: "no plan generated" }));
+    const user = renderForm();
+    await answerParkEvent(user);
+    await save(user);
+
+    expect(
+      await screen.findByText(/it is not known whether its permit plan was generated/),
+    ).toBeDefined();
+    expect(sessionStorage).toHaveLength(1);
+
+    fetchMock.mockImplementationOnce(async (_url: string, init: RequestInit) =>
+      echoSavedEvent(200, init),
+    );
+    fetchMock.mockResolvedValueOnce(jsonResponse(200, {}));
+    fetchMock.mockResolvedValueOnce(jsonResponse(200, storedPlan));
+    await save(user);
+
+    await waitFor(() => expect(router.push).toHaveBeenCalledWith("/events/event-1/plan"));
+    const createCalls = fetchMock.mock.calls.filter(
+      ([url]) => url === "https://api.example.com/api/events",
+    ) as [string, RequestInit][];
+    expect(new Headers(createCalls[1]?.[1].headers).get("Idempotency-Key")).toBe(
+      new Headers(createCalls[0]?.[1].headers).get("Idempotency-Key"),
+    );
+    expect(sessionStorage).toHaveLength(0);
+  });
+
   it("reports an unknown outcome when neither generation nor its recheck answers", async () => {
     fetchMock.mockImplementationOnce(async (_url: string, init: RequestInit) =>
       echoSavedEvent(201, init),
@@ -1188,10 +1220,11 @@ describe("saving and per-field errors", () => {
     expect(sessionStorage).toHaveLength(0);
   });
 
-  it("does not route after the form unmounts while the first plan is generating", async () => {
+  it("clears durable recovery without routing after first planning finishes past unmount", async () => {
     let releasePlan: (response: Response) => void = () => {};
     fetchMock.mockImplementation(async (url: string, init: RequestInit) => {
       if (!url.endsWith("/plan")) return echoSavedEvent(201, init);
+      if (init.method !== "POST") return jsonResponse(200, storedPlan);
       return new Promise<Response>((resolve) => {
         releasePlan = resolve;
       });
@@ -1201,15 +1234,17 @@ describe("saving and per-field errors", () => {
     await answerParkEvent(user);
     await save(user);
     await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
+    expect(sessionStorage).toHaveLength(1);
 
     view.unmount();
     await act(async () => releasePlan(jsonResponse(201, {})));
 
-    expect(fetchMock).toHaveBeenCalledTimes(2);
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(3));
+    expect(sessionStorage).toHaveLength(0);
     expect(router.push).not.toHaveBeenCalled();
   });
 
-  it("still generates the first plan when the create response arrives after unmount", async () => {
+  it("still generates and confirms the first plan when create finishes past unmount", async () => {
     let releaseSave: (response: Response) => void = () => {};
     let submitted: RequestInit | undefined;
     fetchMock.mockImplementationOnce(
@@ -1224,13 +1259,16 @@ describe("saving and per-field errors", () => {
     await answerParkEvent(user);
     await save(user);
     await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
+    expect(sessionStorage).toHaveLength(1);
 
     view.unmount();
     await act(async () => releaseSave(echoSavedEvent(201, submitted as RequestInit)));
 
-    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(3));
     expect(fetchMock.mock.calls[1]?.[0]).toBe("https://api.example.com/api/events/event-1/plan");
     expect((fetchMock.mock.calls[1]?.[1] as RequestInit).method).toBe("POST");
+    expect((fetchMock.mock.calls[2]?.[1] as RequestInit).method).toBeUndefined();
+    expect(sessionStorage).toHaveLength(0);
     expect(router.push).not.toHaveBeenCalled();
   });
 

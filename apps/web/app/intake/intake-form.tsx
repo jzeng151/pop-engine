@@ -521,31 +521,38 @@ export function IntakeForm({
           body.event.id,
           pendingCreate.current?.key,
         );
-        if (!mounted.current) return;
         const generationMessage = generated.ok ? "" : generated.message;
         let planStored: boolean | null = false;
         if (generated.ok || !generated.refused) {
           const loaded = await loadPlan(apiBaseUrl, body.event.id);
-          if (!mounted.current) return;
-          planStored = loaded.ok ? true : loaded.missing ? false : null;
+          planStored = loaded.ok
+            ? true
+            : loaded.missing && (generated.ok || generated.responseReceived)
+              ? false
+              : null;
         }
         const changedWhileSaving = !sameAnswers(currentAnswers.current, stored);
         if (planStored === null) {
-          setFailure(
-            `Your event was saved, but it is not known whether its permit plan was generated. ${generationMessage} Open the permit plan to check before trying again.${changedWhileSaving ? " Changes made while the request was running are still unsaved." : ""}`,
-          );
+          if (mounted.current) {
+            setFailure(
+              `Your event was saved, but it is not known whether its permit plan was generated. ${generationMessage} Open the permit plan to check before trying again.${changedWhileSaving ? " Changes made while the request was running are still unsaved." : ""}`,
+            );
+          }
           return;
         }
         if (!planStored) {
           pendingCreate.current = null;
           storePendingCreate(apiBaseUrl, null);
-          setFailure(
-            `Your event was saved, but its permit plan could not be generated. ${generationMessage}${changedWhileSaving ? " Changes made while the request was running are still unsaved." : ""}`,
-          );
+          if (mounted.current) {
+            setFailure(
+              `Your event was saved, but its permit plan could not be generated. ${generationMessage}${changedWhileSaving ? " Changes made while the request was running are still unsaved." : ""}`,
+            );
+          }
           return;
         }
         pendingCreate.current = null;
         storePendingCreate(apiBaseUrl, null);
+        if (!mounted.current) return;
         setInitialPlanReady(true);
         if (changedWhileSaving) {
           setFailure(

@@ -370,6 +370,31 @@ describe.runIf(databaseUrl.length > 0)("plan API (F-201)", () => {
     expect(retried.body.id).not.toBe(regenerated.body.id);
   });
 
+  it("returns a stored keyed plan before consulting current evaluation dependencies", async () => {
+    const createKey = randomUUID();
+    const eventId = await insertEvent({
+      create_idempotency_key: createKey,
+      create_request_body: scenarioAEvent,
+    });
+    const first = await request(appWith())
+      .post(`/api/events/${eventId}/plan`)
+      .set("Idempotency-Key", createKey);
+    let calendarReads = 0;
+    const retry = await request(
+      appWith(() => {
+        calendarReads += 1;
+        throw new Error("current calendar is unavailable");
+      }),
+    )
+      .post(`/api/events/${eventId}/plan`)
+      .set("Idempotency-Key", createKey);
+
+    expect(first.status).toBe(201);
+    expect(retry.status).toBe(200);
+    expect(retry.body.id).toBe(first.body.id);
+    expect(calendarReads).toBe(0);
+  });
+
   it("rejects malformed or unrelated first-plan keys without writing", async () => {
     const createKey = randomUUID();
     const eventId = await insertEvent({
