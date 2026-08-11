@@ -205,7 +205,7 @@ export function IntakeForm({
   const router = useRouter();
   const [answers, setAnswers] = useState<Answers>({});
   const [saved, setSaved] = useState<SavedEvent | null>(null);
-  const [initialPlanReady, setInitialPlanReady] = useState(eventId !== undefined);
+  const [initialPlanReady, setInitialPlanReady] = useState(false);
   const [errors, setErrors] = useState<IntakeIssue[]>([]);
   const [saving, setSaving] = useState(false);
   const [failure, setFailure] = useState<string | null>(null);
@@ -243,13 +243,16 @@ export function IntakeForm({
   useEffect(() => {
     if (eventId === undefined) return;
     let abandoned = false;
-    void loadEvent(apiBaseUrl, eventId).then((result) => {
+    void loadEvent(apiBaseUrl, eventId).then(async (result) => {
       if (abandoned) return;
       if (result.ok) {
+        const plan = await loadPlan(apiBaseUrl, eventId);
+        if (abandoned) return;
         const loadedAnswers = answersFromEvent(contract, result.loaded.event);
         currentAnswers.current = loadedAnswers;
         setAnswers(loadedAnswers);
         setSaved(result.loaded.event);
+        setInitialPlanReady(plan.ok);
       } else {
         setLoadFailure(result.message);
       }
@@ -388,39 +391,41 @@ export function IntakeForm({
     const creating = saved === null;
     const retry = creating ? pendingCreate.current : null;
     const requestBody = retry?.body ?? submission();
-    const fieldOrder = [
-      ...DESCRIPTIVE_QUESTIONS.map((question) => question.field),
-      ...questions.map((question) => question.field),
-    ];
-    const validationErrors = validateIntake(contract, requestBody, nycToday()).errors;
-    const missing = validationErrors
-      .filter((error) => error.code === "required")
-      .map((error) => {
-        const label =
-          DESCRIPTIVE_QUESTIONS.find((question) => question.field === error.field)?.label ??
-          humanize(error.field);
-        return { ...error, message: `${label} is required` };
-      });
-    const missingFields = new Set(missing.map((error) => error.field));
-    const clientErrors = [
-      ...errors.filter(
-        (error) =>
-          error.code !== "required" &&
-          !missingFields.has(error.field) &&
-          (error.field === "body" ||
-            error.code === "unknown_field" ||
-            error.code === "in_the_past" ||
-            validationErrors.some((candidate) => candidate.field === error.field)),
-      ),
-      ...missing,
-    ];
-    clientErrors.sort(
-      (left, right) => fieldOrder.indexOf(left.field) - fieldOrder.indexOf(right.field),
-    );
-    if (missing.length > 0) {
-      shouldFocusFirstError.current = true;
-      setErrors(clientErrors);
-      return;
+    if (retry === null) {
+      const fieldOrder = [
+        ...DESCRIPTIVE_QUESTIONS.map((question) => question.field),
+        ...questions.map((question) => question.field),
+      ];
+      const validationErrors = validateIntake(contract, requestBody, nycToday()).errors;
+      const missing = validationErrors
+        .filter((error) => error.code === "required")
+        .map((error) => {
+          const label =
+            DESCRIPTIVE_QUESTIONS.find((question) => question.field === error.field)?.label ??
+            humanize(error.field);
+          return { ...error, message: `${label} is required` };
+        });
+      const missingFields = new Set(missing.map((error) => error.field));
+      const clientErrors = [
+        ...errors.filter(
+          (error) =>
+            error.code !== "required" &&
+            !missingFields.has(error.field) &&
+            (error.field === "body" ||
+              error.code === "unknown_field" ||
+              error.code === "in_the_past" ||
+              validationErrors.some((candidate) => candidate.field === error.field)),
+        ),
+        ...missing,
+      ];
+      clientErrors.sort(
+        (left, right) => fieldOrder.indexOf(left.field) - fieldOrder.indexOf(right.field),
+      );
+      if (missing.length > 0) {
+        shouldFocusFirstError.current = true;
+        setErrors(clientErrors);
+        return;
+      }
     }
 
     setSaving(true);
@@ -483,10 +488,6 @@ export function IntakeForm({
         }
         return;
       }
-      if (creating) {
-        pendingCreate.current = null;
-        storePendingCreate(apiBaseUrl, null);
-      }
       // Rebuild from the stored row so answers cleared by hidden questions cannot linger locally.
       const stored = answersFromEvent(contract, body.event);
       if (mounted.current) {
@@ -516,11 +517,15 @@ export function IntakeForm({
         }
         const changedWhileSaving = !sameAnswers(currentAnswers.current, stored);
         if (!planStored) {
+          pendingCreate.current = null;
+          storePendingCreate(apiBaseUrl, null);
           setFailure(
             `Your event was saved, but its permit plan could not be generated. ${generationMessage}${changedWhileSaving ? " Changes made while the request was running are still unsaved." : ""}`,
           );
           return;
         }
+        pendingCreate.current = null;
+        storePendingCreate(apiBaseUrl, null);
         setInitialPlanReady(true);
         if (changedWhileSaving) {
           setFailure(

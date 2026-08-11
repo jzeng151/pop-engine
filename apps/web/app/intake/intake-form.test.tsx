@@ -420,6 +420,22 @@ describe("loading a saved event to edit it", () => {
     ).toBe(true);
     expect(document.querySelector('input[name="status"]')).toBeNull();
     expect(questionsOnScreen()).not.toContain("Obstructs public way");
+    expect(screen.getByRole("link", { name: "Promote public page" }).getAttribute("href")).toBe(
+      "/events/event-9/promote",
+    );
+  });
+
+  it("does not offer promotion when the saved event has no plan", async () => {
+    fetchMock.mockResolvedValueOnce(
+      jsonResponse(200, { event: storedEvent, warnings: [], plan_stale: false }),
+    );
+    fetchMock.mockResolvedValueOnce(jsonResponse(404, { error: "no plan generated" }));
+    renderForm("event-9");
+
+    await waitFor(() => expect(screen.getByText(/Saved as revision 4/)).toBeDefined());
+    expect(screen.queryByRole("link", { name: "Promote public page" })).toBeNull();
+    expect(screen.getByText(/Promotion will be available after/)).toBeDefined();
+    expect(sessionStorage).toHaveLength(0);
   });
 
   it("reloads both assembly-document answers for editing", async () => {
@@ -464,8 +480,8 @@ describe("loading a saved event to edit it", () => {
     await fillField(user, "headcount", "151");
     await save(user);
 
-    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
-    const [url, init] = fetchMock.mock.calls[1] as [string, RequestInit];
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(3));
+    const [url, init] = fetchMock.mock.calls[2] as [string, RequestInit];
     expect(url).toBe("https://api.example.com/api/events/event-9");
     expect(init.method).toBe("PATCH");
     expect(requestBody(fetchMock).headcount).toBe(151);
@@ -529,7 +545,7 @@ describe("clearing an optional answer on an edit", () => {
     await user.clear(document.querySelector<HTMLInputElement>('input[name="capacity"]')!);
     await save(user);
 
-    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(3));
     const edit = requestBody(fetchMock);
     expect(edit).toHaveProperty("location_name", null);
     expect(edit).toHaveProperty("capacity", null);
@@ -862,6 +878,87 @@ describe("saving and per-field errors", () => {
     expect(sessionStorage).toHaveLength(0);
   });
 
+  it("replays a retained create before validating fields added by a newer client", async () => {
+    let createAttempts = 0;
+    fetchMock.mockImplementation(async (url: string, init: RequestInit) => {
+      if (url === "https://api.example.com/api/events") {
+        createAttempts += 1;
+        if (createAttempts === 1) throw new TypeError("response lost");
+        return echoSavedEvent(200, init);
+      }
+      if (url.endsWith("/plan")) {
+        return init.method === "POST" ? jsonResponse(201, {}) : jsonResponse(200, storedPlan);
+      }
+      throw new Error(`unexpected request ${url}`);
+    });
+    let user = renderForm();
+    await answerParkEvent(user);
+    await save(user);
+    expect(await screen.findByRole("alert")).toBeDefined();
+
+    const addedField = {
+      ...contract.fields.find((field) => field.field === "borough")!,
+      field: "new_required_field",
+    };
+    cleanup();
+    user = renderForm(undefined, { ...contract, fields: [...contract.fields, addedField] });
+    await waitFor(() =>
+      expect(document.querySelector<HTMLInputElement>('input[name="name"]')?.value).toBe(
+        "Prospect Park Community Day",
+      ),
+    );
+    await save(user);
+
+    const createCalls = fetchMock.mock.calls.filter(
+      ([url]) => url === "https://api.example.com/api/events",
+    );
+    expect(createCalls).toHaveLength(2);
+    expect(JSON.parse(String((createCalls[1]?.[1] as RequestInit).body))).not.toHaveProperty(
+      "new_required_field",
+    );
+  });
+
+  it("retains create recovery while initial plan generation is in flight", async () => {
+    let createAttempts = 0;
+    let planAttempts = 0;
+    fetchMock.mockImplementation(async (url: string, init: RequestInit) => {
+      if (url === "https://api.example.com/api/events") {
+        createAttempts += 1;
+        return echoSavedEvent(createAttempts === 1 ? 201 : 200, init);
+      }
+      if (url.endsWith("/plan") && init.method === "POST") {
+        planAttempts += 1;
+        if (planAttempts === 1) return new Promise<Response>(() => {});
+        return jsonResponse(201, {});
+      }
+      if (url.endsWith("/plan")) return jsonResponse(200, storedPlan);
+      throw new Error(`unexpected request ${url}`);
+    });
+    let user = renderForm();
+    await answerParkEvent(user);
+    await save(user);
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
+    expect(sessionStorage).toHaveLength(1);
+
+    cleanup();
+    user = renderForm();
+    await waitFor(() =>
+      expect(document.querySelector<HTMLInputElement>('input[name="name"]')?.value).toBe(
+        "Prospect Park Community Day",
+      ),
+    );
+    await save(user);
+
+    await waitFor(() => expect(router.push).toHaveBeenCalledWith("/events/event-1/plan"));
+    const createCalls = fetchMock.mock.calls.filter(
+      ([url]) => url === "https://api.example.com/api/events",
+    ) as [string, RequestInit][];
+    expect(new Headers(createCalls[1]?.[1].headers).get("Idempotency-Key")).toBe(
+      new Headers(createCalls[0]?.[1].headers).get("Idempotency-Key"),
+    );
+    expect(sessionStorage).toHaveLength(0);
+  });
+
   it("keeps edits made while the first plan is generating on the form", async () => {
     let releasePlan: (response: Response) => void = () => {};
     fetchMock.mockImplementation(async (url: string, init: RequestInit) => {
@@ -958,6 +1055,7 @@ describe("saving and per-field errors", () => {
     );
     expect(screen.queryByRole("link", { name: "Promote public page" })).toBeNull();
     expect(screen.getByText(/Promotion will be available after/)).toBeDefined();
+    expect(sessionStorage).toHaveLength(0);
   });
 
   it("opens a plan that exists after its generation response is lost", async () => {
@@ -992,6 +1090,7 @@ describe("saving and per-field errors", () => {
       "Open the permit plan to check before trying again.",
     );
     expect(router.push).not.toHaveBeenCalled();
+    expect(sessionStorage).toHaveLength(1);
   });
 
   it("does not route after the form unmounts while the first plan is generating", async () => {
