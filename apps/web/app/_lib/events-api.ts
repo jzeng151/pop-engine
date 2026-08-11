@@ -133,7 +133,14 @@ export async function regeneratePlan(
     );
     return response.status === 409
       ? { ok: false, refused: true, refusal: readRefusal(body), message }
-      : { ok: false, refused: false, outcomeKnown: response.status <= 500, message };
+      : {
+          ok: false,
+          refused: false,
+          outcomeKnown:
+            response.status < 500 ||
+            (response.status === 500 && asRecord(body)?.error === "plan generation failed"),
+          message,
+        };
   }
   return { ok: true };
 }
