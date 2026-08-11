@@ -125,6 +125,7 @@ export function IntakeForm({
   const locationNameInput = useRef<HTMLInputElement | null>(null);
   const formRef = useRef<HTMLFormElement | null>(null);
   const shouldFocusFirstError = useRef(false);
+  const answerRevision = useRef(0);
 
   useEffect(() => {
     if (eventId === undefined) return;
@@ -203,6 +204,7 @@ export function IntakeForm({
   );
 
   const answer = (field: string, value: IntakeValue) => {
+    answerRevision.current += 1;
     if (field === "location_name") {
       parkSearchRequest.current += 1;
       parkSearchController.current?.abort();
@@ -284,6 +286,7 @@ export function IntakeForm({
     setSaving(true);
     // The answers as they stand at the click, which the response is reconciled against.
     const answersAtSubmit = answers;
+    const answerRevisionAtSubmit = answerRevision.current;
     try {
       const creating = saved === null;
       const target = creating ? "/api/events" : `/api/events/${saved.id}`;
@@ -306,9 +309,16 @@ export function IntakeForm({
       setSaved(body.event);
       if (creating) {
         const generated = await regeneratePlan(apiBaseUrl, body.event.id);
+        const changedWhileSaving = answerRevision.current !== answerRevisionAtSubmit;
         if (!generated.ok) {
           setFailure(
-            `Your event was saved, but its permit plan could not be generated. ${generated.message}`,
+            `Your event was saved, but its permit plan could not be generated. ${generated.message}${changedWhileSaving ? " Changes made while the request was running are still unsaved." : ""}`,
+          );
+          return;
+        }
+        if (changedWhileSaving) {
+          setFailure(
+            "Your event and its permit plan were saved, but changes made while they were saving are still unsaved. Save those changes before opening the plan.",
           );
           return;
         }

@@ -732,6 +732,31 @@ describe("saving and per-field errors", () => {
     );
   });
 
+  it("keeps edits made while the first plan is generating on the form", async () => {
+    let releasePlan: (response: Response) => void = () => {};
+    fetchMock.mockImplementation(async (url: string, init: RequestInit) => {
+      if (!url.endsWith("/plan")) return echoSavedEvent(201, init);
+      return new Promise<Response>((resolve) => {
+        releasePlan = resolve;
+      });
+    });
+    const user = renderForm();
+    await answerParkEvent(user);
+    await save(user);
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
+
+    await fillField(user, "headcount", "175");
+    releasePlan(jsonResponse(201, {}));
+
+    expect(
+      await screen.findByText(
+        "Your event and its permit plan were saved, but changes made while they were saving are still unsaved. Save those changes before opening the plan.",
+      ),
+    ).toBeDefined();
+    expect(document.querySelector<HTMLInputElement>('input[name="headcount"]')?.value).toBe("175");
+    expect(router.push).not.toHaveBeenCalled();
+  });
+
   it("keeps the saved event available when its first plan cannot be generated", async () => {
     fetchMock.mockImplementationOnce(async (_url: string, init: RequestInit) =>
       echoSavedEvent(201, init),
