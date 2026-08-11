@@ -709,6 +709,20 @@ describe("saving and per-field errors", () => {
     expect(screen.getByRole("link", { name: "Event name is required" })).toBeDefined();
   });
 
+  it("replaces a required message when the field becomes nonblank but stays invalid", async () => {
+    const user = renderForm();
+    await save(user);
+    expect(screen.getByRole("link", { name: "Headcount is required" })).toBeDefined();
+
+    await fillField(user, "headcount", "0");
+
+    expect(screen.queryByRole("link", { name: "Headcount is required" })).toBeNull();
+    expect(screen.getByRole("link", { name: "headcount must be at least 1" })).toBeDefined();
+    expect(screen.getByRole("spinbutton", { name: "Headcount" }).getAttribute("aria-invalid")).toBe(
+      "true",
+    );
+  });
+
   it("posts the intake and opens its overview", async () => {
     const user = renderForm();
     await answerParkEvent(user);
@@ -811,6 +825,9 @@ describe("saving and per-field errors", () => {
     expect(
       screen.getByRole("spinbutton", { name: "Headcount" }).getAttribute("aria-invalid"),
     ).toBeNull();
+    expect(screen.getByRole("alert").textContent).toBe(
+      "Your corrected answers were not saved. Save again to store them.",
+    );
   });
 
   it("keeps a failed save's error when the answer stays invalid in flight", async () => {

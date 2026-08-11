@@ -242,12 +242,12 @@ export function IntakeForm({
     setAnswers(updatedAnswers);
     const remaining = validateIntake(contract, updatedAnswers, nycToday()).errors;
     setErrors((current) =>
-      current.filter(
-        (error) =>
-          error.field !== field ||
-          !CORRECTABLE_ERROR_CODES.has(error.code) ||
-          remaining.some((candidate) => candidate.field === error.field),
-      ),
+      current.flatMap((error) => {
+        if (error.field !== field || !CORRECTABLE_ERROR_CODES.has(error.code)) return [error];
+        const latest = remaining.find((candidate) => candidate.field === error.field);
+        if (error.code === "required" && latest?.code !== "required") return latest ? [latest] : [];
+        return latest ? [error] : [];
+      }),
     );
   };
 
@@ -362,8 +362,12 @@ export function IntakeForm({
         );
         shouldFocusFirstError.current = true;
         setErrors(responseErrors);
-        if (responseErrors.length === 0 && (body.errors ?? []).length === 0) {
-          setFailure("The event could not be saved.");
+        if (responseErrors.length === 0) {
+          setFailure(
+            (body.errors ?? []).length === 0
+              ? "The event could not be saved."
+              : "Your corrected answers were not saved. Save again to store them.",
+          );
         }
         return;
       }
