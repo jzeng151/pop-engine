@@ -64,12 +64,7 @@ const nycToday = (): string =>
     day: "2-digit",
   }).format(new Date());
 
-const CORRECTABLE_ERROR_CODES = new Set([
-  "required",
-  "invalid_value",
-  "must_be_positive",
-  "in_the_past",
-]);
+const CORRECTABLE_ERROR_CODES = new Set(["required", "invalid_value", "must_be_positive"]);
 
 const isIntakeValue = (value: unknown): value is IntakeValue =>
   value === null ||
@@ -317,12 +312,15 @@ export function IntakeForm({
           humanize(error.field);
         return { ...error, message: `${label} is required` };
       });
+    const missingFields = new Set(missing.map((error) => error.field));
     const clientErrors = [
       ...errors.filter(
         (error) =>
           error.code !== "required" &&
+          !missingFields.has(error.field) &&
           (error.field === "body" ||
             error.code === "unknown_field" ||
+            error.code === "in_the_past" ||
             validationErrors.some((candidate) => candidate.field === error.field)),
       ),
       ...missing,
