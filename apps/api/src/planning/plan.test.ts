@@ -335,7 +335,9 @@ describe.runIf(databaseUrl.length > 0)("plan API (F-201)", () => {
     const app = appWith();
 
     const responses = await Promise.all([
-      request(app).post(`/api/events/${eventId}/plan`).set("Idempotency-Key", createKey),
+      request(app)
+        .post(`/api/events/${eventId}/plan`)
+        .set("Idempotency-Key", createKey.toUpperCase()),
       request(app).post(`/api/events/${eventId}/plan`).set("Idempotency-Key", createKey),
     ]);
 

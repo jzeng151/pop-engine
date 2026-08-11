@@ -426,6 +426,18 @@ describe("loading a saved event to edit it", () => {
     );
   });
 
+  it("allows editing while the promotion-only plan lookup is pending", async () => {
+    fetchMock.mockResolvedValueOnce(
+      jsonResponse(200, { event: storedEvent, warnings: [], plan_stale: false }),
+    );
+    fetchMock.mockImplementationOnce(() => new Promise(() => {}));
+    renderForm("event-9");
+
+    await waitFor(() => expect(screen.getByText(/Saved as revision 4/)).toBeDefined());
+    expect(screen.getByRole("button", { name: "Save changes" })).toBeDefined();
+    expect(screen.queryByRole("link", { name: "Promote public page" })).toBeNull();
+  });
+
   it("does not offer promotion when the saved event has no plan", async () => {
     fetchMock.mockResolvedValueOnce(
       jsonResponse(200, { event: storedEvent, warnings: [], plan_stale: false }),

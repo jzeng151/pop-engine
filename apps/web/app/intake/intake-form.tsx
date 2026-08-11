@@ -244,20 +244,21 @@ export function IntakeForm({
   useEffect(() => {
     if (eventId === undefined) return;
     let abandoned = false;
-    void loadEvent(apiBaseUrl, eventId).then(async (result) => {
+    void loadEvent(apiBaseUrl, eventId).then((result) => {
       if (abandoned) return;
       if (result.ok) {
-        const plan = await loadPlan(apiBaseUrl, eventId);
-        if (abandoned) return;
         const loadedAnswers = answersFromEvent(contract, result.loaded.event);
         currentAnswers.current = loadedAnswers;
         setAnswers(loadedAnswers);
         setSaved(result.loaded.event);
-        setInitialPlanReady(plan.ok);
+        setLoading(false);
+        void loadPlan(apiBaseUrl, eventId).then((plan) => {
+          if (!abandoned) setInitialPlanReady(plan.ok);
+        });
       } else {
         setLoadFailure(result.message);
+        setLoading(false);
       }
-      setLoading(false);
     });
     return () => {
       abandoned = true;

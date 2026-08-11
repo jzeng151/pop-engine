@@ -149,11 +149,12 @@ function registerPlanRoutes(app: Express, planService: PlanService): void {
   app.post("/api/events/:id/plan", (req, res) => {
     const eventId = req.params.id;
     if (rejectMalformedId(eventId, res)) return;
-    const initialCreateKey = req.get("Idempotency-Key");
-    if (initialCreateKey !== undefined && !UUID.test(initialCreateKey)) {
+    const rawInitialCreateKey = req.get("Idempotency-Key");
+    if (rawInitialCreateKey !== undefined && !UUID.test(rawInitialCreateKey)) {
       res.status(400).json({ error: "Idempotency-Key must be a uuid" });
       return;
     }
+    const initialCreateKey = rawInitialCreateKey?.toLowerCase();
     planService
       .generate(eventId, initialCreateKey)
       .then(({ plan, created }) => res.status(created ? 201 : 200).json(plan))
