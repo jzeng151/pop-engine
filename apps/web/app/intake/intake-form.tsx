@@ -43,6 +43,18 @@ const DESCRIPTIVE_QUESTIONS = [
 ];
 const MAX_PARK_SEARCH_LENGTH = 80;
 
+const visibleQuestions = (contract: IntakeContract, answers: Answers): readonly IntakeField[] => {
+  const invalidFields = new Set(
+    validateIntake(contract, answers, nycToday())
+      .errors.filter((error) => error.code === "invalid_value")
+      .map((error) => error.field),
+  );
+  return askedFields(
+    contract.fields,
+    Object.fromEntries(Object.entries(answers).filter(([field]) => !invalidFields.has(field))),
+  );
+};
+
 const humanize = (token: string): string =>
   token.replace(/_/g, " ").replace(/^./, (letter) => letter.toUpperCase());
 
@@ -158,17 +170,7 @@ export function IntakeForm({
     };
   }, [apiBaseUrl, contract, eventId]);
 
-  const questions = useMemo(() => {
-    const invalidFields = new Set(
-      validateIntake(contract, answers, nycToday())
-        .errors.filter((error) => error.code === "invalid_value")
-        .map((error) => error.field),
-    );
-    return askedFields(
-      contract.fields,
-      Object.fromEntries(Object.entries(answers).filter(([field]) => !invalidFields.has(field))),
-    );
-  }, [contract, answers]);
+  const questions = useMemo(() => visibleQuestions(contract, answers), [contract, answers]);
   // Contradictions and coverage gaps are shown while the organizer types, not only on
   // submit (spec #4, #5). The same function runs server-side on save.
   const warnings = useMemo(() => intakeWarnings(contract, answers), [contract, answers]);
@@ -340,16 +342,23 @@ export function IntakeForm({
       });
       const body = (await response.json()) as ApiResponse;
       if (!response.ok || body.event === undefined) {
-        const latestErrors = validateIntake(contract, currentAnswers.current, nycToday()).errors;
+        const latestAnswers = currentAnswers.current;
+        const latestErrors = validateIntake(contract, latestAnswers, nycToday()).errors;
+        const visibleFields = new Set([
+          ...DESCRIPTIVE_QUESTIONS.map((question) => question.field),
+          ...visibleQuestions(contract, latestAnswers).map((question) => question.field),
+        ]);
         const responseErrors = (body.errors ?? []).filter(
           (error) =>
             error.field === "body" ||
             error.code === "unknown_field" ||
-            sameAnswer(
-              currentAnswers.current[error.field] ?? null,
-              answersAtSubmit[error.field] ?? null,
-            ) ||
-            latestErrors.some((candidate) => candidate.field === error.field),
+            (visibleFields.has(error.field) &&
+              (error.code === "in_the_past" ||
+                sameAnswer(
+                  latestAnswers[error.field] ?? null,
+                  answersAtSubmit[error.field] ?? null,
+                ) ||
+                latestErrors.some((candidate) => candidate.field === error.field))),
         );
         shouldFocusFirstError.current = true;
         setErrors(responseErrors);

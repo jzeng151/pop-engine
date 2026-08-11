@@ -843,6 +843,80 @@ describe("saving and per-field errors", () => {
     );
   });
 
+  it("discards a failed save's error when its control was hidden in flight", async () => {
+    let releaseSave: (response: Response) => void = () => {};
+    fetchMock.mockImplementationOnce(
+      async () =>
+        new Promise<Response>((resolve) => {
+          releaseSave = resolve;
+        }),
+    );
+    const user = renderForm();
+    await answerParkEvent(user);
+    await chooseOption(user, "location_type", "street");
+    await chooseOption(user, "obstructs_public_way", "yes");
+    await chooseOption(user, "sapo_event_type", "street_event");
+    await chooseOption(user, "street_event_size", "large");
+    await save(user);
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
+
+    await chooseOption(user, "location_type", "park");
+    releaseSave(
+      jsonResponse(400, {
+        errors: [
+          {
+            field: "street_event_size",
+            code: "invalid_value",
+            message: "street_event_size is invalid",
+          },
+        ],
+        warnings: [],
+      }),
+    );
+
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: "Save event" }).hasAttribute("disabled")).toBe(
+        false,
+      ),
+    );
+    expect(screen.queryByRole("link", { name: "street_event_size is invalid" })).toBeNull();
+    expect(document.querySelector('input[name="street_event_size"]')).toBeNull();
+  });
+
+  it("keeps a server-owned date error after an in-flight edit", async () => {
+    let releaseSave: (response: Response) => void = () => {};
+    fetchMock.mockImplementationOnce(
+      async () =>
+        new Promise<Response>((resolve) => {
+          releaseSave = resolve;
+        }),
+    );
+    const user = renderForm();
+    await answerParkEvent(user);
+    await fillField(user, "event_date", "2026-08-10");
+    await save(user);
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
+
+    await fillField(user, "event_date", "2026-08-11");
+    releaseSave(
+      jsonResponse(400, {
+        errors: [
+          {
+            field: "event_date",
+            code: "in_the_past",
+            message: "event_date must be today or later",
+          },
+        ],
+        warnings: [],
+      }),
+    );
+
+    expect(
+      await screen.findByRole("link", { name: "event_date must be today or later" }),
+    ).toBeDefined();
+    expect(screen.getByLabelText("Event date").getAttribute("aria-invalid")).toBe("true");
+  });
+
   it("clears invalid-value and past-date errors only after valid corrections", async () => {
     fetchMock.mockResolvedValueOnce(
       jsonResponse(400, {
