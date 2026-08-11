@@ -780,6 +780,8 @@ describe("saving and per-field errors", () => {
     await answerParkEvent(user);
     await save(user);
     await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
+    expect(screen.queryByRole("link", { name: "see its permit plan" })).toBeNull();
+    expect(screen.getByText(/permit plan is being generated/)).toBeDefined();
 
     await fillField(user, "headcount", "175");
     releasePlan(jsonResponse(201, {}));
@@ -809,6 +811,28 @@ describe("saving and per-field errors", () => {
 
     await fillField(user, "headcount", "175");
     await fillField(user, "headcount", "150");
+    releasePlan(jsonResponse(201, {}));
+
+    await waitFor(() => expect(router.push).toHaveBeenCalledWith("/events/event-1/plan"));
+    expect(screen.queryByText(/changes made while they were saving are still unsaved/)).toBeNull();
+  });
+
+  it("opens the plan when an optional blank is typed and cleared during generation", async () => {
+    let releasePlan: (response: Response) => void = () => {};
+    fetchMock.mockImplementation(async (url: string, init: RequestInit) => {
+      if (!url.endsWith("/plan")) return echoSavedEvent(201, init);
+      if (init.method !== "POST") return jsonResponse(200, storedPlan);
+      return new Promise<Response>((resolve) => {
+        releasePlan = resolve;
+      });
+    });
+    const user = renderForm();
+    await answerParkEvent(user);
+    await save(user);
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
+
+    await fillField(user, "location_name", "Long Meadow");
+    await fillField(user, "location_name", "");
     releasePlan(jsonResponse(201, {}));
 
     await waitFor(() => expect(router.push).toHaveBeenCalledWith("/events/event-1/plan"));
@@ -889,6 +913,31 @@ describe("saving and per-field errors", () => {
     await act(async () => releasePlan(jsonResponse(201, {})));
 
     expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(router.push).not.toHaveBeenCalled();
+  });
+
+  it("still generates the first plan when the create response arrives after unmount", async () => {
+    let releaseSave: (response: Response) => void = () => {};
+    let submitted: RequestInit | undefined;
+    fetchMock.mockImplementationOnce(
+      async (_url: string, init: RequestInit) =>
+        new Promise<Response>((resolve) => {
+          submitted = init;
+          releaseSave = resolve;
+        }),
+    );
+    const user = userEvent.setup();
+    const view = render(<IntakeForm contract={contract} apiBaseUrl="https://api.example.com" />);
+    await answerParkEvent(user);
+    await save(user);
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
+
+    view.unmount();
+    await act(async () => releaseSave(echoSavedEvent(201, submitted as RequestInit)));
+
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
+    expect(fetchMock.mock.calls[1]?.[0]).toBe("https://api.example.com/api/events/event-1/plan");
+    expect((fetchMock.mock.calls[1]?.[1] as RequestInit).method).toBe("POST");
     expect(router.push).not.toHaveBeenCalled();
   });
 

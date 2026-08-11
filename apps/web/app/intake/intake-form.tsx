@@ -112,7 +112,10 @@ const sameAnswer = (left: IntakeValue, right: IntakeValue): boolean =>
 
 const sameAnswers = (left: Answers, right: Answers): boolean =>
   [...new Set([...Object.keys(left), ...Object.keys(right)])].every((field) =>
-    sameAnswer(left[field] ?? null, right[field] ?? null),
+    sameAnswer(
+      isBlank(left[field]) ? null : (left[field] ?? null),
+      isBlank(right[field]) ? null : (right[field] ?? null),
+    ),
   );
 
 /** Fold a saved row back into the form without discarding anything typed while the save was in flight. */
@@ -356,8 +359,8 @@ export function IntakeForm({
         body: JSON.stringify(submission()),
       });
       const body = (await response.json()) as ApiResponse;
-      if (!mounted.current) return;
       if (!response.ok || body.event === undefined) {
+        if (!mounted.current) return;
         const latestAnswers = currentAnswers.current;
         const latestErrors = validateIntake(contract, latestAnswers, nycToday()).errors;
         const visibleFields = new Set([
@@ -383,13 +386,15 @@ export function IntakeForm({
         }
         return;
       }
-      setErrors([]);
       // Rebuild from the stored row so answers cleared by hidden questions cannot linger locally.
       const stored = answersFromEvent(contract, body.event);
-      const reconciled = reconcileAnswers(currentAnswers.current, answersAtSubmit, stored);
-      currentAnswers.current = reconciled;
-      setAnswers(reconciled);
-      setSaved(body.event);
+      if (mounted.current) {
+        setErrors([]);
+        const reconciled = reconcileAnswers(currentAnswers.current, answersAtSubmit, stored);
+        currentAnswers.current = reconciled;
+        setAnswers(reconciled);
+        setSaved(body.event);
+      }
       if (creating) {
         const generated = await regeneratePlan(apiBaseUrl, body.event.id);
         if (!mounted.current) return;
@@ -424,7 +429,7 @@ export function IntakeForm({
         router.push(`/events/${body.event.id}/plan`);
         return;
       }
-      router.push(`/events/${body.event.id}`);
+      if (mounted.current) router.push(`/events/${body.event.id}`);
     } catch {
       if (mounted.current) setFailure("The API could not be reached.");
     } finally {
@@ -644,8 +649,14 @@ export function IntakeForm({
           <section className="intake__saved" aria-live="polite">
             <p>
               Saved as revision {saved.revision_counter}.{" "}
-              <a href={`/intake/${saved.id}`}>Come back to this event</a> to edit it later, or{" "}
-              <a href={`/events/${saved.id}/plan`}>see its permit plan</a>.
+              <a href={`/intake/${saved.id}`}>Come back to this event</a> to edit it later
+              {saving ? (
+                ", while its permit plan is being generated."
+              ) : (
+                <>
+                  , or <a href={`/events/${saved.id}/plan`}>see its permit plan</a>.
+                </>
+              )}
             </p>
             <p>
               <a href={`/events/${saved.id}/promote`}>Promote public page</a>
