@@ -144,6 +144,7 @@ beforeEach(() => {
 
 afterEach(() => {
   cleanup();
+  vi.restoreAllMocks();
   vi.unstubAllGlobals();
 });
 
@@ -876,6 +877,20 @@ describe("saving and per-field errors", () => {
     );
     expect(createCalls[1]?.[1].body).toBe(createCalls[0]?.[1].body);
     expect(sessionStorage).toHaveLength(0);
+  });
+
+  it("does not create an event when recovery cannot be stored", async () => {
+    vi.spyOn(Storage.prototype, "setItem").mockImplementation(() => {
+      throw new DOMException("storage disabled", "SecurityError");
+    });
+    const user = renderForm();
+    await answerParkEvent(user);
+    await save(user);
+
+    expect((await screen.findByRole("alert")).textContent).toBe(
+      "This browser could not store the recovery information required to create an event. Enable session storage and try again.",
+    );
+    expect(fetchMock).not.toHaveBeenCalled();
   });
 
   it("replays a retained create before validating fields added by a newer client", async () => {

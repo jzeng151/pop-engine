@@ -137,13 +137,14 @@ function loadPendingCreate(apiBaseUrl: string): PendingCreate | null {
   }
 }
 
-function storePendingCreate(apiBaseUrl: string, pending: PendingCreate | null): void {
+function storePendingCreate(apiBaseUrl: string, pending: PendingCreate | null): boolean {
   try {
     const storageKey = pendingCreateStorageKey(apiBaseUrl);
     if (pending === null) sessionStorage.removeItem(storageKey);
     else sessionStorage.setItem(storageKey, JSON.stringify(pending));
+    return true;
   } catch {
-    // Storage may be disabled; the in-memory retry still works until this tab reloads.
+    return false;
   }
 }
 
@@ -428,7 +429,6 @@ export function IntakeForm({
       }
     }
 
-    setSaving(true);
     // The answers as they stand at the click, which the response is reconciled against.
     const answersAtSubmit = retry?.answers ?? currentAnswers.current;
     if (creating && retry === null) {
@@ -437,8 +437,15 @@ export function IntakeForm({
         body: requestBody,
         answers: answersAtSubmit,
       };
-      storePendingCreate(apiBaseUrl, pendingCreate.current);
+      if (!storePendingCreate(apiBaseUrl, pendingCreate.current)) {
+        pendingCreate.current = null;
+        setFailure(
+          "This browser could not store the recovery information required to create an event. Enable session storage and try again.",
+        );
+        return;
+      }
     }
+    setSaving(true);
     try {
       const target = creating ? "/api/events" : `/api/events/${saved.id}`;
       const response = await fetch(`${apiBaseUrl}${target}`, {
