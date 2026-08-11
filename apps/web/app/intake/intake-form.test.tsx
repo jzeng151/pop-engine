@@ -1001,8 +1001,10 @@ describe("saving and per-field errors", () => {
     await fillField(user, "event_date", "2000-01-01");
     await save(user);
 
-    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
-    expect(router.push).toHaveBeenCalledWith("/events/event-1");
+    await waitFor(() =>
+      expect(fetchMock.mock.calls[0]?.[0]).toBe("https://api.example.com/api/events"),
+    );
+    expect((fetchMock.mock.calls[0]?.[1] as RequestInit).method).toBe("POST");
   });
 
   it("shows an error the form has no field for at the form level", async () => {
