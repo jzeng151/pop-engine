@@ -207,6 +207,7 @@ const renderPlan = () =>
   );
 
 beforeEach(() => {
+  sessionStorage.clear();
   stubApi(plan());
 });
 
@@ -214,6 +215,45 @@ afterEach(() => {
   cleanup();
   vi.unstubAllGlobals();
   vi.unstubAllEnvs();
+});
+
+describe("initial-create recovery", () => {
+  const storageKey = "pop-engine.pending-event-create:https://api.example.com";
+  const storeRecovery = (eventId: string) =>
+    sessionStorage.setItem(
+      storageKey,
+      JSON.stringify({
+        key: "44f58390-9892-4e1b-b1ed-ecf00ea20967",
+        body: {},
+        answers: {},
+        eventId,
+      }),
+    );
+
+  it("clears the matching recovery operation after validating the stored plan", async () => {
+    storeRecovery("event-1");
+    renderPlan();
+
+    await screen.findByRole("complementary", { name: "Rules snapshot" });
+    expect(sessionStorage.getItem(storageKey)).toBeNull();
+  });
+
+  it("keeps recovery for another event", async () => {
+    storeRecovery("event-2");
+    renderPlan();
+
+    await screen.findByRole("complementary", { name: "Rules snapshot" });
+    expect(sessionStorage.getItem(storageKey)).not.toBeNull();
+  });
+
+  it("keeps recovery until a plan is actually found", async () => {
+    storeRecovery("event-1");
+    stubApi({}, liveMeta, 404);
+    renderPlan();
+
+    await screen.findByRole("button", { name: "Generate the plan" });
+    expect(sessionStorage.getItem(storageKey)).not.toBeNull();
+  });
 });
 
 describe("the snapshot banner (AC 1)", () => {

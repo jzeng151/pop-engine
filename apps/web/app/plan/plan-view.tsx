@@ -1,7 +1,12 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { loadEvent, type LoadResult, type SavedEvent } from "../_lib/events-api";
+import {
+  clearPendingCreateForEvent,
+  loadEvent,
+  type LoadResult,
+  type SavedEvent,
+} from "../_lib/events-api";
 import {
   generatePlan,
   loadPlan,
@@ -122,6 +127,7 @@ export function PlanView({
     setRegenerating(false);
 
     void loadPlan(apiBaseUrl, eventId).then((result) => {
+      if (result.ok) clearPendingCreateForEvent(apiBaseUrl, eventId);
       if (abandoned) return;
       setPlanState(planStateFrom(result));
     });

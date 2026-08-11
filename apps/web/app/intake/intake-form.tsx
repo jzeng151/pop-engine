@@ -11,22 +11,22 @@ import {
   type IntakeIssue,
   type IntakeValue,
 } from "@pop-engine/engine";
-import { CREDENTIALED, loadEvent, regeneratePlan, type SavedEvent } from "../_lib/events-api";
+import {
+  CREDENTIALED,
+  isIntakeValue,
+  loadEvent,
+  loadPendingCreate,
+  regeneratePlan,
+  storePendingCreate,
+  type PendingCreate,
+  type SavedEvent,
+} from "../_lib/events-api";
 import { loadPlan } from "../plan/plan-api";
 import { discoverParks, parksBoroughCode, type ParkSuggestion } from "./parks-api";
 
 // The intake questionnaire.
 
 type Answers = Record<string, IntakeValue>;
-type PendingCreate = {
-  key: string;
-  body: Record<string, IntakeValue>;
-  answers: Answers;
-};
-
-const PENDING_CREATE_STORAGE = "pop-engine.pending-event-create";
-const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
-
 type ApiResponse = {
   event?: SavedEvent;
   error?: string;
@@ -95,68 +95,6 @@ const nycToday = (): string =>
   }).format(new Date());
 
 const CORRECTABLE_ERROR_CODES = new Set(["required", "invalid_value", "must_be_positive"]);
-
-const isIntakeValue = (value: unknown): value is IntakeValue =>
-  value === null ||
-  typeof value === "string" ||
-  typeof value === "number" ||
-  typeof value === "boolean" ||
-  (Array.isArray(value) && value.every((entry) => typeof entry === "string"));
-
-const isAnswers = (value: unknown): value is Answers =>
-  typeof value === "object" &&
-  value !== null &&
-  !Array.isArray(value) &&
-  Object.values(value).every(isIntakeValue);
-
-const pendingCreateStorageKey = (apiBaseUrl: string): string =>
-  `${PENDING_CREATE_STORAGE}:${apiBaseUrl}`;
-
-function loadPendingCreate(apiBaseUrl: string): PendingCreate | null {
-  const storageKey = pendingCreateStorageKey(apiBaseUrl);
-  try {
-    const stored = sessionStorage.getItem(storageKey);
-    if (stored === null) return null;
-    const value: unknown = JSON.parse(stored);
-    if (
-      typeof value !== "object" ||
-      value === null ||
-      !("key" in value) ||
-      typeof value.key !== "string" ||
-      !UUID.test(value.key) ||
-      !("body" in value) ||
-      !isAnswers(value.body) ||
-      !("answers" in value) ||
-      !isAnswers(value.answers)
-    ) {
-      try {
-        sessionStorage.removeItem(storageKey);
-      } catch {
-        // Storage may be disabled; the in-memory retry still works until this tab reloads.
-      }
-      return null;
-    }
-    return { key: value.key, body: value.body, answers: value.answers };
-  } catch {
-    try {
-      sessionStorage.removeItem(storageKey);
-    } catch {
-      // Storage may be disabled; the in-memory retry still works until this tab reloads.
-    }
-    return null;
-  }
-}
-
-function storePendingCreate(apiBaseUrl: string, pending: PendingCreate | null): boolean {
-  try {
-    const storageKey = pendingCreateStorageKey(apiBaseUrl);
-    if (pending === null) sessionStorage.removeItem(storageKey);
-    else sessionStorage.setItem(storageKey, JSON.stringify(pending));
-    return true;
-  } catch {
-    return false;
-  }
-}
 
 /**
  * The answers a saved event row already holds. Columns the form does not ask about
@@ -508,6 +446,10 @@ export function IntakeForm({
       }
       // Rebuild from the stored row so answers cleared by hidden questions cannot linger locally.
       const stored = answersFromEvent(contract, body.event);
+      if (creating && pendingCreate.current !== null) {
+        pendingCreate.current = { ...pendingCreate.current, eventId: body.event.id };
+        storePendingCreate(apiBaseUrl, pendingCreate.current);
+      }
       if (mounted.current) {
         setErrors([]);
         const reconciled = reconcileAnswers(currentAnswers.current, answersAtSubmit, stored);

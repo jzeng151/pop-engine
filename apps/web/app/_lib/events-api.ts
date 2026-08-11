@@ -1,5 +1,7 @@
 // The browser's calls to the events API.
 
+import type { IntakeValue } from "@pop-engine/engine";
+
 export const CREDENTIALED = {
   credentials: "include",
   headers: { "Content-Type": "application/json" },
@@ -10,6 +12,91 @@ export type SavedEvent = {
   revision_counter: number;
   [column: string]: unknown;
 };
+
+type Answers = Record<string, IntakeValue>;
+
+export type PendingCreate = {
+  key: string;
+  body: Answers;
+  answers: Answers;
+  eventId?: string;
+};
+
+const PENDING_CREATE_STORAGE = "pop-engine.pending-event-create";
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
+export const isIntakeValue = (value: unknown): value is IntakeValue =>
+  value === null ||
+  typeof value === "string" ||
+  typeof value === "number" ||
+  typeof value === "boolean" ||
+  (Array.isArray(value) && value.every((entry) => typeof entry === "string"));
+
+const isAnswers = (value: unknown): value is Answers =>
+  typeof value === "object" &&
+  value !== null &&
+  !Array.isArray(value) &&
+  Object.values(value).every(isIntakeValue);
+
+const pendingCreateStorageKey = (apiBaseUrl: string): string =>
+  `${PENDING_CREATE_STORAGE}:${apiBaseUrl}`;
+
+export function loadPendingCreate(apiBaseUrl: string): PendingCreate | null {
+  const storageKey = pendingCreateStorageKey(apiBaseUrl);
+  try {
+    const stored = sessionStorage.getItem(storageKey);
+    if (stored === null) return null;
+    const value: unknown = JSON.parse(stored);
+    const record =
+      typeof value === "object" && value !== null && !Array.isArray(value)
+        ? (value as Record<string, unknown>)
+        : null;
+    if (
+      record === null ||
+      typeof record.key !== "string" ||
+      !UUID.test(record.key) ||
+      !isAnswers(record.body) ||
+      !isAnswers(record.answers) ||
+      (record.eventId !== undefined && typeof record.eventId !== "string")
+    ) {
+      try {
+        sessionStorage.removeItem(storageKey);
+      } catch {
+        // Storage may be disabled; the in-memory retry still works until this tab reloads.
+      }
+      return null;
+    }
+    return {
+      key: record.key,
+      body: record.body,
+      answers: record.answers,
+      ...(typeof record.eventId === "string" ? { eventId: record.eventId } : {}),
+    };
+  } catch {
+    try {
+      sessionStorage.removeItem(storageKey);
+    } catch {
+      // Storage may be disabled; the in-memory retry still works until this tab reloads.
+    }
+    return null;
+  }
+}
+
+export function storePendingCreate(apiBaseUrl: string, pending: PendingCreate | null): boolean {
+  try {
+    const storageKey = pendingCreateStorageKey(apiBaseUrl);
+    if (pending === null) sessionStorage.removeItem(storageKey);
+    else sessionStorage.setItem(storageKey, JSON.stringify(pending));
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/** Clear only the recovery operation whose first plan this page has confirmed. */
+export function clearPendingCreateForEvent(apiBaseUrl: string, eventId: string): void {
+  if (loadPendingCreate(apiBaseUrl)?.eventId === eventId) storePendingCreate(apiBaseUrl, null);
+}
 
 export type LoadedEvent = {
   event: SavedEvent;

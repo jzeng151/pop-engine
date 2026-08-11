@@ -14,7 +14,7 @@ const releaseOrder = runbook.slice(runbook.indexOf("### Release order"));
 describe("F-101 create replay rollout constraint the runbook has to carry", () => {
   it("keeps intake closed while the header contract is incompatible", () => {
     expect(read("apps/api/src/events.ts")).toContain("Idempotency-Key is required");
-    expect(read("apps/web/app/intake/intake-form.tsx")).toContain("sessionStorage.setItem");
+    expect(read("apps/web/app/_lib/events-api.ts")).toContain("sessionStorage.setItem");
 
     const prose = releaseOrder.replace(/\s+/g, " ");
     expect(prose).toMatch(/F-101 create replay/i);

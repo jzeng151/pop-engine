@@ -1197,6 +1197,9 @@ describe("saving and per-field errors", () => {
         await screen.findByText(/it is not known whether its permit plan was generated/),
       ).toBeDefined();
       expect(sessionStorage).toHaveLength(1);
+      expect(
+        JSON.parse(sessionStorage.getItem(sessionStorage.key(0) as string) as string).eventId,
+      ).toBe("event-1");
     },
   );
 
