@@ -17,7 +17,7 @@ import type {
   RuleUserSummary,
   VerificationStatus,
 } from "@pop-engine/engine";
-import { CREDENTIALED } from "../intake/events-api";
+import { CREDENTIALED } from "../_lib/events-api";
 import {
   HEADLINE_MODES,
   ROUTE_CHECKS,

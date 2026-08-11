@@ -1,7 +1,7 @@
 import type { MigrationBuilder } from "node-pg-migrate";
 import { Client } from "pg";
 import { describe, expect, it, vi } from "vitest";
-import { up } from "../migrations/013_stale_assembly_document_plans";
+import { up } from "../../migrations/013_stale_assembly_document_plans";
 
 const databaseUrl = process.env.DATABASE_URL ?? "";
 

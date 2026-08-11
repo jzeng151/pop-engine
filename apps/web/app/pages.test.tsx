@@ -4,7 +4,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { cleanup, render, screen, waitFor } from "@testing-library/react";
 import { existsSync, readdirSync } from "node:fs";
 import { join, resolve } from "node:path";
-import { publishedRulesFileIn } from "./rules-file";
+import { publishedRulesFileIn } from "./_lib/rules-file";
 import RootLayout, { metadata } from "./layout";
 import Home from "./page";
 import IntakePage from "./intake/page";

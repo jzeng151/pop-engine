@@ -97,7 +97,7 @@ their contract transition; the conditions for dropping each are stated with it.
    `capacity`. With different numeric values it displays the wrong limit; with `capacity = null` it
    displays a finite limit enforced nowhere. Web-first removes that semantic window: the new web
    reads the old api's `headcount`, which that api enforces, then reads `capacity` after the api
-   deploys. `apps/api/src/deployment-order.test.ts` fails if this instruction disappears while the
+   deploys. `apps/api/src/__tests__/deployment-order.test.ts` fails if this instruction disappears while the
    shape-only response remains. Drop this F-302 constraint only after the rename is the oldest web
    build in service and no older rollback target is selectable.
 
@@ -146,7 +146,7 @@ their contract transition; the conditions for dropping each are stated with it.
    The old build claims an alert only while its status is `pending` or `failed`, its `send_at` has
    passed, and its `next_attempt_at` is null or past; it re-reads all three under a row lock at the
    moment of the claim, and holds that lock across the provider call, which
-   `apps/api/src/alert-delivery.ts` bounds at ten seconds. So this statement cannot return until
+   `apps/api/src/alerts/alert-delivery.ts` bounds at ten seconds. So this statement cannot return until
    every send that was in flight has committed its outcome, and no send can start after it returns.
    It can block for a few seconds per alert that is mid-send and **must not be cancelled**; it
    finishes because every row it has passed stays locked by it until it commits, and the poller's

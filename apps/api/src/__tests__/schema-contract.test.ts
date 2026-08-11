@@ -2,12 +2,12 @@ import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { Client } from "pg";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { publishedRulesFile, RULE_KINDS, VERIFICATION_STATUSES } from "./ruleset";
+import { publishedRulesFile, RULE_KINDS, VERIFICATION_STATUSES } from "../ruleset";
 
 const databaseUrl = process.env.DATABASE_URL ?? "";
 
 const repoFile = (relativePath: string): string =>
-  fileURLToPath(new URL(`../../../${relativePath}`, import.meta.url));
+  fileURLToPath(new URL(`../../../../${relativePath}`, import.meta.url));
 
 const MUST_BE_DOCUMENTED = [
   "permit_rules.kind",

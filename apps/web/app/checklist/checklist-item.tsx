@@ -7,11 +7,11 @@ import {
   type ChecklistStatus,
   offersAFilingAction,
 } from "@pop-engine/engine";
-import { Disclosure } from "../disclosure";
-import { PortalBlock } from "../portal-block";
+import { Disclosure } from "../_components/disclosure";
+import { PortalBlock } from "../_components/portal-block";
 import { formatSnapshotDate } from "../plan/snapshot-banner";
 import { CANDIDATE_HEADING } from "../plan/plan-line";
-import { includesAgencyConfirmation, NOT_COVERED_BY_RULESET } from "../verification-copy";
+import { includesAgencyConfirmation, NOT_COVERED_BY_RULESET } from "../_lib/verification-copy";
 import type { ConsumedRoute } from "../plan/plan-api";
 import { MovedDeadlineNoticeBlock } from "./moved-deadline-notice";
 import {

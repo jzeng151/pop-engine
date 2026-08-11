@@ -8,7 +8,7 @@ import {
   regeneratePlan,
   type LoadedEvent,
   type RegenerationRefusal,
-} from "../../intake/events-api";
+} from "../../_lib/events-api";
 
 /** Said when the endpoint refused the write because of how the two rulesets stand (F-201 AC 12). */
 function downgradeRefusalCopy({

@@ -8,9 +8,9 @@ import {
   SCENARIO_INTAKE_FIXTURES,
   fixtureSubmission,
 } from "@pop-engine/engine/fixtures";
-import { createApp } from "./app";
+import { createApp } from "../app";
 import { mapUrlForVenue } from "./public-page";
-import { loadRuleset } from "./ruleset";
+import { loadRuleset } from "../ruleset";
 
 const databaseUrl = process.env.DATABASE_URL ?? "";
 

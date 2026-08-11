@@ -48,7 +48,7 @@ As an independent organizer, I can see which published rules snapshot produced m
 
 - Live ruleset version ≠ plan's pinned version (post-MVP rule update): banner shows the plan's version plus "a newer ruleset exists; regenerate to update". (Cheap now; required later by F-503/F-713.)
 - Citation present but source URL unresolved: render citation text without a link.
-- COVERAGE_GAP carrying no citation: render the status plus "Not covered by this ruleset version. This plan may be incomplete for your event.", with no citation link. The string is held in `apps/web/app/verification-copy.ts` and tested against RESEARCH_REQUIRED's rendering so the two cannot converge.
+- COVERAGE_GAP carrying no citation: render the status plus "Not covered by this ruleset version. This plan may be incomplete for your event.", with no citation link. The string is held in `apps/web/app/_lib/verification-copy.ts` and tested against RESEARCH_REQUIRED's rendering so the two cannot converge.
 
 ## Answer-Key Scenarios Exercised
 

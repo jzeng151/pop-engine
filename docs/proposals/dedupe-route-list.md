@@ -533,7 +533,7 @@ a verdict means; it now records that the residual it filed was answered elsewher
 
 ### 7.1 What the response gains
 
-`FindingRendering` in `apps/api/src/plan.ts` gains two optional members, alongside `user_summary`:
+`FindingRendering` in `apps/api/src/planning/plan.ts` gains two optional members, alongside `user_summary`:
 
 ```ts
   /** Absent on plans stored before the route list was introduced. */

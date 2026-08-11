@@ -62,7 +62,7 @@ The regression number may remain in the test name when traceability matters. Rev
 
 ### 3. Reduce incident history to the invariant
 
-Before, from `apps/api/src/alert-delivery.ts`:
+Before, from `apps/api/src/alerts/alert-delivery.ts`:
 
 ```ts
 /**
@@ -105,7 +105,7 @@ The compatibility distinction is durable. The bug and affected consumer belong i
 
 ### 5. Keep database/time semantics in one sentence
 
-Before, from `apps/api/src/alerts.ts`:
+Before, from `apps/api/src/alerts/alerts.ts`:
 
 ```ts
 /**

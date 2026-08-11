@@ -6,7 +6,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { cleanup, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { parseIntakeContract } from "@pop-engine/engine";
-import { publishedRulesFileIn } from "../rules-file";
+import { publishedRulesFileIn } from "../_lib/rules-file";
 import { IntakeForm } from "./intake-form";
 
 const router = vi.hoisted(() => ({ push: vi.fn() }));

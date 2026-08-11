@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { loadEvent, type LoadResult, type SavedEvent } from "../intake/events-api";
+import { loadEvent, type LoadResult, type SavedEvent } from "../_lib/events-api";
 import {
   generatePlan,
   loadPlan,

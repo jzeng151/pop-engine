@@ -9,7 +9,7 @@ const INSURANCE_RULE_IDS: ReadonlySet<string> = new Set([
   "PARKS-INSURANCE-NOTE-001",
 ]);
 
-/** The subset of `INSURANCE_RULE_IDS` that is `kind: insurance` — a checklist item with a document slot (`apps/api/src/checklist.ts`'s `TRACKABLE_FINDING_KINDS`) — as opposed to `PARKS-INSURANCE-NOTE-001`, which is `kind: note` and read-only context with nothing to upload against. */
+/** The subset of `INSURANCE_RULE_IDS` that is `kind: insurance` — a checklist item with a document slot (`apps/api/src/planning/checklist.ts`'s `TRACKABLE_FINDING_KINDS`) — as opposed to `PARKS-INSURANCE-NOTE-001`, which is `kind: note` and read-only context with nothing to upload against. */
 const TRACKABLE_INSURANCE_RULE_IDS: ReadonlySet<string> = new Set([
   "SAPO-INSURANCE-001",
   "SAPO-INSURANCE-BLOCK-PARTY-RIDE-001",

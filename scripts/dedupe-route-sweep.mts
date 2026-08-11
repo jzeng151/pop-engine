@@ -75,7 +75,7 @@ const routesOf = (finding: Record<string, unknown>): Record<string, unknown>[] =
   ];
 
 /**
- * The route the checklist reads its window off, which is `apps/api/src/plan.ts`'s `filingRouteOf`
+ * The route the checklist reads its window off, which is `apps/api/src/planning/plan.ts`'s `filingRouteOf`
  * expressed against a finding rather than a stored row. Null when the line publishes its own.
  */
 function filingRoute(finding: Record<string, unknown>): Record<string, unknown> | null {

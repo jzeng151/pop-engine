@@ -5,7 +5,7 @@ import { resolve } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { cleanup, render, screen, within } from "@testing-library/react";
 import { DEFAULT_DISPOSITION_BY_RULE_KIND } from "@pop-engine/engine";
-import { publishedRulesFileIn } from "../rules-file";
+import { publishedRulesFileIn } from "../_lib/rules-file";
 import { InsurancePanel } from "./insurance-panel";
 import type { ConsumedFinding } from "./plan-api";
 

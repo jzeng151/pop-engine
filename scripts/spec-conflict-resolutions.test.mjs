@@ -197,8 +197,8 @@ describe("SPEC-CONFLICT resolutions ratified 2026-08-02", () => {
 
   it("#209: the admission-limit implementation cites the issue, not a register row", () => {
     const sources = [
-      "apps/api/src/rsvps.ts",
-      "apps/api/src/rsvps.test.ts",
+      "apps/api/src/attendance/rsvps.ts",
+      "apps/api/src/attendance/rsvps.test.ts",
       "apps/web/app/events/[id]/guests/guest-list.test.tsx",
     ];
 
@@ -253,7 +253,7 @@ describe("PR #225 review round, 2026-08-04", () => {
   });
 
   it("nothing claims the capacity compatibility window is order-independent", () => {
-    for (const path of ["apps/api/src/rsvps.ts", "specs/F-302-rsvp-guest-list.md"]) {
+    for (const path of ["apps/api/src/attendance/rsvps.ts", "specs/F-302-rsvp-guest-list.md"]) {
       const source = read(path);
       expect(source, `${path} points at the deferred defect`).toContain("#236");
       expect(source, `${path} does not claim both deployment orders are safe`).not.toMatch(

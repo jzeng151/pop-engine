@@ -23,9 +23,9 @@ import {
   fixtureSubmission,
 } from "@pop-engine/engine/fixtures";
 import type { ScenarioIntakeFixture } from "@pop-engine/engine/fixtures";
-import { createApp } from "./app";
+import { createApp } from "../app";
 import { cancelRsvp, createRsvp, listRsvps, normalizeEmail, normalizeOptionalPhone } from "./rsvps";
-import { loadRuleset, publishedRulesFile } from "./ruleset";
+import { loadRuleset, publishedRulesFile } from "../ruleset";
 
 const databaseUrl = process.env.DATABASE_URL ?? "";
 

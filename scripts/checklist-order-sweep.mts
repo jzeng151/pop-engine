@@ -43,13 +43,13 @@ const OVER_10FT = ["yes", "no", "unknown", undefined];
 const TENT_AREA = [undefined, 300, 400, 401, 500];
 const TENT_DAYS = [undefined, 10, 29, 30, 45];
 
-/** `apps/api/src/checklist.ts`'s `TRACKABLE_FINDING_KINDS`. */
+/** `apps/api/src/planning/checklist.ts`'s `TRACKABLE_FINDING_KINDS`. */
 const TRACKABLE = new Set(["permit", "insurance"]);
 
 type Finding = Record<string, unknown>;
 
 /**
- * `apps/api/src/plan.ts`'s `filingRouteOf`, expressed against a finding rather than a stored row.
+ * `apps/api/src/planning/plan.ts`'s `filingRouteOf`, expressed against a finding rather than a stored row.
  * Null when the line publishes its own window, which is every unmerged line.
  */
 function filingRoute(finding: Finding): Finding | null {

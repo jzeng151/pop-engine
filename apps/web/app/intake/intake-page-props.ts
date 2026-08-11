@@ -1,7 +1,7 @@
 import { readFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import { parseIntakeContract, type IntakeContract } from "@pop-engine/engine";
-import { rulesFileIn } from "../rules-file";
+import { rulesFileIn } from "../_lib/rules-file";
 
 // The questionnaire is derived from the published ruleset (AD-2): the registry is read on the server and handed to the form.
 

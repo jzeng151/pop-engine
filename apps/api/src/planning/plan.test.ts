@@ -11,8 +11,8 @@ import {
   type IntakeContract,
 } from "@pop-engine/engine";
 import { SCENARIO_INTAKE_FIXTURES, fixtureSubmission } from "@pop-engine/engine/fixtures";
-import { createApp } from "./app";
-import { holidayCalendarWarning, pinnedCalendar, todayInJurisdiction } from "./calendar";
+import { createApp } from "../app";
+import { holidayCalendarWarning, pinnedCalendar, todayInJurisdiction } from "../calendar";
 import {
   calendarDateFrom,
   createPlanService,
@@ -21,7 +21,7 @@ import {
   type FindingRendering,
   type StoredPlanItem,
 } from "./plan";
-import { loadRuleset, rulesFilePath } from "./ruleset";
+import { loadRuleset, rulesFilePath } from "../ruleset";
 
 const databaseUrl = process.env.DATABASE_URL ?? "";
 const TODAY = "2026-07-22";

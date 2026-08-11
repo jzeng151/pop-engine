@@ -8,8 +8,8 @@ import {
   SCENARIO_INTAKE_FIXTURES,
   fixtureSubmission,
 } from "@pop-engine/engine/fixtures";
-import { createApp } from "./app";
-import { loadRuleset } from "./ruleset";
+import { createApp } from "../app";
+import { loadRuleset } from "../ruleset";
 import { readEventStats } from "./stats";
 
 const databaseUrl = process.env.DATABASE_URL ?? "";
