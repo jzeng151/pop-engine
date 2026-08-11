@@ -11,6 +11,20 @@ const read = (relativePath: string): string => readFileSync(repoFile(relativePat
 const runbook = read("DEPLOY.md");
 const releaseOrder = runbook.slice(runbook.indexOf("### Release order"));
 
+describe("F-101 create replay rollout constraint the runbook has to carry", () => {
+  it("keeps intake closed while the header contract is incompatible", () => {
+    expect(read("apps/api/src/events.ts")).toContain("Idempotency-Key is required");
+    expect(read("apps/web/app/intake/intake-form.tsx")).toContain("sessionStorage.setItem");
+
+    const prose = releaseOrder.replace(/\s+/g, " ");
+    expect(prose).toMatch(/F-101 create replay/i);
+    expect(prose).toMatch(/deny organizer traffic to both the web and api/i);
+    expect(prose).toMatch(/must not submit an intake/i);
+    expect(prose).toMatch(/reports `Migrations complete!` for migration 015/i);
+    expect(prose).toMatch(/reopen organizer access/i);
+  });
+});
+
 describe("F-302 rollout constraint the runbook has to carry", () => {
   it("keeps the capacity rename web-first while the compatibility response is shape-only", () => {
     const api = read("apps/api/src/attendance/rsvps.ts");

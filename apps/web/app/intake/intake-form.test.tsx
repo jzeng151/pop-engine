@@ -131,6 +131,7 @@ let fetchMock: ReturnType<typeof vi.fn>;
 
 beforeEach(() => {
   router.push.mockReset();
+  sessionStorage.clear();
   fetchMock = vi.fn(async (url: string, init: RequestInit) =>
     url.endsWith("/plan")
       ? init.method === "POST"
@@ -821,6 +822,44 @@ describe("saving and per-field errors", () => {
     expect(JSON.parse(String(createCalls[1]?.[1].body)).headcount).toBe(150);
     expect(document.querySelector<HTMLInputElement>('input[name="headcount"]')?.value).toBe("175");
     expect(router.push).not.toHaveBeenCalled();
+  });
+
+  it("replays the original create after its response is lost and the form reloads", async () => {
+    let createAttempts = 0;
+    fetchMock.mockImplementation(async (url: string, init: RequestInit) => {
+      if (url === "https://api.example.com/api/events") {
+        createAttempts += 1;
+        if (createAttempts === 1) throw new TypeError("response lost");
+        return echoSavedEvent(200, init);
+      }
+      if (url.endsWith("/plan")) {
+        return init.method === "POST" ? jsonResponse(201, {}) : jsonResponse(200, storedPlan);
+      }
+      throw new Error(`unexpected request ${url}`);
+    });
+    let user = renderForm();
+    await answerParkEvent(user);
+    await save(user);
+    expect((await screen.findByRole("alert")).textContent).toBe("The API could not be reached.");
+
+    cleanup();
+    user = renderForm();
+    await waitFor(() =>
+      expect(document.querySelector<HTMLInputElement>('input[name="name"]')?.value).toBe(
+        "Prospect Park Community Day",
+      ),
+    );
+    await save(user);
+
+    const createCalls = fetchMock.mock.calls.filter(
+      ([url]) => url === "https://api.example.com/api/events",
+    ) as [string, RequestInit][];
+    expect(createCalls).toHaveLength(2);
+    expect(new Headers(createCalls[1]?.[1].headers).get("Idempotency-Key")).toBe(
+      new Headers(createCalls[0]?.[1].headers).get("Idempotency-Key"),
+    );
+    expect(createCalls[1]?.[1].body).toBe(createCalls[0]?.[1].body);
+    expect(sessionStorage).toHaveLength(0);
   });
 
   it("keeps edits made while the first plan is generating on the form", async () => {

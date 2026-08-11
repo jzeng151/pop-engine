@@ -24,6 +24,9 @@ type PendingCreate = {
   answers: Answers;
 };
 
+const PENDING_CREATE_STORAGE = "pop-engine.pending-event-create";
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
 type ApiResponse = {
   event?: SavedEvent;
   errors?: IntakeIssue[];
@@ -89,6 +92,60 @@ const isIntakeValue = (value: unknown): value is IntakeValue =>
   typeof value === "number" ||
   typeof value === "boolean" ||
   (Array.isArray(value) && value.every((entry) => typeof entry === "string"));
+
+const isAnswers = (value: unknown): value is Answers =>
+  typeof value === "object" &&
+  value !== null &&
+  !Array.isArray(value) &&
+  Object.values(value).every(isIntakeValue);
+
+const pendingCreateStorageKey = (apiBaseUrl: string): string =>
+  `${PENDING_CREATE_STORAGE}:${apiBaseUrl}`;
+
+function loadPendingCreate(apiBaseUrl: string): PendingCreate | null {
+  const storageKey = pendingCreateStorageKey(apiBaseUrl);
+  try {
+    const stored = sessionStorage.getItem(storageKey);
+    if (stored === null) return null;
+    const value: unknown = JSON.parse(stored);
+    if (
+      typeof value !== "object" ||
+      value === null ||
+      !("key" in value) ||
+      typeof value.key !== "string" ||
+      !UUID.test(value.key) ||
+      !("body" in value) ||
+      !isAnswers(value.body) ||
+      !("answers" in value) ||
+      !isAnswers(value.answers)
+    ) {
+      try {
+        sessionStorage.removeItem(storageKey);
+      } catch {
+        // Storage may be disabled; the in-memory retry still works until this tab reloads.
+      }
+      return null;
+    }
+    return { key: value.key, body: value.body, answers: value.answers };
+  } catch {
+    try {
+      sessionStorage.removeItem(storageKey);
+    } catch {
+      // Storage may be disabled; the in-memory retry still works until this tab reloads.
+    }
+    return null;
+  }
+}
+
+function storePendingCreate(apiBaseUrl: string, pending: PendingCreate | null): void {
+  try {
+    const storageKey = pendingCreateStorageKey(apiBaseUrl);
+    if (pending === null) sessionStorage.removeItem(storageKey);
+    else sessionStorage.setItem(storageKey, JSON.stringify(pending));
+  } catch {
+    // Storage may be disabled; the in-memory retry still works until this tab reloads.
+  }
+}
 
 /**
  * The answers a saved event row already holds. Columns the form does not ask about
@@ -173,6 +230,15 @@ export function IntakeForm({
       mounted.current = false;
     };
   }, []);
+
+  useEffect(() => {
+    if (eventId !== undefined) return;
+    const restored = loadPendingCreate(apiBaseUrl);
+    if (restored === null) return;
+    pendingCreate.current = restored;
+    currentAnswers.current = restored.answers;
+    setAnswers(restored.answers);
+  }, [apiBaseUrl, eventId]);
 
   useEffect(() => {
     if (eventId === undefined) return;
@@ -366,6 +432,7 @@ export function IntakeForm({
         body: requestBody,
         answers: answersAtSubmit,
       };
+      storePendingCreate(apiBaseUrl, pendingCreate.current);
     }
     try {
       const target = creating ? "/api/events" : `/api/events/${saved.id}`;
@@ -382,8 +449,9 @@ export function IntakeForm({
       });
       const body = (await response.json()) as ApiResponse;
       if (!response.ok || body.event === undefined) {
-        if (creating && response.status === 400 && (body.errors?.length ?? 0) > 0) {
+        if (creating && response.status >= 400 && response.status < 500) {
           pendingCreate.current = null;
+          storePendingCreate(apiBaseUrl, null);
         }
         if (!mounted.current) return;
         const latestAnswers = currentAnswers.current;
@@ -415,7 +483,10 @@ export function IntakeForm({
         }
         return;
       }
-      if (creating) pendingCreate.current = null;
+      if (creating) {
+        pendingCreate.current = null;
+        storePendingCreate(apiBaseUrl, null);
+      }
       // Rebuild from the stored row so answers cleared by hidden questions cannot linger locally.
       const stored = answersFromEvent(contract, body.event);
       if (mounted.current) {
