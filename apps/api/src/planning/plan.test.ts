@@ -347,6 +347,29 @@ describe.runIf(databaseUrl.length > 0)("plan API (F-201)", () => {
     expect(rows).toHaveLength(1);
   });
 
+  it("returns the original first plan when a keyed retry follows manual regeneration", async () => {
+    const createKey = randomUUID();
+    const eventId = await insertEvent({
+      create_idempotency_key: createKey,
+      create_request_body: scenarioAEvent,
+    });
+    const app = appWith();
+
+    const first = await request(app)
+      .post(`/api/events/${eventId}/plan`)
+      .set("Idempotency-Key", createKey);
+    const regenerated = await request(app).post(`/api/events/${eventId}/plan`);
+    const retried = await request(app)
+      .post(`/api/events/${eventId}/plan`)
+      .set("Idempotency-Key", createKey);
+
+    expect(first.status).toBe(201);
+    expect(regenerated.status).toBe(201);
+    expect(retried.status).toBe(200);
+    expect(retried.body.id).toBe(first.body.id);
+    expect(retried.body.id).not.toBe(regenerated.body.id);
+  });
+
   it("rejects malformed or unrelated first-plan keys without writing", async () => {
     const createKey = randomUUID();
     const eventId = await insertEvent({

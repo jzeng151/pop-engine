@@ -894,6 +894,45 @@ describe("saving and per-field errors", () => {
     expect(sessionStorage).toHaveLength(0);
   });
 
+  it.each([401, 403, 429])(
+    "retains create recovery after an access-layer %i response",
+    async (status) => {
+      let createAttempts = 0;
+      fetchMock.mockImplementation(async (url: string, init: RequestInit) => {
+        if (url === "https://api.example.com/api/events") {
+          createAttempts += 1;
+          if (createAttempts === 1) throw new TypeError("response lost");
+          if (createAttempts === 2) return jsonResponse(status, { error: "access refused" });
+          return echoSavedEvent(200, init);
+        }
+        if (url.endsWith("/plan")) {
+          return init.method === "POST" ? jsonResponse(201, {}) : jsonResponse(200, storedPlan);
+        }
+        throw new Error(`unexpected request ${url}`);
+      });
+      const user = renderForm();
+      await answerParkEvent(user);
+      await save(user);
+      expect(await screen.findByRole("alert")).toBeDefined();
+
+      await save(user);
+      await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
+      expect(sessionStorage).toHaveLength(1);
+
+      await save(user);
+      await waitFor(() => expect(router.push).toHaveBeenCalledWith("/events/event-1/plan"));
+      const createCalls = fetchMock.mock.calls.filter(
+        ([url]) => url === "https://api.example.com/api/events",
+      ) as [string, RequestInit][];
+      expect(createCalls).toHaveLength(3);
+      expect(new Headers(createCalls[2]?.[1].headers).get("Idempotency-Key")).toBe(
+        new Headers(createCalls[0]?.[1].headers).get("Idempotency-Key"),
+      );
+      expect(createCalls[2]?.[1].body).toBe(createCalls[0]?.[1].body);
+      expect(sessionStorage).toHaveLength(0);
+    },
+  );
+
   it("does not create an event when recovery cannot be stored", async () => {
     vi.spyOn(Storage.prototype, "setItem").mockImplementation(() => {
       throw new DOMException("storage disabled", "SecurityError");

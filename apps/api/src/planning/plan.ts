@@ -353,16 +353,18 @@ async function refuseRulesetDowngrade(
   }
 }
 
-async function readLatestPlan(
+async function readPlan(
   database: Pick<Pool, "query">,
   eventId: string,
+  selection: "first" | "latest",
 ): Promise<StoredPlan | null> {
-  // Same order the downgrade guard reads, for the same reason: the plan this returns is the
-  // one the next generation is checked against, so the two must not be able to disagree.
+  const direction = selection === "first" ? "ASC" : "DESC";
   const { rows } = await database.query<PlanRow>(
     `SELECT id, event_revision, ruleset_version, snapshot_date, verdict, verdict_detail,
             generated_at
-       FROM permit_plans WHERE event_id = $1 ORDER BY generated_at DESC, id DESC LIMIT 1`,
+       FROM permit_plans
+      WHERE event_id = $1
+      ORDER BY generated_at ${direction}, id ${direction} LIMIT 1`,
     [eventId],
   );
   const planRow = rows[0];
@@ -447,7 +449,7 @@ export function createPlanService(
         await client.query("BEGIN");
         await lockEventForGeneration(client, eventId);
         if (initialCreateKey !== undefined) {
-          const existing = await readLatestPlan(client, eventId);
+          const existing = await readPlan(client, eventId, "first");
           if (existing !== null) {
             await client.query("COMMIT");
             return { plan: existing, created: false };
@@ -493,7 +495,7 @@ export function createPlanService(
 
     async latest(eventId) {
       await loadEvent(eventId);
-      return readLatestPlan(pool, eventId);
+      return readPlan(pool, eventId, "latest");
     },
   };
 }

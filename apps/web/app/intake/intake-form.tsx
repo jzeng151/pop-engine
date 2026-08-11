@@ -29,10 +29,20 @@ const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-
 
 type ApiResponse = {
   event?: SavedEvent;
+  error?: string;
   errors?: IntakeIssue[];
   warnings?: IntakeIssue[];
   plan_stale?: boolean;
 };
+
+const CREATE_KEY_CONFLICT = "Idempotency-Key was already used with a different body";
+
+function isDefinitiveCreateRejection(status: number, body: ApiResponse): boolean {
+  return (
+    (status === 400 && Array.isArray(body.errors)) ||
+    (status === 409 && body.error === CREATE_KEY_CONFLICT)
+  );
+}
 
 /** Descriptive answers the events table carries that the ruleset does not declare. */
 const DESCRIPTIVE_QUESTIONS = [
@@ -462,7 +472,7 @@ export function IntakeForm({
       });
       const body = (await response.json()) as ApiResponse;
       if (!response.ok || body.event === undefined) {
-        if (creating && response.status >= 400 && response.status < 500) {
+        if (creating && isDefinitiveCreateRejection(response.status, body)) {
           pendingCreate.current = null;
           storePendingCreate(apiBaseUrl, null);
         }
