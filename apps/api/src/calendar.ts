@@ -11,7 +11,11 @@ export class MissingHolidayCalendarError extends Error {
   }
 }
 
-/** Published holiday lists, keyed by the calendar id a ruleset pins. */
+/**
+ * Published holiday lists, keyed by the calendar id a ruleset pins. This calendar is shared by
+ * city and state rules, but no approved source establishes which closures count as business days.
+ * Publishing dates requires product-owner approval and an approved ADR.
+ */
 const PUBLISHED_HOLIDAY_CALENDARS: Readonly<Record<string, readonly string[]>> = {};
 
 export function pinnedCalendar(calendarId: string): HolidayCalendar {

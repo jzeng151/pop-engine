@@ -237,9 +237,15 @@ export type FindingRoute = {
   readonly portalName: string | null;
   readonly portalUrl: string | null;
   readonly portalInstructions: string | null;
-  /** This route's own published notes, as `ruleNotes()` built them for its own rule: the rule's `notes`, its deadline qualification, its verification qualification, and the confirm-with-agency floor where its own window could not be dated. */
+  /**
+   * This route's published notes. `undefined` means an older plan did not record them; `[]` means
+   * the route recorded none.
+   */
   readonly notes?: readonly string[];
-  /** This route's own `conflictText`: both readings of an OFFICIAL_CONFLICT rule, verbatim, or null where its own rule publishes none. */
+  /**
+   * This route's conflict text. `undefined` means an older plan did not record it; `null` means the
+   * route recorded none.
+   */
   readonly conflictText?: string | null;
 };
 

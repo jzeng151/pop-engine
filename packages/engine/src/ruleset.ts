@@ -618,7 +618,10 @@ function rejectMixedDedupeVerificationStatuses(published: readonly EngineRule[])
   }
 }
 
-/** Intake fields the ruleset declares but nothing consumes: questions an organizer is asked whose answer changes no output. */
+/**
+ * Published intake fields intentionally retained despite having no consumers. Removing one changes
+ * rule semantics and requires product-owner approval.
+ */
 export const UNCONSUMED_INTAKE_FIELDS: Readonly<Record<string, string>> = {
   borough: "Display and future jurisdiction routing (F-207). No NYC rule varies by borough today.",
   venue_paco_covers_exact_event:
