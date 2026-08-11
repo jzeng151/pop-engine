@@ -47,7 +47,7 @@ describe("api scaffold", () => {
     expect(res.headers["access-control-allow-methods"]).toContain("POST");
 
     expect(res.headers["access-control-allow-headers"]).toBe(
-      "Authorization, Content-Type, X-Filename, X-Upload-Key",
+      "Authorization, Content-Type, Idempotency-Key, X-Filename, X-Upload-Key",
     );
   });
 });

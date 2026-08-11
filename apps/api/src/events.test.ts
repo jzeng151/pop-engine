@@ -54,8 +54,11 @@ describe.runIf(databaseUrl.length > 0)("F-101 event intake endpoints", () => {
     await database.end();
   });
 
-  const post = async (intake: Record<string, unknown>) => {
-    const response = await request(api).post("/api/events").send(intake);
+  const post = async (intake: Record<string, unknown>, key = randomUUID()) => {
+    const response = await request(api)
+      .post("/api/events")
+      .set("Idempotency-Key", key)
+      .send(intake);
     const id: unknown = response.body?.event?.id;
     if (typeof id === "string") createdEventIds.push(id);
     return response;
@@ -74,6 +77,88 @@ describe.runIf(databaseUrl.length > 0)("F-101 event intake endpoints", () => {
       expect(response.body.event.revision_counter).toBe(1);
       expect(response.body.event.status).toBe("draft");
       expect(response.body.plan_stale).toBe(false);
+    });
+
+    it("returns the original event when the same create is replayed", async () => {
+      const key = randomUUID();
+      const intake = { ...scenario("C"), name: `idempotent-${randomUUID()}` };
+      const first = await post(intake, key);
+      const replay = await post(intake, key);
+
+      expect(first.status).toBe(201);
+      expect(replay.status).toBe(200);
+      expect(replay.body.event.id).toBe(first.body.event.id);
+      expect(replay.body.event).not.toHaveProperty("create_idempotency_key");
+      expect(replay.body.event).not.toHaveProperty("create_request_body");
+      const stored = await database.query<{ count: string }>(
+        "SELECT count(*)::text AS count FROM events WHERE create_idempotency_key = $1",
+        [key],
+      );
+      expect(stored.rows[0]?.count).toBe("1");
+    });
+
+    it("serializes concurrent copies of one create request", async () => {
+      const key = randomUUID();
+      const intake = { ...scenario("C"), name: `concurrent-idempotent-${randomUUID()}` };
+      const copies = await Promise.all([post(intake, key), post(intake, key)]);
+
+      expect(copies.map(({ status }) => status).sort()).toEqual([200, 201]);
+      expect(copies[0]?.body.event.id).toBe(copies[1]?.body.event.id);
+    });
+
+    it("rejects reuse of a committed key with a different body", async () => {
+      const key = randomUUID();
+      const intake: Record<string, unknown> = {
+        ...scenario("C"),
+        name: `key-conflict-${randomUUID()}`,
+      };
+      const first = await post(intake, key);
+      const conflict = await post({ ...intake, headcount: 151 }, key);
+
+      expect(first.status).toBe(201);
+      expect(conflict.status).toBe(409);
+      expect(conflict.body.error).toBe("Idempotency-Key was already used with a different body");
+      const stored = await request(api).get(`/api/events/${first.body.event.id}`);
+      expect(stored.body.event.headcount).toBe(intake["headcount"]);
+    });
+
+    it("resolves a replay before validation against the current date", async () => {
+      let currentToday = "2026-07-22";
+      const replayApi = createApp({
+        database,
+        intakeContract: parseIntakeContract((await loadRuleset()).document),
+        today: () => currentToday,
+      });
+      const key = randomUUID();
+      const intake = { ...scenario("C"), event_date: "2026-07-23" };
+      const send = () =>
+        request(replayApi).post("/api/events").set("Idempotency-Key", key).send(intake);
+
+      const first = await send();
+      currentToday = "2026-07-24";
+      const replay = await send();
+
+      expect(first.status).toBe(201);
+      expect(replay.status).toBe(200);
+      expect(replay.body.event.id).toBe(first.body.event.id);
+      createdEventIds.push(first.body.event.id as string);
+    });
+
+    it("requires a UUID idempotency key before writing", async () => {
+      const intake = { ...scenario("C"), name: `missing-key-${randomUUID()}` };
+      const missing = await request(api).post("/api/events").send(intake);
+      const malformed = await request(api)
+        .post("/api/events")
+        .set("Idempotency-Key", "not-a-uuid")
+        .send(intake);
+
+      expect(errorCodes(missing.body)).toEqual({ "Idempotency-Key": "required" });
+      expect(errorCodes(malformed.body)).toEqual({ "Idempotency-Key": "invalid_value" });
+      const stored = await database.query<{ count: string }>(
+        "SELECT count(*)::text AS count FROM events WHERE name = $1",
+        [intake.name],
+      );
+      expect(stored.rows[0]?.count).toBe("0");
     });
 
     it("stores unknown answers and blank dimensions as the answer key writes them", async () => {
@@ -123,7 +208,10 @@ describe.runIf(databaseUrl.length > 0)("F-101 event intake endpoints", () => {
     });
 
     it("rejects a body that is not a JSON object", async () => {
-      const response = await request(api).post("/api/events").send([]);
+      const response = await request(api)
+        .post("/api/events")
+        .set("Idempotency-Key", randomUUID())
+        .send([]);
       expect(response.status).toBe(400);
       expect(errorCodes(response.body)).toEqual({ body: "invalid_body" });
     });

@@ -768,6 +768,9 @@ describe("saving and per-field errors", () => {
     expect(url).toBe("https://api.example.com/api/events");
     expect(init.method).toBe("POST");
     expect(init.credentials).toBe("include");
+    expect(new Headers(init.headers).get("Idempotency-Key")).toMatch(
+      /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i,
+    );
     expect(fetchMock).toHaveBeenCalledTimes(3);
     expect(fetchMock.mock.calls[1]?.[0]).toBe("https://api.example.com/api/events/event-1/plan");
     expect((fetchMock.mock.calls[1]?.[1] as RequestInit).method).toBe("POST");
@@ -779,6 +782,45 @@ describe("saving and per-field errors", () => {
     expect(screen.getByRole("link", { name: "Guest list" }).getAttribute("href")).toBe(
       "/events/event-1/guests",
     );
+  });
+
+  it("replays the original create after its response is lost", async () => {
+    let createAttempts = 0;
+    fetchMock.mockImplementation(async (url: string, init: RequestInit) => {
+      if (url === "https://api.example.com/api/events") {
+        createAttempts += 1;
+        if (createAttempts === 1) throw new TypeError("response lost");
+        return echoSavedEvent(200, init);
+      }
+      if (url.endsWith("/plan")) {
+        return init.method === "POST" ? jsonResponse(201, {}) : jsonResponse(200, storedPlan);
+      }
+      throw new Error(`unexpected request ${url}`);
+    });
+    const user = renderForm();
+    await answerParkEvent(user);
+    await save(user);
+    expect((await screen.findByRole("alert")).textContent).toBe("The API could not be reached.");
+
+    await fillField(user, "headcount", "175");
+    await save(user);
+
+    expect(
+      await screen.findByText(
+        "Your event and its permit plan were saved, but changes made while they were saving are still unsaved. Save those changes before opening the plan.",
+      ),
+    ).toBeDefined();
+    const createCalls = fetchMock.mock.calls.filter(
+      ([url]) => url === "https://api.example.com/api/events",
+    ) as [string, RequestInit][];
+    expect(createCalls).toHaveLength(2);
+    expect(new Headers(createCalls[0]?.[1].headers).get("Idempotency-Key")).toBe(
+      new Headers(createCalls[1]?.[1].headers).get("Idempotency-Key"),
+    );
+    expect(createCalls[1]?.[1].body).toBe(createCalls[0]?.[1].body);
+    expect(JSON.parse(String(createCalls[1]?.[1].body)).headcount).toBe(150);
+    expect(document.querySelector<HTMLInputElement>('input[name="headcount"]')?.value).toBe("175");
+    expect(router.push).not.toHaveBeenCalled();
   });
 
   it("keeps edits made while the first plan is generating on the form", async () => {
@@ -1349,6 +1391,12 @@ describe("saving and per-field errors", () => {
     await fillField(user, "headcount", "150");
     await save(user);
     await waitFor(() => expect(screen.queryByRole("alert")).toBeNull());
+    const createCalls = fetchMock.mock.calls.filter(
+      ([url]) => url === "https://api.example.com/api/events",
+    ) as [string, RequestInit][];
+    expect(new Headers(createCalls[0]?.[1].headers).get("Idempotency-Key")).not.toBe(
+      new Headers(createCalls[1]?.[1].headers).get("Idempotency-Key"),
+    );
   });
 });
 

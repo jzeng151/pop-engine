@@ -52,7 +52,7 @@ export function createApp(dependencies: AppDependencies): Express {
       // X-Filename carries a document upload's display name (F-202).
       res.setHeader(
         "Access-Control-Allow-Headers",
-        "Authorization, Content-Type, X-Filename, X-Upload-Key",
+        "Authorization, Content-Type, Idempotency-Key, X-Filename, X-Upload-Key",
       );
       res.sendStatus(204);
       return;

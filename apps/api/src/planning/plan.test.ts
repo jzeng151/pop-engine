@@ -182,7 +182,10 @@ describe.runIf(databaseUrl.length > 0)("plan API (F-201)", () => {
     const fixture = SCENARIO_INTAKE_FIXTURES.find(({ scenario }) => scenario === "F");
     if (fixture === undefined) throw new Error("Scenario F fixture is missing");
     const app = appWith();
-    const created = await request(app).post("/api/events").send(fixtureSubmission(fixture));
+    const created = await request(app)
+      .post("/api/events")
+      .set("Idempotency-Key", randomUUID())
+      .send(fixtureSubmission(fixture));
     expect(created.status).toBe(201);
     const eventId = created.body.event.id as string;
 

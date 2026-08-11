@@ -18,6 +18,11 @@ import { discoverParks, parksBoroughCode, type ParkSuggestion } from "./parks-ap
 // The intake questionnaire.
 
 type Answers = Record<string, IntakeValue>;
+type PendingCreate = {
+  key: string;
+  body: Record<string, IntakeValue>;
+  answers: Answers;
+};
 
 type ApiResponse = {
   event?: SavedEvent;
@@ -159,6 +164,7 @@ export function IntakeForm({
   const formRef = useRef<HTMLFormElement | null>(null);
   const shouldFocusFirstError = useRef(false);
   const currentAnswers = useRef<Answers>({});
+  const pendingCreate = useRef<PendingCreate | null>(null);
   const mounted = useRef(true);
 
   useEffect(() => {
@@ -313,11 +319,14 @@ export function IntakeForm({
 
   const save = async () => {
     setFailure(null);
+    const creating = saved === null;
+    const retry = creating ? pendingCreate.current : null;
+    const requestBody = retry?.body ?? submission();
     const fieldOrder = [
       ...DESCRIPTIVE_QUESTIONS.map((question) => question.field),
       ...questions.map((question) => question.field),
     ];
-    const validationErrors = validateIntake(contract, submission(), nycToday()).errors;
+    const validationErrors = validateIntake(contract, requestBody, nycToday()).errors;
     const missing = validationErrors
       .filter((error) => error.code === "required")
       .map((error) => {
@@ -350,17 +359,32 @@ export function IntakeForm({
 
     setSaving(true);
     // The answers as they stand at the click, which the response is reconciled against.
-    const answersAtSubmit = currentAnswers.current;
+    const answersAtSubmit = retry?.answers ?? currentAnswers.current;
+    if (creating && retry === null) {
+      pendingCreate.current = {
+        key: crypto.randomUUID(),
+        body: requestBody,
+        answers: answersAtSubmit,
+      };
+    }
     try {
-      const creating = saved === null;
       const target = creating ? "/api/events" : `/api/events/${saved.id}`;
       const response = await fetch(`${apiBaseUrl}${target}`, {
         method: creating ? "POST" : "PATCH",
         ...CREDENTIALED,
-        body: JSON.stringify(submission()),
+        headers: creating
+          ? {
+              ...CREDENTIALED.headers,
+              "Idempotency-Key": pendingCreate.current?.key ?? "",
+            }
+          : CREDENTIALED.headers,
+        body: JSON.stringify(requestBody),
       });
       const body = (await response.json()) as ApiResponse;
       if (!response.ok || body.event === undefined) {
+        if (creating && response.status === 400 && (body.errors?.length ?? 0) > 0) {
+          pendingCreate.current = null;
+        }
         if (!mounted.current) return;
         const latestAnswers = currentAnswers.current;
         const latestErrors = validateIntake(contract, latestAnswers, nycToday()).errors;
@@ -391,6 +415,7 @@ export function IntakeForm({
         }
         return;
       }
+      if (creating) pendingCreate.current = null;
       // Rebuild from the stored row so answers cleared by hidden questions cannot linger locally.
       const stored = answersFromEvent(contract, body.event);
       if (mounted.current) {

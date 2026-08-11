@@ -28,6 +28,7 @@ export type EventsDependencies = {
 };
 
 type EventRow = Record<string, unknown> & { id: string; revision_counter: number };
+type CreateReplayRow = EventRow & { create_request_matches: boolean };
 
 /** A pool or a single pooled connection. Reads that must agree with each other take the
  * same connection, so they see one consistent moment of the database. */
@@ -68,6 +69,8 @@ async function eventResponse(
   const activeEvent = { ...event };
   delete activeEvent.food_affinity_private_exception_claimed;
   delete activeEvent.venue_has_assembly_approval;
+  delete activeEvent.create_idempotency_key;
+  delete activeEvent.create_request_body;
   return {
     status,
     body: {
@@ -115,6 +118,23 @@ function readSubmission(req: Request, res: Response): Record<string, unknown> | 
   return body as Record<string, unknown>;
 }
 
+function readIdempotencyKey(req: Request, res: Response): string | null {
+  const key = req.get("Idempotency-Key");
+  if (key !== undefined && UUID.test(key)) return key.toLowerCase();
+  res.status(400).json({
+    errors: [
+      {
+        field: "Idempotency-Key",
+        code: key === undefined ? "required" : "invalid_value",
+        message:
+          key === undefined ? "Idempotency-Key is required" : "Idempotency-Key must be a UUID",
+      },
+    ],
+    warnings: [],
+  });
+  return null;
+}
+
 /** Fail the request the way Express expects, so one thrown query cannot hang a client. */
 const handle =
   (route: (req: Request, res: Response) => Promise<void>) =>
@@ -127,15 +147,36 @@ export function createEventsRouter(dependencies: EventsDependencies): Router {
   const columns = intakeColumnNames(intakeContract);
   const router = Router();
 
-  const insert = async (values: IntakeRecord): Promise<EventRow> => {
+  const readCreateReplay = async (
+    key: string,
+    requestBody: string,
+  ): Promise<{ event: EventRow; matches: boolean } | null> => {
+    const { rows } = await database.query<CreateReplayRow>(
+      `SELECT events.*, create_request_body = $2::jsonb AS create_request_matches
+         FROM events
+        WHERE create_idempotency_key = $1`,
+      [key, requestBody],
+    );
+    const row = rows[0];
+    if (row === undefined) return null;
+    const { create_request_matches: matches, ...event } = row;
+    return { event, matches };
+  };
+
+  const insert = async (
+    key: string,
+    requestBody: string,
+    values: IntakeRecord,
+  ): Promise<EventRow | null> => {
     const id = randomUUID();
     const { rows } = await database.query<EventRow>(
-      `INSERT INTO events (id, ${quoted(columns)})
-       VALUES ($1, ${columns.map((_column, index) => `$${index + 2}`).join(", ")})
+      `INSERT INTO events (id, create_idempotency_key, create_request_body, ${quoted(columns)})
+       VALUES ($1, $2, $3::jsonb, ${columns.map((_column, index) => `$${index + 4}`).join(", ")})
+       ON CONFLICT (create_idempotency_key) DO NOTHING
        RETURNING *`,
-      [id, ...columns.map((column) => values[column] ?? null)],
+      [id, key, requestBody, ...columns.map((column) => values[column] ?? null)],
     );
-    return rows[0] as EventRow;
+    return rows[0] ?? null;
   };
 
   // Every edit bumps the revision counter server-side, which is what marks an existing
@@ -157,15 +198,45 @@ export function createEventsRouter(dependencies: EventsDependencies): Router {
   router.post(
     "/events",
     handle(async (req, res) => {
+      const key = readIdempotencyKey(req, res);
+      if (key === null) return;
       const submission = readSubmission(req, res);
       if (submission === null) return;
+      const requestBody = JSON.stringify(submission);
+
+      const replay = await readCreateReplay(key, requestBody);
+      if (replay !== null) {
+        if (!replay.matches) {
+          res.status(409).json({ error: "Idempotency-Key was already used with a different body" });
+          return;
+        }
+        const response = await eventResponse(database, intakeContract, replay.event, 200);
+        res.status(response.status).json(response.body);
+        return;
+      }
 
       const { values, errors, warnings } = validateIntake(intakeContract, submission, today());
       if (values === null) {
         res.status(400).json({ errors, warnings });
         return;
       }
-      const created = await eventResponse(database, intakeContract, await insert(values), 201);
+
+      const inserted = await insert(key, requestBody, values);
+      const result =
+        inserted === null
+          ? await readCreateReplay(key, requestBody)
+          : { event: inserted, matches: true };
+      if (result === null) throw new Error("idempotent event create committed no readable result");
+      if (!result.matches) {
+        res.status(409).json({ error: "Idempotency-Key was already used with a different body" });
+        return;
+      }
+      const created = await eventResponse(
+        database,
+        intakeContract,
+        result.event,
+        inserted === null ? 200 : 201,
+      );
       res.status(created.status).json(created.body);
     }),
   );

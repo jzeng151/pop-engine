@@ -181,7 +181,10 @@ describe.runIf(databaseUrl.length > 0)("F-202 compliance checklist", () => {
     });
 
   const createEvent = async (submission: Record<string, unknown>): Promise<string> => {
-    const response = await request(appWith(fakeStorage())).post("/api/events").send(submission);
+    const response = await request(appWith(fakeStorage()))
+      .post("/api/events")
+      .set("Idempotency-Key", randomUUID())
+      .send(submission);
     expect(response.status).toBe(201);
     const eventId = response.body.event.id as string;
     createdEventIds.push(eventId);
