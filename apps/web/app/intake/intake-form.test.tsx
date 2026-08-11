@@ -778,6 +778,41 @@ describe("saving and per-field errors", () => {
     ).toBeNull();
   });
 
+  it("discards a failed save's error when the answer was corrected in flight", async () => {
+    let releaseSave: (response: Response) => void = () => {};
+    fetchMock.mockImplementationOnce(
+      async () =>
+        new Promise<Response>((resolve) => {
+          releaseSave = resolve;
+        }),
+    );
+    const user = renderForm();
+    await answerParkEvent(user);
+    await fillField(user, "headcount", "0");
+    await save(user);
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
+
+    await fillField(user, "headcount", "1");
+    releaseSave(
+      jsonResponse(400, {
+        errors: [
+          { field: "headcount", code: "must_be_positive", message: "headcount must be at least 1" },
+        ],
+        warnings: [],
+      }),
+    );
+
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: "Save event" }).hasAttribute("disabled")).toBe(
+        false,
+      ),
+    );
+    expect(screen.queryByRole("link", { name: "headcount must be at least 1" })).toBeNull();
+    expect(
+      screen.getByRole("spinbutton", { name: "Headcount" }).getAttribute("aria-invalid"),
+    ).toBeNull();
+  });
+
   it("clears invalid-value and past-date errors only after valid corrections", async () => {
     fetchMock.mockResolvedValueOnce(
       jsonResponse(400, {

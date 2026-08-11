@@ -136,6 +136,7 @@ export function IntakeForm({
   const locationNameInput = useRef<HTMLInputElement | null>(null);
   const formRef = useRef<HTMLFormElement | null>(null);
   const shouldFocusFirstError = useRef(false);
+  const currentAnswers = useRef<Answers>({});
 
   useEffect(() => {
     if (eventId === undefined) return;
@@ -143,7 +144,9 @@ export function IntakeForm({
     void loadEvent(apiBaseUrl, eventId).then((result) => {
       if (abandoned) return;
       if (result.ok) {
-        setAnswers(answersFromEvent(contract, result.loaded.event));
+        const loadedAnswers = answersFromEvent(contract, result.loaded.event);
+        currentAnswers.current = loadedAnswers;
+        setAnswers(loadedAnswers);
         setSaved(result.loaded.event);
       } else {
         setLoadFailure(result.message);
@@ -232,7 +235,8 @@ export function IntakeForm({
       setParkSearchFailure(null);
       setParkSearching(false);
     }
-    const updatedAnswers = { ...answers, [field]: value };
+    const updatedAnswers = { ...currentAnswers.current, [field]: value };
+    currentAnswers.current = updatedAnswers;
     setAnswers(updatedAnswers);
     const remaining = validateIntake(contract, updatedAnswers, nycToday()).errors;
     setErrors((current) =>
@@ -326,7 +330,7 @@ export function IntakeForm({
 
     setSaving(true);
     // The answers as they stand at the click, which the response is reconciled against.
-    const answersAtSubmit = answers;
+    const answersAtSubmit = currentAnswers.current;
     try {
       const target = saved === null ? "/api/events" : `/api/events/${saved.id}`;
       const response = await fetch(`${apiBaseUrl}${target}`, {
@@ -336,15 +340,28 @@ export function IntakeForm({
       });
       const body = (await response.json()) as ApiResponse;
       if (!response.ok || body.event === undefined) {
+        const responseErrors = (body.errors ?? []).filter(
+          (error) =>
+            error.field === "body" ||
+            error.code === "unknown_field" ||
+            sameAnswer(
+              currentAnswers.current[error.field] ?? null,
+              answersAtSubmit[error.field] ?? null,
+            ),
+        );
         shouldFocusFirstError.current = true;
-        setErrors(body.errors ?? []);
-        if ((body.errors ?? []).length === 0) setFailure("The event could not be saved.");
+        setErrors(responseErrors);
+        if (responseErrors.length === 0 && (body.errors ?? []).length === 0) {
+          setFailure("The event could not be saved.");
+        }
         return;
       }
       setErrors([]);
       // Rebuild from the stored row so answers cleared by hidden questions cannot linger locally.
       const stored = answersFromEvent(contract, body.event);
-      setAnswers((latest) => reconcileAnswers(latest, answersAtSubmit, stored));
+      const reconciled = reconcileAnswers(currentAnswers.current, answersAtSubmit, stored);
+      currentAnswers.current = reconciled;
+      setAnswers(reconciled);
       setSaved(body.event);
       router.push(`/events/${body.event.id}`);
     } catch {
