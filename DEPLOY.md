@@ -83,6 +83,18 @@ a window in which two builds and one schema are all live at once. The F-302 capa
 F-203 guarantees hold only if that window is opened in this order. All are one-off constraints for
 their contract transition; the conditions for dropping each are stated with it.
 
+**F-101 create replay (migration 015) requires coordinated intake downtime.** The new web's create
+key is ignored by the old api, while the new api rejects the old web's keyless create, so neither
+mixed pair may accept an intake. Before step 1, schedule maintenance and use Cloudflare Access to
+deny organizer traffic to both the web and api, leaving only the release operator allowlisted.
+Allow requests already admitted through the gate to finish before changing either service. Keep
+the gate closed during step 1: the operator may perform the named guest-list verification but must
+not submit an intake. After the api reports `Migrations complete!` for migration 015, use the new
+web to save one synthetic event, confirm its plan opens, and only then reopen organizer access. If
+either deployment or that check fails, keep maintenance active; do not expose a mixed web/api pair.
+Drop this downtime constraint only after migration 015 is applied and no pre-key web build or
+pre-key api build remains a selectable deployment or rollback target.
+
 1. **Deploy the web service first, verify it is live, remove older web rollback targets, then deploy
    the api.** Two contract changes require this order.
 

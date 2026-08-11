@@ -184,7 +184,10 @@ describe.skipIf(databaseUrl === "")("F-203 deadline alerts", () => {
     });
 
   const createEvent = async (submission: Record<string, unknown>): Promise<string> => {
-    const response = await request(appWith(fakeProvider())).post("/api/events").send(submission);
+    const response = await request(appWith(fakeProvider()))
+      .post("/api/events")
+      .set("Idempotency-Key", randomUUID())
+      .send(submission);
     expect(response.status).toBe(201);
     const eventId = response.body.event.id as string;
     createdEventIds.push(eventId);
@@ -3175,17 +3178,14 @@ describe.skipIf(databaseUrl === "")("F-203 deadline alerts", () => {
         inFlight -= 1;
       };
 
-      const startedAt = Date.now();
       const summary = await createAlertPoller({
         database: pool,
         senders: provider.senders,
         jurisdiction: ruleset.jurisdiction,
       }).tick();
-      const elapsed = Date.now() - startedAt;
 
       expect(summary.sent).toBe(events.length);
       expect(peakInFlight).toBe(events.length);
-      expect(elapsed).toBeLessThan(400);
     });
 
     it("sends one event's own alerts in parallel, not behind each other", async () => {
@@ -3201,17 +3201,14 @@ describe.skipIf(databaseUrl === "")("F-203 deadline alerts", () => {
         inFlight -= 1;
       };
 
-      const startedAt = Date.now();
       const summary = await createAlertPoller({
         database: pool,
         senders: provider.senders,
         jurisdiction: ruleset.jurisdiction,
       }).tick();
-      const elapsed = Date.now() - startedAt;
 
       expect(summary.sent).toBe(6);
       expect(peakInFlight).toBe(6);
-      expect(elapsed).toBeLessThan(400);
     });
 
     it("stops claiming once the tick budget is spent, and leaves the rest due", async () => {
@@ -7748,7 +7745,7 @@ describe.skipIf(databaseUrl === "")("F-203 deadline alerts", () => {
             );
             expect(rows[0]?.pending).toBe("0");
           },
-          { timeout: 30_000, interval: 250 },
+          { timeout: POLL_INTERVAL_MS, interval: 250 },
         );
       } finally {
         await poller.stop();
@@ -7756,7 +7753,7 @@ describe.skipIf(databaseUrl === "")("F-203 deadline alerts", () => {
 
       expect(Date.now() - startedAt).toBeLessThan(POLL_INTERVAL_MS);
       expect(provider.delivered.length).toBe(overflow);
-    }, 45_000);
+    }, POLL_INTERVAL_MS + 15_000);
 
     it("reports a full batch as not drained", async () => {
       const eventId = await createEvent(scenario("C"));

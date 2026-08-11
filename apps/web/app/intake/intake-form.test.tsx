@@ -3,7 +3,7 @@
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { cleanup, render, screen, waitFor, within } from "@testing-library/react";
+import { act, cleanup, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { parseIntakeContract } from "@pop-engine/engine";
 import { publishedRulesFileIn } from "../_lib/rules-file";
@@ -24,6 +24,39 @@ const savedEvent = (overrides: Record<string, unknown> = {}) => ({
   warnings: [],
   plan_stale: false,
 });
+
+const storedPlan = {
+  id: "plan-1",
+  eventId: "event-1",
+  eventRevision: 1,
+  rulesetVersion: "nyc.v2.11",
+  snapshotDate: "2026-08-05",
+  verdict: "CONDITIONAL",
+  verdictDetail: {
+    blockingFinding: null,
+    missedRuleIds: [],
+    minSlackDays: null,
+    missingFacts: [],
+    unresolvedTimelines: [],
+    rescopeSuggestions: [],
+  },
+  today: "2026-08-11",
+  generatedAt: "2026-08-11T12:00:00.000Z",
+  findings: [],
+};
+
+const pendingCreateStorageKey = "pop-engine.pending-event-create:https://api.example.com";
+
+const storeCreateRecovery = (eventId?: string) =>
+  sessionStorage.setItem(
+    pendingCreateStorageKey,
+    JSON.stringify({
+      key: "44f58390-9892-4e1b-b1ed-ecf00ea20967",
+      body: {},
+      answers: {},
+      ...(eventId === undefined ? {} : { eventId }),
+    }),
+  );
 
 const echoSavedEvent = (
   status: number,
@@ -72,7 +105,7 @@ const fillField = async (
   const input = document.querySelector<HTMLInputElement>(`input[name="${field}"]`);
   if (input === null) throw new Error(`no input ${field} on screen`);
   await user.clear(input);
-  await user.type(input, value);
+  if (value !== "") await user.type(input, value);
 };
 
 const answerParkEvent = async (user: ReturnType<typeof userEvent.setup>) => {
@@ -111,14 +144,20 @@ let fetchMock: ReturnType<typeof vi.fn>;
 
 beforeEach(() => {
   router.push.mockReset();
+  sessionStorage.clear();
   fetchMock = vi.fn(async (url: string, init: RequestInit) =>
-    url.endsWith("/plan") ? jsonResponse(201, {}) : echoSavedEvent(201, init),
+    url.endsWith("/plan")
+      ? init.method === "POST"
+        ? jsonResponse(201, {})
+        : jsonResponse(200, storedPlan)
+      : echoSavedEvent(201, init),
   );
   vi.stubGlobal("fetch", fetchMock);
 });
 
 afterEach(() => {
   cleanup();
+  vi.restoreAllMocks();
   vi.unstubAllGlobals();
 });
 
@@ -395,6 +434,46 @@ describe("loading a saved event to edit it", () => {
     ).toBe(true);
     expect(document.querySelector('input[name="status"]')).toBeNull();
     expect(questionsOnScreen()).not.toContain("Obstructs public way");
+    expect(screen.getByRole("link", { name: "Promote public page" }).getAttribute("href")).toBe(
+      "/events/event-9/promote",
+    );
+  });
+
+  it("clears matching create recovery after validating the saved event's plan", async () => {
+    storeCreateRecovery("event-9");
+    fetchMock.mockResolvedValueOnce(
+      jsonResponse(200, { event: storedEvent, warnings: [], plan_stale: false }),
+    );
+    fetchMock.mockResolvedValueOnce(jsonResponse(200, { ...storedPlan, eventId: "event-9" }));
+    renderForm("event-9");
+
+    await screen.findByRole("link", { name: "Promote public page" });
+    expect(sessionStorage.getItem(pendingCreateStorageKey)).toBeNull();
+  });
+
+  it("allows editing while the promotion-only plan lookup is pending", async () => {
+    fetchMock.mockResolvedValueOnce(
+      jsonResponse(200, { event: storedEvent, warnings: [], plan_stale: false }),
+    );
+    fetchMock.mockImplementationOnce(() => new Promise(() => {}));
+    renderForm("event-9");
+
+    await waitFor(() => expect(screen.getByText(/Saved as revision 4/)).toBeDefined());
+    expect(screen.getByRole("button", { name: "Save changes" })).toBeDefined();
+    expect(screen.queryByRole("link", { name: "Promote public page" })).toBeNull();
+  });
+
+  it("does not offer promotion when the saved event has no plan", async () => {
+    fetchMock.mockResolvedValueOnce(
+      jsonResponse(200, { event: storedEvent, warnings: [], plan_stale: false }),
+    );
+    fetchMock.mockResolvedValueOnce(jsonResponse(404, { error: "no plan generated" }));
+    renderForm("event-9");
+
+    await waitFor(() => expect(screen.getByText(/Saved as revision 4/)).toBeDefined());
+    expect(screen.queryByRole("link", { name: "Promote public page" })).toBeNull();
+    expect(screen.getByText(/Promotion will be available after/)).toBeDefined();
+    expect(sessionStorage).toHaveLength(0);
   });
 
   it("reloads both assembly-document answers for editing", async () => {
@@ -439,8 +518,8 @@ describe("loading a saved event to edit it", () => {
     await fillField(user, "headcount", "151");
     await save(user);
 
-    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
-    const [url, init] = fetchMock.mock.calls[1] as [string, RequestInit];
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(3));
+    const [url, init] = fetchMock.mock.calls[2] as [string, RequestInit];
     expect(url).toBe("https://api.example.com/api/events/event-9");
     expect(init.method).toBe("PATCH");
     expect(requestBody(fetchMock).headcount).toBe(151);
@@ -504,7 +583,7 @@ describe("clearing an optional answer on an edit", () => {
     await user.clear(document.querySelector<HTMLInputElement>('input[name="capacity"]')!);
     await save(user);
 
-    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(3));
     const edit = requestBody(fetchMock);
     expect(edit).toHaveProperty("location_name", null);
     expect(edit).toHaveProperty("capacity", null);
@@ -677,6 +756,60 @@ describe("saving and per-field errors", () => {
 
     await fillField(user, "name", "Community Day");
     expect(within(summary).queryByRole("link", { name: "Event name is required" })).toBeNull();
+    expect(document.querySelector<HTMLInputElement>('input[name="name"]')?.value).toBe(
+      "Community Day",
+    );
+    expect(document.activeElement).toBe(document.querySelector('input[name="name"]'));
+
+    const boroughLink = within(summary).getByRole("link", { name: "Borough is required" });
+    await user.click(boroughLink);
+    const borough = document.getElementById("intake-borough");
+    expect(borough?.tagName).toBe("INPUT");
+    expect(borough?.getAttribute("name")).toBe("borough");
+    expect(document.activeElement).toBe(borough);
+  });
+
+  it("removes a conditional error when its parent answer hides the field", async () => {
+    const user = renderForm();
+    await chooseOption(user, "food_present", "true");
+    await save(user);
+
+    const summary = screen.getByRole("region", { name: "Fix these answers before saving:" });
+    expect(
+      within(summary).getByRole("link", { name: "Food vendor count is required" }),
+    ).toBeDefined();
+
+    await chooseOption(user, "food_present", "false");
+    await waitFor(() =>
+      expect(
+        within(summary).queryByRole("link", { name: "Food vendor count is required" }),
+      ).toBeNull(),
+    );
+    expect(document.querySelector('input[name="food_vendor_count"]')).toBeNull();
+  });
+
+  it("treats a whitespace-only required name as missing", async () => {
+    const user = renderForm();
+    await answerParkEvent(user);
+    await fillField(user, "name", "   ");
+    await save(user);
+
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(screen.getByRole("link", { name: "Event name is required" })).toBeDefined();
+  });
+
+  it("replaces a required message when the field becomes nonblank but stays invalid", async () => {
+    const user = renderForm();
+    await save(user);
+    expect(screen.getByRole("link", { name: "Headcount is required" })).toBeDefined();
+
+    await fillField(user, "headcount", "0");
+
+    expect(screen.queryByRole("link", { name: "Headcount is required" })).toBeNull();
+    expect(screen.getByRole("link", { name: "headcount must be at least 1" })).toBeDefined();
+    expect(screen.getByRole("spinbutton", { name: "Headcount" }).getAttribute("aria-invalid")).toBe(
+      "true",
+    );
   });
 
   it("posts the intake, generates its first plan, and opens the plan", async () => {
@@ -690,9 +823,16 @@ describe("saving and per-field errors", () => {
     expect(url).toBe("https://api.example.com/api/events");
     expect(init.method).toBe("POST");
     expect(init.credentials).toBe("include");
-    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(new Headers(init.headers).get("Idempotency-Key")).toMatch(
+      /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i,
+    );
+    expect(fetchMock).toHaveBeenCalledTimes(3);
     expect(fetchMock.mock.calls[1]?.[0]).toBe("https://api.example.com/api/events/event-1/plan");
     expect((fetchMock.mock.calls[1]?.[1] as RequestInit).method).toBe("POST");
+    expect(
+      new Headers((fetchMock.mock.calls[1]?.[1] as RequestInit).headers).get("Idempotency-Key"),
+    ).toBe(new Headers(init.headers).get("Idempotency-Key"));
+    expect((fetchMock.mock.calls[2]?.[1] as RequestInit).method).toBeUndefined();
     expect(screen.getByRole("button", { name: "Save changes" })).toBeDefined();
     expect(screen.getByRole("link", { name: "Promote public page" }).getAttribute("href")).toBe(
       "/events/event-1/promote",
@@ -702,25 +842,683 @@ describe("saving and per-field errors", () => {
     );
   });
 
-  it("keeps the saved event available when its first plan cannot be generated", async () => {
-    fetchMock.mockImplementationOnce(async (_url: string, init: RequestInit) =>
-      echoSavedEvent(201, init),
+  it("replays the original create after its response is lost", async () => {
+    let createAttempts = 0;
+    fetchMock.mockImplementation(async (url: string, init: RequestInit) => {
+      if (url === "https://api.example.com/api/events") {
+        createAttempts += 1;
+        if (createAttempts === 1) throw new TypeError("response lost");
+        return echoSavedEvent(200, init);
+      }
+      if (url.endsWith("/plan")) {
+        return init.method === "POST" ? jsonResponse(201, {}) : jsonResponse(200, storedPlan);
+      }
+      throw new Error(`unexpected request ${url}`);
+    });
+    const user = renderForm();
+    await answerParkEvent(user);
+    await save(user);
+    expect((await screen.findByRole("alert")).textContent).toBe("The API could not be reached.");
+
+    await fillField(user, "headcount", "175");
+    await save(user);
+
+    expect(
+      await screen.findByText(
+        "Your event and its permit plan were saved, but changes made while they were saving are still unsaved. Save those changes before opening the plan.",
+      ),
+    ).toBeDefined();
+    const createCalls = fetchMock.mock.calls.filter(
+      ([url]) => url === "https://api.example.com/api/events",
+    ) as [string, RequestInit][];
+    expect(createCalls).toHaveLength(2);
+    expect(new Headers(createCalls[0]?.[1].headers).get("Idempotency-Key")).toBe(
+      new Headers(createCalls[1]?.[1].headers).get("Idempotency-Key"),
     );
-    fetchMock.mockResolvedValueOnce(jsonResponse(500, { error: "planning unavailable" }));
+    expect(createCalls[1]?.[1].body).toBe(createCalls[0]?.[1].body);
+    expect(JSON.parse(String(createCalls[1]?.[1].body)).headcount).toBe(150);
+    expect(document.querySelector<HTMLInputElement>('input[name="headcount"]')?.value).toBe("175");
+    expect(router.push).not.toHaveBeenCalled();
+  });
+
+  it("replays the original create after its response is lost and the form reloads", async () => {
+    let createAttempts = 0;
+    fetchMock.mockImplementation(async (url: string, init: RequestInit) => {
+      if (url === "https://api.example.com/api/events") {
+        createAttempts += 1;
+        if (createAttempts === 1) throw new TypeError("response lost");
+        return echoSavedEvent(200, init);
+      }
+      if (url.endsWith("/plan")) {
+        return init.method === "POST" ? jsonResponse(201, {}) : jsonResponse(200, storedPlan);
+      }
+      throw new Error(`unexpected request ${url}`);
+    });
+    let user = renderForm();
+    await answerParkEvent(user);
+    await save(user);
+    expect((await screen.findByRole("alert")).textContent).toBe("The API could not be reached.");
+
+    cleanup();
+    user = renderForm();
+    await waitFor(() =>
+      expect(document.querySelector<HTMLInputElement>('input[name="name"]')?.value).toBe(
+        "Prospect Park Community Day",
+      ),
+    );
+    await save(user);
+
+    const createCalls = fetchMock.mock.calls.filter(
+      ([url]) => url === "https://api.example.com/api/events",
+    ) as [string, RequestInit][];
+    expect(createCalls).toHaveLength(2);
+    expect(new Headers(createCalls[1]?.[1].headers).get("Idempotency-Key")).toBe(
+      new Headers(createCalls[0]?.[1].headers).get("Idempotency-Key"),
+    );
+    expect(createCalls[1]?.[1].body).toBe(createCalls[0]?.[1].body);
+    expect(sessionStorage).toHaveLength(0);
+  });
+
+  it.each([401, 403, 429])(
+    "retains create recovery after an access-layer %i response",
+    async (status) => {
+      let createAttempts = 0;
+      fetchMock.mockImplementation(async (url: string, init: RequestInit) => {
+        if (url === "https://api.example.com/api/events") {
+          createAttempts += 1;
+          if (createAttempts === 1) throw new TypeError("response lost");
+          if (createAttempts === 2) return jsonResponse(status, { error: "access refused" });
+          return echoSavedEvent(200, init);
+        }
+        if (url.endsWith("/plan")) {
+          return init.method === "POST" ? jsonResponse(201, {}) : jsonResponse(200, storedPlan);
+        }
+        throw new Error(`unexpected request ${url}`);
+      });
+      const user = renderForm();
+      await answerParkEvent(user);
+      await save(user);
+      expect(await screen.findByRole("alert")).toBeDefined();
+
+      await save(user);
+      await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
+      expect(sessionStorage).toHaveLength(1);
+
+      await save(user);
+      await waitFor(() => expect(router.push).toHaveBeenCalledWith("/events/event-1/plan"));
+      const createCalls = fetchMock.mock.calls.filter(
+        ([url]) => url === "https://api.example.com/api/events",
+      ) as [string, RequestInit][];
+      expect(createCalls).toHaveLength(3);
+      expect(new Headers(createCalls[2]?.[1].headers).get("Idempotency-Key")).toBe(
+        new Headers(createCalls[0]?.[1].headers).get("Idempotency-Key"),
+      );
+      expect(createCalls[2]?.[1].body).toBe(createCalls[0]?.[1].body);
+      expect(sessionStorage).toHaveLength(0);
+    },
+  );
+
+  it("retains create recovery after a replay receives a validation response", async () => {
+    let createAttempts = 0;
+    fetchMock.mockImplementation(async (url: string, init: RequestInit) => {
+      if (url === "https://api.example.com/api/events") {
+        createAttempts += 1;
+        if (createAttempts === 1) throw new TypeError("response lost");
+        if (createAttempts === 2) {
+          return jsonResponse(400, {
+            errors: [
+              { field: "headcount", code: "must_be_positive", message: "headcount is invalid" },
+            ],
+          });
+        }
+        return echoSavedEvent(200, init);
+      }
+      if (url.endsWith("/plan")) {
+        return init.method === "POST" ? jsonResponse(201, {}) : jsonResponse(200, storedPlan);
+      }
+      throw new Error(`unexpected request ${url}`);
+    });
+    const user = renderForm();
+    await answerParkEvent(user);
+    await save(user);
+    expect(await screen.findByRole("alert")).toBeDefined();
+
+    await save(user);
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
+    expect(sessionStorage).toHaveLength(1);
+
+    await save(user);
+    await waitFor(() => expect(router.push).toHaveBeenCalledWith("/events/event-1/plan"));
+    const createCalls = fetchMock.mock.calls.filter(
+      ([url]) => url === "https://api.example.com/api/events",
+    ) as [string, RequestInit][];
+    expect(createCalls).toHaveLength(3);
+    expect(new Headers(createCalls[2]?.[1].headers).get("Idempotency-Key")).toBe(
+      new Headers(createCalls[0]?.[1].headers).get("Idempotency-Key"),
+    );
+    expect(createCalls[2]?.[1].body).toBe(createCalls[0]?.[1].body);
+    expect(sessionStorage).toHaveLength(0);
+  });
+
+  it("lets the organizer discard a rejected replay before creating from current answers", async () => {
+    let createAttempts = 0;
+    fetchMock.mockImplementation(async (url: string, init: RequestInit) => {
+      if (url === "https://api.example.com/api/events") {
+        createAttempts += 1;
+        if (createAttempts === 1) throw new TypeError("response lost");
+        if (createAttempts === 2) {
+          return jsonResponse(400, {
+            errors: [
+              { field: "headcount", code: "must_be_positive", message: "headcount is invalid" },
+            ],
+          });
+        }
+        return echoSavedEvent(201, init);
+      }
+      if (url.endsWith("/plan")) {
+        return init.method === "POST" ? jsonResponse(201, {}) : jsonResponse(200, storedPlan);
+      }
+      throw new Error(`unexpected request ${url}`);
+    });
+    const user = renderForm();
+    await answerParkEvent(user);
+    await save(user);
+    await screen.findByRole("alert");
+
+    await save(user);
+    const discard = await screen.findByRole("button", {
+      name: "Discard recovery and start over",
+    });
+    expect(screen.getByText(/The earlier request may still finish/)).toBeDefined();
+    expect(sessionStorage).toHaveLength(1);
+
+    await user.click(discard);
+    expect(sessionStorage).toHaveLength(0);
+    await fillField(user, "headcount", "175");
+    await save(user);
+
+    await waitFor(() => expect(router.push).toHaveBeenCalledWith("/events/event-1/plan"));
+    const createCalls = fetchMock.mock.calls.filter(
+      ([url]) => url === "https://api.example.com/api/events",
+    ) as [string, RequestInit][];
+    expect(createCalls).toHaveLength(3);
+    expect(new Headers(createCalls[2]?.[1].headers).get("Idempotency-Key")).not.toBe(
+      new Headers(createCalls[0]?.[1].headers).get("Idempotency-Key"),
+    );
+    expect(JSON.parse(String(createCalls[2]?.[1].body)).headcount).toBe(175);
+    expect(sessionStorage).toHaveLength(0);
+  });
+
+  it("does not create an event when recovery cannot be stored", async () => {
+    vi.spyOn(Storage.prototype, "setItem").mockImplementation(() => {
+      throw new DOMException("storage disabled", "SecurityError");
+    });
+    const user = renderForm();
+    await answerParkEvent(user);
+    await save(user);
+
+    expect((await screen.findByRole("alert")).textContent).toBe(
+      "This browser could not store the recovery information required to create an event. Enable session storage and try again.",
+    );
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it("does not generate a plan when the saved event id cannot be added to recovery", async () => {
+    const setItem = Storage.prototype.setItem;
+    let writes = 0;
+    vi.spyOn(Storage.prototype, "setItem").mockImplementation(function (this: Storage, key, value) {
+      writes += 1;
+      if (writes === 2) throw new DOMException("storage disabled", "SecurityError");
+      setItem.call(this, key, value);
+    });
+    const user = renderForm();
+    await answerParkEvent(user);
+    await save(user);
+
+    expect((await screen.findByRole("alert")).textContent).toBe(
+      "Your event was saved, but its permit plan was not generated because this browser could not update its recovery information. Keep this tab open and save again to retry safely.",
+    );
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(screen.getByRole("button", { name: "Save changes" })).toBeDefined();
+    expect(sessionStorage).toHaveLength(1);
+
+    await save(user);
+
+    await waitFor(() => expect(router.push).toHaveBeenCalledWith("/events/event-1/plan"));
+    expect(sessionStorage).toHaveLength(0);
+  });
+
+  it("preserves and blocks on a pending create while its recovery read fails", async () => {
+    storeCreateRecovery();
+    let storageAvailable = false;
+    const getItem = Storage.prototype.getItem;
+    vi.spyOn(Storage.prototype, "getItem").mockImplementation(function (this: Storage, key) {
+      if (!storageAvailable) throw new DOMException("storage disabled", "SecurityError");
+      return getItem.call(this, key);
+    });
+    const user = renderForm();
+
+    expect(
+      await screen.findByText(
+        "This browser could not safely read or clear an earlier event recovery. Reload this page once session storage is available before saving another event.",
+      ),
+    ).toBeDefined();
+    storageAvailable = true;
+    await save(user);
+
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(sessionStorage).toHaveLength(1);
+  });
+
+  it("retains confirmed create recovery until durable removal succeeds", async () => {
+    const getItem = Storage.prototype.getItem;
+    const removeItem = Storage.prototype.removeItem;
+    let storageAvailable = true;
+    let failFirstCleanup = true;
+    fetchMock.mockImplementation(async (url: string, init: RequestInit) => {
+      if (!url.endsWith("/plan")) return echoSavedEvent(201, init);
+      if (init.method === "POST") return jsonResponse(201, {});
+      if (failFirstCleanup) {
+        failFirstCleanup = false;
+        storageAvailable = false;
+      }
+      return jsonResponse(200, storedPlan);
+    });
+    vi.spyOn(Storage.prototype, "getItem").mockImplementation(function (this: Storage, key) {
+      if (!storageAvailable) throw new DOMException("storage disabled", "SecurityError");
+      return getItem.call(this, key);
+    });
+    vi.spyOn(Storage.prototype, "removeItem").mockImplementation(function (this: Storage, key) {
+      if (!storageAvailable) throw new DOMException("storage disabled", "SecurityError");
+      removeItem.call(this, key);
+    });
     const user = renderForm();
     await answerParkEvent(user);
     await save(user);
 
     expect(
       await screen.findByText(
-        "Your event was saved, but its permit plan could not be generated. planning unavailable",
+        "Your event and its permit plan were saved, but this browser could not clear its saved recovery information. Keep this tab open and try again before creating another event.",
       ),
+    ).toBeDefined();
+    expect(router.push).not.toHaveBeenCalled();
+    expect(sessionStorage).toHaveLength(1);
+
+    storageAvailable = true;
+    await save(user);
+
+    await waitFor(() => expect(router.push).toHaveBeenCalledWith("/events/event-1/plan"));
+    expect(sessionStorage).toHaveLength(0);
+  });
+
+  it("replays a retained create before validating fields added by a newer client", async () => {
+    let createAttempts = 0;
+    fetchMock.mockImplementation(async (url: string, init: RequestInit) => {
+      if (url === "https://api.example.com/api/events") {
+        createAttempts += 1;
+        if (createAttempts === 1) throw new TypeError("response lost");
+        return echoSavedEvent(200, init);
+      }
+      if (url.endsWith("/plan")) {
+        return init.method === "POST" ? jsonResponse(201, {}) : jsonResponse(200, storedPlan);
+      }
+      throw new Error(`unexpected request ${url}`);
+    });
+    let user = renderForm();
+    await answerParkEvent(user);
+    await save(user);
+    expect(await screen.findByRole("alert")).toBeDefined();
+
+    const addedField = {
+      ...contract.fields.find((field) => field.field === "borough")!,
+      field: "new_required_field",
+    };
+    cleanup();
+    user = renderForm(undefined, { ...contract, fields: [...contract.fields, addedField] });
+    await waitFor(() =>
+      expect(document.querySelector<HTMLInputElement>('input[name="name"]')?.value).toBe(
+        "Prospect Park Community Day",
+      ),
+    );
+    await save(user);
+
+    const createCalls = fetchMock.mock.calls.filter(
+      ([url]) => url === "https://api.example.com/api/events",
+    );
+    expect(createCalls).toHaveLength(2);
+    expect(JSON.parse(String((createCalls[1]?.[1] as RequestInit).body))).not.toHaveProperty(
+      "new_required_field",
+    );
+  });
+
+  it("retains create recovery while initial plan generation is in flight", async () => {
+    let createAttempts = 0;
+    let planAttempts = 0;
+    fetchMock.mockImplementation(async (url: string, init: RequestInit) => {
+      if (url === "https://api.example.com/api/events") {
+        createAttempts += 1;
+        return echoSavedEvent(createAttempts === 1 ? 201 : 200, init);
+      }
+      if (url.endsWith("/plan") && init.method === "POST") {
+        planAttempts += 1;
+        if (planAttempts === 1) return new Promise<Response>(() => {});
+        return jsonResponse(201, {});
+      }
+      if (url.endsWith("/plan")) return jsonResponse(200, storedPlan);
+      throw new Error(`unexpected request ${url}`);
+    });
+    let user = renderForm();
+    await answerParkEvent(user);
+    await save(user);
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
+    expect(sessionStorage).toHaveLength(1);
+
+    cleanup();
+    user = renderForm();
+    await waitFor(() =>
+      expect(document.querySelector<HTMLInputElement>('input[name="name"]')?.value).toBe(
+        "Prospect Park Community Day",
+      ),
+    );
+    await save(user);
+
+    await waitFor(() => expect(router.push).toHaveBeenCalledWith("/events/event-1/plan"));
+    const createCalls = fetchMock.mock.calls.filter(
+      ([url]) => url === "https://api.example.com/api/events",
+    ) as [string, RequestInit][];
+    expect(new Headers(createCalls[1]?.[1].headers).get("Idempotency-Key")).toBe(
+      new Headers(createCalls[0]?.[1].headers).get("Idempotency-Key"),
+    );
+    const planCalls = fetchMock.mock.calls.filter(
+      ([url, init]) => url.endsWith("/plan") && (init as RequestInit).method === "POST",
+    ) as [string, RequestInit][];
+    expect(planAttempts).toBe(2);
+    expect(new Headers(planCalls[1]?.[1].headers).get("Idempotency-Key")).toBe(
+      new Headers(planCalls[0]?.[1].headers).get("Idempotency-Key"),
+    );
+    expect(sessionStorage).toHaveLength(0);
+  });
+
+  it("keeps edits made while the first plan is generating on the form", async () => {
+    let releasePlan: (response: Response) => void = () => {};
+    fetchMock.mockImplementation(async (url: string, init: RequestInit) => {
+      if (!url.endsWith("/plan")) return echoSavedEvent(201, init);
+      if (init.method !== "POST") return jsonResponse(200, storedPlan);
+      return new Promise<Response>((resolve) => {
+        releasePlan = resolve;
+      });
+    });
+    const user = renderForm();
+    await answerParkEvent(user);
+    await save(user);
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
+    expect(screen.queryByRole("link", { name: "see its permit plan" })).toBeNull();
+    expect(screen.queryByRole("link", { name: "Promote public page" })).toBeNull();
+    expect(screen.getByText(/permit plan is being generated/)).toBeDefined();
+    expect(screen.getByText(/Promotion will be available after/)).toBeDefined();
+
+    await fillField(user, "headcount", "175");
+    releasePlan(jsonResponse(201, {}));
+
+    expect(
+      await screen.findByText(
+        "Your event and its permit plan were saved, but changes made while they were saving are still unsaved. Save those changes before opening the plan.",
+      ),
+    ).toBeDefined();
+    expect(document.querySelector<HTMLInputElement>('input[name="headcount"]')?.value).toBe("175");
+    expect(router.push).not.toHaveBeenCalled();
+  });
+
+  it("opens the plan when an interim edit is restored before generation finishes", async () => {
+    let releasePlan: (response: Response) => void = () => {};
+    fetchMock.mockImplementation(async (url: string, init: RequestInit) => {
+      if (!url.endsWith("/plan")) return echoSavedEvent(201, init);
+      if (init.method !== "POST") return jsonResponse(200, storedPlan);
+      return new Promise<Response>((resolve) => {
+        releasePlan = resolve;
+      });
+    });
+    const user = renderForm();
+    await answerParkEvent(user);
+    await save(user);
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
+
+    await fillField(user, "headcount", "175");
+    await fillField(user, "headcount", "150");
+    releasePlan(jsonResponse(201, {}));
+
+    await waitFor(() => expect(router.push).toHaveBeenCalledWith("/events/event-1/plan"));
+    expect(screen.queryByText(/changes made while they were saving are still unsaved/)).toBeNull();
+  });
+
+  it("opens the plan when an optional blank is typed and cleared during generation", async () => {
+    let releasePlan: (response: Response) => void = () => {};
+    fetchMock.mockImplementation(async (url: string, init: RequestInit) => {
+      if (!url.endsWith("/plan")) return echoSavedEvent(201, init);
+      if (init.method !== "POST") return jsonResponse(200, storedPlan);
+      return new Promise<Response>((resolve) => {
+        releasePlan = resolve;
+      });
+    });
+    const user = renderForm();
+    await answerParkEvent(user);
+    await save(user);
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
+
+    await fillField(user, "location_name", "Long Meadow");
+    await fillField(user, "location_name", "");
+    releasePlan(jsonResponse(201, {}));
+
+    await waitFor(() => expect(router.push).toHaveBeenCalledWith("/events/event-1/plan"));
+    expect(screen.queryByText(/changes made while they were saving are still unsaved/)).toBeNull();
+  });
+
+  it("retains recovery when a genuine API 500 races a missing-plan read", async () => {
+    fetchMock.mockImplementationOnce(async (_url: string, init: RequestInit) =>
+      echoSavedEvent(201, init),
+    );
+    fetchMock.mockResolvedValueOnce(jsonResponse(500, { error: "plan generation failed" }));
+    fetchMock.mockResolvedValueOnce(jsonResponse(404, { error: "no plan generated" }));
+    const user = renderForm();
+    await answerParkEvent(user);
+    await save(user);
+
+    expect(
+      await screen.findByText(/it is not known whether its permit plan was generated/),
     ).toBeDefined();
     expect(router.push).not.toHaveBeenCalled();
     expect(screen.getByRole("button", { name: "Save changes" })).toBeDefined();
     expect(screen.getByRole("link", { name: "see its permit plan" }).getAttribute("href")).toBe(
       "/events/event-1/plan",
     );
+    expect(screen.queryByRole("link", { name: "Promote public page" })).toBeNull();
+    expect(screen.getByText(/Promotion will be available after/)).toBeDefined();
+    expect(sessionStorage).toHaveLength(1);
+    expect(
+      JSON.parse(sessionStorage.getItem(sessionStorage.key(0) as string) as string).eventId,
+    ).toBe("event-1");
+  });
+
+  it("opens a plan that exists after its generation response is lost", async () => {
+    fetchMock.mockImplementationOnce(async (_url: string, init: RequestInit) =>
+      echoSavedEvent(201, init),
+    );
+    fetchMock.mockRejectedValueOnce(new TypeError("connection reset"));
+    fetchMock.mockResolvedValueOnce(jsonResponse(200, storedPlan));
+    const user = renderForm();
+    await answerParkEvent(user);
+    await save(user);
+
+    await waitFor(() => expect(router.push).toHaveBeenCalledWith("/events/event-1/plan"));
+    expect(fetchMock).toHaveBeenCalledTimes(3);
+    expect(screen.queryByText(/could not be generated/)).toBeNull();
+  });
+
+  it("retains recovery when a lost generation response races a missing-plan read", async () => {
+    fetchMock.mockImplementationOnce(async (_url: string, init: RequestInit) =>
+      echoSavedEvent(201, init),
+    );
+    fetchMock.mockRejectedValueOnce(new TypeError("connection reset"));
+    fetchMock.mockResolvedValueOnce(jsonResponse(404, { error: "no plan generated" }));
+    const user = renderForm();
+    await answerParkEvent(user);
+    await save(user);
+
+    expect(
+      await screen.findByText(/it is not known whether its permit plan was generated/),
+    ).toBeDefined();
+    expect(sessionStorage).toHaveLength(1);
+
+    fetchMock.mockImplementationOnce(async (_url: string, init: RequestInit) =>
+      echoSavedEvent(200, init),
+    );
+    fetchMock.mockResolvedValueOnce(jsonResponse(200, {}));
+    fetchMock.mockResolvedValueOnce(jsonResponse(200, storedPlan));
+    await save(user);
+
+    await waitFor(() => expect(router.push).toHaveBeenCalledWith("/events/event-1/plan"));
+    const createCalls = fetchMock.mock.calls.filter(
+      ([url]) => url === "https://api.example.com/api/events",
+    ) as [string, RequestInit][];
+    expect(new Headers(createCalls[1]?.[1].headers).get("Idempotency-Key")).toBe(
+      new Headers(createCalls[0]?.[1].headers).get("Idempotency-Key"),
+    );
+    expect(sessionStorage).toHaveLength(0);
+  });
+
+  it.each([409, 500, 502])(
+    "retains recovery when an ambiguous HTTP %i races a missing-plan read",
+    async (status) => {
+      fetchMock.mockImplementationOnce(async (_url: string, init: RequestInit) =>
+        echoSavedEvent(201, init),
+      );
+      fetchMock.mockResolvedValueOnce(jsonResponse(status, { error: "gateway failure" }));
+      fetchMock.mockResolvedValueOnce(jsonResponse(404, { error: "no plan generated" }));
+      const user = renderForm();
+      await answerParkEvent(user);
+      await save(user);
+
+      expect(
+        await screen.findByText(/it is not known whether its permit plan was generated/),
+      ).toBeDefined();
+      expect(sessionStorage).toHaveLength(1);
+      expect(
+        JSON.parse(sessionStorage.getItem(sessionStorage.key(0) as string) as string).eventId,
+      ).toBe("event-1");
+    },
+  );
+
+  it.each([401, 403, 429])(
+    "retains plan recovery when an access-layer %i races a missing-plan read",
+    async (status) => {
+      fetchMock.mockImplementationOnce(async (_url: string, init: RequestInit) =>
+        echoSavedEvent(201, init),
+      );
+      fetchMock.mockResolvedValueOnce(jsonResponse(status, { error: "access refused" }));
+      fetchMock.mockResolvedValueOnce(jsonResponse(404, { error: "no plan generated" }));
+      const user = renderForm();
+      await answerParkEvent(user);
+      await save(user);
+
+      expect(
+        await screen.findByText(/it is not known whether its permit plan was generated/),
+      ).toBeDefined();
+      expect(sessionStorage).toHaveLength(1);
+      expect(
+        JSON.parse(sessionStorage.getItem(sessionStorage.key(0) as string) as string).eventId,
+      ).toBe("event-1");
+    },
+  );
+
+  it("retains recovery when an unreadable 2xx races a missing-plan read", async () => {
+    fetchMock.mockImplementationOnce(async (_url: string, init: RequestInit) =>
+      echoSavedEvent(201, init),
+    );
+    fetchMock.mockResolvedValueOnce(jsonResponse(404, { error: "no plan generated" }));
+    fetchMock.mockResolvedValueOnce(new Response("<html>Access challenge</html>", { status: 200 }));
+    const user = renderForm();
+    await answerParkEvent(user);
+    await save(user);
+
+    expect(
+      await screen.findByText(/it is not known whether its permit plan was generated/),
+    ).toBeDefined();
+    expect(screen.getByRole("alert").textContent).toContain(
+      "Open the permit plan to check before trying again.",
+    );
+    expect(router.push).not.toHaveBeenCalled();
+    expect(sessionStorage).toHaveLength(1);
+
+    fetchMock.mockImplementationOnce(async (_url: string, init: RequestInit) =>
+      echoSavedEvent(200, init),
+    );
+    fetchMock.mockResolvedValueOnce(jsonResponse(200, storedPlan));
+    await save(user);
+
+    await waitFor(() => expect(router.push).toHaveBeenCalledWith("/events/event-1/plan"));
+    expect(
+      fetchMock.mock.calls.filter(([url]) => url === "https://api.example.com/api/events"),
+    ).toHaveLength(2);
+    const planCalls = fetchMock.mock.calls.filter(
+      ([url, init]) => url.endsWith("/plan") && (init as RequestInit).method === "POST",
+    ) as [string, RequestInit][];
+    expect(planCalls).toHaveLength(2);
+    expect(new Headers(planCalls[1]?.[1].headers).get("Idempotency-Key")).toBe(
+      new Headers(planCalls[0]?.[1].headers).get("Idempotency-Key"),
+    );
+    expect(sessionStorage).toHaveLength(0);
+  });
+
+  it("clears durable recovery without routing after first planning finishes past unmount", async () => {
+    let releasePlan: (response: Response) => void = () => {};
+    fetchMock.mockImplementation(async (url: string, init: RequestInit) => {
+      if (!url.endsWith("/plan")) return echoSavedEvent(201, init);
+      if (init.method !== "POST") return jsonResponse(200, storedPlan);
+      return new Promise<Response>((resolve) => {
+        releasePlan = resolve;
+      });
+    });
+    const user = userEvent.setup();
+    const view = render(<IntakeForm contract={contract} apiBaseUrl="https://api.example.com" />);
+    await answerParkEvent(user);
+    await save(user);
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
+    expect(sessionStorage).toHaveLength(1);
+
+    view.unmount();
+    await act(async () => releasePlan(jsonResponse(201, {})));
+
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(3));
+    expect(sessionStorage).toHaveLength(0);
+    expect(router.push).not.toHaveBeenCalled();
+  });
+
+  it("still generates and confirms the first plan when create finishes past unmount", async () => {
+    let releaseSave: (response: Response) => void = () => {};
+    let submitted: RequestInit | undefined;
+    fetchMock.mockImplementationOnce(
+      async (_url: string, init: RequestInit) =>
+        new Promise<Response>((resolve) => {
+          submitted = init;
+          releaseSave = resolve;
+        }),
+    );
+    const user = userEvent.setup();
+    const view = render(<IntakeForm contract={contract} apiBaseUrl="https://api.example.com" />);
+    await answerParkEvent(user);
+    await save(user);
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
+    expect(sessionStorage).toHaveLength(1);
+
+    view.unmount();
+    await act(async () => releaseSave(echoSavedEvent(201, submitted as RequestInit)));
+
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(3));
+    expect(fetchMock.mock.calls[1]?.[0]).toBe("https://api.example.com/api/events/event-1/plan");
+    expect((fetchMock.mock.calls[1]?.[1] as RequestInit).method).toBe("POST");
+    expect((fetchMock.mock.calls[2]?.[1] as RequestInit).method).toBeUndefined();
+    expect(sessionStorage).toHaveLength(0);
+    expect(router.push).not.toHaveBeenCalled();
   });
 
   it("shows the api's message against the field it belongs to", async () => {
@@ -744,6 +1542,316 @@ describe("saving and per-field errors", () => {
     expect(headcount.getAttribute("aria-invalid")).toBe("true");
     expect(headcount.getAttribute("aria-describedby")).toContain("intake-headcount-error");
     await waitFor(() => expect(document.activeElement).toBe(headcount));
+  });
+
+  it("keeps a server error when a field changes to another invalid value", async () => {
+    fetchMock.mockResolvedValueOnce(
+      jsonResponse(400, {
+        errors: [
+          { field: "headcount", code: "must_be_positive", message: "headcount must be at least 1" },
+        ],
+        warnings: [],
+      }),
+    );
+    const user = renderForm();
+    await answerParkEvent(user);
+    await save(user);
+
+    await fillField(user, "headcount", "-1");
+    expect(screen.getByRole("link", { name: "headcount must be at least 1" })).toBeDefined();
+    expect(screen.getByRole("spinbutton", { name: "Headcount" }).getAttribute("aria-invalid")).toBe(
+      "true",
+    );
+
+    await fillField(user, "headcount", "1");
+    expect(screen.queryByRole("link", { name: "headcount must be at least 1" })).toBeNull();
+    expect(
+      screen.getByRole("spinbutton", { name: "Headcount" }).getAttribute("aria-invalid"),
+    ).toBeNull();
+  });
+
+  it("discards a failed save's error when the answer was corrected in flight", async () => {
+    let releaseSave: (response: Response) => void = () => {};
+    fetchMock.mockImplementationOnce(
+      async () =>
+        new Promise<Response>((resolve) => {
+          releaseSave = resolve;
+        }),
+    );
+    const user = renderForm();
+    await answerParkEvent(user);
+    await fillField(user, "headcount", "0");
+    await save(user);
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
+
+    await fillField(user, "headcount", "1");
+    releaseSave(
+      jsonResponse(400, {
+        errors: [
+          { field: "headcount", code: "must_be_positive", message: "headcount must be at least 1" },
+        ],
+        warnings: [],
+      }),
+    );
+
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: "Save event" }).hasAttribute("disabled")).toBe(
+        false,
+      ),
+    );
+    expect(screen.queryByRole("link", { name: "headcount must be at least 1" })).toBeNull();
+    expect(
+      screen.getByRole("spinbutton", { name: "Headcount" }).getAttribute("aria-invalid"),
+    ).toBeNull();
+    expect(screen.getByRole("alert").textContent).toBe(
+      "Your corrected answers were not saved. Save again to store them.",
+    );
+  });
+
+  it("keeps a failed save's error when the answer stays invalid in flight", async () => {
+    let releaseSave: (response: Response) => void = () => {};
+    fetchMock.mockImplementationOnce(
+      async () =>
+        new Promise<Response>((resolve) => {
+          releaseSave = resolve;
+        }),
+    );
+    const user = renderForm();
+    await answerParkEvent(user);
+    await fillField(user, "headcount", "0");
+    await save(user);
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
+
+    await fillField(user, "headcount", "-1");
+    releaseSave(
+      jsonResponse(400, {
+        errors: [
+          { field: "headcount", code: "must_be_positive", message: "headcount must be at least 1" },
+        ],
+        warnings: [],
+      }),
+    );
+
+    expect(await screen.findByRole("link", { name: "headcount must be at least 1" })).toBeDefined();
+    expect(screen.getByRole("spinbutton", { name: "Headcount" }).getAttribute("aria-invalid")).toBe(
+      "true",
+    );
+  });
+
+  it("discards a failed save's error when its control was hidden in flight", async () => {
+    let releaseSave: (response: Response) => void = () => {};
+    fetchMock.mockImplementationOnce(
+      async () =>
+        new Promise<Response>((resolve) => {
+          releaseSave = resolve;
+        }),
+    );
+    const user = renderForm();
+    await answerParkEvent(user);
+    await chooseOption(user, "location_type", "street");
+    await chooseOption(user, "obstructs_public_way", "yes");
+    await chooseOption(user, "sapo_event_type", "street_event");
+    await chooseOption(user, "street_event_size", "large");
+    await save(user);
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
+
+    await chooseOption(user, "location_type", "park");
+    releaseSave(
+      jsonResponse(400, {
+        errors: [
+          {
+            field: "street_event_size",
+            code: "invalid_value",
+            message: "street_event_size is invalid",
+          },
+        ],
+        warnings: [],
+      }),
+    );
+
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: "Save event" }).hasAttribute("disabled")).toBe(
+        false,
+      ),
+    );
+    expect(screen.queryByRole("link", { name: "street_event_size is invalid" })).toBeNull();
+    expect(document.querySelector('input[name="street_event_size"]')).toBeNull();
+  });
+
+  it("keeps a server-owned date error after an in-flight edit", async () => {
+    let releaseSave: (response: Response) => void = () => {};
+    fetchMock.mockImplementationOnce(
+      async () =>
+        new Promise<Response>((resolve) => {
+          releaseSave = resolve;
+        }),
+    );
+    const user = renderForm();
+    await answerParkEvent(user);
+    await fillField(user, "event_date", "2026-08-10");
+    await save(user);
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
+
+    await fillField(user, "event_date", "2026-08-11");
+    releaseSave(
+      jsonResponse(400, {
+        errors: [
+          {
+            field: "event_date",
+            code: "in_the_past",
+            message: "event_date must be today or later",
+          },
+        ],
+        warnings: [],
+      }),
+    );
+
+    expect(
+      await screen.findByRole("link", { name: "event_date must be today or later" }),
+    ).toBeDefined();
+    expect(screen.getByLabelText("Event date").getAttribute("aria-invalid")).toBe("true");
+  });
+
+  it("clears invalid-value and past-date errors only after valid corrections", async () => {
+    fetchMock.mockResolvedValueOnce(
+      jsonResponse(400, {
+        errors: [
+          {
+            field: "capacity",
+            code: "invalid_value",
+            message: "capacity must be a positive whole number",
+          },
+          {
+            field: "event_date",
+            code: "in_the_past",
+            message: "event_date must be today or later",
+          },
+        ],
+        warnings: [],
+      }),
+    );
+    const user = renderForm();
+    await answerParkEvent(user);
+    await fillField(user, "capacity", "0");
+    await save(user);
+
+    expect(screen.getByRole("link", { name: /capacity must/ })).toBeDefined();
+    await fillField(user, "event_date", "2000-01-01");
+    expect(screen.getByRole("link", { name: /event_date must/ })).toBeDefined();
+
+    await fillField(user, "capacity", "1");
+    await fillField(
+      user,
+      "event_date",
+      new Date(Date.now() + 86_400_000).toISOString().slice(0, 10),
+    );
+    expect(screen.queryByRole("link", { name: /capacity must/ })).toBeNull();
+    expect(screen.getByRole("link", { name: /event_date must/ })).toBeDefined();
+
+    await save(user);
+    await waitFor(() => expect(screen.queryByRole("link", { name: /event_date must/ })).toBeNull());
+  });
+
+  it("replaces a stale field error when that field becomes required", async () => {
+    fetchMock.mockResolvedValueOnce(
+      jsonResponse(400, {
+        errors: [
+          {
+            field: "headcount",
+            code: "invalid_value",
+            message: "headcount must be a whole number",
+          },
+        ],
+        warnings: [],
+      }),
+    );
+    const user = renderForm();
+    await answerParkEvent(user);
+    await save(user);
+
+    await fillField(user, "headcount", "");
+    await save(user);
+
+    expect(screen.getByRole("link", { name: "Headcount is required" })).toBeDefined();
+    expect(screen.queryByRole("link", { name: "headcount must be a whole number" })).toBeNull();
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("keeps an unresolved server error when another answer fails client validation", async () => {
+    fetchMock.mockResolvedValueOnce(
+      jsonResponse(400, {
+        errors: [
+          {
+            field: "event_date",
+            code: "in_the_past",
+            message: "event_date must be today or later",
+          },
+        ],
+        warnings: [],
+      }),
+    );
+    const user = renderForm();
+    await answerParkEvent(user);
+    await save(user);
+
+    await fillField(user, "event_date", "2000-01-01");
+    await fillField(user, "name", "");
+    await save(user);
+
+    expect(screen.getByRole("link", { name: "Event name is required" })).toBeDefined();
+    expect(screen.getByRole("link", { name: "event_date must be today or later" })).toBeDefined();
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+
+    await fillField(user, "name", "Community Day");
+    expect(screen.queryByRole("link", { name: "Event name is required" })).toBeNull();
+    expect(screen.getByRole("link", { name: "event_date must be today or later" })).toBeDefined();
+  });
+
+  it("does not require conditional children triggered by an invalid parent answer", async () => {
+    fetchMock.mockResolvedValueOnce(
+      jsonResponse(400, {
+        errors: [
+          {
+            field: "headcount",
+            code: "invalid_value",
+            message: "headcount must be a whole number",
+          },
+        ],
+        warnings: [],
+      }),
+    );
+    const user = renderForm();
+    await answerParkEvent(user);
+    await chooseOption(user, "location_type", "private_venue");
+    await chooseOption(user, "amplified_sound", "false");
+    await fillField(user, "headcount", "75.5");
+
+    expect(questionsOnScreen()).not.toContain("Venue paco covers exact event");
+    expect(questionsOnScreen()).not.toContain("Venue fdny pa permit current for event space");
+    await save(user);
+
+    expect(screen.getByRole("link", { name: "headcount must be a whole number" })).toBeDefined();
+    expect(
+      screen.queryByRole("link", { name: /Venue paco covers exact event is required/ }),
+    ).toBeNull();
+    expect(
+      screen.queryByRole("link", {
+        name: /Venue fdny pa permit current for event space is required/,
+      }),
+    ).toBeNull();
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("lets the server decide whether an event date is in the past", async () => {
+    const user = renderForm();
+    await answerParkEvent(user);
+    await fillField(user, "event_date", "2000-01-01");
+    await save(user);
+
+    await waitFor(() =>
+      expect(fetchMock.mock.calls[0]?.[0]).toBe("https://api.example.com/api/events"),
+    );
+    expect((fetchMock.mock.calls[0]?.[1] as RequestInit).method).toBe("POST");
   });
 
   it("shows an error the form has no field for at the form level", async () => {
@@ -803,6 +1911,12 @@ describe("saving and per-field errors", () => {
     await fillField(user, "headcount", "150");
     await save(user);
     await waitFor(() => expect(screen.queryByRole("alert")).toBeNull());
+    const createCalls = fetchMock.mock.calls.filter(
+      ([url]) => url === "https://api.example.com/api/events",
+    ) as [string, RequestInit][];
+    expect(new Headers(createCalls[0]?.[1].headers).get("Idempotency-Key")).not.toBe(
+      new Headers(createCalls[1]?.[1].headers).get("Idempotency-Key"),
+    );
   });
 });
 
@@ -845,8 +1959,8 @@ describe("editing a saved event", () => {
     expect(questionsOnScreen()).not.toContain("Street event size");
     await save(user);
 
-    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(3));
-    const [url, init] = fetchMock.mock.calls[2] as [string, RequestInit];
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(4));
+    const [url, init] = fetchMock.mock.calls[3] as [string, RequestInit];
     expect(url).toBe("https://api.example.com/api/events/event-1");
     expect(init.method).toBe("PATCH");
     const edit = requestBody(fetchMock, 1);
@@ -919,7 +2033,7 @@ describe("editing a saved event", () => {
     expect(document.querySelector<HTMLInputElement>('input[name="capacity"]')?.value).toBe("");
 
     await save(user);
-    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(3));
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(4));
     expect(requestBody(fetchMock, 1).headcount).toBe(175);
     expect(requestBody(fetchMock, 1).location_name).toBe("Long Meadow");
     expect(requestBody(fetchMock, 1).capacity).toBeNull();
@@ -978,7 +2092,7 @@ describe("editing a saved event", () => {
     ).toBe(false);
 
     await save(user);
-    expect(fetchMock).toHaveBeenCalledTimes(3);
+    expect(fetchMock).toHaveBeenCalledTimes(4);
     expect(screen.getByRole("alert").textContent).toBe("Street event size is required");
   });
 });

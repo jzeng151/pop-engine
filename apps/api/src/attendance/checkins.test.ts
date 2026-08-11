@@ -385,6 +385,7 @@ describe.runIf(databaseUrl.length > 0)("F-401 check-in endpoints (database)", ()
   const createEvent = async (overrides: Record<string, unknown> = {}) => {
     const response = await request(api)
       .post("/api/events")
+      .set("Idempotency-Key", randomUUID())
       .send({ ...scenarioA(), ...overrides });
     expect(response.status).toBe(201);
     const id: string = response.body.event.id;

@@ -28,6 +28,7 @@ export type EventsDependencies = {
 };
 
 type EventRow = Record<string, unknown> & { id: string; revision_counter: number };
+type CreateReplayRow = EventRow & { create_request_matches: boolean };
 
 /** A pool or a single pooled connection. Reads that must agree with each other take the
  * same connection, so they see one consistent moment of the database. */
@@ -68,6 +69,8 @@ async function eventResponse(
   const activeEvent = { ...event };
   delete activeEvent.food_affinity_private_exception_claimed;
   delete activeEvent.venue_has_assembly_approval;
+  delete activeEvent.create_idempotency_key;
+  delete activeEvent.create_request_body;
   return {
     status,
     body: {
@@ -103,6 +106,30 @@ async function withLockedEvent(
   }
 }
 
+/** Same-key creates queue before replay lookup and current intake validation. */
+async function withLockedCreateKey(
+  database: Pool,
+  key: string,
+  create: (client: Queryable) => Promise<EventResponse>,
+): Promise<EventResponse> {
+  const client = await database.connect();
+  try {
+    await client.query("BEGIN");
+    await client.query(
+      "SELECT pg_advisory_xact_lock(hashtext('pop-engine-event-create'), hashtext($1))",
+      [key],
+    );
+    const response = await create(client);
+    await client.query("COMMIT");
+    return response;
+  } catch (error) {
+    await client.query("ROLLBACK");
+    throw error;
+  } finally {
+    client.release();
+  }
+}
+
 function readSubmission(req: Request, res: Response): Record<string, unknown> | null {
   const body: unknown = req.body;
   if (typeof body !== "object" || body === null || Array.isArray(body)) {
@@ -112,7 +139,39 @@ function readSubmission(req: Request, res: Response): Record<string, unknown> | 
     });
     return null;
   }
+  if (hasUnsafeNumber(body)) {
+    res.status(400).json({
+      errors: [{ field: "body", code: "invalid_body", message: "body numbers must be safe" }],
+      warnings: [],
+    });
+    return null;
+  }
   return body as Record<string, unknown>;
+}
+
+function hasUnsafeNumber(value: unknown): boolean {
+  if (typeof value === "number") {
+    return !Number.isFinite(value) || (Number.isInteger(value) && !Number.isSafeInteger(value));
+  }
+  if (Array.isArray(value)) return value.some(hasUnsafeNumber);
+  return typeof value === "object" && value !== null && Object.values(value).some(hasUnsafeNumber);
+}
+
+function readIdempotencyKey(req: Request, res: Response): string | null {
+  const key = req.get("Idempotency-Key");
+  if (key !== undefined && UUID.test(key)) return key.toLowerCase();
+  res.status(400).json({
+    errors: [
+      {
+        field: "Idempotency-Key",
+        code: key === undefined ? "required" : "invalid_value",
+        message:
+          key === undefined ? "Idempotency-Key is required" : "Idempotency-Key must be a UUID",
+      },
+    ],
+    warnings: [],
+  });
+  return null;
 }
 
 /** Fail the request the way Express expects, so one thrown query cannot hang a client. */
@@ -127,15 +186,38 @@ export function createEventsRouter(dependencies: EventsDependencies): Router {
   const columns = intakeColumnNames(intakeContract);
   const router = Router();
 
-  const insert = async (values: IntakeRecord): Promise<EventRow> => {
-    const id = randomUUID();
-    const { rows } = await database.query<EventRow>(
-      `INSERT INTO events (id, ${quoted(columns)})
-       VALUES ($1, ${columns.map((_column, index) => `$${index + 2}`).join(", ")})
-       RETURNING *`,
-      [id, ...columns.map((column) => values[column] ?? null)],
+  const readCreateReplay = async (
+    client: Queryable,
+    key: string,
+    requestBody: string,
+  ): Promise<{ event: EventRow; matches: boolean } | null> => {
+    const { rows } = await client.query<CreateReplayRow>(
+      `SELECT events.*, create_request_body = $2::jsonb AS create_request_matches
+         FROM events
+        WHERE create_idempotency_key = $1`,
+      [key, requestBody],
     );
-    return rows[0] as EventRow;
+    const row = rows[0];
+    if (row === undefined) return null;
+    const { create_request_matches: matches, ...event } = row;
+    return { event, matches };
+  };
+
+  const insert = async (
+    client: Queryable,
+    key: string,
+    requestBody: string,
+    values: IntakeRecord,
+  ): Promise<EventRow | null> => {
+    const id = randomUUID();
+    const { rows } = await client.query<EventRow>(
+      `INSERT INTO events (id, create_idempotency_key, create_request_body, ${quoted(columns)})
+       VALUES ($1, $2, $3::jsonb, ${columns.map((_column, index) => `$${index + 4}`).join(", ")})
+       ON CONFLICT (create_idempotency_key) DO NOTHING
+       RETURNING *`,
+      [id, key, requestBody, ...columns.map((column) => values[column] ?? null)],
+    );
+    return rows[0] ?? null;
   };
 
   // Every edit bumps the revision counter server-side, which is what marks an existing
@@ -157,16 +239,45 @@ export function createEventsRouter(dependencies: EventsDependencies): Router {
   router.post(
     "/events",
     handle(async (req, res) => {
+      const key = readIdempotencyKey(req, res);
+      if (key === null) return;
       const submission = readSubmission(req, res);
       if (submission === null) return;
+      const rawBody: unknown = Reflect.get(req, "rawJsonBody");
+      if (typeof rawBody !== "string") throw new Error("raw JSON body is unavailable");
+      const requestBody = JSON.stringify(rawBody);
 
-      const { values, errors, warnings } = validateIntake(intakeContract, submission, today());
-      if (values === null) {
-        res.status(400).json({ errors, warnings });
-        return;
-      }
-      const created = await eventResponse(database, intakeContract, await insert(values), 201);
-      res.status(created.status).json(created.body);
+      const response = await withLockedCreateKey(database, key, async (client) => {
+        const replay = await readCreateReplay(client, key, requestBody);
+        if (replay !== null) {
+          if (!replay.matches) {
+            return {
+              status: 409,
+              body: { error: "Idempotency-Key was already used with a different body" },
+            };
+          }
+          return eventResponse(client, intakeContract, replay.event, 200);
+        }
+
+        const { values, errors, warnings } = validateIntake(intakeContract, submission, today());
+        if (values === null) return { status: 400, body: { errors, warnings } };
+
+        const inserted = await insert(client, key, requestBody, values);
+        const result =
+          inserted === null
+            ? await readCreateReplay(client, key, requestBody)
+            : { event: inserted, matches: true };
+        if (result === null)
+          throw new Error("idempotent event create committed no readable result");
+        if (!result.matches) {
+          return {
+            status: 409,
+            body: { error: "Idempotency-Key was already used with a different body" },
+          };
+        }
+        return eventResponse(client, intakeContract, result.event, inserted === null ? 200 : 201);
+      });
+      res.status(response.status).json(response.body);
     }),
   );
 

@@ -111,6 +111,7 @@ export type OrganizerPublicPage = {
   public_path: string;
   map_url: string | null;
   infeasible_warning: boolean;
+  plan_available: boolean;
 };
 
 export type GetOrganizerPageResult =
@@ -141,12 +142,13 @@ export async function getOrganizerPublicPage(
       public_path: `/e/${event.id}`,
       map_url: mapUrlForVenue(event.location_name, event.borough),
       infeasible_warning: verdict === "infeasible",
+      plan_available: verdict !== null,
     },
   };
 }
 
 export type PatchOrganizerPageResult =
-  { status: 200; body: OrganizerPublicPage } | { status: 400 | 404; body: { error: string } };
+  { status: 200; body: OrganizerPublicPage } | { status: 400 | 404 | 409; body: { error: string } };
 
 export async function patchOrganizerPublicPage(
   database: Queryable,
@@ -186,6 +188,16 @@ export async function patchOrganizerPublicPage(
       return { status: 400, body: { error: "public_page_published must be a boolean" } };
     }
     published = record.public_page_published;
+  }
+
+  if (published === true && (await latestVerdict(database, eventId)) === null) {
+    const event = await readEvent(database, eventId);
+    return event === null
+      ? { status: 404, body: { error: "That event was not found." } }
+      : {
+          status: 409,
+          body: { error: "Generate a permit plan before publishing this page." },
+        };
   }
 
   // Update only supplied columns so a description-only save cannot clobber a concurrent

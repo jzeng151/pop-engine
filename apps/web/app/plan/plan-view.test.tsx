@@ -197,23 +197,191 @@ const stubApi = (
   return fetchMock;
 };
 
-const renderPlan = () =>
+const renderPlan = (eventId = "event-1") =>
   render(
     <PlanView
       apiBaseUrl="https://api.example.com"
-      eventId="event-1"
+      eventId={eventId}
       rulesetReferences={rulesetReferences}
     />,
   );
 
 beforeEach(() => {
+  sessionStorage.clear();
   stubApi(plan());
 });
 
 afterEach(() => {
   cleanup();
+  vi.restoreAllMocks();
   vi.unstubAllGlobals();
   vi.unstubAllEnvs();
+});
+
+describe("initial-create recovery", () => {
+  const storageKey = "pop-engine.pending-event-create:https://api.example.com";
+  const storeRecovery = (eventId: string) =>
+    sessionStorage.setItem(
+      storageKey,
+      JSON.stringify({
+        key: "44f58390-9892-4e1b-b1ed-ecf00ea20967",
+        body: {},
+        answers: {},
+        eventId,
+      }),
+    );
+
+  it("clears the matching recovery operation after validating the stored plan", async () => {
+    storeRecovery("event-1");
+    renderPlan();
+
+    await screen.findByRole("complementary", { name: "Rules snapshot" });
+    expect(sessionStorage.getItem(storageKey)).toBeNull();
+  });
+
+  it("reports a matching recovery operation that durable storage could not clear", async () => {
+    storeRecovery("event-1");
+    vi.spyOn(Storage.prototype, "removeItem").mockImplementation(() => {
+      throw new DOMException("storage disabled", "SecurityError");
+    });
+    renderPlan();
+
+    expect(
+      await screen.findByText(
+        "The plan is ready, but this browser could not clear its saved recovery information. Refresh this page to try again before creating another event.",
+      ),
+    ).toBeDefined();
+    expect(sessionStorage.getItem(storageKey)).not.toBeNull();
+  });
+
+  it("does not reuse retained create recovery when regenerating an existing plan", async () => {
+    storeRecovery("event-1");
+    vi.spyOn(Storage.prototype, "removeItem").mockImplementation(() => {
+      throw new DOMException("storage disabled", "SecurityError");
+    });
+    const fetchMock = vi.fn(async (url: string, init?: RequestInit) => {
+      if (url.endsWith("/rules/meta")) return jsonResponse(200, liveMeta);
+      if (url.endsWith("/plan")) {
+        return init?.method === "POST"
+          ? jsonResponse(201, plan({ eventRevision: 2 }))
+          : jsonResponse(200, plan({ eventRevision: 1 }));
+      }
+      return jsonResponse(200, {
+        event: { id: "event-1", revision_counter: 2 },
+        warnings: [],
+        plan_stale: true,
+      });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    const user = userEvent.setup();
+    renderPlan();
+
+    await user.click(await screen.findByRole("button", { name: "Regenerate the plan" }));
+
+    const planPost = fetchMock.mock.calls.find(
+      ([url, init]) => url.endsWith("/plan") && init?.method === "POST",
+    );
+    expect(new Headers(planPost?.[1]?.headers).get("Idempotency-Key")).toBeNull();
+  });
+
+  it("keeps recovery for another event", async () => {
+    storeRecovery("event-2");
+    renderPlan();
+
+    await screen.findByRole("complementary", { name: "Rules snapshot" });
+    expect(sessionStorage.getItem(storageKey)).not.toBeNull();
+  });
+
+  it("keeps recovery until a plan is actually found", async () => {
+    storeRecovery("event-1");
+    stubApi({}, liveMeta, 404);
+    renderPlan();
+
+    await screen.findByRole("button", { name: "Generate the plan" });
+    expect(sessionStorage.getItem(storageKey)).not.toBeNull();
+  });
+
+  it("blocks generation while the recovery read is indeterminate", async () => {
+    storeRecovery("event-1");
+    const fetchMock = stubApi({}, liveMeta, 404);
+    vi.spyOn(Storage.prototype, "getItem").mockImplementation(() => {
+      throw new DOMException("storage disabled", "SecurityError");
+    });
+    vi.spyOn(Storage.prototype, "removeItem").mockImplementation(() => {
+      throw new DOMException("storage disabled", "SecurityError");
+    });
+    const user = userEvent.setup();
+    renderPlan();
+
+    await user.click(await screen.findByRole("button", { name: "Generate the plan" }));
+
+    expect(
+      await screen.findByText(
+        "This browser could not safely read or clear the saved event recovery. Reload this page once session storage is available before generating a plan.",
+      ),
+    ).toBeDefined();
+    expect(fetchMock.mock.calls.filter(([url]) => url.endsWith("/plan"))).toHaveLength(1);
+  });
+
+  it("reuses the matching recovery key for a differently cased event path", async () => {
+    storeRecovery("event-1");
+    let generated = false;
+    const fetchMock = vi.fn(async (url: string, init?: RequestInit) => {
+      if (url.endsWith("/rules/meta")) return jsonResponse(200, liveMeta);
+      if (url.endsWith("/plan")) {
+        if (init?.method === "POST") {
+          generated = true;
+          return jsonResponse(200, plan());
+        }
+        return generated ? jsonResponse(200, plan()) : jsonResponse(404, {});
+      }
+      return jsonResponse(200, {
+        event: { id: "event-1", revision_counter: 1 },
+        warnings: [],
+        plan_stale: false,
+      });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    const user = userEvent.setup();
+    renderPlan("EVENT-1");
+
+    await user.click(await screen.findByRole("button", { name: "Generate the plan" }));
+
+    await screen.findByRole("complementary", { name: "Rules snapshot" });
+    const planPost = fetchMock.mock.calls.find(
+      ([url, init]) => url.endsWith("/plan") && init?.method === "POST",
+    );
+    expect(new Headers(planPost?.[1]?.headers).get("Idempotency-Key")).toBe(
+      "44f58390-9892-4e1b-b1ed-ecf00ea20967",
+    );
+    expect(sessionStorage.getItem(storageKey)).toBeNull();
+  });
+
+  it("keeps recovery when a 2xx generation response and its re-read are unreadable", async () => {
+    storeRecovery("event-1");
+    const fetchMock = vi.fn(async (url: string, init?: RequestInit) => {
+      if (url.endsWith("/rules/meta")) return jsonResponse(200, liveMeta);
+      if (url.endsWith("/plan")) {
+        return init?.method === "POST"
+          ? new Response("<html>Access challenge</html>", { status: 200 })
+          : jsonResponse(404, { error: "no plan generated" });
+      }
+      return jsonResponse(200, {
+        event: { id: "event-1", revision_counter: 1 },
+        warnings: [],
+        plan_stale: false,
+      });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    const user = userEvent.setup();
+    renderPlan();
+
+    await user.click(await screen.findByRole("button", { name: "Generate the plan" }));
+
+    expect(await screen.findByText("The API returned a plan this page cannot read.")).toBeDefined();
+    expect(sessionStorage.getItem(storageKey)).not.toBeNull();
+    expect(screen.getByRole("button", { name: "Generate the plan" })).toBeDefined();
+  });
 });
 
 describe("the snapshot banner (AC 1)", () => {
@@ -2718,7 +2886,7 @@ describe("a generated plan whose own response cannot be read", () => {
     expect(screen.queryByRole("alert")).toBeNull();
   });
 
-  it("reports the failure rather than claiming the plan is there", async () => {
+  it("withholds unkeyed retries when the write outcome cannot be established", async () => {
     stubUnreadableGeneration(() => jsonResponse(500, { error: "plan lookup failed" }));
     const user = userEvent.setup();
     renderPlan();
