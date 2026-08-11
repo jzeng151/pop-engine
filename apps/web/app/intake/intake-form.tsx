@@ -11,7 +11,13 @@ import {
   type IntakeIssue,
   type IntakeValue,
 } from "@pop-engine/engine";
-import { CREDENTIALED, loadEvent, regeneratePlan, type SavedEvent } from "../_lib/events-api";
+import {
+  CREDENTIALED,
+  loadEvent,
+  planExists,
+  regeneratePlan,
+  type SavedEvent,
+} from "../_lib/events-api";
 import { discoverParks, parksBoroughCode, type ParkSuggestion } from "./parks-api";
 
 // The intake questionnaire.
@@ -350,10 +356,23 @@ export function IntakeForm({
       setSaved(body.event);
       if (creating) {
         const generated = await regeneratePlan(apiBaseUrl, body.event.id);
+        const generationMessage = generated.ok ? "" : generated.message;
+        let planStored = generated.ok;
+        if (!generated.ok && !generated.refused) {
+          const exists = await planExists(apiBaseUrl, body.event.id);
+          const changedWhileSaving = !sameAnswers(currentAnswers.current, stored);
+          if (exists === null) {
+            setFailure(
+              `Your event was saved, but it is not known whether its permit plan was generated. ${generationMessage} Open the permit plan to check before trying again.${changedWhileSaving ? " Changes made while the request was running are still unsaved." : ""}`,
+            );
+            return;
+          }
+          planStored = exists;
+        }
         const changedWhileSaving = !sameAnswers(currentAnswers.current, stored);
-        if (!generated.ok) {
+        if (!planStored) {
           setFailure(
-            `Your event was saved, but its permit plan could not be generated. ${generated.message}${changedWhileSaving ? " Changes made while the request was running are still unsaved." : ""}`,
+            `Your event was saved, but its permit plan could not be generated. ${generationMessage}${changedWhileSaving ? " Changes made while the request was running are still unsaved." : ""}`,
           );
           return;
         }

@@ -793,6 +793,7 @@ describe("saving and per-field errors", () => {
       echoSavedEvent(201, init),
     );
     fetchMock.mockResolvedValueOnce(jsonResponse(500, { error: "planning unavailable" }));
+    fetchMock.mockResolvedValueOnce(jsonResponse(404, { error: "no plan generated" }));
     const user = renderForm();
     await answerParkEvent(user);
     await save(user);
@@ -807,6 +808,40 @@ describe("saving and per-field errors", () => {
     expect(screen.getByRole("link", { name: "see its permit plan" }).getAttribute("href")).toBe(
       "/events/event-1/plan",
     );
+  });
+
+  it("opens a plan that exists after its generation response is lost", async () => {
+    fetchMock.mockImplementationOnce(async (_url: string, init: RequestInit) =>
+      echoSavedEvent(201, init),
+    );
+    fetchMock.mockRejectedValueOnce(new TypeError("connection reset"));
+    fetchMock.mockResolvedValueOnce(jsonResponse(200, {}));
+    const user = renderForm();
+    await answerParkEvent(user);
+    await save(user);
+
+    await waitFor(() => expect(router.push).toHaveBeenCalledWith("/events/event-1/plan"));
+    expect(fetchMock).toHaveBeenCalledTimes(3);
+    expect(screen.queryByText(/could not be generated/)).toBeNull();
+  });
+
+  it("reports an unknown outcome when neither generation nor its recheck answers", async () => {
+    fetchMock.mockImplementationOnce(async (_url: string, init: RequestInit) =>
+      echoSavedEvent(201, init),
+    );
+    fetchMock.mockRejectedValueOnce(new TypeError("connection reset"));
+    fetchMock.mockResolvedValueOnce(jsonResponse(503, {}));
+    const user = renderForm();
+    await answerParkEvent(user);
+    await save(user);
+
+    expect(
+      await screen.findByText(/it is not known whether its permit plan was generated/),
+    ).toBeDefined();
+    expect(screen.getByRole("alert").textContent).toContain(
+      "Open the permit plan to check before trying again.",
+    );
+    expect(router.push).not.toHaveBeenCalled();
   });
 
   it("shows the api's message against the field it belongs to", async () => {
