@@ -197,11 +197,11 @@ const stubApi = (
   return fetchMock;
 };
 
-const renderPlan = () =>
+const renderPlan = (eventId = "event-1") =>
   render(
     <PlanView
       apiBaseUrl="https://api.example.com"
-      eventId="event-1"
+      eventId={eventId}
       rulesetReferences={rulesetReferences}
     />,
   );
@@ -271,7 +271,7 @@ describe("initial-create recovery", () => {
     expect(sessionStorage.getItem(storageKey)).not.toBeNull();
   });
 
-  it("reuses the matching recovery key when generating the missing plan", async () => {
+  it("reuses the matching recovery key for a differently cased event path", async () => {
     storeRecovery("event-1");
     let generated = false;
     const fetchMock = vi.fn(async (url: string, init?: RequestInit) => {
@@ -291,7 +291,7 @@ describe("initial-create recovery", () => {
     });
     vi.stubGlobal("fetch", fetchMock);
     const user = userEvent.setup();
-    renderPlan();
+    renderPlan("EVENT-1");
 
     await user.click(await screen.findByRole("button", { name: "Generate the plan" }));
 

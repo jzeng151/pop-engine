@@ -1084,10 +1084,15 @@ describe("saving and per-field errors", () => {
   });
 
   it("retains confirmed create recovery until durable removal succeeds", async () => {
+    const getItem = Storage.prototype.getItem;
     const removeItem = Storage.prototype.removeItem;
-    let removalAvailable = false;
+    let storageAvailable = false;
+    vi.spyOn(Storage.prototype, "getItem").mockImplementation(function (this: Storage, key) {
+      if (!storageAvailable) throw new DOMException("storage disabled", "SecurityError");
+      return getItem.call(this, key);
+    });
     vi.spyOn(Storage.prototype, "removeItem").mockImplementation(function (this: Storage, key) {
-      if (!removalAvailable) throw new DOMException("storage disabled", "SecurityError");
+      if (!storageAvailable) throw new DOMException("storage disabled", "SecurityError");
       removeItem.call(this, key);
     });
     const user = renderForm();
@@ -1102,7 +1107,7 @@ describe("saving and per-field errors", () => {
     expect(router.push).not.toHaveBeenCalled();
     expect(sessionStorage).toHaveLength(1);
 
-    removalAvailable = true;
+    storageAvailable = true;
     await save(user);
 
     await waitFor(() => expect(router.push).toHaveBeenCalledWith("/events/event-1/plan"));

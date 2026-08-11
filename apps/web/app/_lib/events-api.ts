@@ -41,11 +41,21 @@ const isAnswers = (value: unknown): value is Answers =>
 const pendingCreateStorageKey = (apiBaseUrl: string): string =>
   `${PENDING_CREATE_STORAGE}:${apiBaseUrl}`;
 
-export function loadPendingCreate(apiBaseUrl: string): PendingCreate | null {
+type PendingCreateRead = { pending: PendingCreate | null; resolved: boolean };
+
+function readPendingCreate(apiBaseUrl: string): PendingCreateRead {
   const storageKey = pendingCreateStorageKey(apiBaseUrl);
+  const discardUnreadable = (): PendingCreateRead => {
+    try {
+      sessionStorage.removeItem(storageKey);
+      return { pending: null, resolved: true };
+    } catch {
+      return { pending: null, resolved: false };
+    }
+  };
   try {
     const stored = sessionStorage.getItem(storageKey);
-    if (stored === null) return null;
+    if (stored === null) return { pending: null, resolved: true };
     const value: unknown = JSON.parse(stored);
     const record =
       typeof value === "object" && value !== null && !Array.isArray(value)
@@ -59,27 +69,24 @@ export function loadPendingCreate(apiBaseUrl: string): PendingCreate | null {
       !isAnswers(record.answers) ||
       (record.eventId !== undefined && typeof record.eventId !== "string")
     ) {
-      try {
-        sessionStorage.removeItem(storageKey);
-      } catch {
-        // Storage may be disabled; the in-memory retry still works until this tab reloads.
-      }
-      return null;
+      return discardUnreadable();
     }
     return {
-      key: record.key,
-      body: record.body,
-      answers: record.answers,
-      ...(typeof record.eventId === "string" ? { eventId: record.eventId } : {}),
+      pending: {
+        key: record.key,
+        body: record.body,
+        answers: record.answers,
+        ...(typeof record.eventId === "string" ? { eventId: record.eventId } : {}),
+      },
+      resolved: true,
     };
   } catch {
-    try {
-      sessionStorage.removeItem(storageKey);
-    } catch {
-      // Storage may be disabled; the in-memory retry still works until this tab reloads.
-    }
-    return null;
+    return discardUnreadable();
   }
+}
+
+export function loadPendingCreate(apiBaseUrl: string): PendingCreate | null {
+  return readPendingCreate(apiBaseUrl).pending;
 }
 
 export function storePendingCreate(apiBaseUrl: string, pending: PendingCreate | null): boolean {
@@ -93,10 +100,19 @@ export function storePendingCreate(apiBaseUrl: string, pending: PendingCreate | 
   }
 }
 
+export const isPendingCreateForEvent = (
+  pending: PendingCreate | null,
+  eventId: string,
+): pending is PendingCreate & { eventId: string } =>
+  pending?.eventId?.toLowerCase() === eventId.toLowerCase();
+
 /** Clear only the recovery operation whose first plan this page has confirmed. */
 export function clearPendingCreateForEvent(apiBaseUrl: string, eventId: string): boolean {
-  const pending = loadPendingCreate(apiBaseUrl);
-  return pending?.eventId !== eventId || storePendingCreate(apiBaseUrl, null);
+  const read = readPendingCreate(apiBaseUrl);
+  return (
+    read.resolved &&
+    (!isPendingCreateForEvent(read.pending, eventId) || storePendingCreate(apiBaseUrl, null))
+  );
 }
 
 export type LoadedEvent = {

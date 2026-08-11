@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import {
   clearPendingCreateForEvent,
+  isPendingCreateForEvent,
   loadEvent,
   loadPendingCreate,
   type LoadResult,
@@ -168,7 +169,7 @@ export function PlanView({
     const generated = await generatePlan(
       apiBaseUrl,
       eventId,
-      recovery?.eventId === eventId ? recovery.key : undefined,
+      isPendingCreateForEvent(recovery, eventId) ? recovery.key : undefined,
     );
     const cleanupFailed = generated.ok && !clearPendingCreateForEvent(apiBaseUrl, eventId);
     if (active.current !== requested) return;
