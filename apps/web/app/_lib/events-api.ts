@@ -122,7 +122,7 @@ export type PlanRegenerationResult =
    * the detail behind it, null when the body did not carry it in a form this can read.
    */
   | { ok: false; refused: true; refusal: RegenerationRefusal | null; message: string }
-  | { ok: false; refused: false; outcomeKnown: boolean; message: string };
+  | { ok: false; refused: false; message: string };
 
 const UNREACHABLE = "The API could not be reached.";
 
@@ -209,7 +209,7 @@ export async function regeneratePlan(
           : { ...CREDENTIALED.headers, "Idempotency-Key": initialCreateKey },
     });
   } catch {
-    return { ok: false, refused: false, outcomeKnown: false, message: UNREACHABLE };
+    return { ok: false, refused: false, message: UNREACHABLE };
   }
 
   const body = await readJson(response);
@@ -223,10 +223,6 @@ export async function regeneratePlan(
       : {
           ok: false,
           refused: false,
-          outcomeKnown:
-            ![401, 403, 429].includes(response.status) &&
-            (response.status < 500 ||
-              (response.status === 500 && asRecord(body)?.error === "plan generation failed")),
           message,
         };
   }

@@ -166,12 +166,10 @@ export function PlanView({
       eventId,
       recovery?.eventId === eventId ? recovery.key : undefined,
     );
-    if (generated.ok || generated.stored) clearPendingCreateForEvent(apiBaseUrl, eventId);
+    if (generated.ok) clearPendingCreateForEvent(apiBaseUrl, eventId);
     if (active.current !== requested) return;
     if (!generated.ok) {
       setRegenerationFailure(generated.message);
-      // A successful POST wrote an immutable plan even if its response was unreadable.
-      if (generated.stored) setPlanState({ status: "unavailable", message: generated.message });
       setRegenerating(false);
       return;
     }

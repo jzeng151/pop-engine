@@ -1101,16 +1101,16 @@ describe("generatePlan", () => {
     expect(fetchMock).toHaveBeenCalledTimes(2);
   });
 
-  it("says a plan was stored even when neither the POST body nor the re-read can be read", async () => {
+  it("does not claim a plan was stored when an unreadable 2xx is followed by a 404", async () => {
     stubFetch(async (_url, init) =>
       (init as RequestInit | undefined)?.method === "POST"
-        ? jsonResponse(201, omit(storedPlan, "generatedAt"))
-        : jsonResponse(500, { error: "plan lookup failed" }),
+        ? new Response("<html>Access challenge</html>", { status: 200 })
+        : jsonResponse(404, { error: "no plan generated" }),
     );
 
     await expect(generatePlan("https://api.example.com", "event-1")).resolves.toEqual({
       ok: false,
-      stored: true,
+      stored: null,
       message: "The API returned a plan this page cannot read.",
     });
   });

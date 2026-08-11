@@ -933,6 +933,48 @@ describe("saving and per-field errors", () => {
     },
   );
 
+  it("retains create recovery after a replay receives a validation response", async () => {
+    let createAttempts = 0;
+    fetchMock.mockImplementation(async (url: string, init: RequestInit) => {
+      if (url === "https://api.example.com/api/events") {
+        createAttempts += 1;
+        if (createAttempts === 1) throw new TypeError("response lost");
+        if (createAttempts === 2) {
+          return jsonResponse(400, {
+            errors: [
+              { field: "headcount", code: "must_be_positive", message: "headcount is invalid" },
+            ],
+          });
+        }
+        return echoSavedEvent(200, init);
+      }
+      if (url.endsWith("/plan")) {
+        return init.method === "POST" ? jsonResponse(201, {}) : jsonResponse(200, storedPlan);
+      }
+      throw new Error(`unexpected request ${url}`);
+    });
+    const user = renderForm();
+    await answerParkEvent(user);
+    await save(user);
+    expect(await screen.findByRole("alert")).toBeDefined();
+
+    await save(user);
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
+    expect(sessionStorage).toHaveLength(1);
+
+    await save(user);
+    await waitFor(() => expect(router.push).toHaveBeenCalledWith("/events/event-1/plan"));
+    const createCalls = fetchMock.mock.calls.filter(
+      ([url]) => url === "https://api.example.com/api/events",
+    ) as [string, RequestInit][];
+    expect(createCalls).toHaveLength(3);
+    expect(new Headers(createCalls[2]?.[1].headers).get("Idempotency-Key")).toBe(
+      new Headers(createCalls[0]?.[1].headers).get("Idempotency-Key"),
+    );
+    expect(createCalls[2]?.[1].body).toBe(createCalls[0]?.[1].body);
+    expect(sessionStorage).toHaveLength(0);
+  });
+
   it("does not create an event when recovery cannot be stored", async () => {
     vi.spyOn(Storage.prototype, "setItem").mockImplementation(() => {
       throw new DOMException("storage disabled", "SecurityError");
@@ -945,6 +987,26 @@ describe("saving and per-field errors", () => {
       "This browser could not store the recovery information required to create an event. Enable session storage and try again.",
     );
     expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it("does not generate a plan when the saved event id cannot be added to recovery", async () => {
+    const setItem = Storage.prototype.setItem;
+    let writes = 0;
+    vi.spyOn(Storage.prototype, "setItem").mockImplementation(function (this: Storage, key, value) {
+      writes += 1;
+      if (writes === 2) throw new DOMException("storage disabled", "SecurityError");
+      setItem.call(this, key, value);
+    });
+    const user = renderForm();
+    await answerParkEvent(user);
+    await save(user);
+
+    expect((await screen.findByRole("alert")).textContent).toBe(
+      "Your event was saved, but its permit plan was not generated because this browser could not update its recovery information. Open the permit plan to generate it.",
+    );
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(screen.getByRole("button", { name: "Save changes" })).toBeDefined();
+    expect(sessionStorage).toHaveLength(0);
   });
 
   it("replays a retained create before validating fields added by a newer client", async () => {
@@ -1109,7 +1171,7 @@ describe("saving and per-field errors", () => {
     expect(screen.queryByText(/changes made while they were saving are still unsaved/)).toBeNull();
   });
 
-  it("keeps the saved event available when its first plan cannot be generated", async () => {
+  it("retains recovery when a genuine API 500 races a missing-plan read", async () => {
     fetchMock.mockImplementationOnce(async (_url: string, init: RequestInit) =>
       echoSavedEvent(201, init),
     );
@@ -1120,9 +1182,7 @@ describe("saving and per-field errors", () => {
     await save(user);
 
     expect(
-      await screen.findByText(
-        "Your event was saved, but its permit plan could not be generated. plan generation failed",
-      ),
+      await screen.findByText(/it is not known whether its permit plan was generated/),
     ).toBeDefined();
     expect(router.push).not.toHaveBeenCalled();
     expect(screen.getByRole("button", { name: "Save changes" })).toBeDefined();
@@ -1131,7 +1191,10 @@ describe("saving and per-field errors", () => {
     );
     expect(screen.queryByRole("link", { name: "Promote public page" })).toBeNull();
     expect(screen.getByText(/Promotion will be available after/)).toBeDefined();
-    expect(sessionStorage).toHaveLength(0);
+    expect(sessionStorage).toHaveLength(1);
+    expect(
+      JSON.parse(sessionStorage.getItem(sessionStorage.key(0) as string) as string).eventId,
+    ).toBe("event-1");
   });
 
   it("opens a plan that exists after its generation response is lost", async () => {
@@ -1225,11 +1288,11 @@ describe("saving and per-field errors", () => {
     },
   );
 
-  it("reports an unknown outcome when neither generation nor its recheck answers", async () => {
+  it("retains recovery when an unreadable 2xx races a missing-plan read", async () => {
     fetchMock.mockImplementationOnce(async (_url: string, init: RequestInit) =>
       echoSavedEvent(201, init),
     );
-    fetchMock.mockResolvedValueOnce(new Response("<html>Access challenge</html>", { status: 200 }));
+    fetchMock.mockResolvedValueOnce(jsonResponse(404, { error: "no plan generated" }));
     fetchMock.mockResolvedValueOnce(new Response("<html>Access challenge</html>", { status: 200 }));
     const user = renderForm();
     await answerParkEvent(user);

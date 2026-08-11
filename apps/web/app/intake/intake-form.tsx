@@ -37,9 +37,13 @@ type ApiResponse = {
 
 const CREATE_KEY_CONFLICT = "Idempotency-Key was already used with a different body";
 
-function isDefinitiveCreateRejection(status: number, body: ApiResponse): boolean {
+function isDefinitiveCreateRejection(
+  status: number,
+  body: ApiResponse,
+  retrying: boolean,
+): boolean {
   return (
-    (status === 400 && Array.isArray(body.errors)) ||
+    (!retrying && status === 400 && Array.isArray(body.errors)) ||
     (status === 409 && body.error === CREATE_KEY_CONFLICT)
   );
 }
@@ -410,7 +414,7 @@ export function IntakeForm({
       });
       const body = (await response.json()) as ApiResponse;
       if (!response.ok || body.event === undefined) {
-        if (creating && isDefinitiveCreateRejection(response.status, body)) {
+        if (creating && isDefinitiveCreateRejection(response.status, body, retry !== null)) {
           pendingCreate.current = null;
           storePendingCreate(apiBaseUrl, null);
         }
@@ -446,9 +450,10 @@ export function IntakeForm({
       }
       // Rebuild from the stored row so answers cleared by hidden questions cannot linger locally.
       const stored = answersFromEvent(contract, body.event);
+      let eventRecoveryStored = true;
       if (creating && pendingCreate.current !== null) {
         pendingCreate.current = { ...pendingCreate.current, eventId: body.event.id };
-        storePendingCreate(apiBaseUrl, pendingCreate.current);
+        eventRecoveryStored = storePendingCreate(apiBaseUrl, pendingCreate.current);
       }
       if (mounted.current) {
         setErrors([]);
@@ -458,6 +463,16 @@ export function IntakeForm({
         setSaved(body.event);
       }
       if (creating) {
+        if (!eventRecoveryStored) {
+          pendingCreate.current = null;
+          storePendingCreate(apiBaseUrl, null);
+          if (mounted.current) {
+            setFailure(
+              "Your event was saved, but its permit plan was not generated because this browser could not update its recovery information. Open the permit plan to generate it.",
+            );
+          }
+          return;
+        }
         const generated = await regeneratePlan(
           apiBaseUrl,
           body.event.id,
@@ -467,11 +482,7 @@ export function IntakeForm({
         let planStored: boolean | null = false;
         if (generated.ok || !generated.refused) {
           const loaded = await loadPlan(apiBaseUrl, body.event.id);
-          planStored = loaded.ok
-            ? true
-            : loaded.missing && (generated.ok || generated.outcomeKnown)
-              ? false
-              : null;
+          planStored = loaded.ok ? true : null;
         }
         const changedWhileSaving = !sameAnswers(currentAnswers.current, stored);
         if (planStored === null) {

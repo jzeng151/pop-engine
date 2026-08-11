@@ -288,6 +288,32 @@ describe("initial-create recovery", () => {
     );
     expect(sessionStorage.getItem(storageKey)).toBeNull();
   });
+
+  it("keeps recovery when a 2xx generation response and its re-read are unreadable", async () => {
+    storeRecovery("event-1");
+    const fetchMock = vi.fn(async (url: string, init?: RequestInit) => {
+      if (url.endsWith("/rules/meta")) return jsonResponse(200, liveMeta);
+      if (url.endsWith("/plan")) {
+        return init?.method === "POST"
+          ? new Response("<html>Access challenge</html>", { status: 200 })
+          : jsonResponse(404, { error: "no plan generated" });
+      }
+      return jsonResponse(200, {
+        event: { id: "event-1", revision_counter: 1 },
+        warnings: [],
+        plan_stale: false,
+      });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    const user = userEvent.setup();
+    renderPlan();
+
+    await user.click(await screen.findByRole("button", { name: "Generate the plan" }));
+
+    expect(await screen.findByText("The API returned a plan this page cannot read.")).toBeDefined();
+    expect(sessionStorage.getItem(storageKey)).not.toBeNull();
+    expect(screen.getByRole("button", { name: "Generate the plan" })).toBeDefined();
+  });
 });
 
 describe("the snapshot banner (AC 1)", () => {
@@ -2792,7 +2818,7 @@ describe("a generated plan whose own response cannot be read", () => {
     expect(screen.queryByRole("alert")).toBeNull();
   });
 
-  it("reports the failure rather than claiming the plan is there", async () => {
+  it("reports the failure and keeps the missing plan retryable", async () => {
     stubUnreadableGeneration(() => jsonResponse(500, { error: "plan lookup failed" }));
     const user = userEvent.setup();
     renderPlan();
@@ -2804,7 +2830,7 @@ describe("a generated plan whose own response cannot be read", () => {
         "The API returned a plan this page cannot read.",
       ),
     );
-    expect(screen.queryByRole("button", { name: "Generate the plan" })).toBeNull();
+    expect(screen.getByRole("button", { name: "Generate the plan" })).toBeDefined();
   });
 });
 
