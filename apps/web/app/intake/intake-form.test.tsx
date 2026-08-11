@@ -3,7 +3,7 @@
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { cleanup, render, screen, waitFor, within } from "@testing-library/react";
+import { act, cleanup, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { parseIntakeContract } from "@pop-engine/engine";
 import { publishedRulesFileIn } from "../_lib/rules-file";
@@ -132,7 +132,11 @@ let fetchMock: ReturnType<typeof vi.fn>;
 beforeEach(() => {
   router.push.mockReset();
   fetchMock = vi.fn(async (url: string, init: RequestInit) =>
-    url.endsWith("/plan") ? jsonResponse(201, {}) : echoSavedEvent(201, init),
+    url.endsWith("/plan")
+      ? init.method === "POST"
+        ? jsonResponse(201, {})
+        : jsonResponse(200, storedPlan)
+      : echoSavedEvent(201, init),
   );
   vi.stubGlobal("fetch", fetchMock);
 });
@@ -750,9 +754,10 @@ describe("saving and per-field errors", () => {
     expect(url).toBe("https://api.example.com/api/events");
     expect(init.method).toBe("POST");
     expect(init.credentials).toBe("include");
-    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(fetchMock).toHaveBeenCalledTimes(3);
     expect(fetchMock.mock.calls[1]?.[0]).toBe("https://api.example.com/api/events/event-1/plan");
     expect((fetchMock.mock.calls[1]?.[1] as RequestInit).method).toBe("POST");
+    expect((fetchMock.mock.calls[2]?.[1] as RequestInit).method).toBeUndefined();
     expect(screen.getByRole("button", { name: "Save changes" })).toBeDefined();
     expect(screen.getByRole("link", { name: "Promote public page" }).getAttribute("href")).toBe(
       "/events/event-1/promote",
@@ -766,6 +771,7 @@ describe("saving and per-field errors", () => {
     let releasePlan: (response: Response) => void = () => {};
     fetchMock.mockImplementation(async (url: string, init: RequestInit) => {
       if (!url.endsWith("/plan")) return echoSavedEvent(201, init);
+      if (init.method !== "POST") return jsonResponse(200, storedPlan);
       return new Promise<Response>((resolve) => {
         releasePlan = resolve;
       });
@@ -791,6 +797,7 @@ describe("saving and per-field errors", () => {
     let releasePlan: (response: Response) => void = () => {};
     fetchMock.mockImplementation(async (url: string, init: RequestInit) => {
       if (!url.endsWith("/plan")) return echoSavedEvent(201, init);
+      if (init.method !== "POST") return jsonResponse(200, storedPlan);
       return new Promise<Response>((resolve) => {
         releasePlan = resolve;
       });
@@ -849,7 +856,7 @@ describe("saving and per-field errors", () => {
     fetchMock.mockImplementationOnce(async (_url: string, init: RequestInit) =>
       echoSavedEvent(201, init),
     );
-    fetchMock.mockRejectedValueOnce(new TypeError("connection reset"));
+    fetchMock.mockResolvedValueOnce(new Response("<html>Access challenge</html>", { status: 200 }));
     fetchMock.mockResolvedValueOnce(new Response("<html>Access challenge</html>", { status: 200 }));
     const user = renderForm();
     await answerParkEvent(user);
@@ -861,6 +868,27 @@ describe("saving and per-field errors", () => {
     expect(screen.getByRole("alert").textContent).toContain(
       "Open the permit plan to check before trying again.",
     );
+    expect(router.push).not.toHaveBeenCalled();
+  });
+
+  it("does not route after the form unmounts while the first plan is generating", async () => {
+    let releasePlan: (response: Response) => void = () => {};
+    fetchMock.mockImplementation(async (url: string, init: RequestInit) => {
+      if (!url.endsWith("/plan")) return echoSavedEvent(201, init);
+      return new Promise<Response>((resolve) => {
+        releasePlan = resolve;
+      });
+    });
+    const user = userEvent.setup();
+    const view = render(<IntakeForm contract={contract} apiBaseUrl="https://api.example.com" />);
+    await answerParkEvent(user);
+    await save(user);
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
+
+    view.unmount();
+    await act(async () => releasePlan(jsonResponse(201, {})));
+
+    expect(fetchMock).toHaveBeenCalledTimes(2);
     expect(router.push).not.toHaveBeenCalled();
   });
 
@@ -1189,8 +1217,8 @@ describe("editing a saved event", () => {
     expect(questionsOnScreen()).not.toContain("Street event size");
     await save(user);
 
-    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(3));
-    const [url, init] = fetchMock.mock.calls[2] as [string, RequestInit];
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(4));
+    const [url, init] = fetchMock.mock.calls[3] as [string, RequestInit];
     expect(url).toBe("https://api.example.com/api/events/event-1");
     expect(init.method).toBe("PATCH");
     const edit = requestBody(fetchMock, 1);
@@ -1263,7 +1291,7 @@ describe("editing a saved event", () => {
     expect(document.querySelector<HTMLInputElement>('input[name="capacity"]')?.value).toBe("");
 
     await save(user);
-    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(3));
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(4));
     expect(requestBody(fetchMock, 1).headcount).toBe(175);
     expect(requestBody(fetchMock, 1).location_name).toBe("Long Meadow");
     expect(requestBody(fetchMock, 1).capacity).toBeNull();
@@ -1322,7 +1350,7 @@ describe("editing a saved event", () => {
     ).toBe(false);
 
     await save(user);
-    expect(fetchMock).toHaveBeenCalledTimes(3);
+    expect(fetchMock).toHaveBeenCalledTimes(4);
     expect(screen.getByRole("alert").textContent).toBe("Street event size is required");
   });
 });

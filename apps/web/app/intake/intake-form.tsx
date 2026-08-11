@@ -143,6 +143,14 @@ export function IntakeForm({
   const formRef = useRef<HTMLFormElement | null>(null);
   const shouldFocusFirstError = useRef(false);
   const currentAnswers = useRef<Answers>({});
+  const mounted = useRef(true);
+
+  useEffect(() => {
+    mounted.current = true;
+    return () => {
+      mounted.current = false;
+    };
+  }, []);
 
   useEffect(() => {
     if (eventId === undefined) return;
@@ -346,6 +354,7 @@ export function IntakeForm({
         body: JSON.stringify(submission()),
       });
       const body = (await response.json()) as ApiResponse;
+      if (!mounted.current) return;
       if (!response.ok || body.event === undefined) {
         const responseErrors = (body.errors ?? []).filter(
           (error) =>
@@ -372,10 +381,12 @@ export function IntakeForm({
       setSaved(body.event);
       if (creating) {
         const generated = await regeneratePlan(apiBaseUrl, body.event.id);
+        if (!mounted.current) return;
         const generationMessage = generated.ok ? "" : generated.message;
-        let planStored = generated.ok;
-        if (!generated.ok && !generated.refused) {
+        let planStored = false;
+        if (generated.ok || !generated.refused) {
           const loaded = await loadPlan(apiBaseUrl, body.event.id);
+          if (!mounted.current) return;
           const exists = loaded.ok ? true : loaded.missing ? false : null;
           const changedWhileSaving = !sameAnswers(currentAnswers.current, stored);
           if (exists === null) {
@@ -404,9 +415,9 @@ export function IntakeForm({
       }
       router.push(`/events/${body.event.id}`);
     } catch {
-      setFailure("The API could not be reached.");
+      if (mounted.current) setFailure("The API could not be reached.");
     } finally {
-      setSaving(false);
+      if (mounted.current) setSaving(false);
     }
   };
 
