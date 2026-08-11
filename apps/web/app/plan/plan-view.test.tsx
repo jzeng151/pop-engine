@@ -3182,7 +3182,9 @@ describe("the states this page can be in", () => {
     });
     renderPlan();
 
-    expect((await screen.findByRole("alert")).textContent).toBe("event event-1 not found");
+    expect((await screen.findByRole("alert")).textContent).toBe(
+      "No plan has been generated for this event yet.",
+    );
     expect(screen.queryByRole("button", { name: /Generate|Regenerate/ })).toBeNull();
   });
 

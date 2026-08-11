@@ -84,7 +84,9 @@ describe("loadPlan", () => {
   });
 
   it("says plainly when no plan has been generated yet", async () => {
-    stubFetch(async () => jsonResponse(404, {}));
+    stubFetch(async () =>
+      jsonResponse(404, { error: "permit plan not found for event 39d0a1f1-raw-uuid" }),
+    );
     await expect(loadPlan("https://api.example.com", "event-1")).resolves.toEqual({
       ok: false,
       missing: true,

@@ -783,12 +783,10 @@ export async function loadPlan(apiBaseUrl: string, eventId: string): Promise<Pla
     return {
       ok: false,
       missing: response.status === 404,
-      message: failureMessage(
-        body,
+      message:
         response.status === 404
           ? "No plan has been generated for this event yet."
-          : `The plan could not be loaded (HTTP ${response.status}).`,
-      ),
+          : failureMessage(body, `The plan could not be loaded (HTTP ${response.status}).`),
     };
   }
 
