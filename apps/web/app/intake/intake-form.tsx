@@ -356,6 +356,7 @@ export function IntakeForm({
       const body = (await response.json()) as ApiResponse;
       if (!mounted.current) return;
       if (!response.ok || body.event === undefined) {
+        const latestErrors = validateIntake(contract, currentAnswers.current, nycToday()).errors;
         const responseErrors = (body.errors ?? []).filter(
           (error) =>
             error.field === "body" ||
@@ -363,7 +364,8 @@ export function IntakeForm({
             sameAnswer(
               currentAnswers.current[error.field] ?? null,
               answersAtSubmit[error.field] ?? null,
-            ),
+            ) ||
+            latestErrors.some((candidate) => candidate.field === error.field),
         );
         shouldFocusFirstError.current = true;
         setErrors(responseErrors);
