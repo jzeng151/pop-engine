@@ -11,19 +11,43 @@ import {
   type IntakeIssue,
   type IntakeValue,
 } from "@pop-engine/engine";
-import { CREDENTIALED, loadEvent, type SavedEvent } from "../_lib/events-api";
+import {
+  CREDENTIALED,
+  clearPendingCreateForEvent,
+  isIntakeValue,
+  loadEvent,
+  loadPendingCreate,
+  regeneratePlan,
+  storePendingCreate,
+  type PendingCreate,
+  type SavedEvent,
+} from "../_lib/events-api";
+import { loadPlan } from "../plan/plan-api";
 import { discoverParks, parksBoroughCode, type ParkSuggestion } from "./parks-api";
 
 // The intake questionnaire.
 
 type Answers = Record<string, IntakeValue>;
-
 type ApiResponse = {
   event?: SavedEvent;
+  error?: string;
   errors?: IntakeIssue[];
   warnings?: IntakeIssue[];
   plan_stale?: boolean;
 };
+
+const CREATE_KEY_CONFLICT = "Idempotency-Key was already used with a different body";
+
+function isDefinitiveCreateRejection(
+  status: number,
+  body: ApiResponse,
+  retrying: boolean,
+): boolean {
+  return (
+    (!retrying && status === 400 && Array.isArray(body.errors)) ||
+    (status === 409 && body.error === CREATE_KEY_CONFLICT)
+  );
+}
 
 /** Descriptive answers the events table carries that the ruleset does not declare. */
 const DESCRIPTIVE_QUESTIONS = [
@@ -77,13 +101,6 @@ const nycToday = (): string =>
 
 const CORRECTABLE_ERROR_CODES = new Set(["required", "invalid_value", "must_be_positive"]);
 
-const isIntakeValue = (value: unknown): value is IntakeValue =>
-  value === null ||
-  typeof value === "string" ||
-  typeof value === "number" ||
-  typeof value === "boolean" ||
-  (Array.isArray(value) && value.every((entry) => typeof entry === "string"));
-
 /**
  * The answers a saved event row already holds. Columns the form does not ask about
  * (id, status, timestamps) are left behind, and a null answer stays unanswered.
@@ -108,6 +125,14 @@ const sameAnswer = (left: IntakeValue, right: IntakeValue): boolean =>
       left.length === right.length &&
       [...left].sort().every((value, index) => value === [...right].sort()[index])
     : left === right;
+
+const sameAnswers = (left: Answers, right: Answers): boolean =>
+  [...new Set([...Object.keys(left), ...Object.keys(right)])].every((field) =>
+    sameAnswer(
+      isBlank(left[field]) ? null : (left[field] ?? null),
+      isBlank(right[field]) ? null : (right[field] ?? null),
+    ),
+  );
 
 /** Fold a saved row back into the form without discarding anything typed while the save was in flight. */
 function reconcileAnswers(current: Answers, atSubmit: Answers, stored: Answers): Answers {
@@ -134,9 +159,11 @@ export function IntakeForm({
   const router = useRouter();
   const [answers, setAnswers] = useState<Answers>({});
   const [saved, setSaved] = useState<SavedEvent | null>(null);
+  const [initialPlanReady, setInitialPlanReady] = useState(false);
   const [errors, setErrors] = useState<IntakeIssue[]>([]);
   const [saving, setSaving] = useState(false);
   const [failure, setFailure] = useState<string | null>(null);
+  const [canDiscardCreateRecovery, setCanDiscardCreateRecovery] = useState(false);
   const [loading, setLoading] = useState(eventId !== undefined);
   const [loadFailure, setLoadFailure] = useState<string | null>(null);
   const [parkSuggestions, setParkSuggestions] = useState<ParkSuggestion[] | null>(null);
@@ -149,6 +176,32 @@ export function IntakeForm({
   const formRef = useRef<HTMLFormElement | null>(null);
   const shouldFocusFirstError = useRef(false);
   const currentAnswers = useRef<Answers>({});
+  const pendingCreate = useRef<PendingCreate | null>(null);
+  const pendingCreateReadFailed = useRef(false);
+  const mounted = useRef(true);
+
+  useEffect(() => {
+    mounted.current = true;
+    return () => {
+      mounted.current = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (eventId !== undefined) return;
+    const restored = loadPendingCreate(apiBaseUrl);
+    pendingCreateReadFailed.current = !restored.resolved;
+    if (!restored.resolved) {
+      setFailure(
+        "This browser could not safely read or clear an earlier event recovery. Reload this page once session storage is available before saving another event.",
+      );
+      return;
+    }
+    if (restored.pending === null) return;
+    pendingCreate.current = restored.pending;
+    currentAnswers.current = restored.pending.answers;
+    setAnswers(restored.pending.answers);
+  }, [apiBaseUrl, eventId]);
 
   useEffect(() => {
     if (eventId === undefined) return;
@@ -160,10 +213,20 @@ export function IntakeForm({
         currentAnswers.current = loadedAnswers;
         setAnswers(loadedAnswers);
         setSaved(result.loaded.event);
+        setLoading(false);
+        void loadPlan(apiBaseUrl, eventId).then((plan) => {
+          const cleanupFailed = plan.ok && !clearPendingCreateForEvent(apiBaseUrl, eventId);
+          if (cleanupFailed && !abandoned) {
+            setFailure(
+              "The permit plan is ready, but this browser could not clear its saved recovery information. Refresh this page to try again before creating another event.",
+            );
+          }
+          if (!abandoned) setInitialPlanReady(plan.ok);
+        });
       } else {
         setLoadFailure(result.message);
+        setLoading(false);
       }
-      setLoading(false);
     });
     return () => {
       abandoned = true;
@@ -294,54 +357,98 @@ export function IntakeForm({
   };
 
   const save = async () => {
-    setFailure(null);
-    const fieldOrder = [
-      ...DESCRIPTIVE_QUESTIONS.map((question) => question.field),
-      ...questions.map((question) => question.field),
-    ];
-    const validationErrors = validateIntake(contract, submission(), nycToday()).errors;
-    const missing = validationErrors
-      .filter((error) => error.code === "required")
-      .map((error) => {
-        const label =
-          DESCRIPTIVE_QUESTIONS.find((question) => question.field === error.field)?.label ??
-          humanize(error.field);
-        return { ...error, message: `${label} is required` };
-      });
-    const missingFields = new Set(missing.map((error) => error.field));
-    const clientErrors = [
-      ...errors.filter(
-        (error) =>
-          error.code !== "required" &&
-          !missingFields.has(error.field) &&
-          (error.field === "body" ||
-            error.code === "unknown_field" ||
-            error.code === "in_the_past" ||
-            validationErrors.some((candidate) => candidate.field === error.field)),
-      ),
-      ...missing,
-    ];
-    clientErrors.sort(
-      (left, right) => fieldOrder.indexOf(left.field) - fieldOrder.indexOf(right.field),
-    );
-    if (missing.length > 0) {
-      shouldFocusFirstError.current = true;
-      setErrors(clientErrors);
+    if (pendingCreateReadFailed.current) {
+      setFailure(
+        "This browser could not safely read or clear an earlier event recovery. Reload this page once session storage is available before saving another event.",
+      );
       return;
     }
+    setFailure(null);
+    const retry = pendingCreate.current;
+    const creating = saved === null || retry !== null;
+    const requestBody = retry?.body ?? submission();
+    if (retry === null) {
+      const fieldOrder = [
+        ...DESCRIPTIVE_QUESTIONS.map((question) => question.field),
+        ...questions.map((question) => question.field),
+      ];
+      const validationErrors = validateIntake(contract, requestBody, nycToday()).errors;
+      const missing = validationErrors
+        .filter((error) => error.code === "required")
+        .map((error) => {
+          const label =
+            DESCRIPTIVE_QUESTIONS.find((question) => question.field === error.field)?.label ??
+            humanize(error.field);
+          return { ...error, message: `${label} is required` };
+        });
+      const missingFields = new Set(missing.map((error) => error.field));
+      const clientErrors = [
+        ...errors.filter(
+          (error) =>
+            error.code !== "required" &&
+            !missingFields.has(error.field) &&
+            (error.field === "body" ||
+              error.code === "unknown_field" ||
+              error.code === "in_the_past" ||
+              validationErrors.some((candidate) => candidate.field === error.field)),
+        ),
+        ...missing,
+      ];
+      clientErrors.sort(
+        (left, right) => fieldOrder.indexOf(left.field) - fieldOrder.indexOf(right.field),
+      );
+      if (missing.length > 0) {
+        shouldFocusFirstError.current = true;
+        setErrors(clientErrors);
+        return;
+      }
+    }
 
-    setSaving(true);
     // The answers as they stand at the click, which the response is reconciled against.
-    const answersAtSubmit = currentAnswers.current;
+    const answersAtSubmit = retry?.answers ?? currentAnswers.current;
+    if (creating && retry === null) {
+      pendingCreate.current = {
+        key: crypto.randomUUID(),
+        body: requestBody,
+        answers: answersAtSubmit,
+      };
+      if (!storePendingCreate(apiBaseUrl, pendingCreate.current)) {
+        pendingCreate.current = null;
+        setFailure(
+          "This browser could not store the recovery information required to create an event. Enable session storage and try again.",
+        );
+        return;
+      }
+    }
+    setSaving(true);
     try {
-      const target = saved === null ? "/api/events" : `/api/events/${saved.id}`;
+      const target = creating ? "/api/events" : `/api/events/${saved.id}`;
       const response = await fetch(`${apiBaseUrl}${target}`, {
-        method: saved === null ? "POST" : "PATCH",
+        method: creating ? "POST" : "PATCH",
         ...CREDENTIALED,
-        body: JSON.stringify(submission()),
+        headers: creating
+          ? {
+              ...CREDENTIALED.headers,
+              "Idempotency-Key": pendingCreate.current?.key ?? "",
+            }
+          : CREDENTIALED.headers,
+        body: JSON.stringify(requestBody),
       });
       const body = (await response.json()) as ApiResponse;
       if (!response.ok || body.event === undefined) {
+        if (
+          mounted.current &&
+          retry !== null &&
+          response.status === 400 &&
+          Array.isArray(body.errors)
+        ) {
+          setCanDiscardCreateRecovery(true);
+        }
+        if (creating && isDefinitiveCreateRejection(response.status, body, retry !== null)) {
+          pendingCreate.current = null;
+          storePendingCreate(apiBaseUrl, null);
+        }
+        if (!mounted.current) return;
         const latestAnswers = currentAnswers.current;
         const latestErrors = validateIntake(contract, latestAnswers, nycToday()).errors;
         const visibleFields = new Set([
@@ -371,19 +478,101 @@ export function IntakeForm({
         }
         return;
       }
-      setErrors([]);
+      if (mounted.current) setCanDiscardCreateRecovery(false);
       // Rebuild from the stored row so answers cleared by hidden questions cannot linger locally.
       const stored = answersFromEvent(contract, body.event);
-      const reconciled = reconcileAnswers(currentAnswers.current, answersAtSubmit, stored);
-      currentAnswers.current = reconciled;
-      setAnswers(reconciled);
-      setSaved(body.event);
-      router.push(`/events/${body.event.id}`);
+      let eventRecoveryStored = true;
+      if (creating && pendingCreate.current !== null) {
+        pendingCreate.current = { ...pendingCreate.current, eventId: body.event.id };
+        eventRecoveryStored = storePendingCreate(apiBaseUrl, pendingCreate.current);
+      }
+      if (mounted.current) {
+        setErrors([]);
+        const reconciled = reconcileAnswers(currentAnswers.current, answersAtSubmit, stored);
+        currentAnswers.current = reconciled;
+        setAnswers(reconciled);
+        setSaved(body.event);
+      }
+      if (creating) {
+        if (!eventRecoveryStored) {
+          if (mounted.current) {
+            setFailure(
+              "Your event was saved, but its permit plan was not generated because this browser could not update its recovery information. Keep this tab open and save again to retry safely.",
+            );
+          }
+          return;
+        }
+        const generated = await regeneratePlan(
+          apiBaseUrl,
+          body.event.id,
+          pendingCreate.current?.key,
+        );
+        const generationMessage = generated.ok ? "" : generated.message;
+        let planStored: boolean | null = false;
+        if (generated.ok || !generated.refused) {
+          const loaded = await loadPlan(apiBaseUrl, body.event.id);
+          planStored = loaded.ok ? true : null;
+        }
+        const changedWhileSaving = !sameAnswers(currentAnswers.current, stored);
+        if (planStored === null) {
+          if (mounted.current) {
+            setFailure(
+              `Your event was saved, but it is not known whether its permit plan was generated. ${generationMessage} Open the permit plan to check before trying again.${changedWhileSaving ? " Changes made while the request was running are still unsaved." : ""}`,
+            );
+          }
+          return;
+        }
+        if (!planStored) {
+          pendingCreate.current = null;
+          storePendingCreate(apiBaseUrl, null);
+          if (mounted.current) {
+            setFailure(
+              `Your event was saved, but its permit plan could not be generated. ${generationMessage}${changedWhileSaving ? " Changes made while the request was running are still unsaved." : ""}`,
+            );
+          }
+          return;
+        }
+        if (!clearPendingCreateForEvent(apiBaseUrl, body.event.id)) {
+          if (mounted.current) {
+            setFailure(
+              "Your event and its permit plan were saved, but this browser could not clear its saved recovery information. Keep this tab open and try again before creating another event.",
+            );
+          }
+          return;
+        }
+        pendingCreate.current = null;
+        if (!mounted.current) return;
+        setInitialPlanReady(true);
+        if (changedWhileSaving) {
+          setFailure(
+            "Your event and its permit plan were saved, but changes made while they were saving are still unsaved. Save those changes before opening the plan.",
+          );
+          return;
+        }
+        router.push(`/events/${body.event.id}/plan`);
+        return;
+      }
+      if (mounted.current) router.push(`/events/${body.event.id}`);
     } catch {
-      setFailure("The API could not be reached.");
+      if (mounted.current) setFailure("The API could not be reached.");
     } finally {
-      setSaving(false);
+      if (mounted.current) setSaving(false);
     }
+  };
+
+  const discardCreateRecovery = () => {
+    if (!storePendingCreate(apiBaseUrl, null)) {
+      setFailure(
+        "This browser could not discard the saved recovery information. Keep this tab open and try again.",
+      );
+      return;
+    }
+    pendingCreate.current = null;
+    setCanDiscardCreateRecovery(false);
+    setErrors([]);
+    setFailure(
+      "The previous recovery was discarded. Review the current answers, then save to create a new event.",
+    );
   };
 
   if (loading) {
@@ -590,6 +779,18 @@ export function IntakeForm({
           </p>
         )}
 
+        {canDiscardCreateRecovery && (
+          <section className="intake__warning" aria-label="Create recovery options">
+            <p>
+              The earlier request may still finish. Check that it did not create an event before
+              discarding recovery, or a new save could create a duplicate.
+            </p>
+            <button className="intake__secondary" type="button" onClick={discardCreateRecovery}>
+              Discard recovery and start over
+            </button>
+          </section>
+        )}
+
         <button className="intake__submit" type="submit" disabled={saving}>
           {saved === null ? "Save event" : "Save changes"}
         </button>
@@ -598,11 +799,21 @@ export function IntakeForm({
           <section className="intake__saved" aria-live="polite">
             <p>
               Saved as revision {saved.revision_counter}.{" "}
-              <a href={`/intake/${saved.id}`}>Come back to this event</a> to edit it later, or{" "}
-              <a href={`/events/${saved.id}/plan`}>see its permit plan</a>.
+              <a href={`/intake/${saved.id}`}>Come back to this event</a> to edit it later
+              {saving ? (
+                ", while its permit plan is being generated."
+              ) : (
+                <>
+                  , or <a href={`/events/${saved.id}/plan`}>see its permit plan</a>.
+                </>
+              )}
             </p>
             <p>
-              <a href={`/events/${saved.id}/promote`}>Promote public page</a>
+              {initialPlanReady ? (
+                <a href={`/events/${saved.id}/promote`}>Promote public page</a>
+              ) : (
+                "Promotion will be available after the permit plan is generated."
+              )}
               {" · "}
               <a href={`/events/${saved.id}/guests`}>Guest list</a>
             </p>

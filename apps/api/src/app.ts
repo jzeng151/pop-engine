@@ -6,6 +6,7 @@ import { createChecklistRouter, type ChecklistDependencies } from "./planning/ch
 import { createEventsRouter, type EventsDependencies } from "./events";
 import {
   EventNotFoundError,
+  PlanCreateKeyMismatchError,
   PlanIntegrityError,
   PlanRulesetDowngradeError,
   type PlanService,
@@ -52,7 +53,7 @@ export function createApp(dependencies: AppDependencies): Express {
       // X-Filename carries a document upload's display name (F-202).
       res.setHeader(
         "Access-Control-Allow-Headers",
-        "Authorization, Content-Type, X-Filename, X-Upload-Key",
+        "Authorization, Content-Type, Idempotency-Key, X-Filename, X-Upload-Key",
       );
       res.sendStatus(204);
       return;
@@ -60,7 +61,13 @@ export function createApp(dependencies: AppDependencies): Express {
     next();
   });
 
-  app.use(express.json());
+  app.use(
+    express.json({
+      verify: (req, _res, buffer) => {
+        Reflect.set(req, "rawJsonBody", buffer.toString("utf8"));
+      },
+    }),
+  );
 
   // Liveness probe for Railway / Cloudflare health checks. The `engine` field also
   // proves the @pop-engine/engine workspace package resolves end to end.
@@ -148,12 +155,22 @@ function registerPlanRoutes(app: Express, planService: PlanService): void {
   app.post("/api/events/:id/plan", (req, res) => {
     const eventId = req.params.id;
     if (rejectMalformedId(eventId, res)) return;
+    const rawInitialCreateKey = req.get("Idempotency-Key");
+    if (rawInitialCreateKey !== undefined && !UUID.test(rawInitialCreateKey)) {
+      res.status(400).json({ error: "Idempotency-Key must be a uuid" });
+      return;
+    }
+    const initialCreateKey = rawInitialCreateKey?.toLowerCase();
     planService
-      .generate(eventId)
-      .then((plan) => res.status(201).json(plan))
+      .generate(eventId, initialCreateKey)
+      .then(({ plan, created }) => res.status(created ? 201 : 200).json(plan))
       .catch((error: unknown) => {
         if (error instanceof EventNotFoundError) {
           res.status(404).json({ error: error.message });
+          return;
+        }
+        if (error instanceof PlanCreateKeyMismatchError) {
+          res.status(409).json({ error: error.message });
           return;
         }
         // F-201 AC 12.

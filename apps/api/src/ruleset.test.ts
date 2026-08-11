@@ -587,6 +587,8 @@ describe.runIf(databaseUrl.length > 0)("migration 001 and rules sync", () => {
         "food_affinity_private_exception_claimed",
         "description",
         "public_page_published",
+        "create_idempotency_key",
+        "create_request_body",
       ].sort(),
     );
   });

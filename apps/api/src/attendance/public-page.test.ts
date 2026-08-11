@@ -57,7 +57,10 @@ describe.runIf(databaseUrl.length > 0)("F-301 public page endpoints (database)",
   });
 
   const createEvent = async () => {
-    const response = await request(api).post("/api/events").send(scenarioA());
+    const response = await request(api)
+      .post("/api/events")
+      .set("Idempotency-Key", randomUUID())
+      .send(scenarioA());
     expect(response.status).toBe(201);
     const id: string = response.body.event.id;
     createdEventIds.push(id);

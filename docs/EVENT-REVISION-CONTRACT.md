@@ -25,6 +25,7 @@ It resolves `OPEN-QUESTIONS` B-3 under the approval record above. It does not ac
   - `apps/api/migrations/006_events_battery_present.ts`; and
   - `apps/api/migrations/012_events_assembly_document_coverage.ts`, the separately approved F-110 amendment.
 - Unrelated later migrations do not change which migrations define this ratified `events` shape.
+- Migration `015` is the separately approved F-101 request-replay amendment from SPEC-CONFLICT #281. Its paired idempotency key and request body are create-command metadata, not questionnaire answers or an Event Revision, and do not rewrite which migrations define the historical ratified intake shape above. The current access-gated-demo approval leaves the strict production ratification gate unchanged.
 - These merged migrations are immutable. Corrections or future fields use new ordered migrations.
 - Through Phase 1.5, the `events` row remains the authoritative intake record and `revision_counter` remains the plan-staleness mechanism.
 - Ratification does not approve another column. Every later shared/core-table change still requires the approvals in `docs/DOCUMENTATION-GOVERNANCE.md` §6.

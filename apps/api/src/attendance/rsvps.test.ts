@@ -79,6 +79,7 @@ describe.runIf(databaseUrl.length > 0)("F-302 RSVP endpoints (database)", () => 
   const createEvent = async (overrides: Record<string, unknown> = {}) => {
     const response = await request(api)
       .post("/api/events")
+      .set("Idempotency-Key", randomUUID())
       .send({ ...scenarioA(), ...overrides });
     expect(response.status).toBe(201);
     const id: string = response.body.event.id;
@@ -99,7 +100,10 @@ describe.runIf(databaseUrl.length > 0)("F-302 RSVP endpoints (database)", () => 
   };
 
   it("refuses RSVPs while the public page is unpublished", async () => {
-    const response = await request(api).post("/api/events").send(scenarioA());
+    const response = await request(api)
+      .post("/api/events")
+      .set("Idempotency-Key", randomUUID())
+      .send(scenarioA());
     expect(response.status).toBe(201);
     const eventId: string = response.body.event.id;
     createdEventIds.push(eventId);
