@@ -110,6 +110,7 @@ export function PlanView({
   const [meta, setMeta] = useState<RulesMetaResponse | null>(null);
   const [regenerating, setRegenerating] = useState(false);
   const [regenerationFailure, setRegenerationFailure] = useState<string | null>(null);
+  const [generationOutcomeUnknown, setGenerationOutcomeUnknown] = useState(false);
 
   /**
    * Which event this page is currently showing. `generate()` runs outside the effect, so it
@@ -128,6 +129,7 @@ export function PlanView({
     setEventState({ status: "loading" });
     setMeta(null);
     setRegenerationFailure(null);
+    setGenerationOutcomeUnknown(false);
     // A generation belonging to the event we just left is no longer this page's business: its result is dropped by the guard in `generate`, and its in-flight label must not sit on the new event's button.
     setRegenerating(false);
 
@@ -173,14 +175,17 @@ export function PlanView({
       setRegenerating(false);
       return;
     }
-    const generated = await generatePlan(
-      apiBaseUrl,
-      eventId,
-      isPendingCreateForEvent(recovery.pending, eventId) ? recovery.pending.key : undefined,
-    );
+    const initialCreateKey =
+      planState.status === "missing" && isPendingCreateForEvent(recovery.pending, eventId)
+        ? recovery.pending.key
+        : undefined;
+    const generated = await generatePlan(apiBaseUrl, eventId, initialCreateKey);
     const cleanupFailed = generated.ok && !clearPendingCreateForEvent(apiBaseUrl, eventId);
     if (active.current !== requested) return;
     if (!generated.ok) {
+      if (generated.stored === null && initialCreateKey === undefined) {
+        setGenerationOutcomeUnknown(true);
+      }
       setRegenerationFailure(generated.message);
       setRegenerating(false);
       return;
@@ -232,7 +237,7 @@ export function PlanView({
           standing,
           "the plan below",
         );
-  const canGenerate = wouldOffer && refusal === null;
+  const canGenerate = wouldOffer && refusal === null && !generationOutcomeUnknown;
 
   return (
     <main className="plan">

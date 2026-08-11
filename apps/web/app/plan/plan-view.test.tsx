@@ -254,6 +254,36 @@ describe("initial-create recovery", () => {
     expect(sessionStorage.getItem(storageKey)).not.toBeNull();
   });
 
+  it("does not reuse retained create recovery when regenerating an existing plan", async () => {
+    storeRecovery("event-1");
+    vi.spyOn(Storage.prototype, "removeItem").mockImplementation(() => {
+      throw new DOMException("storage disabled", "SecurityError");
+    });
+    const fetchMock = vi.fn(async (url: string, init?: RequestInit) => {
+      if (url.endsWith("/rules/meta")) return jsonResponse(200, liveMeta);
+      if (url.endsWith("/plan")) {
+        return init?.method === "POST"
+          ? jsonResponse(201, plan({ eventRevision: 2 }))
+          : jsonResponse(200, plan({ eventRevision: 1 }));
+      }
+      return jsonResponse(200, {
+        event: { id: "event-1", revision_counter: 2 },
+        warnings: [],
+        plan_stale: true,
+      });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    const user = userEvent.setup();
+    renderPlan();
+
+    await user.click(await screen.findByRole("button", { name: "Regenerate the plan" }));
+
+    const planPost = fetchMock.mock.calls.find(
+      ([url, init]) => url.endsWith("/plan") && init?.method === "POST",
+    );
+    expect(new Headers(planPost?.[1]?.headers).get("Idempotency-Key")).toBeNull();
+  });
+
   it("keeps recovery for another event", async () => {
     storeRecovery("event-2");
     renderPlan();
@@ -2856,7 +2886,7 @@ describe("a generated plan whose own response cannot be read", () => {
     expect(screen.queryByRole("alert")).toBeNull();
   });
 
-  it("reports the failure and keeps the missing plan retryable", async () => {
+  it("withholds unkeyed retries when the write outcome cannot be established", async () => {
     stubUnreadableGeneration(() => jsonResponse(500, { error: "plan lookup failed" }));
     const user = userEvent.setup();
     renderPlan();
@@ -2868,7 +2898,7 @@ describe("a generated plan whose own response cannot be read", () => {
         "The API returned a plan this page cannot read.",
       ),
     );
-    expect(screen.getByRole("button", { name: "Generate the plan" })).toBeDefined();
+    expect(screen.queryByRole("button", { name: "Generate the plan" })).toBeNull();
   });
 });
 
