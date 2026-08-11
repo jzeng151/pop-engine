@@ -66,6 +66,13 @@ export class PlanRulesetDowngradeError extends Error {
   }
 }
 
+export class PlanCreateKeyMismatchError extends Error {
+  constructor() {
+    super("initial plan key does not match the event create key");
+    this.name = "PlanCreateKeyMismatchError";
+  }
+}
+
 const VERDICT_COLUMN_VALUE = {
   FEASIBLE: "feasible",
   FEASIBLE_AT_RISK: "feasible_at_risk",
@@ -89,7 +96,10 @@ export type StoredPlan = {
 };
 
 export type PlanService = {
-  generate(eventId: string): Promise<StoredPlan>;
+  generate(
+    eventId: string,
+    initialCreateKey?: string,
+  ): Promise<{ readonly plan: StoredPlan; readonly created: boolean }>;
   latest(eventId: string): Promise<StoredPlan | null>;
 };
 
@@ -343,6 +353,66 @@ async function refuseRulesetDowngrade(
   }
 }
 
+async function readLatestPlan(
+  database: Pick<Pool, "query">,
+  eventId: string,
+): Promise<StoredPlan | null> {
+  // Same order the downgrade guard reads, for the same reason: the plan this returns is the
+  // one the next generation is checked against, so the two must not be able to disagree.
+  const { rows } = await database.query<PlanRow>(
+    `SELECT id, event_revision, ruleset_version, snapshot_date, verdict, verdict_detail,
+            generated_at
+       FROM permit_plans WHERE event_id = $1 ORDER BY generated_at DESC, id DESC LIMIT 1`,
+    [eventId],
+  );
+  const planRow = rows[0];
+  if (planRow === undefined) return null;
+
+  const { rows: itemRows } = await database.query<PlanItemRow>(
+    `SELECT rule_ids, triggered_by, permit_name, agency, deadline, latest_apply_date, apply_after_date,
+            fee_display, portal_name, portal_url, sources, last_verified_date, kind,
+            disposition, deadline_status, verification_status
+       FROM permit_plan_items WHERE plan_id = $1 ORDER BY id`,
+    [planRow.id],
+  );
+
+  const {
+    today,
+    calendar_id: calendarId,
+    finding_renderings: renderings,
+    ...verdictDetail
+  } = planRow.verdict_detail;
+  const byRuleIds = new Map(itemRows.map((row) => [renderingKey(row.rule_ids), row]));
+  if (itemRows.length !== renderings.length) {
+    throw new PlanIntegrityError(
+      planRow.id,
+      `${renderings.length} findings were written, ${itemRows.length} are stored`,
+    );
+  }
+  return {
+    id: planRow.id,
+    eventId,
+    eventRevision: planRow.event_revision,
+    rulesetVersion: planRow.ruleset_version,
+    snapshotDate: isoDate(planRow.snapshot_date),
+    verdict: ENGINE_VERDICT[planRow.verdict],
+    verdictDetail,
+    today,
+    calendarId,
+    generatedAt: planRow.generated_at.toISOString(),
+    findings: renderings.map((rendering) => {
+      const row = byRuleIds.get(renderingKey(rendering.rule_ids));
+      if (row === undefined) {
+        throw new PlanIntegrityError(
+          planRow.id,
+          `no stored item for finding ${renderingKey(rendering.rule_ids)}`,
+        );
+      }
+      return findingFromRow(row, rendering);
+    }),
+  };
+}
+
 export function createPlanService(
   pool: Pool,
   ruleset: EngineRuleset,
@@ -361,8 +431,11 @@ export function createPlanService(
   };
 
   return {
-    async generate(eventId) {
+    async generate(eventId, initialCreateKey) {
       const row = await loadEvent(eventId);
+      if (initialCreateKey !== undefined && row.create_idempotency_key !== initialCreateKey) {
+        throw new PlanCreateKeyMismatchError();
+      }
       const intake = intakeFromEventRow(row, ruleset);
       // Evaluation runs before the transaction opens: a rule-evaluation failure must surface
       // as an error, never as a stored plan with no findings (AC 5).
@@ -373,6 +446,13 @@ export function createPlanService(
       try {
         await client.query("BEGIN");
         await lockEventForGeneration(client, eventId);
+        if (initialCreateKey !== undefined) {
+          const existing = await readLatestPlan(client, eventId);
+          if (existing !== null) {
+            await client.query("COMMIT");
+            return { plan: existing, created: false };
+          }
+        }
         await refuseRulesetDowngrade(client, eventId, ruleset.rulesetVersion);
         const { id, generatedAt } = await insertPlan(
           client,
@@ -386,19 +466,22 @@ export function createPlanService(
         // The same value `insertPlan` just wrote, so the response a generation returns carries the
         // pinned pair the stored row does rather than leaving the caller to re-read it.
         return {
-          id,
-          eventId,
-          eventRevision,
-          generatedAt,
-          snapshotDate: ruleset.snapshotDate,
-          ...plan,
-          findings: plan.findings.map((finding) => ({
-            ...finding,
-            userSummary: finding.userSummary ?? null,
-            lastVerifiedDate: finding.lastVerifiedDate ?? null,
-            routes: finding.routes ?? null,
-            headlineMode: finding.headlineMode ?? null,
-          })),
+          created: true,
+          plan: {
+            id,
+            eventId,
+            eventRevision,
+            generatedAt,
+            snapshotDate: ruleset.snapshotDate,
+            ...plan,
+            findings: plan.findings.map((finding) => ({
+              ...finding,
+              userSummary: finding.userSummary ?? null,
+              lastVerifiedDate: finding.lastVerifiedDate ?? null,
+              routes: finding.routes ?? null,
+              headlineMode: finding.headlineMode ?? null,
+            })),
+          },
         };
       } catch (error) {
         await client.query("ROLLBACK");
@@ -410,63 +493,7 @@ export function createPlanService(
 
     async latest(eventId) {
       await loadEvent(eventId);
-      // Same order the downgrade guard reads, for the same reason: the plan this returns is the
-      // one the next generation is checked against, so the two must not be able to disagree.
-      const { rows } = await pool.query<PlanRow>(
-        `SELECT id, event_revision, ruleset_version, snapshot_date, verdict, verdict_detail,
-                generated_at
-           FROM permit_plans WHERE event_id = $1 ORDER BY generated_at DESC, id DESC LIMIT 1`,
-        [eventId],
-      );
-      const planRow = rows[0];
-      if (planRow === undefined) return null;
-
-      const { rows: itemRows } = await pool.query<PlanItemRow>(
-        `SELECT rule_ids, triggered_by, permit_name, agency, deadline, latest_apply_date, apply_after_date,
-                fee_display, portal_name, portal_url, sources, last_verified_date, kind,
-                disposition, deadline_status, verification_status
-           FROM permit_plan_items WHERE plan_id = $1 ORDER BY id`,
-        [planRow.id],
-      );
-
-      const {
-        today,
-        calendar_id: calendarId,
-        finding_renderings: renderings,
-        ...verdictDetail
-      } = planRow.verdict_detail;
-      const byRuleIds = new Map(itemRows.map((row) => [renderingKey(row.rule_ids), row]));
-      if (itemRows.length !== renderings.length) {
-        throw new PlanIntegrityError(
-          planRow.id,
-          `${renderings.length} findings were written, ${itemRows.length} are stored`,
-        );
-      }
-      return {
-        id: planRow.id,
-        eventId,
-        eventRevision: planRow.event_revision,
-        rulesetVersion: planRow.ruleset_version,
-        // Read off the plan's own row, beside the version it is paired with.
-        snapshotDate: isoDate(planRow.snapshot_date),
-        verdict: ENGINE_VERDICT[planRow.verdict],
-        verdictDetail,
-        today,
-        calendarId,
-        generatedAt: planRow.generated_at.toISOString(),
-        // Ordered by the engine's finding order, which the renderings preserve: plan items
-        // carry uuid primary keys, so the table itself has no stable order to read back.
-        findings: renderings.map((rendering) => {
-          const row = byRuleIds.get(renderingKey(rendering.rule_ids));
-          if (row === undefined) {
-            throw new PlanIntegrityError(
-              planRow.id,
-              `no stored item for finding ${renderingKey(rendering.rule_ids)}`,
-            );
-          }
-          return findingFromRow(row, rendering);
-        }),
-      };
+      return readLatestPlan(pool, eventId);
     },
   };
 }

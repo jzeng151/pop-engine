@@ -326,6 +326,46 @@ describe.runIf(databaseUrl.length > 0)("plan API (F-201)", () => {
     expect(latest.body.id).toBe(second.body.id);
   });
 
+  it("converges concurrent first-plan retries carrying the event create key", async () => {
+    const createKey = randomUUID();
+    const eventId = await insertEvent({
+      create_idempotency_key: createKey,
+      create_request_body: scenarioAEvent,
+    });
+    const app = appWith();
+
+    const responses = await Promise.all([
+      request(app).post(`/api/events/${eventId}/plan`).set("Idempotency-Key", createKey),
+      request(app).post(`/api/events/${eventId}/plan`).set("Idempotency-Key", createKey),
+    ]);
+
+    expect(responses.map(({ status }) => status).sort()).toEqual([200, 201]);
+    expect(responses[0]?.body.id).toBe(responses[1]?.body.id);
+    const { rows } = await pool.query("SELECT id FROM permit_plans WHERE event_id = $1", [eventId]);
+    expect(rows).toHaveLength(1);
+  });
+
+  it("rejects malformed or unrelated first-plan keys without writing", async () => {
+    const createKey = randomUUID();
+    const eventId = await insertEvent({
+      create_idempotency_key: createKey,
+      create_request_body: scenarioAEvent,
+    });
+    const app = appWith();
+
+    const malformed = await request(app)
+      .post(`/api/events/${eventId}/plan`)
+      .set("Idempotency-Key", "not-a-uuid");
+    const unrelated = await request(app)
+      .post(`/api/events/${eventId}/plan`)
+      .set("Idempotency-Key", randomUUID());
+
+    expect(malformed.status).toBe(400);
+    expect(unrelated.status).toBe(409);
+    const { rows } = await pool.query("SELECT id FROM permit_plans WHERE event_id = $1", [eventId]);
+    expect(rows).toHaveLength(0);
+  });
+
   it("round-trips a stored plan identically to the plan it returned at generation (AC 3)", async () => {
     const eventId = await insertEvent();
     const app = appWith();

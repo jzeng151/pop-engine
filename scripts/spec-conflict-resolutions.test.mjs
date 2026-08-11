@@ -267,13 +267,11 @@ describe("F-101 AC 8 restored on the overview, 2026-08-04", () => {
   const restoringSurface = "apps/web/app/events/[id]/plan-stale-notice.tsx";
 
   function currentBaselineRecord() {
-    const records = read("docs/BASELINE.md")
+    const record = read("docs/BASELINE.md")
       .split(/\n{2,}/)
-      .filter((p) => p.startsWith("**") && p.includes("F-101") && p.includes("regeneration"));
-    expect(records.length, "docs/BASELINE.md records F-101's regeneration at all").toBeGreaterThan(
-      0,
-    );
-    return records[0];
+      .find((paragraph) => paragraph.startsWith("**Record 2026-08-04 (F-101 lane, PR #242):**"));
+    expect(record, "docs/BASELINE.md keeps the PR #242 restoration record").toBeDefined();
+    return record;
   }
 
   it("the manifest's current record names the surface the criterion is met on", () => {

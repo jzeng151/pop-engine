@@ -505,22 +505,18 @@ export function IntakeForm({
         setSaved(body.event);
       }
       if (creating) {
+        const generated = await regeneratePlan(
+          apiBaseUrl,
+          body.event.id,
+          pendingCreate.current?.key,
+        );
+        if (!mounted.current) return;
+        const generationMessage = generated.ok ? "" : generated.message;
         let planStored: boolean | null = false;
-        let generationMessage = "";
-        if (retry !== null) {
+        if (generated.ok || !generated.refused) {
           const loaded = await loadPlan(apiBaseUrl, body.event.id);
           if (!mounted.current) return;
           planStored = loaded.ok ? true : loaded.missing ? false : null;
-        }
-        if (planStored === false) {
-          const generated = await regeneratePlan(apiBaseUrl, body.event.id);
-          if (!mounted.current) return;
-          generationMessage = generated.ok ? "" : generated.message;
-          if (generated.ok || !generated.refused) {
-            const loaded = await loadPlan(apiBaseUrl, body.event.id);
-            if (!mounted.current) return;
-            planStored = loaded.ok ? true : loaded.missing ? false : null;
-          }
         }
         const changedWhileSaving = !sameAnswers(currentAnswers.current, stored);
         if (planStored === null) {

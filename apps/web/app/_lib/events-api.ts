@@ -109,12 +109,17 @@ function readRefusal(body: unknown): RegenerationRefusal | null {
 export async function regeneratePlan(
   apiBaseUrl: string,
   eventId: string,
+  initialCreateKey?: string,
 ): Promise<PlanRegenerationResult> {
   let response: Response;
   try {
     response = await fetch(`${apiBaseUrl}/api/events/${eventId}/plan`, {
       method: "POST",
       ...CREDENTIALED,
+      headers:
+        initialCreateKey === undefined
+          ? CREDENTIALED.headers
+          : { ...CREDENTIALED.headers, "Idempotency-Key": initialCreateKey },
     });
   } catch {
     return { ok: false, refused: false, message: UNREACHABLE };

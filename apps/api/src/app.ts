@@ -6,6 +6,7 @@ import { createChecklistRouter, type ChecklistDependencies } from "./planning/ch
 import { createEventsRouter, type EventsDependencies } from "./events";
 import {
   EventNotFoundError,
+  PlanCreateKeyMismatchError,
   PlanIntegrityError,
   PlanRulesetDowngradeError,
   type PlanService,
@@ -148,12 +149,21 @@ function registerPlanRoutes(app: Express, planService: PlanService): void {
   app.post("/api/events/:id/plan", (req, res) => {
     const eventId = req.params.id;
     if (rejectMalformedId(eventId, res)) return;
+    const initialCreateKey = req.get("Idempotency-Key");
+    if (initialCreateKey !== undefined && !UUID.test(initialCreateKey)) {
+      res.status(400).json({ error: "Idempotency-Key must be a uuid" });
+      return;
+    }
     planService
-      .generate(eventId)
-      .then((plan) => res.status(201).json(plan))
+      .generate(eventId, initialCreateKey)
+      .then(({ plan, created }) => res.status(created ? 201 : 200).json(plan))
       .catch((error: unknown) => {
         if (error instanceof EventNotFoundError) {
           res.status(404).json({ error: error.message });
+          return;
+        }
+        if (error instanceof PlanCreateKeyMismatchError) {
+          res.status(409).json({ error: error.message });
           return;
         }
         // F-201 AC 12.

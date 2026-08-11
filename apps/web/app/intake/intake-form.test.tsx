@@ -792,6 +792,9 @@ describe("saving and per-field errors", () => {
     expect(fetchMock).toHaveBeenCalledTimes(3);
     expect(fetchMock.mock.calls[1]?.[0]).toBe("https://api.example.com/api/events/event-1/plan");
     expect((fetchMock.mock.calls[1]?.[1] as RequestInit).method).toBe("POST");
+    expect(
+      new Headers((fetchMock.mock.calls[1]?.[1] as RequestInit).headers).get("Idempotency-Key"),
+    ).toBe(new Headers(init.headers).get("Idempotency-Key"));
     expect((fetchMock.mock.calls[2]?.[1] as RequestInit).method).toBeUndefined();
     expect(screen.getByRole("button", { name: "Save changes" })).toBeDefined();
     expect(screen.getByRole("link", { name: "Promote public page" }).getAttribute("href")).toBe(
@@ -971,7 +974,13 @@ describe("saving and per-field errors", () => {
     expect(new Headers(createCalls[1]?.[1].headers).get("Idempotency-Key")).toBe(
       new Headers(createCalls[0]?.[1].headers).get("Idempotency-Key"),
     );
-    expect(planAttempts).toBe(1);
+    const planCalls = fetchMock.mock.calls.filter(
+      ([url, init]) => url.endsWith("/plan") && (init as RequestInit).method === "POST",
+    ) as [string, RequestInit][];
+    expect(planAttempts).toBe(2);
+    expect(new Headers(planCalls[1]?.[1].headers).get("Idempotency-Key")).toBe(
+      new Headers(planCalls[0]?.[1].headers).get("Idempotency-Key"),
+    );
     expect(sessionStorage).toHaveLength(0);
   });
 
@@ -1118,11 +1127,13 @@ describe("saving and per-field errors", () => {
     expect(
       fetchMock.mock.calls.filter(([url]) => url === "https://api.example.com/api/events"),
     ).toHaveLength(2);
-    expect(
-      fetchMock.mock.calls.filter(
-        ([url, init]) => url.endsWith("/plan") && (init as RequestInit).method === "POST",
-      ),
-    ).toHaveLength(1);
+    const planCalls = fetchMock.mock.calls.filter(
+      ([url, init]) => url.endsWith("/plan") && (init as RequestInit).method === "POST",
+    ) as [string, RequestInit][];
+    expect(planCalls).toHaveLength(2);
+    expect(new Headers(planCalls[1]?.[1].headers).get("Idempotency-Key")).toBe(
+      new Headers(planCalls[0]?.[1].headers).get("Idempotency-Key"),
+    );
     expect(sessionStorage).toHaveLength(0);
   });
 
