@@ -1088,18 +1088,13 @@ describe("saving and per-field errors", () => {
     expect(sessionStorage).toHaveLength(0);
   });
 
-  it("blocks a new create while an earlier recovery read is indeterminate", async () => {
+  it("preserves and blocks on a pending create while its recovery read fails", async () => {
     storeCreateRecovery();
     let storageAvailable = false;
     const getItem = Storage.prototype.getItem;
-    const removeItem = Storage.prototype.removeItem;
     vi.spyOn(Storage.prototype, "getItem").mockImplementation(function (this: Storage, key) {
       if (!storageAvailable) throw new DOMException("storage disabled", "SecurityError");
       return getItem.call(this, key);
-    });
-    vi.spyOn(Storage.prototype, "removeItem").mockImplementation(function (this: Storage, key) {
-      if (!storageAvailable) throw new DOMException("storage disabled", "SecurityError");
-      removeItem.call(this, key);
     });
     const user = renderForm();
 

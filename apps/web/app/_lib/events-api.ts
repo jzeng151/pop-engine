@@ -53,36 +53,42 @@ export function loadPendingCreate(apiBaseUrl: string): PendingCreateRead {
       return { pending: null, resolved: false };
     }
   };
+  let stored: string | null;
   try {
-    const stored = sessionStorage.getItem(storageKey);
-    if (stored === null) return { pending: null, resolved: true };
-    const value: unknown = JSON.parse(stored);
-    const record =
-      typeof value === "object" && value !== null && !Array.isArray(value)
-        ? (value as Record<string, unknown>)
-        : null;
-    if (
-      record === null ||
-      typeof record.key !== "string" ||
-      !UUID.test(record.key) ||
-      !isAnswers(record.body) ||
-      !isAnswers(record.answers) ||
-      (record.eventId !== undefined && typeof record.eventId !== "string")
-    ) {
-      return discardUnreadable();
-    }
-    return {
-      pending: {
-        key: record.key,
-        body: record.body,
-        answers: record.answers,
-        ...(typeof record.eventId === "string" ? { eventId: record.eventId } : {}),
-      },
-      resolved: true,
-    };
+    stored = sessionStorage.getItem(storageKey);
+  } catch {
+    return { pending: null, resolved: false };
+  }
+  if (stored === null) return { pending: null, resolved: true };
+  let value: unknown;
+  try {
+    value = JSON.parse(stored);
   } catch {
     return discardUnreadable();
   }
+  const record =
+    typeof value === "object" && value !== null && !Array.isArray(value)
+      ? (value as Record<string, unknown>)
+      : null;
+  if (
+    record === null ||
+    typeof record.key !== "string" ||
+    !UUID.test(record.key) ||
+    !isAnswers(record.body) ||
+    !isAnswers(record.answers) ||
+    (record.eventId !== undefined && typeof record.eventId !== "string")
+  ) {
+    return discardUnreadable();
+  }
+  return {
+    pending: {
+      key: record.key,
+      body: record.body,
+      answers: record.answers,
+      ...(typeof record.eventId === "string" ? { eventId: record.eventId } : {}),
+    },
+    resolved: true,
+  };
 }
 
 export function storePendingCreate(apiBaseUrl: string, pending: PendingCreate | null): boolean {
