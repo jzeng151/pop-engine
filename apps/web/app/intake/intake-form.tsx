@@ -5,6 +5,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import {
   askedFields,
   intakeWarnings,
+  validateIntake,
   type IntakeContract,
   type IntakeField,
   type IntakeIssue,
@@ -42,14 +43,39 @@ const DESCRIPTIVE_QUESTIONS = [
 ];
 const MAX_PARK_SEARCH_LENGTH = 80;
 
+const visibleQuestions = (contract: IntakeContract, answers: Answers): readonly IntakeField[] => {
+  const invalidFields = new Set(
+    validateIntake(contract, answers, nycToday())
+      .errors.filter((error) => error.code === "invalid_value")
+      .map((error) => error.field),
+  );
+  return askedFields(
+    contract.fields,
+    Object.fromEntries(Object.entries(answers).filter(([field]) => !invalidFields.has(field))),
+  );
+};
+
 const humanize = (token: string): string =>
   token.replace(/_/g, " ").replace(/^./, (letter) => letter.toUpperCase());
 
 const optionLabel = (value: string): string =>
   value === "unknown" ? "I don't know" : humanize(value);
 
-const isBlank = (value: IntakeValue): boolean =>
-  value === null || value === undefined || value === "";
+const isBlank = (value: IntakeValue | undefined): boolean =>
+  value === null ||
+  value === undefined ||
+  (typeof value === "string" && value.trim() === "") ||
+  (Array.isArray(value) && value.length === 0);
+
+const nycToday = (): string =>
+  new Intl.DateTimeFormat("en-CA", {
+    timeZone: "America/New_York",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(new Date());
+
+const CORRECTABLE_ERROR_CODES = new Set(["required", "invalid_value", "must_be_positive"]);
 
 const isIntakeValue = (value: unknown): value is IntakeValue =>
   value === null ||
@@ -121,6 +147,8 @@ export function IntakeForm({
   const parkSearchController = useRef<AbortController | null>(null);
   const locationNameInput = useRef<HTMLInputElement | null>(null);
   const formRef = useRef<HTMLFormElement | null>(null);
+  const shouldFocusFirstError = useRef(false);
+  const currentAnswers = useRef<Answers>({});
 
   useEffect(() => {
     if (eventId === undefined) return;
@@ -128,7 +156,9 @@ export function IntakeForm({
     void loadEvent(apiBaseUrl, eventId).then((result) => {
       if (abandoned) return;
       if (result.ok) {
-        setAnswers(answersFromEvent(contract, result.loaded.event));
+        const loadedAnswers = answersFromEvent(contract, result.loaded.event);
+        currentAnswers.current = loadedAnswers;
+        setAnswers(loadedAnswers);
         setSaved(result.loaded.event);
       } else {
         setLoadFailure(result.message);
@@ -140,7 +170,7 @@ export function IntakeForm({
     };
   }, [apiBaseUrl, contract, eventId]);
 
-  const questions = useMemo(() => askedFields(contract.fields, answers), [contract, answers]);
+  const questions = useMemo(() => visibleQuestions(contract, answers), [contract, answers]);
   // Contradictions and coverage gaps are shown while the organizer types, not only on
   // submit (spec #4, #5). The same function runs server-side on save.
   const warnings = useMemo(() => intakeWarnings(contract, answers), [contract, answers]);
@@ -152,6 +182,8 @@ export function IntakeForm({
   const parkSearchTooLong = parkSearchName.length > MAX_PARK_SEARCH_LENGTH;
 
   useEffect(() => {
+    if (!shouldFocusFirstError.current) return;
+    shouldFocusFirstError.current = false;
     const firstFieldError = errors.find(
       (error) => error.field !== "body" && error.code !== "unknown_field",
     );
@@ -163,6 +195,22 @@ export function IntakeForm({
     );
     if (control instanceof HTMLElement) control.focus();
   }, [errors]);
+
+  useEffect(() => {
+    const visibleFields = new Set([
+      ...DESCRIPTIVE_QUESTIONS.map((question) => question.field),
+      ...questions.map((question) => question.field),
+    ]);
+    setErrors((current) => {
+      const visible = current.filter(
+        (error) =>
+          error.field === "body" ||
+          error.code === "unknown_field" ||
+          visibleFields.has(error.field),
+      );
+      return visible.length === current.length ? current : visible;
+    });
+  }, [questions]);
 
   useEffect(() => {
     parkSearchRequest.current += 1;
@@ -189,7 +237,18 @@ export function IntakeForm({
       setParkSearchFailure(null);
       setParkSearching(false);
     }
-    setAnswers((current) => ({ ...current, [field]: value }));
+    const updatedAnswers = { ...currentAnswers.current, [field]: value };
+    currentAnswers.current = updatedAnswers;
+    setAnswers(updatedAnswers);
+    const remaining = validateIntake(contract, updatedAnswers, nycToday()).errors;
+    setErrors((current) =>
+      current.flatMap((error) => {
+        if (error.field !== field || !CORRECTABLE_ERROR_CODES.has(error.code)) return [error];
+        const latest = remaining.find((candidate) => candidate.field === error.field);
+        if (error.code === "required" && latest?.code !== "required") return latest ? [latest] : [];
+        return latest ? [error] : [];
+      }),
+    );
   };
 
   const searchParks = async () => {
@@ -235,10 +294,45 @@ export function IntakeForm({
   };
 
   const save = async () => {
-    setSaving(true);
     setFailure(null);
+    const fieldOrder = [
+      ...DESCRIPTIVE_QUESTIONS.map((question) => question.field),
+      ...questions.map((question) => question.field),
+    ];
+    const validationErrors = validateIntake(contract, submission(), nycToday()).errors;
+    const missing = validationErrors
+      .filter((error) => error.code === "required")
+      .map((error) => {
+        const label =
+          DESCRIPTIVE_QUESTIONS.find((question) => question.field === error.field)?.label ??
+          humanize(error.field);
+        return { ...error, message: `${label} is required` };
+      });
+    const missingFields = new Set(missing.map((error) => error.field));
+    const clientErrors = [
+      ...errors.filter(
+        (error) =>
+          error.code !== "required" &&
+          !missingFields.has(error.field) &&
+          (error.field === "body" ||
+            error.code === "unknown_field" ||
+            error.code === "in_the_past" ||
+            validationErrors.some((candidate) => candidate.field === error.field)),
+      ),
+      ...missing,
+    ];
+    clientErrors.sort(
+      (left, right) => fieldOrder.indexOf(left.field) - fieldOrder.indexOf(right.field),
+    );
+    if (missing.length > 0) {
+      shouldFocusFirstError.current = true;
+      setErrors(clientErrors);
+      return;
+    }
+
+    setSaving(true);
     // The answers as they stand at the click, which the response is reconciled against.
-    const answersAtSubmit = answers;
+    const answersAtSubmit = currentAnswers.current;
     try {
       const target = saved === null ? "/api/events" : `/api/events/${saved.id}`;
       const response = await fetch(`${apiBaseUrl}${target}`, {
@@ -248,14 +342,41 @@ export function IntakeForm({
       });
       const body = (await response.json()) as ApiResponse;
       if (!response.ok || body.event === undefined) {
-        setErrors(body.errors ?? []);
-        if ((body.errors ?? []).length === 0) setFailure("The event could not be saved.");
+        const latestAnswers = currentAnswers.current;
+        const latestErrors = validateIntake(contract, latestAnswers, nycToday()).errors;
+        const visibleFields = new Set([
+          ...DESCRIPTIVE_QUESTIONS.map((question) => question.field),
+          ...visibleQuestions(contract, latestAnswers).map((question) => question.field),
+        ]);
+        const responseErrors = (body.errors ?? []).filter(
+          (error) =>
+            error.field === "body" ||
+            error.code === "unknown_field" ||
+            (visibleFields.has(error.field) &&
+              (error.code === "in_the_past" ||
+                sameAnswer(
+                  latestAnswers[error.field] ?? null,
+                  answersAtSubmit[error.field] ?? null,
+                ) ||
+                latestErrors.some((candidate) => candidate.field === error.field))),
+        );
+        shouldFocusFirstError.current = true;
+        setErrors(responseErrors);
+        if (responseErrors.length === 0) {
+          setFailure(
+            (body.errors ?? []).length === 0
+              ? "The event could not be saved."
+              : "Your corrected answers were not saved. Save again to store them.",
+          );
+        }
         return;
       }
       setErrors([]);
       // Rebuild from the stored row so answers cleared by hidden questions cannot linger locally.
       const stored = answersFromEvent(contract, body.event);
-      setAnswers((latest) => reconcileAnswers(latest, answersAtSubmit, stored));
+      const reconciled = reconcileAnswers(currentAnswers.current, answersAtSubmit, stored);
+      currentAnswers.current = reconciled;
+      setAnswers(reconciled);
       setSaved(body.event);
       router.push(`/events/${body.event.id}`);
     } catch {
@@ -295,6 +416,7 @@ export function IntakeForm({
       <form
         ref={formRef}
         className="intake"
+        noValidate
         onSubmit={(event) => {
           event.preventDefault();
           void save();
@@ -307,6 +429,28 @@ export function IntakeForm({
           and &ldquo;I don&rsquo;t know&rdquo; is a real answer — it is stored as unknown and
           carried into your plan.
         </p>
+
+        {errors.some((error) => error.field !== "body" && error.code !== "unknown_field") && (
+          <section className="intake__error-summary" aria-labelledby="intake-error-summary-title">
+            <p id="intake-error-summary-title">
+              <strong>Fix these answers before saving:</strong>
+            </p>
+            <ul>
+              {errors
+                .filter((error) => error.field !== "body" && error.code !== "unknown_field")
+                .map((error) => (
+                  <li key={`${error.field}-${error.code}`}>
+                    <a
+                      href={`#intake-${error.field}`}
+                      onClick={() => document.getElementById(`intake-${error.field}`)?.focus()}
+                    >
+                      {error.message}
+                    </a>
+                  </li>
+                ))}
+            </ul>
+          </section>
+        )}
 
         {DESCRIPTIVE_QUESTIONS.map((question) => {
           const issue = errorFor(question.field);
@@ -583,9 +727,10 @@ function Control({
         : (field.values ?? []).map((option) => ({ value: option, label: optionLabel(option) }));
     return (
       <div className="intake__options">
-        {options.map((option) => (
+        {options.map((option, index) => (
           <label className="intake__option" key={option.value}>
             <input
+              id={index === 0 ? `intake-${field.field}` : undefined}
               type="radio"
               name={field.field}
               value={option.value}
@@ -605,9 +750,10 @@ function Control({
     const selected = Array.isArray(value) ? value : [];
     return (
       <div className="intake__options">
-        {(field.values ?? []).map((option) => (
+        {(field.values ?? []).map((option, index) => (
           <label className="intake__option" key={option}>
             <input
+              id={index === 0 ? `intake-${field.field}` : undefined}
               type="checkbox"
               name={field.field}
               value={option}
@@ -623,6 +769,7 @@ function Control({
 
   return (
     <input
+      id={`intake-${field.field}`}
       className="intake__input"
       name={field.field}
       type={field.type === "date" ? "date" : "number"}

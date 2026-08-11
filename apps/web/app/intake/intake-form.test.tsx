@@ -72,7 +72,7 @@ const fillField = async (
   const input = document.querySelector<HTMLInputElement>(`input[name="${field}"]`);
   if (input === null) throw new Error(`no input ${field} on screen`);
   await user.clear(input);
-  await user.type(input, value);
+  if (value !== "") await user.type(input, value);
 };
 
 const answerParkEvent = async (user: ReturnType<typeof userEvent.setup>) => {
@@ -88,6 +88,7 @@ const answerParkEvent = async (user: ReturnType<typeof userEvent.setup>) => {
   await chooseOption(user, "structure_types", "none");
   await chooseOption(user, "open_flame_or_cooking", "none");
   await chooseOption(user, "generator_present", "false");
+  await chooseOption(user, "battery_present", "false");
   await chooseOption(user, "alcohol", "false");
 };
 
@@ -350,6 +351,7 @@ describe("loading a saved event to edit it", () => {
     structure_types: ["none"],
     open_flame_or_cooking: ["none"],
     generator_present: false,
+    battery_present: false,
     battery_system_kwh: null,
     alcohol: false,
     obstructs_public_way: null,
@@ -478,6 +480,7 @@ describe("clearing an optional answer on an edit", () => {
           structure_types: ["none"],
           open_flame_or_cooking: ["none"],
           generator_present: false,
+          battery_present: false,
           alcohol: false,
         },
         warnings: [],
@@ -646,6 +649,80 @@ describe("inline warnings render the published text (spec #4, #5)", () => {
 });
 
 describe("saving and per-field errors", () => {
+  it("lists every missing visible answer, focuses the first, and clears it when corrected", async () => {
+    const user = renderForm();
+    await save(user);
+
+    expect(fetchMock).not.toHaveBeenCalled();
+    const summary = screen.getByRole("region", { name: "Fix these answers before saving:" });
+    expect(within(summary).getByRole("link", { name: "Event name is required" })).toBeDefined();
+    expect(within(summary).getByRole("link", { name: "Borough is required" })).toBeDefined();
+    expect(within(summary).getByRole("link", { name: "Location type is required" })).toBeDefined();
+    expect(within(summary).queryByText(/Sapo event type is required/)).toBeNull();
+    await waitFor(() =>
+      expect(document.activeElement).toBe(
+        document.querySelector<HTMLInputElement>('input[name="name"]'),
+      ),
+    );
+
+    await fillField(user, "name", "Community Day");
+    expect(within(summary).queryByRole("link", { name: "Event name is required" })).toBeNull();
+    expect(document.querySelector<HTMLInputElement>('input[name="name"]')?.value).toBe(
+      "Community Day",
+    );
+    expect(document.activeElement).toBe(document.querySelector('input[name="name"]'));
+
+    const boroughLink = within(summary).getByRole("link", { name: "Borough is required" });
+    await user.click(boroughLink);
+    const borough = document.getElementById("intake-borough");
+    expect(borough?.tagName).toBe("INPUT");
+    expect(borough?.getAttribute("name")).toBe("borough");
+    expect(document.activeElement).toBe(borough);
+  });
+
+  it("removes a conditional error when its parent answer hides the field", async () => {
+    const user = renderForm();
+    await chooseOption(user, "food_present", "true");
+    await save(user);
+
+    const summary = screen.getByRole("region", { name: "Fix these answers before saving:" });
+    expect(
+      within(summary).getByRole("link", { name: "Food vendor count is required" }),
+    ).toBeDefined();
+
+    await chooseOption(user, "food_present", "false");
+    await waitFor(() =>
+      expect(
+        within(summary).queryByRole("link", { name: "Food vendor count is required" }),
+      ).toBeNull(),
+    );
+    expect(document.querySelector('input[name="food_vendor_count"]')).toBeNull();
+  });
+
+  it("treats a whitespace-only required name as missing", async () => {
+    const user = renderForm();
+    await answerParkEvent(user);
+    await fillField(user, "name", "   ");
+    await save(user);
+
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(screen.getByRole("link", { name: "Event name is required" })).toBeDefined();
+  });
+
+  it("replaces a required message when the field becomes nonblank but stays invalid", async () => {
+    const user = renderForm();
+    await save(user);
+    expect(screen.getByRole("link", { name: "Headcount is required" })).toBeDefined();
+
+    await fillField(user, "headcount", "0");
+
+    expect(screen.queryByRole("link", { name: "Headcount is required" })).toBeNull();
+    expect(screen.getByRole("link", { name: "headcount must be at least 1" })).toBeDefined();
+    expect(screen.getByRole("spinbutton", { name: "Headcount" }).getAttribute("aria-invalid")).toBe(
+      "true",
+    );
+  });
+
   it("posts the intake and opens its overview", async () => {
     const user = renderForm();
     await answerParkEvent(user);
@@ -687,6 +764,314 @@ describe("saving and per-field errors", () => {
     expect(headcount.getAttribute("aria-invalid")).toBe("true");
     expect(headcount.getAttribute("aria-describedby")).toContain("intake-headcount-error");
     await waitFor(() => expect(document.activeElement).toBe(headcount));
+  });
+
+  it("keeps a server error when a field changes to another invalid value", async () => {
+    fetchMock.mockResolvedValueOnce(
+      jsonResponse(400, {
+        errors: [
+          { field: "headcount", code: "must_be_positive", message: "headcount must be at least 1" },
+        ],
+        warnings: [],
+      }),
+    );
+    const user = renderForm();
+    await answerParkEvent(user);
+    await save(user);
+
+    await fillField(user, "headcount", "-1");
+    expect(screen.getByRole("link", { name: "headcount must be at least 1" })).toBeDefined();
+    expect(screen.getByRole("spinbutton", { name: "Headcount" }).getAttribute("aria-invalid")).toBe(
+      "true",
+    );
+
+    await fillField(user, "headcount", "1");
+    expect(screen.queryByRole("link", { name: "headcount must be at least 1" })).toBeNull();
+    expect(
+      screen.getByRole("spinbutton", { name: "Headcount" }).getAttribute("aria-invalid"),
+    ).toBeNull();
+  });
+
+  it("discards a failed save's error when the answer was corrected in flight", async () => {
+    let releaseSave: (response: Response) => void = () => {};
+    fetchMock.mockImplementationOnce(
+      async () =>
+        new Promise<Response>((resolve) => {
+          releaseSave = resolve;
+        }),
+    );
+    const user = renderForm();
+    await answerParkEvent(user);
+    await fillField(user, "headcount", "0");
+    await save(user);
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
+
+    await fillField(user, "headcount", "1");
+    releaseSave(
+      jsonResponse(400, {
+        errors: [
+          { field: "headcount", code: "must_be_positive", message: "headcount must be at least 1" },
+        ],
+        warnings: [],
+      }),
+    );
+
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: "Save event" }).hasAttribute("disabled")).toBe(
+        false,
+      ),
+    );
+    expect(screen.queryByRole("link", { name: "headcount must be at least 1" })).toBeNull();
+    expect(
+      screen.getByRole("spinbutton", { name: "Headcount" }).getAttribute("aria-invalid"),
+    ).toBeNull();
+    expect(screen.getByRole("alert").textContent).toBe(
+      "Your corrected answers were not saved. Save again to store them.",
+    );
+  });
+
+  it("keeps a failed save's error when the answer stays invalid in flight", async () => {
+    let releaseSave: (response: Response) => void = () => {};
+    fetchMock.mockImplementationOnce(
+      async () =>
+        new Promise<Response>((resolve) => {
+          releaseSave = resolve;
+        }),
+    );
+    const user = renderForm();
+    await answerParkEvent(user);
+    await fillField(user, "headcount", "0");
+    await save(user);
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
+
+    await fillField(user, "headcount", "-1");
+    releaseSave(
+      jsonResponse(400, {
+        errors: [
+          { field: "headcount", code: "must_be_positive", message: "headcount must be at least 1" },
+        ],
+        warnings: [],
+      }),
+    );
+
+    expect(await screen.findByRole("link", { name: "headcount must be at least 1" })).toBeDefined();
+    expect(screen.getByRole("spinbutton", { name: "Headcount" }).getAttribute("aria-invalid")).toBe(
+      "true",
+    );
+  });
+
+  it("discards a failed save's error when its control was hidden in flight", async () => {
+    let releaseSave: (response: Response) => void = () => {};
+    fetchMock.mockImplementationOnce(
+      async () =>
+        new Promise<Response>((resolve) => {
+          releaseSave = resolve;
+        }),
+    );
+    const user = renderForm();
+    await answerParkEvent(user);
+    await chooseOption(user, "location_type", "street");
+    await chooseOption(user, "obstructs_public_way", "yes");
+    await chooseOption(user, "sapo_event_type", "street_event");
+    await chooseOption(user, "street_event_size", "large");
+    await save(user);
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
+
+    await chooseOption(user, "location_type", "park");
+    releaseSave(
+      jsonResponse(400, {
+        errors: [
+          {
+            field: "street_event_size",
+            code: "invalid_value",
+            message: "street_event_size is invalid",
+          },
+        ],
+        warnings: [],
+      }),
+    );
+
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: "Save event" }).hasAttribute("disabled")).toBe(
+        false,
+      ),
+    );
+    expect(screen.queryByRole("link", { name: "street_event_size is invalid" })).toBeNull();
+    expect(document.querySelector('input[name="street_event_size"]')).toBeNull();
+  });
+
+  it("keeps a server-owned date error after an in-flight edit", async () => {
+    let releaseSave: (response: Response) => void = () => {};
+    fetchMock.mockImplementationOnce(
+      async () =>
+        new Promise<Response>((resolve) => {
+          releaseSave = resolve;
+        }),
+    );
+    const user = renderForm();
+    await answerParkEvent(user);
+    await fillField(user, "event_date", "2026-08-10");
+    await save(user);
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
+
+    await fillField(user, "event_date", "2026-08-11");
+    releaseSave(
+      jsonResponse(400, {
+        errors: [
+          {
+            field: "event_date",
+            code: "in_the_past",
+            message: "event_date must be today or later",
+          },
+        ],
+        warnings: [],
+      }),
+    );
+
+    expect(
+      await screen.findByRole("link", { name: "event_date must be today or later" }),
+    ).toBeDefined();
+    expect(screen.getByLabelText("Event date").getAttribute("aria-invalid")).toBe("true");
+  });
+
+  it("clears invalid-value and past-date errors only after valid corrections", async () => {
+    fetchMock.mockResolvedValueOnce(
+      jsonResponse(400, {
+        errors: [
+          {
+            field: "capacity",
+            code: "invalid_value",
+            message: "capacity must be a positive whole number",
+          },
+          {
+            field: "event_date",
+            code: "in_the_past",
+            message: "event_date must be today or later",
+          },
+        ],
+        warnings: [],
+      }),
+    );
+    const user = renderForm();
+    await answerParkEvent(user);
+    await fillField(user, "capacity", "0");
+    await save(user);
+
+    expect(screen.getByRole("link", { name: /capacity must/ })).toBeDefined();
+    await fillField(user, "event_date", "2000-01-01");
+    expect(screen.getByRole("link", { name: /event_date must/ })).toBeDefined();
+
+    await fillField(user, "capacity", "1");
+    await fillField(
+      user,
+      "event_date",
+      new Date(Date.now() + 86_400_000).toISOString().slice(0, 10),
+    );
+    expect(screen.queryByRole("link", { name: /capacity must/ })).toBeNull();
+    expect(screen.getByRole("link", { name: /event_date must/ })).toBeDefined();
+
+    await save(user);
+    await waitFor(() => expect(screen.queryByRole("link", { name: /event_date must/ })).toBeNull());
+  });
+
+  it("replaces a stale field error when that field becomes required", async () => {
+    fetchMock.mockResolvedValueOnce(
+      jsonResponse(400, {
+        errors: [
+          {
+            field: "headcount",
+            code: "invalid_value",
+            message: "headcount must be a whole number",
+          },
+        ],
+        warnings: [],
+      }),
+    );
+    const user = renderForm();
+    await answerParkEvent(user);
+    await save(user);
+
+    await fillField(user, "headcount", "");
+    await save(user);
+
+    expect(screen.getByRole("link", { name: "Headcount is required" })).toBeDefined();
+    expect(screen.queryByRole("link", { name: "headcount must be a whole number" })).toBeNull();
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("keeps an unresolved server error when another answer fails client validation", async () => {
+    fetchMock.mockResolvedValueOnce(
+      jsonResponse(400, {
+        errors: [
+          {
+            field: "event_date",
+            code: "in_the_past",
+            message: "event_date must be today or later",
+          },
+        ],
+        warnings: [],
+      }),
+    );
+    const user = renderForm();
+    await answerParkEvent(user);
+    await save(user);
+
+    await fillField(user, "event_date", "2000-01-01");
+    await fillField(user, "name", "");
+    await save(user);
+
+    expect(screen.getByRole("link", { name: "Event name is required" })).toBeDefined();
+    expect(screen.getByRole("link", { name: "event_date must be today or later" })).toBeDefined();
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+
+    await fillField(user, "name", "Community Day");
+    expect(screen.queryByRole("link", { name: "Event name is required" })).toBeNull();
+    expect(screen.getByRole("link", { name: "event_date must be today or later" })).toBeDefined();
+  });
+
+  it("does not require conditional children triggered by an invalid parent answer", async () => {
+    fetchMock.mockResolvedValueOnce(
+      jsonResponse(400, {
+        errors: [
+          {
+            field: "headcount",
+            code: "invalid_value",
+            message: "headcount must be a whole number",
+          },
+        ],
+        warnings: [],
+      }),
+    );
+    const user = renderForm();
+    await answerParkEvent(user);
+    await chooseOption(user, "location_type", "private_venue");
+    await chooseOption(user, "amplified_sound", "false");
+    await fillField(user, "headcount", "75.5");
+
+    expect(questionsOnScreen()).not.toContain("Venue paco covers exact event");
+    expect(questionsOnScreen()).not.toContain("Venue fdny pa permit current for event space");
+    await save(user);
+
+    expect(screen.getByRole("link", { name: "headcount must be a whole number" })).toBeDefined();
+    expect(
+      screen.queryByRole("link", { name: /Venue paco covers exact event is required/ }),
+    ).toBeNull();
+    expect(
+      screen.queryByRole("link", {
+        name: /Venue fdny pa permit current for event space is required/,
+      }),
+    ).toBeNull();
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("lets the server decide whether an event date is in the past", async () => {
+    const user = renderForm();
+    await answerParkEvent(user);
+    await fillField(user, "event_date", "2000-01-01");
+    await save(user);
+
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
+    expect(router.push).toHaveBeenCalledWith("/events/event-1");
   });
 
   it("shows an error the form has no field for at the form level", async () => {
@@ -770,6 +1155,7 @@ describe("editing a saved event", () => {
     await chooseOption(user, "structure_types", "none");
     await chooseOption(user, "open_flame_or_cooking", "none");
     await chooseOption(user, "generator_present", "false");
+    await chooseOption(user, "battery_present", "false");
     await chooseOption(user, "alcohol", "false");
   };
 
@@ -894,7 +1280,7 @@ describe("editing a saved event", () => {
     expect(document.querySelector<HTMLInputElement>('input[name="headcount"]')?.value).toBe("80");
   });
 
-  it("shows a re-revealed question as cleared, not as it was before the save", async () => {
+  it("shows a re-revealed question as cleared and requires it before another save", async () => {
     const user = renderForm();
     await answerSellingStreetEvent(user);
     await save(user);
@@ -919,11 +1305,8 @@ describe("editing a saved event", () => {
         ?.checked,
     ).toBe(false);
 
-    fetchMock.mockImplementationOnce(async (_url: string, init: RequestInit) =>
-      echoSavedEvent(200, init, { revision_counter: 3 }),
-    );
     await save(user);
-    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(3));
-    expect(requestBody(fetchMock, 2).street_event_size).toBeNull();
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(screen.getByRole("alert").textContent).toBe("Street event size is required");
   });
 });
