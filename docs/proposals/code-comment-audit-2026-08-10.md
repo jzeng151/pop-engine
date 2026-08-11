@@ -14,7 +14,7 @@ The migration “after” examples below are the standard new migrations should 
 
 ## Summary
 
-The scan found 3,480 comment tokens spanning 7,696 lines and approximately 548 KB of text across 193 TypeScript/JavaScript files. The implementation reduced that to 1,066 tokens, 1,639 lines, and approximately 119 KB: 6,057 fewer comment lines and a 78% reduction in comment text.
+The scan found 3,480 comment tokens spanning 7,696 lines and approximately 548 KB of text across 193 TypeScript/JavaScript files. The implementation reduced that to 1,066 tokens, 1,641 lines, and approximately 119 KB: 6,055 fewer comment lines and a 78% reduction in comment text.
 
 The desired rule is:
 

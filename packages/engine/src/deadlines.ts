@@ -219,7 +219,8 @@ export function computeDeadline(
     }
 
     case "composite": {
-      // The hard floor is a cliff, not a gradient, and the floor day itself is inside the window: PARKS-EVENT-001 publishes "apply at least 21 days ahead (applications inside 21 days are not accepted)", so filing on the floor.
+      // PARKS-EVENT-001's hard-floor day is valid; the next day is missed. Runway shorter than its
+      // processing range remains at risk.
       const dated = dateBackFrom(
         lastValidFilingDate(
           addCalendarDays(context.eventDate, -deadline.hardFloorDays),

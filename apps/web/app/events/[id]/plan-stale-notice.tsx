@@ -103,7 +103,8 @@ export function PlanStaleNotice({ apiBaseUrl, eventId }: { apiBaseUrl: string; e
     setCleared(null);
   }
 
-  // Commit phase, so an abandoned concurrent render cannot advance it, and the LAYOUT phase rather than a passive effect because React runs this inside the commit that puts the new event on screen, before it yields to any.
+  // A layout effect advances the id only after commit but before queued microtasks; a passive effect
+  // lets the previous event's request pass the identity check and update the new screen.
   useLayoutEffect(() => {
     describedEventId.current = eventId;
   }, [eventId]);
