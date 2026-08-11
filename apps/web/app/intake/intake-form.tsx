@@ -160,7 +160,17 @@ export function IntakeForm({
     };
   }, [apiBaseUrl, contract, eventId]);
 
-  const questions = useMemo(() => askedFields(contract.fields, answers), [contract, answers]);
+  const questions = useMemo(() => {
+    const invalidFields = new Set(
+      validateIntake(contract, answers, nycToday())
+        .errors.filter((error) => error.code === "invalid_value")
+        .map((error) => error.field),
+    );
+    return askedFields(
+      contract.fields,
+      Object.fromEntries(Object.entries(answers).filter(([field]) => !invalidFields.has(field))),
+    );
+  }, [contract, answers]);
   // Contradictions and coverage gaps are shown while the organizer types, not only on
   // submit (spec #4, #5). The same function runs server-side on save.
   const warnings = useMemo(() => intakeWarnings(contract, answers), [contract, answers]);
@@ -284,25 +294,23 @@ export function IntakeForm({
 
   const save = async () => {
     setFailure(null);
-    const missing = [
-      ...DESCRIPTIVE_QUESTIONS.filter(
-        (question) => question.required && isBlank(answers[question.field]),
-      ).map((question) => ({
-        field: question.field,
-        code: "required",
-        message: `${question.label} is required`,
-      })),
-      ...questions
-        .filter((question) => !question.nullable && isBlank(answers[question.field]))
-        .map((question) => ({
-          field: question.field,
-          code: "required",
-          message: `${humanize(question.field)} is required`,
-        })),
+    const fieldOrder = [
+      ...DESCRIPTIVE_QUESTIONS.map((question) => question.field),
+      ...questions.map((question) => question.field),
     ];
-    if (missing.length > 0) {
+    const clientErrors = validateIntake(contract, submission(), nycToday()).errors.map((error) => {
+      if (error.code !== "required") return error;
+      const label =
+        DESCRIPTIVE_QUESTIONS.find((question) => question.field === error.field)?.label ??
+        humanize(error.field);
+      return { ...error, message: `${label} is required` };
+    });
+    clientErrors.sort(
+      (left, right) => fieldOrder.indexOf(left.field) - fieldOrder.indexOf(right.field),
+    );
+    if (clientErrors.length > 0) {
       shouldFocusFirstError.current = true;
-      setErrors(missing);
+      setErrors(clientErrors);
       return;
     }
 

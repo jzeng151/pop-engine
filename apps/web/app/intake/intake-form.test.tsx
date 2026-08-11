@@ -72,7 +72,7 @@ const fillField = async (
   const input = document.querySelector<HTMLInputElement>(`input[name="${field}"]`);
   if (input === null) throw new Error(`no input ${field} on screen`);
   await user.clear(input);
-  await user.type(input, value);
+  if (value !== "") await user.type(input, value);
 };
 
 const answerParkEvent = async (user: ReturnType<typeof userEvent.setup>) => {
@@ -803,6 +803,7 @@ describe("saving and per-field errors", () => {
 
     expect(screen.getByRole("link", { name: /capacity must/ })).toBeDefined();
     await fillField(user, "event_date", "2000-01-01");
+    await save(user);
     expect(screen.getByRole("link", { name: /event_date must/ })).toBeDefined();
 
     await fillField(user, "capacity", "1");
@@ -813,6 +814,57 @@ describe("saving and per-field errors", () => {
     );
     expect(screen.queryByRole("link", { name: /capacity must/ })).toBeNull();
     expect(screen.queryByRole("link", { name: /event_date must/ })).toBeNull();
+  });
+
+  it("keeps an unresolved server error when another answer fails client validation", async () => {
+    fetchMock.mockResolvedValueOnce(
+      jsonResponse(400, {
+        errors: [
+          {
+            field: "event_date",
+            code: "in_the_past",
+            message: "event_date must be today or later",
+          },
+        ],
+        warnings: [],
+      }),
+    );
+    const user = renderForm();
+    await answerParkEvent(user);
+    await save(user);
+
+    await fillField(user, "event_date", "2000-01-01");
+    await fillField(user, "name", "");
+    await save(user);
+
+    expect(screen.getByRole("link", { name: "Event name is required" })).toBeDefined();
+    expect(screen.getByRole("link", { name: "event_date must be today or later" })).toBeDefined();
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+
+    await fillField(user, "name", "Community Day");
+    expect(screen.queryByRole("link", { name: "Event name is required" })).toBeNull();
+    expect(screen.getByRole("link", { name: "event_date must be today or later" })).toBeDefined();
+  });
+
+  it("does not require conditional children triggered by an invalid parent answer", async () => {
+    const user = renderForm();
+    await chooseOption(user, "location_type", "private_venue");
+    await fillField(user, "headcount", "75.5");
+
+    expect(questionsOnScreen()).not.toContain("Venue paco covers exact event");
+    expect(questionsOnScreen()).not.toContain("Venue fdny pa permit current for event space");
+    await save(user);
+
+    expect(screen.getByRole("link", { name: "headcount must be a whole number" })).toBeDefined();
+    expect(
+      screen.queryByRole("link", { name: /Venue paco covers exact event is required/ }),
+    ).toBeNull();
+    expect(
+      screen.queryByRole("link", {
+        name: /Venue fdny pa permit current for event space is required/,
+      }),
+    ).toBeNull();
+    expect(fetchMock).not.toHaveBeenCalled();
   });
 
   it("shows an error the form has no field for at the form level", async () => {
