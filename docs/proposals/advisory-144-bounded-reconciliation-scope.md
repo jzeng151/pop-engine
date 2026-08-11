@@ -668,11 +668,6 @@ replaced. **And an unapproved external branch cannot override the approved basel
 anyway.** The first version of this section created an unresolvable citation and the second created an
 unresolvable precedence; this one has neither.
 
-**The dependency is a note, not a precedence rule.** #171 is where this enumeration originated and
-that is worth knowing. If #171 merges, the two accounts should be reconciled and the duplication
-collapsed, by whoever lands the second of them. Until then **this document governs its own contents**,
-and every location in it stands or falls against `main`, which is the only tree either reader has.
-
 ### 5.2 The enumeration, reproduced, with what an advisory-text-only change reaches
 
 **The seven constants coupled to the published artifact**, plus the eighth that is not compared at
