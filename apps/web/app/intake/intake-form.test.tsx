@@ -971,6 +971,7 @@ describe("saving and per-field errors", () => {
     expect(new Headers(createCalls[1]?.[1].headers).get("Idempotency-Key")).toBe(
       new Headers(createCalls[0]?.[1].headers).get("Idempotency-Key"),
     );
+    expect(planAttempts).toBe(1);
     expect(sessionStorage).toHaveLength(0);
   });
 
@@ -1106,6 +1107,23 @@ describe("saving and per-field errors", () => {
     );
     expect(router.push).not.toHaveBeenCalled();
     expect(sessionStorage).toHaveLength(1);
+
+    fetchMock.mockImplementationOnce(async (_url: string, init: RequestInit) =>
+      echoSavedEvent(200, init),
+    );
+    fetchMock.mockResolvedValueOnce(jsonResponse(200, storedPlan));
+    await save(user);
+
+    await waitFor(() => expect(router.push).toHaveBeenCalledWith("/events/event-1/plan"));
+    expect(
+      fetchMock.mock.calls.filter(([url]) => url === "https://api.example.com/api/events"),
+    ).toHaveLength(2);
+    expect(
+      fetchMock.mock.calls.filter(
+        ([url, init]) => url.endsWith("/plan") && (init as RequestInit).method === "POST",
+      ),
+    ).toHaveLength(1);
+    expect(sessionStorage).toHaveLength(0);
   });
 
   it("does not route after the form unmounts while the first plan is generating", async () => {

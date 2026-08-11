@@ -389,8 +389,8 @@ export function IntakeForm({
 
   const save = async () => {
     setFailure(null);
-    const creating = saved === null;
-    const retry = creating ? pendingCreate.current : null;
+    const retry = pendingCreate.current;
+    const creating = saved === null || retry !== null;
     const requestBody = retry?.body ?? submission();
     if (retry === null) {
       const fieldOrder = [
@@ -505,24 +505,30 @@ export function IntakeForm({
         setSaved(body.event);
       }
       if (creating) {
-        const generated = await regeneratePlan(apiBaseUrl, body.event.id);
-        if (!mounted.current) return;
-        const generationMessage = generated.ok ? "" : generated.message;
-        let planStored = false;
-        if (generated.ok || !generated.refused) {
+        let planStored: boolean | null = false;
+        let generationMessage = "";
+        if (retry !== null) {
           const loaded = await loadPlan(apiBaseUrl, body.event.id);
           if (!mounted.current) return;
-          const exists = loaded.ok ? true : loaded.missing ? false : null;
-          const changedWhileSaving = !sameAnswers(currentAnswers.current, stored);
-          if (exists === null) {
-            setFailure(
-              `Your event was saved, but it is not known whether its permit plan was generated. ${generationMessage} Open the permit plan to check before trying again.${changedWhileSaving ? " Changes made while the request was running are still unsaved." : ""}`,
-            );
-            return;
+          planStored = loaded.ok ? true : loaded.missing ? false : null;
+        }
+        if (planStored === false) {
+          const generated = await regeneratePlan(apiBaseUrl, body.event.id);
+          if (!mounted.current) return;
+          generationMessage = generated.ok ? "" : generated.message;
+          if (generated.ok || !generated.refused) {
+            const loaded = await loadPlan(apiBaseUrl, body.event.id);
+            if (!mounted.current) return;
+            planStored = loaded.ok ? true : loaded.missing ? false : null;
           }
-          planStored = exists;
         }
         const changedWhileSaving = !sameAnswers(currentAnswers.current, stored);
+        if (planStored === null) {
+          setFailure(
+            `Your event was saved, but it is not known whether its permit plan was generated. ${generationMessage} Open the permit plan to check before trying again.${changedWhileSaving ? " Changes made while the request was running are still unsaved." : ""}`,
+          );
+          return;
+        }
         if (!planStored) {
           pendingCreate.current = null;
           storePendingCreate(apiBaseUrl, null);
