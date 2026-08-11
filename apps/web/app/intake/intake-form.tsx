@@ -124,6 +124,7 @@ export function IntakeForm({
   const parkSearchController = useRef<AbortController | null>(null);
   const locationNameInput = useRef<HTMLInputElement | null>(null);
   const formRef = useRef<HTMLFormElement | null>(null);
+  const shouldFocusFirstError = useRef(false);
 
   useEffect(() => {
     if (eventId === undefined) return;
@@ -155,6 +156,8 @@ export function IntakeForm({
   const parkSearchTooLong = parkSearchName.length > MAX_PARK_SEARCH_LENGTH;
 
   useEffect(() => {
+    if (!shouldFocusFirstError.current) return;
+    shouldFocusFirstError.current = false;
     const firstFieldError = errors.find(
       (error) => error.field !== "body" && error.code !== "unknown_field",
     );
@@ -166,6 +169,22 @@ export function IntakeForm({
     );
     if (control instanceof HTMLElement) control.focus();
   }, [errors]);
+
+  useEffect(() => {
+    const visibleFields = new Set([
+      ...DESCRIPTIVE_QUESTIONS.map((question) => question.field),
+      ...questions.map((question) => question.field),
+    ]);
+    setErrors((current) => {
+      const visible = current.filter(
+        (error) =>
+          error.field === "body" ||
+          error.code === "unknown_field" ||
+          visibleFields.has(error.field),
+      );
+      return visible.length === current.length ? current : visible;
+    });
+  }, [questions]);
 
   useEffect(() => {
     parkSearchRequest.current += 1;
@@ -257,6 +276,7 @@ export function IntakeForm({
         })),
     ];
     if (missing.length > 0) {
+      shouldFocusFirstError.current = true;
       setErrors(missing);
       return;
     }
@@ -273,6 +293,7 @@ export function IntakeForm({
       });
       const body = (await response.json()) as ApiResponse;
       if (!response.ok || body.event === undefined) {
+        shouldFocusFirstError.current = true;
         setErrors(body.errors ?? []);
         if ((body.errors ?? []).length === 0) setFailure("The event could not be saved.");
         return;
@@ -344,7 +365,12 @@ export function IntakeForm({
                 .filter((error) => error.field !== "body" && error.code !== "unknown_field")
                 .map((error) => (
                   <li key={`${error.field}-${error.code}`}>
-                    <a href={`#intake-${error.field}`}>{error.message}</a>
+                    <a
+                      href={`#intake-${error.field}`}
+                      onClick={() => document.getElementById(`intake-${error.field}`)?.focus()}
+                    >
+                      {error.message}
+                    </a>
                   </li>
                 ))}
             </ul>
@@ -571,7 +597,6 @@ function Question({
 
   return (
     <fieldset
-      id={`intake-${field.field}`}
       className="intake__question"
       aria-describedby={describedBy.length === 0 ? undefined : describedBy}
       aria-invalid={issue === undefined ? undefined : true}
@@ -627,9 +652,10 @@ function Control({
         : (field.values ?? []).map((option) => ({ value: option, label: optionLabel(option) }));
     return (
       <div className="intake__options">
-        {options.map((option) => (
+        {options.map((option, index) => (
           <label className="intake__option" key={option.value}>
             <input
+              id={index === 0 ? `intake-${field.field}` : undefined}
               type="radio"
               name={field.field}
               value={option.value}
@@ -649,9 +675,10 @@ function Control({
     const selected = Array.isArray(value) ? value : [];
     return (
       <div className="intake__options">
-        {(field.values ?? []).map((option) => (
+        {(field.values ?? []).map((option, index) => (
           <label className="intake__option" key={option}>
             <input
+              id={index === 0 ? `intake-${field.field}` : undefined}
               type="checkbox"
               name={field.field}
               value={option}
@@ -667,6 +694,7 @@ function Control({
 
   return (
     <input
+      id={`intake-${field.field}`}
       className="intake__input"
       name={field.field}
       type={field.type === "date" ? "date" : "number"}

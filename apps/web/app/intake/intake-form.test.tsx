@@ -667,6 +667,36 @@ describe("saving and per-field errors", () => {
 
     await fillField(user, "name", "Community Day");
     expect(within(summary).queryByRole("link", { name: "Event name is required" })).toBeNull();
+    expect(document.querySelector<HTMLInputElement>('input[name="name"]')?.value).toBe(
+      "Community Day",
+    );
+    expect(document.activeElement).toBe(document.querySelector('input[name="name"]'));
+
+    const boroughLink = within(summary).getByRole("link", { name: "Borough is required" });
+    await user.click(boroughLink);
+    const borough = document.getElementById("intake-borough");
+    expect(borough?.tagName).toBe("INPUT");
+    expect(borough?.getAttribute("name")).toBe("borough");
+    expect(document.activeElement).toBe(borough);
+  });
+
+  it("removes a conditional error when its parent answer hides the field", async () => {
+    const user = renderForm();
+    await chooseOption(user, "food_present", "true");
+    await save(user);
+
+    const summary = screen.getByRole("region", { name: "Fix these answers before saving:" });
+    expect(
+      within(summary).getByRole("link", { name: "Food vendor count is required" }),
+    ).toBeDefined();
+
+    await chooseOption(user, "food_present", "false");
+    await waitFor(() =>
+      expect(
+        within(summary).queryByRole("link", { name: "Food vendor count is required" }),
+      ).toBeNull(),
+    );
+    expect(document.querySelector('input[name="food_vendor_count"]')).toBeNull();
   });
 
   it("posts the intake and opens its overview", async () => {
