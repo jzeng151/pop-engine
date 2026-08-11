@@ -767,6 +767,27 @@ describe("saving and per-field errors", () => {
     expect(router.push).not.toHaveBeenCalled();
   });
 
+  it("opens the plan when an interim edit is restored before generation finishes", async () => {
+    let releasePlan: (response: Response) => void = () => {};
+    fetchMock.mockImplementation(async (url: string, init: RequestInit) => {
+      if (!url.endsWith("/plan")) return echoSavedEvent(201, init);
+      return new Promise<Response>((resolve) => {
+        releasePlan = resolve;
+      });
+    });
+    const user = renderForm();
+    await answerParkEvent(user);
+    await save(user);
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
+
+    await fillField(user, "headcount", "175");
+    await fillField(user, "headcount", "150");
+    releasePlan(jsonResponse(201, {}));
+
+    await waitFor(() => expect(router.push).toHaveBeenCalledWith("/events/event-1/plan"));
+    expect(screen.queryByText(/changes made while they were saving are still unsaved/)).toBeNull();
+  });
+
   it("keeps the saved event available when its first plan cannot be generated", async () => {
     fetchMock.mockImplementationOnce(async (_url: string, init: RequestInit) =>
       echoSavedEvent(201, init),

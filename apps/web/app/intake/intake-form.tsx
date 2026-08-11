@@ -91,6 +91,11 @@ const sameAnswer = (left: IntakeValue, right: IntakeValue): boolean =>
       [...left].sort().every((value, index) => value === [...right].sort()[index])
     : left === right;
 
+const sameAnswers = (left: Answers, right: Answers): boolean =>
+  [...new Set([...Object.keys(left), ...Object.keys(right)])].every((field) =>
+    sameAnswer(left[field] ?? null, right[field] ?? null),
+  );
+
 /** Fold a saved row back into the form without discarding anything typed while the save was in flight. */
 function reconcileAnswers(current: Answers, atSubmit: Answers, stored: Answers): Answers {
   const merged: Answers = { ...stored };
@@ -130,7 +135,7 @@ export function IntakeForm({
   const locationNameInput = useRef<HTMLInputElement | null>(null);
   const formRef = useRef<HTMLFormElement | null>(null);
   const shouldFocusFirstError = useRef(false);
-  const answerRevision = useRef(0);
+  const currentAnswers = useRef<Answers>({});
 
   useEffect(() => {
     if (eventId === undefined) return;
@@ -138,7 +143,9 @@ export function IntakeForm({
     void loadEvent(apiBaseUrl, eventId).then((result) => {
       if (abandoned) return;
       if (result.ok) {
-        setAnswers(answersFromEvent(contract, result.loaded.event));
+        const loadedAnswers = answersFromEvent(contract, result.loaded.event);
+        currentAnswers.current = loadedAnswers;
+        setAnswers(loadedAnswers);
         setSaved(result.loaded.event);
       } else {
         setLoadFailure(result.message);
@@ -209,7 +216,6 @@ export function IntakeForm({
   );
 
   const answer = (field: string, value: IntakeValue) => {
-    answerRevision.current += 1;
     if (field === "location_name") {
       parkSearchRequest.current += 1;
       parkSearchController.current?.abort();
@@ -218,7 +224,9 @@ export function IntakeForm({
       setParkSearchFailure(null);
       setParkSearching(false);
     }
-    setAnswers((current) => ({ ...current, [field]: value }));
+    const updatedAnswers = { ...currentAnswers.current, [field]: value };
+    currentAnswers.current = updatedAnswers;
+    setAnswers(updatedAnswers);
     setErrors((current) =>
       current.filter((error) => error.field !== field || !correctionClears(error, value)),
     );
@@ -293,7 +301,6 @@ export function IntakeForm({
     setSaving(true);
     // The answers as they stand at the click, which the response is reconciled against.
     const answersAtSubmit = answers;
-    const answerRevisionAtSubmit = answerRevision.current;
     try {
       const creating = saved === null;
       const target = creating ? "/api/events" : `/api/events/${saved.id}`;
@@ -312,11 +319,13 @@ export function IntakeForm({
       setErrors([]);
       // Rebuild from the stored row so answers cleared by hidden questions cannot linger locally.
       const stored = answersFromEvent(contract, body.event);
-      setAnswers((latest) => reconcileAnswers(latest, answersAtSubmit, stored));
+      const reconciled = reconcileAnswers(currentAnswers.current, answersAtSubmit, stored);
+      currentAnswers.current = reconciled;
+      setAnswers(reconciled);
       setSaved(body.event);
       if (creating) {
         const generated = await regeneratePlan(apiBaseUrl, body.event.id);
-        const changedWhileSaving = answerRevision.current !== answerRevisionAtSubmit;
+        const changedWhileSaving = !sameAnswers(currentAnswers.current, stored);
         if (!generated.ok) {
           setFailure(
             `Your event was saved, but its permit plan could not be generated. ${generated.message}${changedWhileSaving ? " Changes made while the request was running are still unsaved." : ""}`,
