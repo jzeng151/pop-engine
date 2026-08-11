@@ -143,6 +143,7 @@ export function IntakeForm({
   const router = useRouter();
   const [answers, setAnswers] = useState<Answers>({});
   const [saved, setSaved] = useState<SavedEvent | null>(null);
+  const [initialPlanReady, setInitialPlanReady] = useState(eventId !== undefined);
   const [errors, setErrors] = useState<IntakeIssue[]>([]);
   const [saving, setSaving] = useState(false);
   const [failure, setFailure] = useState<string | null>(null);
@@ -424,6 +425,7 @@ export function IntakeForm({
           );
           return;
         }
+        setInitialPlanReady(true);
         if (changedWhileSaving) {
           setFailure(
             "Your event and its permit plan were saved, but changes made while they were saving are still unsaved. Save those changes before opening the plan.",
@@ -663,7 +665,11 @@ export function IntakeForm({
               )}
             </p>
             <p>
-              <a href={`/events/${saved.id}/promote`}>Promote public page</a>
+              {initialPlanReady ? (
+                <a href={`/events/${saved.id}/promote`}>Promote public page</a>
+              ) : (
+                "Promotion will be available after the permit plan is generated."
+              )}
               {" · "}
               <a href={`/events/${saved.id}/guests`}>Guest list</a>
             </p>

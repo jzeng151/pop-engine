@@ -795,7 +795,9 @@ describe("saving and per-field errors", () => {
     await save(user);
     await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
     expect(screen.queryByRole("link", { name: "see its permit plan" })).toBeNull();
+    expect(screen.queryByRole("link", { name: "Promote public page" })).toBeNull();
     expect(screen.getByText(/permit plan is being generated/)).toBeDefined();
+    expect(screen.getByText(/Promotion will be available after/)).toBeDefined();
 
     await fillField(user, "headcount", "175");
     releasePlan(jsonResponse(201, {}));
@@ -873,6 +875,8 @@ describe("saving and per-field errors", () => {
     expect(screen.getByRole("link", { name: "see its permit plan" }).getAttribute("href")).toBe(
       "/events/event-1/plan",
     );
+    expect(screen.queryByRole("link", { name: "Promote public page" })).toBeNull();
+    expect(screen.getByText(/Promotion will be available after/)).toBeDefined();
   });
 
   it("opens a plan that exists after its generation response is lost", async () => {
