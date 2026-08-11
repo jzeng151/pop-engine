@@ -1,16 +1,3 @@
-// The dedupe route list, tested from the co-firing sets that were MEASURED rather than invented.
-//
-// Every fixture below is one of the concrete intakes in `docs/research/draft-dedupe-cofiring.md`
-// (branch `measure/draft-dedupe-cofiring`, PR #251), rebuilt as a synthetic ruleset because the
-// v2 full draft does not load through `parseEngineRuleset` (measurement §3.1) and no branch may
-// edit a rules artifact to make its tests pass. What is reproduced is each set's SHAPE, meaning
-// how many members reach the merge, which of their triggers resolved, and what each publishes;
-// the rule ids and the published values are the draft's own, quoted from the measurement.
-//
-// Plus the exhaustive route-state sweep the "36 more optimistic merged verdicts" figure came from,
-// which is the regression guard: merging two rules under a shared dedupe key must never move the
-// plan verdict in either direction.
-
 import { describe, expect, it } from "vitest";
 import { evaluate, noRouteSuppliesScalars, parseEngineRuleset } from "./index";
 import type { EventIntake, Verdict } from "./types";
@@ -43,9 +30,7 @@ function ruleset(rules: readonly RuleSpec[], fields: readonly unknown[] = []) {
     rules: rules.map((rule) => ({
       id: rule.id,
       kind: rule.kind ?? "permit",
-      // Every trigger is conjoined with a condition that is always true on this intake, so the
-      // loader's "declared but unread" guard sees `headcount` consumed without any rule's own
-      // conditions changing. `headcount` is 50 on every intake below.
+
       trigger: { all: [rule.trigger, { field: "headcount", op: "gte", value: 0 }] },
       output: {
         ...rule.output,
@@ -73,26 +58,13 @@ const plan = (
     },
   );
 
-/** Fires whatever the intake says, so a set's membership is decided by the fields it names. */
 const ALWAYS = { all: [{ field: "headcount", op: "gte", value: 10 }] };
 
 describe("the measured co-firing sets", () => {
-  /**
-   * Measurement §5.1. Fourteen members on one line, and only ever when `sapo_event_type` is
-   * unanswered: the true-only maximum is 1 across all 6,480 sweep intakes. The widest set, 14 of
-   * 14, occurs 10 times, at `sapo_event_type=unknown`.
-   *
-   * The measurement's own summary of the disagreement is what makes this the hardest case: across
-   * the 14 members the published windows are 14, 30, 45, 10, 60, 30, 45, 14 and 60 calendar days,
-   * the names are six different instruments, and the fees run from "$25 processing fee" to
-   * "Up to $66,000 per location per day". Agency and portal are the only fields all 14 share.
-   */
   const SAPO_WINDOWS = [14, 30, 45, 10, 60, 30, 45, 14, 60, 21, 35, 7, 90, 5];
   const sapoPermit = (index: number): RuleSpec => ({
     id: `SAPO-PERMIT-${String(index).padStart(3, "0")}`,
     dedupeKey: "sapo_permit",
-    // Every member keys on the same classifying question, on a different answer, so they are
-    // disjoint on a settled answer and all fourteen are `unknown` when it is not.
     trigger: { all: [{ field: "sapo_event_type", op: "eq", value: `type_${index}` }] },
     output: {
       permit_name: `SAPO instrument ${index}`,
@@ -115,38 +87,25 @@ describe("the measured co-firing sets", () => {
     const merged = plan(SAPO_GROUP, { sapo_event_type: "unknown" }, SAPO_FIELD).findings[0];
     expect(merged?.ruleIds).toHaveLength(14);
     expect(merged?.routes).toHaveLength(14);
-    // Not one of the fourteen is known to apply, so the line is a candidate list, not a filing.
     expect(merged?.headlineMode).toBe("candidate");
     expect(merged?.routes?.every((route) => route.triggerResult === "unknown")).toBe(true);
-    // Fourteen distinct published windows, fourteen names, and both fee displays: this is the
-    // information the merge used to destroy, and the count is what proves it is retained.
     expect(new Set(merged?.routes?.map((route) => route.latestApplyDate)).size).toBe(
       new Set(SAPO_WINDOWS).size,
     );
     expect(new Set(merged?.routes?.map((route) => route.name)).size).toBe(14);
     expect(new Set(merged?.routes?.map((route) => route.feeDisplay)).size).toBe(2);
-    // Every route names the question that decides it, which is what the headline copy reads.
     expect(new Set(merged?.routes?.flatMap((route) => route.unknownFields))).toEqual(
       new Set(["sapo_event_type"]),
     );
   });
 
   it("renders a settled sapo_event_type as one route and no candidate list", () => {
-    // The true-only maximum of 1: on a settled answer the fourteen are disjoint, so nothing merges.
     const settled = plan(SAPO_GROUP, { sapo_event_type: "type_3" }, SAPO_FIELD).findings;
     expect(settled).toHaveLength(1);
     expect(settled[0]?.routes).toBeUndefined();
     expect(settled[0]?.name).toBe("SAPO instrument 3");
   });
 
-  /**
-   * Measurement §5.2. Five members, reaching 2 on answered facts, publishing BYTE-IDENTICAL
-   * outputs: same permit name, same agency, same `research_required` deadline with the same display
-   * text, no fee, no portal. The intake is the measurement's own: a stage both large enough and
-   * long-lived enough, which fires `DOB-STAGE-001` and `DOB-STRUCTURE-DURATION-001` on 360 events.
-   *
-   * There is nothing to reconcile here, and that is exactly what has to render as it did before.
-   */
   const identicalOutput = {
     permit_name: "DOB Alteration Type 2 or 3 Temporary Structure Permit",
     agency: "DOB",
@@ -185,7 +144,6 @@ describe("the measured co-firing sets", () => {
     ).findings[0];
     expect(merged?.ruleIds).toEqual(["DOB-STAGE-001", "DOB-STRUCTURE-DURATION-001"]);
     expect(merged?.headlineMode).toBe("applies_together");
-    // The two routes publish the same thing, so the line reads exactly as an unmerged one does.
     const unmerged = plan(
       DOB_TEMPORARY_STRUCTURE.slice(0, 1),
       { structure_type: "stage", structure_height_ft: 3 },
@@ -203,8 +161,6 @@ describe("the measured co-firing sets", () => {
     ] as const) {
       expect(merged?.[field]).toEqual(unmerged?.[field]);
     }
-    // Two routes, and every published value on them equal. `plan-line.tsx` renders nothing extra
-    // for exactly this state; the check there is the same comparison.
     expect(merged?.routes).toHaveLength(2);
     const published = merged?.routes?.map((route) =>
       JSON.stringify([
@@ -218,15 +174,6 @@ describe("the measured co-firing sets", () => {
     expect(new Set(published).size).toBe(1);
   });
 
-  /**
-   * Measurement §5.4. Four members, never 2 on answered facts, and the substantive disagreement is
-   * the sharpest in the draft: `SAPO-INSURANCE-GENERAL-001` publishes a $1,000,000 certificate
-   * requirement with a `before issuance` dependency deadline, and `SAPO-INSURANCE-BLOCK-EXEMPT-001`
-   * is a note whose entire content is that the general $1 million requirement does not apply. They
-   * co-fire on the measurement's own intake, `sapo_event_type=unknown, block_party_has_ride=no`.
-   *
-   * One line cannot be both, and before the route list it silently was one of them.
-   */
   const SAPO_INSURANCE = [
     {
       id: "SAPO-INSURANCE-GENERAL-001",
@@ -276,13 +223,10 @@ describe("the measured co-firing sets", () => {
     const exempt = merged?.routes?.find(
       (route) => route.ruleId === "SAPO-INSURANCE-BLOCK-EXEMPT-001",
     );
-    // Neither reading is asserted over the other, and both are on the finding rather than one of
-    // them surviving as the line and the other as a note nobody attributes.
     expect(general?.disposition).toBe("may_be_required");
     expect(exempt?.disposition).toBe("no_new_requirement");
     expect(general?.triggerResult).toBe("unknown");
     expect(exempt?.triggerResult).toBe("unknown");
-    // Both routes' published text survives, and the reader can tell whose is whose by rule id.
     expect(merged?.sources.map((source) => source.ruleId)).toEqual([
       "SAPO-INSURANCE-GENERAL-001",
       "SAPO-INSURANCE-BLOCK-EXEMPT-001",
@@ -290,17 +234,6 @@ describe("the measured co-firing sets", () => {
     expect(merged?.noteText).toContain("$1,000,000");
   });
 
-  /**
-   * Measurement §5.5 and §6. The one group of the nine that BOTH co-fires on answered facts AND
-   * disagrees, and the shape the two headline modes were not written for: the Sound Device Permit
-   * fires `true` with a 5-calendar-day window, a "$45 per sound device for the first day, plus $5
-   * per device for each additional day" fee and the precinct portal, while the section 10-108
-   * prohibition is `unknown` because `sound_purpose` is unanswered (54 of 360 intakes).
-   *
-   * The decision this pins: the mode is a PER-ROUTE property and the headline is derived from the
-   * resolved subset, rather than a group-level flag with a third value
-   * (`docs/proposals/dedupe-route-list.md` §4.2).
-   */
   const NYPD_SOUND = [
     {
       id: "NYPD-SOUND-PUBLIC-001",
@@ -359,14 +292,10 @@ describe("the measured co-firing sets", () => {
       { amplified_sound: true, location_type: "street", sound_purpose: null },
       SOUND_FIELDS,
     ).findings[0];
-    // One route resolved, one did not, so this is a candidate list, and the headline is the route
-    // that is KNOWN to apply rather than the one that might.
     expect(merged?.headlineMode).toBe("candidate");
     expect(merged?.name).toBe("Sound Device Permit");
     expect(merged?.latestApplyDate).toBe("2026-11-29");
     expect(merged?.feeDisplay).toContain("$45 per sound device");
-    // The prohibition is a route with its own values and its own deciding question, not a note
-    // whose disposition was folded into the line.
     const prohibition = merged?.routes?.find((route) =>
       route.ruleId.includes("COMMERCIAL-ADVERTISING"),
     );
@@ -377,8 +306,6 @@ describe("the measured co-firing sets", () => {
   });
 
   it("reads the nypd_sound headline as the prohibition when both routes resolve", () => {
-    // Measurement §5.5's both-true set, 15 of 360 intakes. Every trigger resolved, so the routes
-    // genuinely apply together and the strongest disposition is the headline's.
     const merged = plan(
       NYPD_SOUND,
       {
@@ -391,9 +318,6 @@ describe("the measured co-firing sets", () => {
     expect(merged?.headlineMode).toBe("applies_together");
     expect(merged?.disposition).toBe("prohibited_or_ineligible");
     expect(merged?.name).toBe("Commercial advertising by sound device");
-    // THE DEFECT THIS BRANCH REMOVES: the line no longer names the prohibition while quoting the
-    // permit's apply-by date, its fee and its "on track" status. Those are the permit route's, on
-    // the permit route.
     expect(merged?.latestApplyDate).toBeNull();
     expect(merged?.deadlineStatus).toBe("not_applicable");
     expect(merged?.feeDisplay).toBeNull();
@@ -404,17 +328,6 @@ describe("the measured co-firing sets", () => {
   });
 });
 
-/**
- * THE SWEEP. Every ordered pair of route states, evaluated twice: once with the two rules sharing a
- * dedupe key and once with no key at all. The plan verdict must be the same both ways.
- *
- * This is the guard for the adversarial review's finding that 36 merged verdicts read strictly more
- * optimistic than the same rules unmerged. Optimism is the failure that matters, but the assertion
- * is EQUALITY rather than "not better": the split also read PESSIMISTIC on pairs where a closed
- * window in one tier was crossed with a stronger disposition in another, and a merge that invents a
- * blocker is as wrong as one that hides a filing. A shared `dedupe_key` is a statement about
- * rendering, not about feasibility, so it must move no verdict at all.
- */
 describe("merging is verdict-neutral over every route-state pair", () => {
   const WINDOWS = {
     none: undefined,
@@ -476,22 +389,12 @@ describe("merging is verdict-neutral over every route-state pair", () => {
         }
       }
     }
-    // Reported rather than counted, so a failure names the pair instead of a number.
     expect(moved).toEqual([]);
-    // The sweep is exhaustive over the state space and the size is asserted so a shrinking
-    // enumeration cannot quietly turn this into a weaker check.
     expect(states.length).toBe(DISPOSITIONS.length * WINDOW_NAMES.length);
     expect(states.length ** 2).toBe(900);
   });
 });
 
-/**
- * #252. The INFEASIBLE panel names a route, and the engine is what narrows it. Before this, the
- * blocking finding carried only a rule id and a name, so a consumer had to find the finding again
- * by rule id and got back the whole merged line: it rendered the HEADLINE route's name, portal and
- * apply-by date under a heading about the missed one, and where the headline route's window was
- * still open the date it printed was in the FUTURE of the plan's own clock.
- */
 describe("the blocking route of a merged line (#252)", () => {
   const OPEN = {
     id: "OPEN-001",
@@ -516,14 +419,6 @@ describe("the blocking route of a merged line (#252)", () => {
     },
   } as const;
 
-  /**
-   * #252 review: `blockerView` narrows the fee, the agency, the disposition, the status and the
-   * portal instructions, and the `VerdictDetail` serialization carried six fields of the ten the
-   * F-102 amendment names. A route filing through instructions rather than a url — the `nypd_sound`
-   * precinct route publishes a null portal url and files in person — then reached the panel with
-   * nothing on it that says where to file, and the widening itself is what stops the panel falling
-   * back to the whole finding for them.
-   */
   it("serializes every published value the blocking route was narrowed to", () => {
     const inPerson = {
       ...MISSED,
@@ -539,7 +434,6 @@ describe("the blocking route of a merged line (#252)", () => {
     expect(blocker?.disposition).toBe("required");
     expect(blocker?.deadlineStatus).toBe("published_deadline_missed");
     expect(blocker?.feeDisplay).toBe("$900");
-    // The only statement of where to file this route: it publishes no url for the panel to link.
     expect(blocker?.portalUrl).toBeNull();
     expect(blocker?.portalName).toBe("NYPD precinct");
     expect(blocker?.portalInstructions).toBe("File in person at the precinct");
@@ -547,8 +441,6 @@ describe("the blocking route of a merged line (#252)", () => {
 
   it("names the missed route and quotes ITS window, fee and portal", () => {
     const evaluated = plan([OPEN, MISSED]);
-    // The line reads as the open route: it is the tightest AVAILABLE window, and the closed one
-    // ranks below it.
     expect(evaluated.findings[0]?.name).toBe("OPEN-001 permit");
     expect(evaluated.findings[0]?.latestApplyDate).toBe("2026-08-22");
 
@@ -556,31 +448,13 @@ describe("the blocking route of a merged line (#252)", () => {
     const blocker = evaluated.verdictDetail.blockingFinding;
     expect(blocker?.ruleIds).toEqual(["MISSED-001"]);
     expect(blocker?.name).toBe("MISSED-001 permit");
-    // Every one of these was the OPEN route's before, including a date three weeks in the future
-    // of the plan's own clock under a heading saying the deadline had been missed.
     expect(blocker?.latestApplyDate).toBe("2026-06-03");
     expect(blocker?.deadlineDisplay).toBeNull();
     expect(blocker?.portalName).toBe("missed portal");
     expect(blocker?.portalUrl).toBe("https://example.test/missed");
-    // THE CITATIONS ARE THE BLOCKING ROUTE'S TOO, which this used to assert the opposite of. The
-    // whole group's sources rode through on the spread, in the order the rules sit in the published
-    // FILE, while the heading beside them is in BINDING order. `verdict-detail.tsx` takes the first
-    // source with a URL for its "More information" link, so on a group whose two orders differ the
-    // panel pointed the organizer at a rule its own heading does not name (#252 review).
     expect(blocker?.sources?.map((source) => source.ruleId)).toEqual(["MISSED-001"]);
   });
 
-  /**
-   * THE MERGE IS DISJUNCTIVE AND THE WINDOW CHECK IS CONJUNCTIVE, and this pins that they are.
-   *
-   * `mergeGroup` reads a group as alternative routes to one requirement, so any route applying
-   * means the requirement applies and the merged disposition is the strongest on offer.
-   * `computeWindowVerdict` blocks if ANY route's published window has closed, so this plan is
-   * INFEASIBLE while OPEN-001's own window is open. That difference is deliberate and recorded in
-   * `verdict.ts`: nothing published says filing under one route cures another's missed date, and a
-   * disjunctive check would make the verdict depend on whether two rules share a `dedupe_key`,
-   * which is the whole defect the route-reading window check exists to remove.
-   */
   it("blocks on a closed route while another route's window is open, and matches unmerged", () => {
     const merged = plan([OPEN, MISSED]);
     const unmerged = plan([
@@ -594,19 +468,6 @@ describe("the blocking route of a merged line (#252)", () => {
     );
   });
 
-  /**
-   * #252 review: THE ORGANIZER SUMMARY IS NOT THE HEADLINE ROUTE'S EITHER.
-   *
-   * The narrowing kept `userSummary` whenever the blocking route was also the headline route, on
-   * the reading that the merged summary is then that rule's own. It is not: `mergeUserSummary`
-   * takes its heading from the first route in binding order that publishes one, so a binding route
-   * publishing none inherits a sibling's, and the points concatenate over every contributing route
-   * unconditionally. The infeasible panel leads with that heading and links from its first source,
-   * so the narrowed name and citations sat under another route's summary.
-   *
-   * Built so the BLOCKING route is the headline route — the same route on both sides, which is
-   * exactly the case the old condition let through.
-   */
   it("drops the merged summary even where the blocking route is the headline route", () => {
     const summary = (heading: string, id: string) => ({
       heading,
@@ -618,8 +479,7 @@ describe("the blocking route of a merged line (#252)", () => {
         },
       ],
     });
-    // The tightest window and the missed one, so this route is both the binding route and the
-    // blocker. It publishes no summary of its own, so the merged heading is the SIBLING's.
+
     const blocking = {
       id: "BLOCKING-001",
       dedupeKey: "shared",
@@ -641,7 +501,7 @@ describe("the blocking route of a merged line (#252)", () => {
     } as const;
 
     const evaluated = plan([blocking, sibling]);
-    // The merged line really does carry the sibling's heading, so the case is the one described.
+
     expect(evaluated.findings[0]?.routes?.[0]?.ruleId).toBe("BLOCKING-001");
     expect(evaluated.findings[0]?.userSummary?.heading).toBe("SIBLING-001 heading");
 
@@ -651,10 +511,6 @@ describe("the blocking route of a merged line (#252)", () => {
     expect(blocker?.userSummary).toBeNull();
   });
 
-  /**
-   * The other half, so the fix cannot be written as "a blocker never carries a summary". An
-   * unmerged finding never went through `mergeUserSummary`, so its summary IS the rule's own.
-   */
   it("keeps an unmerged blocker's own summary", () => {
     const alone = {
       id: "ALONE-001",
@@ -682,12 +538,6 @@ describe("the blocking route of a merged line (#252)", () => {
   });
 });
 
-/**
- * #252, the case the reviewer could not execute. `applyDependencySequencing` computes the
- * FINDING-level `slackDays` off the merged line's own `latestApplyDate` while `sequenceRoute`
- * computes each route's off that route's. NYPD-SOUND-001 carries no `dedupe_key` on the published
- * ruleset, so the two can only disagree on a synthetic group, which is what this builds.
- */
 describe("dependency sequencing over a merged gated line (#252)", () => {
   const PARKS = {
     id: "PARKS-EVENT-001",
@@ -710,7 +560,7 @@ describe("dependency sequencing over a merged gated line (#252)", () => {
     trigger: ALWAYS,
     output: { note_text: "sound permit follows the parks approval" },
   } as const;
-  /** The gated rule, merged with a second route that publishes a DIFFERENT window. */
+
   const SOUND = {
     id: "NYPD-SOUND-001",
     dedupeKey: "sound",
@@ -736,45 +586,31 @@ describe("dependency sequencing over a merged gated line (#252)", () => {
     const gatedRoute = sound?.routes?.find((route) => route.ruleId === "NYPD-SOUND-001");
     const otherRoute = sound?.routes?.find((route) => route.ruleId === "NYPD-SOUND-ALT-001");
 
-    // The line binds to the tightest window, which is the ALTERNATE route's, and that route is not
-    // the gated one.
     expect(sound?.latestApplyDate).toBe("2026-10-05");
     expect(sound?.routes?.[0]?.ruleId).toBe("NYPD-SOUND-ALT-001");
     expect(gatedRoute?.latestApplyDate).toBe("2026-11-29");
 
-    // SO THE HEADLINE IS NOT SEQUENCED (#252 review). Writing the gate onto the merged scalars put
-    // the NYPD gate and the gated slack beside a name, a window and a status belonging to a route
-    // that is not gated at all, while that route's own entry read `applyAfterDate: null` two lines
-    // below. The scalars stay the binding route's: no gate, and its own ungated 75-day slack from
-    // today to 2026-10-05.
     expect(sound?.applyAfterDate).toBeNull();
     expect(sound?.slackDays).toBe(75);
 
-    // The gated ROUTE carries the sequencing, measured against ITS OWN window: 109 days from the
-    // 2026-08-12 gate to its 2026-11-29 deadline. `verdict.ts` reads the routes, so the narrowed
-    // slack is still what the verdict sees.
     expect(gatedRoute?.applyAfterDate).toBe("2026-08-12");
     expect(gatedRoute?.slackDays).toBe(109);
-    // The route that is not gated is untouched by the sequencing.
+
     expect(otherRoute?.applyAfterDate).toBeNull();
-    // The sequence is still stated on the line, because the note is one sentence about the group.
+
     expect(sound?.notes.some((note) => note.includes("sequenced after PARKS-EVENT-001"))).toBe(
       true,
     );
-    // AND ON THE GATED ROUTE, which is where every per-route reader looks. `routeFrom()` captures a
-    // route's notes when the group merges and this sequencing runs afterwards, so the route's notes
-    // were a snapshot taken before the sequence existed: `alerts.ts` reads them per route and sent
-    // the reminder, and the at-risk warning that says the requirement waits on another agency's
-    // decision, without the sentence saying the ordering is not confirmed (#252 review).
+
     const gatedNote = gatedRoute?.notes?.find((note) =>
       note.includes("sequenced after PARKS-EVENT-001"),
     );
     expect(gatedNote).toContain("Strict issued-before-filed sequencing is not confirmed");
-    // The same sentence on both, rather than two compositions of it.
+
     expect(sound?.notes.find((note) => note.includes("sequenced after PARKS-EVENT-001"))).toBe(
       gatedNote,
     );
-    // The route that is not gated keeps its own notes and gains no sequence it is not in.
+
     expect(otherRoute?.notes?.some((note) => note.includes("sequenced after"))).toBe(false);
   });
 
@@ -783,21 +619,10 @@ describe("dependency sequencing over a merged gated line (#252)", () => {
     const sound = evaluated.findings.find((finding) => finding.ruleIds.includes("NYPD-SOUND-001"));
     const note = sound?.notes.find((entry) => entry.includes("sequenced after PARKS-EVENT-001"));
 
-    // 109 days, from the 2026-08-12 gate to the GATED route's own 2026-11-29 deadline, which is
-    // the same figure the route entry carries. Built from the merged scalars the sentence read
-    // "leaving 54 days", which is the distance to the BINDING route's 2026-10-05 deadline: the
-    // slack of a route that is not gated, offered as the gated route's filing window (#252
-    // review).
     expect(note).toContain("leaving 109 days to file");
     expect(note).not.toContain("leaving 54 days");
   });
 
-  /**
-   * The gated route's own deadline, 2026-07-01, has already passed, so its window is less
-   * available than the alternate's and the alternate binds. The 2026-08-12 gate falls after the
-   * gated route's deadline and well inside the binding route's, so the sequence closes a window
-   * the scalars say is open.
-   */
   const SOUND_PAST = {
     id: "NYPD-SOUND-001",
     dedupeKey: "sound",
@@ -813,9 +638,6 @@ describe("dependency sequencing over a merged gated line (#252)", () => {
     const sound = evaluated.findings.find((finding) => finding.ruleIds.includes("NYPD-SOUND-001"));
     const note = sound?.notes.find((entry) => entry.includes("sequenced after PARKS-EVENT-001"));
 
-    // Both scalars belong to the alternate route, whose window is open and on track. Read off
-    // them, the sequence looked open and the note said "leaving 54 days to file"; it also offered
-    // "filing directly may still be open" for a route whose own published deadline had passed.
     expect(sound?.routes?.[0]?.ruleId).toBe("NYPD-SOUND-ALT-001");
     expect(sound?.latestApplyDate).toBe("2026-10-05");
     expect(sound?.deadlineStatus).toBe("on_track");
@@ -826,21 +648,12 @@ describe("dependency sequencing over a merged gated line (#252)", () => {
   });
 });
 
-/**
- * #252: A BRANCH SIGNATURE BUILT FROM THE MERGED SCALAR CANNOT SEE A ROUTE'S TIMELINE.
- *
- * The window checks read every route. The branch comparison read the merged line's one
- * `latestApplyDate`, so an unknown that moves only a NON-BINDING route's date left the verdict, the
- * merged rule ids and that scalar all equal: the branches signed identically, the unknown was
- * called immaterial and the plan read FEASIBLE with a material timing question discarded.
- * ARCHITECTURE step 3 makes an unknown that changes the finding set OR THE TIMELINE conditional.
- */
 describe("an unknown that moves only a non-binding route's window (#252)", () => {
   const PLAZA_FIELD = [
     { field: "plaza_level", type: "enum", values: ["unknown", "a", "b"] },
     { field: "plaza_multiple_blocks", type: "boolean" },
   ];
-  /** The binding route: the tightest window on the line, and the same date on every branch. */
+
   const BINDING = {
     id: "SAPO-EVENT-001",
     dedupeKey: "plaza",
@@ -850,11 +663,7 @@ describe("an unknown that moves only a non-binding route's window (#252)", () =>
       deadline: { type: "published_minimum", calendar_days: 60 },
     },
   } as const;
-  /**
-   * The non-binding route. Its window is published BY LEVEL, so the unanswered level is what stops
-   * it being dated — and every level publishes a window looser than the binding route's 60 days, so
-   * resolving it moves this route's date and nothing else on the line.
-   */
+
   const BY_LEVEL = {
     id: "SAPO-PLAZA-001",
     dedupeKey: "plaza",
@@ -874,9 +683,6 @@ describe("an unknown that moves only a non-binding route's window (#252)", () =>
     plan([BINDING, BY_LEVEL], { plaza_level: level, plaza_multiple_blocks: false }, PLAZA_FIELD);
 
   it("reads CONDITIONAL, because the branches do not observe the same timelines", () => {
-    // NOT VACUOUS: on both branches the merged line is byte-identical — same rule ids, same name,
-    // same window, same status — which is exactly why the scalar signature could not tell them
-    // apart. The difference is one route's date.
     const withA = evaluated("a").findings[0];
     const withB = evaluated("b").findings[0];
     expect(withA?.ruleIds).toEqual(withB?.ruleIds);
@@ -888,8 +694,6 @@ describe("an unknown that moves only a non-binding route's window (#252)", () =>
     expect(evaluated("a").verdict).toBe("FEASIBLE");
     expect(evaluated("b").verdict).toBe("FEASIBLE");
 
-    // So the unanswered level is a material unknown, and the plan says so instead of resolving it
-    // silently to whichever date the branch happened to produce.
     const unresolved = evaluated("unknown");
     expect(unresolved.verdict).toBe("CONDITIONAL");
     expect(unresolved.verdictDetail.missingFacts.map((fact) => fact.field)).toContain(
@@ -898,26 +702,13 @@ describe("an unknown that moves only a non-binding route's window (#252)", () =>
   });
 });
 
-/**
- * #252: the branch is retained; its ORGANIZER-FACING REASON reads the wrong route.
- *
- * `computeWindowVerdict` blocks on any route's missed window, so an unknown can close a NON-BINDING
- * route's window while the binding route stays open and the merged scalar `deadlineStatus` still
- * says `on_track`. `describeDifference` tested that scalar, so the reason persisted on the plan row
- * said "same findings, re-dated" on exactly the branch F-102 AC 6 requires to state the miss.
- *
- * The non-binding route here is non-binding because its own trigger is unresolved: the binding route
- * is the tightest window among the routes contributing the merged disposition, intersected with the
- * RESOLVED routes, so an `unknown` route is excluded however early its date. That is the only shape
- * in which a missed route is not the headline, since a past date is otherwise the tightest there is.
- */
 describe("the reason for a branch that misses only a non-binding route (#252)", () => {
   const FIELDS = [
     { field: "plaza_level", type: "enum", values: ["unknown", "a", "b"] },
     { field: "plaza_multiple_blocks", type: "boolean" },
     { field: "plaza_gated", type: "boolean" },
   ];
-  /** The binding route: resolved, required, and open on every branch. */
+
   const BINDING = {
     id: "SAPO-EVENT-001",
     dedupeKey: "plaza",
@@ -927,7 +718,7 @@ describe("the reason for a branch that misses only a non-binding route (#252)", 
       deadline: { type: "published_minimum", calendar_days: 60 },
     },
   } as const;
-  /** Unresolved, so it never binds, and dated by the level: `b`'s window closed before today. */
+
   const BY_LEVEL = {
     id: "SAPO-PLAZA-001",
     dedupeKey: "plaza",
@@ -947,8 +738,6 @@ describe("the reason for a branch that misses only a non-binding route (#252)", 
     plan([BINDING, BY_LEVEL], { plaza_level: level, plaza_multiple_blocks: false }, FIELDS);
 
   it("states the filing-window miss the merged scalar cannot see", () => {
-    // NOT VACUOUS: on branch `b` the merged line still reads open, which is why the scalar said
-    // nothing had tightened. The miss is one route down.
     const missing = evaluated("b").findings[0];
     expect(missing?.deadlineStatus).not.toBe("published_deadline_missed");
     expect(missing?.routes?.[1]?.deadlineStatus).toBe("published_deadline_missed");
@@ -958,28 +747,17 @@ describe("the reason for a branch that misses only a non-binding route (#252)", 
     );
     const branchB = level?.branches.find((branch) => branch.value === "b");
     expect(branchB?.reason).toContain("published deadline missed as scoped");
-    // And the branch that does not miss still says so, so the sentence distinguishes them.
+
     const branchA = level?.branches.find((branch) => branch.value === "a");
     expect(branchA?.reason).not.toContain("published deadline missed as scoped");
   });
 });
 
-/**
- * #252: the rescope ladder reaches FEASIBLE_AT_RISK and does not say what is at risk.
- *
- * `computeWindowVerdict` takes `minSlackDays` over every ROUTE, so on a merged line the minimum can
- * belong to a route that is not the headline: the binding route is the tightest window among the
- * routes contributing the merged DISPOSITION, so a route published at a weaker disposition never
- * binds however tight its window. `buildRescopeSuggestions` searched the findings for
- * `slackDays === minSlackDays`, the merged scalar belongs to the binding route, and the search
- * matched nothing — so the ladder named a change that reaches FEASIBLE_AT_RISK with no label for the
- * requirement at risk, on a route that publishes a name.
- */
 describe("naming the at-risk route of a rescoped merged line (#252)", () => {
   const VENUE_FIELD = [
     { field: "venue_type", type: "enum", values: ["unknown", "park", "private"] },
   ];
-  /** Missed, required and unmerged: the current scope is INFEASIBLE, so a ladder is built. */
+
   const BLOCKER = {
     id: "PARKS-MISSED-001",
     dedupeKey: null,
@@ -989,7 +767,7 @@ describe("naming the at-risk route of a rescoped merged line (#252)", () => {
       deadline: { type: "published_minimum", calendar_days: 200 },
     },
   } as const;
-  /** The binding route: strongest disposition, so it takes the headline and its slack is 75 days. */
+
   const BINDING = {
     id: "PLAZA-BIND-001",
     dedupeKey: "plaza",
@@ -999,7 +777,7 @@ describe("naming the at-risk route of a rescoped merged line (#252)", () => {
       deadline: { type: "published_minimum", calendar_days: 60 },
     },
   } as const;
-  /** Resolved, tighter, and weaker: it holds the minimum slack and can never be the headline. */
+
   const AT_RISK = {
     id: "PLAZA-SOFT-001",
     dedupeKey: "plaza",
@@ -1019,8 +797,7 @@ describe("naming the at-risk route of a rescoped merged line (#252)", () => {
       (suggestion) => suggestion.change.field === "venue_type",
     );
     expect(rescope?.reevaluatedVerdict).toBe("FEASIBLE_AT_RISK");
-    // NOT VACUOUS: the merged line's own slack is the binding route's 75 days, which is not the
-    // minimum the suggestion reports, so no finding on the plan carries the number searched for.
+
     const merged = plan([BINDING, AT_RISK]).findings[0];
     expect(merged?.name).toBe("Plaza event permit");
     expect(merged?.slackDays).not.toBe(rescope?.minSlackDays);
@@ -1028,22 +805,9 @@ describe("naming the at-risk route of a rescoped merged line (#252)", () => {
   });
 });
 
-/**
- * §4.3, amended 2026-08-09 by the product owner: where the group holds a resolved route and none of
- * them contributes the merged disposition, the line publishes NO scalars. Picking either way is a
- * claim the group does not support — the settled route's fee and portal under an unsettled route's
- * disposition, or the unsettled route's under a group that holds a settled one — and one date field
- * cannot hold two dates. Every route keeps its own beneath, which is where a reader can tell whose
- * they are.
- *
- * The shape: a resolved route below `required`, so `unresolvedRouteCeilingApplies` does not bite and
- * an unknown-triggered route carries the group to a disposition the resolved route does not
- * contribute. Unreachable on `rules/nyc-rules.v2.11.json`, whose only multi-member group is two
- * permits; reachable on the proposed draft.
- */
 describe("a merged line no route can supply the scalars for (#252)", () => {
   const FIELD = [{ field: "sidewalk_use", type: "enum", values: ["unknown", "cafe", "display"] }];
-  /** Resolved, and `advisory` is below the cap trigger, so the ceiling never bites on this group. */
+
   const RESOLVED_ADVISORY = {
     id: "DOT-SIDEWALK-ADVISORY-001",
     kind: "advisory",
@@ -1057,7 +821,7 @@ describe("a merged line no route can supply the scalars for (#252)", () => {
       portal: { name: "DOT sidewalk desk", url: "https://example.test/dot" },
     },
   } as const;
-  /** Unresolved, and the only route contributing `may_be_required`. Its window is the tighter one. */
+
   const UNRESOLVED_CANDIDATE = {
     id: "DOT-SIDEWALK-CAFE-001",
     kind: "eligibility",
@@ -1077,8 +841,7 @@ describe("a merged line no route can supply the scalars for (#252)", () => {
 
   it("publishes no name, timeline, fee or portal of its own", () => {
     const line = merged();
-    // NOT VACUOUS: this is the shape, and both of the readings the two texts gave would have
-    // published one of these routes' values here.
+
     expect(line?.disposition).toBe("may_be_required");
     expect(line?.headlineMode).toBe("candidate");
 
@@ -1093,8 +856,7 @@ describe("a merged line no route can supply the scalars for (#252)", () => {
     expect(line?.portalName).toBeNull();
     expect(line?.portalUrl).toBeNull();
     expect(line?.portalInstructions).toBeNull();
-    // The one field that cannot be absent takes the value that is true of this line: the routes
-    // publish windows and this line cannot be dated. `not_applicable` would say neither.
+
     expect(line?.deadlineStatus).toBe("not_calculable");
   });
 
@@ -1111,7 +873,7 @@ describe("a merged line no route can supply the scalars for (#252)", () => {
     expect(candidate?.feeDisplay).toBe("$1,050 licence fee");
     expect(candidate?.portalUrl).toBe("https://example.test/dcwp");
     expect(candidate?.latestApplyDate).not.toBeNull();
-    // Provenance is not a pick, so none of it is dropped.
+
     expect(merged()?.ruleIds).toHaveLength(2);
     expect(merged()?.sources.map((source) => source.ruleId)).toEqual([
       "DOT-SIDEWALK-ADVISORY-001",
@@ -1120,8 +882,6 @@ describe("a merged line no route can supply the scalars for (#252)", () => {
   });
 
   it("still binds the scalars where a resolved route does contribute the disposition", () => {
-    // The other side of the amendment: answering the question settles the candidate, a resolved
-    // route contributes the merged disposition, and the line reads as that route as it always has.
     const settled = plan([RESOLVED_ADVISORY, UNRESOLVED_CANDIDATE], { sidewalk_use: "cafe" }, FIELD)
       .findings[0];
     expect(settled?.headlineMode).toBe("applies_together");
@@ -1131,18 +891,6 @@ describe("a merged line no route can supply the scalars for (#252)", () => {
   });
 });
 
-/**
- * THE INVARIANT THE WHOLE ROUTE SHAPE RESTS ON, asserted over the engine's own output rather than
- * at one call site.
- *
- * A merged line either reads as its binding route — `routes[0]`, which `mergeGroup` puts first —
- * or, on the one group where no route can supply its scalars, publishes none of them. Four separate
- * findings on #252 were one consumer or another assuming the first half unconditionally: two
- * validators, and `applyDependencySequencing`, which nulled the scalars in `mergeGroup` and wrote
- * `applyAfterDate` back two steps later in the same pass. Pinning the invariant over evaluated plans
- * closes the class: a future pass that writes a headline scalar without asking fails here rather
- * than at whichever boundary happens to refuse the plan.
- */
 describe("every merged line the engine emits reads as its binding route, or as nobody (#252)", () => {
   const HEADLINE_SCALARS = [
     "name",
@@ -1247,11 +995,6 @@ describe("every merged line the engine emits reads as its binding route, or as n
     );
   });
 
-  /**
-   * The case that broke it: the gated route leads a group whose headline is nobody's, so
-   * `applyDependencySequencing` treated it as the binding route and wrote the gate back onto a
-   * scalar-free line.
-   */
   it("holds after dependency sequencing writes a gate onto a scalar-free group", () => {
     const FIELD = [{ field: "sound_purpose", type: "enum", values: ["unknown", "amplified"] }];
     assertInvariant(
@@ -1270,7 +1013,7 @@ describe("every merged line the engine emits reads as its binding route, or as n
               },
             },
           },
-          // The dependency rule the binding names, without which no sequencing runs at all.
+
           {
             id: "NYPD-SOUND-PARKS-DEP-001",
             kind: "dependency",
@@ -1306,20 +1049,12 @@ describe("every merged line the engine emits reads as its binding route, or as n
   });
 });
 
-/**
- * #252 review: THE BRANCH TABLE NAMED EVERY SIBLING AS HAVING MISSED ITS DEADLINE.
- *
- * `describeDifference` compares the routes whose own windows closed — that set is what decides
- * whether a branch tightened — and then substituted the PARENT finding's whole `ruleIds` into the
- * sentence. On a merged line that told the organizer every contributing rule had missed its
- * published date, when one had.
- */
 describe("the branch reason names the route that missed, not its line (#252)", () => {
   const FIELDS = [
     { field: "plaza_level", type: "enum", values: ["unknown", "a", "b"] },
     { field: "plaza_multiple_blocks", type: "boolean" },
   ];
-  /** Resolved, required, and open on every branch: it must not appear in the missed sentence. */
+
   const OPEN = {
     id: "SAPO-EVENT-001",
     dedupeKey: "plaza",
@@ -1329,7 +1064,7 @@ describe("the branch reason names the route that missed, not its line (#252)", (
       deadline: { type: "published_minimum", calendar_days: 60 },
     },
   } as const;
-  /** Dated by the level: on branch `b` its window closed before today. */
+
   const BY_LEVEL = {
     id: "SAPO-PLAZA-001",
     dedupeKey: "plaza",
@@ -1354,7 +1089,7 @@ describe("the branch reason names the route that missed, not its line (#252)", (
     const branchB = level?.branches.find((branch) => branch.value === "b");
 
     expect(branchB?.reason).toContain("SAPO-PLAZA-001 (published deadline missed as scoped)");
-    // NOT VACUOUS: both rules are on the merged line, and the open one must not be named as missed.
+
     expect(branchB?.reason).not.toContain("SAPO-EVENT-001 (published deadline missed");
     expect(branchB?.reason).not.toContain("SAPO-EVENT-001, SAPO-PLAZA-001 (published");
   });

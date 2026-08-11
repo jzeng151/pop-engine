@@ -2,22 +2,7 @@
 
 import { useId, useState, type ReactNode } from "react";
 
-/**
- * A per-item expand, for progressive disclosure that hides nothing.
- *
- * Every field a line rendered before still renders; the split is only between what is visible
- * before an interaction and what is one interaction away. Scenario F produces eight findings of
- * twenty-three rendered blocks each, which is a page an organizer scrolls rather than reads.
- *
- * A NATIVE BUTTON, deliberately. It is focusable, Enter and Space activate it, and screen readers
- * announce it as a button, all without a keydown handler to get wrong. `aria-expanded` carries the
- * state programmatically, so the triangle and any colour are decoration rather than the only signal
- * (the specs require this and the demo is judged on it).
- *
- * `<details>`/`<summary>` was the other candidate and is not used: its open state is not reliably
- * announced across the assistive-technology matrix this project cannot test against, and a
- * controlled button plus `aria-expanded` is the pattern with no such ambiguity.
- */
+/** A per-item expand, for progressive disclosure that hides nothing. */
 export function Disclosure({
   label,
   ariaLabel,

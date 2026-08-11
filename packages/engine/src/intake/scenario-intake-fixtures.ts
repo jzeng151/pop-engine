@@ -1,30 +1,11 @@
-// Intake inputs for the six approved scenario fixtures (docs/test-scenario-answer-key.md
-// v7, the green-gate acceptance suite). Only the intake half lives here — expected
-// findings and verdicts belong to the rules engine (F-201).
-//
-// Values are transcribed from the answer key, using the registry's field names. "No
-// structures" / "no flame" are the registry's exclusive `none` option (the columns are
-// NOT NULL).
-//
-// Every value below is now stated by the key. v4 wrote down the 11 answers, across 5 fields, the
-// fixtures had been running on unstated — `battery_present` in A, B, D and F; `structure_types`
-// and `generator_present` in D and F; `open_flame_or_cooking` in E and F; `food_vendor_count` in
-// F — closing SPEC-CONFLICT #88 and #106. No fixture value changed, which is why no expected
-// finding moved.
-//
-// Imported as `@pop-engine/engine/fixtures`.
+// Intake inputs for the six approved scenario fixtures (docs/test-scenario-answer-key.md v7, the green-gate acceptance suite).
 
 export type ScenarioIntakeFixture = {
   readonly scenario: string;
   readonly title: string;
   /** Transcribed from the answer key. */
   readonly intake: Readonly<Record<string, unknown>>;
-  /**
-   * Answers the scenario does not state that the registry nonetheless requires, keyed
-   * by field and carrying the open SPEC-CONFLICT issue. Empty for every scenario the
-   * answer key specifies completely — which, since v4, is all six. Kept for the next
-   * time the registry asks something the key has not answered.
-   */
+  /** Answers the scenario does not state that the registry nonetheless requires, keyed by field and carrying the open SPEC-CONFLICT issue. */
   readonly inferred?: Readonly<Record<string, { value: unknown; conflictIssue: number }>>;
 };
 

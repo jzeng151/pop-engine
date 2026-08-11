@@ -106,7 +106,7 @@ describe.runIf(databaseUrl.length > 0)("migration 013 correction after migration
           timestamp_advanced: true,
           plan_stale: true,
         },
-        // The predicate is NOT (has_paco AND has_fdny), so one key present is still a miss.
+
         {
           id: "partial",
           revision_counter: 5,

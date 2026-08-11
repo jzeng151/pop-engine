@@ -13,9 +13,7 @@ import {
 import { CREDENTIALED, loadEvent, type SavedEvent } from "./events-api";
 import { discoverParks, parksBoroughCode, type ParkSuggestion } from "./parks-api";
 
-// The intake questionnaire. Every question, option, and asked-when condition comes from
-// the contract prop, which the server component parses from the published ruleset — this
-// component holds no field list of its own.
+// The intake questionnaire.
 
 type Answers = Record<string, IntakeValue>;
 
@@ -85,16 +83,7 @@ const sameAnswer = (left: IntakeValue, right: IntakeValue): boolean =>
       [...left].sort().every((value, index) => value === [...right].sort()[index])
     : left === right;
 
-/**
- * Fold a saved row back into the form without discarding anything typed while the save
- * was in flight.
- *
- * The answers as they stood when Save was pressed are the base of a three-way merge:
- * a question the organizer has answered differently since then keeps their newer
- * answer, and every other question takes the stored row, which is the answer of record.
- * The alternative — freezing all 32 controls for the length of the request — prevents
- * the edits rather than keeping them.
- */
+/** Fold a saved row back into the form without discarding anything typed while the save was in flight. */
 function reconcileAnswers(current: Answers, atSubmit: Answers, stored: Answers): Answers {
   const merged: Answers = { ...stored };
   for (const field of new Set([...Object.keys(current), ...Object.keys(atSubmit)])) {
@@ -233,16 +222,12 @@ export function IntakeForm({
     const asked = new Set(questions.map((question) => question.field));
     const payload: Record<string, IntakeValue> = {};
     for (const question of DESCRIPTIVE_QUESTIONS) {
-      // A cleared optional is sent as an explicit null. Omitting it would leave the
-      // stored value in place on an edit, so the organizer could never remove a venue
-      // name or a capacity once one had been saved.
+      // A cleared optional is sent as an explicit null.
       const value = answers[question.field] ?? null;
       payload[question.field] = isBlank(value) ? null : value;
     }
     for (const field of contract.fields) {
-      // A question this event is no longer asked is sent as an explicit null, so an
-      // edit that hides a question clears its old answer instead of leaving a value
-      // behind that validation would reject against a control nobody can see.
+      // A question this event is no longer asked is sent as an explicit null, so an edit that hides a question clears its old answer instead of leaving a value behind that validation would reject against a control nobody can.
       const value = answers[field.field] ?? null;
       payload[field.field] = asked.has(field.field) && !isBlank(value) ? value : null;
     }
@@ -268,11 +253,7 @@ export function IntakeForm({
         return;
       }
       setErrors([]);
-      // The stored row is the answer of record, not what this form last held: a save
-      // that hides questions clears them server-side, and rebuilding from the response
-      // is what stops a cleared answer from lingering in a warning or coming back on
-      // the next edit. Anything the organizer typed while the request was in flight is
-      // newer than the response, so it survives the rebuild.
+      // Rebuild from the stored row so answers cleared by hidden questions cannot linger locally.
       const stored = answersFromEvent(contract, body.event);
       setAnswers((latest) => reconcileAnswers(latest, answersAtSubmit, stored));
       setSaved(body.event);

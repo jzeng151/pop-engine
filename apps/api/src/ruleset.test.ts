@@ -88,14 +88,10 @@ describe("ruleset validation", () => {
   });
 
   it("pins which published rules are exempt from agency and source", async () => {
-    // The exemptions are deliberate, so they are named here rather than merely
-    // permitted. A future rule that quietly joins either list has to change this test.
     delete process.env.RULES_FILE;
     const { rules, advisories } = await loadRuleset();
     const all = [...rules, ...advisories];
 
-    // Issue #77: advisory / note / classification describe a condition rather than a
-    // filing, so they may omit the agency. Everything else must name one.
     expect(all.filter((rule) => rule.output.agency === undefined).map((rule) => rule.id)).toEqual([
       "SAPO-SCOPE-001",
       "PARKS-INSURANCE-NOTE-001",
@@ -116,7 +112,6 @@ describe("ruleset validation", () => {
       "ADV-VENUE-OCCUPANCY-001",
     ]);
 
-    // Issue #75: only a COVERAGE_GAP advisory, which asserts nothing, may omit its source.
     expect(all.filter((rule) => rule.source === null).map((rule) => rule.id)).toEqual([
       "ADV-ALCOHOL-PUBLIC-001",
       "ADV-SAPO-OTHER-CLASS-001",
@@ -176,10 +171,6 @@ describe("ruleset validation", () => {
       },
       error: /snapshot_date has no year 0000/,
     },
-    // F-203 states these offsets are config rather than code, so the artifact is the contract and
-    // an unusable value has to be a boot failure. Left to runtime it is an api that starts clean
-    // and then schedules nothing, or fires after the deadline it warns about, one organizer at a
-    // time — the same deferred-failure shape as an unvalidated `last_verified_date`.
     {
       name: "alert offsets missing entirely",
       mutate: (ruleset) => {
@@ -195,8 +186,6 @@ describe("ruleset validation", () => {
       error: /alert_offsets\.deadline_reminder is required/,
     },
     {
-      // The closed half is about the NAMED entry, not about the map being nonempty: an artifact
-      // configuring some other type still leaves F-203 with nothing to read at the path it uses.
       name: "alert offsets carrying a different type instead",
       mutate: (ruleset) => {
         object(ruleset.config).alert_offsets = {
@@ -249,20 +238,14 @@ describe("ruleset validation", () => {
       error: /days_before\[1\] must be a positive whole number of days, received 1.5/,
     },
     {
-      // The reported case on #122: Number.isInteger(1e20) is true, so this passed boot and the
-      // failure waited for the first reminder F-203 tried to schedule.
       name: "an offset the date arithmetic cannot represent (#122)",
       mutate: (ruleset) => {
         alertOffsets(ruleset).deadline_reminder = { days_before: [7, 1e20] };
       },
-      // 1e20 interpolates as its full decimal expansion, not "1e+20", and the message names it
-      // either way — the point of naming the value is that nobody has to hunt for it by hand.
       error:
         /days_before\[1\] is 100000000000000000000, beyond the 719528 days the calendar arithmetic can subtract/,
     },
     {
-      // The first value past the MEASURED representable boundary, so the constant is pinned at its
-      // edge rather than somewhere inside a range that happens to work.
       name: "the first offset past the representable boundary",
       mutate: (ruleset) => {
         alertOffsets(ruleset).deadline_reminder = { days_before: [719_529] };
@@ -271,9 +254,6 @@ describe("ruleset validation", () => {
         /days_before\[0\] is 719529, beyond the 719528 days the calendar arithmetic can subtract/,
     },
     {
-      // Representable but absurd: rejected by the product bound, and the message has to say so,
-      // because "the arithmetic cannot hold it" would be false here and would send someone to the
-      // wrong constant.
       name: "the first offset past the product bound",
       mutate: (ruleset) => {
         alertOffsets(ruleset).deadline_reminder = { days_before: [3_651] };
@@ -297,8 +277,6 @@ describe("ruleset validation", () => {
     {
       name: "a later alert type whose days_before is unusable",
       mutate: (ruleset) => {
-        // Unknown keys are alert types by design. The open half still checks the ONE shape this
-        // file understands, so a future entry using `days_before` is held to the same rules.
         alertOffsets(ruleset).slack_warning = { days_before: ["soon"] };
       },
       error: /slack_warning\.days_before\[0\] must be a positive whole number/,
@@ -310,10 +288,6 @@ describe("ruleset validation", () => {
       },
       error: /status must be APPROVED/,
     },
-    // Every one of these reaches `permit_plan_items.last_verified_date`, a `date` column, so a
-    // validator that accepts them defers the failure to plan generation: the api boots clean and
-    // then every affected write fails, per organizer. Impossible days are the ones a shape check
-    // alone lets through, which is why the calendar round trip is the assertion.
     {
       name: "impossible verification date",
       mutate: (ruleset) => {
@@ -338,17 +312,11 @@ describe("ruleset validation", () => {
     {
       name: "unpadded verification date",
       mutate: (ruleset) => {
-        // Postgres would accept this and normalize it, so the generated response and the row read
-        // back afterwards would disagree about the same date.
         firstVerification(ruleset).last_verified_date = "2026-7-18";
       },
       error: /last_verified_date must be an ISO date/,
     },
     {
-      // The one value the shape check and the calendar round trip both accept and Postgres does
-      // not: ISO 8601 has a year zero and ECMAScript implements it, so this passes every check the
-      // validator made before this case existed and then fails at the INSERT — the deferred failure
-      // the validator exists to stop, surviving inside the validator.
       name: "year-zero verification date",
       mutate: (ruleset) => {
         firstVerification(ruleset).last_verified_date = "0000-01-01";
@@ -356,8 +324,6 @@ describe("ruleset validation", () => {
       error: /last_verified_date has no year 0000/,
     },
     {
-      // Year zero is refused for being year zero, not for being an odd day: February 29 of year 0
-      // is a real proleptic-Gregorian date that Postgres still has no year for.
       name: "year-zero leap day",
       mutate: (ruleset) => {
         firstVerification(ruleset).last_verified_date = "0000-02-29";
@@ -484,7 +450,6 @@ describe("ruleset validation", () => {
       error: /verification.status has unsupported value/,
     },
     {
-      // Issue #77: a finding that directs the organizer to act with a body must name it.
       name: "an agency-required kind with no agency",
       mutate: (ruleset) => {
         delete object(ruleById(ruleset, "PARKS-PROPANE-001").output).agency;
@@ -492,7 +457,6 @@ describe("ruleset validation", () => {
       error: /output.agency must be a non-empty string/,
     },
     {
-      // Issue #75: only a COVERAGE_GAP advisory, which asserts nothing, may omit its source.
       name: "a non-COVERAGE_GAP advisory with no source",
       mutate: (ruleset) => {
         delete ruleById(ruleset, "ADV-NOISE-CODE-001").source;
@@ -506,65 +470,37 @@ describe("ruleset validation", () => {
   });
 
   it("bounds the offset where the calendar arithmetic actually stops working", async () => {
-    // The #114 precedent: measure the divergence rather than patch the reported value, and pin the
-    // measurement so it fails if calendar.ts changes underneath this file. Every assertion below runs
-    // the real `addCalendarDays`.
-    //
-    // What the measurement found is not what #122 assumed. A RangeError is only the OUTER boundary,
-    // at ±100,000,000 days from the Unix epoch. Well inside it, `addCalendarDays` leaves the range
-    // `toISOString` can format as a plain date, because `toISOString().slice(0, 10)` cuts
-    // `-000001-12-31T…` down to `"-000001-12"`. That used to be RETURNED, with no error; it now
-    // throws, because `fromEpochDay` tests its own output against ISO_DATE (#126). So the usable
-    // boundary is where the RESULT leaves years 0000–9999, and it is date-dependent:
-    // `epochDay(deadline) − epochDay(0000-01-01)`. MAX_REPRESENTABLE_DAYS_BEFORE is that value at the
-    // Unix epoch, where it is smallest, and therefore safe for every later deadline.
     const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
     const EPOCH = "1970-01-01";
 
-    // The bound itself still returns a real date from the tightest possible deadline...
     const atBound = addCalendarDays(EPOCH, -MAX_REPRESENTABLE_DAYS_BEFORE);
     expect(atBound, "the bound is reachable from the earliest deadline the product can hold").toBe(
       "0000-01-01",
     );
     expect(ISO_DATE.test(atBound)).toBe(true);
 
-    // ...and one day further throws instead of returning `"-000001-12"` silently. The guard lives in
-    // `fromEpochDay`, so this validator's bound and the arithmetic it protects now agree: the last
-    // offset the validator admits is the last one that yields a date.
     const pastBound = (): string => addCalendarDays(EPOCH, -(MAX_REPRESENTABLE_DAYS_BEFORE + 1));
     expect(pastBound).toThrow(EvaluationError);
     expect(pastBound).toThrow(/epoch day -719529 is outside the representable calendar range/);
 
-    // The outer RangeError boundary is a DIFFERENT boundary and still distinguishable by type: the
-    // guard reports leaving years 0000–9999, while past ±8.64e15 ms `toISOString` throws RangeError
-    // before the guard can run. -100,000,000 no longer returns `"-271821-04"`; it is inside the band
-    // the guard now covers, which is why this assertion moved from `.not.toThrow()`.
     expect(() => addCalendarDays(EPOCH, -100_000_000)).toThrow(EvaluationError);
     expect(() => addCalendarDays(EPOCH, -100_000_001)).toThrow(RangeError);
     expect(() => addCalendarDays(EPOCH, -100_000_001)).not.toThrow(EvaluationError);
 
-    // Every offset the validator admits stays well inside the usable range, from a real deadline.
     for (const deadline of ["1970-01-01", "2026-08-26", "2026-12-04"]) {
       const scheduled = addCalendarDays(deadline, -MAX_PRODUCT_DAYS_BEFORE);
       expect(ISO_DATE.test(scheduled), `${deadline} - ${MAX_PRODUCT_DAYS_BEFORE}`).toBe(true);
       expect(differenceInCalendarDays(scheduled, deadline)).toBe(MAX_PRODUCT_DAYS_BEFORE);
     }
 
-    // And the product bound is the tighter of the two, which is what makes it the effective one.
     expect(MAX_PRODUCT_DAYS_BEFORE).toBeLessThan(MAX_REPRESENTABLE_DAYS_BEFORE);
   });
 
   it("accepts a later alert kind that schedules by something other than days_before", async () => {
-    // The open half, asserted rather than described. The published note says each alert type owns an
-    // object precisely so a kind scheduling by an absolute date or an hour offset can add its own
-    // field, so requiring `days_before` of every entry rejected exactly the extension the artifact
-    // invites — which is what F-305 and F-413 are named in that note to do.
     for (const futureEntry of [
       { at_time: "09:00", timezone: "America/New_York" },
       { hours_before: [48, 6] },
       { absolute_date: "2026-08-01" },
-      // No recognised field at all: accepted rather than guessed at, since there is no field name to
-      // require without predicting the mechanism.
       { pending_design: true },
     ]) {
       const ruleset = await readRawRuleset();
@@ -574,8 +510,6 @@ describe("ruleset validation", () => {
   });
 
   it("still requires deadline_reminder when a later kind is present", async () => {
-    // The two halves at once: an artifact may add any kind it likes and still may not drop the one
-    // F-203 reads. This is the case that fails if either half is collapsed into the other.
     const ruleset = await readRawRuleset();
     const offsets = alertOffsets(ruleset);
     offsets.f305_digest = { at_time: "09:00" };
@@ -584,9 +518,6 @@ describe("ruleset validation", () => {
   });
 
   it("accepts the years either side of the one Postgres has no room for", async () => {
-    // The boundary in the other direction, so the year-zero rejection cannot widen unnoticed.
-    // Postgres stores 0001-01-01 and 9999-12-31 without complaint, so refusing either would reject
-    // an artifact the column can hold — a validator that over-rejects fails a boot that should work.
     for (const date of ["0001-01-01", "0001-12-31", "9999-12-31"]) {
       const ruleset = await readRawRuleset();
       firstVerification(ruleset).last_verified_date = date;
@@ -620,17 +551,12 @@ describe.runIf(databaseUrl.length > 0)("migration 001 and rules sync", () => {
     );
     expect(tables.rows.map(({ table_name }) => table_name)).toEqual(
       [
-        // F-203: that PopEngine was about to hand an alert to a provider, written before the
-        // handoff so a crash between provider-accept and COMMIT is not read as an alert nobody
-        // ever tried (migration 014).
         "alert_send_attempts",
         "alerts",
         "checkins",
         "checklist_acknowledgements",
         "checklist_items",
         "documents",
-        // F-203: where an event's alerts go, which is an event-scoped mutable fact and not the
-        // per-message record `alerts.recipient` holds (migration 009).
         "event_alert_contacts",
         "events",
         "permit_plan_items",
@@ -657,12 +583,8 @@ describe.runIf(databaseUrl.length > 0)("migration 001 and rules sync", () => {
         "revision_counter",
         "created_at",
         "updated_at",
-        // F-110 migration 012 retains the coarse answer as deprecated history. It is deliberately
-        // absent from the active registry and never used to infer either replacement value.
         "venue_has_assembly_approval",
-        // #194 keeps the removed organizer claim only for historical rows and replay.
         "food_affinity_private_exception_claimed",
-        // F-301 promotion fields (migration 005 / SPEC-CONFLICT #100) — not intake.
         "description",
         "public_page_published",
       ].sort(),
@@ -852,11 +774,6 @@ describe.runIf(databaseUrl.length > 0)("migration 001 and rules sync", () => {
       [otherEventId],
     );
 
-    // `cancelled`, like the row above, so it is never DUE. This suite and the F-203 poller suite
-    // share one database and vitest runs their files in parallel: a row left `pending` with
-    // `send_at = current_timestamp` is a real due alert, and a tick running in the other worker
-    // will claim and deliver it. What is under test here is the trigger, which does not care
-    // about status.
     await database.query(
       `INSERT INTO alerts
         (id, event_id, checklist_item_id, alert_type, channel, recipient,
@@ -941,9 +858,6 @@ describe.runIf(databaseUrl.length > 0)("migration 001 and rules sync", () => {
       [otherPlanId, otherEventId, ruleset.rulesetVersion],
     );
 
-    // Both foreign keys are individually satisfiable — the event exists and the plan exists —
-    // so only the pairwise constraint can reject this. Without it the row lands and F-202
-    // answers "has your plan changed" against a plan this organizer never saw.
     await expect(
       database.query(`INSERT INTO checklist_acknowledgements (event_id, plan_id) VALUES ($1, $2)`, [
         ownEventId,
@@ -963,8 +877,6 @@ describe.runIf(databaseUrl.length > 0)("migration 001 and rules sync", () => {
       [ownEventId, ownPlanId],
     );
 
-    // One row per event: re-acknowledging a later plan replaces the earlier answer rather than
-    // accumulating rows a "latest acknowledgement" read would have to disambiguate.
     const laterPlanId = randomUUID();
     await database.query(
       `INSERT INTO permit_plans
@@ -972,9 +884,6 @@ describe.runIf(databaseUrl.length > 0)("migration 001 and rules sync", () => {
        VALUES ($1, $2, 2, $3, 'feasible', '{}'::jsonb, '{}'::jsonb)`,
       [laterPlanId, ownEventId, ruleset.rulesetVersion],
     );
-    // acknowledged_at must be reapplied explicitly: Postgres does not re-evaluate a column
-    // default on conflict, so an upsert that sets only plan_id keeps reporting the time of the
-    // first review forever. Asserting the row count and plan_id alone would not notice.
     const { rows: before } = await database.query<{ acknowledged_at: Date }>(
       `SELECT acknowledged_at FROM checklist_acknowledgements WHERE event_id = $1`,
       [ownEventId],
@@ -1065,14 +974,6 @@ describe.runIf(databaseUrl.length > 0)("migration 001 and rules sync", () => {
   });
 });
 
-// The validator's promise is "this survives the `date` column", and the mechanism is a JS check —
-// so the two have to be shown to agree rather than assumed to. Year zero is where they did not:
-// ISO 8601 has one, ECMAScript implements it, Postgres has none, so a value that passed every
-// clause failed at the INSERT. Casting the boundaries through a real column is what keeps that
-// claim honest; the sweep behind it covered every string the shape admits (the full year axis,
-// the full month and day axes, February 28 and 29 of all 10,000 years, each month's last and
-// first-invalid day) and found year 0000 to be the only disagreement, with no value that both
-// accept stored as a different day.
 describe.runIf((process.env.DATABASE_URL ?? "").length > 0)(
   "the date check agrees with the column it stands in for",
   () => {
@@ -1087,7 +988,6 @@ describe.runIf((process.env.DATABASE_URL ?? "").length > 0)(
       await client.end();
     }, 30_000);
 
-    /** Whether a Postgres `date` accepts the value, and what it stores if it does. */
     const asStoredDate = async (value: string): Promise<string | null> => {
       try {
         const { rows } = await client.query<{ d: string }>("SELECT ($1::date)::text AS d", [value]);
@@ -1109,7 +1009,6 @@ describe.runIf((process.env.DATABASE_URL ?? "").length > 0)(
     };
 
     it.each([
-      // Accepted by both, and stored as itself.
       "0001-01-01",
       "0001-12-31",
       "1582-10-04",
@@ -1119,14 +1018,11 @@ describe.runIf((process.env.DATABASE_URL ?? "").length > 0)(
       "2024-02-29",
       "2026-07-18",
       "9999-12-31",
-      // Rejected by both: impossible days inside the shape.
       "2026-02-29",
       "2026-02-31",
       "2026-13-45",
       "2026-00-01",
       "2026-01-00",
-      // Rejected by both, and the reason differs on each side — the shape rejects these before the
-      // round trip, while Postgres would accept several of them and reinterpret them entirely.
       "2026-7-18",
       "20260718",
       "2026-189",
@@ -1134,24 +1030,18 @@ describe.runIf((process.env.DATABASE_URL ?? "").length > 0)(
       "epoch",
       "infinity",
       "10000-01-01",
-      // The one the validator had to be taught: legal ISO, no such Postgres date.
       "0000-01-01",
       "0000-02-29",
       "0000-12-31",
     ])("agrees about %s", async (date) => {
       const stored = await asStoredDate(date);
       const accepted = await validatorAccepts(date);
-      // Equivalence in the direction that matters: nothing the validator accepts may fail the cast,
-      // and nothing it accepts may be stored as a different day. The reverse — Postgres accepting
-      // what the validator refuses — is deliberate and safe, so it is not asserted as equality.
       if (accepted) {
         expect(stored, `${date} passed the validator, so the column must take it`).toBe(date);
       }
     });
 
     it("rejects every year-zero day while accepting the years either side", async () => {
-      // Stated as a pair so the fix cannot drift into rejecting year 1 or 9999, which the column
-      // stores without complaint.
       for (const date of ["0000-01-01", "0000-02-29", "0000-06-15", "0000-12-31"]) {
         expect(await validatorAccepts(date), date).toBe(false);
         expect(await asStoredDate(date), date).toBeNull();

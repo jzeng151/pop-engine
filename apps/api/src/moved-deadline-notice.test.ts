@@ -132,15 +132,6 @@ describe("movedDeadlineNotice (F-202 AC 9)", () => {
     expect(notice?.stateChange?.current.gated).toBe(true);
   });
 
-  /**
-   * #252 review: the gate a merged row renders is not always the gate its scalar carries.
-   *
-   * A binding route publishing a gate but no window, beside a sibling publishing the window, makes
-   * `filingRouteOf` select the sibling, so the row's `applyAfterDate` is the sibling's null and the
-   * binding route's gate is rendered one line down by `gatedRoutesOf`. Reading the scalar alone put
-   * `gated: false` on both sides of a regeneration that removed that gate, so no notice was emitted
-   * for a date the row visibly stopped showing.
-   */
   describe("a gate published by a route the row's scalar is not read off", () => {
     const route = (ruleId: string, overrides: Partial<FindingRoute> = {}): FindingRoute => ({
       ruleId,
@@ -161,14 +152,14 @@ describe("movedDeadlineNotice (F-202 AC 9)", () => {
       portalInstructions: null,
       ...overrides,
     });
-    /** The sibling the row's window, and so its null gate, is read off. */
+
     const window = route("SAPO-STREET-MEDIUM-001", {
       latestApplyDate: "2026-07-12",
       deadlineStatus: "on_track",
     });
     const merged = (gate: string | null) =>
       rendering({ routes: [route("DOB-TENT-001", { applyAfterDate: gate }), window] });
-    // The filing route's, which is null on both sides: this is the scalar the old reading used.
+
     const filed = item({ apply_after_date: null, latest_apply_date: "2026-07-12" });
 
     it("reports the gate the row loses", () => {
@@ -182,7 +173,7 @@ describe("movedDeadlineNotice (F-202 AC 9)", () => {
       expect(
         movedDeadlineNotice(filed, merged("2026-08-01"), filed, merged("2026-08-01")),
       ).toBeNull();
-      // And the gate's calendar value still moves without reporting one, as it does on the scalar.
+
       expect(
         movedDeadlineNotice(filed, merged("2026-08-01"), filed, merged("2026-08-09")),
       ).toBeNull();

@@ -38,91 +38,18 @@ export type WindowVerdict = {
   readonly minSlackDays: number | null;
 };
 
-/**
- * Whether a route's own published window has closed, which is the other half of what closes a plan.
- *
- * EXPORTED FOR THE REASON `canBlockWhenMissed` IS. `plan-api.ts` took the miss from
- * `verdictDetail.missedRuleIds`, which is this predicate's OUTPUT rather than the fact: a payload
- * whose list and whose route status disagree passed, and the list is the easier of the two for a
- * wrong payload to satisfy (#252 review). Both must hold, so both are checked, and the status token
- * is compared here rather than restated at the boundary.
- */
+/** Whether a route's own published window has closed, which is the other half of what closes a plan. */
 export const windowIsMissed = (route: Pick<FindingRoute, "deadlineStatus">): boolean =>
   route.deadlineStatus === "published_deadline_missed";
 
-/**
- * Every route of every finding, each paired with the finding that holds it.
- *
- * THE WINDOW CHECKS READ ROUTES, NOT MERGED LINES, and that is the whole of what changes here. A
- * merged line shows one window, so before the route list a group's other routes' windows were not
- * on the finding at all: adding a `dedupe_key` to two rules could turn INFEASIBLE into FEASIBLE with
- * no regulatory fact changing, because the closed route's `published_deadline_missed` had nowhere to
- * live. Reading routes makes merging verdict-neutral by construction, since the check sees the same
- * set of (disposition, deadlineStatus, slackDays, latestApplyDate) tuples whether two rules share a
- * key or not. `routesOf` supplies the single-route fallback for an unmerged finding and for a
- * replayed artifact stored before the field existed.
- *
- * WHAT A VERDICT MEANS IS UNCHANGED. The four verdicts, their ranks, the branch expansion and every
- * threshold below are exactly as they were; only which findings the check reads has moved.
- *
- * THE MERGE IS DISJUNCTIVE AND THIS CHECK IS CONJUNCTIVE, DELIBERATELY (#252 review). `findings.ts`
- * merges a group's disposition as the STRONGEST any route offers, on the reading that any one route
- * applying means the requirement applies. The window check below blocks if ANY route's published
- * window is missed, so a group can read INFEASIBLE while one of its routes is still open. The two
- * are not reconciled, and this records why rather than leaving the difference to be inferred:
- *
- * 1. NOTHING PUBLISHED SAYS FILING UNDER ONE ROUTE CURES ANOTHER'S MISSED DATE. A `dedupe_key` says
- *    two rules describe one requirement. It does not say the agency accepts either filing
- *    interchangeably, and no source in this ruleset says so. Reading the check disjunctively would
- *    assert that equivalence, which is inventing an exception (AGENTS.md, regulatory safety).
- * 2. BOTH DIRECTIONS ARE THE SAME CHOICE, NOT OPPOSITE ONES. The disposition merge takes the
- *    strongest and the window check takes the worst because both refuse to understate what an
- *    organizer must do. A disjunctive window check is the only one of the four combinations that
- *    understates.
- * 3. A DISJUNCTIVE CHECK WOULD PUT #252 BACK. Two unmerged rules, one missed, is INFEASIBLE; adding
- *    a `dedupe_key` would make it FEASIBLE with no regulatory fact changing. Making the verdict
- *    independent of whether two rules share a key is the whole reason this function reads routes.
- *
- * What the panel must not do is name the wrong route, and `blockerView` is what stops it: the
- * INFEASIBLE copy names the route whose window closed, not the route the merged line reads.
- */
+/** Every route of every finding, each paired with the finding that holds it. */
 function routeEntries(
   findings: readonly Finding[],
 ): { readonly finding: Finding; readonly route: FindingRoute }[] {
   return findings.flatMap((finding) => routesOf(finding).map((route) => ({ finding, route })));
 }
 
-/**
- * The merged line narrowed to the route that blocks, so the copy names the route rather than
- * whichever route the headline happens to read. Everything else on the line is retained, because a
- * consumer reading `blockingFinding` still wants its notes and trigger reasons.
- *
- * SOURCES ARE NARROWED TOO, AND THEY WERE THE ONE FIELD THIS DOCSTRING CLAIMED AND DID NOT DO. They
- * rode through on the spread, so the blocker carried the whole group's citations in the order the
- * rules sit in the published FILE while `routes` and the heading are in BINDING order. The panel's
- * "More information" link takes the first source with a URL (`verdict-detail.tsx`), so on a group
- * whose file order and binding order differ it pointed the organizer at a rule the heading beside
- * it does not name. `FindingSource` carries its own `ruleId`, so the narrowing is a filter and
- * needs no per-route field: the blocker's citations are the blocking rule's citations.
- *
- * EVERY OTHER FIELD A ROUTE PUBLISHES IS NARROWED, INCLUDING THE ONES A READER SEES FIRST. The fee, the
- * portal and the organizer summary were left on the merged line, so a blocker panel naming the
- * missed route rendered the binding route's heading, portal and fee beside it (#252 review). The
- * summary has no per-route form to narrow to — `FindingRoute` carries no `userSummary`, because a
- * summary is written about a rule and the merged heading belongs to whichever rule the line reads
- * — so on a merged finding it is dropped rather than reattributed, and the route's own published
- * `name` stands in.
- *
- * DROPPED ON EVERY MERGED FINDING, NOT ONLY WHERE THE BLOCKING ROUTE IS NOT THE HEADLINE. Keeping
- * it for the headline route read `userSummary` as the headline rule's own, and a merged one is not:
- * `mergeUserSummary` takes the heading from the first route in BINDING order that publishes one, so
- * a binding route publishing none inherits a sibling's heading, and the points CONCATENATE over
- * every contributing route unconditionally. The infeasible panel leads with that heading and links
- * from its first source (`verdict-detail.tsx`), so the narrowed name and citations sat under another
- * route's summary — the same crossover this function exists to remove, surviving in the one field
- * that had an exception (#252 review). An UNMERGED finding keeps its summary, because there the
- * merge never ran and the summary is the rule's own.
- */
+/** The merged line narrowed to the route that blocks, so the copy names the route rather than whichever route the headline happens to read. */
 function blockerView(finding: Finding, route: FindingRoute): Finding {
   const merged = (finding.routes?.length ?? 0) > 1;
   return {
@@ -146,46 +73,8 @@ function blockerView(finding: Finding, route: FindingRoute): Finding {
   };
 }
 
-/**
- * Whether a missed finding blocks. Three conditions, and each is load-bearing.
- *
- * `required` is the BAR rather than the whole set: `prohibited_or_ineligible` sits ABOVE `required`
- * in `DISPOSITION_STRENGTH`, so testing for equality let a finding that is both barred and past its
- * published window fall through to the missed-but-not-blocking branch and read CONDITIONAL. Product
- * owner, 2026-08-08.
- *
- * The finding also has to assert that bar off a trigger that RESOLVED, which is the same gate
- * `resolveDisposition()` applies one tier down. It does not apply there to `prohibited_or_ineligible`
- * on purpose (`proposals.ts` §2): a lone barred finding whose trigger came back `unknown` keeps its
- * published disposition so it still RENDERS as the blocking answer it publishes. Under the old
- * `=== "required"` filter that could never reach the window check, because a `required` rule with an
- * unknown trigger has already been demoted to `may_be_required`. Widening the bar upward brought it
- * into reach, and the file's own header states the invariant it would have broken: an
- * unknown-conditioned finding can never render INFEASIBLE (F-102 AC 2, Scenario F). Telling an
- * organizer their event is barred AND past its filing deadline, in the same payload that says the
- * engine does not know the fact the bar hangs off, is the failure this repository forbids everywhere
- * else. So the disposition still renders; only the verdict waits for the answer.
- *
- * `DefiniteRoutes` carries which routes resolved, because the trigger result is not on `Finding` and
- * `routesOf` cannot invent one for an unmerged line: its synthesized entry reads `"true"`, which is
- * right for the readers that ask whether a route applies and wrong for this one. A route whose own
- * trigger came back `unknown` must not close a plan even where it publishes a bar, since
- * `resolveDisposition` deliberately leaves `prohibited_or_ineligible` undemoted so it still RENDERS
- * (`proposals.ts` §2), and telling an organizer their event is barred AND past its deadline, in the
- * same payload that says the engine does not know the fact the bar hangs off, is the failure this
- * repository forbids everywhere else (#254 review). The set also excludes OFFICIAL_CONFLICT, per
- * `findings.ts`.
- *
- * IT IS READ PER ROUTE, WHICH IS WHY ONE SET ANSWERS WHAT #254 NEEDED TWO FOR. That change had to
- * ask separately whether the disposition's route and the window's route resolved, because a merged
- * line took them from different rules. An entry here is one rule's own disposition beside one rule's
- * own window, so a single membership test covers both.
- */
-// MEMBERSHIP IS THE WHOLE TEST, because membership IS `canBlockWhenMissed`. This also compared the
-// disposition against the blocking floor, which `evaluate` had already applied to the same value
-// when it built the set — one clause of the shared predicate, restated beside the set the predicate
-// filled. Equivalent today and free to drift the day the floor rule changes shape, which is the
-// reason the predicate was extracted (#252 review).
+/** Whether a missed finding blocks. */
+// MEMBERSHIP IS THE WHOLE TEST, because membership IS `canBlockWhenMissed`.
 const blocksWhenMissed = (route: FindingRoute, definite: DefiniteRoutes): boolean =>
   definite.blockingRuleIds.has(route.ruleId);
 
@@ -232,23 +121,7 @@ export function computeWindowVerdict(
 const ruleIdsOf = (findings: readonly Finding[]): string[] =>
   findings.flatMap((finding) => finding.ruleIds).sort();
 
-/**
- * What a branch has to agree on before its unknown can be called immaterial: ARCHITECTURE step 3
- * makes an unknown that changes the finding set OR THE TIMELINE conditional, so the signature
- * carries each finding's timeline, not just the verdict.
- *
- * EVERY ROUTE'S TIMELINE, NOT THE MERGED SCALAR, AND FOR THE SAME REASON THE WINDOW CHECK READS
- * ROUTES. The merged line shows one window, so an unknown that moves only a NON-BINDING route's
- * date left the headline `latestApplyDate`, the verdict and the merged `ruleIds` all equal and the
- * two branches signed identically. The window check above reads every route, so those branches do
- * NOT observe the same timelines: one of them can hold a route whose published window is missed
- * while the other does not, and the engine returned FEASIBLE with the unknown discarded rather than
- * CONDITIONAL (#252 review). Whatever the check can see, the signature has to see.
- *
- * THE STATUS TRAVELS WITH THE DATE because a route can change state without changing its date: the
- * same published window read on the branch that misses it and the branch that does not is one date
- * and two deadline statuses, and it is the status the check blocks on.
- */
+/** What a branch has to agree on before its unknown can be called immaterial: ARCHITECTURE step 3 makes an unknown that changes the finding set OR THE TIMELINE conditional, so the signature carries each finding's timeline, not just the verdict. */
 const branchSignature = (verdict: Verdict, findings: readonly Finding[]): string =>
   [
     verdict,
@@ -270,22 +143,7 @@ function describeDifference(base: readonly Finding[], candidate: readonly Findin
   const candidateIds = new Set(ruleIdsOf(candidate));
   const added = [...candidateIds].filter((id) => !baseIds.has(id));
   const dropped = [...baseIds].filter((id) => !candidateIds.has(id));
-  // Rule ids, not organizer headings. This prose is persisted on the plan row, so the id is the
-  // permanent anchor back to the published rule that produced the sentence; a heading is not unique
-  // and any later ruleset publish may reword it. The organizer never reads the id: the plan view's
-  // `humanizeRuleCodes` swaps each id for the same heading at render time.
-  // THE ROUTE NAMED BY THE ID, NOT THE LINE IT SITS ON, for the reason the window check reads
-  // routes. `computeWindowVerdict` blocks on ANY route's missed window, so an unknown can make a
-  // branch divergent by missing a NON-BINDING route while the merged scalar `deadlineStatus` stays
-  // open. Reading the scalar wrote the branch's persisted reason as a bare `adds <id>` or
-  // `same findings, re-dated` on exactly the branch F-102 AC 6 requires to state the filing-window
-  // miss (#252 review). An unmerged finding has one route and `routesOf` supplies it, so this is
-  // the same answer the scalar gave wherever the scalar was right.
-  //
-  // NO ROUTE CARRIES THE ID means the line is unmerged or was stored before route lists existed, and
-  // there the scalar is the route's own value: `routesOf` names such a line by its FIRST rule id, so
-  // a legacy multi-id line asked about its second id finds nothing and must read the scalar rather
-  // than answer "not missed".
+  // Rule ids, not organizer headings.
   const missedAsScoped = (finding: Finding, id: string): boolean => {
     const route = routesOf(finding).find((entry) => entry.ruleId === id);
     return windowIsMissed({ deadlineStatus: route?.deadlineStatus ?? finding.deadlineStatus });
@@ -298,12 +156,7 @@ function describeDifference(base: readonly Finding[], candidate: readonly Findin
     return finding === undefined ? id : describeMissed(finding, id);
   };
 
-  // Same rule ids can still tighten: Scenario F's unresolved base already carries SLA-ONEDAY /
-  // SLA-CATERING as may_be_required, and the no-license branch makes them required with a missed
-  // window. Report that even when another finding is merely dropped (AC 6).
-  // WHICH ROUTES OF THE LINE ARE MISSED, standing in for the merged `deadlineStatus` for the reason
-  // `describeMissed` gives. Substituting it changes no outcome the scalar already got right: a
-  // status change that is not a miss produced no sentence before and produces none now.
+  // Same rule ids can still tighten: Scenario F's unresolved base already carries SLA-ONEDAY / SLA-CATERING as may_be_required, and the no-license branch makes them required with a missed window.
   /** The routes whose own windows are missed, which is a different set from the line's rule ids. */
   const missedRouteIds = (finding: Finding): string[] =>
     routesOf(finding)
@@ -323,11 +176,7 @@ function describeDifference(base: readonly Finding[], candidate: readonly Findin
       continue;
     }
     if (nowMissed !== "") {
-      // THE ROUTES THAT MISSED, NOT THE LINE THEY SIT ON. `missedRouteIds` already holds exactly
-      // the routes whose own windows closed — it is what the comparison above is made of — and the
-      // message substituted the parent's whole `ruleIds` instead, telling the organizer that every
-      // sibling route on a merged line had missed its deadline. Wrong values in the branch table,
-      // on the branches F-102 AC 6 requires the reason to be stated on (#252 review).
+      // THE ROUTES THAT MISSED, NOT THE LINE THEY SIT ON.
       tightened.push(`${missedRouteIds(finding).join(", ")} (published deadline missed as scoped)`);
       continue;
     }
@@ -395,14 +244,7 @@ function emitsF102DetailEnrichment(rulesetVersion: string): boolean {
   return !PRE_F102_DETAIL_ERAS.has(rulesetVersion);
 }
 
-/**
- * The published thresholds that decide a field the engine cannot enumerate, so a numeric unknown
- * still tells a client what to ask for instead of leaving an empty branch table (P2).
- *
- * When a condition declares `boundary: "conditional"`, the exact threshold is unresolved (not
- * "below the line"), so the description must say so — e.g. DOB-TENT-001 at exactly 400 sq ft.
- * That clause is current-line enrichment only; superseded eras keep the shorter historical prose.
- */
+/** The published thresholds that decide a field the engine cannot enumerate, so a numeric unknown still tells a client what to ask for instead of leaving an empty branch table (P2). */
 function publishedThresholds(field: string, ruleset: EngineRuleset): string | null {
   const described: string[] = [];
   const enrichBoundary = emitsF102DetailEnrichment(ruleset.rulesetVersion);
@@ -437,13 +279,7 @@ type ConditionalEvaluation = {
   readonly findings: readonly Finding[];
   readonly window: WindowVerdict;
   readonly verdict: Verdict;
-  /**
-   * The finding whose closed window explains an INFEASIBLE verdict. Usually the base window's,
-   * but when the verdict is INFEASIBLE only because every branch of an unknown misses, the base
-   * window has none: an unknown-triggered finding is downgraded to may_be_required and so never
-   * blocks. Carrying the branch blocker out keeps the "published deadline missed" copy and the
-   * rescope suggestions working instead of returning an unexplained INFEASIBLE.
-   */
+  /** The finding whose closed window explains an INFEASIBLE verdict. */
   readonly blockingFinding: Finding | null;
   readonly missingFacts: readonly MissingFact[];
   readonly unresolvedTimelines: readonly UnresolvedTimeline[];
@@ -548,20 +384,7 @@ function longestLeadBlocker(blockers: readonly Finding[]): Finding | null {
   );
 }
 
-/**
- * Whether the branch verdicts alone close the plan, which is the condition under which a blocker is
- * PROMOTED out of the branches while the unresolved base line is returned.
- *
- * EVERY branch, and at least one. `every` on an empty array is vacuously true, so the length test
- * is the rule rather than a guard around it: a plan with no enumerable unknown has no branch that
- * says anything, and a blocker promoted on that basis was promoted on nothing.
- *
- * EXPORTED BECAUSE THE BOUNDARY WAS ABOUT TO RESTATE IT, and restating it went wrong the first
- * time: `plan-api.ts` accepted a promoted blocker when SOME branch read INFEASIBLE, which is weaker
- * than this and let a payload with one infeasible branch beside a feasible one bypass every
- * narrowed check (#252 review). Fourth engine rule shared this way, after `canBlockWhenMissed`,
- * `bindingRouteOf` and `offersAFilingAction`, and for the same reason each of those was extracted.
- */
+/** Whether the branch verdicts alone close the plan, which is the condition under which a blocker is PROMOTED out of the branches while the unresolved base line is returned. */
 export const branchesForceInfeasible = (pathVerdicts: readonly Verdict[]): boolean =>
   pathVerdicts.length > 0 && pathVerdicts.every((verdict) => verdict === "INFEASIBLE");
 
@@ -641,10 +464,7 @@ function buildRescopeSuggestions(
       const introduced = candidate.findings.filter((finding) =>
         finding.ruleIds.every((ruleId) => !baseRuleIds.has(ruleId)),
       );
-      // R3 (proposals §6): a coverage gap asserts nothing, another agency's permit is not
-      // relief, and a scope whose timeline is unresolved is not a scope it can recommend —
-      // except when the only block is an unpublished holiday calendar (SPEC-CONFLICT #130),
-      // which must not erase F-102 AC 7's private-venue ladder step.
+      // R3 (proposals §6): a coverage gap asserts nothing, another agency's permit is not relief, and a scope whose timeline is unresolved is not a scope it can recommend — except when the only block is an unpublished holiday.
       if (introduced.some((finding) => finding.verificationStatus === "COVERAGE_GAP")) continue;
       if (
         introduced.some(
@@ -694,13 +514,7 @@ function buildRescopeSuggestions(
       );
       if (candidate.verdict === "FEASIBLE_AT_RISK") {
         const minSlackDays = candidate.window.minSlackDays;
-        // THE ROUTE THAT HOLDS THE MINIMUM, NOT THE LINE THAT CONTAINS IT. `computeWindowVerdict`
-        // takes `minSlackDays` over every route, so on a merged line the slack can belong to a
-        // non-binding route while the merged scalar is null or a different number. Searching the
-        // findings for `slackDays === minSlackDays` then matched nothing and the ladder said which
-        // change reaches FEASIBLE_AT_RISK without naming what is at risk, on a route that publishes
-        // a name (#252 review). An unmerged finding is its own route, so this is the same answer
-        // wherever the scalar was right.
+        // THE ROUTE THAT HOLDS THE MINIMUM, NOT THE LINE THAT CONTAINS IT.
         const atRiskRoute =
           minSlackDays !== null
             ? (candidate.findings

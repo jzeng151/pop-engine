@@ -1,10 +1,3 @@
-// F-202 API surface against a real schema: materialization, status and notes, uploads, signed
-// download urls, and what a rescope does to an existing checklist. Runs only when a database is
-// configured, matching the other schema-backed suites (CI applies `migrate up` first).
-//
-// Object storage is a fake implementing the same `DocumentStorage` seam the S3 adapter does, so
-// nothing here needs a bucket or a network. The adapter itself is tested in `storage.test.ts`.
-
 import { randomUUID } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import { request as httpRequest } from "node:http";
@@ -35,7 +28,6 @@ import { attachmentDisposition, DocumentStorageError, type DocumentStorage } fro
 
 const databaseUrl = process.env.DATABASE_URL ?? "";
 
-/** The smallest byte sequences each accepted format is required to start with. */
 const PDF = Buffer.concat([Buffer.from("%PDF-1.7"), Buffer.alloc(64, 0x20)]);
 const PNG = Buffer.concat([
   Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]),
@@ -46,12 +38,11 @@ type StoredObject = {
   body: Buffer;
   contentType: string;
   sizeBytes: number;
-  /** Whether the route handed over a stream rather than a fully-read buffer. */
+
   receivedStream: boolean;
 };
 type FakeStorage = DocumentStorage & { objects: Map<string, StoredObject> };
 
-/** Drains the stream the route hands over, which is also how a real adapter consumes it. */
 const collect = async (body: Readable): Promise<Buffer> => {
   const chunks: Buffer[] = [];
   for await (const chunk of body) chunks.push(chunk as Buffer);
@@ -133,11 +124,6 @@ type ChecklistItemView = {
 
 const ruleIdsOf = (items: ChecklistItemView[]): string[][] => items.map((item) => item.ruleIds);
 
-/**
- * A POST with no `Content-Length`. Node falls back to chunked encoding when the length is not
- * declared, which supertest will not do — and a chunked body is exactly what the route refuses,
- * because sizing it would mean holding all of it.
- */
 const chunkedUpload = (app: Express, path: string, body: Buffer): Promise<number> =>
   new Promise((resolve, reject) => {
     const server = app.listen(0, () => {
@@ -165,18 +151,14 @@ describe.runIf(databaseUrl.length > 0)("F-202 compliance checklist", () => {
   let pool: Pool;
   let ruleset: EngineRuleset;
   let intakeContract: IntakeContract;
-  /** `config.alert_offsets.deadline_reminder.days_before`, read from the artifact (F-203). */
   let reminderOffsets: number[] = [];
   const createdEventIds: string[] = [];
 
-  // The answer key's scenarios are dated against its own clock, and the fixture windows carry no
-  // contested holidays (AD-11), so the calendar is injected rather than the guard relaxed.
   const fixtureCalendar = (calendarId: string): HolidayCalendar => ({
     id: calendarId,
     holidays: [],
   });
 
-  /** F-203 runs inside materialization; its clock is pinned to the fixture suite's date. */
   const scheduleAlerts: AlertScheduler = (...args) =>
     createAlertScheduler({
       reminderDaysBefore: reminderOffsets,
@@ -194,7 +176,6 @@ describe.runIf(databaseUrl.length > 0)("F-202 compliance checklist", () => {
       checklist: { database: pool, storage, scheduleAlerts, jurisdiction: ruleset.jurisdiction },
     });
 
-  /** An event created through the intake endpoint, so it is exactly what F-101 would store. */
   const createEvent = async (submission: Record<string, unknown>): Promise<string> => {
     const response = await request(appWith(fakeStorage())).post("/api/events").send(submission);
     expect(response.status).toBe(201);
@@ -208,16 +189,6 @@ describe.runIf(databaseUrl.length > 0)("F-202 compliance checklist", () => {
     expect(response.status).toBe(201);
   };
 
-  /**
-   * Press review the way the page does: naming the plan the caller is currently being shown.
-   *
-   * The endpoint requires that id and refuses to choose one itself, because the acknowledgement it
-   * writes is the record that the organizer reviewed THAT plan. Reading it off a GET first is
-   * exactly what the browser does — it renders from a GET and hands back the id it rendered — so
-   * these tests exercise the same two-step the real client performs rather than a shortcut only
-   * the tests can take. A test that wants to review a DIFFERENT plan passes `planId` explicitly,
-   * which is the stale-tab case.
-   */
   const review = async (
     api: Express,
     eventId: string,
@@ -232,22 +203,12 @@ describe.runIf(databaseUrl.length > 0)("F-202 compliance checklist", () => {
       .send({ planId: shown, ...contacts });
   };
 
-  /** The published name of a rule, so a hand-built plan item states no permit fact of its own. */
   const publishedName = (ruleId: string): string | null => {
     const rule = ruleset.rules.find((candidate) => candidate.id === ruleId);
     if (rule === undefined) throw new Error(`no published rule ${ruleId}`);
     return rule.name;
   };
 
-  /**
-   * A plan written directly, for shapes the six approved scenarios do not produce: a plan with no
-   * trackable line, and a dedupe-merged line carrying two rule ids. `generatedAt` is explicit so
-   * "the latest plan" is decided by the test rather than by insert timing.
-   *
-   * The finding renderings are written empty. These plans exist to exercise item identity, not
-   * published text, and inventing notes for a real rule id would be worse than carrying none;
-   * the rendering path is covered against engine-generated plans instead.
-   */
   const insertPlan = async (
     eventId: string,
     items: readonly { ruleIds: string[]; kind: string; latestApplyDate?: string }[],
@@ -307,11 +268,6 @@ describe.runIf(databaseUrl.length > 0)("F-202 compliance checklist", () => {
     return planId;
   };
 
-  /**
-   * The real pool, with `query` intercepted. Returning a promise from `intercept` replaces the
-   * query; returning null lets it through. Used to stage the failures a document upload has to
-   * survive without lying about what it stored.
-   */
   const poolIntercepting = (
     intercept: (text: string, values: readonly unknown[]) => Promise<never> | null,
   ): Pool => {
@@ -323,7 +279,6 @@ describe.runIf(databaseUrl.length > 0)("F-202 compliance checklist", () => {
     return proxy;
   };
 
-  /** An upload driven against a checklist item, with the database staged by the caller. */
   const uploadWith = (database: Pool, storage: DocumentStorage, checklistItemId: string) =>
     request(
       createApp({
@@ -337,7 +292,6 @@ describe.runIf(databaseUrl.length > 0)("F-202 compliance checklist", () => {
       .set("Content-Type", "application/pdf")
       .send(PDF);
 
-  /** A scenario event with its plan and checklist already materialized. */
   const checklistFor = async (
     scenarioId: string,
     storage: DocumentStorage = fakeStorage(),
@@ -362,9 +316,7 @@ describe.runIf(databaseUrl.length > 0)("F-202 compliance checklist", () => {
 
   afterAll(async () => {
     if (createdEventIds.length > 0) {
-      // Before the checklist items they hang off: F-203 alerts reference both (migration 001).
       await pool.query("DELETE FROM alerts WHERE event_id = ANY($1)", [createdEventIds]);
-      // Before the events they key on: contacts are event-scoped (migration 009).
       await pool.query("DELETE FROM event_alert_contacts WHERE event_id = ANY($1)", [
         createdEventIds,
       ]);
@@ -388,8 +340,6 @@ describe.runIf(databaseUrl.length > 0)("F-202 compliance checklist", () => {
            SELECT id FROM permit_plans WHERE event_id = ANY($1))`,
         [createdEventIds],
       );
-      // Before the plans it references: the acknowledgement's composite FK is what stops one
-      // event's checklist naming another event's plan, and it holds here too.
       await pool.query("DELETE FROM checklist_acknowledgements WHERE event_id = ANY($1)", [
         createdEventIds,
       ]);
@@ -404,10 +354,6 @@ describe.runIf(databaseUrl.length > 0)("F-202 compliance checklist", () => {
       const { body } = await checklistFor("A");
       const items = body.items;
 
-      // Scenario A's permit and insurance findings, soonest published filing date first. Four
-      // since nyc.v2.5: FDNY-GENERATOR-001 was here because an unanswered battery question made
-      // its trigger unknown, and Scenario A has neither a generator nor a battery. The approved
-      // answer key never listed it for A, so this list now matches the key it is derived from.
       expect(ruleIdsOf(items)).toEqual([
         ["SAPO-STREET-LARGE-001"],
         ["NYPD-SOUND-001"],
@@ -415,7 +361,6 @@ describe.runIf(databaseUrl.length > 0)("F-202 compliance checklist", () => {
         ["SAPO-INSURANCE-001"],
       ]);
       expect(items.every((item) => ["permit", "insurance"].includes(item.kind))).toBe(true);
-      // Notification and named-confirmation lines are real context, not trackable tasks.
       expect((body.contextItems as { ruleIds: string[] }[]).map((item) => item.ruleIds)).toEqual([
         ["DOHMH-ORGANIZER-NOTIFY-001"],
         ["CONF-NO-ALCOHOL-001"],
@@ -435,7 +380,6 @@ describe.runIf(databaseUrl.length > 0)("F-202 compliance checklist", () => {
       expect(blocking?.userSummary?.heading).toBe(
         ruleset.rules.find((rule) => rule.id === "SAPO-STREET-LARGE-001")?.userSummary?.heading,
       );
-      // Spec AC 5: the deadline context lives where the work happens.
       expect(blocking?.latestApplyDate).toBe("2026-07-12");
       expect(blocking?.verificationStatus).toBe("SOURCE_CONFIRMED");
       expect(blocking?.lastVerifiedDate).toBeNull();
@@ -492,22 +436,6 @@ describe.runIf(databaseUrl.length > 0)("F-202 compliance checklist", () => {
     });
 
     it("keeps a retained row's provenance with the dates it is actually showing", async () => {
-      // The regression guard for F-206 Acceptance Criterion 4's mixed-checklist clause, which
-      // distinguishes the two retained-row states explicitly: a dropped row is attributed to its
-      // persisted plan item (asserted above), and a still-required row to the latest plan.
-      //
-      // A retained still-required row deliberately shows the LATEST plan's recalculated dates
-      // before the organizer re-materializes (PRD principle 6; asserted on its own below).
-      // Labelling those dates with the version and snapshot of a plan that did not produce them is
-      // a pinned version beside data it never carried, which is what AC 4 forbids and what #93
-      // fixed for the plan banner. So the three facts are asserted together: the row keeps its
-      // persisted link, shows the new plan's date, and reports the new plan's provenance. Moving
-      // `sourcePlan` alone to the persisted item fails here, as it should.
-      //
-      // This assertion was removed on #114 while F-202 AC 8 and F-206 read as contradicting each
-      // other (SPEC-CONFLICT #115), because pinning either reading would have institutionalised the
-      // losing side. The amendment resolved that in favour of what the code already did, so the
-      // guard is back and cites the criterion rather than the issue.
       const eventId = await createEvent(scenario("A"));
       const api = appWith(fakeStorage());
       await insertPlan(
@@ -521,7 +449,6 @@ describe.runIf(databaseUrl.length > 0)("F-202 compliance checklist", () => {
       expect(created.status).toBe(201);
       const before = (created.body.items as ChecklistItemView[])[0];
 
-      // Regenerated with the same requirement and a moved filing date, and NOT re-materialized.
       await insertPlan(
         eventId,
         [{ ruleIds: ["SAPO-STREET-LARGE-001"], kind: "permit", latestApplyDate: "2026-08-30" }],
@@ -532,15 +459,11 @@ describe.runIf(databaseUrl.length > 0)("F-202 compliance checklist", () => {
       const read = await request(api).get(`/api/events/${eventId}/checklist`);
       const after = (read.body.items as ChecklistItemView[])[0];
 
-      // Still the row the organizer has been working: same checklist item, same persisted link.
       expect(after?.id).toBe(before?.id);
       expect(after?.planItemId).toBe(before?.planItemId);
       expect(after?.struckThrough).toBe(false);
-      // Showing the new plan's date...
       expect(after?.latestApplyDate).toBe("2026-08-30");
-      // ...so it must say the new plan is where that date came from.
       expect(after?.sourcePlan).toEqual({ rulesetVersion: "test.v2", snapshotDate: "2026-07-21" });
-      // F-202 AC 9: the previous date travels with the notice until a review re-points the row.
       expect(after?.deadlineNotice?.dateChange).toEqual({
         kind: "both",
         previous: "2026-07-12",
@@ -602,9 +525,6 @@ describe.runIf(databaseUrl.length > 0)("F-202 compliance checklist", () => {
     });
 
     it("offers an empty checklist for a plan with no permit or insurance line", async () => {
-      // No approved scenario currently produces a plan without a permit line (SPEC-CONFLICT #92
-      // covers the spec's stale claim that Scenario B does), so the case is built directly from
-      // a published advisory rule rather than asserted of a scenario that does not have it.
       const eventId = await createEvent(scenario("B"));
       await insertPlan(
         eventId,
@@ -614,7 +534,6 @@ describe.runIf(databaseUrl.length > 0)("F-202 compliance checklist", () => {
 
       const response = await review(appWith(fakeStorage()), eventId);
 
-      // Nothing was created, so the call is already idempotent on its first use.
       expect(response.status).toBe(200);
       expect(response.body.items).toEqual([]);
       expect(response.body.planChanged).toBe(false);
@@ -624,11 +543,6 @@ describe.runIf(databaseUrl.length > 0)("F-202 compliance checklist", () => {
     });
   });
 
-  // A finding that shares a `dedupe_key` merges into one line carrying every contributing rule id
-  // (engine `mergeFindings`). Today only DOB-TALL-STRUCTURE-001 publishes one, so no approved
-  // scenario produces a merged line — but issue #89 is live on whether DOB-TENT-001 should carry
-  // `dob-structure` too, and that change would turn two plan lines into one. These pin what the
-  // checklist does about it, so the answer is not decided by accident by whoever edits the key.
   describe("requirement identity across plans", () => {
     const MERGED = ["DOB-TENT-001", "DOB-TALL-STRUCTURE-001"];
 
@@ -639,7 +553,6 @@ describe.runIf(databaseUrl.length > 0)("F-202 compliance checklist", () => {
       const first = await review(api, eventId);
       expect(first.status).toBe(201);
 
-      // The same two rules, merged in the other order: the same requirement, not a new one.
       await insertPlan(
         eventId,
         [{ ruleIds: [...MERGED].reverse(), kind: "permit" }],
@@ -665,7 +578,6 @@ describe.runIf(databaseUrl.length > 0)("F-202 compliance checklist", () => {
         .patch(`/api/checklist-items/${mergedItemId}`)
         .send({ status: "submitted", notes: "one filing covered both" });
 
-      // The dedupe key changes and the merged line becomes two.
       await insertPlan(
         eventId,
         MERGED.map((ruleId) => ({ ruleIds: [ruleId], kind: "permit" })),
@@ -674,9 +586,6 @@ describe.runIf(databaseUrl.length > 0)("F-202 compliance checklist", () => {
       const split = await review(api, eventId);
 
       expect(split.status).toBe(201);
-      // Partial overlap is not a match, so "submitted" is not carried onto a line whose scope
-      // just changed. This POST is the organizer accepting the new plan, so the prompt clears;
-      // its rise and fall across every shape of regeneration is pinned below.
       expect(split.body.planChanged).toBe(false);
       const items = split.body.items as ChecklistItemView[];
       expect(items).toHaveLength(3);
@@ -694,11 +603,6 @@ describe.runIf(databaseUrl.length > 0)("F-202 compliance checklist", () => {
     });
 
     it("strikes both tracked lines when a later plan merges them, and re-points neither", async () => {
-      // `checklist_items.plan_item_id` is UNIQUE, and `materialize` re-points a tracked item at
-      // the current plan's row. That is only safe because whole-set identity makes a match
-      // strictly one-to-one: a merge is not a match, so two tracked items can never both claim
-      // the one merged row. This test is what makes that load-bearing property fail loudly if
-      // the identity rule is ever relaxed to partial overlap.
       const eventId = await createEvent(scenario("A"));
       await insertPlan(
         eventId,
@@ -710,27 +614,22 @@ describe.runIf(databaseUrl.length > 0)("F-202 compliance checklist", () => {
       const trackedIds = (separate.body.items as ChecklistItemView[]).map((item) => item.id);
       expect(trackedIds).toHaveLength(2);
 
-      // The dedupe key changes and the two lines become one.
       await insertPlan(eventId, [{ ruleIds: MERGED, kind: "permit" }], "2026-07-22T11:00:00Z");
       const merged = await review(api, eventId);
 
-      // No unique violation: the merged row is claimed by the new item, not fought over.
       expect(merged.status).toBe(201);
       const items = merged.body.items as ChecklistItemView[];
       expect(items).toHaveLength(3);
       const struck = items.filter((item) => trackedIds.includes(item.id));
       expect(struck).toHaveLength(2);
       expect(struck.every((item) => item.struckThrough)).toBe(true);
-      // Neither was re-pointed: they still hold the rows of the plan that raised them.
       expect(struck.map((item) => item.planItemId).sort()).toEqual(
         (separate.body.items as ChecklistItemView[]).map((item) => item.planItemId).sort(),
       );
       expect(items.at(-1)?.ruleIds.slice().sort()).toEqual([...MERGED].sort());
       expect(items.at(-1)?.struckThrough).toBe(false);
-      // Cleared by this POST: the merged row is now tracked and the two struck rows are history.
       expect(merged.body.planChanged).toBe(false);
 
-      // And one checklist row per plan item, which is what the constraint exists to guarantee.
       const { rows } = await pool.query<{ count: string }>(
         `SELECT count(DISTINCT checklist.plan_item_id) FROM checklist_items AS checklist
            JOIN permit_plan_items AS item ON item.id = checklist.plan_item_id
@@ -898,8 +797,6 @@ describe.runIf(databaseUrl.length > 0)("F-202 compliance checklist", () => {
       const itemId = body.items[0]?.id;
       const api = appWith(fakeStorage());
 
-      // Agencies are messy: the spec allows any transition, so the walk goes forward,
-      // sideways, and back to the start.
       for (const status of ["submitted", "approved", "rejected", "in_progress", "not_started"]) {
         const response = await request(api)
           .patch(`/api/checklist-items/${itemId}`)
@@ -926,7 +823,6 @@ describe.runIf(databaseUrl.length > 0)("F-202 compliance checklist", () => {
       const read = await request(api).get(`/api/events/${eventId}/checklist`);
       const stored = (read.body.items as ChecklistItemView[]).find((item) => item.id === itemId);
       expect(stored?.notes).toBe("Called the precinct; they want the SAPO number first.");
-      // AC 2: the rollup follows the per-item status.
       expect(read.body.statusRollup).toMatchObject({ in_progress: 1, not_started: 3 });
     });
 
@@ -969,8 +865,6 @@ describe.runIf(databaseUrl.length > 0)("F-202 compliance checklist", () => {
     });
 
     it("holds the same status vocabulary the schema enforces", async () => {
-      // The same guard as schema-contract.test.ts, for the one enum this feature holds in code:
-      // a hand-kept copy that nothing compares is what issues #70, #73 and #76 all were.
       const { rows } = await pool.query<{ def: string }>(
         `SELECT pg_get_constraintdef(c.oid) AS def
            FROM pg_constraint c
@@ -1010,7 +904,6 @@ describe.runIf(databaseUrl.length > 0)("F-202 compliance checklist", () => {
       const storageKey = rows[0]?.storage_key as string;
       expect(storageKey).toMatch(new RegExp(`^checklist-items/${itemId}/[0-9a-f-]{36}\\.pdf$`));
       expect(storage.objects.get(storageKey)?.body).toEqual(PDF);
-      // Nothing binary in Postgres: the row carries the key and the size, not the bytes.
       expect(Object.keys(rows[0] ?? {})).not.toContain("body");
     });
 
@@ -1062,7 +955,6 @@ describe.runIf(databaseUrl.length > 0)("F-202 compliance checklist", () => {
       expect(wrongType.status).toBe(415);
       expect(wrongType.body.error).toContain("application/pdf");
 
-      // A content type is a claim by the caller; an executable announced as a PDF is not one.
       const lyingBytes = await request(api)
         .post(`/api/checklist-items/${itemId}/documents`)
         .set("Content-Type", "application/pdf")
@@ -1110,10 +1002,6 @@ describe.runIf(databaseUrl.length > 0)("F-202 compliance checklist", () => {
       expect(storedKey).not.toContain("passwd");
     });
 
-    // A header value is a ByteString, so the browser cannot send these names raw: the client
-    // percent-encodes and this decodes. Letters and marks survive in any script; everything else
-    // becomes `_`, which still excludes control characters, the invisible bidi/format characters
-    // that can reverse how a name reads, and every path separator.
     it.each([
       ["Chinese", "%E7%94%B3%E8%AF%B7%E4%B9%A6.pdf", "\u7533\u8bf7\u4e66.pdf"],
       [
@@ -1139,14 +1027,10 @@ describe.runIf(databaseUrl.length > 0)("F-202 compliance checklist", () => {
 
       expect(upload.status).toBe(201);
       expect(upload.body.filename).toBe(expected);
-      // Whatever the name, it never reaches the storage key.
       const [storedKey] = [...storage.objects.keys()];
       expect(storedKey).toBe(`checklist-items/${itemId}/${storedKey?.split("/")[2]}`);
     });
 
-    // The root of the duplicate-document defect, fixed at the write instead of at the read.
-    // Three review rounds tried to stop the client repeating a request whose result it could not
-    // observe; a client cannot know that, so the repeat is made harmless instead.
     it("stores one document however many times the same upload key arrives", async () => {
       const storage = fakeStorage();
       const { eventId, body } = await checklistFor("A", storage);
@@ -1161,12 +1045,9 @@ describe.runIf(databaseUrl.length > 0)("F-202 compliance checklist", () => {
 
       const first = await send();
       const second = await send();
-      // A third from a "different session": the key is derived from the file, so a reload and a
-      // re-pick reproduce it. That is the case the read-side fixes could not cover.
       const third = await send();
 
       expect(first.status).toBe(201);
-      // 200, not 201: nothing was created, which is the distinction the checklist endpoint draws.
       expect(second.status).toBe(200);
       expect(third.status).toBe(200);
       expect(second.body.id).toBe(first.body.id);
@@ -1177,7 +1058,6 @@ describe.runIf(databaseUrl.length > 0)("F-202 compliance checklist", () => {
         [itemId],
       );
       expect(rows[0]?.count).toBe("1");
-      // And one object, because the storage key is derived from the same id.
       expect(storage.objects.size).toBe(1);
 
       const listed = await request(appWith(storage)).get(`/api/events/${eventId}/checklist`);
@@ -1198,8 +1078,6 @@ describe.runIf(databaseUrl.length > 0)("F-202 compliance checklist", () => {
           .set("X-Upload-Key", key)
           .send(PDF);
 
-      // Same name, edited: a different size or timestamp is a different key and a different
-      // document, which is what replacing a filed application looks like.
       const first = await send("1024-1769472000000-application.pdf");
       const second = await send("2048-1769558400000-application.pdf");
 
@@ -1223,16 +1101,11 @@ describe.runIf(databaseUrl.length > 0)("F-202 compliance checklist", () => {
       const first = await send();
       const second = await send();
 
-      // Additive: a client that sends no key gets exactly the previous behaviour rather than an
-      // error, and two uploads remain two documents.
       expect(first.status).toBe(201);
       expect(second.status).toBe(201);
       expect(second.body.id).not.toBe(first.body.id);
     });
 
-    // Every accepted type is one a browser renders inline, so a plain signed GET previews the
-    // document under a control labelled Download. The disposition is signed with the URL, so it
-    // cannot be stripped by whoever holds the link.
     it("signs the download so it saves rather than previewing, under the stored name", async () => {
       const storage = fakeStorage();
       const { body } = await checklistFor("A", storage);
@@ -1252,7 +1125,6 @@ describe.runIf(databaseUrl.length > 0)("F-202 compliance checklist", () => {
         "response-content-disposition",
       );
       expect(disposition).toContain("attachment;");
-      // Both forms: an ASCII fallback that cannot break out of the header, and the real name.
       expect(disposition).toContain(`filename="___.pdf"`);
       expect(disposition).toContain(
         `filename*=UTF-8''${encodeURIComponent("\u7533\u8bf7\u4e66.pdf")}`,
@@ -1270,7 +1142,6 @@ describe.runIf(databaseUrl.length > 0)("F-202 compliance checklist", () => {
         .send(PDF);
 
       expect(failed.status).toBe(503);
-      // The message is ours; no SDK, bucket or endpoint detail reaches the client.
       expect(failed.body).toEqual({ error: "document storage is unavailable", retryable: true });
       const { rows } = await pool.query("SELECT id FROM documents WHERE checklist_item_id = $1", [
         itemId,
@@ -1309,7 +1180,6 @@ describe.runIf(databaseUrl.length > 0)("F-202 compliance checklist", () => {
         .patch(`/api/checklist-items/${large?.id}`)
         .send({ status: "submitted", notes: "filed 2026-07-10" });
 
-      // The rescope the demo path uses: the same event, scoped down a size class.
       const edited = await request(api)
         .patch(`/api/events/${eventId}`)
         .send({ street_event_size: "medium" });
@@ -1319,21 +1189,15 @@ describe.runIf(databaseUrl.length > 0)("F-202 compliance checklist", () => {
       const rescoped = await review(api, eventId);
 
       expect(rescoped.status).toBe(201);
-      // The rescope raised the prompt (asserted on the read below); this POST answers it.
       expect(rescoped.body.planChanged).toBe(false);
       const items = rescoped.body.items as ChecklistItemView[];
-      // Nothing is deleted: the large-event line survives with its status and note intact,
-      // marked as no longer in the plan so the UI can strike it through.
       const dropped = items.find((item) => item.ruleIds[0] === "SAPO-STREET-LARGE-001");
       expect(dropped?.struckThrough).toBe(true);
       expect(dropped?.status).toBe("submitted");
       expect(dropped?.notes).toBe("filed 2026-07-10");
-      // The new requirement is appended rather than inserted among the tracked work.
       expect(items.at(-1)?.ruleIds).toEqual(["SAPO-STREET-MEDIUM-001"]);
       expect(items.at(-1)?.struckThrough).toBe(false);
-      // Requirements the rescope did not change keep their identity, not a duplicate row.
       expect(items.filter((item) => item.ruleIds[0] === "NYPD-SOUND-001")).toHaveLength(1);
-      // A struck item is not current work, so it does not count toward the rollup.
       expect(rescoped.body.statusRollup).toMatchObject({ submitted: 0 });
     });
 
@@ -1342,7 +1206,6 @@ describe.runIf(databaseUrl.length > 0)("F-202 compliance checklist", () => {
       const before = body.items.find((item) => item.ruleIds[0] === "NYPD-SOUND-001");
       const api = appWith(fakeStorage());
 
-      // Moving the event moves every computed filing date with it (PRD principle 6).
       await request(api).patch(`/api/events/${eventId}`).send({ event_date: "2026-09-30" });
       await generatePlan(eventId);
 
@@ -1377,9 +1240,6 @@ describe.runIf(databaseUrl.length > 0)("F-202 compliance checklist", () => {
       const api = appWith(fakeStorage());
       const absent = randomUUID();
 
-      // A plan id is supplied by hand for both 404s below. The helper reads one off a GET, and a
-      // GET against an event that does not exist (or has no plan) has none to give — the request
-      // would then be refused for a missing planId and never reach the lookup under test.
       expect((await review(api, absent, randomUUID())).status).toBe(404);
       expect((await request(api).get(`/api/events/${absent}/checklist`)).status).toBe(404);
       expect(
@@ -1402,7 +1262,6 @@ describe.runIf(databaseUrl.length > 0)("F-202 compliance checklist", () => {
         .send(PDF);
 
       expect(response.status).toBe(404);
-      // The check runs before the upload, so an unknown item cannot leave bytes in the bucket.
       expect(storage.objects.size).toBe(0);
     });
 
@@ -1421,47 +1280,12 @@ describe.runIf(databaseUrl.length > 0)("F-202 compliance checklist", () => {
     });
   });
 
-  // Review round 1, findings 1 and 2: a checklist may not present a plan that no longer answers
-  // the current intake, and "the plan changed" must survive a regeneration that moved only dates.
   describe("a plan generated while a checklist is being created", () => {
     it("holds a generation behind the event lock the checklist takes", async () => {
-      // The checklist decides which plan it is materializing under the event row lock and then
-      // acknowledges that plan, so a generation committing inside that window would have the POST
-      // acknowledge a superseded plan and answer planChanged: false while a newer one exists.
-      // #92 read `plan.ts`, which takes no lock of its own, and concluded nothing prevents it.
-      //
-      // Postgres does. `permit_plans.event_id` references `events`, so every plan insert takes a
-      // FOR KEY SHARE row lock on the parent event, and FOR UPDATE conflicts with it: the insert
-      // waits for the checklist's transaction to end. Verified rather than assumed: under the
-      // held lock the generation waits on `Lock: transactionid` at `INSERT INTO permit_plans`,
-      // holding a tuple lock on `events`, and it commits only once the lock is released.
-      //
-      // So this pins the property rather than any one mechanism, because the mechanism is
-      // implicit and two edits would remove it silently: dropping the foreign key, and weakening
-      // this route's lock to FOR NO KEY UPDATE, which does NOT conflict with FOR KEY SHARE.
-      //
-      // It waits for the insert to be observably blocked rather than sleeping and assuming it is.
-      // A fixed window is the vacuous pass this test exists to prevent: on a loaded worker the
-      // request can still be starting up when the window closes, and "it has not finished" then
-      // holds for a generation nothing is serializing at all, so the guard stays green through
-      // the very edit it guards against. Not reaching the insert is a failure here, not a pass.
-      //
-      // The holder stands in for the checklist's own transaction: it takes exactly the lock the
-      // POST takes, and holds it for as long as the test needs.
       const eventId = await createEvent(scenario("A"));
       await generatePlan(eventId);
       const api = appWith(fakeStorage());
 
-      /**
-       * The generation's own backend, waiting on a lock at either statement that can serialize it.
-       *
-       * F-201's regeneration downgrade guard now takes the same `events` row lock explicitly at the
-       * start of the generating transaction, because its precondition is a read followed by a write
-       * and the implicit FK lock arrives too late to serialize the read. So the generation blocks
-       * there rather than at the insert. Both statements are matched: the property under test and
-       * the non-vacuity assertion below are unchanged, and the test still fails if a future edit
-       * removes both the explicit lock and the foreign key.
-       */
       const blockedOnGeneration = async (): Promise<boolean> => {
         const { rows } = await pool.query(
           `SELECT 1 FROM pg_stat_activity
@@ -1487,8 +1311,6 @@ describe.runIf(databaseUrl.length > 0)("F-202 compliance checklist", () => {
             settled = true;
             return response;
           });
-        // An assertion below may fail before this is awaited, and an unhandled rejection would
-        // then be reported instead of the assertion that actually failed.
         void inFlight.catch(() => undefined);
 
         const deadline = Date.now() + 10_000;
@@ -1513,15 +1335,10 @@ describe.runIf(databaseUrl.length > 0)("F-202 compliance checklist", () => {
         await holder.query("COMMIT");
         committed = true;
       } finally {
-        // Releasing a client does not end its transaction: without this, a failed assertion
-        // returns a connection to the pool idle in transaction, still holding the event-row lock,
-        // and the blocked generation and the suite's cleanup both wait on it until the run times
-        // out. A regression would then read as flake rather than as itself.
         if (!committed) await holder.query("ROLLBACK").catch(() => undefined);
         holder.release();
       }
 
-      // Released, so it proceeds: serialized, not refused.
       const generated = await inFlight;
       expect(generated.status).toBe(201);
       const { rows } = await pool.query<{ count: string }>(
@@ -1538,7 +1355,6 @@ describe.runIf(databaseUrl.length > 0)("F-202 compliance checklist", () => {
       await generatePlan(eventId);
       const api = appWith(fakeStorage());
 
-      // The edit bumps revision_counter; the plan still pins the revision it evaluated.
       await request(api).patch(`/api/events/${eventId}`).send({ street_event_size: "medium" });
       const refused = await review(api, eventId);
 
@@ -1553,7 +1369,6 @@ describe.runIf(databaseUrl.length > 0)("F-202 compliance checklist", () => {
       );
       expect(rows).toHaveLength(0);
 
-      // Regenerating clears it, and the checklist then covers the rescoped requirements.
       await generatePlan(eventId);
       const created = await review(api, eventId);
       expect(created.status).toBe(201);
@@ -1582,8 +1397,6 @@ describe.runIf(databaseUrl.length > 0)("F-202 compliance checklist", () => {
       const api = appWith(fakeStorage());
       const before = body.items.map((item) => item.latestApplyDate);
 
-      // Moving the date regenerates every deadline while the requirement set stays identical:
-      // the case a comparison of added and removed rule ids cannot see.
       await request(api).patch(`/api/events/${eventId}`).send({ event_date: "2026-10-14" });
       await generatePlan(eventId);
 
@@ -1593,8 +1406,6 @@ describe.runIf(databaseUrl.length > 0)("F-202 compliance checklist", () => {
       expect(after).not.toEqual(before);
       expect(read.body.planChanged).toBe(true);
 
-      // Re-creating the checklist is the organizer accepting the new plan, so the prompt clears
-      // rather than latching on for the rest of the event's life.
       const accepted = await review(api, eventId);
       expect(accepted.status).toBe(200);
       expect(accepted.body.planChanged).toBe(false);
@@ -1626,26 +1437,11 @@ describe.runIf(databaseUrl.length > 0)("F-202 compliance checklist", () => {
       expect(item?.status).toBe("approved");
       expect(item?.notes).toBe("approved by SAPO");
       expect(item?.documents).toHaveLength(1);
-      // Re-pointed at the current plan's row, so the deadline it shows is the recalculated one.
       expect(item?.planItemId).not.toBe(body.items[0]?.planItemId);
       expect(item?.struckThrough).toBe(false);
     });
   });
 
-  /**
-   * THE STALE TAB. A review acknowledges a SPECIFIC plan, and the organizer must have been shown
-   * the plan it acknowledges.
-   *
-   * The race is between requests, not inside one: the transaction-level race is covered above, and
-   * it was never the reachable case. This one is — a tab renders plan A, anything at all
-   * regenerates, and the click arrives minutes later. Choosing the plan server-side made that
-   * click acknowledge plan B, so `checklist_acknowledgements` asserted a review that did not
-   * happen and nothing downstream could tell. AC 6 reads that row to mean the organizer has
-   * reviewed the changed items, which is exactly the claim it could not support.
-   *
-   * Asserted against the ROW rather than the response, both the plan id and the timestamp,
-   * because "did not record" is the whole property and a response body cannot demonstrate it.
-   */
   describe("a review is bound to the plan the organizer was shown", () => {
     const acknowledgement = async (eventId: string) =>
       (
@@ -1658,29 +1454,22 @@ describe.runIf(databaseUrl.length > 0)("F-202 compliance checklist", () => {
     it("refuses a review naming a superseded plan, and records nothing", async () => {
       const { eventId, body } = await checklistFor("A");
       const api = appWith(fakeStorage());
-      // What the organizer's tab is still displaying, captured before anything regenerates.
       const displayed = body.planId as string;
       const before = await acknowledgement(eventId);
       expect(before?.plan_id).toBe(displayed);
 
-      // Another tab, or another device, moves the event on and regenerates.
       await request(api).patch(`/api/events/${eventId}`).send({ event_date: "2026-10-14" });
       await generatePlan(eventId);
       const current = await request(api).get(`/api/events/${eventId}/checklist`);
       expect(current.body.planId).not.toBe(displayed);
 
-      // The organizer, who has seen none of that, presses review.
       const refused = await review(api, eventId, displayed);
 
       expect(refused.status).toBe(409);
       expect(refused.body.supersededPlanId).toBe(displayed);
-      // NOTHING WAS RECORDED. Same plan and the same timestamp: had it re-acknowledged, the plan
-      // id would have moved to the newer plan, and had it merely re-run, the timestamp would have.
       const after = await acknowledgement(eventId);
       expect(after?.plan_id).toBe(before?.plan_id);
       expect(after?.acknowledged_at.getTime()).toBe(before?.acknowledged_at.getTime());
-      // Re-presented rather than merely refused: the newer plan comes back with the refusal, so
-      // the organizer can read what they are being asked to acknowledge.
       expect(refused.body.checklist.planId).toBe(current.body.planId);
       expect(refused.body.checklist.planChanged).toBe(true);
     });
@@ -1693,7 +1482,6 @@ describe.runIf(databaseUrl.length > 0)("F-202 compliance checklist", () => {
 
       await request(api).patch(`/api/events/${eventId}`).send({ event_date: "2026-10-14" });
       await generatePlan(eventId);
-      // This time the organizer re-reads the page first, so the id they submit is the current one.
       const current = await request(api).get(`/api/events/${eventId}/checklist`);
       expect(current.body.planChanged).toBe(true);
 
@@ -1701,8 +1489,6 @@ describe.runIf(databaseUrl.length > 0)("F-202 compliance checklist", () => {
 
       expect(accepted.status).toBe(200);
       expect(accepted.body.planChanged).toBe(false);
-      // The acknowledgement moved to the plan they actually read, which is the normal path this
-      // guard must not break: refusing everything would satisfy the test above and nothing else.
       const after = await acknowledgement(eventId);
       expect(after?.plan_id).toBe(current.body.planId);
       expect(after?.acknowledged_at.getTime()).toBeGreaterThan(
@@ -1715,8 +1501,6 @@ describe.runIf(databaseUrl.length > 0)("F-202 compliance checklist", () => {
       const api = appWith(fakeStorage());
       const before = await acknowledgement(eventId);
 
-      // Exactly the old client's request. Defaulting it to the latest plan is the defect, so the
-      // absent id is refused rather than filled in.
       const bare = await request(api).post(`/api/events/${eventId}/checklist`).send({});
       const notAUuid = await request(api)
         .post(`/api/events/${eventId}/checklist`)
@@ -1731,18 +1515,6 @@ describe.runIf(databaseUrl.length > 0)("F-202 compliance checklist", () => {
     });
   });
 
-  /**
-   * Every shape of regeneration, rise and fall, in one place.
-   *
-   * `planChanged` has now been wrong twice in opposite directions — a comparison of rule-id sets
-   * missed a date-only regeneration, and a comparison of counts let a retained struck-through row
-   * hold the prompt open forever. Both were correct about the case they were written for. These
-   * cases are kept together so a future change cannot fix one shape and silently re-break another;
-   * a fix that only satisfies its own case fails here.
-   *
-   * The plans are written directly so each shape is exactly one difference, rather than whatever
-   * a rescope happens to produce.
-   */
   describe("planChanged across every shape of regeneration", () => {
     const A = "SAPO-STREET-LARGE-001";
     const B = "NYPD-SOUND-001";
@@ -1750,7 +1522,6 @@ describe.runIf(databaseUrl.length > 0)("F-202 compliance checklist", () => {
     const permits = (...ruleIds: string[]) =>
       ruleIds.map((id) => ({ ruleIds: [id], kind: "permit" }));
 
-    /** An event whose checklist is materialized from a first synthetic plan. */
     const startedFrom = async (ruleIds: string[]) => {
       const eventId = await createEvent(scenario("A"));
       await insertPlan(eventId, permits(...ruleIds), "2026-07-22T10:00:00Z");
@@ -1776,7 +1547,6 @@ describe.runIf(databaseUrl.length > 0)("F-202 compliance checklist", () => {
     it("rises for a regeneration that changed nothing but the plan, and clears on re-materialize", async () => {
       const { eventId, api } = await startedFrom([A, B]);
 
-      // The same requirements, new rows: the date-only rescope.
       await insertPlan(eventId, permits(A, B), "2026-07-22T11:00:00Z");
 
       expect(await flagOn(api, eventId)).toBe(true);
@@ -1804,12 +1574,9 @@ describe.runIf(databaseUrl.length > 0)("F-202 compliance checklist", () => {
       expect(await flagOn(api, eventId)).toBe(true);
       const accepted = await review(api, eventId);
       expect(accepted.body.planChanged).toBe(false);
-      // The retained row is history, not a pending review: it must not hold the prompt open on
-      // this read or any later one.
       expect(await flagOn(api, eventId)).toBe(false);
       expect((await review(api, eventId)).body.planChanged).toBe(false);
 
-      // And it is still there, struck through, with nothing deleted (AC 6).
       const items = (await request(api).get(`/api/events/${eventId}/checklist`)).body
         .items as ChecklistItemView[];
       expect(items).toHaveLength(2);
@@ -1827,10 +1594,6 @@ describe.runIf(databaseUrl.length > 0)("F-202 compliance checklist", () => {
     });
 
     it("appends a reintroduced requirement instead of sorting it by its first plan", async () => {
-      // Three plans, because a two-plan sequence passes under both the old rule and the new one.
-      // X, then Y with the checklist created against it, then X+Y. Ordering by first appearance in
-      // any plan dates A from plan X — earlier than B, which the organizer has been working since
-      // the checklist existed — and sorts the brand-new task above it. AC 6 appends.
       const eventId = await createEvent(scenario("A"));
       const api = appWith(fakeStorage());
 
@@ -1845,12 +1608,10 @@ describe.runIf(databaseUrl.length > 0)("F-202 compliance checklist", () => {
       await insertPlan(eventId, permits(A, B), "2026-07-22T12:00:00Z");
       const reviewed = await review(api, eventId);
 
-      // B first: it became a task first, even though A appeared in an earlier plan.
       expect((reviewed.body.items as ChecklistItemView[]).map((item) => item.ruleIds[0])).toEqual([
         B,
         A,
       ]);
-      // And the order is a property of the checklist, so a later read reproduces it.
       const read = await request(api).get(`/api/events/${eventId}/checklist`);
       expect((read.body.items as ChecklistItemView[]).map((item) => item.ruleIds[0])).toEqual([
         B,
@@ -1859,17 +1620,6 @@ describe.runIf(databaseUrl.length > 0)("F-202 compliance checklist", () => {
     });
 
     it("keeps a dropped item in its cohort instead of leading the list with it", async () => {
-      // Every task of one materialization shares a `created_at`, because Postgres fixes
-      // `current_timestamp` per transaction, so their relative order is decided entirely by the
-      // query's tiebreak, and the tiebreak must not read the plan each row currently points at.
-      // After this rescope the struck row still points at the plan it was raised by while its
-      // cohort-mate has been re-pointed forward, so ordering on `plan.generated_at` puts the
-      // struck row first and moves a row the organizer has been working.
-      //
-      // Three plans, so the plan a row points at, the plan a requirement first appeared in, and
-      // the order the tasks were created are three different things. C appears in the first plan,
-      // is absent when the checklist is created, and returns last; its published name sorts first,
-      // so it can only come last by having become a task last.
       const eventId = await createEvent(scenario("A"));
       const api = appWith(fakeStorage());
 
@@ -1877,20 +1627,17 @@ describe.runIf(databaseUrl.length > 0)("F-202 compliance checklist", () => {
       await insertPlan(eventId, permits(A, B), "2026-07-22T11:00:00Z");
       const created = await review(api, eventId);
       expect(created.status).toBe(201);
-      // One transaction, so A and B tie on creation and the filing-date order decides.
       expect((created.body.items as ChecklistItemView[]).map((item) => item.ruleIds[0])).toEqual([
         B,
         A,
       ]);
 
-      // Drops A, keeps B, brings C back.
       await insertPlan(eventId, permits(B, C), "2026-07-22T12:00:00Z");
       const reviewed = await review(api, eventId);
       expect(reviewed.status).toBe(201);
 
       const items = reviewed.body.items as ChecklistItemView[];
       expect(items.map((item) => item.ruleIds[0])).toEqual([B, A, C]);
-      // A is the struck one, and it did not move: it is history in place, not a new first row.
       expect(items.find((item) => item.ruleIds[0] === A)?.struckThrough).toBe(true);
       const read = await request(api).get(`/api/events/${eventId}/checklist`);
       expect((read.body.items as ChecklistItemView[]).map((item) => item.ruleIds[0])).toEqual([
@@ -1901,16 +1648,6 @@ describe.runIf(databaseUrl.length > 0)("F-202 compliance checklist", () => {
     });
 
     it("does not reshuffle a cohort when a regeneration moves the filing dates", async () => {
-      // The other half of the same defect. Rows created together share a `created_at`, so the
-      // query's order decides between them, and reading a recalculated field there reshuffles the
-      // list on regeneration just as reading the plan's timestamp did. A retained row is re-pointed
-      // at the new plan's date while a dropped row keeps the last-known date of the plan that
-      // raised it, so the two are not even measured against the same evaluation: here the retained
-      // item's new date crosses the dropped item's historical one, which is the Scenario A rescope
-      // ladder, and under a filing-date order the pair swaps.
-      //
-      // The order that must hold is the one the organizer learned: filing order as it stood when
-      // the tasks were created, which `cohort_position` froze.
       const eventId = await createEvent(scenario("A"));
       const api = appWith(fakeStorage());
 
@@ -1926,7 +1663,6 @@ describe.runIf(databaseUrl.length > 0)("F-202 compliance checklist", () => {
       expect(created.status).toBe(201);
       const before = (created.body.items as ChecklistItemView[]).map((item) => item.ruleIds[0]);
 
-      // Drops A, which keeps 2026-08-01, and recalculates B to a date ahead of it.
       await insertPlan(
         eventId,
         [{ ruleIds: [B], kind: "permit", latestApplyDate: "2026-07-25" }],
@@ -1937,8 +1673,6 @@ describe.runIf(databaseUrl.length > 0)("F-202 compliance checklist", () => {
 
       const after = (reviewed.body.items as ChecklistItemView[]).map((item) => item.ruleIds[0]);
       expect(after, "the cohort was reordered by a date the regeneration moved").toEqual(before);
-      // Named as well as unchanged, so "stable" cannot be satisfied by freezing a wrong order:
-      // A led at creation because 2026-08-01 was the sooner deadline then.
       expect(after).toEqual([A, B]);
       expect(
         (reviewed.body.items as ChecklistItemView[]).find((item) => item.ruleIds[0] === A)
@@ -1947,7 +1681,6 @@ describe.runIf(databaseUrl.length > 0)("F-202 compliance checklist", () => {
     });
 
     it("does not reshuffle the list when the organizer works an item", async () => {
-      // `created_at` rather than `updated_at`: a status change must not move a task's position.
       const { eventId, api } = await startedFrom([A, B]);
       const items = (await request(api).get(`/api/events/${eventId}/checklist`)).body
         .items as ChecklistItemView[];
@@ -1965,8 +1698,6 @@ describe.runIf(databaseUrl.length > 0)("F-202 compliance checklist", () => {
     });
 
     it("distinguishes a checklist that does not exist from one with nothing in it", async () => {
-      // Both render zero items, and they are different states: one offers creation, the other says
-      // there is nothing to track. Only the acknowledgement separates them.
       const uncreated = await createEvent(scenario("A"));
       await insertPlan(uncreated, permits(A), "2026-07-22T10:00:00Z");
       const api = appWith(fakeStorage());
@@ -1975,7 +1706,6 @@ describe.runIf(databaseUrl.length > 0)("F-202 compliance checklist", () => {
       expect(beforeCreate.body.created).toBe(false);
       expect(beforeCreate.body.items).toEqual([]);
 
-      // A plan with no trackable line at all: created, and still empty (Scenario B).
       const emptyEvent = await createEvent(scenario("A"));
       await insertPlan(
         emptyEvent,
@@ -1987,7 +1717,6 @@ describe.runIf(databaseUrl.length > 0)("F-202 compliance checklist", () => {
       expect(emptyCreated.body.created).toBe(true);
       expect(emptyCreated.body.items).toEqual([]);
 
-      // Creating flips it, so the flag tracks the checklist and not the plan's shape.
       await review(api, uncreated);
       expect((await request(api).get(`/api/events/${uncreated}/checklist`)).body.created).toBe(
         true,
@@ -1995,10 +1724,6 @@ describe.runIf(databaseUrl.length > 0)("F-202 compliance checklist", () => {
     });
 
     it("rises when the regeneration removes every trackable requirement", async () => {
-      // The case that defeated all four earlier shapes. Each of them asked the checklist whether
-      // the latest plan held a line it was not pointing at; with every requirement gone there is
-      // no such line, so the answer was no and the largest possible change to a plan produced
-      // silence. Scenario B is exactly this plan — advisories only, nothing to track.
       const { eventId, api } = await startedFrom([A, B]);
 
       await insertPlan(
@@ -2008,8 +1733,6 @@ describe.runIf(databaseUrl.length > 0)("F-202 compliance checklist", () => {
       );
 
       expect(await flagOn(api, eventId)).toBe(true);
-      // Both retained rows are struck through and nothing is deleted, so an empty trackable set on
-      // the new plan is not an empty checklist.
       const items = (await request(api).get(`/api/events/${eventId}/checklist`)).body
         .items as ChecklistItemView[];
       expect(items).toHaveLength(2);
@@ -2020,9 +1743,6 @@ describe.runIf(databaseUrl.length > 0)("F-202 compliance checklist", () => {
     });
 
     it("answers from the acknowledgement row and from nothing else", async () => {
-      // Pins the mechanism rather than the outcome. If the flag were still being derived from the
-      // checklist's own rows, removing the acknowledgement would leave it unchanged; instead the
-      // question becomes unanswerable and the checklist reads as never reviewed.
       const { eventId, api } = await startedFrom([A, B]);
       await insertPlan(eventId, permits(A), "2026-07-22T11:00:00Z");
       expect(await flagOn(api, eventId)).toBe(true);
@@ -2036,9 +1756,6 @@ describe.runIf(databaseUrl.length > 0)("F-202 compliance checklist", () => {
     });
 
     it("moves the acknowledgement forward on every review rather than accumulating rows", async () => {
-      // One row per event (migration 002), and `acknowledged_at` must actually advance: Postgres
-      // does not re-evaluate the column default on conflict, so an upsert that sets only plan_id
-      // would report the first review forever.
       const { eventId, api } = await startedFrom([A, B]);
       const acknowledgement = async () =>
         (
@@ -2065,19 +1782,16 @@ describe.runIf(databaseUrl.length > 0)("F-202 compliance checklist", () => {
 
       await insertPlan(eventId, permits(A), "2026-07-22T11:00:00Z");
 
-      // Reading the checklist is not reviewing it; only re-creating it clears the prompt.
       expect(await flagOn(api, eventId)).toBe(true);
       expect(await flagOn(api, eventId)).toBe(true);
     });
   });
 
-  // Review round 1, finding 7: a date and a status are not the whole regulatory answer.
   describe("published regulatory content on checklist items", () => {
     it("carries the confirm-with-agency notes and sources of a research_required deadline", async () => {
       const { body } = await checklistFor("A");
       const vendor = body.items.find((item) => item.ruleIds[0] === "DOHMH-VENDOR-PERMIT-001");
 
-      // No computable date: everything this line means is in the published text.
       expect(vendor?.latestApplyDate).toBeNull();
       expect(vendor?.deadlineStatus).toBe("not_calculable");
       expect(vendor?.publishedNotes.join(" ")).toContain("onfirm with");
@@ -2086,8 +1800,6 @@ describe.runIf(databaseUrl.length > 0)("F-202 compliance checklist", () => {
     });
 
     it("carries both readings and every source of an OFFICIAL_CONFLICT permit", async () => {
-      // The answer key's headcount=20 boundary, where the exactly-20 Parks rule stops being
-      // dormant. Its verification status is OFFICIAL_CONFLICT in the published ruleset.
       const eventId = await createEvent({ ...scenario("C"), headcount: 20 });
       await generatePlan(eventId);
       const response = await review(appWith(fakeStorage()), eventId);
@@ -2096,7 +1808,6 @@ describe.runIf(databaseUrl.length > 0)("F-202 compliance checklist", () => {
         (item) => item.ruleIds[0] === "PARKS-EVENT-EXACTLY-20-001",
       );
       expect(conflicted?.verificationStatus).toBe("OFFICIAL_CONFLICT");
-      // Both readings ride on the item; nothing here resolves the conflict to one of them.
       expect(conflicted?.conflictText).toBeTruthy();
       expect(conflicted?.sources.length).toBeGreaterThan(0);
     });
@@ -2104,14 +1815,8 @@ describe.runIf(databaseUrl.length > 0)("F-202 compliance checklist", () => {
     it("refuses to serve an item whose published text is missing rather than dropping it", async () => {
       const eventId = await createEvent(scenario("A"));
       await generatePlan(eventId);
-      // Read while the plan still renders, because that is the honest order: the organizer had it
-      // on screen and pressed review, and the renderings were lost underneath them. Reading it
-      // afterwards is not possible anyway — the GET the helper uses fails for the same reason the
-      // POST under test does.
       const shown = (await request(appWith(fakeStorage())).get(`/api/events/${eventId}/checklist`))
         .body.planId as string;
-      // A plan whose renderings were lost is a partial answer, and F-201 AC 5 already settled
-      // that a partial plan is never served as a complete one.
       await pool.query(
         `UPDATE permit_plans SET verdict_detail = verdict_detail - 'finding_renderings'
           WHERE event_id = $1`,
@@ -2122,18 +1827,14 @@ describe.runIf(databaseUrl.length > 0)("F-202 compliance checklist", () => {
 
       expect(response.status).toBe(500);
       expect(response.body.error).toBe("checklist request failed");
-      // The client is told nothing about the database or the plan's internals.
       expect(JSON.stringify(response.body)).not.toContain("verdict_detail");
     });
   });
 
-  // Review round 1, findings 3, 4 and 5.
   describe("how a document gets to the bucket", () => {
     it("hands storage the request stream and the declared length, never a buffer it read itself", async () => {
       const storage = fakeStorage();
       const { body } = await checklistFor("A", storage);
-      // Several chunks' worth, so this exercises the streamed path and the pushed-back head
-      // rather than a body that happened to arrive whole in one read.
       const large = Buffer.concat([PDF, Buffer.alloc(256 * 1024, 0x20)]);
 
       const upload = await request(appWith(storage))
@@ -2145,7 +1846,6 @@ describe.runIf(databaseUrl.length > 0)("F-202 compliance checklist", () => {
       const [stored] = [...storage.objects.values()];
       expect(stored?.receivedStream).toBe(true);
       expect(stored?.sizeBytes).toBe(large.byteLength);
-      // Every byte arrived, and the bytes peeked for the format check were not eaten.
       expect(stored?.body).toEqual(large);
       expect(upload.body.sizeBytes).toBe(large.byteLength);
     });
@@ -2153,7 +1853,6 @@ describe.runIf(databaseUrl.length > 0)("F-202 compliance checklist", () => {
     it("stores a body that ends inside the format check, since that stream cannot be pushed back", async () => {
       const storage = fakeStorage();
       const { body } = await checklistFor("A", storage);
-      // A JPEG's signature is its whole content here: the request ends before the peek is full.
       const tiny = Buffer.from([0xff, 0xd8, 0xff]);
 
       const upload = await request(appWith(storage))
@@ -2202,16 +1901,6 @@ describe.runIf(databaseUrl.length > 0)("F-202 compliance checklist", () => {
       expect(storage.objects.size).toBe(0);
     });
 
-    /**
-     * What the api does with the bytes when the metadata write reports failure.
-     *
-     * A rejected query is not the same as a rejected statement: Postgres can commit the insert and
-     * the connection can drop before the result gets back. Round 1 deleted the object after any
-     * rejection, which turned that case into a `documents` row pointing at bytes that no longer
-     * exist — a document the organizer can see and click and get nothing from. The rule these
-     * cases pin is that the object is only deleted when the row is known to be absent, because an
-     * orphaned object is a failure nobody sees and orphaned metadata is a visible lie.
-     */
     it("deletes the object when the server rejected the statement outright", async () => {
       const storage = fakeStorage();
       const { body } = await checklistFor("A", storage);
@@ -2223,12 +1912,9 @@ describe.runIf(databaseUrl.length > 0)("F-202 compliance checklist", () => {
 
       const response = await uploadWith(failing, storage, body.items[0]?.id as string);
 
-      // The server answered, so the statement never committed and nothing can reference the bytes.
       expect(response.status).toBe(500);
       expect(storage.objects.size).toBe(0);
       expect(JSON.stringify(response.body)).not.toContain("foreign key");
-      // Established as not stored, so it carries no unknown marker: resending here is safe and
-      // the client must not be sent to reconcile a document that provably does not exist.
       expect(response.body.storedOutcome).toBeUndefined();
     });
 
@@ -2249,7 +1935,6 @@ describe.runIf(databaseUrl.length > 0)("F-202 compliance checklist", () => {
         body.items[0]?.id,
       ]);
       expect(rows).toHaveLength(0);
-      // The driver's message never reaches the client.
       expect(JSON.stringify(response.body)).not.toContain("connection terminated");
     });
 
@@ -2257,11 +1942,6 @@ describe.runIf(databaseUrl.length > 0)("F-202 compliance checklist", () => {
       const storage = fakeStorage();
       const { eventId, body } = await checklistFor("A", storage);
       const itemId = body.items[0]?.id as string;
-      // The row lands and the connection then drops before the result returns: the query rejects
-      // while the metadata exists. The lookup settles that it exists, and a stored document
-      // reported as a failure is a wrong answer the code already has the truth to avoid. The
-      // organizer retries, and each retry generates new ids and a new key, so every one of them
-      // writes another object and another row for the same upload.
       const failing = poolIntercepting((text, values) =>
         text.includes("INSERT INTO documents")
           ? pool
@@ -2277,17 +1957,14 @@ describe.runIf(databaseUrl.length > 0)("F-202 compliance checklist", () => {
         [itemId],
       );
       expect(rows).toHaveLength(1);
-      // The same answer the success path gives, describing the row that is actually there.
       expect(response.status).toBe(201);
       expect(response.body.id).toBe(rows[0]?.id);
       expect(response.body.filename).toBe(rows[0]?.filename);
       expect(response.body.contentType).toBe("application/pdf");
       expect(response.body.sizeBytes).toBe(PDF.length);
       expect(typeof response.body.uploadedAt).toBe("string");
-      // The row survived, so the bytes it names must too.
       expect(storage.objects.has(rows[0]?.storage_key as string)).toBe(true);
       expect(storage.objects.size).toBe(1);
-      // And it is listed exactly once, not as a duplicate of a retry.
       const listed = await request(appWith(storage)).get(`/api/events/${eventId}/checklist`);
       expect(
         (listed.body.items as ChecklistItemView[]).find((item) => item.id === itemId)?.documents,
@@ -2297,7 +1974,6 @@ describe.runIf(databaseUrl.length > 0)("F-202 compliance checklist", () => {
     it("keeps the object when nothing can say whether the row was written", async () => {
       const storage = fakeStorage();
       const { body } = await checklistFor("A", storage);
-      // The insert fails ambiguously and the database cannot be reached to settle it either.
       const failing = poolIntercepting((text) =>
         text.includes("documents")
           ? Promise.reject(new Error("connection terminated unexpectedly"))
@@ -2307,10 +1983,7 @@ describe.runIf(databaseUrl.length > 0)("F-202 compliance checklist", () => {
       const response = await uploadWith(failing, storage, body.items[0]?.id as string);
 
       expect(response.status).toBe(500);
-      // Unknown is not the same as failed, so the bytes stay and the key is logged for cleanup.
       expect(storage.objects.size).toBe(1);
-      // And the client is told it is unknown. Every other failure here stored nothing, so a bare
-      // 500 reads as "safe to resend" — which in this one case duplicates a committed row.
       expect(response.body.storedOutcome).toBe("unknown");
     });
 
@@ -2346,8 +2019,6 @@ describe.runIf(databaseUrl.length > 0)("F-202 compliance checklist", () => {
         .set("Content-Type", "application/pdf")
         .send(PDF);
 
-      // The orphan is logged for manual deletion; the client is told about the write, not the
-      // cleanup, and no metadata row exists either way.
       expect(response.status).toBe(500);
       const { rows } = await pool.query("SELECT id FROM documents WHERE checklist_item_id = $1", [
         body.items[0]?.id,
@@ -2356,8 +2027,6 @@ describe.runIf(databaseUrl.length > 0)("F-202 compliance checklist", () => {
     });
 
     it("lets a browser preflight the upload header it is told to send", async () => {
-      // web and api are separately hosted, so an upload from the browser preflights first. A
-      // header missing from the allowlist fails there, before any of this feature's code runs.
       const response = await request(appWith(fakeStorage()))
         .options("/api/checklist-items/00000000-0000-4000-8000-000000000000/documents")
         .set("Origin", "http://localhost:3000")
@@ -2367,25 +2036,11 @@ describe.runIf(databaseUrl.length > 0)("F-202 compliance checklist", () => {
       expect(response.status).toBe(204);
       const allowed = (response.headers["access-control-allow-headers"] ?? "").toLowerCase();
       expect(allowed).toContain("x-filename");
-      // Without this the browser drops the idempotency key on a cross-origin upload, and every
-      // repeat becomes a new document again — the failure would be invisible from the api's side.
       expect(allowed).toContain("x-upload-key");
     });
   });
 
-  /**
-   * #252. A merged dedupe line reads as ONE route, its binding route, and where that route
-   * publishes no window the line's own columns carry none. The checklist reads those columns, so
-   * before this it rendered an undated, feeless task for a requirement whose OTHER route publishes
-   * a 15-business-day window and a TUP fee, and F-203 scheduled nothing at all.
-   *
-   * This is the whole of the published ruleset's dedupe group, driven end to end through the real
-   * API: `structure_over_10ft_tall: "yes"` resolves DOB-TALL-STRUCTURE-001, which publishes no
-   * deadline, while DOB-TENT-001's area/duration question is unanswered so its trigger is unknown.
-   * The resolved route binds and the dated one does not.
-   */
   describe("a merged dedupe line whose binding route publishes no window (#252)", () => {
-    /** The intake the review measured: the tall-structure route resolved, the tent route not. */
     const TALL_TENT = {
       ...scenario("A"),
       structure_types: ["tent_canopy"],
@@ -2394,16 +2049,6 @@ describe.runIf(databaseUrl.length > 0)("F-202 compliance checklist", () => {
       tent_days_in_place: null,
     };
 
-    /**
-     * The same group with the tent question ANSWERED, so both routes resolve and the line is
-     * `applies_together` rather than `candidate`.
-     *
-     * The reminder tests below use this one and the two above it do not, and the difference is the
-     * point: a candidate group's open question is WHICH of its routes applies, so it offers no
-     * filing action on any surface — `offersAFilingAction`'s second clause, which the alert path
-     * used to ignore (#252 review). Rendering a merged line's values is a different question from
-     * instructing a filing, so the rows above still read the unanswered shape.
-     */
     const SETTLED_TALL_TENT = { ...TALL_TENT, tent_area_sqft: 500, tent_days_in_place: 2 };
 
     const dobItem = async (): Promise<ChecklistItemView & Record<string, unknown>> => {
@@ -2420,11 +2065,8 @@ describe.runIf(databaseUrl.length > 0)("F-202 compliance checklist", () => {
 
     it("keeps the filing date, the fee and the status the other route publishes", async () => {
       const item = await dobItem();
-      // Both rules merged onto one line, and the line reads as the resolved route.
       expect(item.ruleIds).toEqual(["DOB-TENT-001", "DOB-TALL-STRUCTURE-001"]);
       expect(item.permitName).toBe("DOB permit — structure over 10 feet tall");
-      // None of these is on the line's own columns; every one is DOB-TENT-001's, and the row says
-      // so rather than presenting them as the named route's.
       expect(item.latestApplyDate).toBe("2026-08-05");
       expect(item.deadlineStatus).toBe("on_track");
       expect(item.feeDisplay).toBe(
@@ -2437,7 +2079,6 @@ describe.runIf(databaseUrl.length > 0)("F-202 compliance checklist", () => {
       const item = await dobItem();
       expect(item.headlineMode).toBe("candidate");
       const routes = item.routes as Record<string, unknown>[];
-      // IN BINDING ORDER: the route the line reads first, not the order the rules sit in the file.
       expect(routes.map((route) => route.ruleId)).toEqual([
         "DOB-TALL-STRUCTURE-001",
         "DOB-TENT-001",
@@ -2459,19 +2100,6 @@ describe.runIf(databaseUrl.length > 0)("F-202 compliance checklist", () => {
       );
     });
 
-    /**
-     * #252 review: THE FILING ROUTE'S NULLS ARE THE FILING ROUTE'S ANSWER.
-     *
-     * `??` reads null as "missing", so where the selected filing route published no fee and no
-     * portal the row fell back to the binding route's — and the sentence above them says all of
-     * these filing details belong to the selected route. One route's deadline beside another
-     * route's price and application portal, presented as one rule's.
-     *
-     * SYNTHETIC, and it has to be: on `nyc.v2.11` the one dedupe group runs the other way round
-     * (DOB-TENT-001 is the dated route AND the one publishing the fee, DOB-TALL-STRUCTURE-001
-     * publishes neither), so the fallback cannot fire there. The shape is a plan written directly
-     * with the group's own rule ids; every value below is this fixture's, not the ruleset's.
-     */
     it("keeps the filing route's own nulls instead of the binding route's fee and portal", async () => {
       const eventId = await createEvent(TALL_TENT);
       const planId = randomUUID();
@@ -2513,11 +2141,9 @@ describe.runIf(databaseUrl.length > 0)("F-202 compliance checklist", () => {
                 slack_days: null,
                 deadline_unknown_fields: [],
                 timeline_unresolved_reason: null,
-                // The binding route's, like every other column below.
                 portal_instructions: "file through the binding route's counter",
                 headline_mode: "candidate",
                 routes: [
-                  // Binding: a fee and a portal, and no window at all.
                   route({
                     ruleId: "DOB-TALL-STRUCTURE-001",
                     disposition: "may_be_required",
@@ -2527,7 +2153,6 @@ describe.runIf(databaseUrl.length > 0)("F-202 compliance checklist", () => {
                     portalUrl: "https://example.test/fixture",
                     portalInstructions: "file through the binding route's counter",
                   }),
-                  // The filing route: the window, and nothing else published.
                   route({
                     ruleId: "DOB-TENT-001",
                     disposition: "required",
@@ -2560,31 +2185,14 @@ describe.runIf(databaseUrl.length > 0)("F-202 compliance checklist", () => {
         candidate.ruleIds.includes("DOB-TENT-001"),
       ) as ChecklistItemView & Record<string, unknown>;
 
-      // The window is the filing route's, which is the whole reason the row reads that route.
       expect(item.latestApplyDate).toBe("2026-08-05");
       expect(item.filingRouteRuleId).toBe("DOB-TENT-001");
-      // And so is everything the sentence beside it claims: that route publishes no fee, no portal
-      // and no instruction, so the row shows none rather than the other route's.
       expect(item.feeDisplay).toBeNull();
       expect(item.portalName).toBeNull();
       expect(item.portalUrl).toBeNull();
       expect(item.portalInstructions).toBeNull();
     });
 
-    /**
-     * #252 review: THE PROVENANCE OF A NARROWED DEADLINE IS THAT ROUTE'S PROVENANCE.
-     *
-     * `noticeItemFrom` narrows the deadline, the date and the status to the filing route and left
-     * `sources` and `source_url` as the merged item's. `sources` concatenates over the group in
-     * CONTRIBUTING order and `source_url` is `sources[0].urls[0]`, so the notice labelled whichever
-     * rule the published file lists first as the Primary source for another route's deadline
-     * change. `conflict_text` is the same defect one field over: `mergeGroup` falls back through
-     * binding order and takes the first route that publishes any, so the two readings quoted beside
-     * the moved date were the binding route's.
-     *
-     * SYNTHETIC for the reason the fee-and-portal test above is: the one published group runs the
-     * other way round. Every value below is this fixture's.
-     */
     it("cites the filing route's own source beside a deadline it narrowed", async () => {
       const eventId = await createEvent(TALL_TENT);
       const planId = randomUUID();
@@ -2631,7 +2239,6 @@ describe.runIf(databaseUrl.length > 0)("F-202 compliance checklist", () => {
                 rule_ids: ["DOB-TALL-STRUCTURE-001", "DOB-TENT-001"],
                 notes: [],
                 note_text: null,
-                // The binding route's, which is what a merged line carries.
                 conflict_text: "the binding route's two readings",
                 deadline_display: null,
                 slack_days: null,
@@ -2646,7 +2253,6 @@ describe.runIf(databaseUrl.length > 0)("F-202 compliance checklist", () => {
                     name: "DOB permit — structure over 10 feet tall",
                     conflictText: "the binding route's two readings",
                   }),
-                  // The filing route: the window, its own page, and no conflict of its own.
                   route({
                     ruleId: "DOB-TENT-001",
                     disposition: "required",
@@ -2679,13 +2285,10 @@ describe.runIf(databaseUrl.length > 0)("F-202 compliance checklist", () => {
       const item = (read.body.items as ChecklistItemView[]).find((candidate) =>
         candidate.ruleIds.includes("DOB-TENT-001"),
       );
-      // The date that moved is the filing route's, which is what makes the rest attribution.
       expect(item?.deadlineNotice?.dateChange).toMatchObject({
         kind: "both",
         previous: "2026-07-01",
       });
-      // NOT VACUOUS, each on its own: before the narrowing these read both sources, the binding
-      // route's url, and the binding route's two readings.
       const provenance = item?.deadlineNotice?.previousProvenance;
       expect(provenance?.sources).toEqual([filingSource]);
       expect(provenance?.sourceUrl).toBe("https://example.test/filing");
@@ -2713,24 +2316,12 @@ describe.runIf(databaseUrl.length > 0)("F-202 compliance checklist", () => {
         [eventId],
       );
 
-      // One per published offset, exactly as an unmerged dated requirement gets.
       expect(rows).toHaveLength(reminderOffsets.length);
       expect(rows.every((row) => row.alert_type === "deadline_reminder")).toBe(true);
-      // The reminder names the route whose window it counts down to, not the route the line reads.
       expect(rows[0]?.subject).toContain("tent/canopy");
       expect(rows[0]?.subject).not.toContain("structure over 10 feet tall");
     });
 
-    /**
-     * The window a route-scheduled reminder retires on, recorded on the alert itself.
-     *
-     * The plan item's `latest_apply_date` is the merged line's, and here the line's binding route
-     * publishes none, so it is NULL. `FILING_WINDOW_HAS_SHUT` read only that column, so the window
-     * never shut for these reminders on any day: one held in retry backoff would be delivered
-     * saying "file by 2026-08-05" after that date had passed, which is the one thing the predicate
-     * exists to prevent. Two further readers inherit it, the reconciliation hold and the earlier-of
-     * bound on an unresolved attempt (#252 review).
-     */
     it("records the window its reminders retire on, which its item column does not carry", async () => {
       const eventId = await createEvent(SETTLED_TALL_TENT);
       await generatePlan(eventId);
@@ -2744,8 +2335,6 @@ describe.runIf(databaseUrl.length > 0)("F-202 compliance checklist", () => {
         shut_the_day_after: boolean;
         shut_on_the_day: boolean;
       }>(
-        // THE PREDICATE ITSELF, imported rather than restated, so this asserts what the sweep and
-        // the claim actually evaluate.
         `SELECT alerts.payload->>'controlling_apply_by' AS controlling_apply_by,
                 item.latest_apply_date::text AS item_apply_by,
                 ${FILING_WINDOW_HAS_SHUT("'2026-08-06'")} AS shut_the_day_after,
@@ -2759,27 +2348,12 @@ describe.runIf(databaseUrl.length > 0)("F-202 compliance checklist", () => {
 
       expect(rows).toHaveLength(reminderOffsets.length);
       for (const row of rows) {
-        // THE ITEM COLUMN IS NO LONGER NULL ON THIS FIXTURE, and the assertion is dropped rather
-        // than reworded. It was null because the dated tent route was NON-BINDING, and on this
-        // published group the only thing that makes it non-binding is an unresolved trigger —
-        // which makes the line a candidate group, which now schedules no filing reminder at all.
-        // The two conditions are mutually exclusive here. What the alert carries the date FOR is
-        // still pinned, by the synthetic `applies_together` group in `alerts.test.ts` whose binding
-        // route is undated because a stronger route binds, which is the shape this one modelled
-        // (#252 review).
         expect(row.controlling_apply_by).toBe("2026-08-05");
         expect(row.shut_the_day_after).toBe(true);
-        // Still open on its own last day, which is the day the reminder is about.
         expect(row.shut_on_the_day).toBe(false);
       }
     });
 
-    /**
-     * The row renders "apply by 2026-08-05" and sorts where that date puts it. `PLAN_ITEM_ORDER`
-     * read the column, which is NULL here, so the only DATED requirement on this plan sorted behind
-     * an undated `research_required` one — and `materialize` freezes that into `cohort_position`,
-     * which migration 007 exists to make permanent (#252 review).
-     */
     it("sorts on the date the row shows, not on the column the row leaves empty", async () => {
       const eventId = await createEvent({
         ...TALL_TENT,
@@ -2800,13 +2374,6 @@ describe.runIf(databaseUrl.length > 0)("F-202 compliance checklist", () => {
       expect(dobStructure).toBeLessThan(dobStage);
     });
 
-    /**
-     * `null` on `routes` means "this plan predates the field", never "this line has no routes"
-     * (`FindingRendering.routes`). Synthesized from the row's columns instead, a two-rule line
-     * stored before the field was served a one-entry list naming `rule_ids[0]` alone, which is a
-     * claim that a merged requirement has one route. The plan endpoint has always served the
-     * stored list or null; this is the checklist agreeing with it (#252 review).
-     */
     it("serves the stored route list or nothing, never one synthesized from the row", async () => {
       const eventId = await createEvent(TALL_TENT);
       await generatePlan(eventId);
@@ -2817,25 +2384,10 @@ describe.runIf(databaseUrl.length > 0)("F-202 compliance checklist", () => {
         if (routes === null) continue;
         expect(routes.length).toBeGreaterThan(1);
       }
-      // Every unmerged line on this plan carries none rather than a restatement of itself.
       const sound = items.find((item) => item.ruleIds.includes("NYPD-SOUND-001"));
       expect(sound?.routes).toBeNull();
     });
 
-    /**
-     * #252: `FILING_ORDER_JOIN` LACKED THE `routes.length >= 2` GUARD ITS THREE TYPESCRIPT
-     * COUNTERPARTS ALL MAKE.
-     *
-     * `filingRouteOf`, `plan-line.tsx` and `alertSubjects` each treat a ONE-entry route list as an
-     * unmerged line, because a line with a single route has its own columns and `storedRoutes`
-     * collapses it back to the row. The lateral did not, so it read the lone route's window and
-     * ordered the item by it: the same plan sorted one way through the api and another through
-     * SQL. One shape out of 32 exhaustive route-list shapes disagreed, and it disagreed here.
-     *
-     * Written against the stored rendering directly, because no engine output produces a one-entry
-     * list; that is exactly what makes the guard a contract about the column rather than about
-     * something the engine happens not to emit today.
-     */
     it("orders a one-entry route list off the row's own column, as every other reader does", async () => {
       const eventId = await createEvent(TALL_TENT);
       await generatePlan(eventId);
@@ -2844,8 +2396,6 @@ describe.runIf(databaseUrl.length > 0)("F-202 compliance checklist", () => {
         [eventId],
       );
       const planId = planRows[0]?.id as string;
-      // The line's own window is NULL and its single route publishes one. Every TypeScript reader
-      // calls this unmerged, so the ordering date is the column: NULL, and the row sorts last.
       await pool.query(
         `UPDATE permit_plans
             SET verdict_detail = jsonb_set(verdict_detail, '{finding_renderings}',
@@ -2869,19 +2419,6 @@ describe.runIf(databaseUrl.length > 0)("F-202 compliance checklist", () => {
       expect(rows[0]?.ordering_date).toBeNull();
     });
 
-    /**
-     * #252 review: THE NOTICE COMPARED ONE ROUTE'S TYPED FIELDS AGAINST ANOTHER'S TEXT.
-     *
-     * `noticeItemFrom` replaces the deadline, the date and the status with the filing route's, and
-     * the merged rendering was passed beside it unchanged — so `movedDeadlineNotice` compared the
-     * filing route's fields against the BINDING route's `deadline_display`. A regeneration that
-     * moves which route binds, while the filing route and its window stay exactly where they are,
-     * then reported a deadline-state change over unchanged filing data.
-     *
-     * The regeneration is real and only the binding route's published text is edited onto it,
-     * because that string is the whole of what a changed binding puts on this line: the item's own
-     * columns are NULL either way, and every other field the notice reads is the filing route's.
-     */
     it("reports no deadline change when only the headline binding moved", async () => {
       const eventId = await createEvent(TALL_TENT);
       await generatePlan(eventId);
@@ -2909,7 +2446,6 @@ describe.runIf(databaseUrl.length > 0)("F-202 compliance checklist", () => {
       const item = (read.body.items as ChecklistItemView[]).find((candidate) =>
         candidate.ruleIds.includes("DOB-TENT-001"),
       );
-      // The filing data the row shows is untouched, which is what makes a notice about it false.
       expect(item?.latestApplyDate).toBe("2026-08-05");
       expect(item?.deadlineStatus).toBe("on_track");
       expect(item?.deadlineNotice).toBeNull();

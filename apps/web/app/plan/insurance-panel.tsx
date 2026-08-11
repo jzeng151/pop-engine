@@ -1,34 +1,15 @@
 import type { ConsumedFinding } from "./plan-api";
 
-// F-205: a dedicated insurance card on top of — never instead of — the plan line each finding
-// still renders from via PlanLine (AC 5; removing this file loses only the card). R10 and R11
-// already ship in the day-one ruleset (F-201); this component adds no rule and reads no field a
-// test cannot trace to the published artifact.
-//
-// Nothing here composes regulatory prose. Every string an organizer reads is either published in
-// the rules artifact and carried through the plan, or one of the schema's own disposition tokens.
+// F-205: a dedicated insurance card on top of — never instead of — the plan line each finding still renders from via PlanLine (AC 5; removing this file loses only the card).
 
-/**
- * The three published rules this feature surfaces. Matched by id rather than by `kind` — which
- * `ConsumedFinding` deliberately does not carry (`./plan-api`'s F-206 boundary: a field not read
- * elsewhere in this app is not in the type) — because a fixed, small id set is exactly what a
- * dedicated card for three named rules needs, and adding `kind` back for one caller would reopen
- * a boundary the rest of this feature already enforces without it.
- */
+/** The three published rules this feature surfaces. */
 const INSURANCE_RULE_IDS: ReadonlySet<string> = new Set([
   "SAPO-INSURANCE-001",
   "SAPO-INSURANCE-BLOCK-PARTY-RIDE-001",
   "PARKS-INSURANCE-NOTE-001",
 ]);
 
-/**
- * The subset of `INSURANCE_RULE_IDS` that is `kind: insurance` — a checklist item with a document
- * slot (`apps/api/src/checklist.ts`'s `TRACKABLE_FINDING_KINDS`) — as opposed to
- * `PARKS-INSURANCE-NOTE-001`, which is `kind: note` and read-only context with nothing to upload
- * against. `kind` never softens: an `unknown`-triggered SAPO-INSURANCE-001 renders `disposition:
- * may_be_required` (`UNKNOWN_TRIGGER_DISPOSITION`, `packages/engine/src/proposals.ts`) but is
- * still the same trackable row, so link eligibility is keyed on the rule id, never on disposition.
- */
+/** The subset of `INSURANCE_RULE_IDS` that is `kind: insurance` — a checklist item with a document slot (`apps/api/src/checklist.ts`'s `TRACKABLE_FINDING_KINDS`) — as opposed to `PARKS-INSURANCE-NOTE-001`, which is `kind: note` and read-only context with nothing to upload against. */
 const TRACKABLE_INSURANCE_RULE_IDS: ReadonlySet<string> = new Set([
   "SAPO-INSURANCE-001",
   "SAPO-INSURANCE-BLOCK-PARTY-RIDE-001",
@@ -36,13 +17,7 @@ const TRACKABLE_INSURANCE_RULE_IDS: ReadonlySet<string> = new Set([
 
 const humanize = (token: string): string => token.replace(/_/g, " ");
 
-/**
- * The published deadline's own type, for SAPO-INSURANCE-001's `{type: "before_issuance"}` — no
- * computable date, so "before issuance" is the whole timing requirement (ARCHITECTURE.md's
- * "Rules loading" table states it the same way: "obtain before permit issuance"). Guarded the same
- * way `plan-line.tsx` guards it: only when nothing else timing-related is published, so a future
- * rule that adds a computed date is never silently dropped in favor of the bare type.
- */
+/** The published deadline's own type, for SAPO-INSURANCE-001's `{type: "before_issuance"}` — no computable date, so "before issuance" is the whole timing requirement (ARCHITECTURE.md's "Rules loading" table states it the same way: "obtain before permit issuance"). */
 const deadlineTypeLabel = (finding: ConsumedFinding): string | null =>
   finding.deadline !== null &&
   finding.deadlineDisplay === null &&
@@ -51,31 +26,10 @@ const deadlineTypeLabel = (finding: ConsumedFinding): string | null =>
     ? humanize(finding.deadline.type)
     : null;
 
-/**
- * Whether this card is a hard requirement or informational (AC 1/2). The engine's own disposition
- * token is the distinction — `required` for SAPO-INSURANCE-001 and the block-party-ride rule
- * (both `kind: insurance`), `no_new_requirement` for PARKS-INSURANCE-NOTE-001 (`kind: note`) — so
- * the card never states "informational" or "required" in words this feature composed; it renders
- * the published disposition and styles by it.
- */
+/** Whether this card is a hard requirement or informational (AC 1/2). */
 const isRequired = (finding: ConsumedFinding): boolean => finding.disposition === "required";
 
-/**
- * The insurance rule's OWN published values, where the line it arrived on merged.
- *
- * The panel selects a finding because ANY of its rule ids is an insurance id, and then rendered the
- * line's scalars — which on a merged group are the BINDING route's, and the binding route need not
- * be the insurance one. So a group holding an insurance rule beside a permit that binds showed the
- * permit's name, agency, disposition and deadline as the insurance card, with the insurance
- * checklist link beside it (#252 review).
- *
- * The same narrowing `blockerView` does in the engine, and for the same reason: select by rule,
- * then read that rule's own route rather than the line. `noteText` is dropped on a merged line for
- * the reason the blocker drops its summary — it is single-valued and falls back through the routes
- * in binding order, so a merged one is not this rule's own and there is no per-route form to narrow
- * to. `notes` comes from the route where the plan recorded them. An unmerged finding is its own
- * route and is returned untouched.
- */
+/** The insurance rule's OWN published values, where the line it arrived on merged. */
 const insuranceView = (finding: ConsumedFinding): ConsumedFinding => {
   const routes = finding.routes ?? [];
   if (routes.length < 2) return finding;
@@ -96,13 +50,7 @@ const insuranceView = (finding: ConsumedFinding): ConsumedFinding => {
     portalName: route.portalName,
     portalUrl: route.portalUrl,
     portalInstructions: route.portalInstructions,
-    // THE ROUTE'S OWN NOTES, and the round that called this blocked was wrong. `plan.ts` serves
-    // `routes: finding.routes ?? null`, the whole `FindingRoute`, so the per-route notes were
-    // already on the wire and only `ConsumedRoute` ignored them; naming and validating them there
-    // was the whole of it, and no wire contract moved. Without this the card rendered the GROUP's
-    // concatenated notes under the narrowed insurance name, attributing a sibling's published
-    // qualification to the insurance rule (#252 review). A plan stored before the engine carried
-    // per-route notes has none, and falls back to the line's.
+    // THE ROUTE'S OWN NOTES, and the round that called this blocked was wrong.
     notes: route.notes ?? finding.notes,
     noteText: null,
     sources: finding.sources.filter((source) => source.ruleId === route.ruleId),
@@ -113,14 +61,7 @@ const insuranceView = (finding: ConsumedFinding): ConsumedFinding => {
 const isTrackable = (finding: ConsumedFinding): boolean =>
   finding.ruleIds.some((ruleId) => TRACKABLE_INSURANCE_RULE_IDS.has(ruleId));
 
-/**
- * One insurance card. Styling is disposition-based (AC 1/2: required renders the warning
- * treatment, anything else — `no_new_requirement` for the parks note, `may_be_required` for an
- * unknown-triggered insurance rule — renders neutral). The checklist link is a separate question,
- * gated on `isTrackable` rather than on disposition: a `may_be_required` insurance finding is
- * still a trackable checklist row, and withholding the link there would leave an organizer with
- * nowhere to put a certificate for a requirement that may well apply.
- */
+/** One insurance card. */
 function InsuranceCard({ finding, eventId }: { finding: ConsumedFinding; eventId: string }) {
   const headingId = `insurance-${finding.ruleIds.join("-")}`;
   const required = isRequired(finding);
@@ -170,17 +111,7 @@ function InsuranceCard({ finding, eventId }: { finding: ConsumedFinding; eventId
   );
 }
 
-/**
- * The dedicated insurance panel (F-205). Renders one card per matching finding, above the plan's
- * own line items, and nothing at all when none match.
- *
- * AC 3's silence is deliberate and unconditional: a private-venue event triggers none of the three
- * rules, so `insuranceFindings` is empty and this returns `null` — no empty state, no "no
- * insurance required" affirmation. Either would assert an absence no source establishes; the
- * answer key is silent, so this is. The same path covers the block-party-without-a-ride edge case
- * (Scenario D) and a street-to-private-venue rescope (Scenario A): neither triggers an insurance
- * rule, so neither renders a card, without this component knowing why.
- */
+/** The dedicated insurance panel (F-205). */
 export function InsurancePanel({
   findings,
   eventId,

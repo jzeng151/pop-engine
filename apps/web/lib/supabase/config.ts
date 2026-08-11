@@ -27,6 +27,7 @@ export function siteUrl(env: Environment = process.env): string | null {
   const value = env.NEXT_PUBLIC_SITE_URL;
   if (!value) return null;
   const url = httpUrl(value);
+  // Callback configuration must be a bare origin: no credentials, path, query, or fragment.
   if (
     url === null ||
     url.username ||

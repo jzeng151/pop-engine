@@ -94,7 +94,6 @@ describe("MovedDeadlineNoticeBlock", () => {
               gated: false,
             },
             current: {
-              // Real AC 9 change: day count moved. Countdown also advanced with the clock.
               deadlineStatus: "deadline_approaching",
               deadline: {
                 type: "published_minimum",

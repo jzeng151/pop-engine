@@ -1,8 +1,4 @@
 // The browser's calls to the events API.
-//
-// Web and api are separate origins behind Cloudflare Access (BASELINE.md provider
-// baseline), so every call sends credentials and the api answers with
-// `Access-Control-Allow-Credentials`.
 
 export const CREDENTIALED = {
   credentials: "include",
@@ -24,13 +20,7 @@ export type LoadedEvent = {
 
 export type LoadResult = { ok: true; loaded: LoadedEvent } | { ok: false; message: string };
 
-/**
- * The endpoint's ruleset-downgrade refusal (F-201 AC 12), as the browser receives it.
- *
- * `pinnedRulesetVersion` is what the plan this generation would have superseded pinned, and
- * `rulesetVersion` is what the service that refused is running. Both travel with the refusal
- * because a refusal an organizer cannot be told the reason for is its own harm.
- */
+/** The endpoint's ruleset-downgrade refusal (F-201 AC 12), as the browser receives it. */
 export type RegenerationRefusal = {
   readonly rulesetVersion: string;
   readonly pinnedRulesetVersion: string;
@@ -99,22 +89,13 @@ export async function loadEvent(apiBaseUrl: string, eventId: string): Promise<Lo
     loaded: {
       event: event as SavedEvent,
       plan_stale: asRecord(body)?.plan_stale === true,
-      // Whether the API actually answered the staleness question, as distinct from answering
-      // "no". A caller deciding "is it stale" wants the boolean above; a caller deciding
-      // "was freshness confirmed" cannot use it, because a body that omits the field would read
-      // as confirmed-current.
+      // Whether the API actually answered the staleness question, as distinct from answering "no".
       plan_stale_reported: typeof asRecord(body)?.plan_stale === "boolean",
     },
   };
 }
 
-/**
- * The two versions and the direction, read off a 409 body, or null if it did not carry them.
- *
- * A 409 that cannot be read this way is reported as an ordinary failure rather than guessed at:
- * the copy this feeds names both versions and says which is older, and stating either wrongly is
- * worse than falling back to the endpoint's own sentence.
- */
+/** The two versions and the direction, read off a 409 body, or null if it did not carry them. */
 function readRefusal(body: unknown): RegenerationRefusal | null {
   const record = asRecord(body);
   if (record === null) return null;
@@ -124,17 +105,7 @@ function readRefusal(body: unknown): RegenerationRefusal | null {
   return { rulesetVersion, pinnedRulesetVersion, standing };
 }
 
-/**
- * One-click plan regeneration (F-101 spec #8). The endpoint is F-201's
- * (`POST /api/events/:id/plan`, ARCHITECTURE.md API Surface); intake only asks for it and reports
- * what came back. Plans are immutable snapshots (AD-7), so regeneration is a new plan for the
- * current revision, never a patch.
- *
- * This does not decide whether generating is safe before asking. F-201 AC 12 puts that decision
- * inside the transaction that inserts, under a row lock, which is the only place both the ruleset
- * being evaluated with and the plan being superseded are visible at once. So the browser attempts
- * the write and handles the answer, including the 409 the guard returns.
- */
+/** One-click plan regeneration (F-101 spec #8). */
 export async function regeneratePlan(
   apiBaseUrl: string,
   eventId: string,

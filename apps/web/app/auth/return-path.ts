@@ -1,3 +1,4 @@
+// A fixed allowlist prevents authentication callback open redirects.
 export const AUTH_RETURN_PATHS = ["/", "/account", "/auth/update-password"] as const;
 export type AuthReturnPath = (typeof AUTH_RETURN_PATHS)[number];
 

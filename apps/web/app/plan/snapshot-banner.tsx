@@ -1,9 +1,7 @@
 import { compareToPinned } from "@pop-engine/engine";
 import type { RulesMetaResponse } from "./plan-api";
 
-// F-206 AC 1 and AC 4: every plan and checklist view states which rules snapshot produced what
-// it is showing. Exported on its own so the checklist view (F-202) renders the same banner from
-// the same values rather than a second copy of this copy.
+// F-206 AC 1 and AC 4: every plan and checklist view states which rules snapshot produced what it is showing.
 
 /**
  * A snapshot date is the date the ruleset was PUBLISHED, not a date on which its facts were
@@ -12,12 +10,7 @@ import type { RulesMetaResponse } from "./plan-api";
  */
 const PUBLISHED_PREFIX = "published";
 
-/**
- * AC 4's copy for a plan whose `snapshot_date` is null — one generated before migration 002 added
- * the column. The version alone is still the honest answer to "which rules produced this"; the
- * live file's date is not, and the column is never backfilled, because the plan does not record
- * which artifact it read and a derived date would assert provenance nothing witnessed.
- */
+/** AC 4's copy for a plan whose `snapshot_date` is null — one generated before migration 002 added the column. */
 const DATE_NOT_RECORDED = "publication date not recorded for this plan";
 
 /**
@@ -36,11 +29,7 @@ export function formatSnapshotDate(isoDate: string): string {
   });
 }
 
-/**
- * The ruleset-version ordering moved to `@pop-engine/engine` so the F-201 generation guard orders
- * these values the same way this banner does. Re-exported under the names this app's call sites
- * already import; the ordering itself has one implementation, not two (CONTRIBUTING "Code Style").
- */
+/** The ruleset-version ordering moved to `@pop-engine/engine` so the F-201 generation guard orders these values the same way this banner does. */
 export { compareToPinned, parseRulesetVersion } from "@pop-engine/engine";
 
 export function SnapshotBanner({

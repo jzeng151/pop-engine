@@ -1,11 +1,3 @@
-// The plan boundary read against the engine's OWN output, rather than against hand-written bodies.
-//
-// `headlineMatchesBinding` and the route contract are assertions about what `mergeGroup()` produces,
-// and a boundary that refuses valid engine output costs an organizer their whole plan. Every merged
-// shape this repository knows how to build is evaluated here and served exactly as `plan.ts` serves
-// it, so a predicate that is too strict fails in CI rather than in front of an organizer (#252
-// review).
-
 import { describe, expect, it, vi } from "vitest";
 import { evaluate, parseEngineRuleset } from "@pop-engine/engine";
 import type { EventIntake } from "@pop-engine/engine";
@@ -53,7 +45,6 @@ function ruleset(rules: readonly RuleSpec[], fields: readonly unknown[] = []) {
   });
 }
 
-/** Served exactly as `apps/api/src/plan.ts` serves a generated plan. */
 const served = (rules: readonly RuleSpec[], intake: Record<string, unknown>, fields: unknown[]) => {
   const plan = evaluate(
     { event_date: EVENT_DATE, headcount: 50, ...intake } as unknown as EventIntake,
@@ -139,15 +130,13 @@ describe("the plan boundary reads what the engine produces (#252)", () => {
 
   it("reads a merged line that publishes no scalars of its own", async () => {
     const body = served([RESOLVED_ADVISORY, CANDIDATE], { sidewalk_use: null }, FIELD);
-    // The unattributable shape, produced by the engine rather than hand-written.
+
     expect(body.findings[0]?.deadlineStatus).toBe("not_calculable");
     expect(body.findings[0]?.latestApplyDate).toBeNull();
     await expect(readsBack(body)).resolves.toMatchObject({ ok: true });
   });
 
   it("reads a merged line whose gated route carries dependency sequencing", async () => {
-    // `applyDependencySequencing` rewrites the line's gate, slack and status AND the gated route's,
-    // so the two must still agree after it has run.
     const body = served(
       [
         {

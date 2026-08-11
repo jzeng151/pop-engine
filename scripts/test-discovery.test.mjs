@@ -1,11 +1,3 @@
-// What `pnpm test` actually discovers under `scripts/`, asked of vitest rather than of the glob.
-//
-// The root config exempts one directory, `scripts/dedupe-cofiring/`, for the governance reason
-// recorded there. Spelling that exemption as a one-level glob instead of an `exclude` entry widened
-// it to every subdirectory, so a nested guard added later would have left the required run in
-// silence (#251 review). These cases plant such a guard and put the question to vitest's own
-// discovery, so the exemption cannot quietly grow again.
-
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { join, relative } from "node:path";
 import { spawnSync } from "node:child_process";
@@ -15,7 +7,6 @@ import { expect, test } from "vitest";
 
 const repoRoot = fileURLToPath(new URL("../", import.meta.url));
 
-/** The files vitest itself resolves from the root config, repo-relative and slash-separated. */
 function discoveredFiles() {
   const listed = spawnSync(
     "node",

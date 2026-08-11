@@ -1,7 +1,4 @@
 // Tri-state condition evaluation (ARCHITECTURE "Condition evaluation").
-// A material unknown propagates to `unknown` and never silently becomes false; a field the
-// registry never scopes in is not material at all (F-201 spec, "Uncollected/inapplicable
-// branch fields evaluate per the registry's asked-when scoping").
 
 import { EvaluationError } from "./types";
 import type {
@@ -32,19 +29,7 @@ export type TriggerEvaluation = {
 
 export type ScopeResolver = { isInScope: (field: string) => boolean };
 
-/**
- * Evaluate the registry's `asked_when` scoping. The published expressions are a closed set of
- * conjunctions; anything outside the grammar throws rather than being ignored, because silently
- * treating a field as in-scope would change which findings fire.
- */
-/**
- * The registry's `asked_when` grammar, parsed once rather than re-read per evaluation.
- *
- * Parsing prose at evaluation time is how a typo becomes silence: `headcount gte seventy_five`
- * makes `Number(operand)` NaN, the clause reads false, the field and every rule depending on it
- * fall out of scope, and the plan omits requirements with no error anywhere. So the grammar is
- * validated when the ruleset is loaded and evaluation only walks the parsed result.
- */
+/** The registry's `asked_when` grammar, parsed once rather than re-read per evaluation. */
 export function parseAskedWhen(
   expression: string,
   fields: readonly ScopedField[],
@@ -52,16 +37,7 @@ export function parseAskedWhen(
   return expression.split(" AND ").map((clause) => parseAskedWhenClause(clause.trim(), fields));
 }
 
-/**
- * Every operand is checked against the field it names, not just the field's existence. A mistyped
- * enum — `sapo_event_type = street_evet` — parses fine and then matches no intake ever, so the
- * field and everything scoped by it silently leaves scope and requirements vanish with no error.
- * That is the same silent-omission failure a non-numeric threshold caused, so it fails the same
- * way: at load, naming the clause.
- *
- * The operator/type table is deliberately strict. A published expression this rejects is a loud
- * boot failure someone fixes; one it wrongly accepts is a plan that quietly omits permits.
- */
+/** Every operand is checked against the field it names, not just the field's existence. */
 function declaredValuesOf(field: string, fields: readonly ScopedField[]): readonly string[] | null {
   return fields.find((entry) => entry.field === field)?.values ?? null;
 }
@@ -137,10 +113,7 @@ function parseAskedWhenClause(clause: string, fields: readonly ScopedField[]): A
     if (allowed === null && type === "boolean" && operand !== "true" && operand !== "false") {
       rejectClause(clause, `compares boolean "${field}" against "${operand}"`);
     }
-    // The operand is typed at load, not left as the text it was written as. An intake answer is a
-    // boolean or a number, and evaluation compares strictly, so keeping "true" or "75" as strings
-    // would make every equality false and every inequality true — the scoped field and everything
-    // depending on it silently leaving scope, which is the failure this validation exists to stop.
+    // The operand is typed at load, not left as the text it was written as.
     return {
       kind: "compare",
       field,
@@ -189,10 +162,7 @@ export function createScopeResolver(intake: EventIntake, ruleset: EngineRuleset)
       case "in":
         return clause.values.includes(String(value));
       case "compare":
-        // On a multi-select ("structure_types != none") the comparison is membership. Comparing
-        // the array itself would read ["none"] as "not none" and put the dependent question in
-        // scope when nothing is selected; the questionnaire already read it as membership, and
-        // the two must not disagree about which questions an event is asked.
+        // On a multi-select ("structure_types != none") the comparison is membership.
         if (Array.isArray(value)) {
           const holdsMember = value.includes(String(clause.value));
           return clause.op === "=" ? holdsMember : !holdsMember;
@@ -353,10 +323,7 @@ export function evaluateTrigger(
     return {
       result: decisive,
       unknownFields: [],
-      // A decisive `any` is settled by its true children alone, so only those are the answers
-      // that triggered the finding (AC 1). Recording an unanswered sibling — FDNY-GENERATOR-001's
-      // null diesel amount next to a decisive gasoline figure — would claim provenance it has not
-      // got. The `all` path and the undecided `any` path keep every contribution.
+      // A decisive `any` is settled by its true children alone, so only those are the answers that triggered the finding (AC 1).
       triggeredBy:
         decisive === "true"
           ? children

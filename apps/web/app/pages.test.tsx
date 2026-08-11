@@ -18,20 +18,12 @@ vi.mock("next/navigation", () => ({
   usePathname: () => "/events/event-9",
 }));
 
-// The route components are thin: each one reads the published ruleset on the server and
-// hands the questionnaire its props. These assert the wiring — that the contract really
-// is the published registry, and that the edit route passes the id through — rather than
-// re-testing the form, which has its own suite.
-
 afterEach(() => {
   cleanup();
   vi.unstubAllEnvs();
   vi.unstubAllGlobals();
 });
 
-// `intakeFormProps` resolves the ruleset against the working directory, which is the
-// Next app's own directory when it runs. Vitest runs from the repo root, so the tests
-// point RULES_FILE at the same artifact the way a deployment does.
 const useRepoRuleset = () => vi.stubEnv("RULES_FILE", publishedRulesFileIn("rules"));
 
 describe("the app shell", () => {
@@ -73,15 +65,6 @@ describe("intakeFormProps", () => {
   });
 
   it("fails loudly when the ruleset is not where it expects", async () => {
-    // With no RULES_FILE the rules DIRECTORY is resolved against the working directory, which is
-    // the Next app's own directory when it runs and the repo root here. A page that cannot read
-    // the published ruleset must not render a questionnaire at all.
-    //
-    // Matched on the directory rather than on a filename. Pinning `nyc-rules.v2.8.json` here made
-    // this assertion itself a version landmine — the very thing the resolver removes — and it
-    // would have gone green on the next bump only because the message happened to still contain
-    // whatever name was hard-coded. The directory is what the page looks for now, so that is what
-    // this asserts, and it stays true across every bump.
     vi.stubEnv("RULES_FILE", undefined);
     await expect(intakeFormProps()).rejects.toThrow(/rules/);
   });
@@ -102,23 +85,13 @@ describe("the intake routes", () => {
       vi.fn(() => new Promise(() => {})),
     );
     render(await EditIntakePage({ params: Promise.resolve({ id: "event-9" }) }));
-    // The form takes it from here: it fetches the event from the browser, because the
-    // Access cookie is the browser's and not this server's.
+
     expect(screen.getByRole("status").textContent).toBe("Loading your event…");
   });
 });
 
-// Vitest runs from the repo root, the same assumption `useRepoRuleset` above is built on.
 const APP_DIRECTORY = resolve("apps/web/app");
 
-/**
- * The route module Next would serve `href` from, or null when `app/` has no route for it.
- *
- * Walks the segments the way the router does — a literal directory first, the dynamic `[param]`
- * one otherwise — so a destination page that is deleted or renamed resolves to null here. Asserting
- * the href strings alone could not: those strings come from the component under test, so both sides
- * of the comparison move together and a dead link stays green.
- */
 function routeModuleFor(href: string): string | null {
   let directory = APP_DIRECTORY;
   for (const segment of href.split("/").filter((part) => part !== "")) {
@@ -135,8 +108,6 @@ function routeModuleFor(href: string): string | null {
   return existsSync(routeModule) ? routeModule : null;
 }
 
-// F-705 AC 8: the overview links only to routes that exist. A destination removed or renamed
-// elsewhere leaves a dead link here, and the shell's own suite does not cover this page.
 describe("the event overview route", () => {
   it("links every listed destination to a route module that serves it", async () => {
     vi.stubGlobal(
@@ -160,9 +131,6 @@ describe("the event overview route", () => {
     });
   });
 
-  // The stale-plan notice and the workspace shell are client components: they fetch from the
-  // organizer's browser, so a server-only `API_BASE_URL` reaches neither and both fall back to
-  // localhost in every deployment. `NEXT_PUBLIC_API_BASE_URL` is the variable the deployment sets.
   it("points the stale-plan notice at the configured browser api", async () => {
     vi.stubEnv("NEXT_PUBLIC_API_BASE_URL", "https://api.example.com");
     const fetchMock = vi.fn(() => new Promise<Response>(() => undefined));

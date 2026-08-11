@@ -5,14 +5,7 @@ import { Router, type Request, type Response } from "express";
 import type { Pool, PoolClient, QueryResult, QueryResultRow } from "pg";
 
 // F-302 RSVP / guest list (ARCHITECTURE.md API Surface + rsvps schema).
-//
-// Admission is `events.capacity`, the confirmed venue/event capacity, and a NULL capacity means
-// no enforced limit (spec AC 2, resolving SPEC-CONFLICT #209 on 2026-08-03). It used to be
-// F-101 `headcount`, which was wrong in a way worth recording: `headcount` is a regulatory input
-// that drives the 75+ assembly gate and the Parks exactly-20 conflict, so
-// admitting against it meant raising an RSVP cap silently moved the event's permit findings. The
-// same column also feeds F-402's gauge, which is the shape F-306 promotes into.
-// Public POST requires F-301 public_page_published so unpublished events cannot collect RSVPs.
+// Admission uses events.capacity; null means unlimited (SPEC-CONFLICT #209).
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -134,12 +127,7 @@ export type CreateRsvpResult =
   | { status: 200 | 201; body: { rsvp: RsvpRow; confirmed_count: number; capacity: number | null } }
   | { status: 400 | 404; body: { error: string } };
 
-/**
- * Create or update an RSVP. Duplicate email on the same event updates the row
- * (spec AC 3). New confirmed seats are refused at a confirmed capacity with "event is full";
- * an event with no confirmed capacity is never refused for being full.
- * Count checks run under the event row lock so concurrent RSVPs cannot overbook.
- */
+/** Create or update an RSVP. */
 export async function createRsvp(
   database: Pool,
   eventId: string,
@@ -245,7 +233,7 @@ export type ListRsvpsResult =
           id: string;
           name: string;
           capacity: number | null;
-          /** Compatibility window only; see `listRsvps`. Removed with the web rollout. */
+          /** #236: deploy web-first; compatibility headcount is not an admission limit. */
           headcount: number;
           event_date: string;
         };
@@ -255,26 +243,7 @@ export type ListRsvpsResult =
     }
   | { status: 400 | 404; body: { error: string } };
 
-/**
- * Organizer guest list: every RSVP row plus count vs confirmed capacity (null = no limit).
- *
- * The response carries BOTH contract generations for now. `docs/ARCHITECTURE.md:9` rolls web and
- * API independently, so between the two deployments one side speaks the pre-rename contract, and
- * a web build that predates the rename rejects any response without `event.headcount`: the guest
- * list empties and the cancel controls go with it until the second deployment finishes. Serving
- * the old field alongside the new one keeps the page rendering in either deployment order.
- *
- * This is shape compatibility only; it does not make an api-first rollout safe. A pre-rename web
- * build reads `headcount` as the enforced limit while this API admits against `capacity`. When the
- * two numeric values differ it shows the wrong limit, and when `capacity` is null it shows a finite
- * limit enforced nowhere. Issue #236 removes that semantic window by requiring the coordinated
- * web-first release in `DEPLOY.md`.
- *
- * `headcount` keeps its own meaning here, the `events.headcount` column, which is what the
- * pre-rename API returned. It is not capacity under an old name. Admission is `capacity` alone.
- *
- * `specs/F-302-rsvp-guest-list.md` records what removing `headcount` from this response needs.
- */
+/** Organizer guest list: every RSVP row plus count vs confirmed capacity (null = no limit). */
 export async function listRsvps(database: Queryable, eventId: string): Promise<ListRsvpsResult> {
   if (!UUID.test(eventId)) {
     return { status: 400, body: { error: "That event link is not valid." } };
@@ -375,8 +344,6 @@ export function createRsvpsRouter(dependencies: RsvpsDependencies): Router {
   const router = Router();
 
   // Public create stays on /rsvps so Access can bypass that path for attendees.
-  // Organizer list/cancel live on /guests — required with F-301: Access bypass matches
-  // path not method (DEPLOY.md §5 / issue #13), so GET cannot stay on /rsvps.
   router.post(
     "/events/:id/rsvps",
     handle(async (req, res) => {

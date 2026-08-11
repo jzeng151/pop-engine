@@ -1,19 +1,4 @@
 // F-202 compliance checklist + document uploads (ARCHITECTURE.md API Surface).
-//
-// The checklist is the execution view of a plan: one trackable row per permit/insurance line
-// of the latest plan, each still linked to the plan item it came from, so rule, deadline,
-// citation and portal travel with the work (spec AC 1).
-//
-// Plans are immutable snapshots (AD-7), so a rescope produces a NEW plan rather than editing the
-// old one. Supersession is therefore a relationship between two plans, not a flag on either, and
-// this file returns it as explicit fields (`planChanged`, `struckThrough`, `planStale`) so a client
-// renders rather than re-derives it. Nothing is ever deleted or rewritten (spec AC 6).
-//
-// The two are answered from different places, deliberately. `struckThrough` is terminal per row,
-// derived from immutable plan history. `planChanged` is about the plan as a whole and is answered
-// from `checklist_acknowledgements` — which plan the organizer last converted — because the
-// checklist's own rows cannot answer it: a regeneration that removes every trackable requirement
-// leaves nothing to compare, and that is the case the prompt most needs to fire in.
 
 import { createHash, randomUUID } from "node:crypto";
 import { Readable } from "node:stream";
@@ -101,24 +86,7 @@ const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
  */
 const UPLOAD_NAMESPACE = "f2b0c1a4-6d3e-4f57-9a8b-0c2d4e6f8a10";
 
-/**
- * The document id a given upload key names, derived rather than minted.
- *
- * This is what makes the upload idempotent, and it is the root of a defect that took three review
- * rounds to reach. `POST .../documents` used to mint a fresh id and a fresh storage key on every
- * request, so any repeat stored a second object and a second row. Everything built on top of that
- * — a retryable flag, then a three-state outcome, then a reconciling re-read — was the client
- * trying not to repeat a request whose result it could not observe. None of it could be made
- * airtight, because a client cannot know whether a request it never saw the answer to landed.
- *
- * Deriving the id removes the question instead of answering it. The same key from the same item
- * names the same row and the same object however many times it arrives, so a repeat is the same
- * document rather than another one, and a racing read is harmless.
- *
- * RFC 4122 version 5 (SHA-1, namespace + name), which is the standard shape for exactly this. No
- * migration: `documents.id` is already the primary key, so the uniqueness this relies on is the
- * constraint that has always been there.
- */
+/** The document id a given upload key names, derived rather than minted. */
 function documentIdFor(checklistItemId: string, uploadKey: string): string {
   const namespace = Buffer.from(UPLOAD_NAMESPACE.replace(/-/g, ""), "hex");
   const hash = createHash("sha1")
@@ -132,13 +100,7 @@ function documentIdFor(checklistItemId: string, uploadKey: string): string {
   return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20, 32)}`;
 }
 
-/**
- * The client's idempotency key for this upload, or null when it sent none.
- *
- * Bounded and reduced to a conservative character set for the same reason the filename is: it is
- * untrusted input. It never reaches storage or SQL directly — it is hashed — so this is about
- * keeping the key stable and small rather than about escaping.
- */
+/** The client's idempotency key for this upload, or null when it sent none. */
 function uploadKeyOf(supplied: string | undefined): string | null {
   if (supplied === undefined) return null;
   const cleaned = supplied.replace(/[^A-Za-z0-9%._~-]/g, "_").slice(0, 200);
@@ -148,20 +110,9 @@ function uploadKeyOf(supplied: string | undefined): string | null {
 export type ChecklistDependencies = {
   database: Pool;
   storage: DocumentStorage;
-  /**
-   * F-203. Materializing a checklist is also where its alerts are computed, so the two run in one
-   * transaction: a checklist whose reminders silently did not get written is the failure mode
-   * F-202's spec ("creation also schedules F-203 alerts") is guarding against. Required rather
-   * than optional for the same reason — an absent scheduler would schedule nothing, quietly.
-   */
+  /** F-203. */
   scheduleAlerts: AlertScheduler;
-  /**
-   * F-203. The checklist reports which alerts the poller has stopped on, and that classification
-   * turns on whether a filing window has shut, a question about the jurisdiction's calendar day,
-   * which is the day `sendOne` reads when it retires the same row. Named here rather than derived,
-   * for the reason the poller states: there is no honest default, and a wrong one classifies holds
-   * on the wrong day.
-   */
+  /** F-203. */
   jurisdiction: string;
 };
 
@@ -169,24 +120,7 @@ type Queryable = {
   query<Row extends QueryResultRow>(text: string, values?: unknown[]): Promise<QueryResult<Row>>;
 };
 
-/**
- * A requirement's identity across plans. A regenerated plan writes new plan-item rows with new
- * uuids, so the stable identity of "the same requirement" is its finding kind plus the set of rule
- * ids behind it.
- *
- * Identity is the WHOLE set, and partial overlap is deliberately not a match. Findings sharing a
- * `dedupe_key` merge into one line carrying every contributing rule id, so changing a dedupe key
- * (live on #89 for the two DOB structure rules) turns two lines into one or one into two. A
- * merged line asserts something neither contributing line did on its own — both citations, both
- * sources, a deadline resolved across both — so carrying a "submitted" over to it would claim
- * the organizer filed for a requirement whose scope had just changed. Under whole-set matching
- * the old items survive struck through with their status and documents, the new line is appended
- * untouched, and `planChanged` is true: a visible review rather than a silent wrong answer.
- *
- * Sorted, because merge order follows the rule file's order and is not part of what a requirement
- * IS. (`plan.ts` joins unsorted, which is correct there: it zips positionally against renderings
- * written by the same evaluation, where order is guaranteed. Across two plans it is not.)
- */
+/** A requirement's identity across plans. */
 const requirementKey = (ruleIds: readonly string[], kind: FindingKind): string =>
   `${kind}:${[...ruleIds].sort().join(",")}`;
 
@@ -217,30 +151,10 @@ const PLAN_ITEM_COLUMNS = `id, plan_id, rule_ids, permit_name, agency, kind, dis
    latest_apply_date, apply_after_date, deadline_status, verification_status, fee_display,
    portal_name, portal_url, sources, source_url, last_verified_date`;
 
-/**
- * Plan items carry uuid primary keys, so the table has no stable order of its own (F-201 hit
- * the same wall reading plans back). The soonest published filing date first is both stable and
- * the order the work actually happens in; the trailing keys break ties for undated lines.
- *
- * The date is the one the ROW RENDERS, which on a merged dedupe line is its filing route's rather
- * than the column's. See `FILING_ORDER_JOIN`.
- */
+/** Plan items carry uuid primary keys, so the table has no stable order of its own (F-201 hit the same wall reading plans back). */
 const PLAN_ITEM_ORDER = `${FILING_ORDER_DATE} NULLS LAST, item.permit_name, item.rule_ids`;
 
-/**
- * The order of checklist rows created together, which is a different question.
- *
- * Every task of one materialization shares a `created_at` (Postgres fixes `current_timestamp` per
- * transaction), so this is not a tiebreak that rarely fires: it decides the whole order of a
- * cohort, and for a first checklist that is the entire list. It therefore may not read anything an
- * evaluation recomputes, and `latest_apply_date` is exactly that. `cohort_position` is the filing
- * order the requirement had when it became a task, written once and never rewritten (migration
- * 007), so the checklist still leads with the soonest deadline without re-reading a date that a
- * later plan moved.
- *
- * `rule_ids` and the checklist id make the order total. The id matters after a terminal identity
- * returns: the old and new tasks deliberately carry the same rule ids and kind.
- */
+/** The order of checklist rows created together, which is a different question. */
 const CHECKLIST_COHORT_ORDER =
   "checklist.created_at, checklist.cohort_position, item.rule_ids, checklist.id";
 
@@ -265,29 +179,7 @@ type DocumentRow = {
 const isoDate = (value: Date | string | null): string | null =>
   value === null ? null : calendarDateFrom(value);
 
-/**
- * The plan context a checklist row renders: deadline, agency, portal, verification badge — and
- * every published qualification that goes with them.
- *
- * A date and a status are not the whole regulatory answer. A `research_required` deadline has no
- * date at all and its meaning lives entirely in the published notes ("confirm the lead time with
- * the agency"); an OFFICIAL_CONFLICT line means nothing without both readings and both sources.
- * Dropping any of that renders an unresolved requirement as a resolved one, which AGENTS.md
- * forbids end to end. The persisted rendering fields ride in the plan's `verdict_detail` because
- * the item table has no columns for them (see `plan.ts`); they are carried through here rather
- * than restated, so there is one copy of each string.
- */
-/**
- * The value a field takes when a filing route is what the row renders: THAT ROUTE'S, INCLUDING ITS
- * NULLS.
- *
- * `??` reads null as "missing" and falls back, and the filing route's null is not missing: it is
- * the route publishing no fee, no portal or no instruction. Falling back put the binding row's fee
- * and portal beside the filing route's deadline under a sentence saying all of those filing details
- * belong to the selected route, which is the one-route-end-to-end rule this whole file is built on,
- * broken in the fields a reader acts on (#252 review). A route either supplies these values or the
- * line has none to show.
- */
+/** The value a field takes when a filing route is what the row renders: THAT ROUTE'S, INCLUDING ITS NULLS. */
 const fromFilingRoute =
   (filing: FindingRoute | null) =>
   <Value>(read: (route: FindingRoute) => Value, columnValue: Value): Value =>
@@ -309,20 +201,7 @@ const planContext = (item: PlanItemRow, rendering: FindingRendering) => {
     applyAfterDate: filed((route) => route.applyAfterDate, isoDate(item.apply_after_date)),
     deadlineStatus: filed((route) => route.deadlineStatus, item.deadline_status),
     slackDays: filed((route) => route.slackDays, rendering.slack_days),
-    /**
-     * Every contributing route of a merged dedupe line, and which one the window, status and fee
-     * above were read off when the line publishes none of its own. `filingRouteRuleId` is null on
-     * an unmerged line and on a merged line that carries its own window: there the values above are
-     * the line's own and nothing is being attributed elsewhere.
-     *
-     * SERVED EXACTLY AS THE PLAN ENDPOINT SERVES IT, which is the stored list or null. Null means
-     * this plan predates the field, never "this line has no routes" — the contract
-     * `FindingRendering.routes` states. Synthesized instead from the row's columns, a two-rule line
-     * stored before the field was served `routes: ["DOB-TENT-001"]`: a one-entry list is a claim
-     * that this requirement has one route, and for a merged row it is a false one. Nothing renders
-     * it today, because both web components require two or more, and one endpoint contradicting
-     * another's stated contract is how the next reader gets it wrong (#252 review).
-     */
+    /** Every contributing route of a merged dedupe line, and which one the window, status and fee above were read off when the line publishes none of its own. */
     routes: rendering.routes ?? null,
     headlineMode: rendering.headline_mode ?? null,
     filingRouteRuleId: filing?.ruleId ?? null,
@@ -351,26 +230,11 @@ const planContext = (item: PlanItemRow, rendering: FindingRendering) => {
   };
 };
 
-/**
- * The window a moved-deadline notice compares against, which is the same window the checklist row
- * renders. Reading the columns alone made a regeneration onto a merged line whose binding route
- * publishes no window report `became_not_applicable` and say "The requirement no longer carries a
- * filing date of its own" — false, because the route that publishes it still does (#252 review).
- */
+/** The window a moved-deadline notice compares against, which is the same window the checklist row renders. */
 const noticeItemFrom = (item: PlanItemRow, rendering: FindingRendering): NoticePlanItem => {
   const filing = filingRouteOf(item, rendering);
   const filed = fromFilingRoute(filing);
   // THE PROVENANCE OF THE DEADLINE ABOVE IT, WHICH IS THE SAME ROUTE OR IT IS NOT PROVENANCE.
-  // The notice states a previous filing date and cites the source it rests on. The date is the
-  // filing route's, and `sources` concatenates over the group in CONTRIBUTING order while
-  // `source_url` is `sources[0].urls[0]` (`plan.ts`), so the Primary source beside a narrowed date
-  // was whichever rule the published file happens to list first. It labelled one route's official
-  // page as the source for another route's deadline change (#252 review). The same narrowing
-  // `blockerView` and `insuranceView` do, and by the same means: `FindingSource.ruleId`.
-  //
-  // A ROUTE WITH NO SOURCE OF ITS OWN CITES NONE. `ruleSources` returns `[]` where a rule publishes
-  // no `source` block, so the filtered set can legitimately be empty; falling back to the group's
-  // there would put back exactly the misattribution this removes.
   const ownSources =
     filing === null
       ? item.sources
@@ -389,36 +253,7 @@ const noticeItemFrom = (item: PlanItemRow, rendering: FindingRendering): NoticeP
   };
 };
 
-/**
- * The rendering that goes with `noticeItemFrom`'s item, read off the same route.
- *
- * ONE ROUTE END TO END, WHICH IS WHAT WAS MISSING. `noticeItemFrom` replaces the deadline, the date
- * and the status with the filing route's, and the merged rendering was passed beside it unchanged —
- * so `movedDeadlineNotice` compared the filing route's typed fields against the BINDING route's
- * `deadline_display`. A regeneration that changes which route binds while the filing route, its date
- * and its published text all stay put then reported a deadline-state change with no filing data
- * changed, and the checklist showed the unchanged date under a notice saying it had moved
- * (#252 review).
- *
- * `conflict_text` IS ADJUSTED TOO, and it is provenance rather than state: `movedDeadlineNotice`
- * puts it on `previousProvenance` beside the sources, where it stands as the two readings that
- * qualify the date that moved. The merged value is not a concatenation — `mergeGroup` falls back
- * through the routes in binding order and takes the first that publishes any — so beside a narrowed
- * date it quoted another rule's two readings as the qualification on this one. `FindingRoute`
- * gained a per-route form this round, so unlike the two fields below there is something to narrow
- * to. Absence means the plan predates the field and the merged value stands, which is the reading
- * `insurance-panel.tsx` gives the same optional field.
- *
- * ONLY `deadline_display` IS ADJUSTED OF THE STATE FIELDS, and the other two `stateSide` reads are
- * deliberately
- * left merged. `FindingRoute` publishes no `timelineUnresolvedReason` and no
- * `deadlineUnknownFields`: the first is single-valued text the merge falls back through binding
- * order for, and the second concatenates over the whole group. Neither has a per-route form to
- * narrow to, and more to the point the checklist row RENDERS the merged values of both
- * (`planContext`), so comparing them is comparing what the organizer actually sees. Narrowing them
- * here would report "nothing moved" on a row whose own text had changed, which is the mirror of the
- * defect being fixed.
- */
+/** The rendering that goes with `noticeItemFrom`'s item, read off the same route. */
 const noticeRenderingFrom = (item: PlanItemRow, rendering: FindingRendering): FindingRendering => {
   const filing = filingRouteOf(item, rendering);
   if (filing === null) return rendering;
@@ -531,17 +366,7 @@ async function planItems(database: Queryable, planId: string): Promise<PlanItemR
   return rows;
 }
 
-/**
- * Every checklist row of the event, in the order rows created together are displayed in.
- *
- * Deliberately says nothing about the plan each row currently points at, nor about anything that
- * plan recomputed. The plan a row points at is not a property of the task, it is a property of the
- * last regeneration that kept it: a rescope re-points the survivors and leaves a dropped
- * requirement on the plan that raised it, so ordering on `plan.generated_at` sorted the struck row
- * ahead of the cohort it was created with, and ordering on `latest_apply_date` reshuffled the
- * cohort whenever a recalculated date crossed a historical one. Both are the derivation from plan
- * data that migration 004 was added to remove, one layer apart (#92, and #111 round 1).
- */
+/** Every checklist row of the event, in the order rows created together are displayed in. */
 async function checklistRows(database: Queryable, eventId: string): Promise<ChecklistRow[]> {
   const { rows } = await database.query<ChecklistRow>(
     `SELECT checklist.id AS checklist_item_id, checklist.plan_item_id, checklist.status,
@@ -652,17 +477,7 @@ const documentView = (row: DocumentRow) => ({
   uploadedAt: row.uploaded_at.toISOString(),
 });
 
-/**
- * The whole checklist for an event: its items with live plan context, the read-only lines of
- * the latest plan, and whether the plan the checklist was built from has been superseded.
- */
-/**
- * The plan the organizer last converted into a checklist, or null if they never have.
- *
- * `materialize` writes this row in the same transaction that creates the checklist, so a checklist
- * cannot exist without one. That is what makes its absence mean "no checklist yet" rather than
- * "checklist of unknown vintage".
- */
+/** The plan the organizer last converted into a checklist, or null if they never have. */
 async function acknowledgedPlanId(database: Queryable, eventId: string): Promise<string | null> {
   const { rows } = await database.query<{ plan_id: string }>(
     "SELECT plan_id FROM checklist_acknowledgements WHERE event_id = $1",
@@ -675,14 +490,7 @@ async function checklistView(
   database: Queryable,
   eventId: string,
   plan: LatestPlan,
-  /**
-   * The jurisdiction whose calendar day the health statement classifies holds against.
-   *
-   * The zone rather than a day, and not a clock either: the reads above this one take real time,
-   * a review holds them inside one transaction, and the statement below is issued after all of
-   * them. A day derived anywhere in this process is an answer about a moment before the statement
-   * runs. `alertDeliveryHealth` derives it where the predicate reads it instead.
-   */
+  /** The jurisdiction whose calendar day the health statement classifies holds against. */
   jurisdiction: string,
 ) {
   const items = await checklistRows(database, eventId);
@@ -738,25 +546,10 @@ async function checklistView(
     ]),
   );
 
-  // Asked of the plan and the acknowledgement, never of the checklist's own rows: is the latest
-  // plan the one the organizer last reviewed? `materialize` records the plan it ran against, so
-  // the answer is no immediately afterwards and yes again the moment a regeneration replaces it —
-  // including the rescope where the requirements are identical and only the filing dates moved.
-  //
-  // Every earlier shape of this asked the checklist to report on a plan it does not hold, and each
-  // one broke on the same case: a regeneration that removes every trackable requirement leaves
-  // nothing on the latest plan to compare against, so the largest possible change produced
-  // silence. Comparing two plan ids has no such blind spot, because it never consults the item
-  // set — the item set being empty tells it nothing and therefore hides nothing.
-  //
-  // Null means no checklist has ever been created, which is not a change to review; the organizer
-  // is offered creation instead (AC 6 flags an existing checklist).
+  // Asked of the plan and the acknowledgement, never of the checklist's own rows: is the latest plan the one the organizer last reviewed?
   const acknowledged = await acknowledgedPlanId(database, eventId);
   const planChanged = acknowledged !== null && acknowledged !== plan.id;
-  // F-203: both alert-delivery notices from ONE snapshot. Read separately they were two pool
-  // queries with real time between them, and the hold predicate turns on how old an attempt is —
-  // so a row crossing the dedup cutoff in the gap arrived under both notices at once, one saying
-  // PopEngine keeps retrying it and the other saying retrying has stopped.
+  // F-203: both alert-delivery notices from ONE snapshot.
   const alertHealth = await alertDeliveryHealth(database, eventId, jurisdiction);
 
   return {
@@ -764,36 +557,17 @@ async function checklistView(
     planId: plan.id,
     rulesetVersion: plan.rulesetVersion,
     snapshotDate: plan.snapshotDate,
-    // Whether a checklist exists at all, which the rows cannot say: a plan whose every requirement
-    // is an advisory materialises to zero items (Scenario B), and so does never having pressed
-    // create. Those render differently — "nothing to track" against "turn this plan into a
-    // checklist" — and only the acknowledgement distinguishes them, because `materialize` writes it
-    // in the same transaction that creates the checklist.
+    // Whether a checklist exists at all, which the rows cannot say: a plan whose every requirement is an advisory materialises to zero items (Scenario B), and so does never having pressed create.
     created: acknowledged !== null,
     planChanged,
-    // The event has been edited since even the latest plan was generated (AD-13), so these
-    // requirements answer an intake the organizer has already moved on from. Creation is refused
-    // in that state; a read says so rather than presenting the plan as current.
+    // The event has been edited since even the latest plan was generated (AD-13), so these requirements answer an intake the organizer has already moved on from.
     planStale: plan.eventRevision < plan.currentRevision,
     statusRollup,
-    // F-203: channels that reported an alert sent without delivering it, with the label that says
-    // so. Empty in every configuration where nothing is simulated. It is read here rather than
-    // from a new endpoint because a simulated send has to be visible where the organizer works,
-    // and this is that surface (AGENTS.md: a simulation is only permissible while it is labeled).
+    // F-203: channels that reported an alert sent without delivering it, with the label that says so.
     simulatedAlertDeliveries: await simulatedDeliveries(database, eventId),
-    // F-203: where this event's alerts go, so the organizer can see and correct it. Read from the
-    // contact store rather than off an alert row — an alert records where one message went, which
-    // is a different fact with a different lifetime, and is why nothing was ever scheduled through
-    // the product before the store existed.
-    // F-203: channels whose alerts tried to send and did not, counted from the rows rather than
-    // inferred. Kept separate from the simulation above on purpose — "switched off by design" and
-    // "tried and failed" are different facts, and collapsing them would misreport both.
+    // F-203: where this event's alerts go, so the organizer can see and correct it.
     failedAlertDeliveries: alertHealth.failedDeliveries,
-    // F-203: alerts the poller has permanently stopped on, kept apart from the failures above for
-    // the same reason those are kept apart from the simulation. "Still being retried" and "stopped
-    // until a person checks with the provider" are different facts, and the organizer needs the
-    // second one most: nothing else on this page distinguishes an alert that is on its way from
-    // one that is never coming.
+    // F-203: alerts the poller has permanently stopped on, kept apart from the failures above for the same reason those are kept apart from the simulation.
     alertsHeldForReconciliation: alertHealth.reconciliationHolds,
     alertContacts: await alertContacts(database, eventId),
     items: view,
@@ -804,17 +578,7 @@ async function checklistView(
   };
 }
 
-/**
- * Bring the checklist into line with the latest plan, returning how many items were created.
- *
- * A requirement already tracked is re-pointed at the current plan's row rather than left on the
- * superseded one: `checklist_items` is mutable user state, not a plan snapshot, so moving the
- * link neither deletes nor rewrites history, and the status, notes and documents ride along. It
- * is also what makes `planChanged` fall back to false once the organizer has re-created the
- * checklist — without it, the AC 6 prompt would latch on at the first regeneration and never
- * clear. A terminal task keeps pointing at the plan item that raised it, preserving its provenance
- * and leaving a returning identity free to create a new task.
- */
+/** Bring the checklist into line with the latest plan, returning how many items were created. */
 async function materialize(client: PoolClient, eventId: string, planId: string): Promise<number> {
   const existing = await checklistRows(client, eventId);
   const struck = await struckChecklistItemIds(client, eventId, planId, existing);
@@ -828,10 +592,7 @@ async function materialize(client: PoolClient, eventId: string, planId: string):
     if (!TRACKABLE_FINDING_KINDS.has(item.kind)) continue;
     const tracked = trackedByKey.get(requirementKey(item.rule_ids, item.kind));
     if (tracked === undefined) {
-      // `created` is this task's position among the tasks this call creates, and the loop walks
-      // the plan in published filing-date order, so the position freezes that order at creation
-      // (migration 007). Recorded rather than re-read, because the date it came from is
-      // recalculated by every later regeneration and the order the organizer learned is not.
+      // `created` is this task's position among the tasks this call creates, and the loop walks the plan in published filing-date order, so the position freezes that order at creation (migration 007).
       await client.query(
         `INSERT INTO checklist_items (id, plan_item_id, cohort_position) VALUES ($1, $2, $3)
            ON CONFLICT (plan_item_id) DO NOTHING`,
@@ -847,13 +608,7 @@ async function materialize(client: PoolClient, eventId: string, planId: string):
     ]);
   }
 
-  // Converting the plan into a checklist is the organizer reviewing it (AC 1, and AC 6's "review
-  // items" — the same idempotent call, which is why this needs no endpoint of its own). One row
-  // per event, so a later review replaces the earlier one rather than accumulating.
-  //
-  // `acknowledged_at` is set explicitly because Postgres does not re-evaluate a column default on
-  // conflict: updating `plan_id` alone would leave the timestamp reporting the first review
-  // forever (migration 002).
+  // Converting the plan into a checklist is the organizer reviewing it (AC 1, and AC 6's "review items" — the same idempotent call, which is why this needs no endpoint of its own).
   await client.query(
     `INSERT INTO checklist_acknowledgements (event_id, plan_id, acknowledged_at)
        VALUES ($1, $2, current_timestamp)
@@ -892,17 +647,7 @@ const handle =
     route(req, res).catch(next);
   };
 
-/**
- * Everything a header value cannot carry, percent-decoded back.
- *
- * A header value is a ByteString, so a browser cannot put "文件.pdf" in one — constructing the
- * request throws before a byte is sent. The client therefore percent-encodes the name and this
- * undoes it. Decoding happens BEFORE the path split below, deliberately: `..%2F..%2Fetc%2Fpasswd`
- * decoded after splitting would still be a path, and the split is what makes a filename a name.
- *
- * A value that is not valid percent-encoding is used as sent rather than rejected. It is a display
- * name; a literal `%` in a filename from some other client is not worth a failed upload.
- */
+/** Everything a header value cannot carry, percent-decoded back. */
 function decodeFilename(supplied: string | undefined): string {
   if (supplied === undefined) return "";
   try {
@@ -912,16 +657,7 @@ function decodeFilename(supplied: string | undefined): string {
   }
 }
 
-/**
- * A display name only. The client's filename is untrusted: it is reduced to its last path segment
- * and a bounded character set, and it never contributes to the storage key.
- *
- * Letters, numbers and combining marks are kept in any script, so an organizer who names a file in
- * Chinese gets that name back rather than a row of underscores. Everything else becomes `_`, which
- * still excludes the classes that make a display name dangerous: control characters, the bidi and
- * other invisible format characters (`\p{Cf}`) that can reverse how a name reads on screen, and
- * every path separator and shell metacharacter.
- */
+/** A display name only. */
 function displayFilename(supplied: string | undefined, extension: string): string {
   const lastSegment = decodeFilename(supplied).split(/[\\/]/).pop() ?? "";
   const cleaned = lastSegment
@@ -943,12 +679,7 @@ function declaredLength(req: Request): number | null {
   return Number.isInteger(length) && length >= 0 ? length : null;
 }
 
-/**
- * Read the leading `size` bytes without consuming them, so the format check runs before a single
- * byte is forwarded to storage. Only the head is buffered; the rest of the body is never held in
- * memory. `ended` says the whole body arrived within those bytes, which matters because a stream
- * cannot be unshifted after it has ended — the caller re-sends the head instead.
- */
+/** Read the leading `size` bytes without consuming them, so the format check runs before a single byte is forwarded to storage. */
 function peek(req: Request, size: number): Promise<{ head: Buffer; ended: boolean }> {
   return new Promise((resolve, reject) => {
     const chunks: Buffer[] = [];
@@ -979,13 +710,7 @@ function peek(req: Request, size: number): Promise<{ head: Buffer; ended: boolea
   });
 }
 
-/**
- * Delete an object whose metadata write is known not to have landed, so the bucket does not keep
- * bytes nothing points at. If the delete itself fails there is nothing further to try — the
- * repository has no cleanup queue, and the outbox that would give one is Phase 2
- * (ARCHITECTURE-FUTURE) — so the key is logged for manual deletion and the original failure is
- * still what the client is told.
- */
+/** Delete an object whose metadata write is known not to have landed, so the bucket does not keep bytes nothing points at. */
 async function removeOrphanedObject(storage: DocumentStorage, key: string): Promise<void> {
   try {
     await storage.remove(key);
@@ -1005,22 +730,7 @@ async function removeOrphanedObject(storage: DocumentStorage, key: string): Prom
 type MetadataOutcome =
   { state: "written"; row: DocumentRow } | { state: "not_written" } | { state: "unknown" };
 
-/**
- * A rejected query is not the same as a rejected statement. If Postgres commits the insert and
- * the connection drops before the result gets back, node-postgres rejects while the row exists.
- *
- * That distinction decides which failure the organizer gets, and the two are not equally bad. An
- * orphaned object costs storage and nobody ever sees it. Orphaned metadata is a document the
- * organizer can see in their checklist and click and get nothing from — a visible lie about what
- * they uploaded. So the object is deleted only when the row is known to be absent, and every
- * uncertain path keeps the bytes.
- *
- * `DatabaseError` means the server answered with an error, so the statement never committed. Any
- * other failure happened somewhere in the round trip and settles nothing by itself, so the id —
- * freshly generated and unique to this request, which no retry or concurrent upload can reuse —
- * is looked up once. A lookup that cannot answer leaves the outcome unknown, and unknown keeps
- * the object.
- */
+/** A rejected query is not the same as a rejected statement. */
 async function metadataOutcome(
   database: Queryable,
   documentId: string,
@@ -1050,17 +760,7 @@ export function createChecklistRouter(dependencies: ChecklistDependencies): Rout
       const eventId = req.params.id ?? "";
       if (rejectMalformedId(eventId, res, "event id")) return;
 
-      // WHICH PLAN THE ORGANIZER WAS LOOKING AT WHEN THEY PRESSED REVIEW. Required, not optional.
-      //
-      // Converting a plan into a checklist writes `checklist_acknowledgements`, and AC 6 reads
-      // that row to mean the organizer has reviewed the changed items. Choosing the plan
-      // server-side made that record unfalsifiable: a second tab regenerating between the render
-      // and the click left the acknowledgement pointing at a plan the organizer had never been
-      // shown, and nothing anywhere could tell the difference afterwards.
-      //
-      // A caller that does not say what it displayed cannot have that checked, so omitting this
-      // is refused rather than defaulted to the latest plan. Defaulting is precisely the old
-      // behaviour, and leaving it reachable would keep the defect one forgetful caller away.
+      // WHICH PLAN THE ORGANIZER WAS LOOKING AT WHEN THEY PRESSED REVIEW.
       const displayedPlanId: unknown = (req.body as { planId?: unknown } | undefined)?.planId;
       if (typeof displayedPlanId !== "string" || !UUID.test(displayedPlanId)) {
         res.status(400).json({
@@ -1071,10 +771,7 @@ export function createChecklistRouter(dependencies: ChecklistDependencies): Rout
         return;
       }
 
-      // Where the alerts go (F-203 Inputs: contact fields are entered at checklist creation, since
-      // there is no account to read them off in the MVP). Read from the same body as the plan id
-      // above, and optional: a checklist without a contact is still a checklist, and the response
-      // reports that nothing was scheduled rather than refusing the conversion.
+      // Where the alerts go (F-203 Inputs: contact fields are entered at checklist creation, since there is no account to read them off in the MVP).
       const parsed = parseContacts(req.body);
       if ("error" in parsed) {
         res.status(400).json({ error: parsed.error });
@@ -1101,11 +798,7 @@ export function createChecklistRouter(dependencies: ChecklistDependencies): Rout
           notFound(res, `no plan generated for event ${eventId}`);
           return;
         }
-        // A plan pins the revision it evaluated (AD-13). If the event has been edited since,
-        // materializing it would present requirements computed from an intake the organizer has
-        // already replaced, silently omitting anything the edit introduced — a checklist that
-        // looks current and is not. Read under the same row lock as the event, so an edit
-        // committing mid-request cannot slip past this.
+        // A plan pins the revision it evaluated (AD-13).
         if (plan.eventRevision < plan.currentRevision) {
           await client.query("ROLLBACK");
           res.status(409).json({
@@ -1113,18 +806,7 @@ export function createChecklistRouter(dependencies: ChecklistDependencies): Rout
           });
           return;
         }
-        // THE STALE TAB. The organizer is looking at a plan that is no longer the latest, because
-        // another tab or another device regenerated after this one rendered. Re-pointing the
-        // review at the newer plan is what the old code did silently, and it produced an
-        // acknowledgement asserting a review that did not happen.
-        //
-        // Refused and re-presented rather than refused flat: nothing is written, and the newer
-        // plan's checklist comes back in the same response so the organizer sees what changed and
-        // can press review again against a plan they have now actually been shown. A bare error
-        // would leave them re-reading a screen that still shows the superseded plan.
-        //
-        // Read under the same row lock as everything above, so a regeneration committing mid
-        // request lands either wholly before this comparison or wholly after it.
+        // THE STALE TAB.
         if (displayedPlanId !== plan.id) {
           const current = await checklistView(client, eventId, plan, jurisdiction);
           await client.query("ROLLBACK");
@@ -1136,9 +818,7 @@ export function createChecklistRouter(dependencies: ChecklistDependencies): Rout
           return;
         }
         const created = await materialize(client, eventId, plan.id);
-        // After materialization, because reminders hang off the checklist rows it just wrote, and
-        // inside the same transaction, so the checklist and its alerts commit together (AC 7: a
-        // regeneration reviewed here is also where pending alerts are recomputed).
+        // Schedule after materialization, in the same transaction as the checklist rows.
         const alerts = await scheduleAlerts(client, eventId, plan.id, parsed.contacts);
         const view = await checklistView(client, eventId, plan, jurisdiction);
         await client.query("COMMIT");
@@ -1239,9 +919,7 @@ export function createChecklistRouter(dependencies: ChecklistDependencies): Rout
         return;
       }
 
-      // The declared length is what bounds the upload and what S3 signs the PUT against. Without
-      // it the only way to know the size is to buffer the whole body, which is the thing this
-      // route exists not to do, so an undeclared length is refused rather than guessed at.
+      // The declared length is what bounds the upload and what S3 signs the PUT against.
       const sizeBytes = declaredLength(req);
       if (sizeBytes === null) {
         res.status(411).json({ error: "content-length is required to upload a document" });
@@ -1271,21 +949,12 @@ export function createChecklistRouter(dependencies: ChecklistDependencies): Rout
         return;
       }
 
-      // The id names the document, and the key names its bytes. With an upload key both are
-      // derived from it, so a repeat overwrites the same object and collides with the same row
-      // instead of creating a second of each; without one they are random, which is the previous
-      // behaviour and what a client that sends no key still gets.
-      //
-      // Neither is derived from the FILENAME: a caller still cannot choose where its bytes land or
-      // reach another item's document, because the item id is inside the hash.
+      // The id names the document, and the key names its bytes.
       const uploadKey = uploadKeyOf(req.get("x-upload-key"));
       const documentId =
         uploadKey === null ? randomUUID() : documentIdFor(checklistItemId, uploadKey);
       const storageKey = `checklist-items/${checklistItemId}/${documentId}.${accepted.extension}`;
-      // Storage first, metadata second: a failed upload leaves no row pointing at bytes that
-      // are not there (spec edge case), and the client can simply retry. The request itself is
-      // what gets streamed — a body that ended inside the peek is re-sent from the head, since
-      // an ended stream cannot be unshifted.
+      // Storage first, metadata second: a failed upload leaves no row pointing at bytes that are not there (spec edge case), and the client can simply retry.
       await storage.put(storageKey, ended ? Readable.from(head) : req, contentType, sizeBytes);
 
       const filename = displayFilename(req.get("x-filename"), accepted.extension);
@@ -1303,14 +972,7 @@ export function createChecklistRouter(dependencies: ChecklistDependencies): Rout
           return;
         }
 
-        // The id was already there: this key has been uploaded before, so this request IS that
-        // document rather than another one. Answered 200 rather than 201 — nothing was created —
-        // which is the same distinction `POST /events/:id/checklist` already draws.
-        //
-        // Scoped by `checklist_item_id` as well as by id. The id derives from the item, so a row
-        // under a different item cannot collide with it short of a SHA-1 collision; the scope
-        // makes that structural rather than probabilistic, and a miss is a conflict rather than
-        // another item's document handed to this caller.
+        // The id was already there: this key has been uploaded before, so this request IS that document rather than another one.
         const { rows: existing } = await database.query<DocumentRow>(
           `SELECT id, checklist_item_id, filename, content_type, size_bytes, uploaded_at
              FROM documents WHERE id = $1 AND checklist_item_id = $2`,
@@ -1325,10 +987,7 @@ export function createChecklistRouter(dependencies: ChecklistDependencies): Rout
       } catch (error) {
         const outcome = await metadataOutcome(database, documentId, error);
         if (outcome.state === "written") {
-          // The row is there and the object is there; only the result was lost. Reporting a
-          // failure would tell the organizer a stored document did not store, and the retry that
-          // invites writes a second object and a second row: new id, new key, every attempt.
-          // The upload succeeded, so it is answered as one, from the row that proves it.
+          // The row is there and the object is there; only the result was lost.
           res.status(201).json(documentView(outcome.row));
           return;
         }
@@ -1336,15 +995,7 @@ export function createChecklistRouter(dependencies: ChecklistDependencies): Rout
           // Nothing references the object and nothing will, so a retry writes exactly one.
           await removeOrphanedObject(storage, storageKey);
         } else {
-          // Nobody can say whether the row landed. Deleting on that would leave a document the
-          // organizer can click and get nothing from, so the bytes stay and the key is logged.
-          //
-          // And the client is TOLD it is unknown rather than left to infer it from a bare 500.
-          // Every other failure here stored nothing — a refusal never reached storage, and the
-          // not_written path above deletes the object — so a client that reads a 500 as "safe to
-          // resend" is right in every case except this one, which is exactly the case where
-          // resending duplicates a committed row. `storedOutcome` is the api's own three-state
-          // answer (`metadataOutcome`) carried onto the wire instead of being flattened by it.
+          // Nobody can say whether the row landed.
           console.error(
             `document ${documentId} may have been written for object ${storageKey}; the object ` +
               `is kept and needs reconciling by hand (metadata outcome: ${outcome.state})`,

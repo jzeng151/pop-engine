@@ -1,36 +1,4 @@
-// Measurement harness for PR #252's route-list review, second of two. NOT part of the build; run
-// by hand, once per calendar configuration:
-//
-//   node_modules/.pnpm/node_modules/.bin/vite-node scripts/checklist-order-sweep.mts -- packages/engine/src /tmp/order-unpublished.json
-//   HOLIDAYS=published node_modules/.pnpm/node_modules/.bin/vite-node scripts/checklist-order-sweep.mts -- packages/engine/src /tmp/order-published.json
-//
-// WHAT IT MEASURES. How many checklists come out in a different order when plan items are ordered
-// on `permit_plan_items.latest_apply_date` alone — which is what `main` does, and what every
-// consumer on this branch did before it read the route list — instead of on the date the row
-// actually renders. A merged dedupe line stores its BINDING route's window in that column, and
-// where the binding route publishes none the column is NULL while the row still shows another
-// route's date. Ordered on the column, such a line sorts to the end under `NULLS LAST`; ordered on
-// what it shows, it sorts where its date puts it. `materialize` then freezes whichever order it got
-// into `cohort_position`, which migration 007 exists to make permanent, so a later regeneration
-// does not correct it.
-//
-// WHY IT IS COMMITTED. The figure it produces went into `docs/BASELINE.md`, `docs/ARCHITECTURE-FUTURE.md`
-// and a code comment, and the harness that produced the first version of it was never committed, so
-// nobody could re-derive it. A number in a governing record that nobody can reproduce is the shape
-// of claim this PR series exists to remove, so the harness ships with the number.
-//
-// THE CONSUMER LOGIC IS IMPORTED OR RESTATED FROM ONE PLACE, NEVER INVENTED. The two sort keys are
-// `apps/api/src/checklist.ts`'s `PLAN_ITEM_ORDER` before and after this branch; the filing-route
-// lookup is `apps/api/src/plan.ts`'s `filingRouteOf`; the trackable-kind filter is
-// `apps/api/src/checklist.ts`'s `TRACKABLE_FINDING_KINDS`. Each is restated here against a finding
-// rather than a stored row and each says which function it mirrors.
-//
-// ON COLLATION. Both orderings break ties on `permit_name` then `rule_ids`, identically, so the
-// only key that differs between them is the date. A JavaScript string comparison is not Postgres's
-// collation, but it cannot change the ANSWER to "did these two orderings differ", because a tie
-// broken one way in both is a tie broken the same way in both. The end-to-end 64-intake check runs
-// against a real database; this exists because the full sweep is not something anyone will re-run
-// through Postgres.
+// Measurement harness for PR #252's route-list review, second of two.
 
 import { readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
@@ -51,10 +19,7 @@ const { evaluate, parseEngineRuleset } = engine;
 
 const RULES = path.resolve(process.cwd(), "rules/nyc-rules.v2.11.json");
 const ruleset = parseEngineRuleset(JSON.parse(readFileSync(RULES, "utf8")));
-// `HOLIDAYS=published` runs against a published (empty) holiday list, which is what the api's own
-// suites inject; unset runs against production's, where none is published and a business-day window
-// is NOT_CALCULABLE. Both are measured, because the reordering is only reachable where the losing
-// route can be dated at all.
+// `HOLIDAYS=published` runs against a published (empty) holiday list, which is what the api's own suites inject; unset runs against production's, where none is published and a business-day window is NOT_CALCULABLE.
 const calendar = {
   id: ruleset.calendarId,
   holidays: process.env.HOLIDAYS === "published" ? [] : null,
@@ -63,10 +28,7 @@ const calendar = {
 const TODAY = "2026-07-22";
 const EVENT_DATE = "2026-09-19";
 
-// The same intake space as `scripts/dedupe-route-sweep.mts`, for the same reason it uses it: the
-// power set of `structure_types` by `tent_area_sqft` by `tent_days_in_place` by
-// `structure_over_10ft_tall`. 32 x 5 x 5 x 4 = 3,200. Every other collected field is answered, so
-// the only unknowns are the four dimensions the sweep varies.
+// The same intake space as `scripts/dedupe-route-sweep.mts`, for the same reason it uses it: the power set of `structure_types` by `tent_area_sqft` by `tent_days_in_place` by `structure_over_10ft_tall`.
 const STRUCTURE_VALUES = [
   "tent_canopy",
   "stage_platform_scaffold",

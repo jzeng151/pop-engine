@@ -1,9 +1,4 @@
 // Intake validation: types, applicability, contradictions, and the inline notices.
-//
-// Every field rule is read from the published registry (`IntakeContract`), so a ruleset
-// edit changes validation without a code change. Blocking problems come back as errors;
-// the spec's inline warnings (block-party eligibility, alcohol in public space) never
-// block submission — they are shown and the event is stored as answered.
 
 import type { IntakeContract, IntakeField, PublishedNotice } from "./registry";
 import { askedFieldNames, type IntakeAnswers, type IntakeValue } from "./visibility";
@@ -65,15 +60,7 @@ function isIsoDate(value: string): boolean {
   return !Number.isNaN(parsed.getTime()) && parsed.toISOString().startsWith(value);
 }
 
-/**
- * Every registry number is a count or a physical quantity (vendors, square feet, days,
- * feet, gallons, kW, kWh), so a negative answer is not a smaller value — it is not an
- * answer. It is rejected rather than stored, because the published thresholds are all
- * "greater than" comparisons and a negative would evaluate below them and silently
- * suppress a requirement. Zero is accepted on every field: it is a real answer (no
- * diesel, no days in place) and it evaluates below every threshold correctly. The one
- * exception is `headcount`, which the spec requires to be at least 1.
- */
+/** Every registry number is a count or a physical quantity (vendors, square feet, days, feet, gallons, kW, kWh), so a negative answer is not a smaller value — it is not an answer. */
 const negativeMessage = (field: string): string => `${field} cannot be negative`;
 
 /** Coerce one submitted value against its declared type, or describe why it does not fit. */
@@ -151,15 +138,7 @@ export function intakeColumnNames(contract: IntakeContract): string[] {
   ];
 }
 
-/**
- * Apply an edit to a stored intake.
- *
- * An answer the edit hides is cleared rather than carried forward: a question that is no
- * longer asked has no answer, and leaving the old one in place would make the event
- * unsavable — validation would reject a field whose control the UI no longer renders. A
- * value the caller supplies explicitly is kept exactly as supplied, so a contradictory
- * edit still fails validation instead of being silently dropped.
- */
+/** Apply an edit to a stored intake. */
 export function mergeIntakeEdit(
   contract: IntakeContract,
   stored: Readonly<Record<string, unknown>>,
@@ -205,24 +184,14 @@ export function isIntakeUnchanged(
   );
 }
 
-/**
- * The spec's inline warnings for a set of answers. Never blocking; safe to recompute.
- *
- * Only answers to questions this event is currently asked count. An answer whose
- * question is no longer asked is not an answer, and a published regulatory notice must
- * never be shown for a scope the event no longer has — the moment a street event is
- * moved to a park, its block-party classification stops applying, whether or not the
- * row has been saved yet.
- */
+/** The spec's inline warnings for a set of answers. */
 export function intakeWarnings(contract: IntakeContract, answers: IntakeAnswers): IntakeIssue[] {
   const warnings: IntakeIssue[] = [];
   const asked = askedFieldNames(contract.fields, answers);
   const applicable = (field: string): IntakeValue =>
     asked.has(field) ? (answers[field] ?? null) : null;
 
-  // Spec #4: a block party that sells or serves alcohol conflicts with block-party
-  // eligibility. Warn inline, store the answers as given; the plan renders the
-  // PROHIBITED_OR_INELIGIBLE finding.
+  // Spec #4: a block party that sells or serves alcohol conflicts with block-party eligibility.
   if (
     applicable("sapo_event_type") === "block_party" &&
     (applicable("selling_anything") === true || applicable("alcohol") === true)
@@ -236,9 +205,7 @@ export function intakeWarnings(contract: IntakeContract, answers: IntakeAnswers)
     );
   }
 
-  // Spec #5: alcohol in public space is outside this ruleset version's coverage. The
-  // public location types are every location type other than the private venue; the
-  // engine tests pin this against ADV-ALCOHOL-PUBLIC-001's own trigger.
+  // Spec #5: alcohol in public space is outside this ruleset version's coverage.
   const locationType = applicable("location_type");
   if (
     applicable("alcohol") === true &&

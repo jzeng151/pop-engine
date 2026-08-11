@@ -2,8 +2,6 @@ import { Router, type Request, type Response } from "express";
 import type { Pool, QueryResult, QueryResultRow } from "pg";
 
 // F-301 public event page (ARCHITECTURE.md API Surface).
-// Promotion fields live on events (migration 005). Compliance internals never appear
-// on the public GET /e/:eventId payload.
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 

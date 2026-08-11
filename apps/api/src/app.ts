@@ -41,21 +41,15 @@ export type AppDependencies = EventsDependencies & {
 export function createApp(dependencies: AppDependencies): Express {
   const app = express();
 
-  // The web app is served from a different origin than the api in both local dev and on
-  // Railway (DEPLOY.md), so browser calls need CORS. Single allowed origin per
-  // ARCHITECTURE.md; CORS is not authorization (AD-5, the gate is Cloudflare Access).
+  // The web app is served from a different origin than the api in both local dev and on Railway (DEPLOY.md), so browser calls need CORS.
   const webOrigin = process.env.WEB_ORIGIN ?? "http://localhost:3000";
   app.use((req, res, next) => {
     res.setHeader("Access-Control-Allow-Origin", webOrigin);
-    // Behind Cloudflare Access the web host calls the api with credentials so the
-    // CF_Authorization cookie rides along; credentialed CORS requires this header and a
-    // single non-wildcard origin (which `webOrigin` already is).
+    // Behind Cloudflare Access the web host calls the api with credentials so the CF_Authorization cookie rides along; credentialed CORS requires this header and a single non-wildcard origin (which `webOrigin` already is).
     res.setHeader("Access-Control-Allow-Credentials", "true");
     if (req.method === "OPTIONS") {
       res.setHeader("Access-Control-Allow-Methods", "GET,POST,PATCH,DELETE,OPTIONS");
-      // X-Filename carries a document upload's display name (F-202). A preflight that lists a
-      // header this allowlist omits fails in the browser before the route is ever reached, and
-      // web and api are separately hosted, so that is the normal path rather than an edge case.
+      // X-Filename carries a document upload's display name (F-202).
       res.setHeader(
         "Access-Control-Allow-Headers",
         "Authorization, Content-Type, X-Filename, X-Upload-Key",
@@ -162,9 +156,7 @@ function registerPlanRoutes(app: Express, planService: PlanService): void {
           res.status(404).json({ error: error.message });
           return;
         }
-        // F-201 AC 12. 409, not 500: the request was well formed and the service is working; the
-        // state of the deployment is what makes it unsafe to write. The two versions and the
-        // direction are named so a fail-closed lane can be diagnosed from the response alone.
+        // F-201 AC 12.
         if (error instanceof PlanRulesetDowngradeError) {
           res.status(409).json({
             error: error.message,

@@ -43,6 +43,7 @@ function readName(value: unknown): string | null | undefined {
 function parksUrl(borough: string, limit: number, name: string | undefined): string {
   const where = [`borough='${borough}'`];
   if (name !== undefined) {
+    // SoQL string literals escape apostrophes by doubling them.
     where.push(`upper(name) LIKE '%${name.toUpperCase().replaceAll("'", "''")}%'`);
   }
   const query = new URLSearchParams({

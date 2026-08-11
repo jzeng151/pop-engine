@@ -18,15 +18,7 @@ import { hasOnlyUndatedDeadlines, NO_DATED_DEADLINES_NOTE } from "./undated-dead
 import { type FindingReference, VerdictDetailPanel } from "./verdict-detail";
 import { type FieldChecks, isNumber, readChecked } from "./validated";
 
-// The plan view. F-206 owns what this page is for: the snapshot banner and the per-line citation
-// and verification-status rendering. The verdict is shown in its approved copy; F-102's branch
-// tables and rescope ladder render under that line from `verdictDetail`.
-//
-// What this page can be showing is written down once, as two states, rather than inferred from a
-// handful of booleans. Three review findings in a row were "a failure path was not considered",
-// and each was a combination the booleans allowed but nobody had enumerated: a failure with a
-// plan already on screen, a missing plan and an unreadable one treated alike, an action promised
-// by the banner that no state offered.
+// The plan view.
 
 /** What came back for the plan itself. */
 type PlanState =
@@ -41,11 +33,7 @@ type PlanState =
 type EventState =
   { status: "loading" } | { status: "found"; revision: number } | { status: "unavailable" };
 
-// The plan and the event are two facts that arrive separately, and every path through this
-// component applies them separately. Both mappings live here, once, rather than at each call site:
-// the two review findings this component has taken about them — a pending event lookup rendering as
-// confirmed, and a pending event lookup hiding an already-generated plan — were the same mistake
-// made twice, and duplicated mappings are what let it be made twice.
+// The plan and the event are two facts that arrive separately, and every path through this component applies them separately.
 
 const planStateFrom = (result: PlanResult): PlanState =>
   result.ok
@@ -54,21 +42,7 @@ const planStateFrom = (result: PlanResult): PlanState =>
       ? { status: "missing", message: result.message }
       : { status: "unavailable", message: result.message };
 
-/**
- * The one field this page reads off an event body, checked before it is believed.
- *
- * `loadEvent` answers `ok` on any body carrying a string `id` and casts the rest to `SavedEvent`,
- * which DECLARES `revision_counter: number` without anything having checked it. A body missing it,
- * or carrying it as a string, therefore arrived here as a successful load and was installed as a
- * `found` revision — and `eventState.revision > plan.eventRevision` against a non-number is
- * `false`, so an edited plan rendered with neither the stale warning nor the unconfirmed one. The
- * same silent-false shape as the `eventRevision` case on the plan body: nothing throws, and the
- * page states currency it never established.
- *
- * `loadEvent` itself is F-101's, shared with the intake form, which reads many more columns off the
- * same open type. Narrowing it there would mean deciding F-101's consumed set too, so the check
- * lives at this page's boundary, over exactly the field this page reads.
- */
+/** The one field this page reads off an event body, checked before it is believed. */
 type ConsumedEvent = Pick<SavedEvent, "revision_counter">;
 
 const EVENT_CHECKS: FieldChecks<ConsumedEvent> = { revision_counter: isNumber };
@@ -87,42 +61,7 @@ const isNearEmpty = (findings: PlanResponse["findings"]): boolean =>
     ({ disposition }) => disposition !== "required" && disposition !== "prohibited_or_ineligible",
   );
 
-/**
- * Why regenerating this plan is refused, or null when it is safe to offer.
- *
- * Regeneration evaluates whatever ruleset the SERVICE has loaded, not the one the plan pinned. So
- * offering it while the service sits behind the plan's version replaces a plan built from newer
- * rules with one built from superseded ones — a destructive downgrade of the plan's regulatory
- * basis, presented as the same routine button that fixes a stale plan. Nothing warns the organizer
- * afterwards, because the new plan is internally consistent; only its basis got worse.
- *
- * Reachable, not hypothetical: plans are immutable snapshots pinned at generation (AD-7), and
- * RULES_FILE skew between deployments (#89) is the condition that puts a service behind a stored
- * plan. An unorderable pair — an unparseable version, or a second jurisdiction — is refused for the
- * same reason: nothing establishes that regenerating would not move the plan backwards.
- *
- * A live version that cannot be read is refused too. It is the same claim either way — that the
- * service is at or ahead of the pinned version — and an unreadable `/api/rules/meta` does not
- * establish it. The cost is that a stale plan cannot be regenerated until that endpoint answers;
- * the plan on screen is stale but its regulatory basis is sound, and the page already says it is
- * stale. Stale-but-sound is the better of the two to leave an organizer holding.
- *
- * What this cannot do is hold across the write it authorises. It decides on reads that have
- * already returned, and another deployment can store a plan pinned to a newer ruleset in the
- * interval before the POST, which no client read observes. That interval is closed at the endpoint
- * now: `POST /api/events/:id/plan` refuses a downgrade inside the transaction that inserts, under a
- * row lock (F-201 AC 12, `docs/OPEN-QUESTIONS.md` T-5). This comparison is what the page says
- * BEFORE offering, so an organizer is told why the button is absent rather than shown a 409 after
- * pressing it; correctness no longer rests on it. The event overview's stale-plan notice (F-101
- * AC 8) makes no such comparison and attempts the write instead. Either shape is safe now, and
- * this one keeps a refusal the page can already state out of a round trip. It is not exported: the
- * overview was the only other caller.
- *
- * `preservedPlan` is how the caller's own screen refers to the plan the refusal preserves, because
- * the two surfaces sit in different places relative to it: the plan view renders it directly under
- * this text, while the overview only links to it. A fixed phrase would tell the overview's reader
- * they are already looking at a regulatory artifact they would still have to navigate to.
- */
+/** Why regenerating this plan is refused, or null when it is safe to offer. */
 function regenerationRefusal(
   pinnedVersion: string,
   liveVersion: string | null,
@@ -174,16 +113,12 @@ export function PlanView({
     active.current = showing;
     let abandoned = false;
 
-    // Everything on screen belongs to one event. Navigating to another one clears it first, so a
-    // previous event's regulatory plan can never be read under a different event's id — not while
-    // the new request runs, and not if the new request fails.
+    // Everything on screen belongs to one event.
     setPlanState({ status: "loading" });
     setEventState({ status: "loading" });
     setMeta(null);
     setRegenerationFailure(null);
-    // A generation belonging to the event we just left is no longer this page's business: its
-    // result is dropped by the guard in `generate`, and its in-flight label must not sit on the
-    // new event's button.
+    // A generation belonging to the event we just left is no longer this page's business: its result is dropped by the guard in `generate`, and its in-flight label must not sit on the new event's button.
     setRegenerating(false);
 
     void loadPlan(apiBaseUrl, eventId).then((result) => {
@@ -191,9 +126,7 @@ export function PlanView({
       setPlanState(planStateFrom(result));
     });
 
-    // A plan pins the revision it evaluated (AD-13), and the plan endpoint serves the latest plan
-    // whether or not the event has moved on since. The event's own revision is what says so, and
-    // it is the same comparison the checklist API refuses on: current > pinned means stale.
+    // A plan pins the revision it evaluated (AD-13), and the plan endpoint serves the latest plan whether or not the event has moved on since.
     void loadEvent(apiBaseUrl, eventId).then((result) => {
       if (abandoned) return;
       setEventState(eventStateFrom(result));
@@ -224,24 +157,17 @@ export function PlanView({
     if (active.current !== requested) return;
     if (!generated.ok) {
       setRegenerationFailure(generated.message);
-      // A POST that answered 2xx wrote a plan even when nothing readable came back, so this event no
-      // longer has "no plan" — leaving it `missing` would keep offering to generate and write a
-      // second immutable row for the one that exists.
+      // A successful POST wrote an immutable plan even if its response was unreadable.
       if (generated.stored) setPlanState({ status: "unavailable", message: generated.message });
       setRegenerating(false);
       return;
     }
 
-    // The generation's own response IS the plan it stored, so it goes on screen here. Asking for
-    // the same plan again made the one the organizer had just created conditional on a second
-    // request that could be slow or fail; nothing about the plan is learned by re-reading it.
+    // The generation's own response IS the plan it stored, so it goes on screen here.
     setPlanState({ status: "ready", plan: generated.plan });
     setRegenerating(false);
 
-    // The revision this plan will be compared against is a separate question, and one this page no
-    // longer knows the answer to: the event may have been edited again while the generation ran, so
-    // the revision read before it is not evidence about the plan that just replaced it. Unconfirmed
-    // until the re-read answers, and the plan above does not wait for it.
+    // The revision this plan will be compared against is a separate question, and one this page no longer knows the answer to: the event may have been edited again while the generation ran, so the revision read before it is.
     setEventState({ status: "loading" });
     void loadEvent(apiBaseUrl, eventId).then((result) => {
       if (active.current !== requested) return;
@@ -267,9 +193,7 @@ export function PlanView({
 
   const isStale =
     plan !== null && eventState.status === "found" && eventState.revision > plan.eventRevision;
-  // The banner tells the organizer a newer ruleset exists, so the page has to offer the action it
-  // names. Regeneration also needs an event to generate from: an event that cannot be read is not
-  // one this page may create an immutable plan row for.
+  // The banner tells the organizer a newer ruleset exists, so the page has to offer the action it names.
   const wouldOffer =
     eventState.status === "found" &&
     (planState.status === "missing" || isStale || standing === "newer");

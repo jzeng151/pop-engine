@@ -2,8 +2,6 @@ import { Router, type Request, type Response } from "express";
 import type { Pool, QueryResult, QueryResultRow } from "pg";
 
 // F-402 live ops dashboard stats (ARCHITECTURE.md API Surface).
-// Polled ~5s from the organizer dashboard. Counts are check-ins (arrivals) only —
-// there is no exit tracking in MVP (F-410), so presence claims are unsupported.
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -41,13 +39,7 @@ type StatsRow = {
   rsvps_total: string;
 };
 
-/**
- * Check-in and RSVP totals for one event, plus optional confirmed capacity.
- * `rsvps_total` is confirmed RSVPs only (same definition as the guest list).
- * `checkins_registered` / `checkins_walk_in` split on `checkins.rsvp_id` (F-302 AC 4).
- * All counters come from one statement so concurrent inserts cannot yield
- * `checkins_last_10min > checkins_total`.
- */
+/** Check-in and RSVP totals for one event, plus optional confirmed capacity. */
 export async function readEventStats(database: Queryable, eventId: string): Promise<StatsResult> {
   if (!UUID.test(eventId)) {
     return { status: 400, body: { error: "That event link is not valid." } };

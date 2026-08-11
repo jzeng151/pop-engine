@@ -17,15 +17,7 @@ import {
 } from "./checklist-api";
 import { ChecklistItemCard, ContextLine } from "./checklist-item";
 
-// The checklist view (F-202): the execution surface for a permit plan. One click converts the
-// latest plan into trackable rows (AC 1), each row keeps its link to the plan item and therefore
-// to its rule, deadline, citation and portal, and nothing is ever removed from it (AC 6).
-//
-// What this page can be showing is written down as states rather than inferred from booleans,
-// which is the shape the plan view arrived at after three "a failure path was not considered"
-// findings. The distinctions that matter here: an event with no plan cannot have a checklist and
-// is sent to the plan view, an unreadable checklist is not an absent one, and a plan with zero
-// trackable requirements is a real answer rather than a failure.
+// The checklist view (F-202): the execution surface for a permit plan.
 
 type ChecklistState =
   | { status: "loading" }
@@ -42,14 +34,7 @@ const stateFrom = (result: ChecklistResult): ChecklistState =>
       ? { status: "no_plan", message: result.message }
       : { status: "unavailable", message: result.message };
 
-/**
- * AC 2's rollup, as the api counted it. The statuses that have rows, in the engine's own order.
- *
- * The counting rule lives in `apps/api/src/checklist.ts` and only there. Counting it again here
- * would put two implementations of one criterion in two languages, which is the drift this repo
- * spent a day removing from the answer key. What keeps it from going stale is that every mutation
- * re-reads the checklist, so the counts and the rows on screen always come from one response.
- */
+/** AC 2's rollup, as the api counted it. */
 const rollupOf = (rollup: StatusRollup): readonly [ChecklistStatus, number][] =>
   CHECKLIST_STATUSES.map((status) => [status, rollup[status]] as [ChecklistStatus, number]).filter(
     ([, count]) => count > 0,
@@ -67,22 +52,7 @@ const CHANNEL_NAMES: Readonly<Record<string, string>> = {
   email: "email",
 };
 
-/**
- * F-203 AC 5, and the reason it is a sentence here rather than the string the api stores.
- *
- * Twilio A2P 10DLC approval is not in hand, so SMS is the labelled in-product simulation
- * DESIGN.md permits. AGENTS.md permits a simulation only while the UI labels it — and the label
- * has to land on the ORGANIZER, who is the person relying on the alert. The row's stored label is
- * written for whoever is reading the database: it cites the provider baseline and an open-question
- * id, neither of which tells someone waiting for a text that no text is coming. So the audit
- * string stays on the row and this says the thing the organizer needs, in the order they need it:
- * nothing arrived, how much did not arrive, and what still works.
- *
- * It states what happened rather than what is planned. "Not switched on yet" is PopEngine's own
- * status and is named as such; nothing here implies an agency deadline moved or that a filing was
- * missed, which is the distinction this repo keeps everywhere else between our policy and their
- * requirements.
- */
+/** F-203 AC 5, and the reason it is a sentence here rather than the string the api stores. */
 export function simulatedDeliveryNotice(delivery: { channel: string; sentCount: number }): string {
   const name = CHANNEL_NAMES[delivery.channel] ?? delivery.channel;
   const alerts = delivery.sentCount === 1 ? "alert" : "alerts";
@@ -90,41 +60,11 @@ export function simulatedDeliveryNotice(delivery: { channel: string; sentCount: 
   const detail =
     `PopEngine recorded ${delivery.sentCount} ${name} ${alerts} for this event, but ${name} ` +
     `sending is not switched on yet, so nothing was delivered.`;
-  // NO "but email is fine" REASSURANCE. The first version added one, and it was a promise this
-  // page has no way to keep: email is live only when Resend is configured, `index.ts` deliberately
-  // supports the unconfigured state by leaving those alerts pending, and nothing in this response
-  // reports either. Pointing an organizer at a second channel that may be just as silent is the
-  // same overclaim as presenting the simulated one as delivered — the failure this notice exists
-  // to correct. It says what did not happen and stops there.
+  // NO "but email is fine" REASSURANCE.
   return `${lead} ${detail}`;
 }
 
-/**
- * A channel whose alerts were attempted and failed, which is a different fact from the one above.
- *
- * The simulation notice says "this channel is switched off by design". This one says "this channel
- * tried and did not get through". Collapsing them would tell an organizer the wrong thing about
- * both, so they are separate fields, separate sentences and separate blocks on the page.
- *
- * Every word here is backed by a counted row. It does not say why — provider error text is
- * operator detail that can name an address — and it does not say anything about the channels that
- * are NOT listed, because an absent failure count can equally mean nothing was attempted. What it
- * does say is the one thing that is both true and actionable: the address can be corrected below,
- * and correcting it redirects the alerts that have not gone out yet.
- *
- * EXCEPT WHILE THE PLAN IS STALE, when "PopEngine keeps retrying them" stops being true. The api
- * holds alerts whose plan the event has been edited past — it will not send a filing date the
- * current event does not have — so retrying is suspended until the plan is regenerated and the
- * checklist reviewed, for however long the organizer takes to do it. The count is still real and
- * still worth showing; the sentence about what happens next is not.
- *
- * QUALIFIED RATHER THAN HIDDEN, and that is the whole choice. Dropping these rows from the count
- * would leave an organizer with failed alerts and no sign of them, which is the silence this
- * notice exists to break. Telling them delivery is paused AND why names the one action that
- * resumes it, which the contact correction alone would not do: correcting the address is useless
- * here until the plan is current again. The version that leaves them able to act is the version
- * that says both.
- */
+/** A channel whose alerts were attempted and failed, which is a different fact from the one above. */
 export function failedDeliveryNotice(failure: {
   channel: string;
   failedCount: number;
@@ -134,17 +74,9 @@ export function failedDeliveryNotice(failure: {
   const name = CHANNEL_NAMES[failure.channel] ?? failure.channel;
   const alerts = failure.failedCount === 1 ? "alert" : "alerts";
   const have = failure.failedCount === 1 ? "has" : "have";
-  // UNCONFIRMED, NOT UNDELIVERED. A provider timeout or a lost response is recorded as failed while
-  // the message MAY have arrived — that ambiguity is the whole reason this module hands the
-  // provider an idempotency key and retries. Saying the alerts "failed to send" and "have not gone
-  // out" turned an unknown outcome into a definite non-delivery, which is the same overclaim in the
-  // opposite direction from the one the simulation notice refuses. The page cannot tell a rejection
-  // from a lost answer, because the reason lives in `payload.last_error` and is deliberately not
-  // sent to a client, so unconfirmed is the strongest thing that is true here.
+  // UNCONFIRMED, NOT UNDELIVERED.
   const lead = `${failure.failedCount} ${name} ${alerts} for this event ${have} not been confirmed as delivered.`;
-  // Read from the plans the FAILED ROWS hang off, not from the latest plan, which is what
-  // `planStale` describes. Between a regeneration and a review the latest plan is current while
-  // these rows still point at the old revision and stay unclaimable.
+  // Read from the plans the FAILED ROWS hang off, not from the latest plan, which is what `planStale` describes.
   if (failure.heldForReview !== true) {
     return (
       `${lead} PopEngine keeps retrying them. If the ${name} address below is wrong, correcting ` +
@@ -154,18 +86,7 @@ export function failedDeliveryNotice(failure: {
   const paused =
     `${lead} Retrying is paused because this event changed after their plan was made: ` +
     `regenerate the plan and review the checklist to start it again.`;
-  // AND THE ACTION DOES NOT ALWAYS WORK, which the sentence above promised it did. An alert
-  // carrying an attempt nobody saw the end of is upserted in place by the regeneration rather than
-  // cancelled, and a review supersedes an attempt only on a row revived from `cancelled` — so the
-  // review refreshes the schedule and the row stops for reconciliation instead of retrying. (A
-  // retry past the hold bound supersedes an attempt too, but that is the poller sending, not
-  // anything this notice can offer an organizer.) Sending an
-  // organizer to do the one thing they believe is left, when it will not start their reminder
-  // again, is worse than the silence this notice exists to break.
-  //
-  // Both sentences, because both are true of the channel: the rows without an open attempt DO
-  // resume. The count is per channel and cannot be split without saying which alert is which,
-  // which is not something this page is given.
+  // AND THE ACTION DOES NOT ALWAYS WORK, which the sentence above promised it did.
   return failure.attemptedWithoutOutcome === true
     ? `${paused} That will not restart any that were already attempted with no outcome recorded: ` +
         `those stay paused until someone checks with the sending service, or until PopEngine's ` +
@@ -173,63 +94,7 @@ export function failedDeliveryNotice(failure: {
     : paused;
 }
 
-/**
- * An alert PopEngine has stopped on, said as stopping rather than as failing.
- *
- * THE THIRD FACT, and the one that was being reported as one of the other two. An alert recorded as
- * an attempted send whose outcome nobody saw stops being retryable once the provider would no
- * longer recognise the key, because a retry past that point is a second copy to the same person rather
- * than a deduplicated one. A crash left that row `pending`, which the failure notice correctly says
- * nothing about, and a lost answer left it `failed`, where the notice above told the organizer
- * PopEngine keeps retrying it. Both readings said delivery was in hand after it had ended.
- *
- * WHAT IT MAY AND MAY NOT SAY. It may not say the message did not arrive: nobody knows, and that
- * uncertainty is the reason for the hold. It may not promise a retry, a schedule, or anyone in
- * particular acting, because none of those is happening. What is true and useful is the shape of
- * the state: a send was attempted, no outcome was ever recorded, PopEngine has stopped, and only a
- * person checking with the sending service changes that. The last clause is the one an organizer
- * can act on today, and it stops at their own reminders: it says not to rely on this alert, and
- * says nothing about the filing itself, which is the ruleset's to describe and not this sentence's.
- *
- * NOR MAY IT SAY THE HANDOFF HAPPENED, which is what "were handed to the sending service" said and
- * what the whole notice was built on. The attempt is recorded BEFORE the provider is called, on
- * its own connection, exactly so a process that dies mid-send leaves evidence — and a process that
- * dies in the gap between that record and the call leaves the SAME evidence with nothing handed
- * over at all. After downtime longer than the dedup window that row is a hold like any other, so
- * the weakest case this string has to be true of is a send that never left the process. Every
- * clause is written against that case: the record is an attempted send, the outcome is missing
- * rather than negative, and what a person checks is whether anything went out rather than whether
- * it arrived. Copy an organizer reads about a filing deadline does not get to assume the stronger
- * reading because it is the commoner one.
- *
- * NOR MAY IT SAY THIS ALERT CAN NEVER GO OUT AGAIN, which is what "will not be sent again on its
- * own" said. A regeneration cancels a held alert and the next review revives it as a FRESH
- * schedule: `alerts.ts` supersedes the unresolved attempt on purpose, because an attempt speaks
- * for the schedule it was made for, and the revived row is then sent like any other. So an
- * organizer who regenerates can receive precisely the second copy that sentence ruled out. The
- * page cannot see whether a regeneration is coming and must not guess, so it qualifies the claim
- * to the schedule it CAN see: nothing on this one will send them again.
- *
- * NOR EVEN ON THAT SCHEDULE UNCONDITIONALLY, because the exit from the hold is the action this
- * notice itself asks for. Checking with the sending service has two answers, and one of them is
- * that no message is there: the operator clears or resolves the unresolved attempt (`alerts.ts`
- * and migration 014 both document that as the way out), the alert stays pending or failed on the
- * same `send_at`, and the next poll sends it. No cancellation and no revival are involved. So the
- * promise holds only while the attempt stays as it is, and the sentence says so rather than
- * ruling out a send the reconciliation is there to release.
- *
- * AND THE HOLD ENDS BY ITSELF, which is the product owner's 2026-08-04 resolution of SPEC-CONFLICT
- * #240 (`docs/BASELINE.md`) and the last thing this notice was still saying was permanent. Past
- * `UNRESOLVED_ATTEMPT_HOLD_LIMIT_HOURS` the poller retries the alert on the schedule it is already
- * on, with nobody having checked anything. So the copy is a pause rather than a stop, and it says
- * the second copy is possible when the pause ends: an organizer who is told delivery has stopped
- * and then receives the reminder twice was told something false by the page that was supposed to
- * be the honest one. The number stays out of the sentence and out of this file — one constant owns
- * it, in `apps/api/src/alerts.ts`, and a copy of it here would be a second one to keep in step.
- *
- * "the sending service" rather than the provider's name, which is an operational detail an
- * organizer has no account with and cannot ring up.
- */
+/** An alert PopEngine has stopped on, said as stopping rather than as failing. */
 export function reconciliationHoldNotice(hold: { channel: string; heldCount: number }): string {
   const name = CHANNEL_NAMES[hold.channel] ?? hold.channel;
   const one = hold.heldCount === 1;
@@ -256,26 +121,10 @@ export function ChecklistView({ apiBaseUrl, eventId }: { apiBaseUrl: string; eve
   const [state, setState] = useState<ChecklistState>({ status: "loading" });
   const [creating, setCreating] = useState(false);
   const [creationFailure, setCreationFailure] = useState<string | null>(null);
-  /**
-   * What the api's own rules file says about itself, or null when it could not be read.
-   *
-   * Used for ONE thing, which F-206 AC 4 is explicit about: how the live ruleset stands relative
-   * to the one this checklist's plan pinned. The version and date the banner DISPLAYS still come
-   * off the plan and only off the plan — pairing a pinned version with the live file's date would
-   * render a combination that never existed, and AC 4 forbids it in as many words. `/api/rules/meta`
-   * is "for surfaces with no plan in context"; a checklist has one, so it is read for the
-   * comparison and never for the pair.
-   */
+  /** What the api's own rules file says about itself, or null when it could not be read. */
   const [meta, setMeta] = useState<RulesMetaResponse | null>(null);
 
-  /**
-   * Where this event's deadline alerts go, as the organizer is editing it.
-   *
-   * Held here rather than read straight off the checklist because it is being typed into. Seeded
-   * once per event from what is stored, and deliberately NOT re-seeded by the reloads that follow
-   * every status change and note save: those land while the organizer may be mid-address, and
-   * re-seeding would delete what they were typing.
-   */
+  /** Where this event's deadline alerts go, as the organizer is editing it. */
   const [contacts, setContacts] = useState<{ email: string; phone: string }>({
     email: "",
     phone: "",
@@ -289,38 +138,11 @@ export function ChecklistView({ apiBaseUrl, eventId }: { apiBaseUrl: string; eve
   const showing = `${apiBaseUrl}|${eventId}`;
   const active = useRef(showing);
 
-  /**
-   * Which re-read a reload belongs to, and which one is on screen. Two writes can be in flight at
-   * once — a status change on one row while another row's note saves — and their reloads can come
-   * back in either order. Without this, the older answer wins whenever it happens to land second.
-   */
+  /** Which re-read a reload belongs to, and which one is on screen. */
   const writeEpoch = useRef(0);
   const appliedEpoch = useRef(0);
 
-  /**
-   * Re-reads scheduled after a conversion, so a delivery failure can reach the screen it is for.
-   *
-   * The warning below renders `failedAlertDeliveries` out of the POST's own response, and that
-   * response is assembled before the alerts it just scheduled have been attempted — the poller
-   * cannot record a failure until after the state on screen was rendered. With no reload path, a
-   * failed reminder stayed silent forever unless the organizer happened to refresh, which closed
-   * the entry point to everything the contact-correction work built: the address is correctable,
-   * the corrected one no longer inherits the old one's failures, it gets a fresh provider identity,
-   * the audit row is no longer rewritten, and none of it is reachable by someone who is never told
-   * there is anything to correct.
-   *
-   * BOUNDED RE-READS RATHER THAN A LIVE UPDATE PATH, and the window is taken from the criterion
-   * instead of chosen. AC 2 promises delivery within two minutes of `send_at`, and the slack
-   * warning and any already-due reminder are written with `send_at` of now, so two minutes after
-   * the conversion is exactly when "it was attempted and failed" has become knowable. Reading at
-   * the poller's interval and again at the bound covers it in two requests that stop by
-   * themselves. A subscription or a general poll would promise freshness this page does not
-   * otherwise offer and would keep running for a fact that becomes true once.
-   *
-   * What this does NOT cover, said rather than implied: a reminder that fails days later, on its
-   * own filing date, with nobody on the page. That needs a channel this product does not have, and
-   * the checklist shows it on the next visit.
-   */
+  /** Re-reads scheduled after a conversion, so a delivery failure can reach the screen it is for. */
   const deliveryReads = useRef<ReturnType<typeof setTimeout>[]>([]);
   const ALERT_POLL_INTERVAL_MS = 60_000;
   const ALERT_DELIVERY_BOUND_MS = 120_000;
@@ -370,16 +192,7 @@ export function ChecklistView({ apiBaseUrl, eventId }: { apiBaseUrl: string; eve
     };
   }, [apiBaseUrl, eventId, showing]);
 
-  /**
-   * Convert the latest plan into a checklist, and re-run the same call to review it after a
-   * regeneration. The endpoint is idempotent: a second call creates nothing and answers with the
-   * checklist that already exists, so a double click cannot produce two.
-   *
-   * `displayedPlanId` comes from the checklist this button is rendered beside, NOT from a fresh
-   * read taken at click time. That is the whole point: it is the id of the plan the organizer has
-   * actually been looking at, so the api can refuse to file a review against anything else. Taking
-   * it from a fresh read would reintroduce the bug this argument exists to close.
-   */
+  /** Convert the latest plan into a checklist, and re-run the same call to review it after a regeneration. */
   const convert = async (displayedPlanId: string) => {
     const requested = showing;
     setCreating(true);
@@ -388,11 +201,7 @@ export function ChecklistView({ apiBaseUrl, eventId }: { apiBaseUrl: string; eve
     const result = await createChecklist(apiBaseUrl, eventId, displayedPlanId, contacts);
     if (active.current !== requested) return;
     if (!result.ok) {
-      // Superseded is not a failure to report and stop at: the plan moved while this page was
-      // being read, NOTHING was recorded, and the organizer needs the newer plan in front of them
-      // to review it. Re-read so the screen shows what they are being asked to review, and say
-      // plainly that nothing was filed — a message alone would leave them looking at the plan the
-      // api just refused.
+      // Superseded is not a failure to report and stop at: the plan moved while this page was being read, NOTHING was recorded, and the organizer needs the newer plan in front of them to review it.
       if (result.superseded === true) {
         const reloadFailure = await reload(requested);
         setCreationFailure(
@@ -407,12 +216,7 @@ export function ChecklistView({ apiBaseUrl, eventId }: { apiBaseUrl: string; eve
       setCreating(false);
       return;
     }
-    // The conversion's own response is NOT installed, even though it is the checklist the api just
-    // wrote. Reviewing is offered while the item controls are live, so a status change can commit
-    // and render while this POST is in flight, and this response — assembled before that update —
-    // would put the old status and the old counts back on screen. It goes through the same
-    // epoch-ordered re-read every other write uses, so there is one ordering rule rather than one
-    // rule and an exception.
+    // The conversion's own response is NOT installed, even though it is the checklist the api just wrote.
     setCreationFailure(await reload(requested));
     setCreating(false);
 
@@ -432,19 +236,7 @@ export function ChecklistView({ apiBaseUrl, eventId }: { apiBaseUrl: string; eve
     }
   };
 
-  /**
-   * Re-read the whole checklist after a write, and report what stopped that from working.
-   *
-   * The write already succeeded when this runs, so nothing here can be reported as the write
-   * failing. What it can report is that the page is no longer showing the current state, which an
-   * organizer has to know before they read a status or a count off it.
-   *
-   * Applying the write's own response locally instead would be one request cheaper and wrong in a
-   * specific way: the rollup is counted by the api over the rows it holds, so patching one row on
-   * screen leaves the counts describing the checklist as it was before the click. Re-reading is
-   * what keeps the counting rule in one place (AC 2), and it is what the guest list does after a
-   * cancel for the same reason.
-   */
+  /** Re-read the whole checklist after a write, and report what stopped that from working. */
   const reload = async (requested: string): Promise<string | null> => {
     const epoch = ++writeEpoch.current;
     const result = await loadChecklist(apiBaseUrl, eventId);
@@ -485,12 +277,7 @@ export function ChecklistView({ apiBaseUrl, eventId }: { apiBaseUrl: string; eve
     if (result.outcome === "not_stored")
       return { message: result.message, outcome: result.outcome };
 
-    // Anything else may be on the item already, so the checklist is re-read and the list shown
-    // rather than guessed at. The re-read is deliberately NOT the safety mechanism: it can finish
-    // before a still-running upload commits, so the list it shows may be a moment early. What
-    // makes that harmless is on the write — the api derives the document id from the upload key,
-    // so a second attempt with the same file is the same document. The list is information; the
-    // key is the guarantee.
+    // Anything else may be on the item already, so the checklist is re-read and the list shown rather than guessed at.
     const failure = await reload(requested);
     return {
       message:
@@ -501,18 +288,7 @@ export function ChecklistView({ apiBaseUrl, eventId }: { apiBaseUrl: string; eve
     };
   };
 
-  /**
-   * Follow a document's short-lived signed URL.
-   *
-   * The tab is opened synchronously, on the click itself, and navigated once the URL comes back.
-   * Opening it after the await is what the first version did, and it silently did nothing twice
-   * over: `window.open` with `noopener` returns null by specification, so the handle was always
-   * null and the null was ignored, and a browser that has since expired the click's transient
-   * activation refuses the popup anyway. Both paths reported success while nothing happened.
-   *
-   * `opener` is cleared by hand because that is what `noopener` would have done, and it is the
-   * part worth keeping: the storage origin must not get a reference back into this page.
-   */
+  /** Follow a document's short-lived signed URL. */
   const download = async (documentId: string): Promise<string | null> => {
     const target = window.open("", "_blank");
     if (target !== null) target.opener = null;
@@ -565,9 +341,7 @@ export function ChecklistView({ apiBaseUrl, eventId }: { apiBaseUrl: string; eve
     snapshotDate: checklist.snapshotDate,
   };
   const rollup = rollupOf(checklist.statusRollup);
-  // Only "newer" is actionable. A service running an older or unorderable ruleset is the plan
-  // view's refusal case, and telling an organizer to regenerate onto it would downgrade the
-  // regulatory basis of a plan that is currently sound.
+  // Only "newer" is actionable.
   const supersededRuleset =
     meta !== null && compareToPinned(meta.ruleset_version, checklist.rulesetVersion) === "newer";
   const retained = checklist.items.filter((item) => item.struckThrough).length;

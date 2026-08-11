@@ -1,12 +1,3 @@
-/**
- * SPEC-CONFLICT #149 regression guard (governance §5.7).
- *
- * F-204 was amended to accept only portals the published ruleset carries. This suite fails if a
- * future ruleset (or a mistaken invent) silently restores the contradiction: DOHMH/SLA portals
- * appearing without a deliberate publish, required_documents appearing as if F-204 must render
- * them, or an SLA citation URL being mistakable for an application portal field.
- */
-
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import { parseEngineRuleset } from "./index";

@@ -10,10 +10,6 @@ import {
   fixtureSubmission,
 } from "./scenario-intake-fixtures";
 
-// The published ruleset is the only source of the intake contract, so these tests read
-// the real file rather than a hand-built stub wherever the assertion is about the
-// contract itself. Structural error branches use minimal synthetic rulesets.
-
 const publishedRuleset: Record<string, unknown> = JSON.parse(
   readFileSync(PUBLISHED_RULES_FILE, "utf8"),
 );
@@ -30,11 +26,8 @@ const scenarioFixture = (id: string) => {
   return fixture;
 };
 
-/** A scenario's complete submission: the answer key's values plus anything inferred. */
 const scenario = (id: string): Record<string, unknown> => fixtureSubmission(scenarioFixture(id));
 
-// Test names say where each scenario's values came from, so a green run never reads as
-// "entered exactly as written" while an inferred value is standing in for a missing one.
 const SCENARIO_CASES = SCENARIO_INTAKE_FIXTURES.map((fixture) => ({
   ...fixture,
   submission: fixtureSubmission(fixture),
@@ -65,7 +58,6 @@ type PublishedRuleJson = {
   verification: { status: string };
 };
 
-/** A synthetic ruleset carrying just the pieces the contract parser reads. */
 const rulesetWith = (fields: unknown[]): Record<string, unknown> => ({
   intake_fields: fields,
   rules: publishedRuleset.rules,
@@ -107,9 +99,6 @@ describe("intake contract derives from the published registry", () => {
   });
 
   it("resolves each asked_when form to the clause it means", () => {
-    // These are the engine's clauses, not a second vocabulary: the questionnaire and the rules
-    // engine parse `asked_when` with one parser, so they cannot drift apart on what a
-    // question depends on.
     expect(fieldNamed("obstructs_public_way").askedWhen).toEqual([
       { kind: "in", field: "location_type", values: ["street", "sidewalk", "plaza"] },
     ]);
@@ -136,8 +125,6 @@ describe("intake contract derives from the published registry", () => {
   });
 
   it("types a comparison operand the same way the engine does", () => {
-    // The bug this sharing removes: the questionnaire kept "true"/"75" as strings while the
-    // engine typed them, so a field the engine had in scope was a question the user never saw.
     const contract = parseIntakeContract(
       rulesetWith([
         { field: "food_present", type: "boolean" },
@@ -150,9 +137,6 @@ describe("intake contract derives from the published registry", () => {
       { kind: "compare", field: "food_present", op: "=", value: true },
       { kind: "compare", field: "headcount", op: "=", value: 75 },
     ]);
-    // and the questionnaire actually asks it, rather than comparing a string to a boolean
-    // (this file's own askedFieldNames helper is bound to the published contract, so the
-    // synthetic registry is queried through the visibility function directly)
     expect(askedNamesIn(contract.fields, { food_present: true, headcount: 75 })).toContain(
       "alcohol",
     );
@@ -188,14 +172,11 @@ describe("intake contract derives from the published registry", () => {
       text: alcohol?.output.advisory_text,
       verificationStatus: alcohol?.verification.status,
     });
-    // The two notices carry different statuses; neither may be rendered as the other.
     expect(contract.alcoholInPublicSpaceNotice.verificationStatus).toBe("COVERAGE_GAP");
     expect(contract.blockPartyEligibilityNotice.verificationStatus).toBe("SOURCE_CONFIRMED");
   });
 
   it("keeps the coverage warning's location set equal to the advisory's own trigger", () => {
-    // Drift guard: intake warns for alcohol at any non-private location. If the advisory
-    // ever narrows its trigger, the two must be reconciled rather than quietly disagree.
     const advisory = (
       publishedRuleset.advisories as {
         id: string;
@@ -402,8 +383,6 @@ describe("conditional flow (spec #2)", () => {
         askedFieldNames(fixtureSubmission(fixture)).length,
       ]),
     );
-    // The low-burden scenarios land in the spec's 10-15 band; the SAPO and
-    // max-complexity ones ask more because they classify. None asks all 33.
     expect(asked.B).toBeGreaterThanOrEqual(10);
     expect(asked.B).toBeLessThanOrEqual(15);
     expect(asked.C).toBeGreaterThanOrEqual(10);
@@ -418,8 +397,6 @@ describe("conditional flow (spec #2)", () => {
   });
 
   it("ignores an answer whose own question is no longer asked", () => {
-    // The organizer classified a street event, then moved it to a park. The stale SAPO
-    // class must not keep the street-size question alive.
     const moved = {
       location_type: "park",
       obstructs_public_way: "yes",
@@ -441,19 +418,12 @@ describe("the six scenario fixtures are enterable (spec #1)", () => {
   });
 
   it("enters Scenario F as the answer key writes it (closes SPEC-CONFLICT #88 and #106)", () => {
-    // The case that used to fail: F's documented inputs were incomplete against the registry.
-    // Answer key v4 states the caterer count and the battery answer, so what the key writes is
-    // now a complete submission on its own — no value stands in for a missing one.
     const asWritten = scenarioFixture("F").intake;
     expect(scenarioFixture("F").inferred).toBeUndefined();
     expect(codesFor(asWritten)).toEqual({});
   });
 
   it("supplies no answer the key does not state, for any scenario", () => {
-    // The register of what the fixtures supply beyond the approved key, asserted exactly so a new
-    // supplied value cannot arrive unlisted. Empty everywhere since v4: #88 (Scenario F's
-    // food_vendor_count) and #106 (battery_present, which nyc.v2.5 asks of every event) are both
-    // closed by the key stating the values the fixtures were already running on.
     const supplied = Object.fromEntries(
       SCENARIO_INTAKE_FIXTURES.map((fixture) => [
         fixture.scenario,
@@ -577,16 +547,12 @@ describe("contradictions are challenged, never resolved silently (spec #4)", () 
     expect(codesFor({ ...scenario("C"), headcount: 0 })).toEqual({
       headcount: "must_be_positive",
     });
-    // A negative headcount is caught by the non-negative rule that guards every
-    // quantity, one step earlier than the spec's "at least 1" rule.
     expect(codesFor({ ...scenario("C"), headcount: -5 })).toEqual({
       headcount: "invalid_value",
     });
   });
 
   it("rejects a negative quantity instead of letting it evaluate below a threshold", () => {
-    // Under-prescribing is the failure mode here: -5 gallons would clear
-    // FDNY-GENERATOR-001's "more than 2.5" and silently drop the permit.
     const negatives = {
       generator_gasoline_gallons: -5,
       generator_diesel_gallons: -1,
@@ -624,8 +590,6 @@ describe("contradictions are challenged, never resolved silently (spec #4)", () 
   it("accepts zero on every quantity, which is a real answer", () => {
     const zeroed = {
       ...scenario("E"),
-      // Zero kWh is a real answer to a question that was asked, which since nyc.v2.5 means the
-      // battery question was answered yes; unasked is a different state and no longer spelled 0.
       battery_present: true,
       tent_area_sqft: 0,
       tent_days_in_place: 0,
@@ -641,7 +605,6 @@ describe("contradictions are challenged, never resolved silently (spec #4)", () 
   });
 
   it("returns a field error for a date that matches the shape but is not a day", () => {
-    // "2026-13-01" parses to an Invalid Date; it must not escape as a thrown RangeError.
     for (const malformed of ["2026-13-01", "2026-02-30", "2026-00-10", "2026-01-32"]) {
       expect(codesFor({ ...scenario("C"), event_date: malformed }), malformed).toEqual({
         event_date: "invalid_value",
@@ -749,8 +712,6 @@ describe("inline warnings do not block submission (spec #4, #5)", () => {
   });
 
   it("renders the published coverage warning for alcohol in public space", () => {
-    // The COVERAGE_GAP status travels with the text so the UI cannot render an
-    // uncovered area as an evaluated one (AGENTS.md "Regulatory safety").
     expect(warningsFor({ ...scenario("C"), alcohol: true })).toEqual([
       {
         field: "alcohol",
@@ -778,16 +739,11 @@ describe("inline warnings do not block submission (spec #4, #5)", () => {
   });
 
   it("stops warning the moment the answer behind it stops applying", () => {
-    // A published notice must never be shown for a scope the event no longer has. The
-    // block-party classification is not asked of a park, so it cannot be what makes a
-    // park event ineligible — regardless of whether the change has been saved yet.
     const sellingBlockParty = { ...scenario("D"), selling_anything: true };
     expect(warningsFor(sellingBlockParty).map((warning) => warning.code)).toEqual([
       "block_party_eligibility_conflict",
     ]);
 
-    // The block-party answer is still sitting in the submission; a park is simply not
-    // asked it, so it no longer says anything about this event.
     const movedToAPark: Record<string, unknown> = {
       ...sellingBlockParty,
       location_type: "park",
@@ -859,8 +815,6 @@ describe("recognising a save that changes nothing (AD-13)", () => {
   });
 
   it("ignores the columns intake does not own", () => {
-    // status, revision_counter and the timestamps are not answers, so they cannot make
-    // a resubmitted intake look changed.
     const stored = {
       ...storedRow("C"),
       id: "event-1",
@@ -880,9 +834,6 @@ describe("editing a saved intake (spec #8)", () => {
   };
 
   it("clears the answers a rescope hides, so the edit can be saved", () => {
-    // The dead end this prevents: the organizer moves a street event into a park, the
-    // SAPO controls disappear, and the stored answers fail validation against fields
-    // the form no longer renders. The edit could never be saved.
     const edited = mergeIntakeEdit(contract, stored("A"), { location_type: "park" });
     expect(edited.obstructs_public_way).toBeNull();
     expect(edited.sapo_event_type).toBeNull();

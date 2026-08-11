@@ -48,6 +48,7 @@ export async function signUp(formData: FormData): Promise<never> {
     options: { emailRedirectTo: callbackUrl("/account") },
   });
   if (error) authRedirect("error", error.message);
+  // A signup session means email confirmation was bypassed; revoke it before failing.
   if (data.session) {
     await supabase.auth.signOut({ scope: "local" });
     authRedirect("error", "Email verification is not configured correctly for this environment.");

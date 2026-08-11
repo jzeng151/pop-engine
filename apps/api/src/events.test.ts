@@ -11,23 +11,14 @@ import {
 import { createApp } from "./app";
 import { loadRuleset } from "./ruleset";
 
-// Integration tests for the F-101 endpoints against a real schema: the intake rules
-// themselves are unit-tested in packages/engine, so these assert persistence, status
-// codes, and the revision/stale-plan behavior. Runs only when a database is configured,
-// matching the other schema-backed suites (CI applies `migrate up` first).
-
 const databaseUrl = process.env.DATABASE_URL ?? "";
 
-/** A scenario's complete submission: the answer key's values plus anything inferred. */
 const scenario = (id: string): Record<string, unknown> => {
   const fixture = SCENARIO_INTAKE_FIXTURES.find((candidate) => candidate.scenario === id);
   if (fixture === undefined) throw new Error(`no fixture ${id}`);
   return fixtureSubmission(fixture);
 };
 
-// Every scenario is entered exactly as answer key v6 writes it — it states the values the
-// fixtures were already running on (SPEC-CONFLICT #88 and #106, both closed). The provenance
-// branch stays so a future inferred value cannot be reported as "as written".
 const SCENARIO_CASES = SCENARIO_INTAKE_FIXTURES.map((fixture) => ({
   ...fixture,
   submission: fixtureSubmission(fixture),
@@ -110,8 +101,6 @@ describe.runIf(databaseUrl.length > 0)("F-101 event intake endpoints", () => {
     });
 
     it("rejects a contradictory submission with a per-field error and stores nothing", async () => {
-      // Count by this submission's own name — a global events count races other suites
-      // that insert in parallel against the same database (same flake #93 hit).
       const street = { ...scenario("A"), name: `reject-contradiction-${randomUUID()}` };
       const response = await post({ ...street, tent_area_sqft: 200, headcount: 0 });
       expect(response.status).toBe(400);
@@ -240,9 +229,6 @@ describe.runIf(databaseUrl.length > 0)("F-101 event intake endpoints", () => {
     });
 
     it("leaves the revision and the plan alone when a save changes nothing", async () => {
-      // A no-op save is not an edit (AD-13). Bumping the counter would report a plan as
-      // stale against an intake it still matches exactly, forcing a regeneration that
-      // could only produce the same plan.
       const event = await createStreetEvent();
       await database.query(
         `INSERT INTO permit_plans (id, event_id, event_revision, ruleset_version, verdict,
@@ -273,7 +259,6 @@ describe.runIf(databaseUrl.length > 0)("F-101 event intake endpoints", () => {
                   "revision_counter",
                   "created_at",
                   "updated_at",
-                  // F-301 promotion fields — not intake; re-sending them is unknown_field.
                   "description",
                   "public_page_published",
                 ].includes(column),
@@ -291,11 +276,6 @@ describe.runIf(databaseUrl.length > 0)("F-101 event intake endpoints", () => {
     });
 
     it("waits for a concurrent edit rather than answering from a row it read first", async () => {
-      // The interleave is real, not simulated: a second connection holds the row lock
-      // while it makes an edit, so the PATCH physically cannot read until that edit
-      // commits. Without the lock the PATCH reads first, decides nothing changed, and
-      // answers with revision 1 and a plan reported current — the row having already
-      // moved to revision 2 underneath it.
       const event = await createStreetEvent();
       await database.query(
         `INSERT INTO permit_plans (id, event_id, event_revision, ruleset_version, verdict,
@@ -335,7 +315,6 @@ describe.runIf(databaseUrl.length > 0)("F-101 event intake endpoints", () => {
             return response;
           });
 
-        // The other connection commits a real edit while this request is blocked.
         await holder.query(
           "UPDATE events SET headcount = 175, revision_counter = revision_counter + 1 WHERE id = $1",
           [event.id],
@@ -349,8 +328,6 @@ describe.runIf(databaseUrl.length > 0)("F-101 event intake endpoints", () => {
         holder.release();
       }
 
-      // The answer describes the row as it stands after the concurrent edit, never the
-      // one this request would have read had it not waited.
       expect(resaved.status, JSON.stringify(resaved.body)).toBe(200);
       expect(resaved.body.event.revision_counter).toBeGreaterThan(1);
       expect(resaved.body.plan_stale).toBe(true);
@@ -360,9 +337,6 @@ describe.runIf(databaseUrl.length > 0)("F-101 event intake endpoints", () => {
     });
 
     it("answers only once its own write is durable", async () => {
-      // The response is built inside the transaction but sent after the commit, so a
-      // client that reads back the instant it is answered cannot see an older row than
-      // the one it was just handed.
       const event = await createStreetEvent();
       const edited = await request(api).patch(`/api/events/${event.id}`).send({ headcount: 90 });
       const readBack = await request(api).get(`/api/events/${event.id}`);
@@ -373,10 +347,6 @@ describe.runIf(databaseUrl.length > 0)("F-101 event intake endpoints", () => {
     });
 
     it("rolls the transaction back when the write fails, leaving the event untouched", async () => {
-      // The trigger is the int4 overflow tracked on issue #89: the engine accepts a
-      // whole non-negative number and the column rejects it, which is a 500 today. What
-      // matters here is that the failure does not leave a half-applied edit or a
-      // connection stuck in an aborted transaction.
       const event = await createStreetEvent();
       const failed = await request(api)
         .patch(`/api/events/${event.id}`)
@@ -388,7 +358,6 @@ describe.runIf(databaseUrl.length > 0)("F-101 event intake endpoints", () => {
       expect(afterwards.body.event.revision_counter).toBe(1);
       expect(afterwards.body.event.headcount).toBe(75);
 
-      // The pool still works, so the connection went back clean rather than aborted.
       const stillEditable = await request(api)
         .patch(`/api/events/${event.id}`)
         .send({ headcount: 76 });
@@ -410,9 +379,6 @@ describe.runIf(databaseUrl.length > 0)("F-101 event intake endpoints", () => {
     });
 
     it("saves a rescope that hides questions, without the client clearing them", async () => {
-      // Regression: a street event moved to a park used to be unsavable. The merge kept
-      // the stored SAPO answers, validation rejected them as not_applicable, and their
-      // controls were already hidden, so the error had nowhere to render.
       const event = await createStreetEvent();
       const response = await request(api)
         .patch(`/api/events/${event.id}`)
@@ -424,7 +390,6 @@ describe.runIf(databaseUrl.length > 0)("F-101 event intake endpoints", () => {
       expect(response.body.event.sapo_event_type).toBeNull();
       expect(response.body.event.street_event_size).toBeNull();
       expect(response.body.event.revision_counter).toBe(2);
-      // The answers the park still asks are untouched.
       expect(response.body.event.headcount).toBe(75);
       expect(response.body.event.food_vendor_count).toBe(1);
     });
@@ -443,8 +408,6 @@ describe.runIf(databaseUrl.length > 0)("F-101 event intake endpoints", () => {
     });
 
     it("asks the questions a rescope reveals before it will save", async () => {
-      // Scenario A's rescope (c): the same event moved to a private venue. The SAPO
-      // answers go away on their own and the venue questions take their place.
       const event = await createStreetEvent();
       const missing = await request(api)
         .patch(`/api/events/${event.id}`)

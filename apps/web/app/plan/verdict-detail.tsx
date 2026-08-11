@@ -5,9 +5,7 @@ import { WIDENED_BLOCKER_KEYS } from "./plan-api";
 import type { ConsumedFinding, ConsumedVerdictDetail } from "./plan-api";
 import { AT_RISK_BUFFER_NOTE, verdictCopy } from "./verdict-copy";
 
-// F-102's branch table (CONDITIONAL) and rescope ladder (INFEASIBLE). The approved verdict line
-// above this panel stays in `verdictCopy`; this panel is the detail the copy rule points at —
-// every missing fact's branches, or the blocking finding plus each re-evaluated rescope.
+// F-102's branch table (CONDITIONAL) and rescope ladder (INFEASIBLE).
 
 const humanize = (token: string): string => token.replace(/_/g, " ");
 
@@ -17,19 +15,7 @@ export type FindingReference = {
   readonly source: { readonly label: string; readonly url: string } | null;
   readonly portalName: string | null;
   readonly portalUrl: string | null;
-  /**
-   * Whether the answers have decided that this route applies. False only for a route whose own
-   * trigger came back `unknown`, which is a route the plan line lists under "May apply".
-   *
-   * IT DECIDES WHETHER THE PORTAL IS AN INSTRUCTION. "Apply through X" tells an organizer to file,
-   * and telling them to file a permit the recorded answers have not decided they need is the one
-   * thing the approved candidate design forbids (§5.3). The plan line and the checklist row already
-   * withhold it, through `PortalBlock`'s `lead`; this panel renders the third copy of the same
-   * action and did not, so a missed candidate route in the conditional section offered the filing
-   * link the other two surfaces had just stopped offering (#252 review). Absent means settled: every
-   * other reference on this panel is a rule the plan says applies, or a finding with no route list,
-   * whose single route reads `"true"`.
-   */
+  /** Whether the answers have decided that this route applies. */
   readonly settled?: boolean;
 };
 
@@ -59,13 +45,7 @@ const referenceFromFinding = (finding: ReferenceSource): FindingReference => {
         : { label: fallbackSource.citation, url: fallbackSource.urls[0] as string }),
     portalName: finding.portalName ?? null,
     portalUrl: finding.portalUrl ?? null,
-    // ONE PREDICATE FOR EVERY SURFACE THAT OFFERS A FILING ACTION. This read the group's mode and
-    // nothing else, so a resolved `advisory` or a `prohibited_or_ineligible` finding rendered an
-    // Apply link: the mode says the group is settled, and settled is not the same as having a
-    // filing to make. `offersAFilingAction` is the engine's own test and adds the clause this was
-    // missing (#252 review).
-    // A reference built without one is a caller that knows nothing about the finding's
-    // disposition; it keeps the previous behaviour rather than silently withholding the link.
+    // ONE PREDICATE FOR EVERY SURFACE THAT OFFERS A FILING ACTION.
     settled:
       finding.disposition === undefined ||
       offersAFilingAction({ disposition: finding.disposition }, finding.headlineMode),
@@ -127,9 +107,7 @@ function FindingReferences({ references }: { references: readonly FindingReferen
             {showSource && reference.portalUrl !== null ? " · " : ""}
             {reference.portalUrl !== null &&
               (reference.settled === false ? (
-                // Named and still linked, never an instruction: the same treatment `PortalBlock`
-                // gives a candidate route's portal on the plan line and the checklist row. The rule
-                // published it, so it is not dropped; what is withheld is the imperative.
+                // Named and still linked, never an instruction: the same treatment `PortalBlock` gives a candidate route's portal on the plan line and the checklist row.
                 <>
                   {"portal: "}
                   <a href={reference.portalUrl} target="_blank" rel="noreferrer">
@@ -237,19 +215,7 @@ function rescopeVerdictLine(
   return verdictCopy(suggestion.reevaluatedVerdict);
 }
 
-/**
- * THE SAME REFERENCE THE BLOCKER SECTION SHOWS, NOT ONE RE-FOUND BY RULE ID.
- *
- * `blockingFinding` is the merged line NARROWED to the route whose window closed, and this sentence
- * names the finding a rescope removes. Resolving its rule ids back through `findings` collapsed the
- * match to the parent line, so on a merged group whose blocker is a NON-binding route the sentence
- * rendered the binding route's name, citation and portal — a route the rescope is not removing, in
- * the one sentence that says what it removes. That is the defect the panel above it already fixed by
- * reading the blocker off the narrowed object, surviving one section down (#252 review).
- *
- * The panel's own `blockerReference` is passed in rather than rebuilt, so both places show one
- * reference and the legacy fallback for a plan stored before the narrowing is applied once.
- */
+/** THE SAME REFERENCE THE BLOCKER SECTION SHOWS, NOT ONE RE-FOUND BY RULE ID. */
 function RescopeReason({
   suggestion,
   blockingFinding,
@@ -383,24 +349,7 @@ type MissedRoute = {
   readonly disposition: ConsumedFinding["disposition"] | null;
 };
 
-/**
- * One entry per MISSED ROUTE, narrowed to that route's own published values.
- *
- * BOTH PANELS THAT READ `missedRuleIds` READ THEM THE SAME WAY, which is why this is a function
- * rather than a loop inside the conditional panel. The ids are ROUTE ids
- * (`verdict.ts` `computeWindowVerdict`), and a merged line can hold two of them: resolving each back
- * to its containing FINDING both renamed it — the merged line's heading, citation, portal and
- * disposition under a heading about the missed route — and COLLAPSED two missed routes into one
- * entry. The conditional panel was narrowed for the first defect; the infeasible panel then counted
- * parent findings, saw one, and suppressed the "All published deadlines missed" list on exactly the
- * multiple-missed-routes case the F-102 amendment requires it for (#252 review). `blockerView`
- * narrows the engine side for the same reason, and the narrowing here is the same one: the route's
- * own name, portal and disposition, and the citations `FindingSource.ruleId` attributes to it.
- *
- * A LINE WITH NO ROUTE LIST is unmerged or was stored before the field existed. Its own rule ids are
- * its routes and the line's values are the route's, so it contributes one entry however many of its
- * ids the list names.
- */
+/** One entry per MISSED ROUTE, narrowed to that route's own published values. */
 function missedRouteEntries(
   missedRuleIds: readonly string[],
   findings: readonly ConsumedFinding[],
@@ -438,11 +387,7 @@ function missedRouteEntries(
             source === undefined ? null : { label: source.citation, url: source.urls[0] as string },
           portalName: route.portalName,
           portalUrl: route.portalUrl,
-          // The route's own trigger AND its own disposition. A resolved trigger says the route
-          // applies; it says nothing about whether the route publishes a filing, and this is the
-          // section that exists for routes whose windows are past — including the `advisory` ones
-          // it now describes in words as publishing no filing of their own. An Apply link beside
-          // that sentence contradicts it (#252 review).
+          // The route's own trigger AND its own disposition.
           settled: offersAFilingAction(route, finding.headlineMode),
         },
         disposition: route.disposition,
@@ -475,21 +420,11 @@ function MissedMayBeRequiredSection({
   rulesetReferences: readonly FindingReference[];
 }) {
   const missed = missedRouteEntries(missedRuleIds, findings, rulesetReferences);
-  // What is actually in the list, which is what the sentence above it may claim. A route with no
-  // disposition recorded (a stored plan whose line is no longer among the findings) counts as
-  // neither: nothing is known about it to describe.
+  // What is actually in the list, which is what the sentence above it may claim.
   const barred = missed.filter((entry) => entry.disposition === "prohibited_or_ineligible");
-  // `may_be_required` EXACTLY, not "everything that is not barred". The list can hold an advisory
-  // route whose own window has closed — `isMissed` reads a route's status and says nothing about
-  // its disposition — and calling that may-be-required is the same overstatement one disposition
-  // further down: the sentence would claim a conditional requirement for a rule that publishes an
-  // advisory (#252 review). Anything that is neither takes the mixed sentence, which names no
-  // disposition and says each keeps its own.
+  // `may_be_required` EXACTLY, not "everything that is not barred".
   const hedged = missed.filter((entry) => entry.disposition === "may_be_required");
-  // The two shapes the three earlier branches described as disagreement. `nonFiling` is a list
-  // whose every member publishes no filing of its own, and `unrecorded` one whose members'
-  // dispositions this plan does not hold at all — a replayed or rescoped plan whose line is no
-  // longer among the findings. Neither is a disagreement, and one of them is not even a claim.
+  // The two shapes the three earlier branches described as disagreement.
   const nonFiling = missed.filter(
     (entry) => entry.disposition === "advisory" || entry.disposition === "no_new_requirement",
   );
@@ -563,30 +498,7 @@ export function VerdictDetailPanel({
   /** Deployed ruleset references, supplied only when that version matches the plan's snapshot. */
   rulesetReferences?: readonly FindingReference[];
 }) {
-  // `rulesetReferences` is supplied only when the deployed ruleset is the exact version this plan
-  // pinned, so after the next publish every stored plan would render raw ids like `SLA-ONEDAY-001`
-  // in its branch prose. The plan's findings are the snapshot's own copy of the headings the
-  // ruleset published at generation time, so they carry the mapping forward for every rule that
-  // fired on this plan; the deployed references still cover the rest, when they are current. A rule
-  // that neither fired here nor exists in the deployed ruleset keeps its id — nothing on this page
-  // knows what that version called it, and the id is the honest answer.
-  //
-  // The deployed references come FIRST because each names exactly one rule, and a finding may
-  // label only the ids it can label unambiguously — which is none, once it has been deduplicated.
-  // A merged finding carries every contributing rule id under the heading of one of them and does
-  // not record which, so letting it map them would rename each to that heading: `drops
-  // DOB-TALL-STRUCTURE-001` would read as dropping the tent approval rather than the published
-  // tall-structure permit. A merged id the deployed references cannot cover therefore keeps its id,
-  // which is the same honest answer this panel already gives an unknown rule.
-  //
-  // Not covered, and not coverable here: a rule named only in a branch reason or a threshold line
-  // on a stored plan whose version has moved on. Those candidate rules never fired, so the plan
-  // holds no heading for them — `missingFacts` stores the prose and no labels behind it — and
-  // `rulesetReferences` is withheld because the deployed ruleset is no longer the one this plan
-  // pinned. Closing it means persisting the labels in `verdict_detail`, which is era-gated engine
-  // output (AD-7 byte-stable replay), so it needs a new published ruleset and its owners' approval;
-  // and it would still leave every already-stored plan on the raw id. F-102's Output section names
-  // this residue as the one case where an organizer is shown an id.
+  // `rulesetReferences` is supplied only when the deployed ruleset is the exact version this plan pinned, so after the next publish every stored plan would render raw ids like `SLA-ONEDAY-001` in its branch prose.
   const references = [
     ...rulesetReferences,
     ...findings.filter((finding) => finding.ruleIds.length === 1).map(referenceFromFinding),
@@ -690,26 +602,9 @@ export function VerdictDetailPanel({
   }
 
   if (verdict === "INFEASIBLE") {
-    // THE BLOCKER IS READ OFF `blockingFinding`, NOT RE-FOUND AMONG THE PLAN'S LINES. The engine
-    // already narrowed it to the route whose window closed (`verdict.ts` `blockerView`), and a
-    // merged line holds more than one route: re-finding it by rule-id intersection returned the
-    // MERGED line, so the panel rendered the headline route's name, portal and apply-by date under
-    // a heading about the missed one. On a two-route group with one open and one closed window,
-    // every fact in this section was the open route's and its date was in the future of the plan's
-    // own clock (#252 review). Nothing needs to be re-found: `blockingFinding` is a whole finding
-    // and carries its own notes, sources and trigger reasons.
+    // THE BLOCKER IS READ OFF `blockingFinding`, NOT RE-FOUND AMONG THE PLAN'S LINES.
     const blocker = detail.blockingFinding;
-    // A PLAN STORED BEFORE THE BLOCKER CARRIED ITS OWN VALUES CARRIES NONE OF THEM, and reading one
-    // as though it did is how this section went blank. Every `permit_plans` row written before this
-    // widening stores `{ruleIds, name}` alone, so the panel printed the rule's bare name and one
-    // sentence, losing the organizer heading, the citation link, the portal link and the published
-    // apply-by date — on the one section that tells an organizer why their event is infeasible
-    // (#252 review). The instance above is real and the removal of the fallback was the wrong cure
-    // for it: what closes both is NARROWING the fallback to the plans that need it.
-    //
-    // NO KEY PRESENT MEANS NOT RECORDED, which is why presence rather than value decides. A blocker
-    // that genuinely publishes no portal stores `portalName: null`, and that is a value the panel
-    // must honour rather than re-find. Absence is the api not having written the field at all.
+    // A PLAN STORED BEFORE THE BLOCKER CARRIED ITS OWN VALUES CARRIES NONE OF THEM, and reading one as though it did is how this section went blank.
     const blockerWasWidened =
       blocker !== null && WIDENED_BLOCKER_KEYS.some((key) => key in blocker);
     const storedBlockerFinding =
@@ -731,29 +626,16 @@ export function VerdictDetailPanel({
             (references.find((reference) =>
               reference.ruleIds.some((ruleId) => blocker.ruleIds.includes(ruleId)),
             ) ?? referenceFromFinding(blocker));
-    // ONE ENTRY PER MISSED ROUTE. Counting the parent lines answered one for two missed routes of a
-    // merged line and hid the second; counting the ids answers three for one legacy line carrying
-    // three provenance ids, which is the F-102 edge case the finding count existed for. The shared
-    // resolution above is neither: it is the routes, and a line with no route list is one of them.
+    // ONE ENTRY PER MISSED ROUTE.
     const missedRoutes = missedRouteEntries(detail.missedRuleIds, findings, references);
-    // A ROUTE CAN PUBLISH ITS FILING PATH AS INSTRUCTIONS AND NO URL, and a reference renders a url
-    // or nothing. The `nypd_sound` precinct route is that shape — null portal url, "File in person
-    // at the precinct" — so it reached this panel with nowhere to file stated at all, and the
-    // widening had already turned the legacy fallback off, so consulting the whole finding could not
-    // supply it either (#252 review). What the reference already rendered is not rendered twice:
-    // where it printed the apply link, only the instructions are added beneath it.
+    // A ROUTE CAN PUBLISH ITS FILING PATH AS INSTRUCTIONS AND NO URL, and a reference renders a url or nothing.
     const referenceShowsPortal = blockerReference?.portalUrl != null;
     const blockerPortal: PortalFields = {
       portalName: referenceShowsPortal ? null : (blockerFacts?.portalName ?? null),
       portalUrl: referenceShowsPortal ? null : (blockerFacts?.portalUrl ?? null),
       portalInstructions: blockerFacts?.portalInstructions ?? null,
     };
-    // AND THE WORST INSTANCE OF THE SAME RULE. This block took the default "apply at" lead and
-    // rendered the rule's own filing instructions beneath it, so a blocker whose disposition is
-    // `prohibited_or_ineligible` told the organizer to file the very route that BARS their event,
-    // two lines under a heading saying it blocks the date. Not an unneeded action: one that
-    // contradicts the finding beside it (#252 review). The portal is still named and still linked,
-    // which is what `lead: "portal"` keeps.
+    // AND THE WORST INSTANCE OF THE SAME RULE.
     const blockerOffersFiling =
       blockerFacts?.disposition === undefined
         ? true

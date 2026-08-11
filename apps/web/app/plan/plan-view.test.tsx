@@ -18,9 +18,6 @@ import { SnapshotBanner, compareToPinned, formatSnapshotDate } from "./snapshot-
 import { verdictCopy } from "./verdict-copy";
 import { NOT_COVERED_BY_RULESET } from "../verification-copy";
 
-// Component tests for F-206. Regulatory prose in the assertions is read out of the published
-// ruleset rather than retyped here, so a rule edit moves the test the same way it moves the
-// screen. Resolved from the repo root, which is vitest's working directory.
 const publishedRuleset: {
   ruleset_version: string;
   snapshot_date: string;
@@ -88,16 +85,8 @@ const rulesetReferences = {
   }),
 };
 
-/** The exactly-20 conflict: two official readings, three pages between them. */
 const CONFLICT_RULE = publishedRule("PARKS-EVENT-EXACTLY-20-001");
 
-/**
- * THE HEADLINE OF A MERGED LINE IS ITS BINDING ROUTE'S, and `routes[0]` is that route: `mergeGroup()`
- * spreads the binding route into the finding and leads the list with it, and the plan boundary now
- * refuses a body where the two disagree. A fixture that supplies `routes` therefore takes its
- * headline scalars from the first of them, exactly as a served plan does, unless the test overrides
- * one of those fields explicitly — which is how a test asks for the crossed headline on purpose.
- */
 const HEADLINE_FROM_BINDING = [
   "name",
   "agency",
@@ -119,9 +108,6 @@ const headlineOf = (overrides: Partial<Finding>): Partial<Finding> => {
   for (const field of HEADLINE_FROM_BINDING) {
     headline[field] = field in overrides ? overrides[field] : binding[field];
   }
-  // `disposition` is the one headline value that is NOT the binding route's: it is the strongest
-  // any route contributes, capped where an unresolved route would be promoted past a resolved one.
-  // The boundary checks it against that arithmetic, so a fixture derives it the same way.
   headline.disposition =
     "disposition" in overrides
       ? overrides.disposition
@@ -191,11 +177,6 @@ const liveMeta = {
   snapshot_date: publishedRuleset.snapshot_date,
 };
 
-/**
- * Answers all three calls the page makes, the way the api does: the plan, the rules meta, and the
- * event whose revision says whether the plan is still current. The event defaults to the revision
- * the plan pinned, so nothing reads as stale unless a test says so.
- */
 const stubApi = (
   planBody: unknown,
   metaBody: unknown = liveMeta,
@@ -247,8 +228,6 @@ describe("the snapshot banner (AC 1)", () => {
   });
 
   it("never says the rules were verified as of that date", () => {
-    // A snapshot date is published-on, not all-facts-verified-on. Each line's own verification
-    // status is what carries that claim, and this wording has been wrong once already.
     render(<SnapshotBanner rulesetVersion="nyc.v2.3" snapshotDate="2026-07-25" meta={liveMeta} />);
     const banner = screen.getByRole("complementary", { name: "Rules snapshot" });
 
@@ -271,7 +250,6 @@ describe("the snapshot banner (AC 1)", () => {
   });
 
   it("reads the published date as a calendar day, not an instant", () => {
-    // Parsing "2026-07-25" as local midnight would render July 24 anywhere west of Greenwich.
     expect(formatSnapshotDate("2026-07-25")).toBe("July 25, 2026");
     expect(formatSnapshotDate("2026-01-01")).toBe("January 1, 2026");
     expect(formatSnapshotDate("not-a-date")).toBe("not-a-date");
@@ -279,7 +257,6 @@ describe("the snapshot banner (AC 1)", () => {
 });
 
 describe("a plan pinned to an older ruleset (AC 4)", () => {
-  /** A pinned pair from an older ruleset, both values unlike anything the live file carries. */
   const PINNED = { rulesetVersion: "nyc.v2.1", snapshotDate: "2026-03-02" };
 
   it("shows the version that produced the plan, not the one now published", async () => {
@@ -295,8 +272,6 @@ describe("a plan pinned to an older ruleset (AC 4)", () => {
   });
 
   it("dates a superseded plan from its own row, never from the live file", async () => {
-    // The pinned version and the pinned date travel together. Reading the date off the live file
-    // would render a version-and-date pair that never existed on any artifact.
     stubApi(plan(PINNED));
     renderPlan();
     const banner = await screen.findByRole("complementary", { name: "Rules snapshot" });
@@ -306,8 +281,6 @@ describe("a plan pinned to an older ruleset (AC 4)", () => {
   });
 
   it("states the pinned pair even when the live ruleset cannot be read", async () => {
-    // /api/rules/meta answers one question — whether a newer ruleset exists. Losing it costs the
-    // comparison, not the banner: both values the banner states come from the plan.
     stubApi(plan(PINNED), {}, 200, 503);
     renderPlan();
     const banner = await screen.findByRole("complementary", { name: "Rules snapshot" });
@@ -318,8 +291,6 @@ describe("a plan pinned to an older ruleset (AC 4)", () => {
   });
 
   it("never asks the live file for a date, even when the versions agree", async () => {
-    // The version matching is not licence to read the live file's date: two artifacts can share a
-    // version string, and only the plan's row witnesses which date its evaluation ran against.
     stubApi(plan({ snapshotDate: "2026-03-02" }), {
       ruleset_version: publishedRuleset.ruleset_version,
       snapshot_date: "2026-12-31",
@@ -343,8 +314,6 @@ describe("a plan generated before migration 002 recorded a snapshot date (AC 4)"
   });
 
   it("does not fall back to the live file's date", async () => {
-    // A null snapshot_date is not an invitation to substitute one. The plan does not record which
-    // artifact it read, so any date rendered here would assert provenance nothing witnessed.
     stubApi(plan({ snapshotDate: null }), {
       ruleset_version: publishedRuleset.ruleset_version,
       snapshot_date: "2026-12-31",
@@ -357,8 +326,6 @@ describe("a plan generated before migration 002 recorded a snapshot date (AC 4)"
   });
 
   it("is the only reading of a missing date — an absent field is unreadable, not legacy", async () => {
-    // A plan body with no `snapshotDate` at all is a plumbing mismatch, and rendering the legacy
-    // sentence for it would state something about the plan that nothing checked.
     const { snapshotDate: _omitted, ...withoutDate } = plan();
     stubApi(withoutDate);
     renderPlan();
@@ -370,14 +337,6 @@ describe("a plan generated before migration 002 recorded a snapshot date (AC 4)"
 });
 
 describe("per-line citations and status (AC 2, AC 3)", () => {
-  /**
-   * One rendered line, with its detail expanded when it has any.
-   *
-   * The line is progressively disclosed: the summary carries name, agency, disposition, fee, the
-   * deadline, the verification badge and the primary citation, and everything else is one click
-   * away. These cases assert that a field RENDERS with the right content, which is unchanged by
-   * the split, so the helper opens the panel. The collapsed contract has its own cases below.
-   */
   const lineFor = async (only: Finding) => {
     stubApi(plan({ findings: [only] }));
     renderPlan();
@@ -411,9 +370,6 @@ describe("per-line citations and status (AC 2, AC 3)", () => {
   });
 
   it("reports an unreadable plan rather than crashing on a finding it cannot render", async () => {
-    // The finding that merged unfixed on #93: a finding with valid ruleIds but a missing or renamed
-    // `verificationStatus` reached `VerificationBadge`, which called `.toLowerCase()` on undefined
-    // and took the page down — a render failure standing in for the intended error message.
     const { verificationStatus: _lost, ...withoutStatus } = finding();
     stubApi(plan({ findings: [withoutStatus] }));
     renderPlan();
@@ -429,7 +385,6 @@ describe("per-line citations and status (AC 2, AC 3)", () => {
 
     const note = line.getByRole("note");
     expect(note.textContent).toBe(CONFIRM_WITH_AGENCY);
-    // Visible text, not an attribute a pointer has to hover to reveal.
     expect(note.getAttribute("title")).toBeNull();
     expect(line.getByText("RESEARCH REQUIRED")).toBeDefined();
   });
@@ -500,12 +455,10 @@ describe("per-line citations and status (AC 2, AC 3)", () => {
     });
     const line = await lineFor(conflict);
 
-    // Both readings, verbatim from the rule that publishes them.
     expect(line.getByText(String(CONFLICT_RULE.output.note_text))).toBeDefined();
     expect(line.getByText("OFFICIAL CONFLICT")).toBeDefined();
     expect(line.getByText(String(CONFLICT_RULE.source?.citation))).toBeDefined();
 
-    // Every page the two readings rest on is reachable, not just the first.
     const urls = CONFLICT_RULE.source?.urls ?? [];
     expect(urls.length).toBeGreaterThan(1);
     const hrefs = line.getAllByRole("link").map((link) => link.getAttribute("href"));
@@ -513,8 +466,6 @@ describe("per-line citations and status (AC 2, AC 3)", () => {
   });
 
   it("shows a conflict's text once when the rule publishes it as both note and conflict", async () => {
-    // PARKS-EVENT-EXACTLY-20-001 publishes one string that is both its note and its conflict
-    // reading; rendering it twice would read as two separate official statements.
     const shared = String(CONFLICT_RULE.output.note_text);
     const line = await lineFor(
       finding({ verificationStatus: "OFFICIAL_CONFLICT", conflictText: shared, noteText: shared }),
@@ -537,10 +488,6 @@ describe("per-line citations and status (AC 2, AC 3)", () => {
   });
 
   it("logs loudly when a stored citation has lost its URL, and still renders the text", async () => {
-    // F-206's Edge Cases pair the fallback above with "log loudly". Every rule in the published
-    // ruleset carries at least one URL on its source, so reaching this means a stored plan has lost
-    // its click-through — and a plan row is immutable with nothing re-deriving it, so the log is the
-    // only way an operator learns of it.
     const logged = vi.spyOn(console, "error").mockImplementation(() => {});
     try {
       const line = await lineFor(
@@ -551,10 +498,6 @@ describe("per-line citations and status (AC 2, AC 3)", () => {
         }),
       );
 
-      // Awaited, not asserted directly: the log fires from an effect, so it is not guaranteed to
-      // have run by the time the article is queryable. Asserting it synchronously passed locally
-      // and failed in CI, where coverage instrumentation moves the flush — a race in the test, not
-      // in the component.
       await waitFor(() =>
         expect(logged).toHaveBeenCalledWith(
           expect.stringContaining("no source URL"),
@@ -564,7 +507,6 @@ describe("per-line citations and status (AC 2, AC 3)", () => {
           }),
         ),
       );
-      // The organizer is not told: they can do nothing with it, and the citation is still correct.
       expect(line.getByText("Parks borough office, by phone")).toBeDefined();
       expect(line.queryAllByRole("link")).toEqual([]);
     } finally {
@@ -583,7 +525,6 @@ describe("per-line citations and status (AC 2, AC 3)", () => {
   });
 
   it("renders the explicit not-covered-by-this-ruleset-version state for a source-less coverage gap", async () => {
-    // ADV-ALCOHOL-PUBLIC-001 is a COVERAGE_GAP advisory: it asserts nothing and cites nothing.
     const line = await lineFor(
       finding({
         ruleIds: ["ADV-ALCOHOL-PUBLIC-001"],
@@ -618,13 +559,10 @@ describe("per-line citations and status (AC 2, AC 3)", () => {
 
     const line = await lineFor(finding({ agency: null, name: "Insurance determined at review" }));
     expect(line.queryByText("NYC Parks")).toBeNull();
-    // The line still reads as a complete row rather than showing an empty label.
     expect(line.getByRole("heading").textContent).toBe("Insurance determined at review");
   });
 
   it("renders the filing route for a rule that publishes instructions instead of a URL", async () => {
-    // NYPD-SOUND-001 publishes the precinct and form PD 656-041A and no portal URL; that text is
-    // the entire filing route for the line (F-204 AC 1).
     const instructions = "File at the precinct where the device will be used; form PD 656-041A.";
     const line = await lineFor(
       finding({
@@ -658,7 +596,6 @@ describe("per-line citations and status (AC 2, AC 3)", () => {
     expect(linked.getByText("$105 filing fee")).toBeDefined();
     cleanup();
 
-    // A portal named but not yet resolved to a URL renders as text rather than a dead link.
     const unlinked = await lineFor(finding({ portalUrl: null, portalName: "Borough office" }));
     expect(unlinked.getByText(/apply at Borough office/)).toBeDefined();
     expect(unlinked.queryByRole("link", { name: "Borough office" })).toBeNull();
@@ -723,8 +660,6 @@ describe("per-line citations and status (AC 2, AC 3)", () => {
   });
 
   it("renders every published note on the line", async () => {
-    // PARKS-INSURANCE-NOTE-001's whole content is its note text: dropping it would leave the line
-    // asserting a requirement the rule explicitly says is not automatic.
     const noteText =
       "Insurance determined by borough office at review — not automatically required.";
     const line = await lineFor(
@@ -769,7 +704,6 @@ describe("per-line citations and status (AC 2, AC 3)", () => {
 });
 
 describe("the routes of a merged dedupe line", () => {
-  // The engine's own field names, so a shape change moves this test rather than passing quietly.
   const route = (overrides: Partial<FindingRoute> = {}): FindingRoute => ({
     ruleId: "DOB-TENT-001",
     triggerResult: "true",
@@ -796,18 +730,6 @@ describe("the routes of a merged dedupe line", () => {
     return within(await screen.findByRole("article"));
   };
 
-  /**
-   * #252 review: THE ANNOUNCED NAME AND THE VISIBLE ONE DISAGREED, on the surface where only the
-   * announced one names anything.
-   *
-   * `name` is the BINDING route's — the merged summary's heading, or `finding.name` — and the
-   * disclosure holds the whole group's rule ids, notes and sources. Where a summary exists the
-   * visible label is route-neutral ("Legal details and all sources") and only the accessible name
-   * carried the permit, so a screen-reader user heard one unsettled candidate stated as the
-   * requirement and a sighted user did not. The heading above it is the deciding question.
-   *
-   * The same divergence, same cause, was fixed on the checklist controls one round earlier.
-   */
   it("labels a candidate line's disclosure after no single route", async () => {
     const ruleIds = ["DOB-TENT-001", "DOB-TALL-STRUCTURE-001"];
     for (const userSummary of [
@@ -823,16 +745,12 @@ describe("the routes of a merged dedupe line", () => {
         name: "Tall structure permit",
         headlineMode: "candidate",
         ...(userSummary === null ? {} : { userSummary }),
-        // In binding order: the resolved route is the only one contributing the merged
-        // `required`, so it binds and the unresolved candidate follows it.
         routes: [
           route({ ruleId: "DOB-TALL-STRUCTURE-001", name: "Tall structure permit" }),
           route({ ruleId: "DOB-TENT-001", triggerResult: "unknown", unknownFields: ["tent_area"] }),
         ],
       });
 
-      // NOT VACUOUS: the control is found by role, so a label that named the binding route would
-      // match `/Tent permit/` and fail the assertion below rather than fail to find anything.
       const disclosure = screen.getByRole("button", { name: /details|Legal details/i });
       const announced = disclosure.getAttribute("aria-label") ?? disclosure.textContent ?? "";
       expect(announced).not.toContain("Tall structure permit");
@@ -841,9 +759,6 @@ describe("the routes of a merged dedupe line", () => {
   });
 
   it("renders nothing extra when the routes publish the same thing", async () => {
-    // Three of the nine multi-member groups in the v2 full draft are byte-identical and are the
-    // ones that merge most often. A block listing one permit twice under "both of these have their
-    // conditions met" would be a rendering fault presented as regulatory content.
     const line = await lineWith({
       ruleIds: ["DOB-STAGE-001", "DOB-STRUCTURE-DURATION-001"],
       headlineMode: "applies_together",
@@ -853,12 +768,6 @@ describe("the routes of a merged dedupe line", () => {
     expect(line.queryByText(/do not say which of these applies/)).toBeNull();
   });
 
-  /**
-   * §4.3 amended 2026-08-09: where no resolved route contributes the merged disposition, the line
-   * publishes no scalars of its own and every route keeps its own beneath. This is the plan surface
-   * of that amendment, checked rather than assumed: the page renders such a line without a date, a
-   * fee or a portal of its own, and the routes block carries all three per route.
-   */
   it("renders a candidate line that publishes no scalars of its own", async () => {
     const line = await lineWith({
       ruleIds: ["DOT-SIDEWALK-CAFE-001", "DOT-SIDEWALK-ADVISORY-001"],
@@ -874,9 +783,6 @@ describe("the routes of a merged dedupe line", () => {
       portalUrl: null,
       portalInstructions: null,
       headlineMode: "candidate",
-      // IN BINDING ORDER, which on a scalar-free line is the unresolved route: it is the only one
-      // contributing the merged `may_be_required`, so it is the whole pool. The line withholds its
-      // values rather than publishing them, which is what makes the shape scalar-free.
       routes: [
         route({
           ruleId: "DOT-SIDEWALK-CAFE-001",
@@ -905,33 +811,19 @@ describe("the routes of a merged dedupe line", () => {
       ],
     });
 
-    // The heading is the question, and the line states no filing date, fee or portal of its own.
     expect(line.getByText(/do not say which of these applies/)).toBeDefined();
     const own = screen.getByRole("article");
-    // The line's own timing block, not the entries': both routes still print their own dates.
     expect(own.querySelector(".line__deadline-date")).toBeNull();
     expect(own.querySelector(".line__fee")).toBeNull();
     expect(own.querySelector(".line__portal")).toBeNull();
-    // Both routes keep everything, which is where a reader can tell whose it is.
     expect(own.querySelectorAll(".line__route")).toHaveLength(2);
     expect(line.getByText("No fee")).toBeDefined();
     expect(line.getByText("$1,050 licence fee")).toBeDefined();
     expect(own.querySelector('a[href="https://example.test/dot"]')).not.toBeNull();
     expect(own.querySelector('a[href="https://example.test/dcwp"]')).not.toBeNull();
-    // The one status it must publish says the window exists and this line cannot be dated.
     expect(line.getByText(/not calculable/)).toBeDefined();
   });
 
-  /**
-   * #252 review: THE GATE LIVES ON THE ROUTE, AND THE PLAN DID NOT SHOW IT.
-   *
-   * `applyDependencySequencing` leaves the headline gate alone where the gated rule is a non-binding
-   * member and stores it on that route, so the entry is the only place a plan can render it. The
-   * checklist reads it through `gatedRoutesOf` and the reminders schedule against it; this renderer
-   * never read the field, so one surface showed an earliest realistic filing date and the other did
-   * not. The signature counts it too, so a group differing only by this visible value is not
-   * collapsed as identical.
-   */
   it("renders a route's own gate, and does not collapse a group that differs only by it", async () => {
     const gated = route({
       ruleId: "NYPD-SOUND-001",
@@ -946,21 +838,9 @@ describe("the routes of a merged dedupe line", () => {
 
     expect(line.getByText(/Earliest realistic filing:/)).toBeDefined();
     expect(line.getByText(/2026-08-12/)).toBeDefined();
-    // NOT VACUOUS: every other rendered field of the two entries is identical, including the name,
-    // so the gate is the only thing keeping the block on screen.
     expect(screen.getByRole("article").querySelectorAll(".line__route")).toHaveLength(2);
   });
 
-  /**
-   * #252 review: AND THE SAME SIGNATURE MUST NOT COMPARE WHAT THE ENTRY DOES NOT SHOW.
-   *
-   * Deriving it from the whole route fixed the missing values and admitted two the entry never
-   * renders: `notes`, which the merged disclosure carries, and `unknownFields`, which the candidate
-   * introduction reads. Two entries displaying the same twelve values then signed differently and
-   * the block listed one permit twice under a heading saying both routes were triggered, which is
-   * what design §5.1 forbids. Rendering and comparing read one list now, so neither direction is
-   * expressible.
-   */
   it("collapses a group whose routes differ only in a value the entry does not render", async () => {
     await lineWith({
       ruleIds: ["DOB-STAGE-001", "DOB-STRUCTURE-DURATION-001"],
@@ -970,21 +850,10 @@ describe("the routes of a merged dedupe line", () => {
         route({ ruleId: "DOB-STRUCTURE-DURATION-001", notes: ["the duration rule's own note"] }),
       ],
     });
-    // NOT VACUOUS: the notes differ and are published, and the entries are identical in every
-    // value the entry displays, so this is exactly the byte-identical group §5.1 collapses.
     expect(screen.getByRole("article").querySelectorAll(".line__route")).toHaveLength(0);
     expect(screen.queryByText(/Both of these have their conditions met/)).toBeNull();
   });
 
-  /**
-   * #252 review: THE SIGNATURE DECIDES WHETHER THE ENTRIES RENDER AT ALL, so a value it ignores can
-   * be collapsed away before the code that renders it ever runs.
-   *
-   * Twice now a route gained a rendered value and the hand-listed signature did not know about it —
-   * the typed deadline, then `conflictText` — and each time a group whose entries differ collapsed
-   * into one, dropping the sibling's published value silently. The signature is derived from the
-   * route now, so these two cases are one test rather than two, and a third field needs no third.
-   */
   it("keeps a group whose routes differ only in a value the entry renders", async () => {
     const cases: {
       field: string;
@@ -1000,16 +869,10 @@ describe("the routes of a merged dedupe line", () => {
       {
         field: "deadline type",
         overrides: { deadline: { type: "before_issuance" } as FindingRoute["deadline"] },
-        // The headline is the binding route's, and a published deadline is one of its values.
         headline: { deadline: { type: "before_issuance" } as Finding["deadline"] },
         shown: "before issuance",
       },
     ];
-    // THE VARYING VALUE SITS ON THE BINDING ROUTE, which is where the payload can put it. A
-    // published window makes a route MORE available, so the route carrying the typed deadline is
-    // the one the engine binds; and where the two tie, the rule id decides and
-    // DOB-TALL-STRUCTURE-001 sorts first. Listing the other route first is an order the api cannot
-    // serve, which the boundary now refuses.
     for (const { overrides, headline, shown } of cases) {
       cleanup();
       const line = await lineWith({
@@ -1022,30 +885,15 @@ describe("the routes of a merged dedupe line", () => {
         ],
       });
 
-      // NOT VACUOUS: the two routes are identical in every other rendered field, including the
-      // name, so the one value under test is all that keeps the block on screen.
       expect(screen.getByRole("article").querySelectorAll(".line__route")).toHaveLength(2);
-      // `getAllBy`: the line renders the binding route's typed deadline in its own timing block
-      // too, so the value under test legitimately appears twice on the deadline case.
       expect(line.getAllByText(shown).length).toBeGreaterThan(0);
     }
   });
 
-  /**
-   * #252 review: A TYPED-ONLY DEADLINE IS THE WHOLE TIMING REQUIREMENT, on a route as on a line.
-   *
-   * SAPO-INSURANCE-001 publishes `{type: "before_issuance"}` and nothing else, so a route carrying
-   * it has no display, no dates and `not_applicable` status. The entry's timing block tested those
-   * four and suppressed itself, taking the published type with it, though the finding-level renderer
-   * has handled exactly this shape through `deadlineTypeLabel` all along. Both halves are here: the
-   * entry renders it, and the signature counts it, so a group whose only timing difference is that
-   * deadline is not collapsed as "these publish the same thing".
-   */
   it("renders a route's typed-only deadline and does not collapse the group over it", async () => {
     const line = await lineWith({
       ruleIds: ["DOB-TALL-STRUCTURE-001", "DOB-TENT-001"],
       headlineMode: "applies_together",
-      // On the binding route, because a published window is what makes a route bind.
       deadline: { type: "before_issuance" } as Finding["deadline"],
       routes: [
         route({
@@ -1055,23 +903,10 @@ describe("the routes of a merged dedupe line", () => {
         route({ ruleId: "DOB-TENT-001" }),
       ],
     });
-    // NOT VACUOUS: the two routes are identical in every other rendered field, including the name,
-    // so the typed deadline is the only thing keeping the block on screen. Asserted on the block
-    // rather than on its leading sentence, whose wording is a separate open thread.
     expect(screen.getByRole("article").querySelectorAll(".line__route")).toHaveLength(2);
-    // Twice: the line's own timing block reads the binding route's published type, and the entry
-    // beneath it reads the same route's. Both are that route's own value.
     expect(line.getAllByText("before issuance").length).toBe(2);
   });
 
-  /**
-   * #252 P2: TWO ROUTES DIFFERING ONLY BY TRIGGER RESULT ARE NOT TWO ROUTES PUBLISHING THE SAME
-   * THING, and the signature that decided they were made the whole candidate block vanish.
-   *
-   * `checklist-item.tsx` renders its deciding question off the same payload with no such test, so
-   * the two surfaces disagreed on one plan and the plan page was the one hiding it: the checklist
-   * asked which route applies while the plan line said nothing at all.
-   */
   it("still asks the question when two routes differ only by trigger result", async () => {
     const line = await lineWith({
       ruleIds: ["DOB-STAGE-001", "DOB-STRUCTURE-DURATION-001"],
@@ -1086,24 +921,10 @@ describe("the routes of a merged dedupe line", () => {
       ],
     });
     expect(line.getByText(/do not say which of these applies/)).toBeDefined();
-    // Twice now, and deliberately: the introduction names the field that would decide the group,
-    // and the sentence beneath the settled entry names what the unsettled route itself turns on
-    // (design §5.3, amended 2026-08-09).
     expect(line.getAllByText(/structure duration days/).length).toBeGreaterThan(0);
     expect(line.getByText("May apply")).toBeDefined();
   });
 
-  /**
-   * #252 review: THE SAME DEFECT, ONE CASE FURTHER ON. Where every route is unresolved and the
-   * outputs match, every signature is equal — `unknownFields` is not one of them and every
-   * `triggerResult` is "unknown" — so the collapse still fired and the candidate block still
-   * vanished. Widening the signature does not reach it either: routes open on the SAME answers are
-   * the commonest candidate group there is.
-   *
-   * The introduction is not a second copy of the entries. It carries the count, how many are
-   * triggered so far, and WHICH ANSWERS WOULD DECIDE IT, which is the organizer's way out of the
-   * unresolved state and is on no entry.
-   */
   it("still asks the question when every unresolved route publishes the same thing", async () => {
     const line = await lineWith({
       ruleIds: ["DOB-STAGE-001", "DOB-STRUCTURE-DURATION-001"],
@@ -1126,21 +947,12 @@ describe("the routes of a merged dedupe line", () => {
     expect(line.getByText(/treat none of the routes below as settled/)).toBeDefined();
   });
 
-  /**
-   * #252 review: THE HEADING IS THE QUESTION, NOT A PERMIT (route-list design §5.3).
-   *
-   * The deciding question used to be appended BELOW a heading still taken from the summary or the
-   * binding route's permit name, so a candidate line led with one unresolved route and its scalar
-   * summary as the requirement and only afterwards said the routes were unsettled. The heading and
-   * what leads the line are chosen by `headlineMode`.
-   */
   it("heads a candidate line with the question and puts it before the merged summary", async () => {
     stubApi(
       plan({
         findings: [
           finding({
             ruleIds: ["DOB-STAGE-001", "DOB-STRUCTURE-DURATION-001"],
-            // No name override: a merged line's name is its binding route's, which is `routes[0]`.
             userSummary: {
               heading: "Do you need a temporary structure permit?",
               points: [
@@ -1172,11 +984,8 @@ describe("the routes of a merged dedupe line", () => {
     expect(line.getByRole("heading").textContent).toBe(
       "The answers so far do not say which of these applies.",
     );
-    // Said once. It was the heading of the routes block before it was the heading of the line.
     expect(line.getAllByText(/do not say which of these applies/)).toHaveLength(1);
 
-    // AND BEFORE THE SCALARS IT QUALIFIES: the summary below belongs to the binding route, and on
-    // a candidate line no route is known to be the one.
     const article = await screen.findByRole("article");
     const routesBlock = article.querySelector(".line__routes");
     const summary = article.querySelector(".line__summary");
@@ -1186,16 +995,12 @@ describe("the routes of a merged dedupe line", () => {
       (routesBlock as Element).compareDocumentPosition(summary as Element) &
         Node.DOCUMENT_POSITION_FOLLOWING,
     ).toBeGreaterThan(0);
-    // The permit name is still on the line, on its own route entry, where a reader can tell whose
-    // it is.
     expect(line.getByText("Stage permit")).toBeDefined();
   });
 
   it("keeps the permit heading when the routes apply together", async () => {
     const line = await lineWith({
       ruleIds: ["NYPD-SOUND-PROHIBITED-001", "NYPD-SOUND-PUBLIC-001"],
-      // The binding route's name, which on this group is the barred route's: it is the only route
-      // contributing the merged `prohibited_or_ineligible`, so it is the only one in the pool.
       name: "Commercial advertising by sound device",
       disposition: "prohibited_or_ineligible",
       headlineMode: "applies_together",
@@ -1208,14 +1013,12 @@ describe("the routes of a merged dedupe line", () => {
         route({ ruleId: "NYPD-SOUND-PUBLIC-001", name: "Sound Device Permit" }),
       ],
     });
-    // The heading is a NAME rather than the candidate question, which is what this pins.
     expect(line.getByRole("heading").textContent).toBe("Commercial advertising by sound device");
   });
 
   it("says both apply, and names each route's own window and fee, when every trigger resolved", async () => {
     const line = await lineWith({
       ruleIds: ["NYPD-SOUND-PROHIBITED-001", "NYPD-SOUND-PUBLIC-001"],
-      // The barred route binds, so the line carries its name and its empty window.
       name: "Commercial advertising by sound device",
       disposition: "prohibited_or_ineligible",
       headlineMode: "applies_together",
@@ -1234,18 +1037,10 @@ describe("the routes of a merged dedupe line", () => {
         }),
       ],
     });
-    // "have their conditions met", not "apply": NYPD-SOUND-PROHIBITED-001's trigger resolving does
-    // not mean the requirement applies, and the heading may not say more than the mode knows.
-    // Approved copy, amended into design §5.2 on 2026-08-09 with §5.3's labels (product owner).
     expect(line.getByText(/Both of these have their conditions met/)).toBeDefined();
     expect(line.getByText(/each of their conditions is met/)).toBeDefined();
-    // Twice: the heading is the binding route's name, and the entry names it again. That is what a
-    // served plan carries, since the merged line's scalars ARE `routes[0]`'s.
     expect(line.getAllByText("Sound Device Permit").length).toBeGreaterThan(0);
-    // Twice: the heading is the binding route's name and its entry names it again, which is what a
-    // served plan carries, since the merged line's scalars ARE `routes[0]`'s.
     expect(line.getAllByText("Commercial advertising by sound device").length).toBeGreaterThan(0);
-    // The permit's window and fee are on the permit's entry, not on the barred line's headline.
     expect(line.getAllByText(/apply by 2026-11-29/).length).toBeGreaterThan(0);
     expect(line.getAllByText(/\$45 per sound device/).length).toBeGreaterThan(0);
   });
@@ -1270,24 +1065,9 @@ describe("the routes of a merged dedupe line", () => {
       line.getByText(/one of them has its conditions met on the answers so far/),
     ).toBeDefined();
     expect(line.getByText(/Answering sound purpose would decide it/)).toBeDefined();
-    // NOT "treat none of the routes below as settled", which contradicted the sentence before it
-    // and the entry labelled below (#252 review): one route IS triggered, so the unsettled ones
-    // are named instead of all of them.
     expect(line.getByText(/treat the routes marked .May apply. as unsettled/)).toBeDefined();
-    // Per entry, which routes' own conditions the recorded answers meet and which they do not.
-    // "Conditions met" rather than the approved section 5.3's "Applies", which overstates what a
-    // resolved trigger asserts, and rather than "Triggered", which is engine vocabulary in copy an
-    // organizer reads (product owner, 2026-08-09).
     expect(line.getByText("Conditions met")).toBeDefined();
     expect(line.getByText("May apply")).toBeDefined();
-    // And what the organizer still faces, beneath the entry they can act on, naming the unsettled
-    // route and the field its own trigger left open. No threshold is named: none is published.
-    //
-    // INTERROGATIVE, NOT PREDICTIVE. The unsettled route's own entry reads "May apply" beside
-    // `may be required`, because `resolveDisposition` demotes an unknown-triggered `required` rule;
-    // a sentence calling it required would contradict its own entry one line apart, which is the
-    // claim the labels were amended away from (product owner, 2026-08-09, correcting the same day's
-    // amendment).
     expect(
       line.getByText(
         "Whether Commercial advertising by sound device also applies turns on sound purpose.",
@@ -1296,11 +1076,6 @@ describe("the routes of a merged dedupe line", () => {
     expect(line.queryByText(/would also be required/)).toBeNull();
   });
 
-  /**
-   * #252 review: NO CANDIDATE ENTRY RENDERS AS AN ACTION (design §5.3), and the portal block was
-   * the entry's action. "apply at DOB NOW" under an entry labelled "May apply" tells an organizer
-   * to file a permit the recorded answers have not decided they need.
-   */
   it("names a candidate route's portal instead of telling an organizer to apply at it", async () => {
     const line = await lineWith({
       ruleIds: ["DOB-STAGE-001", "DOB-TENT-001"],
@@ -1319,35 +1094,19 @@ describe("the routes of a merged dedupe line", () => {
     });
 
     expect(line.queryByText(/apply at/)).toBeNull();
-    // The portal is a published value, so it is named and still linked, not dropped. The rule's
-    // own instructions are its words and are untouched.
     expect(line.getByText(/portal:/)).toBeDefined();
     expect(line.getByRole("link", { name: "DOB NOW: Build" })).toBeDefined();
-    // AND THE INSTRUCTION IS WITHHELD WITH THE LEAD. "Select the temporary structure application."
-    // is this route's filing instruction, which is the action a candidate entry may not render;
-    // the portal is still named and still linked above it (#252 review).
     expect(line.queryByText("Select the temporary structure application.")).toBeNull();
   });
 
-  /**
-   * #252 review: THE SAME RULE ON THE SCALAR PORTAL, which is a second copy of the binding route's
-   * action rather than a second kind of action. `mergeGroup` builds the merged finding by spreading
-   * the binding route's fields (`packages/engine/src/findings.ts:481`), so the binding route's
-   * portal is also the finding's portal, and neutralizing the route entries left the disclosure
-   * still saying "apply at DOB NOW" for the very route the entry above had stopped saying it for.
-   * This is the published DOB candidate shape, with the resolved route binding.
-   */
   it("names the binding route's portal in the disclosure rather than telling an organizer to apply at it", async () => {
     const line = await lineWith({
       ruleIds: ["DOB-STAGE-001", "DOB-TENT-001"],
       headlineMode: "candidate",
-      // The scalars `mergeGroup` copies off the binding tent route.
       portalName: "DOB NOW: Build",
       portalUrl: "https://example.test/dob-now",
       portalInstructions: "Select the temporary structure application.",
       routes: [
-        // The binding route is the RESOLVED one: it is the only route contributing the merged
-        // `required`, since the unresolved tent route is capped at `may_be_required` beside it.
         route({
           ruleId: "DOB-STAGE-001",
           name: "Stage permit",
@@ -1365,7 +1124,6 @@ describe("the routes of a merged dedupe line", () => {
 
     await userEvent.click(line.getByRole("button", { name: /^Details for/ }));
 
-    // Neither the entry nor the disclosure offers the action, and the entry alone is not enough.
     expect(line.queryByText(/apply at/)).toBeNull();
     expect(line.getAllByText(/portal:/)).toHaveLength(2);
     expect(line.getAllByRole("link", { name: "DOB NOW: Build" })).toHaveLength(2);
@@ -1378,7 +1136,6 @@ describe("the routes of a merged dedupe line", () => {
       portalName: "DOB NOW: Build",
       portalUrl: "https://example.test/dob-now",
       routes: [
-        // The binding route, whose portal the line's own is: a merged line's portal is `routes[0]`'s.
         route({
           ruleId: "DOB-STAGE-001",
           name: "Stage permit",
@@ -1396,12 +1153,6 @@ describe("the routes of a merged dedupe line", () => {
     expect(line.getAllByText(/apply at/).length).toBeGreaterThan(0);
   });
 
-  /**
-   * #252 review: THE DECIDING QUESTION IS BOTH SETS OF UNKNOWNS. A route's `unknownFields` are its
-   * trigger's only. Listing them alone told the organizer that answering the trigger field "would
-   * decide it" while the line's filing timeline still waited on an unanswered deadline input the
-   * sentence never named (design §5.3).
-   */
   it("names the deadline unknowns alongside the trigger unknowns in the question", async () => {
     const line = await lineWith({
       ruleIds: ["DOB-STAGE-001", "DOB-TENT-001"],
@@ -1467,8 +1218,6 @@ describe("the plan view's own states", () => {
     cleanup();
 
     releasePlan(jsonResponse(200, plan()));
-    // Nothing to assert on screen: the point is that the late answer updates no state and the
-    // test does not blow up on an unmounted component.
     await waitFor(() => expect(screen.queryByRole("status")).toBeNull());
   });
 
@@ -1506,14 +1255,6 @@ describe("the plan view's own states", () => {
 });
 
 describe("dated lines that publish no deadline prose", () => {
-  /**
-   * One rendered line, with its detail expanded when it has any.
-   *
-   * The line is progressively disclosed: the summary carries name, agency, disposition, fee, the
-   * deadline, the verification badge and the primary citation, and everything else is one click
-   * away. These cases assert that a field RENDERS with the right content, which is unchanged by
-   * the split, so the helper opens the panel. The collapsed contract has its own cases below.
-   */
   const lineFor = async (only: Finding) => {
     stubApi(plan({ findings: [only] }));
     renderPlan();
@@ -1524,8 +1265,6 @@ describe("dated lines that publish no deadline prose", () => {
   };
 
   it("shows the demo anchor's apply-by date and missed status with no display text", async () => {
-    // SAPO-STREET-LARGE-001 publishes no `deadline.display`, and it is Scenario A's blocking
-    // finding. Gating the block on that prose hid the two facts the line exists to state.
     const large = publishedRule("SAPO-STREET-LARGE-001");
     expect(large.output.deadline).toBeDefined();
     expect((large.output.deadline as unknown as { display?: string }).display).toBeUndefined();
@@ -1545,11 +1284,6 @@ describe("dated lines that publish no deadline prose", () => {
   });
 
   it("dates when a gated line can realistically be pursued, without barring an earlier filing", async () => {
-    // NYPD-SOUND-PARKS-DEP-001 carries verification.qualification "sequencing detail
-    // RESEARCH_REQUIRED", and the engine dates this from the upstream processing range precisely
-    // because a strict issued-before-filed order is not confirmed. "Not before" would assert the
-    // sequencing the verification owner declined to assert, one layer above the engine that
-    // deliberately stopped short of it.
     const dependency = publishedRule("NYPD-SOUND-PARKS-DEP-001");
     expect(dependency.verification.qualification).toBe("sequencing detail RESEARCH_REQUIRED");
 
@@ -1567,14 +1301,11 @@ describe("dated lines that publish no deadline prose", () => {
     expect(line.getByText(/apply by 2026-09-11/)).toBeDefined();
     expect(line.getByText(/earliest realistic filing 2026-08-26/)).toBeDefined();
 
-    // No wording anywhere on the line may read as a prohibition on filing earlier.
     const rendered = line.getByRole("heading").closest("article")?.textContent ?? "";
     expect(rendered).not.toMatch(/not before/i);
     expect(rendered).not.toMatch(/cannot be filed/i);
     expect(rendered).not.toMatch(/must not/i);
 
-    // The published caveat is on the line in the words the verification owner approved, not a
-    // paraphrase, so the uncertainty travels with the date.
     expect(line.getByText(String(dependency.output.note_text))).toBeDefined();
     expect(String(dependency.output.note_text)).toContain("not confirmed by located primary text");
   });
@@ -1614,7 +1345,6 @@ describe("the verdict's approved copy", () => {
     const text = await verdictText("INFEASIBLE");
 
     expect(text).toContain("Published deadline missed as scoped");
-    // The bare enum token would read as a claim about legality rather than a filing window.
     expect(text.toLowerCase()).not.toContain("infeasible");
     expect(text.toLowerCase()).not.toContain("impossible");
   });
@@ -1641,10 +1371,6 @@ describe("the verdict's approved copy", () => {
   });
 
   it("labels the at-risk countdown as PopEngine's buffer, on screen", async () => {
-    // F-102's verdict table: "threshold labeled as PopEngine's internal planning buffer, never an
-    // official threshold", and the ruleset's own config note says the UI must label it. An
-    // organizer reading "apply within 10 days" with the explanation only in a source comment has
-    // been handed what looks like an agency filing deadline.
     stubApi(
       plan({
         verdict: "FEASIBLE_AT_RISK",
@@ -1661,8 +1387,6 @@ describe("the verdict's approved copy", () => {
   });
 
   it("does not label a verdict that carries no buffer countdown", async () => {
-    // The label qualifies the at-risk countdown. Attaching it to "On track" would explain a
-    // threshold that verdict never states.
     stubApi(plan({ verdict: "FEASIBLE" }));
     renderPlan();
     await screen.findByRole("complementary", { name: "Rules snapshot" });
@@ -1688,14 +1412,6 @@ describe("F-102 · undated deadlines note", () => {
     );
   });
 
-  /**
-   * #252, the first of the two cases the reviewer could not reach on the published ruleset. A
-   * merged dedupe line takes its status from its binding route, so a line whose binding route
-   * publishes no window reads `not_applicable` while another route on it publishes a dated one.
-   * Asked of the line alone, the note claimed a plan had no dated deadlines while a route on it
-   * dated 2026-11-10. Reachable only where the undated route BINDS on a resolved trigger, which
-   * `nyc.v2.11` never produces without also making the plan CONDITIONAL.
-   */
   it("does not claim undated deadlines when a non-binding route publishes a window", async () => {
     stubApi(
       plan({
@@ -1765,15 +1481,6 @@ describe("F-102 · undated deadlines note", () => {
     expect(screen.queryByTestId("no-dated-deadlines")).toBeNull();
   });
 
-  /**
-   * #252: `routes: []` PASSED THE VALIDATOR, AND AN EMPTY ARRAY ANSWERS EVERY QUESTION YES.
-   *
-   * `hasOnlyUndatedDeadlines` asks whether every route is undated, and `[].every()` is true, so an
-   * empty route list printed "No dated deadlines identified." on a FEASIBLE plan beside a line
-   * showing a date. The wire contract has always said `routes` is null-or-non-empty; the validator
-   * now enforces it rather than documenting it, so the shape is refused at the boundary rather
-   * than reinterpreted by whichever consumer reaches it first.
-   */
   it("refuses a plan whose route list is empty rather than reading it as no routes", async () => {
     stubApi(
       plan({
@@ -1860,9 +1567,6 @@ describe("F-102 · CONDITIONAL branch table and INFEASIBLE rescope ladder", () =
   });
 
   it("names a branch rule by its own heading, not by the merged finding's", async () => {
-    // DOB-TENT-001 and DOB-TALL-STRUCTURE-001 share the `dob-structure` dedupe key, so one finding
-    // carries both ids under the tent heading. The branch that drops the tall-structure permit must
-    // say so: naming the tent approval there misstates which requirement the answer removes.
     stubApi(
       plan({
         verdict: "CONDITIONAL",
@@ -1900,12 +1604,6 @@ describe("F-102 · CONDITIONAL branch table and INFEASIBLE rescope ladder", () =
   });
 
   it("shows the residue F-102 names: a historical merged rule id no source can label", async () => {
-    // The one case F-102's Output section excludes from "the organizer is shown no id". Same
-    // merged finding, but the plan pinned a version this deployment no longer runs, so the
-    // per-rule references are withheld. The finding's heading belongs to one of its contributing
-    // rules and the plan does not say which, so it labels none of them: the id is the honest
-    // answer, and naming the tent approval here would be a wrong one. Labelling it needs per-rule
-    // labels persisted in `verdict_detail`, which is a new ruleset era and not approved here.
     stubApi(
       plan({
         rulesetVersion: "nyc.v2.10",
@@ -1954,9 +1652,6 @@ describe("F-102 · CONDITIONAL branch table and INFEASIBLE rescope ladder", () =
       plan({
         verdict: "INFEASIBLE",
         findings: [
-          // The blocker below narrows to this line's own route, so every value it carries is this
-          // finding's: a fixture whose blocker names another agency is a payload the api cannot
-          // serve, and the boundary now refuses it.
           finding({
             ruleIds: ["SAPO-STREET-LARGE-001"],
             name: "Street Activity Permit — Large",
@@ -1972,11 +1667,6 @@ describe("F-102 · CONDITIONAL branch table and INFEASIBLE rescope ladder", () =
         ],
         verdictDetail: {
           ...emptyVerdictDetail,
-          // The blocker carries the blocking ROUTE's own published values. The panel reads them off
-          // here rather than re-finding the finding by rule id, which on a merged line returned the
-          // whole line and printed the headline route's name and date (#252 review).
-          // Every widened key or none: the panel reads their presence as a version, so a payload
-          // carrying some of them turns the legacy fallback off while leaving the section blank.
           blockingFinding: {
             ruleIds: ["SAPO-STREET-LARGE-001"],
             name: "Street Activity Permit — Large",
@@ -1993,7 +1683,6 @@ describe("F-102 · CONDITIONAL branch table and INFEASIBLE rescope ladder", () =
             userSummary: null,
           },
           missedRuleIds: ["SAPO-STREET-LARGE-001"],
-          // An unmerged blocker's own trigger result is recorded nowhere but the trace.
           trace: [{ ruleId: "SAPO-STREET-LARGE-001", result: "true" }],
           rescopeSuggestions: [
             {
@@ -2001,8 +1690,6 @@ describe("F-102 · CONDITIONAL branch table and INFEASIBLE rescope ladder", () =
               reevaluatedVerdict: "CONDITIONAL",
               droppedRuleIds: ["SAPO-INSURANCE-001", "SAPO-STREET-LARGE-001"],
               introducedRuleIds,
-              // This is the stored shape from before introduced finding metadata was snapshotted.
-              // The page may use its deployed references because the versions match exactly.
               remainingMissingFields: ["sound_audible_from_public_way"],
               remainingTimelineReasons: [],
               minSlackDays: null,
@@ -2048,7 +1735,6 @@ describe("F-102 · CONDITIONAL branch table and INFEASIBLE rescope ladder", () =
     expect(screen.getByTestId("rescope-ladder")).toBeDefined();
     const suggestions = screen.getAllByTestId("rescope-suggestion");
     expect(suggestions).toHaveLength(3);
-    // AC 7 ladder order even when the wire arrives in field-discovery order.
     expect(suggestions[0]?.textContent).toContain("medium");
     expect(suggestions[0]?.textContent).not.toContain("SAPO-STREET-MEDIUM-001");
     expect(
@@ -2084,13 +1770,6 @@ describe("F-102 · CONDITIONAL branch table and INFEASIBLE rescope ladder", () =
     );
   });
 
-  /**
-   * #252. Every `permit_plans` row written before the blocker carried its own published values
-   * stores `{ruleIds, name}` alone. Read as though it carried them, this section lost the organizer
-   * heading, the citation link, the portal link and the published apply-by date — on the one
-   * section that tells an organizer why their event is infeasible. Absence of every widened key is
-   * what says "not recorded", so the panel falls back to the reading that wrote it.
-   */
   it("renders a stored blocker that predates the widened keys from the plan's own line", async () => {
     stubApi(
       plan({
@@ -2104,14 +1783,12 @@ describe("F-102 · CONDITIONAL branch table and INFEASIBLE rescope ladder", () =
             latestApplyDate: "2026-07-12",
             portalName: publishedRule("SAPO-STREET-LARGE-001").output.portal?.name ?? null,
             portalUrl: publishedRule("SAPO-STREET-LARGE-001").output.portal?.url ?? null,
-            // The published summary itself; this file's local JSON type does not carry its shape.
             userSummary: publishedRule("SAPO-STREET-LARGE-001").output
               .user_summary as unknown as Finding["userSummary"],
           }),
         ],
         verdictDetail: {
           ...emptyVerdictDetail,
-          // Exactly what a stored plan holds: two keys, and none of the widened ones.
           blockingFinding: {
             ruleIds: ["SAPO-STREET-LARGE-001"],
             name: "Street Event Permit (Large)",
@@ -2137,23 +1814,6 @@ describe("F-102 · CONDITIONAL branch table and INFEASIBLE rescope ladder", () =
     expect(blocker.textContent).toContain("latest published apply-by date was 2026-07-12");
   });
 
-  /**
-   * #252 review: A ROUTE CAN PUBLISH ITS FILING PATH AS INSTRUCTIONS AND NO URL. The `nypd_sound`
-   * precinct route is that shape, and this section renders a citation link and a portal url, so
-   * the one statement of where to file it had nowhere to render. The blocker payload carried
-   * neither the instructions nor the fee to render, and the widening is itself what stops the panel
-   * consulting the whole finding for them, so both halves are the fix: `VerdictDetail` carries the
-   * narrowed values and the section renders the published filing path beneath the reason.
-   */
-  /**
-   * #252 review: THE PANEL TOLD THE ORGANIZER TO FILE THE ROUTE THAT BARS THEIR EVENT.
-   *
-   * The blocker's `PortalBlock` took the default "apply at" lead and rendered the rule's own filing
-   * instructions beneath it, whatever the blocker publishes. On a `prohibited_or_ineligible`
-   * blocker that is an action contradicting the finding two lines above it, not merely an
-   * unnecessary one. The portal is still named and still linked; the imperative and the
-   * instructions are withheld, which is what `offersAFilingAction` decides on every other surface.
-   */
   it("names a barred blocker's portal instead of telling the organizer to apply at it", async () => {
     stubApi(
       plan({
@@ -2168,7 +1828,6 @@ describe("F-102 · CONDITIONAL branch table and INFEASIBLE rescope ladder", () =
             portalName: "Parks permit office",
             portalUrl: null,
             portalInstructions: "File in person at the borough office",
-            // The blocker's citations must be exactly this rule's, and it publishes none.
             sources: [],
           }),
         ],
@@ -2198,8 +1857,6 @@ describe("F-102 · CONDITIONAL branch table and INFEASIBLE rescope ladder", () =
     await screen.findByTestId("verdict-detail");
 
     const blocker = screen.getByTestId("blocking-finding");
-    // NOT VACUOUS: the portal is still named, so this is the lead and the instruction being
-    // withheld rather than the block disappearing.
     expect(blocker.textContent).toContain("Parks permit office");
     expect(blocker.textContent).not.toContain("apply at");
     expect(blocker.textContent).not.toContain("File in person at the borough office");
@@ -2242,7 +1899,6 @@ describe("F-102 · CONDITIONAL branch table and INFEASIBLE rescope ladder", () =
             userSummary: null,
           },
           missedRuleIds: ["NYPD-SOUND-001"],
-          // An unmerged blocker's own trigger result is recorded nowhere but the trace.
           trace: [{ ruleId: "NYPD-SOUND-001", result: "true" }],
         },
       }),
@@ -2348,15 +2004,6 @@ describe("F-102 · CONDITIONAL branch table and INFEASIBLE rescope ladder", () =
     );
   });
 
-  /**
-   * #252: TWO MISSED ROUTES OF ONE MERGED LINE ARE TWO MISSED DEADLINES.
-   *
-   * `missedRuleIds` carries ROUTE ids, and the guard above counted the parent findings they sit on:
-   * on a merged line it answered one, suppressed the list, and the second missed route was never
-   * shown — the case the F-102 amendment added the list for. The multi-rule finding above is the
-   * opposite shape and still counts as one, which is why the count is over resolved routes rather
-   * than over either set of ids.
-   */
   it("lists every missed route of one merged line", async () => {
     const missedRoute = (ruleId: string, name: string, latestApplyDate: string) => ({
       ruleId,
@@ -2407,17 +2054,6 @@ describe("F-102 · CONDITIONAL branch table and INFEASIBLE rescope ladder", () =
     expect(blocker.textContent).toContain("Tall structure permit");
   });
 
-  /**
-   * #252 review: THE TWO SHAPES THE EARLIER BRANCHES CALLED DISAGREEMENT.
-   *
-   * `barred` counts `prohibited_or_ineligible` exactly and `hedged` counts `may_be_required`
-   * exactly, so a list holding neither fell to the mixed sentence and asserted that the findings
-   * "differ in what they publish". A list of resolved advisory routes does not differ, and a list
-   * whose dispositions the plan does not record is not a claim the page can make at all.
-   *
-   * Copy approved by the product owner on 2026-08-10 and recorded in `docs/BASELINE.md`; the
-   * section is stated in `specs/F-102-feasibility-verdict.md`.
-   */
   it("describes a missed list that publishes no filing, and one it cannot read", async () => {
     const cases = [
       {
@@ -2441,8 +2077,6 @@ describe("F-102 · CONDITIONAL branch table and INFEASIBLE rescope ladder", () =
         says: "publish no filing of their own",
       },
       {
-        // A replayed or rescoped plan: the missed rule is no longer among the findings, so the
-        // page holds no disposition for it.
         findings: [],
         missedRuleIds: ["SAPO-STREET-LARGE-001"],
         says: "does not record what each of them publishes",
@@ -2462,12 +2096,7 @@ describe("F-102 · CONDITIONAL branch table and INFEASIBLE rescope ladder", () =
 
       const section = screen.getByTestId("missed-may-be-required");
       expect(section.textContent).toContain(says);
-      // NOT VACUOUS: the mixed sentence is what both of these rendered before, and neither list
-      // disagrees with itself.
       expect(section.textContent).not.toContain("differ in what they publish");
-      // AND THE CLOSING SENTENCE POINTS AT A PLAN LINE THAT EXISTS. The unrecorded branch is
-      // reached because the missed rules are absent from `findings`, so there is no line to state
-      // the date and qualification on (#252 review).
       const pointsAtTheLine = section.textContent?.includes("on the plan line") ?? false;
       expect(pointsAtTheLine).toBe(findings.length > 0);
     }
@@ -2496,8 +2125,6 @@ describe("F-102 · CONDITIONAL branch table and INFEASIBLE rescope ladder", () =
     await screen.findByTestId("verdict-detail");
 
     const section = screen.getByTestId("missed-may-be-required");
-    // The heading states the section's subject and the lede carries the conditionality, which is
-    // where it is branched (product owner, 2026-08-10).
     expect(section.textContent).toContain("Published windows that are past");
     expect(section.textContent).toContain("may-be-required");
     expect(section.textContent).toContain("keeps the verdict conditional");
@@ -2535,15 +2162,6 @@ describe("F-102 · CONDITIONAL branch table and INFEASIBLE rescope ladder", () =
     expect(section.textContent).not.toContain("DOB-TALL-STRUCTURE-001");
   });
 
-  /**
-   * #252 P2: THE PANEL NAMED THE LINE AND NOT THE MISSED ROUTE.
-   *
-   * `computeWindowVerdict` emits `missedRuleIds` as ROUTE ids. This section resolved each one back
-   * to the containing finding and rendered THAT line's name, citation, portal and disposition, so a
-   * `required` route's name appeared under a heading saying these findings carry a may-be-required
-   * disposition. `blockerView` already narrows the INFEASIBLE panel to the blocking route for the
-   * same reason; this is the other panel that reads the same ids.
-   */
   it("names the missed route, not the merged line it sits on", async () => {
     stubApi(
       plan({
@@ -2556,9 +2174,6 @@ describe("F-102 · CONDITIONAL branch table and INFEASIBLE rescope ladder", () =
             portalName: "DOB NOW",
             portalUrl: "https://example.gov/dobnow",
             headlineMode: "applies_together",
-            // Both routes publish a window and only one is still open, so the open one binds and
-            // the line reads it. Without a published window on either, the CLOSED route's earlier
-            // date would decide the order and the headline here would be the missed route's.
             deadline: { type: "before_issuance" } as Finding["deadline"],
             sources: [
               { ruleId: "DOB-TENT-001", citation: "Tent FAQ", urls: ["https://example.gov/tent"] },
@@ -2610,7 +2225,6 @@ describe("F-102 · CONDITIONAL branch table and INFEASIBLE rescope ladder", () =
         ],
         verdictDetail: {
           ...emptyVerdictDetail,
-          // The route that missed, which is NOT the route the merged line reads.
           missedRuleIds: ["DOB-TALL-STRUCTURE-001"],
         },
       }),
@@ -2625,16 +2239,6 @@ describe("F-102 · CONDITIONAL branch table and INFEASIBLE rescope ladder", () =
     expect(section.querySelector('a[href="https://example.gov/dobnow"]')).toBeNull();
   });
 
-  /**
-   * #252 review: TWO DEFECTS IN THE SAME SECTION, both about a route the answers have not settled.
-   *
-   * A candidate route whose window is past enters `missedRuleIds`, and this section carried its
-   * portal into a reference, which renders "Apply through" — a filing instruction for a route the
-   * plan line and the checklist row both present non-actionably. And the lede asserted that every
-   * finding listed carries a may-be-required disposition, while a barred route whose own trigger is
-   * unresolved reaches this same section (`blocksWhenMissed` requires a RESOLVED trigger before a
-   * bar can close a plan) and prints "(prohibited or ineligible)" two lines below the sentence.
-   */
   it("names an unsettled route's portal without telling the organizer to file it", async () => {
     const route = (overrides: Partial<FindingRoute> = {}): FindingRoute => ({
       ruleId: "DOB-TENT-001",
@@ -2661,8 +2265,6 @@ describe("F-102 · CONDITIONAL branch table and INFEASIBLE rescope ladder", () =
         findings: [
           finding({
             ruleIds: ["DOB-TENT-001", "DOB-TALL-STRUCTURE-001"],
-            // The binding route's, which is the RESOLVED one: both routes contribute the merged
-            // `may_be_required` and the pool narrows to the routes known to apply.
             name: "Tall structure permit",
             deadlineStatus: "published_deadline_missed",
             latestApplyDate: "2026-07-01",
@@ -2692,28 +2294,15 @@ describe("F-102 · CONDITIONAL branch table and INFEASIBLE rescope ladder", () =
     await screen.findByTestId("missed-may-be-required");
 
     const section = screen.getByTestId("missed-may-be-required");
-    // The unsettled route: named, still linked, and not an instruction to file.
     const unsettled = section.querySelector('a[href="https://example.gov/dobnow"]');
     expect(unsettled?.textContent).toBe("DOB NOW");
     expect(section.textContent).toContain("portal: DOB NOW");
-    // AND SO IS THE RESOLVED ROUTE BESIDE IT, which is a change and the right one. This asserted
-    // that a route whose own trigger resolved keeps the Apply link; the group is in CANDIDATE mode,
-    // and design §5.3 suppresses the action for every entry of a candidate group including a
-    // triggered one, which is what the plan line has done since the entries were neutralised. This
-    // panel now reads the same predicate, so the two surfaces stop disagreeing about one group
-    // (#252 review).
     expect(
       section.querySelector('a[href="https://example.gov/tall-portal"]')?.textContent,
     ).not.toContain("Apply through");
     expect(section.textContent).toContain("portal: DOB tall structures");
   });
 
-  /**
-   * #252 review: NOT A BLANKET SUPPRESSION, which the candidate case above no longer proves.
-   *
-   * `offersAFilingAction` withholds the action on two counts and this pins the other side of both:
-   * a settled group whose route publishes a filing keeps its Apply link.
-   */
   it("keeps the apply link on a settled route that publishes a filing", async () => {
     const route = (overrides: Partial<FindingRoute> = {}): FindingRoute => ({
       ruleId: "DOB-TENT-001",
@@ -2740,7 +2329,6 @@ describe("F-102 · CONDITIONAL branch table and INFEASIBLE rescope ladder", () =
         findings: [
           finding({
             ruleIds: ["DOB-TALL-STRUCTURE-001", "DOB-TENT-001"],
-            // The binding route's, which on a tie is the earlier rule id.
             name: "Tall structure permit",
             disposition: "required",
             deadlineStatus: "published_deadline_missed",
@@ -2810,7 +2398,6 @@ describe("F-102 · CONDITIONAL branch table and INFEASIBLE rescope ladder", () =
     await screen.findByTestId("missed-may-be-required");
 
     const section = screen.getByTestId("missed-may-be-required");
-    // The value the list prints, and a sentence that agrees with it rather than contradicting it.
     expect(section.textContent).toContain("(prohibited or ineligible)");
     expect(section.textContent).not.toContain("These findings carry a may-be-required disposition");
     expect(section.textContent).toContain("publish a prohibition or an ineligibility");
@@ -2818,21 +2405,11 @@ describe("F-102 · CONDITIONAL branch table and INFEASIBLE rescope ladder", () =
     expect(barredRoute.disposition).toBe("prohibited_or_ineligible");
   });
 
-  /**
-   * #252 review: THE RESCOPE SENTENCE NAMED THE ROUTE IT IS NOT REMOVING.
-   *
-   * "This removes X — the missed-deadline finding that blocks the current event date" resolved the
-   * blocker's rule ids back through `findings`, which on a merged line returns the parent and
-   * collapses to the headline. Where the blocker is a NON-binding route, the sentence named the
-   * binding route instead: the panel above had already been fixed to read the narrowed blocker, and
-   * this section had not.
-   */
   it("names the blocking route, not the headline, in the rescope explanation", async () => {
     const route = (overrides: Partial<FindingRoute> = {}): FindingRoute => ({
       ruleId: "DOB-TENT-001",
       triggerResult: "true",
       disposition: "required",
-      // A published window on both routes, which is what makes the OPEN one bind.
       unknownFields: [],
       name: "Tent permit",
       agency: "DOB",
@@ -2855,9 +2432,6 @@ describe("F-102 · CONDITIONAL branch table and INFEASIBLE rescope ladder", () =
           finding({
             ruleIds: ["DOB-TENT-001", "DOB-TALL-STRUCTURE-001"],
             headlineMode: "applies_together",
-            // The headline is the binding route's: both routes publish a window, and an open one
-            // binds ahead of a closed one, so the on-track tent route reads the line while the
-            // missed tall route is the blocker below.
             deadline: { type: "before_issuance" } as Finding["deadline"],
             routes: [
               route({}),
@@ -2872,7 +2446,6 @@ describe("F-102 · CONDITIONAL branch table and INFEASIBLE rescope ladder", () =
         ],
         verdictDetail: {
           ...emptyVerdictDetail,
-          // The blocker is the NON-binding route, narrowed by `blockerView` as the engine serves it.
           blockingFinding: {
             ruleIds: ["DOB-TALL-STRUCTURE-001"],
             name: "Tall structure permit",
@@ -2910,7 +2483,6 @@ describe("F-102 · CONDITIONAL branch table and INFEASIBLE rescope ladder", () =
     const reason = screen
       .getByTestId("rescope-ladder")
       .querySelector(".verdict-detail__rescope-reason");
-    // The route the rescope actually drops, not the one the merged line reads.
     expect(reason?.textContent).toContain("Tall structure permit");
     expect(reason?.textContent).not.toContain("Tent permit");
   });
@@ -2934,8 +2506,6 @@ describe("navigating from one event's plan to another", () => {
       ),
     );
 
-    // The second event's plan request never settles: the first event's plan must not be sitting
-    // on screen underneath it.
     vi.stubGlobal(
       "fetch",
       vi.fn(
@@ -3033,7 +2603,6 @@ describe("the first plan for an event", () => {
 
     await user.click(await screen.findByRole("button", { name: "Generate the plan" }));
 
-    // The failure renders alongside the missing-plan message rather than replacing it.
     await waitFor(() =>
       expect(screen.getAllByRole("alert").map((alert) => alert.textContent)).toContain(
         "plan generation failed",
@@ -3052,15 +2621,12 @@ describe("the metadata request", () => {
       vi.fn(
         (url: string) =>
           new Promise<Response>((resolvePromise) => {
-            // The meta call hangs; the plan call answers normally.
             if (!url.endsWith("/rules/meta")) resolvePromise(jsonResponse(200, plan()));
           }),
       ),
     );
     renderPlan();
 
-    // The banner states the pinned pair off the plan, so a hanging meta call costs it nothing but
-    // the comparison: it simply says nothing about a newer ruleset until the metadata arrives.
     const banner = await screen.findByRole("complementary", { name: "Rules snapshot" });
     expect(banner.textContent).toContain(`Rules snapshot ${publishedRuleset.ruleset_version}`);
     expect(banner.textContent).toContain(
@@ -3073,7 +2639,6 @@ describe("the metadata request", () => {
 
 describe("verdictCopy on its own", () => {
   it("returns the approved copy with no plan detail to draw slots from", () => {
-    // F-102's verdict card will call this without a plan in hand.
     expect(verdictCopy("INFEASIBLE")).toBe("Published deadline missed as scoped");
     expect(verdictCopy("FEASIBLE")).toBe("On track");
     expect(verdictCopy("CONDITIONAL")).toBe("Depends on");
@@ -3082,12 +2647,6 @@ describe("verdictCopy on its own", () => {
 });
 
 describe("a generated plan whose own response cannot be read", () => {
-  /**
-   * The generation POST answers with the plan it stored, and that is what the page installs. The
-   * only case left needing a re-read is a POST that succeeded with a body this page cannot read: a
-   * plan row was still written, so reporting a failure would misstate what happened and POSTing
-   * again would write a second immutable row for one organizer action.
-   */
   const stubUnreadableGeneration = (reread: () => Response) => {
     let generated = false;
     vi.stubGlobal(
@@ -3097,8 +2656,6 @@ describe("a generated plan whose own response cannot be read", () => {
         if (url.endsWith("/plan")) {
           if (init?.method === "POST") {
             generated = true;
-            // 201, so a plan was written — but the body omits `generatedAt`, which the page reads
-            // unconditionally, so it cannot be rendered.
             const { generatedAt: _lost, ...unreadable } = plan();
             return jsonResponse(201, unreadable);
           }
@@ -3114,10 +2671,6 @@ describe("a generated plan whose own response cannot be read", () => {
   };
 
   it("installs the plan the generation returned, without reading it back", async () => {
-    // The POST answers with the complete plan it stored. Re-reading made the plan the organizer had
-    // just created conditional on a second request: a slow one left the old plan on screen, and a
-    // failed one replaced it with "could not be read" for a plan that exists — and in that state the
-    // button disappeared, so there was no way to retry without reloading the page.
     let planGets = 0;
     vi.stubGlobal(
       "fetch",
@@ -3128,7 +2681,6 @@ describe("a generated plan whose own response cannot be read", () => {
             return jsonResponse(201, plan({ eventRevision: 7, verdict: "FEASIBLE" }));
           }
           planGets += 1;
-          // Only the initial load may read; anything after the POST would be the redundant re-read.
           return planGets > 1
             ? jsonResponse(500, { error: "must not be called" })
             : jsonResponse(404, {});
@@ -3160,7 +2712,6 @@ describe("a generated plan whose own response cannot be read", () => {
 
     await user.click(await screen.findByRole("button", { name: "Generate the plan" }));
 
-    // The plan exists and is shown, recovered by the one re-read that is genuinely necessary.
     await waitFor(() =>
       expect(document.querySelector(".plan__verdict")?.textContent).toContain("generated"),
     );
@@ -3179,16 +2730,12 @@ describe("a generated plan whose own response cannot be read", () => {
         "The API returned a plan this page cannot read.",
       ),
     );
-    // A plan that could not be read is not a plan that is missing, so generating is not offered
-    // again — that would write a second plan row for one that already exists.
     expect(screen.queryByRole("button", { name: "Generate the plan" })).toBeNull();
   });
 });
 
 describe("a rule whose whole deadline is its type", () => {
   it("states 'before issuance' for a line that publishes no prose and no date", async () => {
-    // SAPO-INSURANCE-001 publishes {type: "before_issuance"} and nothing else. Dropping it
-    // leaves the line silent about when the insurance actually has to exist.
     const insurance = publishedRule("SAPO-INSURANCE-001");
     expect(insurance.output.deadline).toEqual({ type: "before_issuance" });
 
@@ -3207,8 +2754,6 @@ describe("a rule whose whole deadline is its type", () => {
     );
     renderPlan();
 
-    // F-205 also renders SAPO-INSURANCE-001 as its own dedicated card, so two articles now match
-    // this rule id; this test is about the plan LINE (F-206), scoped here by its own class.
     await screen.findAllByRole("article");
     const planLine = document.querySelector("article.line");
     expect(planLine).not.toBeNull();
@@ -3247,31 +2792,24 @@ describe("ordering the live ruleset against the pinned one", () => {
   it("only tells the organizer to regenerate when the live ruleset is actually newer", () => {
     expect(compareToPinned("nyc.v2.3", "nyc.v2.1")).toBe("newer");
     expect(compareToPinned("nyc.v3.0", "nyc.v2.9")).toBe("newer");
-    // Regenerating onto an older ruleset would rebuild the plan from superseded rules.
     expect(compareToPinned("nyc.v2.2", "nyc.v2.3")).toBe("older");
     expect(compareToPinned("nyc.v2.9", "nyc.v3.0")).toBe("older");
     expect(compareToPinned("nyc.v2.3", "nyc.v2.3")).toBe("same");
   });
 
   it("orders the minor part as a number, not as text", () => {
-    // A string comparison puts v2.10 below v2.9 and would call a newer ruleset older.
     expect(compareToPinned("nyc.v2.10", "nyc.v2.9")).toBe("newer");
     expect(compareToPinned("nyc.v2.9", "nyc.v2.10")).toBe("older");
   });
 
   it("refuses to claim a direction it cannot derive", () => {
-    // `nyc.vMAJOR.MINOR` is the only shape BASELINE declares; anything else is unorderable.
     expect(compareToPinned("nyc-2.3", "nyc.v2.1")).toBe("different");
     expect(compareToPinned("nyc.v2.3", "draft")).toBe("different");
-    // Two jurisdictions have no ordering between them at all.
     expect(compareToPinned("bos.v1.0", "nyc.v2.3")).toBe("different");
-    // Identical strings are not evidence of identical content unless they are versions. Two
-    // artifacts both labelled `draft` are two unknown artifacts, so they stay unorderable.
     expect(compareToPinned("draft", "draft")).toBe("different");
   });
 
   it("says the service is on an older ruleset after a rollback, without advising regeneration", async () => {
-    // The api is rolled back to v2.2 while a plan pinned to v2.3 is read.
     stubApi(plan({ rulesetVersion: "nyc.v2.3" }), {
       ruleset_version: "nyc.v2.2",
       snapshot_date: "2026-07-24",
@@ -3300,7 +2838,6 @@ describe("ordering the live ruleset against the pinned one", () => {
 });
 
 describe("regenerating while the service is behind the plan's ruleset", () => {
-  /** A stale plan — the event has been edited — pinned to `pinned`, with the service on `live`. */
   const stubBehind = (pinned: string, live: string | null) =>
     vi.stubGlobal(
       "fetch",
@@ -3322,13 +2859,9 @@ describe("regenerating while the service is behind the plan's ruleset", () => {
     );
 
   it("refuses regeneration when the service has been rolled back behind the plan", async () => {
-    // The event has been edited, so staleness would offer the button. Regeneration evaluates the
-    // SERVICE's ruleset, so taking that offer would rebuild a v2.3 plan from v2.2 — a silent
-    // downgrade of the plan's regulatory basis, dressed as the routine fix for a stale plan.
     stubBehind("nyc.v2.3", "nyc.v2.2");
     renderPlan();
 
-    // The staleness warning still stands: the plan really is stale.
     expect((await screen.findByRole("alert")).textContent).toContain("now at revision 4");
     expect(screen.queryByRole("button", { name: "Regenerate the plan" })).toBeNull();
   });
@@ -3338,19 +2871,14 @@ describe("regenerating while the service is behind the plan's ruleset", () => {
     renderPlan();
     await screen.findByRole("complementary", { name: "Rules snapshot" });
 
-    // Greying out a button, or dropping it, leaves an organizer to conclude their event is at fault.
     const refused = document.querySelector(".plan__refused");
     expect(refused?.textContent).toContain("generated from ruleset nyc.v2.3");
     expect(refused?.textContent).toContain("service is currently running nyc.v2.2");
     expect(refused?.textContent).toContain("not a problem with your event");
-    // Here the preserved plan really is rendered under this notice, so this surface is the one
-    // entitled to say so. Every other caller supplies its own referent.
     expect(refused?.textContent).toContain("the plan below");
   });
 
   it("refuses a version it cannot order, for the same reason", async () => {
-    // Nothing establishes that regenerating onto an unorderable artifact would not move the plan
-    // backwards, and "we cannot tell" is not permission to overwrite a regulatory basis.
     stubBehind("nyc.v2.3", "nyc-hotfix");
     renderPlan();
     await screen.findByRole("complementary", { name: "Rules snapshot" });
@@ -3360,8 +2888,6 @@ describe("regenerating while the service is behind the plan's ruleset", () => {
   });
 
   it("refuses when the service's ruleset cannot be read at all", async () => {
-    // The claim being made is that the service is at or ahead of the pinned version. An unreadable
-    // /api/rules/meta does not establish it, and the cost of waiting is a stale-but-sound plan.
     stubBehind("nyc.v2.3", null);
     renderPlan();
     await screen.findByRole("complementary", { name: "Rules snapshot" });
@@ -3387,7 +2913,6 @@ describe("regenerating while the service is behind the plan's ruleset", () => {
   });
 
   it("still generates a first plan whatever the service is running", async () => {
-    // Nothing is pinned yet, so there is no regulatory basis to downgrade.
     vi.stubGlobal(
       "fetch",
       vi.fn(async (url: string) => {
@@ -3410,7 +2935,6 @@ describe("regenerating while the service is behind the plan's ruleset", () => {
 });
 
 describe("a plan the event has moved past", () => {
-  /** The event endpoint's answer, which is where the current revision comes from. */
   const stubWithEvent = (planBody: unknown, revisionCounter: number | null, planStatus = 200) => {
     const fetchMock = vi.fn(async (url: string, init?: RequestInit) => {
       if (url.endsWith("/rules/meta")) return jsonResponse(200, liveMeta);
@@ -3431,7 +2955,6 @@ describe("a plan the event has moved past", () => {
   };
 
   it("says so when the event has been edited since the plan was generated", async () => {
-    // Same comparison the checklist API refuses on: the event's revision is past the plan's.
     stubWithEvent(plan({ eventRevision: 1 }), 3);
     renderPlan();
 
@@ -3451,8 +2974,6 @@ describe("a plan the event has moved past", () => {
   });
 
   it("replaces a stale plan with one generated for the event as it stands", async () => {
-    // The event sits at revision 3 while the stored plan still pins 1. Generating pins the
-    // revision the event is actually on, which is what clears the warning.
     const eventRevision = 3;
     let planRevision = 1;
     vi.stubGlobal(
@@ -3483,7 +3004,6 @@ describe("a plan the event has moved past", () => {
   });
 
   it("does not claim currency it could not confirm", async () => {
-    // The event could not be read, so silence would read as confirmation that the plan matches.
     stubWithEvent(plan({ eventRevision: 1 }), null);
     renderPlan();
 
@@ -3491,13 +3011,6 @@ describe("a plan the event has moved past", () => {
     expect(screen.getByText(/whether this plan is still current is unconfirmed/)).toBeDefined();
   });
 
-  /**
-   * `loadEvent` answers `ok` for any body with a string `id` and casts the rest to `SavedEvent`,
-   * which declares `revision_counter: number` without checking it. An unusable revision therefore
-   * arrived as a successful load — and `current > pinned` against a non-number is `false`, so an
-   * edited plan rendered with NEITHER the stale warning nor the unconfirmed one. Silence, on a
-   * regulatory plan whose dates were computed from superseded answers.
-   */
   const stubEventBody = (event: Record<string, unknown>) =>
     vi.stubGlobal(
       "fetch",
@@ -3518,7 +3031,6 @@ describe("a plan the event has moved past", () => {
     renderPlan();
 
     await screen.findByRole("complementary", { name: "Rules snapshot" });
-    // Unconfirmed, not silent. The plan may well be stale and we cannot tell.
     expect(screen.getByText(/whether this plan is still current is unconfirmed/)).toBeDefined();
   });
 
@@ -3531,10 +3043,6 @@ describe("a plan the event has moved past", () => {
   });
 
   it("does not claim currency it has not confirmed yet", async () => {
-    // The plan and the event are two independent requests. When the plan wins the race, the
-    // verdict and deadlines are on screen with the revision check still outstanding — and if the
-    // event request never settles after an edit, an outdated regulatory plan sits there looking
-    // authoritative. Not-yet-checked has to read as unconfirmed, exactly like could-not-check.
     let releaseEvent: (response: Response) => void = () => {};
     vi.stubGlobal(
       "fetch",
@@ -3548,12 +3056,10 @@ describe("a plan the event has moved past", () => {
     );
     renderPlan();
 
-    // The plan is fully rendered while the revision check is still in flight.
     await screen.findByRole("complementary", { name: "Rules snapshot" });
     expect(screen.getAllByRole("article").length).toBeGreaterThan(0);
     expect(screen.getByText(/unconfirmed until then/)).toBeDefined();
 
-    // And the caveat comes off only once the check actually answers.
     releaseEvent(
       jsonResponse(200, {
         event: { id: "event-1", revision_counter: 1 },
@@ -3573,10 +3079,6 @@ describe("a plan the event has moved past", () => {
   });
 
   it("installs a regenerated plan without waiting for the revision re-read", async () => {
-    // The mirror image of the finding above, and the same mistake: the event request treated as a
-    // gate on the plan rather than a separate fact. The POST has succeeded, so a plan exists on the
-    // server — withholding it until an ancillary revision check answers leaves the organizer looking
-    // at a button stuck on "Generating plan…" and a plan they cannot reach.
     const eventRevision = 3;
     let planRevision = 1;
     let eventCalls = 0;
@@ -3593,7 +3095,6 @@ describe("a plan the event has moved past", () => {
           return jsonResponse(200, plan({ eventRevision: planRevision }));
         }
         eventCalls += 1;
-        // The initial load answers; the re-read after the generation never settles.
         if (eventCalls > 1) {
           return new Promise<Response>((resolvePromise) => {
             releaseEvent = resolvePromise;
@@ -3611,14 +3112,10 @@ describe("a plan the event has moved past", () => {
 
     await user.click(await screen.findByRole("button", { name: "Regenerate the plan" }));
 
-    // The new plan is on screen and the button has let go, with the revision check still in flight.
-    // Read off the verdict line, which only the installed plan renders — "revision 3" also appears
-    // in the staleness warning the old plan was showing.
     await waitFor(() =>
       expect(document.querySelector(".plan__verdict")?.textContent).toContain("revision 3"),
     );
     expect(screen.queryByRole("button", { name: "Generating plan…" })).toBeNull();
-    // And currency is not claimed off the revision read before the generation ran.
     expect(screen.getByText(/unconfirmed until then/)).toBeDefined();
 
     releaseEvent(
@@ -3633,7 +3130,6 @@ describe("a plan the event has moved past", () => {
 });
 
 describe("the states this page can be in", () => {
-  /** Answers each endpoint from a small script, so a test states exactly what the api did. */
   const stubScript = (script: {
     plan?: () => Response;
     post?: () => Response;
@@ -3662,8 +3158,6 @@ describe("the states this page can be in", () => {
   };
 
   it("offers generation for a missing plan but not for one it could not read", async () => {
-    // A 500, an integrity error or an unreachable api all leave no plan on screen, but a plan may
-    // well exist — generating would write a second immutable row for one that is merely unread.
     for (const unreadable of [
       () => jsonResponse(500, { error: "plan lookup failed" }),
       () => jsonResponse(500, { error: "stored plan is incomplete" }),
@@ -3682,8 +3176,6 @@ describe("the states this page can be in", () => {
   });
 
   it("does not offer to create a plan for an event that does not exist", async () => {
-    // The plan endpoint answers 404 for a missing event as well as a missing plan; only the event
-    // itself distinguishes them.
     stubScript({
       plan: () => jsonResponse(404, { error: "event event-1 not found" }),
       event: () => jsonResponse(404, { error: "event not found" }),
@@ -3695,8 +3187,6 @@ describe("the states this page can be in", () => {
   });
 
   it("shows a regeneration failure while the stale plan is still on screen", async () => {
-    // The button re-enabling with no message left the organizer clicking again, and every attempt
-    // writes another immutable plan row.
     stubScript({
       plan: () => jsonResponse(200, plan({ eventRevision: 1 })),
       event: () =>
@@ -3717,14 +3207,11 @@ describe("the states this page can be in", () => {
         "plan generation failed",
       ),
     );
-    // The plan it failed to replace is still readable, and still marked stale.
     expect(screen.getAllByRole("article").length).toBeGreaterThan(0);
     expect(screen.getByText(/generated for revision 1/)).toBeDefined();
   });
 
   it("offers the regeneration the banner tells the organizer to perform", async () => {
-    // A rules update with no event edit: the banner says a newer ruleset exists, so the page has
-    // to offer the action it names. Nothing else on the page would.
     stubScript({
       plan: () => jsonResponse(200, plan({ rulesetVersion: "nyc.v2.1", eventRevision: 1 })),
       meta: () => jsonResponse(200, { ruleset_version: "nyc.v2.3", snapshot_date: "2026-07-25" }),
@@ -3734,13 +3221,10 @@ describe("the states this page can be in", () => {
     const banner = await screen.findByRole("complementary", { name: "Rules snapshot" });
     expect(banner.textContent).toContain("regenerate to update");
     expect(screen.getByRole("button", { name: "Regenerate the plan" })).toBeDefined();
-    // The event matches its plan, so this is the rules-update case and not the stale one.
     expect(screen.queryByText(/has since been edited/)).toBeNull();
   });
 
   it("offers nothing when the live ruleset is older or unorderable", async () => {
-    // The banner does not tell the organizer to regenerate in either case, so neither should the
-    // page: regenerating onto an older ruleset would rebuild the plan from superseded rules.
     for (const live of ["nyc.v2.2", "nyc-hotfix"]) {
       stubScript({
         plan: () => jsonResponse(200, plan({ rulesetVersion: "nyc.v2.3", eventRevision: 1 })),
@@ -3829,9 +3313,6 @@ describe("the states this page can be in", () => {
 
 describe("a regeneration that finishes after the page has moved on", () => {
   it("does not install one event's plan under another event's id", async () => {
-    // The effect's guard covers its own requests; this one starts outside it. After the POST for
-    // event-1 lands, event-1's plan is readable — so without a guard the follow-up read installs
-    // it, and the page is showing event-2.
     let releasePost: (response: Response) => void = () => {};
     let generated = false;
     vi.stubGlobal(
@@ -3862,23 +3343,18 @@ describe("a regeneration that finishes after the page has moved on", () => {
     const view = render(<PlanView apiBaseUrl="https://api.example.com" eventId="event-1" />);
 
     await user.click(await screen.findByRole("button", { name: "Generate the plan" }));
-    // Away to another event while event-1's generation is still in flight.
     view.rerender(<PlanView apiBaseUrl="https://api.example.com" eventId="event-2" />);
     await screen.findByRole("button", { name: "Generate the plan" });
 
     releasePost(jsonResponse(201, plan({ eventId: "event-1", rulesetVersion: "nyc.v2.1" })));
     await new Promise((resolveTimer) => setTimeout(resolveTimer, 50));
 
-    // event-1's plan must not appear under event-2, current or otherwise.
     expect(screen.queryByText(/nyc\.v2\.1/)).toBeNull();
     expect(screen.queryAllByRole("article")).toEqual([]);
     expect(screen.getByRole("button", { name: "Generate the plan" })).toBeDefined();
   });
 });
 
-// Progressive disclosure. Nothing was removed from a line; these pin WHICH fields are visible
-// before an interaction and which are one interaction away, because that split is the whole
-// change and a later edit could quietly move a field across it.
 describe("a scannable line (progressive disclosure)", () => {
   const collapsedLine = async (only: Finding) => {
     stubApi(plan({ findings: [only] }));
@@ -3886,7 +3362,6 @@ describe("a scannable line (progressive disclosure)", () => {
     return within(await screen.findByRole("article"));
   };
 
-  /** Everything the summary carries, on a finding that publishes all of it. */
   const full = () =>
     finding({
       name: "Special Event Permit",
@@ -4001,8 +3476,6 @@ describe("a scannable line (progressive disclosure)", () => {
   it("shows exactly the summary fields before the line is expanded", async () => {
     const line = await collapsedLine(full());
 
-    // Present: name, agency, disposition, fee, the deadline and its status, the badge, the
-    // primary citation.
     expect(line.getByRole("heading", { name: "Special Event Permit" })).toBeDefined();
     expect(line.getByText("NYC Parks")).toBeDefined();
     expect(line.getByText("required")).toBeDefined();
@@ -4012,7 +3485,6 @@ describe("a scannable line (progressive disclosure)", () => {
     expect(line.getByText("SOURCE CONFIRMED")).toBeDefined();
     expect(line.getByText("Parks FAQ")).toBeDefined();
 
-    // Absent until expanded, and absent from the DOM rather than merely hidden.
     expect(line.queryByText("Second page")).toBeNull();
     expect(line.queryByText(/last verified/)).toBeNull();
     expect(line.queryByText("A published note.")).toBeNull();
@@ -4032,14 +3504,11 @@ describe("a scannable line (progressive disclosure)", () => {
     expect(line.getByText(/apply at/)).toBeDefined();
     expect(line.getByText("PARKS-EVENT-001")).toBeDefined();
 
-    // The summary keeps everything it had: expanding adds, it never moves a field down.
     expect(line.getByText(/apply by 2026-08-01/)).toBeDefined();
     expect(line.getByText("SOURCE CONFIRMED")).toBeDefined();
   });
 
   it("shows a RESEARCH_REQUIRED line's absent source on the line itself", async () => {
-    // The absence IS the information, so it cannot sit behind the expand: an empty citation slot
-    // would read as a rendering fault instead of a finding.
     const line = await collapsedLine(
       finding({ verificationStatus: "RESEARCH_REQUIRED", sources: [] }),
     );
@@ -4056,7 +3525,6 @@ describe("a scannable line (progressive disclosure)", () => {
       }),
     );
 
-    // The badge is the scannable signal; the two readings are one interaction away, verbatim.
     expect(line.getByText("OFFICIAL CONFLICT")).toBeDefined();
     expect(line.queryByText(/One source says 90 days/)).toBeNull();
 
@@ -4065,26 +3533,16 @@ describe("a scannable line (progressive disclosure)", () => {
   });
 
   it("renders a published fee, and nothing at all when none is published", async () => {
-    // The line used to say "fee not published" for a null fee. That sentence asserted two things at
-    // once — that a price exists, and that its amount was withheld — and a finding carries evidence
-    // for neither: `ruleset.ts` collapses an absent `fee` and an explicit `fee: null` to one value,
-    // so "this filing has no fee" and "the amount is unpublished" arrive here identical. Deciding it
-    // from the finding's KIND only moved the inference up a level, to what OTHER rules of that kind
-    // publish, which is a fact about a different filing. SAPO-INSURANCE-BLOCK-PARTY-RIDE-001,
-    // PARKS-EVENT-EXACTLY-20-001 and DOB-PROP-TRUSS-001 are all fee-bearing kinds carrying no fee,
-    // and all three would have been captioned on that basis alone.
     const published = await collapsedLine(finding({ feeDisplay: "$25 processing fee" }));
     expect(published.getByText("$25 processing fee")).toBeDefined();
 
     cleanup();
     const absent = await collapsedLine(finding({ feeDisplay: null }));
     expect(absent.queryByText("fee not published")).toBeNull();
-    // No blank row standing where the amount would be: the row is not rendered at all.
     expect(document.querySelector(".line__fee")).toBeNull();
     expect(absent.queryByText("$0")).toBeNull();
   });
 
-  /** Scenario B's DOHMH-EXEMPTION-001: one source, and none of the optional detail fields. */
   const bareFinding = () =>
     finding({
       ruleIds: ["DOHMH-EXEMPTION-001"],
@@ -4111,9 +3569,6 @@ describe("a scannable line (progressive disclosure)", () => {
     });
 
   it("keeps the rule ids reachable on a finding that has no optional detail", async () => {
-    // F-201 AC 1: every finding references its rule ID. The rule ids render inside the panel, so
-    // gating the panel on the OPTIONAL fields took them off the page entirely for this shape —
-    // not hidden behind an expand, absent, with no control to reveal them.
     const line = await collapsedLine(bareFinding());
 
     const toggle = line.getByRole("button", {
@@ -4124,8 +3579,6 @@ describe("a scannable line (progressive disclosure)", () => {
   });
 
   it("offers the expand on every finding shape, so no panel field can vanish with the panel", async () => {
-    // The general form of the case above: the panel is unconditional, so a finding shape can never
-    // drop a field that was moved into it. Asserted on the emptiest shape the plan produces.
     for (const shape of [bareFinding(), finding({ sources: [] }), full()]) {
       cleanup();
       const line = await collapsedLine(shape);
@@ -4134,11 +3587,6 @@ describe("a scannable line (progressive disclosure)", () => {
   });
 
   it("reports a URL-less source that is behind the expand, without anyone expanding it", async () => {
-    // The log is how an operator learns a stored plan has lost its click-through, and a plan row is
-    // immutable, so nothing else reports it. A source past the first renders inside the panel, and
-    // the panel is UNMOUNTED while collapsed: while the check lived inside the citation it ran only
-    // if someone happened to expand that one line. The existing case above covers a url-less
-    // PRIMARY source, which stays mounted, and passes either way.
     const logged = vi.spyOn(console, "error").mockImplementation(() => {});
     try {
       const line = await collapsedLine(
@@ -4154,7 +3602,6 @@ describe("a scannable line (progressive disclosure)", () => {
         }),
       );
 
-      // Still collapsed, and the second citation is genuinely absent rather than hidden.
       expect(line.queryByText("Parks borough office, by phone")).toBeNull();
 
       await waitFor(() =>
@@ -4175,7 +3622,6 @@ describe("a scannable line (progressive disclosure)", () => {
     const line = await collapsedLine(full());
     const toggle = line.getByRole("button", { name: "Details for Special Event Permit" });
 
-    // Reachable by Tab, and the state is on the control rather than in a colour or a glyph.
     expect(toggle.getAttribute("aria-expanded")).toBe("false");
     await userEvent.tab();
     while (document.activeElement !== toggle) await userEvent.tab();
@@ -4187,7 +3633,6 @@ describe("a scannable line (progressive disclosure)", () => {
     await userEvent.keyboard(" ");
     expect(toggle.getAttribute("aria-expanded")).toBe("false");
 
-    // The control points at the region it opens, so assistive technology can follow it.
     await userEvent.keyboard("{Enter}");
     const panelId = toggle.getAttribute("aria-controls");
     expect(panelId).not.toBeNull();

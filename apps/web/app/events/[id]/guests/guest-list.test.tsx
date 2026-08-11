@@ -44,8 +44,7 @@ const listBody = {
 };
 
 describe("GuestListView", () => {
-  // SPEC-CONFLICT #209, resolved 2026-08-03: a null capacity is no confirmed limit, so the
-  // count is shown on its own rather than against a number the organizer never set.
+  // SPEC-CONFLICT #209: null capacity displays no admission limit.
   it("shows the count alone when no capacity is confirmed", async () => {
     vi.stubGlobal(
       "fetch",
@@ -63,10 +62,6 @@ describe("GuestListView", () => {
     expect(await screen.findByText("1 confirmed")).toBeDefined();
   });
 
-  // The note is rendered during the compatibility window, when `readLimit` may have taken the
-  // number from a pre-rename API's regulatory `headcount`. Calling that a confirmed capacity
-  // tells the organizer something the responding API has not stated, so the copy names the
-  // limit by what it does rather than by which field supplied it.
   it("does not call the limit a confirmed capacity when a pre-rename api supplied it", async () => {
     const legacyBody = {
       ...listBody,

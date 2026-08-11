@@ -1,16 +1,3 @@
-// The F-201 acceptance suite: the six scenarios and every boundary fixture in
-// docs/test-scenario-answer-key.md (v7), pinned to that document's clock (today = 2026-07-22)
-// and evaluated against the published ruleset. Expected finding sets are exact — a rule the
-// key does not list is a false addition and fails here.
-//
-// Two things the key does NOT pin, called out at each use:
-//   * `disposition` per line (zero occurrences in the whole document). Where a rule publishes
-//     one, that value is asserted as published. Where it does not, the assertion documents the
-//     engine's PROPOSED default (packages/engine/src/proposals.ts §1) and is not evidence the
-//     team agreed to it.
-//   * the holiday list behind `us-ny-business-days@2026.1`, which is still RESEARCH_REQUIRED.
-//     Fixture windows are pinned to periods the key states carry no contested holidays.
-
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import { PUBLISHED_RULES_FILE } from "./__fixtures__/published-ruleset";
@@ -22,9 +9,6 @@ const TODAY = "2026-07-22";
 
 const ruleset = parseEngineRuleset(JSON.parse(readFileSync(PUBLISHED_RULES_FILE, "utf8")));
 
-// The pinned calendar's holiday list is unresolved upstream (config.business_day_math: "the
-// holiday list itself remains RESEARCH_REQUIRED"). Fixtures may not invent holidays, so the
-// list stays empty and every fixture window is one the answer key states is uncontested.
 const calendar: PublishedHolidayCalendar = { id: ruleset.calendarId, holidays: [] };
 
 const plan = (intake: EventIntake, today = TODAY): PermitPlan =>
@@ -47,7 +31,6 @@ const actualLines = (findings: readonly Finding[], withDates: boolean): unknown[
     ...(withDates ? { latestApplyDate: finding.latestApplyDate } : {}),
   }));
 
-/** Dates are compared only for the scenarios whose expectations pin them. */
 const expectFindings = (findings: readonly Finding[], expected: ExpectedLine[]): void => {
   const withDates = expected.every((line) => line.latestApplyDate !== undefined);
   expect(actualLines(findings, withDates)).toEqual(expected);
@@ -61,7 +44,6 @@ const confirmationLine = (ruleId: string, withDate = true): ExpectedLine => ({
   ...(withDate ? { latestApplyDate: null } : {}),
 });
 
-/** Fields every scenario answers the same way; each scenario overrides what it exercises. */
 const baseIntake: EventIntake = {
   borough: "manhattan",
   location_type: "private_venue",
@@ -74,12 +56,7 @@ const baseIntake: EventIntake = {
   structure_types: ["none"],
   open_flame_or_cooking: ["none"],
   generator_present: false,
-  // The answer key describes no battery system in any scenario ("battery none" in E, no power
-  // equipment in the others). Since nyc.v2.5 that is said by answering the question the registry
-  // actually asks: `battery_present` is collected of every event, and `battery_system_kwh` is only
-  // asked when it is true. Before, this file answered a kWh of 0 while the shared intake fixtures
-  // left it unanswered, so the same six scenarios disagreed about the battery between two fixture
-  // sets and only one of them saw FDNY-GENERATOR-001 (recorded against #88 on #91).
+
   battery_present: false,
   alcohol: false,
 };
@@ -103,7 +80,6 @@ describe("Scenario A — Bushwick Street Activation (demo anchor)", () => {
 
   it("produces exactly the five expected findings with their published dates", () => {
     expectFindings(plan(intakeA).findings, [
-      // disposition PROPOSED (kind default: permit -> required)
       {
         ruleIds: ["SAPO-STREET-LARGE-001"],
         kind: "permit",
@@ -111,7 +87,7 @@ describe("Scenario A — Bushwick Street Activation (demo anchor)", () => {
         deadlineStatus: "published_deadline_missed",
         latestApplyDate: "2026-07-12",
       },
-      // disposition PROPOSED (kind default: insurance -> required)
+
       {
         ruleIds: ["SAPO-INSURANCE-001"],
         kind: "insurance",
@@ -119,7 +95,7 @@ describe("Scenario A — Bushwick Street Activation (demo anchor)", () => {
         deadlineStatus: "not_applicable",
         latestApplyDate: null,
       },
-      // disposition PROPOSED (kind default: permit -> required)
+
       {
         ruleIds: ["NYPD-SOUND-001"],
         kind: "permit",
@@ -127,7 +103,7 @@ describe("Scenario A — Bushwick Street Activation (demo anchor)", () => {
         deadlineStatus: "on_track",
         latestApplyDate: "2026-08-21",
       },
-      // disposition PROPOSED (kind default: permit -> required)
+
       {
         ruleIds: ["DOHMH-VENDOR-PERMIT-001"],
         kind: "permit",
@@ -135,7 +111,7 @@ describe("Scenario A — Bushwick Street Activation (demo anchor)", () => {
         deadlineStatus: "not_calculable",
         latestApplyDate: null,
       },
-      // disposition published on the rule (MAY_BE_REQUIRED)
+
       {
         ruleIds: ["DOHMH-ORGANIZER-NOTIFY-001"],
         kind: "notification",
@@ -160,29 +136,26 @@ describe("Scenario A — Bushwick Street Activation (demo anchor)", () => {
 
   it("produces the three rescopes by full re-evaluation, not static text (AC 9)", () => {
     const suggestions = plan(intakeA).verdictDetail.rescopeSuggestions;
-    // F-102 AC 7 ladder order: Medium → Small → private venue.
+
     expect(suggestions.map((suggestion) => suggestion.change.value)).toEqual([
       "medium",
       "small",
       "private_venue",
     ]);
     expect(suggestions).toMatchObject([
-      // (a) size=medium: 30-day deadline = 2026-07-27, five days out
       {
         change: { field: "street_event_size", value: "medium" },
         reevaluatedVerdict: "FEASIBLE_AT_RISK",
         droppedRuleIds: ["SAPO-STREET-LARGE-001"],
         minSlackDays: 5,
       },
-      // (b) size=small: 14-day deadline clears; the DOHMH notification is the tight one
+
       {
         change: { field: "street_event_size", value: "small" },
         reevaluatedVerdict: "FEASIBLE_AT_RISK",
         droppedRuleIds: ["SAPO-STREET-LARGE-001"],
       },
-      // (c) private venue: SAPO permit + SAPO insurance drop. Conditional rather than at-risk
-      // because moving indoors opens a question the street version never asked — whether the
-      // amplified sound carries to a public way (§10-108(b)(3)) — and that decides a permit.
+
       {
         change: { field: "location_type", value: "private_venue" },
         reevaluatedVerdict: "CONDITIONAL",
@@ -194,7 +167,7 @@ describe("Scenario A — Bushwick Street Activation (demo anchor)", () => {
     const privateVenue = suggestions.find((s) => s.change.value === "private_venue");
     expect(medium?.minSlackDays).toBe(5);
     expect(small?.atRiskFindingName ?? small?.minSlackDays).toBeTruthy();
-    // Current-line enrichment names findings the private-venue re-evaluation introduces.
+
     expect(privateVenue?.introducedRuleIds).toEqual(
       expect.arrayContaining(["ADV-NOISE-CODE-001", "ADV-VENUE-OCCUPANCY-001", "DOB-ASSEMBLY-001"]),
     );
@@ -208,13 +181,12 @@ describe("Scenario A — Bushwick Street Activation (demo anchor)", () => {
     });
     expect(privateVenue?.remainingMissingFields).toContain("sound_audible_from_public_way");
     expect(privateVenue?.remainingTimelineReasons).toEqual([]);
-    // Non-at-risk suggestions omit at-risk-only enrichment keys (null would still change shape).
+
     expect(privateVenue !== undefined && !("minSlackDays" in privateVenue)).toBe(true);
     expect(privateVenue !== undefined && !("atRiskFindingName" in privateVenue)).toBe(true);
   });
 
   it("keeps the private-venue ladder step when the holiday calendar is unpublished", () => {
-    // Deployed API pins holidays: null (SPEC-CONFLICT #130). AC 7 still requires the third step.
     const unpublished = { id: ruleset.calendarId, holidays: null };
     const suggestions = evaluate(intakeA, ruleset, TODAY, unpublished).verdictDetail
       .rescopeSuggestions;
@@ -274,7 +246,6 @@ describe("Scenario B — Gallery Pop-up (false-positive test)", () => {
 
   it("identifies a low burden and nothing more: no SAPO, sound, assembly, or insurance line", () => {
     expectFindings(plan(intakeB).findings, [
-      // disposition PROPOSED (kind default: permit -> required)
       {
         ruleIds: ["DOHMH-VENDOR-PERMIT-001"],
         kind: "permit",
@@ -282,7 +253,7 @@ describe("Scenario B — Gallery Pop-up (false-positive test)", () => {
         deadlineStatus: "not_calculable",
         latestApplyDate: null,
       },
-      // disposition published on the rule (MAY_BE_REQUIRED)
+
       {
         ruleIds: ["DOHMH-ORGANIZER-NOTIFY-001"],
         kind: "notification",
@@ -297,7 +268,7 @@ describe("Scenario B — Gallery Pop-up (false-positive test)", () => {
       confirmationLine("CONF-NO-GENERATOR-001"),
       confirmationLine("CONF-NO-BATTERY-001"),
       confirmationLine("CONF-NO-ALCOHOL-001"),
-      // disposition PROPOSED (kind default: advisory -> advisory)
+
       {
         ruleIds: ["ADV-VENUE-OCCUPANCY-001"],
         kind: "advisory",
@@ -329,7 +300,6 @@ describe("Scenario C — Prospect Park Community Day (dependency chain)", () => 
 
   it("produces the four expected findings", () => {
     expectFindings(plan(intakeC).findings, [
-      // disposition PROPOSED (kind default: permit -> required)
       {
         ruleIds: ["NYPD-SOUND-001"],
         kind: "permit",
@@ -337,7 +307,7 @@ describe("Scenario C — Prospect Park Community Day (dependency chain)", () => 
         deadlineStatus: "on_track",
         latestApplyDate: "2026-09-11",
       },
-      // disposition published on the rule (MAY_BE_REQUIRED)
+
       {
         ruleIds: ["NYPD-SOUND-PARKS-DEP-001"],
         kind: "dependency",
@@ -345,7 +315,7 @@ describe("Scenario C — Prospect Park Community Day (dependency chain)", () => 
         deadlineStatus: "not_applicable",
         latestApplyDate: null,
       },
-      // disposition PROPOSED (kind default: permit -> required)
+
       {
         ruleIds: ["PARKS-EVENT-001"],
         kind: "permit",
@@ -353,7 +323,7 @@ describe("Scenario C — Prospect Park Community Day (dependency chain)", () => 
         deadlineStatus: "on_track",
         latestApplyDate: "2026-08-26",
       },
-      // disposition PROPOSED (kind default: note -> no_new_requirement)
+
       {
         ruleIds: ["PARKS-INSURANCE-NOTE-001"],
         kind: "note",
@@ -372,8 +342,6 @@ describe("Scenario C — Prospect Park Community Day (dependency chain)", () => 
   });
 
   it("keeps the published in-person filing instructions on the sound permit", () => {
-    // NYPD-SOUND-001 publishes no portal URL; the precinct and form number are the only
-    // actionable filing detail it has.
     const sound = plan(intakeC).findings.find((finding) =>
       finding.ruleIds.includes("NYPD-SOUND-001"),
     );
@@ -397,41 +365,32 @@ describe("Scenario C — Prospect Park Community Day (dependency chain)", () => 
     const sound = plan(intakeC).findings.find((finding) =>
       finding.ruleIds.includes("NYPD-SOUND-001"),
     );
-    // Parks publishes 21–30 days of processing, so the earliest the sound permit can be pursued
-    // is 21 days from today; its own 5-day deadline is 2026-09-11, leaving a 30-day window.
+
     expect(sound?.applyAfterDate).toBe("2026-08-12");
     expect(sound?.latestApplyDate).toBe("2026-09-11");
     expect(sound?.deadlineStatus).toBe("on_track");
     expect(sound?.notes.join(" ")).toContain("earliest pursuit 2026-08-12");
     expect(sound?.notes.join(" ")).toContain("21–30 day decision window");
-    // The order itself is not confirmed by located primary text, so the note says so.
+
     expect(sound?.notes.join(" ")).toContain("not confirmed by located primary text");
   });
 
   it("reports gated slack as the filing window, not the distance to the deadline", () => {
-    // 35-day runway. Parks processing opens the window 21 days out (2026-08-12); the sound
-    // permit's own 5-day deadline is 2026-08-21. The buffer that matters is the 9 days between
-    // them, not the 30 days from today, because nothing can be filed before the window opens.
     const runway35 = plan({ ...intakeC, event_date: "2026-08-26" });
     const sound = runway35.findings.find((finding) => finding.ruleIds.includes("NYPD-SOUND-001"));
 
     expect(sound?.applyAfterDate).toBe("2026-08-12");
     expect(sound?.latestApplyDate).toBe("2026-08-21");
-    // Pin the arithmetic, not the number: slack is latest_apply − apply_after (F-102 AC 5).
+
     expect(sound?.slackDays).toBe(
       differenceInCalendarDays(sound?.applyAfterDate ?? "", sound?.latestApplyDate ?? ""),
     );
     expect(sound?.slackDays).toBe(9);
-    // The plan's minimum slack follows it, so deadline copy and F-203 alerts inherit 9, not the
-    // 14 days the Parks line has or the 30 the ungated sound figure would have claimed.
+
     expect(runway35.verdictDetail.minSlackDays).toBe(9);
   });
 
   it("warns but never fabricates a blocker when the sequence is squeezed", () => {
-    // 25 days out: the Parks decision lands 2026-08-12, one day after the sound permit's own
-    // 2026-08-11 deadline. A strict issued-before-filed order is unconfirmed, so this raises a
-    // warning and never a missed window — but the gate is a day past the deadline, so there is no
-    // date to wait for and none is published. The 35-day case above keeps its gate.
     const squeezed = plan({ ...intakeC, event_date: "2026-08-16" });
     const sound = squeezed.findings.find((finding) => finding.ruleIds.includes("NYPD-SOUND-001"));
     expect(sound?.latestApplyDate).toBe("2026-08-11");
@@ -459,7 +418,6 @@ describe("Scenario D — Queens Block Party (tight but feasible)", () => {
 
   it("produces four findings and no insurance line (block party without a ride is exempt)", () => {
     expectFindings(plan(intakeD).findings, [
-      // disposition PROPOSED (kind default: permit -> required)
       {
         ruleIds: ["SAPO-BLOCK-PARTY-001"],
         kind: "permit",
@@ -467,7 +425,7 @@ describe("Scenario D — Queens Block Party (tight but feasible)", () => {
         deadlineStatus: "deadline_approaching",
         latestApplyDate: "2026-08-01",
       },
-      // disposition published on the rule (MAY_BE_REQUIRED)
+
       {
         ruleIds: ["SAPO-BLOCK-PARTY-SPONSOR-001"],
         kind: "eligibility",
@@ -475,7 +433,7 @@ describe("Scenario D — Queens Block Party (tight but feasible)", () => {
         deadlineStatus: "not_applicable",
         latestApplyDate: null,
       },
-      // disposition PROPOSED (kind default: permit -> required)
+
       {
         ruleIds: ["NYPD-SOUND-001"],
         kind: "permit",
@@ -483,7 +441,7 @@ describe("Scenario D — Queens Block Party (tight but feasible)", () => {
         deadlineStatus: "on_track",
         latestApplyDate: "2026-09-25",
       },
-      // disposition PROPOSED (kind default: permit -> required)
+
       {
         ruleIds: ["FDNY-FUEL-001"],
         kind: "permit",
@@ -541,11 +499,6 @@ describe("Scenario E — Plaza Brand Activation (max complexity)", () => {
   };
 
   it("produces the expected findings, with the two DOB structure rules as one line", () => {
-    // Eight findings, and item 8 carries both DOB rule ids — what the key has specified since v3.
-    // Until nyc.v2.6 only DOB-TALL-STRUCTURE-001 published `dedupe_key: dob-structure` and
-    // DOB-TENT-001 published none, so the key paired with nothing and the plan rendered two lines
-    // for one DOB temporary-structure permit. v2.6 wired the missing side (#89 item 6), resolving
-    // the ruleset against its own note_text rather than bending the fixture.
     expectFindings(plan(intakeE).findings, [
       {
         ruleIds: ["SAPO-PLAZA-001"],
@@ -589,8 +542,7 @@ describe("Scenario E — Plaza Brand Activation (max complexity)", () => {
         disposition: "required",
         deadlineStatus: "not_calculable",
       },
-      // At exactly 400 sq ft the engine refuses to assert the trigger (proposals §4). The merged
-      // line retains both contributing rule ids, so neither route to the permit is lost.
+
       {
         ruleIds: ["DOB-TENT-001", "DOB-TALL-STRUCTURE-001"],
         kind: "permit",
@@ -627,8 +579,7 @@ describe("Scenario E — Plaza Brand Activation (max complexity)", () => {
     const tentFact = result.verdictDetail.missingFacts.find(
       (fact) => fact.field === "tent_area_sqft",
     );
-    // The rule id, not the organizer heading: this string is persisted on the plan row and the
-    // plan view humanizes it at render time.
+
     expect(tentFact?.thresholds).toContain("DOB-TENT-001 applies above 400");
     expect(tentFact?.thresholds).toContain("exactly 400 is a conditional boundary");
   });
@@ -651,7 +602,6 @@ describe("Scenario F — Rooftop Launch Party (conditional branches)", () => {
 
   it("produces the expected conditional finding set", () => {
     expectFindings(plan(intakeF).findings, [
-      // permit -> required by default, downgraded because the trigger came back unknown
       {
         ruleIds: ["NYPD-SOUND-001"],
         kind: "permit",
@@ -714,28 +664,21 @@ describe("Scenario F — Rooftop Launch Party (conditional branches)", () => {
     const licenseFact = result.verdictDetail.missingFacts.find(
       (fact) => fact.field === "venue_license_covers_event_area",
     );
-    // Each branch is itself evaluated in full: the "yes" branch stays conditional because sound
-    // audibility is still open inside it and decides whether a permit applies. The "no" branch is
-    // infeasible on every remaining path — the SLA window is missed whatever the sound answer is —
-    // so it reports the closed window rather than hiding it behind another "it depends".
+
     expect(licenseFact?.branches.map((branch) => [branch.value, branch.verdict])).toEqual([
       ["yes", "CONDITIONAL"],
       ["no", "INFEASIBLE"],
     ]);
     const noLicense = licenseFact?.branches.find((branch) => branch.value === "no");
-    // AC 6: the closed SLA window is named even when the rule ids were already on the unresolved base.
+
     expect(noLicense?.reason).toContain("published deadline missed as scoped");
     expect(noLicense?.reason).not.toBe("same findings, re-dated");
-    // This reason is persisted verbatim in `permit_plans.verdict_detail`, so it names the rules by
-    // id and never by their organizer heading. The id resolves to one published rule forever; a
-    // heading is not unique and any later publish may reword it, which would leave a stored
-    // sentence that no longer traces back. The organizer sees the heading regardless, because the
-    // plan view's `humanizeRuleCodes` substitutes it at render time.
+
     const sla = ruleset.rules.find((rule) => rule.id === "SLA-ONEDAY-001");
     expect(noLicense?.reason).toContain("SLA-ONEDAY-001");
     expect(sla?.userSummary?.heading).toBeDefined();
     expect(noLicense?.reason).not.toContain(sla?.userSummary?.heading);
-    // Approved Scenario F branch table is two facts (license + sound); assembly approval is confirmation context only (#89).
+
     expect(result.verdictDetail.missingFacts.map((fact) => fact.field).sort()).toEqual([
       "sound_audible_from_public_way",
       "venue_license_covers_event_area",
@@ -1045,7 +988,6 @@ describe("Boundary and unit fixtures (AC 8)", () => {
   const ruleIdsOf = (result: PermitPlan): string[] =>
     substantiveFindings(result).flatMap((finding) => finding.ruleIds);
 
-  // A location that triggers nothing on its own, so a structure/power fixture shows only what it tests.
   const neutralIntake: EventIntake = { ...baseIntake, location_type: "park", headcount: 10 };
 
   it("park headcount 19 identifies no new city requirement at all", () => {
@@ -1170,12 +1112,6 @@ describe("Boundary and unit fixtures (AC 8)", () => {
   });
 
   it("reports the FDNY permit only where the answer key lists it", () => {
-    // The shared intake fixtures, not this file's own base intake — that is where the defect lived.
-    // `battery_system_kwh` had no asked_when and is nullable, so it was in scope and unanswered for
-    // every event, the trigger's battery disjunct evaluated unknown, and the whole any(...) with
-    // it. Five scenarios with no generator at all were told a fire-department permit may be
-    // required; the answer key lists FDNY-GENERATOR-001 in Scenario E only. Over-prescribing is a
-    // named failure mode (F-201 AC 4).
     const disposition = (scenario: string) => {
       const fixture = SCENARIO_INTAKE_FIXTURES.find((entry) => entry.scenario === scenario);
       if (fixture === undefined) throw new Error(`no fixture for Scenario ${scenario}`);
@@ -1193,8 +1129,6 @@ describe("Boundary and unit fixtures (AC 8)", () => {
         `Scenario ${scenario} has no generator and no battery`,
       ).toBeUndefined();
     }
-    // E keeps it on gasoline alone: 5 gal > 2.5, with no battery either. The scoping fix must not
-    // silence the rule where it genuinely fires.
     expect(disposition("E")).toBe("required");
   });
 
@@ -1204,10 +1138,6 @@ describe("Boundary and unit fixtures (AC 8)", () => {
     expect(ruleIdsOf(plan({ ...withBattery, battery_system_kwh: 20.1 }))).toEqual([
       "FDNY-GENERATOR-001",
     ]);
-    // The third case the boundary needs and could not be written before nyc.v2.5: no battery at
-    // all, as distinct from a battery of zero. It was previously indistinguishable from an
-    // unanswered question, which is what reported the permit as MAY_BE_REQUIRED to every organizer
-    // who had no generator either.
     expect(ruleIdsOf(plan({ ...neutralIntake, battery_present: false }))).toEqual([]);
   });
 
@@ -1226,10 +1156,6 @@ describe("Boundary and unit fixtures (AC 8)", () => {
     const ladder = result.findings
       .filter((finding) => finding.ruleIds[0]?.startsWith("SAPO-STREET-"))
       .map((finding) => [finding.ruleIds[0], finding.disposition, finding.latestApplyDate]);
-    // Every published size arm stays open, each with its own date — four, not three. The key's
-    // ladder line named 14/30/45 until fixtures v5 corrected it to 14/30/45/60 (#89 item 1): the
-    // extra-large arm's 60 days is equally unresolved, and it is the only arm an organizer can
-    // already be late for, so omitting it hid the case that matters.
     expect(ladder).toEqual([
       ["SAPO-STREET-SMALL-001", "may_be_required", "2026-11-20"],
       ["SAPO-STREET-MEDIUM-001", "may_be_required", "2026-11-04"],
