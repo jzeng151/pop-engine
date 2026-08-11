@@ -94,8 +94,9 @@ export function storePendingCreate(apiBaseUrl: string, pending: PendingCreate | 
 }
 
 /** Clear only the recovery operation whose first plan this page has confirmed. */
-export function clearPendingCreateForEvent(apiBaseUrl: string, eventId: string): void {
-  if (loadPendingCreate(apiBaseUrl)?.eventId === eventId) storePendingCreate(apiBaseUrl, null);
+export function clearPendingCreateForEvent(apiBaseUrl: string, eventId: string): boolean {
+  const pending = loadPendingCreate(apiBaseUrl);
+  return pending?.eventId !== eventId || storePendingCreate(apiBaseUrl, null);
 }
 
 export type LoadedEvent = {

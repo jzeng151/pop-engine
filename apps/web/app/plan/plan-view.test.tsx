@@ -213,6 +213,7 @@ beforeEach(() => {
 
 afterEach(() => {
   cleanup();
+  vi.restoreAllMocks();
   vi.unstubAllGlobals();
   vi.unstubAllEnvs();
 });
@@ -236,6 +237,21 @@ describe("initial-create recovery", () => {
 
     await screen.findByRole("complementary", { name: "Rules snapshot" });
     expect(sessionStorage.getItem(storageKey)).toBeNull();
+  });
+
+  it("reports a matching recovery operation that durable storage could not clear", async () => {
+    storeRecovery("event-1");
+    vi.spyOn(Storage.prototype, "removeItem").mockImplementation(() => {
+      throw new DOMException("storage disabled", "SecurityError");
+    });
+    renderPlan();
+
+    expect(
+      await screen.findByText(
+        "The plan is ready, but this browser could not clear its saved recovery information. Refresh this page to try again before creating another event.",
+      ),
+    ).toBeDefined();
+    expect(sessionStorage.getItem(storageKey)).not.toBeNull();
   });
 
   it("keeps recovery for another event", async () => {

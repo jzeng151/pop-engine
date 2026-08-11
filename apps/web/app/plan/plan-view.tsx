@@ -26,6 +26,9 @@ import { type FieldChecks, isNumber, readChecked } from "./validated";
 
 // The plan view.
 
+const RECOVERY_CLEANUP_FAILURE =
+  "The plan is ready, but this browser could not clear its saved recovery information. Refresh this page to try again before creating another event.";
+
 /** What came back for the plan itself. */
 type PlanState =
   | { status: "loading" }
@@ -128,8 +131,9 @@ export function PlanView({
     setRegenerating(false);
 
     void loadPlan(apiBaseUrl, eventId).then((result) => {
-      if (result.ok) clearPendingCreateForEvent(apiBaseUrl, eventId);
+      const cleanupFailed = result.ok && !clearPendingCreateForEvent(apiBaseUrl, eventId);
       if (abandoned) return;
+      if (cleanupFailed) setRegenerationFailure(RECOVERY_CLEANUP_FAILURE);
       setPlanState(planStateFrom(result));
     });
 
@@ -166,7 +170,7 @@ export function PlanView({
       eventId,
       recovery?.eventId === eventId ? recovery.key : undefined,
     );
-    if (generated.ok) clearPendingCreateForEvent(apiBaseUrl, eventId);
+    const cleanupFailed = generated.ok && !clearPendingCreateForEvent(apiBaseUrl, eventId);
     if (active.current !== requested) return;
     if (!generated.ok) {
       setRegenerationFailure(generated.message);
@@ -176,6 +180,7 @@ export function PlanView({
 
     // The generation's own response IS the plan it stored, so it goes on screen here.
     setPlanState({ status: "ready", plan: generated.plan });
+    if (cleanupFailed) setRegenerationFailure(RECOVERY_CLEANUP_FAILURE);
     setRegenerating(false);
 
     // The revision this plan will be compared against is a separate question, and one this page no longer knows the answer to: the event may have been edited again while the generation ran, so the revision read before it is.

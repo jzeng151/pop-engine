@@ -207,7 +207,12 @@ export function IntakeForm({
         setSaved(result.loaded.event);
         setLoading(false);
         void loadPlan(apiBaseUrl, eventId).then((plan) => {
-          if (plan.ok) clearPendingCreateForEvent(apiBaseUrl, eventId);
+          const cleanupFailed = plan.ok && !clearPendingCreateForEvent(apiBaseUrl, eventId);
+          if (cleanupFailed && !abandoned) {
+            setFailure(
+              "The permit plan is ready, but this browser could not clear its saved recovery information. Refresh this page to try again before creating another event.",
+            );
+          }
           if (!abandoned) setInitialPlanReady(plan.ok);
         });
       } else {
@@ -515,8 +520,15 @@ export function IntakeForm({
           }
           return;
         }
+        if (!clearPendingCreateForEvent(apiBaseUrl, body.event.id)) {
+          if (mounted.current) {
+            setFailure(
+              "Your event and its permit plan were saved, but this browser could not clear its saved recovery information. Keep this tab open and try again before creating another event.",
+            );
+          }
+          return;
+        }
         pendingCreate.current = null;
-        storePendingCreate(apiBaseUrl, null);
         if (!mounted.current) return;
         setInitialPlanReady(true);
         if (changedWhileSaving) {

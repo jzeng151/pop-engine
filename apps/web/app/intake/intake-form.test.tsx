@@ -1083,6 +1083,32 @@ describe("saving and per-field errors", () => {
     expect(sessionStorage).toHaveLength(0);
   });
 
+  it("retains confirmed create recovery until durable removal succeeds", async () => {
+    const removeItem = Storage.prototype.removeItem;
+    let removalAvailable = false;
+    vi.spyOn(Storage.prototype, "removeItem").mockImplementation(function (this: Storage, key) {
+      if (!removalAvailable) throw new DOMException("storage disabled", "SecurityError");
+      removeItem.call(this, key);
+    });
+    const user = renderForm();
+    await answerParkEvent(user);
+    await save(user);
+
+    expect(
+      await screen.findByText(
+        "Your event and its permit plan were saved, but this browser could not clear its saved recovery information. Keep this tab open and try again before creating another event.",
+      ),
+    ).toBeDefined();
+    expect(router.push).not.toHaveBeenCalled();
+    expect(sessionStorage).toHaveLength(1);
+
+    removalAvailable = true;
+    await save(user);
+
+    await waitFor(() => expect(router.push).toHaveBeenCalledWith("/events/event-1/plan"));
+    expect(sessionStorage).toHaveLength(0);
+  });
+
   it("replays a retained create before validating fields added by a newer client", async () => {
     let createAttempts = 0;
     fetchMock.mockImplementation(async (url: string, init: RequestInit) => {
