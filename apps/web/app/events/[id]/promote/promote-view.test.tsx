@@ -81,6 +81,27 @@ describe("PromoteView", () => {
     expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 
+  it("keeps promote controls usable while an older API lacks the publication gate", async () => {
+    const { publication_blocked: _publicationBlocked, ...old } = sample;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => jsonResponse(200, old)),
+    );
+    render(
+      <PromoteView
+        eventId={EVENT_ID}
+        apiBaseUrl="https://api.example.com"
+        webOrigin="https://web.example.com"
+      />,
+    );
+
+    expect(await screen.findByText(/service update finishes/i)).toBeDefined();
+    expect(screen.getByLabelText("Description")).toBeDefined();
+    expect(screen.getByRole<HTMLButtonElement>("button", { name: "Publish page" }).disabled).toBe(
+      true,
+    );
+  });
+
   it("builds the share URL from the browser origin when webOrigin is unset", async () => {
     vi.stubGlobal(
       "fetch",

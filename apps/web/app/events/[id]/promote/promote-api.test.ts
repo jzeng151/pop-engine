@@ -35,7 +35,7 @@ describe("promote-api", () => {
     );
     await expect(loadPromoteState("https://api.example.com", sample.event_id)).resolves.toEqual({
       ok: true,
-      state: sample,
+      state: { ...sample, publication_gate_available: true },
     });
 
     const fetchMock = vi.fn(async () =>
@@ -52,5 +52,24 @@ describe("promote-api", () => {
       `https://api.example.com/api/events/${sample.event_id}/public-page`,
       expect.objectContaining({ method: "PATCH" }),
     );
+  });
+
+  it("keeps controls readable but blocks new publication against an older API", async () => {
+    const { publication_blocked: _publicationBlocked, ...old } = sample;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => jsonResponse(200, old)),
+    );
+
+    const loaded = await loadPromoteState("https://api.example.com", sample.event_id);
+
+    expect(loaded).toEqual({
+      ok: true,
+      state: {
+        ...old,
+        publication_blocked: true,
+        publication_gate_available: false,
+      },
+    });
   });
 });

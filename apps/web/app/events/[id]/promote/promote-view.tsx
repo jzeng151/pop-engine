@@ -103,7 +103,12 @@ export function PromoteView({ eventId, apiBaseUrl, webOrigin }: PromoteViewProps
         {state.venue !== null ? ` · ${state.venue}` : ""}
       </p>
 
-      {state.publication_blocked ? (
+      {!state.publication_gate_available ? (
+        <p className="promote__warning" role="status">
+          Publishing is temporarily unavailable while the service update finishes. You can still
+          save the description or unpublish this page.
+        </p>
+      ) : state.publication_blocked ? (
         <p className="promote__warning" role="status">
           The latest plan is blocked as scoped by a published prohibition or ineligibility. Rescope
           and generate a new plan before publishing.

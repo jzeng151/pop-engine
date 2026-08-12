@@ -72,7 +72,7 @@ async function readEvent(database: Queryable, eventId: string): Promise<EventPub
 
 type LatestPlanState = { verdict: string; publication_blocked: boolean };
 
-async function latestPlanState(
+export async function latestPlanState(
   database: Queryable,
   eventId: string,
 ): Promise<LatestPlanState | null> {

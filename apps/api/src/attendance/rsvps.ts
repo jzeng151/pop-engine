@@ -3,6 +3,7 @@ export { normalizeOptionalPhone } from "../contact";
 import { normalizeOptionalPhone } from "../contact";
 import { Router, type Request, type Response } from "express";
 import type { Pool, PoolClient, QueryResult, QueryResultRow } from "pg";
+import { latestPlanState } from "./public-page";
 
 // F-302 RSVP / guest list (ARCHITECTURE.md API Surface + rsvps schema).
 // Admission uses events.capacity; null means unlimited (SPEC-CONFLICT #209).
@@ -150,6 +151,9 @@ export async function createRsvp(
     }
     // Match F-301 visibility: unpublished pages must not accept public RSVPs (replay / stale tab).
     if (!event.public_page_published) {
+      return { status: 404, body: { error: "That event page is not available." } };
+    }
+    if ((await latestPlanState(client, eventId))?.publication_blocked === true) {
       return { status: 404, body: { error: "That event page is not available." } };
     }
     if (event.event_date < today) {

@@ -115,6 +115,29 @@ describe.runIf(databaseUrl.length > 0)("F-302 RSVP endpoints (database)", () => 
     expect(blocked.body.error).toMatch(/not available/i);
   });
 
+  it("refuses RSVPs when a published event's latest plan becomes prohibition-blocked", async () => {
+    const { id: eventId } = await createEvent();
+    await database.query(
+      `UPDATE permit_plans
+          SET verdict = 'infeasible',
+              verdict_detail = '{"blockingFinding":{"disposition":"prohibited_or_ineligible"}}'::jsonb
+        WHERE event_id = $1`,
+      [eventId],
+    );
+
+    const blocked = await request(api)
+      .post(`/api/events/${eventId}/rsvps`)
+      .send({ name: "Ada", email: "ada@example.com" });
+
+    expect(blocked.status).toBe(404);
+    expect(blocked.body.error).toMatch(/not available/i);
+    const { rows } = await database.query<{ count: string }>(
+      "SELECT count(*)::text AS count FROM rsvps WHERE event_id = $1",
+      [eventId],
+    );
+    expect(rows[0]?.count).toBe("0");
+  });
+
   it("creates an RSVP and lists it on the guest list with count vs capacity", async () => {
     const { id: eventId, capacity } = await createEvent({ capacity: 5 });
     const created = await request(api)
