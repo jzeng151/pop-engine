@@ -211,27 +211,26 @@ describe("the measured co-firing sets", () => {
     { field: "block_party_has_ride", type: "enum", values: ["unknown", "yes", "no"] },
   ];
 
-  it("keeps both readings when one route requires a $1,000,000 certificate and another says it does not apply", () => {
-    const merged = plan(
+  it("omits an unresolved no-new-requirement reading without losing its uncertainty", () => {
+    const result = plan(
       SAPO_INSURANCE,
       { sapo_event_type: "unknown", block_party_has_ride: "no" },
       INSURANCE_FIELDS,
-    ).findings[0];
-    expect(merged?.headlineMode).toBe("candidate");
-    expect(merged?.routes).toHaveLength(2);
-    const general = merged?.routes?.find((route) => route.ruleId === "SAPO-INSURANCE-GENERAL-001");
-    const exempt = merged?.routes?.find(
-      (route) => route.ruleId === "SAPO-INSURANCE-BLOCK-EXEMPT-001",
     );
-    expect(general?.disposition).toBe("may_be_required");
-    expect(exempt?.disposition).toBe("no_new_requirement");
-    expect(general?.triggerResult).toBe("unknown");
-    expect(exempt?.triggerResult).toBe("unknown");
-    expect(merged?.sources.map((source) => source.ruleId)).toEqual([
-      "SAPO-INSURANCE-GENERAL-001",
-      "SAPO-INSURANCE-BLOCK-EXEMPT-001",
-    ]);
-    expect(merged?.noteText).toContain("$1,000,000");
+    expect(result.findings).toHaveLength(1);
+    expect(result.findings[0]).toMatchObject({
+      ruleIds: ["SAPO-INSURANCE-GENERAL-001"],
+      disposition: "may_be_required",
+    });
+    expect(result.verdictDetail.trace).toEqual(
+      expect.arrayContaining([
+        { ruleId: "SAPO-INSURANCE-GENERAL-001", result: "unknown" },
+        { ruleId: "SAPO-INSURANCE-BLOCK-EXEMPT-001", result: "unknown" },
+      ]),
+    );
+    expect(result.verdictDetail.missingFacts.map((fact) => fact.field)).toContain(
+      "sapo_event_type",
+    );
   });
 
   const NYPD_SOUND = [

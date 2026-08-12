@@ -621,12 +621,6 @@ describe("Scenario F — Rooftop Launch Party (conditional branches)", () => {
         deadlineStatus: "deadline_approaching",
       },
       {
-        ruleIds: ["SLA-VENUE-LICENSE-001"],
-        kind: "advisory",
-        disposition: "no_new_requirement",
-        deadlineStatus: "not_applicable",
-      },
-      {
         ruleIds: ["SLA-ONEDAY-001"],
         kind: "permit",
         disposition: "may_be_required",
@@ -656,6 +650,20 @@ describe("Scenario F — Rooftop Launch Party (conditional branches)", () => {
         deadlineStatus: "not_applicable",
       },
     ]);
+  });
+
+  it("does not claim that no new alcohol permit was identified until license coverage resolves", () => {
+    const venueLicenseFinding = (coverage: "unknown" | "yes" | "no") =>
+      plan({ ...intakeF, venue_license_covers_event_area: coverage }).findings.find((finding) =>
+        finding.ruleIds.includes("SLA-VENUE-LICENSE-001"),
+      );
+
+    expect(venueLicenseFinding("unknown")).toBeUndefined();
+    expect(venueLicenseFinding("yes")?.disposition).toBe("no_new_requirement");
+    expect(venueLicenseFinding("no")).toBeUndefined();
+    expect(plan(intakeF).verdictDetail.missingFacts.map((fact) => fact.field)).toContain(
+      "venue_license_covers_event_area",
+    );
   });
 
   it("renders CONDITIONAL rather than INFEASIBLE: branches run before window checks", () => {
