@@ -29,7 +29,7 @@ export type PublishedRuleset = {
 };
 
 const EXPECTED_SCHEMA = "popengine-rules/v2";
-const EXPECTED_RULESET_VERSION = "nyc.v2.12";
+const EXPECTED_RULESET_VERSION = "nyc.v2.13";
 const EXPECTED_RULE_COUNT = 42;
 const EXPECTED_ADVISORY_COUNT = 4;
 /** Published rulesets are `nyc-rules.v<version>.json`; `rules/proposals/` is drafts and excluded. */
@@ -196,7 +196,7 @@ function requireDaysBefore(value: unknown, label: string): void {
     if (day > MAX_PRODUCT_DAYS_BEFORE) {
       validationError(
         `${at} is ${day}, beyond the ${MAX_PRODUCT_DAYS_BEFORE}-day maximum reminder offset; the ` +
-          `longest window nyc.v2.12 publishes is 60 days`,
+          `longest window nyc.v2.13 publishes is 60 days`,
       );
     }
     if (seen.has(day)) {

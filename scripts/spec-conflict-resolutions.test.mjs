@@ -327,7 +327,7 @@ describe("SPEC-CONFLICT #268 stale assembly-coverage proposal", () => {
   });
 
   it("keeps the F-110 replacement fields in the active intake registry", () => {
-    const ruleset = JSON.parse(read("rules/nyc-rules.v2.12.json"));
+    const ruleset = JSON.parse(read("rules/nyc-rules.v2.13.json"));
     const fields = ruleset.intake_fields.map(({ field }) => field);
 
     expect(fields).toContain("venue_paco_covers_exact_event");

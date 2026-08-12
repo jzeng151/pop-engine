@@ -72,7 +72,7 @@ describe("ruleset validation", () => {
     const ruleset = await loadRuleset();
 
     expect(ruleset.schema).toBe("popengine-rules/v2");
-    expect(ruleset.rulesetVersion).toBe("nyc.v2.12");
+    expect(ruleset.rulesetVersion).toBe("nyc.v2.13");
     expect(ruleset.snapshotDate).toBe("2026-08-12");
     expect(ruleset.intakeFields).toHaveLength(33);
     expect(ruleset.intakeFields).not.toContain("food_affinity_private_exception_claimed");
@@ -118,10 +118,30 @@ describe("ruleset validation", () => {
     ]);
   });
 
+  it("keeps source-less coverage-gap advisories assertion-free", async () => {
+    const raw = await readRawRuleset();
+    const alcohol = object(ruleById(raw, "ADV-ALCOHOL-PUBLIC-001").output);
+    const sapoClass = object(ruleById(raw, "ADV-SAPO-OTHER-CLASS-001").output);
+
+    expect(raw.reference_tables).toBeUndefined();
+    expect(alcohol.advisory_text).toBe(
+      "Alcohol in public space is outside this ruleset version's validated coverage. " +
+        "This combination is not modeled by this ruleset version. Confirm the event plan with " +
+        "the relevant agency before including alcohol.",
+    );
+    expect(JSON.stringify(alcohol)).not.toMatch(/prohibit|block part|SAPO/i);
+    expect(sapoClass.advisory_text).toBe(
+      "The selected SAPO class is outside this ruleset version's validated coverage. This " +
+        "combination is not modeled by this ruleset version. Confirm the permit type, deadline, " +
+        "and fee with the relevant agency.",
+    );
+    expect(JSON.stringify(sapoClass)).not.toMatch(/\b(?:10|15|90)\b|December 31|OFFICIAL_CONFLICT/);
+  });
+
   it("honors RULES_FILE", async () => {
     process.env.RULES_FILE = rulesFile;
     await expect(loadRuleset()).resolves.toMatchObject({
-      rulesetVersion: "nyc.v2.12",
+      rulesetVersion: "nyc.v2.13",
     });
   });
 

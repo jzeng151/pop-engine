@@ -1271,7 +1271,11 @@ describe("Boundary and unit fixtures (AC 8)", () => {
     expect(advisory?.feeDisplay).toBeNull();
     expect(advisory?.portalUrl).toBeNull();
     expect(advisory?.sources).toEqual([]);
-    expect(advisory?.name).toContain("outside this ruleset version's validated coverage");
+    expect(advisory?.name).toBe(
+      "The selected SAPO class is outside this ruleset version's validated coverage. This " +
+        "combination is not modeled by this ruleset version. Confirm the permit type, deadline, " +
+        "and fee with the relevant agency.",
+    );
   });
 
   it("obstructs_public_way=no on a sidewalk persists the classification rule as a note", () => {

@@ -75,7 +75,7 @@ describe.runIf(databaseUrl.length > 0)("F-301 public page endpoints (database)",
     await database.query(
       `INSERT INTO permit_plans (
          id, event_id, event_revision, ruleset_version, verdict, verdict_detail, intake_snapshot
-       ) VALUES ($1, $2, 1, 'nyc.v2.12', $3, $4::jsonb, '{}'::jsonb)`,
+       ) VALUES ($1, $2, 1, 'nyc.v2.13', $3, $4::jsonb, '{}'::jsonb)`,
       [randomUUID(), eventId, verdict, JSON.stringify(verdictDetail)],
     );
   };

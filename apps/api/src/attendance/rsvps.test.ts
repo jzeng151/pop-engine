@@ -88,7 +88,7 @@ describe.runIf(databaseUrl.length > 0)("F-302 RSVP endpoints (database)", () => 
     await database.query(
       `INSERT INTO permit_plans (
          id, event_id, event_revision, ruleset_version, verdict, verdict_detail, intake_snapshot
-       ) VALUES ($1, $2, 1, 'nyc.v2.12', 'feasible', '{}'::jsonb, '{}'::jsonb)`,
+       ) VALUES ($1, $2, 1, 'nyc.v2.13', 'feasible', '{}'::jsonb, '{}'::jsonb)`,
       [randomUUID(), id],
     );
 

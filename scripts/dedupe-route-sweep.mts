@@ -17,7 +17,7 @@ const engine = (await import(path.resolve(engineDir, "index.ts"))) as {
 };
 const { evaluate, parseEngineRuleset } = engine;
 
-const RULES = path.resolve(process.cwd(), "rules/nyc-rules.v2.12.json");
+const RULES = path.resolve(process.cwd(), "rules/nyc-rules.v2.13.json");
 const ruleset = parseEngineRuleset(JSON.parse(readFileSync(RULES, "utf8")));
 /** The ruleset's own pinned calendar, with no published holiday list, as `pinnedCalendar` gives. */
 // `HOLIDAYS=published` runs the sweep against a published (empty) holiday list, which is what the api's own suites inject; unset runs it against production's, where none is published and a business-day window is.
