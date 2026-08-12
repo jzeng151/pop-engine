@@ -721,7 +721,9 @@ describe("inline warnings do not block submission (spec #4, #5)", () => {
         verificationStatus: "COVERAGE_GAP",
       },
     ]);
-    expect(contract.alcoholInPublicSpaceNotice.text).toContain("Confirm with the relevant agency.");
+    expect(contract.alcoholInPublicSpaceNotice.text).toContain(
+      "Confirm the event plan with the relevant agency before including alcohol.",
+    );
   });
 
   it("does not warn about alcohol at a private venue", () => {

@@ -201,12 +201,12 @@ A second fetch-confirmed pass run to verify the external (Codex) assessment of r
 | `SLA-VENUE-LICENSE-001`               | On-premises licensing is SLA's; matches the string already used by `SLA-ONEDAY-001` / `SLA-CATERING-001`                                                                                                                                                                                                                                                                                                       | NY State Liquor Authority                                                                                |
 | `ADV-VENUE-OCCUPANCY-001`             | Certificate of occupancy / legal use is DOB-issued (Supporting Agencies, DOB entry)                                                                                                                                                                                                                                                                                                                            | DOB                                                                                                      |
 | `SAPO-SCOPE-001`                      | Rule's own note text directs "confirm scope with SAPO for borderline setups"                                                                                                                                                                                                                                                                                                                                   | SAPO (Mayor's Office CECM), if a `classification` finding carries one at all                             |
-| `ADV-SAPO-OTHER-CLASS-001`            | Advisory's own text directs "Confirm with SAPO"                                                                                                                                                                                                                                                                                                                                                                | SAPO (Mayor's Office CECM), if a COVERAGE_GAP advisory carries one at all                                |
 
-**No single agency located (2 of 13):**
+**No single agency located (3 of 13):**
 
 - `ADV-NOISE-CODE-001` — DEP and NYPD share Noise Code enforcement (DEP primary for commercial and vehicle noise, NYPD for residential and by-ear complaints). The advisory directs no filing, so no acting agency is named. Not located: any published text assigning a single agency to §24-244 / §24-231 compliance for events.
 - `ADV-ALCOHOL-PUBLIC-001` — COVERAGE_GAP whose own text says "Confirm with the relevant agency" precisely because the path was not evaluated. Naming an agency would assert coverage this ruleset version does not have.
+- `ADV-SAPO-OTHER-CLASS-001` — COVERAGE_GAP whose issue #144 copy says "relevant agency" because the selected class is not modeled. Naming SAPO as the acting agency on this source-less advisory would itself assert the route the status says is outside validated coverage.
 
 **Notes for rule authoring (candidate, not promoted):**
 
@@ -360,7 +360,7 @@ The approved publication reuses only source URLs already published by nyc.v2.8 a
 | CONF-NO-ALCOHOL-001          | SOURCE_CONFIRMED  | VS §5 Round 1 + Round2 #6/#11 + Round3 unit re-verification |
 | CONF-NO-BLOCK-PARTY-RIDE-001 | SOURCE_CONFIRMED  | VS §4 Round 1                                               |
 
-Organizer-visible text and the complete official URL snapshots are published verbatim in `rules/nyc-rules.v2.12.json`; that immutable artifact is the authoritative copy.
+Organizer-visible text and the complete official URL snapshots are published verbatim in `rules/nyc-rules.v2.13.json`; that immutable artifact is the authoritative copy.
 
 ## Round 8 — 2026-07-29 (issue #181 citation attribution)
 

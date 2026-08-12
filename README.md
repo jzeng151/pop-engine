@@ -4,7 +4,7 @@
 
 [![CI](https://github.com/jzeng151/pop-engine/actions/workflows/ci.yml/badge.svg)](https://github.com/jzeng151/pop-engine/actions/workflows/ci.yml)
 ![Node](https://img.shields.io/badge/node-%3E%3D22-brightgreen)
-![Ruleset](https://img.shields.io/badge/ruleset-nyc.v2.12-blue)
+![Ruleset](https://img.shields.io/badge/ruleset-nyc.v2.13-blue)
 ![Coverage gate](https://img.shields.io/badge/coverage%20gate-90%25-informational)
 
 ![Event field guide: one event record from permit planning through door-day operations](docs/screenshots/overview.jpg)

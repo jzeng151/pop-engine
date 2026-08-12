@@ -1967,7 +1967,7 @@ describe("ruleset parsing rejects anything it cannot evaluate", () => {
   });
 
   it("accepts the published ruleset unchanged", () => {
-    expect(ruleset.rulesetVersion).toBe("nyc.v2.12");
+    expect(ruleset.rulesetVersion).toBe("nyc.v2.13");
     expect(ruleset.slackWarningDays).toBe(14);
     expect(ruleset.rules).toHaveLength(46);
   });

@@ -29,7 +29,7 @@ const storedPlan = {
   id: "plan-1",
   eventId: "event-1",
   eventRevision: 1,
-  rulesetVersion: "nyc.v2.12",
+  rulesetVersion: "nyc.v2.13",
   snapshotDate: "2026-08-05",
   verdict: "CONDITIONAL",
   verdictDetail: {
