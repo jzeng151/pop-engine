@@ -335,3 +335,25 @@ describe("SPEC-CONFLICT #268 stale assembly-coverage proposal", () => {
     expect(fields).not.toContain("venue_has_assembly_approval");
   });
 });
+
+describe("SPEC-CONFLICT #130 business-day calendar", () => {
+  it("keeps the supplied-calendar criterion separate from the production fallback", () => {
+    const baseline = read("docs/BASELINE.md");
+    const planSpec = read("specs/F-201-permit-plan-generator.md");
+    const architecture = read("docs/ARCHITECTURE.md");
+    const answerKey = read("docs/test-scenario-answer-key.md");
+
+    expect(baseline).toContain("SPEC-CONFLICT #130, F-201 business-day calendar");
+    expect(planSpec).toContain(
+      "business-day computation is exercised against an explicitly supplied calendar",
+    );
+    expect(planSpec).toContain("every affected window returns `NOT_CALCULABLE`");
+    expect(architecture).toContain(
+      "Production supplies `holidays: null` and returns NOT_CALCULABLE",
+    );
+    expect(answerKey).toContain(
+      "under the supplied fixture calendar, only 14 business days remain",
+    );
+    expect(answerKey).toContain("Production returns NOT_CALCULABLE");
+  });
+});

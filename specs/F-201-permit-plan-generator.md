@@ -16,7 +16,7 @@ As an independent organizer, I get the complete list of requirements my specific
 
 - An `events` row (F-101 fields) + its `revision_counter`.
 - `rules/nyc-rules.v2.12.json` (authoritative, loaded in-memory at boot; AD-2/AD-9).
-- `today` and the pinned holiday calendar (injected; the engine never reads the clock; AD-6/AD-11).
+- `today` and the pinned calendar input (injected; its holiday list may be unpublished/null; the engine never reads the clock; AD-6/AD-11).
 
 ## Outputs
 
@@ -41,7 +41,7 @@ As an independent organizer, I get the complete list of requirements my specific
 7. All six scenarios pass: expected finding sets match exactly (kind + disposition + finding), 0 false omissions, 0 false additions, verdicts and rescope results match.
 8. All boundary fixtures pass: park headcount 19/20/21; block party ± sales/ride; tent 399/400/401 sq ft; prop/truss height no/unknown/yes; stage 2.0/2.5 ft × 119/120 sq ft; park propane only, park charcoal/wood only, mixed park fuel, and non-park propane; generator 2.5/2.6 gal; 39.9/40 kW; battery 20/20.1 kWh; street size unknown; other_sapo_class advisory; obstructs_public_way = no.
 9. Scenario A's three rescopes are produced by full re-evaluation (size=medium → AT-RISK 5 days; size=small → AT-RISK on the DOHMH notification; private venue → SAPO + insurance drop), never by static text.
-10. Scenario F's business-day computation counts actual business days (14 remaining vs 15 required) against the pinned calendar.
+10. Scenario F's business-day computation is exercised against an explicitly supplied calendar. With the fixture calendar, it counts 14 remaining versus 15 required. In production, while no holiday list is published for the pinned calendar id, every affected window returns `NOT_CALCULABLE` with agency-confirmation guidance instead of a date. This criterion does not assert that production has a published holiday list.
 11. Scenario F's immutable `intake_snapshot` retains both F-110 answers as `unknown`; changing either answer produces a new event revision and snapshot while leaving its finding set and two material verdict branches unchanged. Historical food-exception claims remain inert in replay after issue #194 removes that field from active intake.
 
 ## Edge Cases
