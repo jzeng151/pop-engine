@@ -75,18 +75,19 @@ describe.runIf(databaseUrl.length > 0)("plan API (F-201)", () => {
     holidays: null,
   });
 
-  const PUBLICATION_IS_A_RESOLUTION = [
+  const PUBLICATION_REQUIRES_R10_RESOLUTION = [
     `A holiday list is now published for the ruleset's pinned calendar.`,
-    `THIS IS AN EXPECTED RESOLUTION OF SPEC-CONFLICT #130, NOT A REGRESSION:`,
-    `F-201 AC 10 and ARCHITECTURE AD-11 both require business-day math against this calendar, and`,
-    `neither is satisfiable in production while no list exists. This assertion is a notification,`,
+    `THIS REQUIRES RESOLVING OPEN-QUESTIONS R-10 AND THE CALENDAR-PUBLICATION ADR:`,
+    `SPEC-CONFLICT #130 already reconciled F-201 AC 10 and ARCHITECTURE AD-11 by requiring`,
+    `business-day math against an explicitly supplied calendar and NOT_CALCULABLE in production`,
+    `while no list exists. This assertion is a notification,`,
     `so that publishing lands in one visible place instead of silently moving four plan dates.`,
     `Before deleting it, read the doc comment on PUBLISHED_HOLIDAY_CALENDARS in`,
     `apps/api/src/calendar.ts: it records what blocked publication — no source consulted defines`,
     `"business day" for a filing lead, which is the independent reason, and one calendar id spans`,
     `a city agency and a state agency whose published STAFF holiday schedules differ, which matters`,
-    `only if a staff closure stops a filing counter and nothing establishes that it does — and #130`,
-    `records the resolutions and their costs. If those are answered, delete this test and close #130.`,
+    `only if a staff closure stops a filing counter and nothing establishes that it does. If those`,
+    `are answered, delete this test through the approved R-10/calendar-publication change.`,
   ].join(" ");
 
   const appWith = (resolveCalendar = fixtureCalendar) =>
@@ -517,8 +518,11 @@ describe.runIf(databaseUrl.length > 0)("plan API (F-201)", () => {
     expect(holidayCalendarWarning({ id: "published@2026", holidays: [] })).toBeNull();
   });
 
-  it("notifies when a list is published for the pinned calendar (SPEC-CONFLICT #130)", () => {
-    expect(pinnedCalendar(ruleset.calendarId).holidays, PUBLICATION_IS_A_RESOLUTION).toBeNull();
+  it("notifies when a list is published for the pinned calendar (OPEN-QUESTIONS R-10)", () => {
+    expect(
+      pinnedCalendar(ruleset.calendarId).holidays,
+      PUBLICATION_REQUIRES_R10_RESOLUTION,
+    ).toBeNull();
   });
 
   it("derives today in the jurisdiction's own calendar, not UTC", () => {

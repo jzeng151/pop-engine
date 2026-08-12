@@ -345,6 +345,7 @@ describe("SPEC-CONFLICT #130 business-day calendar", () => {
     const openQuestions = read("docs/OPEN-QUESTIONS.md");
     const dateAdvisor = read("specs/F-106-date-advisor.md");
     const multiJurisdiction = read("specs/F-207-multi-jurisdiction-activation.md");
+    const planTest = read("apps/api/src/planning/plan.test.ts");
 
     expect(baseline).toContain("SPEC-CONFLICT #130, F-201 business-day calendar");
     expect(planSpec).toContain(
@@ -365,5 +366,8 @@ describe("SPEC-CONFLICT #130 business-day calendar", () => {
     expect(dateAdvisor).not.toContain("Resolve SPEC-CONFLICT #130");
     expect(multiJurisdiction).toContain("SPEC-CONFLICT #130 is resolved for F-201");
     expect(multiJurisdiction).not.toContain("Resolve SPEC-CONFLICT #130");
+    expect(planTest).toContain("THIS REQUIRES RESOLVING OPEN-QUESTIONS R-10");
+    expect(planTest).not.toContain("EXPECTED RESOLUTION OF SPEC-CONFLICT #130");
+    expect(planTest).not.toContain("delete this test and close #130");
   });
 });
