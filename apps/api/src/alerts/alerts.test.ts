@@ -3305,6 +3305,10 @@ describe.skipIf(databaseUrl === "")("F-203 deadline alerts", () => {
     it("leaves an alert that is not due yet alone", async () => {
       const eventId = await createEvent(scenario("C"));
       await materialize(eventId);
+      await pool.query(
+        "UPDATE alerts SET send_at = current_timestamp + interval '1 day' WHERE event_id = $1",
+        [eventId],
+      );
       const provider = fakeProvider();
 
       await createAlertPoller({
