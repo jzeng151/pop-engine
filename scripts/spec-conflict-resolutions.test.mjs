@@ -342,6 +342,9 @@ describe("SPEC-CONFLICT #130 business-day calendar", () => {
     const planSpec = read("specs/F-201-permit-plan-generator.md");
     const architecture = read("docs/ARCHITECTURE.md");
     const answerKey = read("docs/test-scenario-answer-key.md");
+    const openQuestions = read("docs/OPEN-QUESTIONS.md");
+    const dateAdvisor = read("specs/F-106-date-advisor.md");
+    const multiJurisdiction = read("specs/F-207-multi-jurisdiction-activation.md");
 
     expect(baseline).toContain("SPEC-CONFLICT #130, F-201 business-day calendar");
     expect(planSpec).toContain(
@@ -355,5 +358,11 @@ describe("SPEC-CONFLICT #130 business-day calendar", () => {
       "under the supplied fixture calendar, only 14 business days remain",
     );
     expect(answerKey).toContain("Production returns NOT_CALCULABLE");
+    expect(openQuestions).toContain("OPEN after SPEC-CONFLICT #130's fallback resolution");
+    expect(openQuestions).not.toContain("SPEC-CONFLICT #130 remains open");
+    expect(dateAdvisor).toContain("SPEC-CONFLICT #130 is resolved for F-201");
+    expect(dateAdvisor).not.toContain("Resolve SPEC-CONFLICT #130");
+    expect(multiJurisdiction).toContain("SPEC-CONFLICT #130 is resolved for F-201");
+    expect(multiJurisdiction).not.toContain("Resolve SPEC-CONFLICT #130");
   });
 });
