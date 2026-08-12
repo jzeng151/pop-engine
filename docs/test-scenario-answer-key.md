@@ -130,6 +130,9 @@ _Replaces the v1 anchor, whose universal 60-day SAPO lead was contradicted by pr
 2. Alcohol branch on venue_license_covers_event_area:
    - yes → SLA-VENUE-LICENSE-001: no new permit; confirm the license covers the exact rooftop area
    - no → SLA-ONEDAY-001: 15 business days required; **only 14 business days remain to 2026-08-11** (actual count, no holidays in window) → PUBLISHED_DEADLINE_MISSED on this branch; SLA-CATERING-001 same window (and requires real food + a currently licensed caterer)
+
+   While unanswered, keep this material branch and the two outcomes above, but emit no existing-license finding in the current finding list; a no-new-permit claim is not an answer-neutral description (#179).
+
 3. NYPD-SOUND-001 — conditional on sound_audible_from_public_way: yes → permit in scope (§10-108(b)(3)); no → ADV-NOISE-CODE-001 advisory (noise code still applies) — a rooftop DJ is NOT automatically exempt (v1 corrected)
 4. DOHMH-EXEMPTION-001 — invite-only + catered → private-function exemption may apply; confirm
 5. ADV-VENUE-OCCUPANCY-001 — the venue's certificate of occupancy / legal use governs capacity regardless of permits; confirm the permitted use and occupancy. Added in v5: the advisory triggers on `location_type = private_venue` alone, names F in its own `exercised_by_scenarios`, and at 90 on a roof terrace the C-of-O question is the live one — `DOB-ASSEMBLY-001` counts roof terraces against the 75 indoor threshold, so the permit and the occupancy limit are separate constraints and the plan states both. Scenario B already listed this advisory on the same trigger.

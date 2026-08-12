@@ -627,6 +627,14 @@ export function resolveFindings(
     trace.push({ ruleId: rule.id, result: evaluation.result });
     if (evaluation.result === "false") continue;
     for (const field of evaluation.unknownFields) unknownFields.add(field);
+    // A no-new-requirement claim is only safe after its trigger resolves. Keep the
+    // unknown in the trace and branch inputs, but do not emit the claim itself (#179).
+    if (
+      evaluation.result === "unknown" &&
+      resolveDisposition(rule, evaluation.result) === "no_new_requirement"
+    ) {
+      continue;
+    }
     const finding = buildFinding(rule, evaluation.result, evaluation.triggeredBy, deadlineContext);
     // An unknown that surfaces while dating a finding is as material as one from its trigger.
     for (const field of finding.deadlineUnknownFields) unknownFields.add(field);

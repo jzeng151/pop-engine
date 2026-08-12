@@ -1,6 +1,7 @@
 // ─────────────────────────────────────────────────────────────────────────────
-// PROPOSAL — PARTLY APPROVED. §7 is approved (2026-07-27, see its own block for the
-// scope and the capacity); §1, §2, §3 and §6 are NOT, and still need the product
+// PROPOSAL — PARTLY APPROVED. §2 is approved (2026-08-12, issue #179) and §7 is
+// approved (2026-07-27, see its own block for the scope and the capacity); §1, §3
+// and §6 are NOT, and still need the product
 // owner's sign-off (DOCUMENTATION-GOVERNANCE §6, "rule trigger, dedupe, branch,
 // deadline, or formula semantics", which names one capacity since 2026-08-04; that
 // row is regulatory publication, and that sign-off is the whole requirement even
@@ -25,7 +26,8 @@
 // §3, §6 and §7 were found while deriving the six scenarios and are new. §4 and §5 are gone:
 // nyc.v2.4 publishes both as rule data — the by-level deadline names the fields it keys on, and
 // the tent condition declares that its exact threshold is unresolved — so neither is an
-// engine-side assertion any more. Five contracts remain: §1, §2, §3, §6, §7.
+// engine-side assertion any more. Five contracts are collected here: §1, §2, §3,
+// §6 and §7; §2 and §7 carry their approvals in their own sections.
 // ─────────────────────────────────────────────────────────────────────────────
 
 import type { Disposition, RuleKind } from "./types";
@@ -63,13 +65,15 @@ export const DEFAULT_DISPOSITION_BY_RULE_KIND: Readonly<Record<RuleKind, Disposi
 
 /**
  * §2 — A finding whose trigger evaluated tri-state `unknown` is never definitive.
+ * APPROVED 2026-08-12 by the product owner under issue #179.
  *
  * engine_conventions says a material unknown propagates to CONDITIONAL and never silently
  * becomes false; it does not say what disposition the resulting finding carries. Rendering
  * it as REQUIRED would overclaim, so a `required` finding whose trigger came back unknown
- * is downgraded to this. Dispositions that already hedge or already say something other
- * than "you must file this" (advisory, no_new_requirement, prohibited_or_ineligible) are
- * left exactly as published.
+ * is downgraded to this. Advisory and prohibited-or-ineligible findings remain visible as
+ * published. A no-new-requirement finding is omitted until its trigger resolves because
+ * the trace, unknown field, and branch evaluation preserve the uncertainty while the
+ * affirmative claim would contradict it.
  */
 export const UNKNOWN_TRIGGER_DISPOSITION: Disposition = "may_be_required";
 
