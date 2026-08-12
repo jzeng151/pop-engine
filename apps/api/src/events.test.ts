@@ -375,7 +375,9 @@ describe.runIf(databaseUrl.length > 0)("F-101 event intake endpoints", () => {
       const response = await post({ ...park, alcohol: true });
       expect(response.status).toBe(201);
       expect(response.body.warnings[0].code).toBe("coverage_gap");
-      expect(response.body.warnings[0].message).toContain("Confirm with the relevant agency.");
+      expect(response.body.warnings[0].message).toContain(
+        "Confirm the event plan with the relevant agency before including alcohol.",
+      );
     });
   });
 
