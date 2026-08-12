@@ -15,6 +15,8 @@ export type PromoteState = {
   map_url: string | null;
   infeasible_warning: boolean;
   plan_available: boolean;
+  publication_blocked: boolean;
+  publication_gate_available: boolean;
 };
 
 export type PromoteResult = { ok: true; state: PromoteState } | { ok: false; message: string };
@@ -47,11 +49,17 @@ function parseState(body: unknown): PromoteState | null {
     typeof record.title !== "string" ||
     typeof record.public_path !== "string" ||
     typeof record.public_page_published !== "boolean" ||
-    typeof record.plan_available !== "boolean"
+    typeof record.plan_available !== "boolean" ||
+    (record.publication_blocked !== undefined && typeof record.publication_blocked !== "boolean")
   ) {
     return null;
   }
-  return record as PromoteState;
+  const publicationGateAvailable = typeof record.publication_blocked === "boolean";
+  return {
+    ...(record as Omit<PromoteState, "publication_blocked" | "publication_gate_available">),
+    publication_blocked: publicationGateAvailable ? record.publication_blocked === true : true,
+    publication_gate_available: publicationGateAvailable,
+  };
 }
 
 export async function loadPromoteState(

@@ -533,7 +533,7 @@ export function PlanLine({ finding }: { finding: ConsumedFinding }) {
         )}
 
       {/* COVERAGE_GAP means this ruleset version does not model the combination, not that a
-          source is missing (published legend, rules/nyc-rules.v2.11.json). Saying "no source" here
+          source is missing (published legend, rules/nyc-rules.v2.12.json). Saying "no source" here
           would state RESEARCH_REQUIRED's meaning, which renders CONFIRM_WITH_AGENCY above. Also a
           summary field, because it too explains why no citation follows. */}
       {finding.verificationStatus === "COVERAGE_GAP" && finding.sources.length === 0 && (

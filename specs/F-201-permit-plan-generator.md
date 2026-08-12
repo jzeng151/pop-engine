@@ -1,10 +1,12 @@
 # F-201 · Permit Plan Generator
 
 **Status:** APPROVED (2026-07-24; Acceptance Criterion 2's COVERAGE_GAP clause is amended 2026-07-27 under `docs/DOCUMENTATION-GOVERNANCE.md` §2 against the published legend, and is approved under §6 ("Regulatory source/status/content") by the product owner acting as verification owner and rules reviewer. ONE person signed in THREE capacities, all lanes being currently held by one person. §6 states two things about that, and the first is unconditional: "No person approves their own regulatory publication alone. The author and source reviewer should be distinct whenever the team size permits." The first sentence does not bite here because there is no regulatory publication to approve: the amendment asserts no new regulatory fact, changes no rule, trigger, threshold, deadline or verification status, and conforms a lower-authority artifact to the legend already published in `rules/nyc-rules.v2.8.json` under §2's authority hierarchy. The second sentence is the one that applies, and its "whenever the team size permits" is what a single-person team cannot satisfy. Recorded so the sole-approver fact is visible rather than implied; Outputs and Acceptance Criterion 1 amended 2026-08-08, product-owner approved, so a merged finding retains every contributing rule's published values and not only its id, see the second Amendment at the foot of this file) · **Reviewer/approver:** product owner · **Owner:** see Lane below · see `docs/BASELINE.md`.
-**Phase:** 1 (core, week 1) · **Lane:** Dev 1 · **Depends on:** F-101, ruleset nyc.v2.11 ratified (BASELINE.md) · **Feeds:** F-102, F-202, F-203, F-204
-**Updated:** 2026-07-22 against nyc.v2.1; retargeted through nyc.v2.8 for the changes recorded in `docs/BASELINE.md`, to nyc.v2.9 on 2026-07-29, to nyc.v2.10 the same day for issue #181's citation-only correction, and to nyc.v2.11 for organizer summaries. The shared issue #178 publication adds the nine issue #107 named confirmations, F-110's two active assembly-document fields, and issue #194's active food-claim removal. The registry changes add no finding or verdict; the named confirmations change no substantive requirement or verdict and narrow near-empty to plans with no `required` or `prohibited_or_ineligible` finding. v2.10 and v2.11 change no trigger, status, or verdict. Scenario B remains CONDITIONAL with low identified burden and is not near-empty because DOHMH-VENDOR-PERMIT-001 is `required + not_calculable`. Amended 2026-08-10 by product-owner direction in issue #275 so a missing-plan 404 renders stable organizer copy rather than the API's identifier-bearing error.
+**Phase:** 1 (core, week 1) · **Lane:** Dev 1 · **Depends on:** F-101, ruleset nyc.v2.12 ratified (BASELINE.md) · **Feeds:** F-102, F-202, F-203, F-204
+**Updated:** 2026-07-22 against nyc.v2.1; retargeted through nyc.v2.8 for the changes recorded in `docs/BASELINE.md`, to nyc.v2.9 on 2026-07-29, to nyc.v2.10 the same day for issue #181's citation-only correction, to nyc.v2.11 for organizer summaries, and to nyc.v2.12 on 2026-08-12 for issues #258 and #287. The shared issue #178 publication adds the nine issue #107 named confirmations, F-110's two active assembly-document fields, and issue #194's active food-claim removal. The registry changes add no finding or verdict; the named confirmations change no substantive requirement or verdict and narrow near-empty to plans with no `required` or `prohibited_or_ineligible` finding. v2.10 and v2.11 change no trigger, status, or verdict. Scenario B remains CONDITIONAL with low identified burden and is not near-empty because DOHMH-VENDOR-PERMIT-001 is `required + not_calculable`. Amended 2026-08-10 by product-owner direction in issue #275 so a missing-plan 404 renders stable organizer copy rather than the API's identifier-bearing error.
 
 **Signed amendment:** one amendment is recorded at the end of this file (AC 12, the regeneration downgrade guard), APPROVED 2026-08-04 by the product owner in the product and architecture capacities. It is part of this spec's approved baseline, as is everything above and below it.
+
+**Decision 2026-08-12:** APPROVED by the product owner under issues #258 and #287. Ruleset nyc.v2.12 applies the prop/truss height answer before publishing the DOB route, hedges the broader tall-structure rule at MAY_BE_REQUIRED, and reconciles the FDNY fuel route with the Parks propane prohibition using the existing intake fields and operators.
 
 ## User Story
 
@@ -13,7 +15,7 @@ As an independent organizer, I get the complete list of requirements my specific
 ## Inputs
 
 - An `events` row (F-101 fields) + its `revision_counter`.
-- `rules/nyc-rules.v2.11.json` (authoritative, loaded in-memory at boot; AD-2/AD-9).
+- `rules/nyc-rules.v2.12.json` (authoritative, loaded in-memory at boot; AD-2/AD-9).
 - `today` and the pinned holiday calendar (injected; the engine never reads the clock; AD-6/AD-11).
 
 ## Outputs
@@ -37,7 +39,7 @@ As an independent organizer, I get the complete list of requirements my specific
 **The acceptance suite lives in `docs/test-scenario-answer-key.md` (v7): six scenarios (A–F) plus the boundary/unit fixture list. It is derived from the ruleset and pinned to `today = 2026-07-22`. This spec deliberately does not duplicate the expected outputs — the fixture doc is the single copy.** Requirements:
 
 7. All six scenarios pass: expected finding sets match exactly (kind + disposition + finding), 0 false omissions, 0 false additions, verdicts and rescope results match.
-8. All boundary fixtures pass: park headcount 19/20/21; block party ± sales/ride; tent 399/400/401 sq ft; stage 2.0/2.5 ft × 119/120 sq ft; generator 2.5/2.6 gal; 39.9/40 kW; battery 20/20.1 kWh; street size unknown; other_sapo_class advisory; obstructs_public_way = no.
+8. All boundary fixtures pass: park headcount 19/20/21; block party ± sales/ride; tent 399/400/401 sq ft; prop/truss height no/unknown/yes; stage 2.0/2.5 ft × 119/120 sq ft; park propane only, park charcoal/wood only, mixed park fuel, and non-park propane; generator 2.5/2.6 gal; 39.9/40 kW; battery 20/20.1 kWh; street size unknown; other_sapo_class advisory; obstructs_public_way = no.
 9. Scenario A's three rescopes are produced by full re-evaluation (size=medium → AT-RISK 5 days; size=small → AT-RISK on the DOHMH notification; private venue → SAPO + insurance drop), never by static text.
 10. Scenario F's business-day computation counts actual business days (14 remaining vs 15 required) against the pinned calendar.
 11. Scenario F's immutable `intake_snapshot` retains both F-110 answers as `unknown`; changing either answer produces a new event revision and snapshot while leaving its finding set and two material verdict branches unchanged. Historical food-exception claims remain inert in replay after issue #194 removes that field from active intake.
@@ -45,7 +47,7 @@ As an independent organizer, I get the complete list of requirements my specific
 ## Edge Cases
 
 - OFFICIAL_CONFLICT rules (PARKS-TUA-001, PARKS-EVENT-EXACTLY-20-001) render as MAY_BE_REQUIRED with the conflict text; they never flip a verdict to INFEASIBLE on their own.
-- Eligibility conflicts (block party + sales) render PROHIBITED_OR_INELIGIBLE with rescope guidance; the permit finding still lists so the user sees both.
+- Resolved eligibility bars (block party + sales) render PROHIBITED_OR_INELIGIBLE with rescope guidance and drive the overall verdict to INFEASIBLE; the permit finding still lists so the user sees both.
 - `research_required` deadlines are excluded from verdict/slack arithmetic but always listed.
 - Uncollected/inapplicable branch fields evaluate per the registry's asked-when scoping; a field never asked is not a material unknown.
 

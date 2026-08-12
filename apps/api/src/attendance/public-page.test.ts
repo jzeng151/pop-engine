@@ -67,12 +67,16 @@ describe.runIf(databaseUrl.length > 0)("F-301 public page endpoints (database)",
     return id;
   };
 
-  const createPlan = async (eventId: string, verdict = "feasible") => {
+  const createPlan = async (
+    eventId: string,
+    verdict = "feasible",
+    verdictDetail: Record<string, unknown> = {},
+  ) => {
     await database.query(
       `INSERT INTO permit_plans (
          id, event_id, event_revision, ruleset_version, verdict, verdict_detail, intake_snapshot
-       ) VALUES ($1, $2, 1, 'nyc.v2.11', $3, '{}'::jsonb, '{}'::jsonb)`,
-      [randomUUID(), eventId, verdict],
+       ) VALUES ($1, $2, 1, 'nyc.v2.12', $3, $4::jsonb, '{}'::jsonb)`,
+      [randomUUID(), eventId, verdict, JSON.stringify(verdictDetail)],
     );
   };
 
@@ -120,11 +124,37 @@ describe.runIf(databaseUrl.length > 0)("F-301 public page endpoints (database)",
     expect(organizer.status).toBe(200);
     expect(organizer.body.infeasible_warning).toBe(true);
     expect(organizer.body.plan_available).toBe(true);
+    expect(organizer.body.publication_blocked).toBe(false);
 
     await request(api)
       .patch(`/api/events/${eventId}/public-page`)
       .send({ public_page_published: true });
     expect((await request(api).get(`/e/${eventId}`)).status).toBe(200);
+  });
+
+  it("refuses publication when the latest plan is blocked by a prohibition", async () => {
+    const eventId = await createEvent();
+    await createPlan(eventId, "infeasible", {
+      blockingFinding: { disposition: "prohibited_or_ineligible" },
+    });
+
+    const organizer = await request(api).get(`/api/events/${eventId}/public-page`);
+    expect(organizer.status).toBe(200);
+    expect(organizer.body.publication_blocked).toBe(true);
+
+    const refused = await request(api).patch(`/api/events/${eventId}/public-page`).send({
+      description: "This must not be saved.",
+      public_page_published: true,
+    });
+    expect(refused.status).toBe(409);
+    expect(refused.body.error).toMatch(/published prohibition or ineligibility/i);
+
+    const unchanged = await request(api).get(`/api/events/${eventId}/public-page`);
+    expect(unchanged.body.public_page_published).toBe(false);
+    expect(unchanged.body.description).toBeNull();
+
+    await database.query("UPDATE events SET public_page_published = true WHERE id = $1", [eventId]);
+    expect((await request(api).get(`/e/${eventId}`)).status).toBe(404);
   });
 
   it("accepts an RSVP from the public flow once the page is published", async () => {

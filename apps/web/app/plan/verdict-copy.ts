@@ -7,7 +7,7 @@ const VERDICT_COPY: Readonly<Record<Verdict, string>> = {
   FEASIBLE: "On track",
   FEASIBLE_AT_RISK: "At risk",
   CONDITIONAL: "Depends on",
-  INFEASIBLE: "Published deadline missed as scoped",
+  INFEASIBLE: "Blocked as scoped",
 };
 
 /** The label F-102's verdict table requires beside FEASIBLE-AT-RISK: "threshold labeled as PopEngine's **internal planning buffer**, never an official threshold". */

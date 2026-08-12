@@ -46,6 +46,7 @@ export {
   type RouteFieldOrigin,
   bindingRouteOf,
   canBlockWhenMissed,
+  canBlockOverall,
   offersAFilingAction,
   mergedDispositionOf,
   noRouteSuppliesScalars,

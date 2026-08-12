@@ -745,8 +745,8 @@ describe("loadPlan", () => {
       ruleIds: ["PARKS-PROPANE-001"],
       name: "Propane prohibited in this park",
       disposition: "prohibited_or_ineligible",
-      latestApplyDate: "2026-03-01",
-      deadlineStatus: "published_deadline_missed",
+      latestApplyDate: null,
+      deadlineStatus: "not_applicable",
       sources: [
         { ruleId: "PARKS-PROPANE-001", citation: "Parks rules", urls: ["https://example.gov/p"] },
       ],
@@ -772,7 +772,7 @@ describe("loadPlan", () => {
           sources: line.sources,
           userSummary: null,
         },
-        missedRuleIds: line.ruleIds,
+        missedRuleIds: [],
         ...(trace === undefined ? {} : { trace }),
       },
     });

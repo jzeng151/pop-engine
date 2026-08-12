@@ -875,6 +875,28 @@ describe.skipIf(databaseUrl === "")("F-203 deadline alerts", () => {
       );
     });
 
+    it("does not send an at-risk slack warning for an overall blocked plan", async () => {
+      const eventId = await createEvent(scenario("C"));
+      const { planId } = await insertDuePlan(eventId, {
+        verdict: "infeasible",
+        minSlackDays: 9,
+        latestApplyDate: dayFromToday(9),
+      });
+      const client = await pool.connect();
+      try {
+        await schedulerWith()(client, eventId, planId, {
+          email: "organizer@example.test",
+          phone: null,
+        });
+      } finally {
+        client.release();
+      }
+
+      expect((await alertsOf(eventId)).some((row) => row.alert_type === "slack_warning")).toBe(
+        false,
+      );
+    });
+
     it("schedules no reminder for a filing date the plan's own clock has already passed", async () => {
       const eventId = await createEvent(scenario("A"));
       await materialize(eventId);
@@ -3283,6 +3305,10 @@ describe.skipIf(databaseUrl === "")("F-203 deadline alerts", () => {
     it("leaves an alert that is not due yet alone", async () => {
       const eventId = await createEvent(scenario("C"));
       await materialize(eventId);
+      await pool.query(
+        "UPDATE alerts SET send_at = current_timestamp + interval '1 day' WHERE event_id = $1",
+        [eventId],
+      );
       const provider = fakeProvider();
 
       await createAlertPoller({
@@ -7715,45 +7741,49 @@ describe.skipIf(databaseUrl === "")("F-203 deadline alerts", () => {
       expect(after?.status).toBe("cancelled");
     });
 
-    it("does not make a full batch wait an interval for the rest", async () => {
-      const eventId = await createEvent(scenario("C"));
-      const overflow = 97;
-      await pool.query(
-        `INSERT INTO alerts (id, event_id, alert_type, channel, recipient, idempotency_key,
+    it(
+      "does not make a full batch wait an interval for the rest",
+      async () => {
+        const eventId = await createEvent(scenario("C"));
+        const overflow = 97;
+        await pool.query(
+          `INSERT INTO alerts (id, event_id, alert_type, channel, recipient, idempotency_key,
                                send_at, status, payload)
            SELECT gen_random_uuid(), $1, 'slack_warning', 'email', 'organizer@example.test',
                   $2 || ':batch:' || step, current_timestamp - interval '1 minute', 'pending',
                   '{"subject":"s","body":"b"}'::jsonb
              FROM generate_series(1, $3) AS step`,
-        [eventId, `${eventId}`, overflow],
-      );
-      const provider = fakeProvider();
-      const poller = createAlertPoller({
-        database: pool,
-        senders: provider.senders,
-        jurisdiction: ruleset.jurisdiction,
-      });
-      const startedAt = Date.now();
-
-      poller.start();
-      try {
-        await vi.waitFor(
-          async () => {
-            const { rows } = await pool.query<{ pending: string }>(
-              "SELECT count(*)::text AS pending FROM alerts WHERE event_id = $1 AND status <> 'sent'",
-              [eventId],
-            );
-            expect(rows[0]?.pending).toBe("0");
-          },
-          { timeout: POLL_INTERVAL_MS, interval: 250 },
+          [eventId, `${eventId}`, overflow],
         );
-      } finally {
-        await poller.stop();
-      }
+        const provider = fakeProvider();
+        const poller = createAlertPoller({
+          database: pool,
+          senders: provider.senders,
+          jurisdiction: ruleset.jurisdiction,
+        });
+        const startedAt = Date.now();
 
-      expect(Date.now() - startedAt).toBeLessThan(POLL_INTERVAL_MS);
-      expect(provider.delivered.length).toBe(overflow);
-    }, POLL_INTERVAL_MS + 15_000);
+        poller.start();
+        try {
+          await vi.waitFor(
+            async () => {
+              const { rows } = await pool.query<{ pending: string }>(
+                "SELECT count(*)::text AS pending FROM alerts WHERE event_id = $1 AND status <> 'sent'",
+                [eventId],
+              );
+              expect(rows[0]?.pending).toBe("0");
+            },
+            { timeout: POLL_INTERVAL_MS, interval: 250 },
+          );
+        } finally {
+          await poller.stop();
+        }
+
+        expect(Date.now() - startedAt).toBeLessThan(POLL_INTERVAL_MS);
+        expect(provider.delivered.length).toBe(overflow);
+      },
+      POLL_INTERVAL_MS + 15_000,
+    );
 
     it("reports a full batch as not drained", async () => {
       const eventId = await createEvent(scenario("C"));

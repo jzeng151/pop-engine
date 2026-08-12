@@ -360,7 +360,7 @@ The approved publication reuses only source URLs already published by nyc.v2.8 a
 | CONF-NO-ALCOHOL-001          | SOURCE_CONFIRMED  | VS §5 Round 1 + Round2 #6/#11 + Round3 unit re-verification |
 | CONF-NO-BLOCK-PARTY-RIDE-001 | SOURCE_CONFIRMED  | VS §4 Round 1                                               |
 
-Organizer-visible text and the complete official URL snapshots are published verbatim in `rules/nyc-rules.v2.11.json`; that immutable artifact is the authoritative copy.
+Organizer-visible text and the complete official URL snapshots are published verbatim in `rules/nyc-rules.v2.12.json`; that immutable artifact is the authoritative copy.
 
 ## Round 8 — 2026-07-29 (issue #181 citation attribution)
 

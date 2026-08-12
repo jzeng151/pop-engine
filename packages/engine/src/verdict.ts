@@ -73,13 +73,17 @@ function blockerView(finding: Finding, route: FindingRoute): Finding {
   };
 }
 
+/** Whether a resolved route may close the plan, independently of its deadline. */
+const blocksOverall = (route: FindingRoute, definite: DefiniteRoutes): boolean =>
+  definite.blockingRuleIds.has(route.ruleId) && route.disposition === "prohibited_or_ineligible";
+
 /** Whether a missed finding blocks. */
 // MEMBERSHIP IS THE WHOLE TEST, because membership IS `canBlockWhenMissed`.
 const blocksWhenMissed = (route: FindingRoute, definite: DefiniteRoutes): boolean =>
   definite.blockingRuleIds.has(route.ruleId);
 
 /**
- * Steps 4–6: the window checks, with no branch expansion. Also the per-branch and per-rescope
+ * Steps 4–7: the blocker/window checks, with no branch expansion. Also the per-branch and per-rescope
  * verdict, which is why it is separate from `computeVerdict`.
  */
 export function computeWindowVerdict(
@@ -93,6 +97,16 @@ export function computeWindowVerdict(
     .filter(({ route }) => route.slackDays !== null && !windowIsMissed(route))
     .map(({ route }) => route.slackDays as number);
   const minSlackDays = slacks.length === 0 ? null : Math.min(...slacks);
+
+  const prohibited = entries.find(({ route }) => blocksOverall(route, definite));
+  if (prohibited !== undefined) {
+    return {
+      verdict: "INFEASIBLE",
+      blockingFinding: blockerView(prohibited.finding, prohibited.route),
+      missedRuleIds,
+      minSlackDays,
+    };
+  }
 
   // The blocking route is the missed one with the longest published lead, i.e. the earliest date.
   const blocking = missed
@@ -210,6 +224,16 @@ function alternativeValues(
   const definition = ruleset.intakeFields.find((entry) => entry.field === field);
   if (definition === undefined) return [];
   if (definition.values !== null) {
+    if (definition.type === "multi_enum") {
+      const current = Array.isArray(intake[field]) ? intake[field] : [];
+      return definition.values
+        .filter(
+          (value) =>
+            !(current.length === 1 && current[0] === value) &&
+            !(RESCOPE_EXCLUDES_UNKNOWN_VALUES && value === UNKNOWN_ANSWER),
+        )
+        .map((value) => ({ display: value, value: [value] }));
+    }
     return definition.values
       .filter(
         (value) =>
@@ -279,7 +303,7 @@ type ConditionalEvaluation = {
   readonly findings: readonly Finding[];
   readonly window: WindowVerdict;
   readonly verdict: Verdict;
-  /** The finding whose closed window explains an INFEASIBLE verdict. */
+  /** The finding whose resolved prohibition or closed window explains an INFEASIBLE verdict. */
   readonly blockingFinding: Finding | null;
   readonly missingFacts: readonly MissingFact[];
   readonly unresolvedTimelines: readonly UnresolvedTimeline[];
@@ -604,12 +628,14 @@ export function computeVerdict(
               sources: blockingFinding.sources,
               userSummary: blockingFinding.userSummary ?? null,
             },
-      // A blocker promoted out of the branches misses in every branch but not in the unresolved
-      // base, so it belongs in the missed list the copy reads from.
+      // A missed blocker promoted out of branches belongs in the missed list; a prohibition does
+      // not, because this field remains strictly about published windows.
       missedRuleIds: [
         ...new Set([
           ...window.missedRuleIds,
-          ...(blockingFinding === null ? [] : blockingFinding.ruleIds),
+          ...(blockingFinding?.deadlineStatus === "published_deadline_missed"
+            ? blockingFinding.ruleIds
+            : []),
         ]),
       ],
       minSlackDays: window.minSlackDays,

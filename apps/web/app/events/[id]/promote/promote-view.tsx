@@ -103,12 +103,22 @@ export function PromoteView({ eventId, apiBaseUrl, webOrigin }: PromoteViewProps
         {state.venue !== null ? ` · ${state.venue}` : ""}
       </p>
 
-      {state.infeasible_warning && (
+      {!state.publication_gate_available ? (
         <p className="promote__warning" role="status">
-          The latest plan is infeasible (published deadline missed as scoped). You can still publish
-          — that call is yours.
+          Publishing is temporarily unavailable while the service update finishes. You can still
+          save the description or unpublish this page.
         </p>
-      )}
+      ) : state.publication_blocked ? (
+        <p className="promote__warning" role="status">
+          The latest plan is blocked as scoped by a published prohibition or ineligibility. Rescope
+          and generate a new plan before publishing.
+        </p>
+      ) : state.infeasible_warning ? (
+        <p className="promote__warning" role="status">
+          The latest plan is blocked as scoped because a published deadline was missed. You can
+          still publish — that call is yours.
+        </p>
+      ) : null}
 
       {!state.plan_available && (
         <p className="promote__warning" role="status">
@@ -140,7 +150,10 @@ export function PromoteView({ eventId, apiBaseUrl, webOrigin }: PromoteViewProps
         <button
           type="button"
           className="promote__button promote__secondary"
-          disabled={saving || (!state.plan_available && !state.public_page_published)}
+          disabled={
+            saving ||
+            ((!state.plan_available || state.publication_blocked) && !state.public_page_published)
+          }
           onClick={() => {
             void persist({
               description: description.trim() === "" ? null : description.trim(),

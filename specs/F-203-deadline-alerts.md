@@ -1,6 +1,7 @@
 # F-203 · Deadline Alerts
 
 **Status:** APPROVED (2026-07-25; maximum reminder offset ratified 2026-07-26, product-owner approved, resolving the P1 on PR #125; outputs amended 2026-07-27 to name `event_alert_contacts`, product-owner approved on PR #131; AC 7 and the `dependency_unlocked` row amended 2026-07-27 to carry the destination and null `latest_apply_date` qualifiers the implementation already had, product-owner approved on PR #131) · **Reviewer/approver:** product owner + affected lane owners via the approval PR · **Owner:** see Lane below · see `docs/BASELINE.md`.
+**Decision 2026-08-12:** APPROVED by the product owner under issue #258: an overall blocked plan never receives the FEASIBLE-AT-RISK slack-warning email.
 **Phase:** 1 (core, week 2; happy path) · **Lane:** Dev 4 · **Depends on:** F-202 (scheduling happens at checklist creation) · **Feeds:** F-305/F-413 reuse the plumbing (post-MVP)
 
 ## User Story
@@ -47,6 +48,7 @@ Reminder offsets (7/1) are config, not code: they are published at `config.alert
 5. Email path works end-to-end live. SMS: if Twilio A2P approval is in hand, live send; otherwise the in-product labeled simulation (DESIGN.md fallback; decision deadline end of week 1 per OPEN-QUESTIONS P-2).
 6. `POST /api/events/:id/alerts/test` fires one real alert immediately (demo utility, visibly labeled "test").
 7. Rescheduling: plan regeneration + checklist review recomputes pending alerts; a sent alert is never re-sent TO THE DESTINATION IT WAS SENT TO. What makes a re-send legitimate is a different destination, not a different attempt: a message addressed to a contact the organizer has since corrected never reached them, so the corrected address is scheduled the alert again rather than inheriting a delivery it did not receive. Withholding it would mean a contact correction can repair nothing that was already attempted, in a feature whose purpose is that a filing deadline does not pass unnoticed. The sent row itself is never rewritten and stays the record of where that message actually went, which is what keeps "never re-sent" true where it is about duplicate delivery to one person.
+8. A `slack_warning` is scheduled only when the overall plan verdict is FEASIBLE-AT-RISK. An overall blocked/INFEASIBLE plan receives no at-risk warning even if its stored detail carries a numeric `minSlackDays`; per-finding deadline reminders remain governed by their own existing criteria.
 
 ## Phase 1 Scope Cut
 

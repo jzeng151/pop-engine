@@ -1,8 +1,9 @@
 # F-102 · Feasibility Verdict
 
 **Status:** APPROVED (2026-07-24; Outputs amended 2026-08-02, product-owner approved, one person currently holding every lane: the three rescope enrichment fields the engine already emits are written down, and `verdict_detail` prose is pinned to rule ids, with the render-time substitution stated as what it actually delivers and its one merged-finding residue named. No verdict, finding, deadline, threshold or regulatory fact moves; Acceptance amended 2026-08-08, product-owner approved: a missed finding blocks at or above `required` in the disposition strength order rather than exactly at it, so a finding that is both barred and past its published window renders INFEASIBLE where it rendered CONDITIONAL, and, at the same tier, the blocking finding's trigger has to have resolved, which is AC 2's invariant restated where the demotion it relies on does not reach. That one moves a verdict, and AC 10 states which; Edge Cases amended 2026-08-08, product-owner approved, so the window checks read a merged line's routes rather than the line, see the Amendment at the foot of this file) · **Reviewer/approver:** product owner · **Owner:** see Lane below · see `docs/BASELINE.md`.
+**Decision 2026-08-12:** APPROVED by the product owner under issue #258: F-102 is the overall verdict, and a resolved prohibition or ineligibility is an INFEASIBLE blocker without needing a deadline. See Acceptance Criterion 11 and the signed amendment below.
 **Phase:** 1 (core, week 1) · **Lane:** Dev 1 · **Depends on:** F-201 (same engine invocation) · **Feeds:** plan UI, F-203 slack warnings
-**Updated:** 2026-07-22 against nyc.v2.1; retargeted through nyc.v2.8 for the changes recorded in `docs/BASELINE.md`, to nyc.v2.9 on 2026-07-29, to nyc.v2.10 the same day for issue #181's citation-only correction, and to nyc.v2.11 for organizer summaries. v2.9 adds `no_new_requirement` confirmation findings and changes the active intake registry for F-110 and issue #194 without changing a verdict. v2.10 and v2.11 change no finding, status, or verdict. The plan renderer's separate near-empty predicate is disposition-based: a `required + not_calculable` finding remains definite and suppresses near-empty copy.
+**Updated:** 2026-07-22 against nyc.v2.1; retargeted through nyc.v2.8 for the changes recorded in `docs/BASELINE.md`, to nyc.v2.9 on 2026-07-29, to nyc.v2.10 the same day for issue #181's citation-only correction, to nyc.v2.11 for organizer summaries, and to nyc.v2.12 on 2026-08-12 for issues #258 and #287. v2.9 adds `no_new_requirement` confirmation findings and changes the active intake registry for F-110 and issue #194 without changing a verdict. v2.10 and v2.11 change no finding, status, or verdict. v2.12 changes existing structure and fuel findings under the approved overall-prohibition verdict semantics. The plan renderer's separate near-empty predicate is disposition-based: a `required + not_calculable` finding remains definite and suppresses near-empty copy.
 
 ## User Story
 
@@ -18,12 +19,12 @@ Per-finding **deadline status**: ON_TRACK / DEADLINE_APPROACHING / PUBLISHED_DEA
 
 One top-level verdict on the `permit_plans` row, plus `verdict_detail`:
 
-| Verdict          | detail carries                                                    | Copy rule                                                                                                |
-| ---------------- | ----------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------- |
-| FEASIBLE         | min_slack_days                                                    | "On track"                                                                                               |
-| FEASIBLE-AT-RISK | tightest finding, "apply within N days"                           | threshold labeled as PopEngine's **internal planning buffer**, never an official threshold               |
-| CONDITIONAL      | each missing fact + every branch's verdict and reason             | branch table rendered                                                                                    |
-| INFEASIBLE       | blocking finding, rescope suggestions (each a full re-evaluation) | **"published deadline missed as scoped"** — a missed filing window, never a claim of legal impossibility |
+| Verdict          | detail carries                                                    | Copy rule                                                                                                            |
+| ---------------- | ----------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------- |
+| FEASIBLE         | min_slack_days                                                    | "On track"                                                                                                           |
+| FEASIBLE-AT-RISK | tightest finding, "apply within N days"                           | threshold labeled as PopEngine's **internal planning buffer**, never an official threshold                           |
+| CONDITIONAL      | each missing fact + every branch's verdict and reason             | branch table rendered                                                                                                |
+| INFEASIBLE       | blocking finding, rescope suggestions (each a full re-evaluation) | **"Blocked as scoped"**; detail distinguishes a published prohibition/ineligibility from a missed published deadline |
 
 ### Rescope suggestion enrichment (amended 2026-08-02)
 
@@ -58,11 +59,13 @@ A rescope that improves the verdict is not thereby complete. These two "remainin
 
     On the published ruleset this moves no plan, and the bound is per dedupe group rather than per rule, because a merged line takes its group's tightest published window whatever disposition contributed it (AD-19): no rule that can reach `prohibited_or_ineligible` is in a dedupe group holding a published window. `SAPO-BLOCK-PARTY-ELIG-001` and `PARKS-PROPANE-001` are the only findings that carry the disposition, both publish no deadline and neither carries a `dedupe_key`. It becomes reachable when a ruleset publishes a barred rule that carries a filing window or shares a dedupe key with one.
 
+11. **What a prohibition blocks on (amended 2026-08-12, product owner).** A route whose own trigger resolves `true`, whose verification status is not `OFFICIAL_CONFLICT`, and whose disposition is `prohibited_or_ineligible` drives the overall verdict to INFEASIBLE regardless of deadline status. The blocker detail names that route and identifies the bar rather than describing a missed deadline. An unresolved trigger remains CONDITIONAL. `verdictDetail.missedRuleIds` lists only routes with `published_deadline_missed` status and does not acquire an undated prohibition merely because it blocks.
+
 ## Edge Cases
 
 - Multiple findings missed → INFEASIBLE names the blocking finding with the longest lead; all missed findings listed in detail.
 - Zero dated findings (Scenario B) → no slack figure; verdict from the conditional/coverage logic alone.
-- PROHIBITED_OR_INELIGIBLE findings (block party + sales) don't drive date math; they render as blockers of a different color with rescope guidance. Where such a finding does carry a published window and that window has closed, AC 10 applies and the verdict is INFEASIBLE.
+- A resolved PROHIBITED_OR_INELIGIBLE route drives INFEASIBLE without deadline math and renders with rescope guidance; an unresolved or OFFICIAL_CONFLICT route does not close the plan by itself.
 - An OFFICIAL_CONFLICT finding never flips the verdict by itself; it renders MAY_BE_REQUIRED with both readings.
 - Only NOT_APPLICABLE/NOT_CALCULABLE deadlines → CONDITIONAL if material unknowns exist, else FEASIBLE with an explicit "no dated deadlines identified" note.
 - A required finding remains a definite requirement when its deadline is NOT_CALCULABLE; calculability never makes the plan near-empty.
@@ -118,6 +121,12 @@ Each branch is followed by the unchanged sentence "Each finding below states its
 
 **The shared phrase.** "Publishes no filing of its own" is the vocabulary for a dated route outside the filing dispositions, chosen so that this surface and any other saying the same thing say it in the same words. It names no disposition the ruleset does not use, and the humanized disposition token still renders beside each entry.
 
-**Reachability, measured rather than assumed.** On `rules/nyc-rules.v2.11.json` no `advisory` or `no_new_requirement` rule publishes a deadline, so branch 3 is unreachable on the published ruleset and arises on the proposed draft and in fixtures. Branch 4 is reachable today. That bounds the harm of the sentences the three earlier branches produced for those shapes; it does not make them true, which is why they are amended rather than left.
+**Reachability, measured rather than assumed.** On `rules/nyc-rules.v2.12.json` no `advisory` or `no_new_requirement` rule publishes a deadline, so branch 3 is unreachable on the published ruleset and arises on the proposed draft and in fixtures. Branch 4 is reachable today. That bounds the harm of the sentences the three earlier branches produced for those shapes; it does not make them true, which is why they are amended rather than left.
 
 **This amendment adds no residual.**
+
+## Amendment (SIGNED 2026-08-12): resolved prohibitions block the overall verdict
+
+**Status: APPROVED 2026-08-12 by the product owner under issue #258, and part of this spec's approved baseline.** This changes product and verdict semantics under `docs/DOCUMENTATION-GOVERNANCE.md` §6. It publishes no regulatory fact and changes no rule or verification status.
+
+The four-state verdict vocabulary remains unchanged. A resolved `prohibited_or_ineligible` route now closes the plan as INFEASIBLE even when it publishes no deadline. Its organizer label is “Blocked as scoped,” and the detail says the published rule marks the setup prohibited or ineligible. Missed-deadline blockers keep their deadline explanation. An unresolved prohibition remains CONDITIONAL, an OFFICIAL_CONFLICT never closes the plan by itself, and `missedRuleIds` remains a deadline-only list.

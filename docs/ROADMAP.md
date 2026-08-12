@@ -9,7 +9,7 @@
 Prerequisites, not features:
 
 - Ratify the `events` schema (the team's single integration point) — completed for the access-gated demo 2026-07-27 through PR #137's recorded overwrite; strict production ratification and later shared/core-table changes remain the product owner's under governance §6.
-- Ratify `rules/nyc-rules.v2.11.json` (42 rules + 4 advisories: product-owner sign-off per `BASELINE.md`, which is the whole requirement under governance §6 even for a ruleset the product owner authored); boot validation loads it.
+- Ratify `rules/nyc-rules.v2.12.json` (42 rules + 4 advisories: product-owner sign-off per `BASELINE.md`, which is the whole requirement under governance §6 even for a ruleset the product owner authored); boot validation loads it.
 - Repo scaffold, deploy target, Twilio account + A2P registration started.
 
 ## Phase 1 — MVP Core (capstone; iron-clad, no mocks)
@@ -21,7 +21,7 @@ The permit-planning spine. Must pass all 6 answer-key scenarios; "iron-clad" is 
 - **F-101 · Event Intake Questionnaire** — conditional intake mirroring the ruleset's field registry (location/obstruction, SAPO class + size/plaza level, headcount, date, audience, food, sales, sound, structures, fuel, generator/battery, alcohol/license, assembly); contradiction checks; "I don't know" on branching facts.
 - **F-110 · Assembly Document Coverage Intake** — at private venues with headcount 75+, replace the coarse assembly-approval question with explicit tri-state PACO exact-event coverage and current FDNY Public Assembly Permit confirmations; persist through reload and plan snapshots without adding a regulatory or verdict branch.
 - **F-201 · Permit Plan Generator** — rules-engine output: typed findings (permits, insurance, notifications, registrations, eligibility, prohibitions, advisories) with agencies, typed deadlines, fees, portals, citations + verification statuses; ruleset version stored per plan.
-- **F-102 · Feasibility Verdict** — backward-computed timeline; per-finding deadline statuses under a four-state verdict (FEASIBLE / FEASIBLE-AT-RISK / CONDITIONAL / INFEASIBLE); INFEASIBLE = "published deadline missed as scoped"; rescopes are full re-evaluations; unknowns propagate to CONDITIONAL.
+- **F-102 · Feasibility Verdict** — backward-computed timeline; per-finding deadline statuses under a four-state verdict (FEASIBLE / FEASIBLE-AT-RISK / CONDITIONAL / INFEASIBLE); a resolved prohibition or ineligibility also drives INFEASIBLE without a deadline; INFEASIBLE = "Blocked as scoped" with blocker-specific detail; rescopes are full re-evaluations; unknowns propagate to CONDITIONAL.
 - **F-206 · Rules Snapshot Banner** — "Rules snapshot [version] · published [date]" in-product (never "verified as of"); per-line citations + verification status.
 
 **Week 2:**
