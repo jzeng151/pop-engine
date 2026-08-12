@@ -11,6 +11,9 @@ sentence of AD-19 named in section 9. §4.2's closing paragraph was amended on 2
 product-owner decision recorded in `docs/BASELINE.md`, which corrects what that paragraph said about
 how the draft's `nypd_sound` prohibition renders. That amendment approves nothing new, moves no
 other section, and changes no engine behaviour; the 2026-08-08 approval stands as given.
+Issue #263 amended sections 3, 4.3, 7 and 9 on 2026-08-12: current merged findings no longer
+duplicate route values at top level, `headlineRouteId` identifies the leading route or is null, and
+historical scalar-only merged snapshots remain an explicit unattributed legacy shape.
 
 **Issue:** #239 (dedupe merge), continuing PR #244.
 **Reads:** `docs/research/draft-dedupe-cofiring.md` (MEASUREMENT, branch `measure/draft-dedupe-cofiring`, PR #251),
@@ -120,13 +123,22 @@ export type FindingRoute = {
 export type HeadlineMode = "applies_together" | "candidate";
 ```
 
-On `Finding`:
+On `Finding`, the current shapes are disjoint:
 
 ```ts
-  /** Present exactly when this finding merged two or more rules. */
-  readonly routes?: readonly FindingRoute[];
-  /** Present exactly when `routes` is. Derived from the routes' own trigger results. */
-  readonly headlineMode?: HeadlineMode;
+type UnmergedFinding = FindingBase &
+  FindingRouteValues & {
+    readonly routes?: undefined;
+    readonly headlineMode?: undefined;
+    readonly headlineRouteId?: undefined;
+  };
+
+type MergedFinding = FindingBase & {
+  readonly routes: readonly FindingRoute[];
+  readonly headlineMode: HeadlineMode;
+  readonly headlineRouteId: string | null;
+  // FindingRouteValues are absent here.
+};
 ```
 
 `route.disposition` is the value `resolveDisposition()` produced for that rule on its own, before
@@ -179,7 +191,7 @@ information. This is a departure from `specs/F-103-scope-comparator.md`'s Route 
 
 ### 3.2 Present exactly when the finding merged
 
-`routes` and `headlineMode` are absent on a finding that came from a single rule. A single-rule
+`routes`, `headlineMode` and `headlineRouteId` are absent on a finding that came from a single rule. A single-rule
 finding is its own route and every scalar on it is that rule's; a one-entry list would restate the
 finding and would make "did this merge?" unanswerable from the shape.
 
@@ -191,20 +203,12 @@ writing it twice.
 
 ### 3.3 What is dropped from the current merged finding
 
-**Nothing on the finding is removed.** Every field `mergeGroup()` produces today it still produces.
-What is dropped is a RULE, not a field: the identity/timeline split.
-
-Today identity comes from the tightest-window route among those contributing the merged disposition,
-and the timeline comes from the tightest-window route over the whole group. Under this proposal both
-come from ONE route, the binding route (section 4.3). The split existed for one reason, stated in
-`findings.ts:305-308` and in AD-19: a published filing window may never be dropped for sitting in a
-weaker disposition tier. That reason is gone, because the window is no longer dropped. It is on the
-route entry, and section 6 makes the verdict read it.
-
-So the change to the finding's scalars is: **`deadline`, `deadlineDisplay`, `latestApplyDate`,
-`applyAfterDate`, `deadlineStatus`, `slackDays` and `timelineUnresolvedReason` move from the
-whole-group window binding back to the identity binding.** That is the part of AD-19 this supersedes,
-and it is the only part.
+The route-specific top-level fields are removed from a current merged finding: `name`, `agency`,
+`deadline`, `deadlineDisplay`, `latestApplyDate`, `applyAfterDate`, `deadlineStatus`, `slackDays`,
+`feeDisplay`, `portalName`, `portalUrl`, `portalInstructions`. They remain on every route.
+`headlineRouteId` makes the binding selection explicit, and `headlineOf()` is the one engine helper
+for resolving it. Aggregate values such as `disposition`, retained notes, sources, trigger reasons,
+summary and verification status remain on the finding.
 
 ## 4. The two headline modes
 
@@ -351,12 +355,8 @@ picking the unsettled one would put a candidate's name, window, fee and portal o
 holds a route that does apply. One date field cannot hold two dates, and the honest answer where two
 routes disagree and neither can be preferred is to publish neither.
 
-`deadlineStatus` is the one field that cannot be absent, and it reads `not_calculable` there.
-`not_applicable` would state that no filing date applies to this requirement, which is false: the
-routes publish windows. `not_calculable` states that a published window exists and this line cannot
-be dated, which is the state exactly, and it is the value the engine already uses for a published
-window it could not turn into a date. `timelineUnresolvedReason` still carries whatever published
-text the routes supply, verbatim.
+`headlineRouteId` is null there. No synthetic `deadlineStatus` or other route value is published at
+the finding level; each route retains its own. `timelineUnresolvedReason` remains aggregate text.
 
 **What is unchanged.** `disposition`, `ruleIds`, `notes`, `sources`, `triggeredBy`,
 `deadlineUnknownFields`, the summary, the single-valued published texts, `routes` and `headlineMode`.
@@ -540,6 +540,8 @@ a verdict means; it now records that the residual it filed was answered elsewher
   routes?: readonly FindingRoute[] | null;
   /** Absent on the same plans. */
   headline_mode?: HeadlineMode | null;
+  /** The route whose values lead the line, or null for a scalar-free headline. */
+  headline_rule_id?: string | null;
 ```
 
 They ride in `verdict_detail.finding_renderings` for the same reason `user_summary`, `notes`,
@@ -547,27 +549,16 @@ They ride in `verdict_detail.finding_renderings` for the same reason `user_summa
 branch does not add columns (`AGENTS.md`). This is reported as a schema gap for a later migration,
 exactly as the existing block is.
 
-### 7.2 Does an older client break
+### 7.2 Compatibility and rollout
 
-**No, and the reason is a precedent rather than an assurance.** Plans are persisted and replayed. A
-plan stored before this change carries no `routes` key in its stored rendering. Three properties
-make that safe:
+Plans stored before routes replay as scalar findings. Multiple stored rule IDs mark that shape
+`legacyMerged: true`; it has no route attribution because none was recorded. It is not rewritten or
+re-evaluated. Route-era stored plans missing `headline_rule_id` derive it from their recorded binding
+order, or null for the approved scalar-free case.
 
-1. **Additive only.** No existing field changes name, type or nullability. A client that does not
-   read `routes` sees exactly the response it saw before, except where the headline moved (section
-   9), which is a value change within an existing field and not a shape change.
-2. **Optional-and-normalized, which is the established pattern.** `user_summary` is declared
-   `user_summary?: Finding["userSummary"]` on the rendering type, written as `finding.userSummary ??
-null`, and read back as `rendering.user_summary ?? null` (`plan.ts:149`, `162`, `511`). `routes`
-   and `headline_mode` follow that exactly: optional on the type, normalized on write, normalized to
-   `null` on read. A replayed pre-change plan reads `routes: null`.
-3. **`null` has a defined meaning and it is not "no routes".** `routes: null` means the stored plan
-   predates the field, and a consumer falls back to the finding itself, which is what it did before
-   the field existed. `routes: []` is never emitted. A merged finding always has two or more routes
-   and an unmerged one omits the field entirely.
-
-The web client reads `routes` only through the same fallback, so a replayed pre-change plan renders
-as it did.
+The change is not additive for current merged responses. The web therefore deploys first: it accepts
+the prior response and normalizes it to the explicit shape. After old web builds and rollback targets
+are removed, the api deploys and stops serving top-level route values for current merged findings.
 
 **The one thing that is not backward compatible, stated rather than buried:** a plan REGENERATED
 after this change may carry a different headline from the plan stored for the same event before it,

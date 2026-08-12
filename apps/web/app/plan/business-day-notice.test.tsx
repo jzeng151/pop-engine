@@ -8,6 +8,7 @@ import userEvent from "@testing-library/user-event";
 import {
   CONFIRM_WITH_AGENCY,
   evaluate,
+  headlineOf,
   parseEngineRuleset,
   type EventIntake,
   type Finding,
@@ -75,18 +76,15 @@ const findIn = (plan: typeof evaluated, ruleId: string): Finding => {
 const findingFor = (ruleId: string): Finding => findIn(evaluated, ruleId);
 
 const withBindingDeadline = (finding: Finding, deadline: unknown): Finding =>
-  ({
-    ...finding,
-    deadline,
-    timelineUnresolvedReason: null,
-    ...(finding.routes === undefined
-      ? {}
-      : {
-          routes: finding.routes.map((route, index) =>
-            index === 0 ? { ...route, deadline } : route,
-          ),
-        }),
-  }) as Finding;
+  finding.routes === undefined
+    ? ({ ...finding, deadline, timelineUnresolvedReason: null } as Finding)
+    : ({
+        ...finding,
+        timelineUnresolvedReason: null,
+        routes: finding.routes.map((route, index) =>
+          index === 0 ? { ...route, deadline } : route,
+        ),
+      } as Finding);
 
 const tentAlone = (): Finding => findIn(evaluatedAlone, "DOB-TENT-001");
 
@@ -250,8 +248,8 @@ describe("a merged dedupe line, and the routes whose windows it did not take", (
   it("gets the same sentence when a second route merged into it", async () => {
     const merged = findingFor("DOB-TENT-001");
     expect(merged.ruleIds).toEqual(["DOB-TENT-001", "DOB-TALL-STRUCTURE-001"]);
-    expect(merged.deadline?.type).toBe("business_days_minimum");
-    expect(merged.deadlineStatus).toBe("not_calculable");
+    expect(headlineOf(merged)?.deadline?.type).toBe("business_days_minimum");
+    expect(headlineOf(merged)?.deadlineStatus).toBe("not_calculable");
 
     expect(await applyByLine(merged)).toContain(
       "Apply by: the exact date depends on which days DOB counts as business days. " +
@@ -262,8 +260,8 @@ describe("a merged dedupe line, and the routes whose windows it did not take", (
   it("carries the sentence on the route whose window it is, when another route binds", async () => {
     const merged = findIn(evaluatedTallBinding, "DOB-TENT-001");
     expect(merged.ruleIds).toContain("DOB-TALL-STRUCTURE-001");
-    expect(merged.deadline).toBeNull();
-    expect(merged.deadlineStatus).toBe("not_applicable");
+    expect(merged).not.toHaveProperty("deadline");
+    expect(headlineOf(merged)?.deadlineStatus).toBe("not_applicable");
     const tent = merged.routes?.find((route) => route.ruleId === "DOB-TENT-001");
     expect(tent?.deadline?.type).toBe("business_days_minimum");
     expect(tent?.deadlineStatus).toBe("not_calculable");

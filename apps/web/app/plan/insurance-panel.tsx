@@ -1,4 +1,4 @@
-import type { ConsumedFinding } from "./plan-api";
+import type { ConsumedFinding, ConsumedScalarFinding } from "./plan-api";
 
 // F-205: a dedicated insurance card on top of — never instead of — the plan line each finding still renders from via PlanLine (AC 5; removing this file loses only the card).
 
@@ -18,7 +18,7 @@ const TRACKABLE_INSURANCE_RULE_IDS: ReadonlySet<string> = new Set([
 const humanize = (token: string): string => token.replace(/_/g, " ");
 
 /** The published deadline's own type, for SAPO-INSURANCE-001's `{type: "before_issuance"}` — no computable date, so "before issuance" is the whole timing requirement (ARCHITECTURE.md's "Rules loading" table states it the same way: "obtain before permit issuance"). */
-const deadlineTypeLabel = (finding: ConsumedFinding): string | null =>
+const deadlineTypeLabel = (finding: ConsumedScalarFinding): string | null =>
   finding.deadline !== null &&
   finding.deadlineDisplay === null &&
   finding.latestApplyDate === null &&
@@ -27,14 +27,14 @@ const deadlineTypeLabel = (finding: ConsumedFinding): string | null =>
     : null;
 
 /** Whether this card is a hard requirement or informational (AC 1/2). */
-const isRequired = (finding: ConsumedFinding): boolean => finding.disposition === "required";
+const isRequired = (finding: ConsumedScalarFinding): boolean => finding.disposition === "required";
 
 /** The insurance rule's OWN published values, where the line it arrived on merged. */
-const insuranceView = (finding: ConsumedFinding): ConsumedFinding => {
+const insuranceView = (finding: ConsumedFinding): ConsumedScalarFinding => {
   const routes = finding.routes ?? [];
-  if (routes.length < 2) return finding;
+  if (finding.routes === null) return finding;
   const route = routes.find((entry) => INSURANCE_RULE_IDS.has(entry.ruleId));
-  if (route === undefined) return finding;
+  if (route === undefined) throw new Error("insurance finding does not carry its own route");
   return {
     ...finding,
     ruleIds: [route.ruleId],
@@ -54,6 +54,10 @@ const insuranceView = (finding: ConsumedFinding): ConsumedFinding => {
     notes: route.notes ?? finding.notes,
     noteText: null,
     sources: finding.sources.filter((source) => source.ruleId === route.ruleId),
+    routes: null,
+    headlineMode: null,
+    headlineRouteId: null,
+    legacyMerged: false,
   };
 };
 
@@ -62,7 +66,7 @@ const isTrackable = (finding: ConsumedFinding): boolean =>
   finding.ruleIds.some((ruleId) => TRACKABLE_INSURANCE_RULE_IDS.has(ruleId));
 
 /** One insurance card. */
-function InsuranceCard({ finding, eventId }: { finding: ConsumedFinding; eventId: string }) {
+function InsuranceCard({ finding, eventId }: { finding: ConsumedScalarFinding; eventId: string }) {
   const headingId = `insurance-${finding.ruleIds.join("-")}`;
   const required = isRequired(finding);
   const trackable = isTrackable(finding);

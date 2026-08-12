@@ -9,12 +9,20 @@ import {
   differenceInCalendarDays,
   bindingRouteOf,
   evaluate,
+  headlineOf,
   parseEngineRuleset,
+  routesOf,
   subtractBusinessDays,
   triggerFields,
   EvaluationError,
 } from "./index";
-import type { EventIntake, HolidayCalendar, PermitPlan, PublishedHolidayCalendar } from "./types";
+import type {
+  EventIntake,
+  Finding,
+  HolidayCalendar,
+  PermitPlan,
+  PublishedHolidayCalendar,
+} from "./types";
 
 const TODAY = "2026-07-22";
 const rawRuleset: Record<string, unknown> = JSON.parse(readFileSync(PUBLISHED_RULES_FILE, "utf8"));
@@ -212,20 +220,23 @@ const mergedGroup = (
   return plan.findings[0];
 };
 
+const headline = (finding: Finding | undefined) =>
+  finding === undefined ? undefined : (headlineOf(finding) ?? undefined);
+
 const decidedFields = (finding: ReturnType<typeof mergedGroup>) => ({
   disposition: finding?.disposition,
   kind: finding?.kind,
-  name: finding?.name,
-  agency: finding?.agency,
-  deadline: finding?.deadline,
-  deadlineDisplay: finding?.deadlineDisplay,
-  latestApplyDate: finding?.latestApplyDate,
-  deadlineStatus: finding?.deadlineStatus,
-  slackDays: finding?.slackDays,
-  feeDisplay: finding?.feeDisplay,
-  portalName: finding?.portalName,
-  portalUrl: finding?.portalUrl,
-  portalInstructions: finding?.portalInstructions,
+  name: headline(finding)?.name,
+  agency: headline(finding)?.agency,
+  deadline: headline(finding)?.deadline,
+  deadlineDisplay: headline(finding)?.deadlineDisplay,
+  latestApplyDate: headline(finding)?.latestApplyDate,
+  deadlineStatus: headline(finding)?.deadlineStatus,
+  slackDays: headline(finding)?.slackDays,
+  feeDisplay: headline(finding)?.feeDisplay,
+  portalName: headline(finding)?.portalName,
+  portalUrl: headline(finding)?.portalUrl,
+  portalInstructions: headline(finding)?.portalInstructions,
   noteText: finding?.noteText,
   conflictText: finding?.conflictText,
   timelineUnresolvedReason: finding?.timelineUnresolvedReason,
@@ -348,7 +359,7 @@ describe("dedupe field merge (#239)", () => {
     );
     const merged = plan.findings[0];
     expect(merged?.disposition).toBe("required");
-    expect(merged?.name).toBe("permit route");
+    expect(headline(merged)?.name).toBe("permit route");
     expect(merged?.ruleIds).toContain("RULE-B");
     expect(merged?.sources.map((source) => source.ruleId)).toContain("RULE-B");
     expect(merged?.triggeredBy.map((reason) => reason.field)).toContain("structure_height_ft");
@@ -383,6 +394,8 @@ describe("dedupe field merge (#239)", () => {
       const routes = merged?.routes ?? [];
       expect(routes.length).toBeGreaterThan(1);
       expect(bindingRouteOf(routes)?.ruleId).toBe(routes[0]?.ruleId);
+      expect(merged?.headlineRouteId).toBe(routes[0]?.ruleId);
+      expect(merged).not.toHaveProperty("name");
       expect(routes[0]?.ruleId).not.toBe(rules[0]?.id);
     }
 
@@ -403,6 +416,7 @@ describe("dedupe field merge (#239)", () => {
     expect(merged.length).toBeGreaterThan(0);
     for (const finding of merged) {
       expect(bindingRouteOf(finding.routes ?? [])?.ruleId).toBe(finding.routes?.[0]?.ruleId);
+      expect(finding.headlineRouteId).toBe(finding.routes?.[0]?.ruleId);
     }
   });
 
@@ -420,16 +434,18 @@ describe("dedupe field merge (#239)", () => {
     ]);
     expect(blocked).toMatchObject({
       disposition: "prohibited_or_ineligible",
+      noteText: "not eligible at this location",
+      headlineMode: "applies_together",
+    });
+    expect(headline(blocked)).toMatchObject({
       name: "barred route",
       feeDisplay: null,
       portalName: null,
       portalUrl: null,
-      noteText: "not eligible at this location",
       latestApplyDate: null,
       deadlineStatus: "not_applicable",
-      headlineMode: "applies_together",
+      deadline: null,
     });
-    expect(blocked?.deadline).toBeNull();
     expect(blocked?.routes).toMatchObject([
       {
         ruleId: "RULE-B",
@@ -467,8 +483,8 @@ describe("dedupe field merge (#239)", () => {
     ];
     for (const listing of [group, [...group].reverse()]) {
       const merged = mergedGroup(listing, closedWindow);
-      expect(merged).toMatchObject({
-        disposition: "prohibited_or_ineligible",
+      expect(merged?.disposition).toBe("prohibited_or_ineligible");
+      expect(headline(merged)).toMatchObject({
         name: "barred route",
         feeDisplay: null,
         latestApplyDate: null,
@@ -521,8 +537,8 @@ describe("dedupe field merge (#239)", () => {
       disposedRule("RULE-B", "REQUIRED", calendarWindow(45)),
       disposedRule("RULE-A", "REQUIRED", calendarWindow(21)),
     ]);
-    expect(forward?.latestApplyDate).toBe("2026-10-20");
-    expect(reverse?.latestApplyDate).toBe("2026-10-20");
+    expect(headline(forward)?.latestApplyDate).toBe("2026-10-20");
+    expect(headline(reverse)?.latestApplyDate).toBe("2026-10-20");
   });
 
   it("binds to the earliest window that is still open, not to one that has closed", () => {
@@ -532,7 +548,7 @@ describe("dedupe field merge (#239)", () => {
     ];
     const options = { intake: { event_date: "2026-08-20" } };
     for (const listing of [group, [...group].reverse()]) {
-      expect(mergedGroup(listing, options)).toMatchObject({
+      expect(headline(mergedGroup(listing, options))).toMatchObject({
         latestApplyDate: "2026-07-30",
         deadlineStatus: "deadline_approaching",
       });
@@ -546,7 +562,7 @@ describe("dedupe field merge (#239)", () => {
     ];
     const options = { intake: { event_date: "2026-08-01" } };
     for (const listing of [group, [...group].reverse()]) {
-      expect(mergedGroup(listing, options)).toMatchObject({
+      expect(headline(mergedGroup(listing, options))).toMatchObject({
         latestApplyDate: "2026-06-17",
         deadlineStatus: "published_deadline_missed",
       });
@@ -562,7 +578,7 @@ describe("dedupe field merge (#239)", () => {
     ];
     const options = { holidays: null };
     for (const listing of [group, [...group].reverse()]) {
-      expect(mergedGroup(listing, options)).toMatchObject({
+      expect(headline(mergedGroup(listing, options))).toMatchObject({
         name: "dated route",
         deadlineStatus: "not_calculable",
         latestApplyDate: null,
@@ -583,7 +599,7 @@ describe("dedupe field merge (#239)", () => {
     ];
     const options = { holidays: null };
     for (const listing of [group, [...group].reverse()]) {
-      expect(mergedGroup(listing, options)).toMatchObject({
+      expect(headline(mergedGroup(listing, options))).toMatchObject({
         name: "datable route",
         latestApplyDate: "2026-10-20",
         deadlineStatus: "on_track",
@@ -609,7 +625,7 @@ describe("dedupe field merge (#239)", () => {
     ];
     const options = { intake: { event_date: "2026-08-20" } };
     for (const listing of [group, [...group].reverse()]) {
-      expect(mergedGroup(listing, options)).toMatchObject({
+      expect(headline(mergedGroup(listing, options))).toMatchObject({
         name: "permit with a closed window",
         deadlineStatus: "published_deadline_missed",
         latestApplyDate: "2026-06-21",
@@ -629,7 +645,7 @@ describe("dedupe field merge (#239)", () => {
     ];
     const options = { intake: { event_date: "2026-08-20" }, holidays: null };
     for (const listing of [group, [...group].reverse()]) {
-      expect(mergedGroup(listing, options)).toMatchObject({
+      expect(headline(mergedGroup(listing, options))).toMatchObject({
         name: "permit with a closed window",
         deadlineStatus: "published_deadline_missed",
         latestApplyDate: "2026-06-21",
@@ -646,8 +662,14 @@ describe("dedupe field merge (#239)", () => {
       disposedRule("RULE-B", "MAY_BE_REQUIRED"),
       disposedRule("RULE-A", "REQUIRED", calendarWindow(45)),
     ]);
-    expect(forward).toMatchObject({ latestApplyDate: "2026-10-20", deadlineStatus: "on_track" });
-    expect(reverse).toMatchObject({ latestApplyDate: "2026-10-20", deadlineStatus: "on_track" });
+    expect(headline(forward)).toMatchObject({
+      latestApplyDate: "2026-10-20",
+      deadlineStatus: "on_track",
+    });
+    expect(headline(reverse)).toMatchObject({
+      latestApplyDate: "2026-10-20",
+      deadlineStatus: "on_track",
+    });
   });
 
   it("reads note, conflict and timeline text off the binding rule rather than the file order", () => {
@@ -687,7 +709,7 @@ describe("dedupe field merge (#239)", () => {
     ];
     const swapped = [group[1], group[0], group[2]] as Record<string, unknown>[];
     for (const listing of [group, swapped]) {
-      expect(mergedGroup(listing)).toMatchObject({
+      expect(headline(mergedGroup(listing))).toMatchObject({
         name: "binding route",
         latestApplyDate: "2026-10-20",
       });
@@ -751,8 +773,8 @@ describe("dedupe field merge (#239)", () => {
 
     const deployed = merged(null);
     expect(deployed?.ruleIds).toEqual(["DOB-TENT-001", "DOB-TALL-STRUCTURE-001"]);
-    expect(deployed).toMatchObject({
-      disposition: "required",
+    expect(deployed?.disposition).toBe("required");
+    expect(headline(deployed)).toMatchObject({
       name: "DOB permit — tent/canopy over 400 gross sq ft or in place 30+ days",
       deadlineStatus: "not_calculable",
       latestApplyDate: null,
@@ -765,8 +787,8 @@ describe("dedupe field merge (#239)", () => {
 
     expect(deployed?.noteText).toContain("over 10 feet may require");
 
-    expect(merged([])).toMatchObject({
-      disposition: "required",
+    expect(merged([])?.disposition).toBe("required");
+    expect(headline(merged([]))).toMatchObject({
       name: "DOB permit — tent/canopy over 400 gross sq ft or in place 30+ days",
       deadlineStatus: "on_track",
       latestApplyDate: "2026-11-13",
@@ -810,9 +832,9 @@ describe("dedupe field merge (#239)", () => {
     const gatedFirst = sequencedSound(true);
     const alternativeFirst = sequencedSound(false);
 
-    expect(gatedFirst?.applyAfterDate).not.toBeNull();
-    expect(alternativeFirst?.applyAfterDate).toBe(gatedFirst?.applyAfterDate);
-    expect(alternativeFirst?.slackDays).toBe(gatedFirst?.slackDays);
+    expect(headline(gatedFirst)?.applyAfterDate).not.toBeNull();
+    expect(headline(alternativeFirst)?.applyAfterDate).toBe(headline(gatedFirst)?.applyAfterDate);
+    expect(headline(alternativeFirst)?.slackDays).toBe(headline(gatedFirst)?.slackDays);
     expect(alternativeFirst?.notes.join(" ")).toContain("sequenced after PARKS-EVENT-001");
     expect(gatedFirst?.notes.join(" ")).toContain("sequenced after PARKS-EVENT-001");
   });
@@ -1001,8 +1023,9 @@ describe("an unknown trigger never blocks, however barred the finding (F-102 AC 
     expect(plan.findings).toHaveLength(1);
     expect(plan.findings[0]?.disposition).toBe("prohibited_or_ineligible");
 
-    expect(plan.findings[0]?.deadlineStatus).toBe("not_calculable");
-    expect(plan.findings[0]?.latestApplyDate).toBeNull();
+    expect(headline(plan.findings[0])).toBeUndefined();
+    expect(plan.findings[0]?.headlineRouteId).toBeNull();
+    expect(plan.findings[0]).not.toHaveProperty("deadlineStatus");
     expect(
       plan.findings[0]?.routes?.map((route) => [route.ruleId, route.deadlineStatus]),
     ).toContainEqual(["BAR-001", "published_deadline_missed"]);
@@ -1063,7 +1086,7 @@ describe("a resolved prohibition blocks independently of its window (F-102, amen
     expect(plan.findings).toHaveLength(1);
 
     expect(plan.findings[0]?.disposition).toBe("prohibited_or_ineligible");
-    expect(plan.findings[0]?.deadlineStatus).toBe("not_applicable");
+    expect(headline(plan.findings[0])?.deadlineStatus).toBe("not_applicable");
     expect(routeOf(plan, "RULE-B")?.deadlineStatus).toBe("published_deadline_missed");
     expect(routeOf(plan, "RULE-B")?.latestApplyDate).toBe("2026-06-18");
 
@@ -1323,7 +1346,9 @@ describe("typed deadlines", () => {
 
     expect(plan.verdictDetail.minSlackDays).toBe(0);
     expect(
-      plan.findings.every((finding) => finding.slackDays === null || finding.slackDays >= 0),
+      plan.findings
+        .flatMap(routesOf)
+        .every((route) => route.slackDays === null || route.slackDays >= 0),
       "no finding publishes a negative countdown",
     ).toBe(true);
   });
@@ -2355,8 +2380,9 @@ describe("facts the ruleset publishes rather than the engine assuming (nyc.v2.4)
         [...findings.flatMap((f) => f.ruleIds)].sort();
       const windows = (findings: PermitPlan["findings"]) =>
         findings
-          .filter((f) => f.latestApplyDate !== null)
-          .map((f) => `${f.latestApplyDate}:${f.deadlineStatus}`)
+          .flatMap(routesOf)
+          .filter((route) => route.latestApplyDate !== null)
+          .map((route) => `${route.latestApplyDate}:${route.deadlineStatus}`)
           .sort();
       return {
         verdictMatches: before.verdict === after.verdict,
@@ -2371,9 +2397,13 @@ describe("facts the ruleset publishes rather than the engine assuming (nyc.v2.4)
         windowFor: (ruleId: string) => {
           const pick = (findings: PermitPlan["findings"]) => {
             const finding = findings.find((f) => f.ruleIds.includes(ruleId));
-            return finding === undefined
+            const route =
+              finding === undefined
+                ? undefined
+                : routesOf(finding).find((r) => r.ruleId === ruleId);
+            return route === undefined
               ? "no finding"
-              : `${finding.latestApplyDate}:${finding.deadlineStatus}`;
+              : `${route.latestApplyDate}:${route.deadlineStatus}`;
           };
           return { before: pick(before.findings), after: pick(afterFindings) };
         },

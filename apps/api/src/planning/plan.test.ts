@@ -426,6 +426,88 @@ describe.runIf(databaseUrl.length > 0)("plan API (F-201)", () => {
     expect(fetched.body.verdict).toBe(generated.body.verdict);
   });
 
+  it("serves current merged findings with explicit route ownership and no duplicated scalars", async () => {
+    const eventId = await insertEvent({
+      location_type: "private_venue",
+      obstructs_public_way: null,
+      sapo_event_type: null,
+      street_event_size: null,
+      structure_types: ["tent_canopy"],
+      tent_area_sqft: 500,
+      tent_days_in_place: 2,
+      structure_over_10ft_tall: "yes",
+    });
+    const app = appWith();
+    const generated = await request(app).post(`/api/events/${eventId}/plan`);
+    const merged = generated.body.findings.find((finding: { ruleIds: string[] }) =>
+      finding.ruleIds.includes("DOB-TENT-001"),
+    );
+
+    expect(merged.routes).toHaveLength(2);
+    expect(merged.headlineRouteId).toBe(merged.routes[0].ruleId);
+    expect(merged.legacyMerged).toBe(false);
+    for (const field of [
+      "name",
+      "agency",
+      "deadline",
+      "deadlineDisplay",
+      "latestApplyDate",
+      "applyAfterDate",
+      "deadlineStatus",
+      "slackDays",
+      "feeDisplay",
+      "portalName",
+      "portalUrl",
+      "portalInstructions",
+    ]) {
+      expect(merged).not.toHaveProperty(field);
+    }
+
+    const fetched = await request(app).get(`/api/events/${eventId}/plan`);
+    expect(fetched.body.findings).toContainEqual(merged);
+  });
+
+  it("replays a pre-route merged snapshot as explicitly legacy without inventing attribution", async () => {
+    const eventId = await insertEvent({
+      location_type: "private_venue",
+      obstructs_public_way: null,
+      sapo_event_type: null,
+      street_event_size: null,
+      structure_types: ["tent_canopy"],
+      tent_area_sqft: 500,
+      tent_days_in_place: 2,
+      structure_over_10ft_tall: "yes",
+    });
+    const app = appWith();
+    const generated = await request(app).post(`/api/events/${eventId}/plan`);
+    const current = generated.body.findings.find((finding: { ruleIds: string[] }) =>
+      finding.ruleIds.includes("DOB-TENT-001"),
+    );
+
+    await pool.query(
+      `UPDATE permit_plans
+          SET verdict_detail = jsonb_set(
+            verdict_detail,
+            '{finding_renderings}',
+            (SELECT jsonb_agg(
+               CASE WHEN rendering->'rule_ids' @> '["DOB-TENT-001"]'::jsonb
+                    THEN rendering - 'routes' - 'headline_mode' - 'headline_rule_id'
+                    ELSE rendering END)
+               FROM jsonb_array_elements(verdict_detail->'finding_renderings') AS rendering))
+        WHERE id = $1`,
+      [generated.body.id],
+    );
+
+    const fetched = await request(app).get(`/api/events/${eventId}/plan`);
+    const legacy = fetched.body.findings.find((finding: { ruleIds: string[] }) =>
+      finding.ruleIds.includes("DOB-TENT-001"),
+    );
+    expect(legacy.routes).toBeNull();
+    expect(legacy.headlineRouteId).toBeNull();
+    expect(legacy.legacyMerged).toBe(true);
+    expect(legacy.name).toBe(current.routes[0].name);
+  });
+
   it("round-trips the PACO organizer summary through the immutable plan snapshot", async () => {
     const eventId = await insertEvent({ location_type: "private_venue", headcount: 90 });
     const app = appWith();

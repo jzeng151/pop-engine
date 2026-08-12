@@ -8,7 +8,7 @@ import { Disclosure } from "../_components/disclosure";
 import { PortalBlock } from "../_components/portal-block";
 import { includesAgencyConfirmation, NOT_COVERED_BY_RULESET } from "../_lib/verification-copy";
 import { businessDayNotice } from "./business-day-notice";
-import type { ConsumedFinding, ConsumedRoute } from "./plan-api";
+import { findingHeadline, type ConsumedFinding, type ConsumedRoute } from "./plan-api";
 import type { HeadlineMode } from "@pop-engine/engine";
 import { offersAFilingAction } from "@pop-engine/engine";
 
@@ -27,7 +27,7 @@ const naturally = (items: readonly string[]): string =>
  * `not_applicable` with no dates, no prose and no published deadline means there is nothing to
  * render.
  */
-const hasDeadlineData = (finding: ConsumedFinding): boolean =>
+const hasDeadlineData = (finding: PublishedTiming): boolean =>
   finding.deadlineDisplay !== null ||
   finding.latestApplyDate !== null ||
   finding.applyAfterDate !== null ||
@@ -39,7 +39,7 @@ const hasDeadlineData = (finding: ConsumedFinding): boolean =>
  * the rule below is written once: the shape is what decides it, not which of the two published it.
  */
 type PublishedTiming = Pick<
-  ConsumedFinding,
+  ConsumedRoute,
   "deadline" | "deadlineDisplay" | "latestApplyDate" | "applyAfterDate" | "deadlineStatus"
 >;
 
@@ -355,7 +355,7 @@ function Routes({ finding }: { finding: ConsumedFinding }) {
   );
 }
 
-function PublishedDeadline({ finding }: { finding: ConsumedFinding }) {
+function PublishedDeadline({ finding }: { finding: PublishedTiming }) {
   if (!hasDeadlineData(finding)) return null;
   return (
     <p className="line__deadline">
@@ -381,24 +381,26 @@ function PublishedDeadline({ finding }: { finding: ConsumedFinding }) {
 }
 
 export function PlanLine({ finding }: { finding: ConsumedFinding }) {
+  const headline = findingHeadline(finding);
   const ruleIds = finding.ruleIds.join(", ");
   const isResearchRequired = finding.verificationStatus === "RESEARCH_REQUIRED";
   const [detailsOpen, setDetailsOpen] = useState(false);
   const summaryShowsResearchTreatment =
-    isResearchRequired && includesAgencyConfirmation([finding.deadlineDisplay, finding.feeDisplay]);
+    isResearchRequired &&
+    includesAgencyConfirmation([headline?.deadlineDisplay, headline?.feeDisplay]);
   const detailsShowResearchTreatment =
     isResearchRequired &&
     includesAgencyConfirmation([
       finding.conflictText,
       finding.noteText,
       finding.timelineUnresolvedReason,
-      finding.portalInstructions,
+      headline?.portalInstructions,
       ...finding.notes,
     ]);
-  const businessDayWindow = businessDayNotice(finding);
+  const businessDayWindow = headline === null ? null : businessDayNotice(headline);
   const userSummary = finding.userSummary ?? null;
   const hasUserSummary = userSummary !== null;
-  const name = userSummary?.heading ?? finding.name ?? ruleIds;
+  const name = userSummary?.heading ?? headline?.name ?? ruleIds;
   // THE HEADING AND WHAT LEADS THE LINE ARE CHOSEN BY `headlineMode`, not decorated afterwards
   // (design §5.3, #252 review).
   const isCandidate = candidateRoutesOf(finding) !== null;
@@ -442,7 +444,7 @@ export function PlanLine({ finding }: { finding: ConsumedFinding }) {
 
       {hasUserSummary && (
         <p className="line__meta">
-          {finding.agency !== null && <span className="line__agency">{finding.agency}</span>}
+          {headline?.agency != null && <span className="line__agency">{headline.agency}</span>}
           <span className="line__disposition">{humanize(finding.disposition)}</span>
         </p>
       )}
@@ -455,16 +457,16 @@ export function PlanLine({ finding }: { finding: ConsumedFinding }) {
               <SummarySources sources={point.sources} />
             </li>
           ))}
-          {finding.latestApplyDate !== null && (
+          {headline?.latestApplyDate != null && (
             <li className="line__point line__point--deadline">
-              <strong>Apply by:</strong> {finding.latestApplyDate}
-              {finding.deadlineStatus !== "not_applicable" &&
-                ` · ${humanize(finding.deadlineStatus)}`}
+              <strong>Apply by:</strong> {headline.latestApplyDate}
+              {headline.deadlineStatus !== "not_applicable" &&
+                ` · ${humanize(headline.deadlineStatus)}`}
               <SummarySources sources={deadlineSources} />
             </li>
           )}
-          {finding.latestApplyDate === null &&
-            finding.deadlineStatus === "not_calculable" &&
+          {headline?.latestApplyDate === null &&
+            headline.deadlineStatus === "not_calculable" &&
             (businessDayWindow === null ? (
               <li className="line__point line__point--warning">
                 <strong>Exact apply-by date:</strong> not calculable — {CONFIRM_WITH_AGENCY}
@@ -495,10 +497,10 @@ export function PlanLine({ finding }: { finding: ConsumedFinding }) {
           <p className="line__meta">
             {/* advisory, note and classification findings legitimately publish no agency, so the
                 label is omitted rather than rendered empty. */}
-            {finding.agency !== null && <span className="line__agency">{finding.agency}</span>}
+            {headline?.agency != null && <span className="line__agency">{headline.agency}</span>}
             <span className="line__disposition">{humanize(finding.disposition)}</span>
           </p>
-          <PublishedDeadline finding={finding} />
+          {headline !== null && <PublishedDeadline finding={headline} />}
           {/* The same approved sentence, on the branch a plan stored before organizer summaries
               existed renders. `loadPlan` normalizes a missing `userSummary` to null, so those plans
               take this branch for good and are immutable, while carrying the same published deadline
@@ -513,7 +515,7 @@ export function PlanLine({ finding }: { finding: ConsumedFinding }) {
             </p>
           )}
           {/* An absent fee and an explicit null are indistinguishable, so null renders nothing. */}
-          {finding.feeDisplay !== null && <p className="line__fee">{finding.feeDisplay}</p>}
+          {headline?.feeDisplay != null && <p className="line__fee">{headline.feeDisplay}</p>}
         </>
       )}
 
@@ -566,17 +568,17 @@ export function PlanLine({ finding }: { finding: ConsumedFinding }) {
           )}
         </p>
 
-        {hasUserSummary && <PublishedDeadline finding={finding} />}
-        {hasUserSummary && finding.feeDisplay !== null && (
-          <p className="line__fee">{finding.feeDisplay}</p>
+        {hasUserSummary && headline !== null && <PublishedDeadline finding={headline} />}
+        {hasUserSummary && headline?.feeDisplay != null && (
+          <p className="line__fee">{headline.feeDisplay}</p>
         )}
         {/* NOT ON A CANDIDATE LINE, where `finding.name` is the binding route's permit name and this
             paragraph renders it alone, unattributed, as what the requirement is called. The routes
             block above already lists every contributing route's name against its own entry, so
             nothing published is lost by withholding it here and the one unattributed statement of a
             single candidate's name goes with it (#252 review). */}
-        {hasUserSummary && !isCandidate && finding.name !== null && finding.name !== name && (
-          <p className="line__note">{finding.name}</p>
+        {hasUserSummary && !isCandidate && headline?.name != null && headline.name !== name && (
+          <p className="line__note">{headline.name}</p>
         )}
 
         {/* Both readings of an official conflict, verbatim. The badge in the summary already
@@ -594,8 +596,10 @@ export function PlanLine({ finding }: { finding: ConsumedFinding }) {
               text. "Not before" would assert the sequencing the verification owner declined to
               assert. It sits beside that note rather than in the summary for that reason: the
               caveat and the date are one fact. */}
-        {finding.applyAfterDate !== null && (
-          <p className="line__deadline-after">earliest realistic filing {finding.applyAfterDate}</p>
+        {headline?.applyAfterDate != null && (
+          <p className="line__deadline-after">
+            earliest realistic filing {headline.applyAfterDate}
+          </p>
         )}
         {finding.timelineUnresolvedReason !== null && (
           <p className="line__timeline">{finding.timelineUnresolvedReason}</p>
@@ -614,13 +618,18 @@ export function PlanLine({ finding }: { finding: ConsumedFinding }) {
             the binding route's duplicate action here, still saying "apply at" for the entry that
             had just stopped saying it (#252 review). */}
         <PortalBlock
-          portalName={finding.portalName}
-          portalUrl={finding.portalUrl}
-          portalInstructions={finding.portalInstructions}
+          portalName={headline?.portalName ?? null}
+          portalUrl={headline?.portalUrl ?? null}
+          portalInstructions={headline?.portalInstructions ?? null}
           className="line__portal"
           instructionsClassName="line__portal-instructions"
           lead={
-            offersAFilingAction(finding, isCandidate ? "candidate" : null) ? "apply at" : "portal"
+            offersAFilingAction(
+              headline ?? { disposition: finding.disposition },
+              isCandidate ? "candidate" : null,
+            )
+              ? "apply at"
+              : "portal"
           }
         />
 

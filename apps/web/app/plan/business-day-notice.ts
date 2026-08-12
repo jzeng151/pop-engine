@@ -1,10 +1,10 @@
 // The apply-by line for a published business-day window that production cannot turn into a date.
 
-import type { ConsumedFinding } from "./plan-api";
+import type { ConsumedRoute } from "./plan-api";
 
 /** What the sentence is read off: the four published values that decide whether it applies and which agency it names. */
 type BusinessDayLine = Pick<
-  ConsumedFinding,
+  ConsumedRoute,
   "agency" | "deadline" | "deadlineStatus" | "latestApplyDate"
 >;
 

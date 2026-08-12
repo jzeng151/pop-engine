@@ -96,7 +96,13 @@ Drop this downtime constraint only after migration 015 is applied and no pre-key
 pre-key api build remains a selectable deployment or rollback target.
 
 1. **Deploy the web service first, verify it is live, remove older web rollback targets, then deploy
-   the api.** Two contract changes require this order.
+   the api.** Three contract changes require this order.
+
+   **F-201 explicit merged routes (issue #263).** Deploy the web build that accepts both the prior
+   duplicated merged scalars and the new `routes` plus `headlineRouteId` response. Verify an
+   existing stored plan and a newly generated merged plan against the old api. Remove every older
+   web build and rollback target before deploying the api that omits top-level route values from
+   current merged findings. Drop this constraint once that web build is the oldest selectable one.
 
    **F-302 capacity rename (issue #236).** Before deploying the api that admits RSVPs against
    `capacity`, deploy the web build that reads a present `capacity` and falls back to `headcount`

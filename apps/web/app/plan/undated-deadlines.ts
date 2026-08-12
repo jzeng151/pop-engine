@@ -1,5 +1,5 @@
 import type { DeadlineStatus } from "@pop-engine/engine";
-import type { ConsumedFinding } from "./plan-api";
+import { findingHeadline, type ConsumedFinding } from "./plan-api";
 
 /** F-102 Edge Cases — FEASIBLE when every deadline is undated. */
 export const NO_DATED_DEADLINES_NOTE = "No dated deadlines identified.";
@@ -11,7 +11,7 @@ const isUndated = (status: DeadlineStatus): boolean =>
 export function hasOnlyUndatedDeadlines(findings: readonly ConsumedFinding[]): boolean {
   return findings.every((finding) =>
     finding.routes == null
-      ? isUndated(finding.deadlineStatus)
+      ? isUndated(findingHeadline(finding)?.deadlineStatus ?? "not_calculable")
       : finding.routes.every((route) => isUndated(route.deadlineStatus)),
   );
 }

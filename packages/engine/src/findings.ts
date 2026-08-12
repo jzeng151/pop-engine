@@ -19,6 +19,7 @@ import type {
   FindingKind,
   FindingRoute,
   FindingSource,
+  MergedFinding,
   Deadline,
   DeadlineStatus,
   Disposition,
@@ -26,6 +27,7 @@ import type {
   TriggeredBy,
   RuleUserSummary,
   Tristate,
+  UnmergedFinding,
   VerificationStatus,
 } from "./types";
 
@@ -292,7 +294,7 @@ type BindingCandidate = {
   readonly latestApplyDate: string | null;
 };
 
-const bindingCandidateOf = (finding: Finding): BindingCandidate => ({
+const bindingCandidateOf = (finding: UnmergedFinding): BindingCandidate => ({
   ruleId: finding.ruleIds[0] ?? "",
   deadline: finding.deadline,
   deadlineStatus: finding.deadlineStatus,
@@ -312,7 +314,7 @@ function compareBindingCandidates(a: BindingCandidate, b: BindingCandidate): num
   return a.ruleId <= b.ruleId ? -1 : 1;
 }
 
-function compareBinding(a: Finding, b: Finding): number {
+function compareBinding(a: UnmergedFinding, b: UnmergedFinding): number {
   return compareBindingCandidates(bindingCandidateOf(a), bindingCandidateOf(b));
 }
 
@@ -348,7 +350,7 @@ function mergeUserSummary(
  * merge no longer has to discard the losing routes' name, window and fee to fit one line.
  */
 function routeFrom(
-  finding: Finding,
+  finding: UnmergedFinding,
   triggerResult: Tristate,
   unknownFields: readonly string[],
 ): FindingRoute {
@@ -379,6 +381,13 @@ export function routesOf(finding: Finding): readonly FindingRoute[] {
   return finding.routes ?? [routeFrom(finding, "true", [])];
 }
 
+/** The route whose values lead the line, or null for a merged line with no attributable headline. */
+export function headlineOf(finding: Finding): FindingRoute | null {
+  if (finding.routes === undefined) return routeFrom(finding, "true", []);
+  if (finding.headlineRouteId === null) return null;
+  return finding.routes.find((route) => route.ruleId === finding.headlineRouteId) ?? null;
+}
+
 /** One finding for a dedupe group, retaining every contributing rule, source, trigger reason AND every route's own published values. */
 function mergeGroup(group: readonly Contribution[]): Finding {
   const first = group[0] as Contribution;
@@ -388,7 +397,7 @@ function mergeGroup(group: readonly Contribution[]): Finding {
   const contributed = (contribution: Contribution): Disposition =>
     contributedDisposition(contribution, ceilingApplies);
   const disposition = strongestDisposition(group.map(contributed));
-  const findings = group.map((contribution) => contribution.finding);
+  const findings = group.map((contribution) => contribution.finding as UnmergedFinding);
 
   // The routes that contributed the headline disposition, narrowed to those known to apply where any of them is.
   const contributing = group.filter((contribution) => contributed(contribution) === disposition);
@@ -399,14 +408,14 @@ function mergeGroup(group: readonly Contribution[]): Finding {
   // THE GROUP HOLDS A SETTLED ROUTE AND NONE OF THEM CARRIES THE HEADLINE, which is the one case §4.2 and §4.3 step 2 pointed at different routes for, amended 2026-08-09 by the product owner so that the line picks neither.
   const unattributable = resolved.length === 0 && group.some(isResolved);
   const binding = bindingPool
-    .map((contribution) => contribution.finding)
-    .sort(compareBinding)[0] as Finding;
+    .map((contribution) => contribution.finding as UnmergedFinding)
+    .sort(compareBinding)[0] as UnmergedFinding;
   // The binding route first, then the rest, for the single-valued texts it leaves empty.
   const bindingOrder = [
     binding,
     ...findings.filter((finding) => finding !== binding).sort(compareBinding),
   ];
-  const publishedText = (read: (finding: Finding) => string | null): string | null =>
+  const publishedText = (read: (finding: UnmergedFinding) => string | null): string | null =>
     bindingOrder.map(read).find((text) => text !== null) ?? null;
   const userSummary = mergeUserSummary(findings, bindingOrder);
   const verificationDates = findings.map((finding) => finding.lastVerifiedDate);
@@ -425,9 +434,23 @@ function mergeGroup(group: readonly Contribution[]): Finding {
     ? "applies_together"
     : "candidate";
 
+  const {
+    name: _name,
+    agency: _agency,
+    deadline: _deadline,
+    deadlineDisplay: _deadlineDisplay,
+    latestApplyDate: _latestApplyDate,
+    applyAfterDate: _applyAfterDate,
+    deadlineStatus: _deadlineStatus,
+    slackDays: _slackDays,
+    feeDisplay: _feeDisplay,
+    portalName: _portalName,
+    portalUrl: _portalUrl,
+    portalInstructions: _portalInstructions,
+    ...bindingWithoutRouteValues
+  } = binding;
   return {
-    // Identity and timeline, both off the binding route.
-    ...binding,
+    ...bindingWithoutRouteValues,
     disposition,
     ruleIds: findings.flatMap((finding) => finding.ruleIds),
     notes: findings.flatMap((finding) => finding.notes),
@@ -441,25 +464,9 @@ function mergeGroup(group: readonly Contribution[]): Finding {
     ...(verificationDates.some((date) => date !== undefined) ? { lastVerifiedDate } : {}),
     routes,
     headlineMode,
-    ...(unattributable ? UNATTRIBUTABLE_SCALARS : {}),
-  };
+    headlineRouteId: unattributable ? null : (binding.ruleIds[0] as string),
+  } satisfies MergedFinding;
 }
-
-/** What a merged line publishes where no route can supply its scalars: none of them. */
-const UNATTRIBUTABLE_SCALARS = {
-  name: null,
-  agency: null,
-  deadline: null,
-  deadlineDisplay: null,
-  latestApplyDate: null,
-  applyAfterDate: null,
-  deadlineStatus: "not_calculable",
-  slackDays: null,
-  feeDisplay: null,
-  portalName: null,
-  portalUrl: null,
-  portalInstructions: null,
-} as const satisfies Partial<Finding>;
 
 /** Findings sharing a dedupe key merge deterministically, retaining every contributing rule and source. */
 function dedupe(
@@ -524,12 +531,16 @@ function applyDependencySequencing(
     const upstream = byRuleId.get(binding.upstreamRuleId);
     const gated = byRuleId.get(binding.gatedRuleId);
     if (dependency === undefined || upstream === undefined || gated === undefined) continue;
-    if (upstream.deadline?.type !== "composite") continue;
+    const upstreamHeadline = headlineOf(upstream);
+    if (upstreamHeadline?.deadline?.type !== "composite") continue;
 
-    const [earliestDecisionDays, latestDecisionDays] = upstream.deadline.processingRangeDays;
+    const [earliestDecisionDays, latestDecisionDays] =
+      upstreamHeadline.deadline.processingRangeDays;
     const applyAfterDate = addCalendarDays(context.today, earliestDecisionDays);
     // WHOSE WINDOW IS BEING SEQUENCED: the gated RULE's, which on a merged line is its route entry rather than the line's scalars.
-    const gatedRoute = gated.routes?.find((route) => route.ruleId === binding.gatedRuleId) ?? gated;
+    const gatedRoute =
+      gated.routes?.find((route) => route.ruleId === binding.gatedRuleId) ?? headlineOf(gated);
+    if (gatedRoute === null) continue;
     const gatedLatestApplyDate = gatedRoute.latestApplyDate;
     const gatedDeadlineStatus = gatedRoute.deadlineStatus;
 
@@ -567,41 +578,28 @@ function applyDependencySequencing(
           : `, leaving ${gatedWindowDays} days to file. Strict issued-before-filed sequencing ` +
             `is not confirmed by located primary text — confirm the order with the agency`);
 
-    // WHETHER THE HEADLINE HAS A ROUTE TO SEQUENCE AT ALL, which is two questions and used to be one.
-    const gatedRouteBinds =
-      gated.routes === undefined ||
-      (gated.routes[0]?.ruleId === binding.gatedRuleId && !noRouteSuppliesScalars(gated.routes));
-
-    sequenced.set(binding.gatedRuleId, {
-      ...gated,
-      // `apply_after_date` is an actionable gate: F-202 renders it as the start date and F-203 schedules `dependency_unlocked` at it.
-      applyAfterDate: !gatedRouteBinds
-        ? gated.applyAfterDate
-        : sequenceClosedWindow
-          ? null
-          : applyAfterDate,
-      // Slack for a gated finding is the window it can actually be filed in, not the distance from today to its own deadline (F-102 AC 5: latest_apply − apply_after).
-      slackDays: !gatedRouteBinds
-        ? gated.slackDays
-        : sequenceClosedWindow
-          ? null
-          : (gatedWindowDays ?? gated.slackDays),
-      deadlineStatus:
-        isSqueezed && gatedRouteBinds && gated.deadlineStatus === "on_track"
-          ? "deadline_approaching"
-          : gated.deadlineStatus,
-      // The gated rule's own route carries the same sequencing, computed off ITS OWN window rather than off the merged line's.
-      ...(gated.routes === undefined
-        ? {}
-        : {
-            routes: gated.routes.map((route) =>
-              route.ruleId === binding.gatedRuleId
-                ? sequenceRoute(route, applyAfterDate, context.slackWarningDays, sequencingNote)
-                : route,
-            ),
-          }),
-      notes: [...gated.notes, sequencingNote],
-    });
+    if (gated.routes === undefined) {
+      sequenced.set(binding.gatedRuleId, {
+        ...gated,
+        applyAfterDate: sequenceClosedWindow ? null : applyAfterDate,
+        slackDays: sequenceClosedWindow ? null : (gatedWindowDays ?? gated.slackDays),
+        deadlineStatus:
+          isSqueezed && gated.deadlineStatus === "on_track"
+            ? "deadline_approaching"
+            : gated.deadlineStatus,
+        notes: [...gated.notes, sequencingNote],
+      });
+    } else {
+      sequenced.set(binding.gatedRuleId, {
+        ...gated,
+        routes: gated.routes.map((route) =>
+          route.ruleId === binding.gatedRuleId
+            ? sequenceRoute(route, applyAfterDate, context.slackWarningDays, sequencingNote)
+            : route,
+        ),
+        notes: [...gated.notes, sequencingNote],
+      });
+    }
   }
 
   return findings.map((finding) => {
