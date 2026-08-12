@@ -1,7 +1,7 @@
 // Verdict algorithm, ARCHITECTURE steps 3–6. Branch evaluation for unknowns runs before any
 // window check, so an unknown-conditioned finding can never render INFEASIBLE (Scenario F).
 
-import { resolveFindings, routesOf } from "./findings";
+import { headlineOf, resolveFindings, routesOf } from "./findings";
 import type { DefiniteRoutes } from "./findings";
 import type { PlanContext } from "./deadlines";
 import {
@@ -22,6 +22,7 @@ import type {
   UnresolvedTimeline,
   Verdict,
   VerdictDetail,
+  UnmergedFinding,
 } from "./types";
 
 const VERDICT_RANK: Readonly<Record<Verdict, number>> = {
@@ -50,10 +51,16 @@ function routeEntries(
 }
 
 /** The merged line narrowed to the route that blocks, so the copy names the route rather than whichever route the headline happens to read. */
-function blockerView(finding: Finding, route: FindingRoute): Finding {
+function blockerView(finding: Finding, route: FindingRoute): UnmergedFinding {
   const merged = (finding.routes?.length ?? 0) > 1;
+  const {
+    routes: _routes,
+    headlineMode: _headlineMode,
+    headlineRouteId: _headlineRouteId,
+    ...base
+  } = finding;
   return {
-    ...finding,
+    ...base,
     ruleIds: [route.ruleId],
     sources: finding.sources.filter((source) => source.ruleId === route.ruleId),
     name: route.name,
@@ -160,7 +167,10 @@ function describeDifference(base: readonly Finding[], candidate: readonly Findin
   // Rule ids, not organizer headings.
   const missedAsScoped = (finding: Finding, id: string): boolean => {
     const route = routesOf(finding).find((entry) => entry.ruleId === id);
-    return windowIsMissed({ deadlineStatus: route?.deadlineStatus ?? finding.deadlineStatus });
+    return windowIsMissed({
+      deadlineStatus:
+        route?.deadlineStatus ?? headlineOf(finding)?.deadlineStatus ?? "not_calculable",
+    });
   };
   const describeMissed = (finding: Finding, id: string): string =>
     missedAsScoped(finding, id) ? `${id} (published deadline missed as scoped)` : id;
@@ -403,7 +413,9 @@ function evaluateConditional(
 function longestLeadBlocker(blockers: readonly Finding[]): Finding | null {
   return (
     [...blockers].sort((left, right) =>
-      (left.latestApplyDate ?? "").localeCompare(right.latestApplyDate ?? ""),
+      (headlineOf(left)?.latestApplyDate ?? "").localeCompare(
+        headlineOf(right)?.latestApplyDate ?? "",
+      ),
     )[0] ?? null
   );
 }
@@ -472,7 +484,7 @@ function buildRescopeSuggestions(
     ...rootGatingFields(triggerFieldNames, ruleset),
   ]);
   const baseRuleIds = new Set(ruleIdsOf(base.findings));
-  const baseAgencies = new Set(base.findings.map((finding) => finding.agency));
+  const baseAgencies = new Set(base.findings.map((finding) => headlineOf(finding)?.agency ?? null));
   const suggestions: RescopeSuggestion[] = [];
 
   for (const definition of ruleset.intakeFields) {
@@ -492,7 +504,9 @@ function buildRescopeSuggestions(
       if (introduced.some((finding) => finding.verificationStatus === "COVERAGE_GAP")) continue;
       if (
         introduced.some(
-          (finding) => finding.disposition === "required" && !baseAgencies.has(finding.agency),
+          (finding) =>
+            finding.disposition === "required" &&
+            !baseAgencies.has(headlineOf(finding)?.agency ?? null),
         )
       ) {
         continue;
@@ -500,7 +514,7 @@ function buildRescopeSuggestions(
       if (
         introduced.some(
           (finding) =>
-            finding.deadlineStatus === "not_calculable" &&
+            routesOf(finding).some((route) => route.deadlineStatus === "not_calculable") &&
             !isUnpublishedCalendarUnresolved(finding.timelineUnresolvedReason),
         )
       ) {
@@ -528,8 +542,8 @@ function buildRescopeSuggestions(
               ruleIds: finding.ruleIds,
               label: finding.userSummary?.heading ?? null,
               source: finding.userSummary?.points.flatMap((point) => point.sources)[0] ?? null,
-              portalName: finding.portalName,
-              portalUrl: finding.portalUrl,
+              portalName: headlineOf(finding)?.portalName ?? null,
+              portalUrl: headlineOf(finding)?.portalUrl ?? null,
             }))
           : null;
       const remainingMissingFields = candidate.missingFacts.map((fact) => fact.field);
@@ -597,6 +611,7 @@ export function computeVerdict(
   const resolved = resolveFindings(intake, ruleset, context);
   const evaluated = evaluateConditional(intake, ruleset, context);
   const { window, verdict, blockingFinding } = evaluated;
+  const blockingHeadline = blockingFinding === null ? null : headlineOf(blockingFinding);
 
   const rescopeSuggestions =
     blockingFinding !== null
@@ -615,16 +630,16 @@ export function computeVerdict(
           ? null
           : {
               ruleIds: blockingFinding.ruleIds,
-              name: blockingFinding.name,
-              agency: blockingFinding.agency,
+              name: blockingHeadline?.name ?? null,
+              agency: blockingHeadline?.agency ?? null,
               disposition: blockingFinding.disposition,
-              deadlineDisplay: blockingFinding.deadlineDisplay,
-              latestApplyDate: blockingFinding.latestApplyDate,
-              deadlineStatus: blockingFinding.deadlineStatus,
-              feeDisplay: blockingFinding.feeDisplay,
-              portalName: blockingFinding.portalName,
-              portalUrl: blockingFinding.portalUrl,
-              portalInstructions: blockingFinding.portalInstructions,
+              deadlineDisplay: blockingHeadline?.deadlineDisplay ?? null,
+              latestApplyDate: blockingHeadline?.latestApplyDate ?? null,
+              deadlineStatus: blockingHeadline?.deadlineStatus ?? "not_calculable",
+              feeDisplay: blockingHeadline?.feeDisplay ?? null,
+              portalName: blockingHeadline?.portalName ?? null,
+              portalUrl: blockingHeadline?.portalUrl ?? null,
+              portalInstructions: blockingHeadline?.portalInstructions ?? null,
               sources: blockingFinding.sources,
               userSummary: blockingFinding.userSummary ?? null,
             },
@@ -633,8 +648,8 @@ export function computeVerdict(
       missedRuleIds: [
         ...new Set([
           ...window.missedRuleIds,
-          ...(blockingFinding?.deadlineStatus === "published_deadline_missed"
-            ? blockingFinding.ruleIds
+          ...(blockingHeadline?.deadlineStatus === "published_deadline_missed"
+            ? (blockingFinding?.ruleIds ?? [])
             : []),
         ]),
       ],

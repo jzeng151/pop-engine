@@ -7,6 +7,7 @@ import type {
   Disposition,
   Finding,
   FindingRoute,
+  FindingRouteValues,
   FindingSource,
   HeadlineMode,
   MissingFact,
@@ -84,46 +85,66 @@ export type PlanResponse = Omit<
 };
 
 /** The `Finding` members this feature reads, and only those. */
-export type ConsumedFinding = Omit<
-  Pick<
-    Finding,
-    | "ruleIds"
-    | "disposition"
-    | "name"
-    | "agency"
-    | "deadline"
-    | "deadlineDisplay"
-    | "latestApplyDate"
-    | "applyAfterDate"
-    | "deadlineStatus"
-    | "feeDisplay"
-    | "portalName"
-    | "portalUrl"
-    | "portalInstructions"
-    | "notes"
-    | "noteText"
-    | "deadlineUnknownFields"
-    | "timelineUnresolvedReason"
-    | "conflictText"
-    | "sources"
-    | "userSummary"
-    | "verificationStatus"
-    | "lastVerifiedDate"
-  >,
-  "deadline" | "lastVerifiedDate" | "userSummary"
+type ConsumedFindingCommon = Pick<
+  Finding,
+  | "ruleIds"
+  | "disposition"
+  | "notes"
+  | "noteText"
+  | "deadlineUnknownFields"
+  | "timelineUnresolvedReason"
+  | "conflictText"
+  | "sources"
+  | "userSummary"
+  | "verificationStatus"
+  | "lastVerifiedDate"
 > & {
-  readonly deadline: ConsumedDeadline | null;
   /** Required on the stored-plan wire even though pre-field engine replays omit it internally. */
   readonly lastVerifiedDate: string | null;
   /** Normalized to null for plans stored before organizer summaries existed. */
   readonly userSummary?: RuleUserSummary | null;
-  /**
-   * Every contributing route of a merged line. Null on an unmerged line and on plans stored before
-   * the field existed; never an empty array.
-   */
-  readonly routes?: readonly ConsumedRoute[] | null;
-  /** Present exactly when `routes` is non-null. */
-  readonly headlineMode?: HeadlineMode | null;
+};
+
+type ConsumedRouteValues = Omit<FindingRouteValues, "deadline" | "slackDays"> & {
+  readonly deadline: ConsumedDeadline | null;
+  readonly disposition: Disposition;
+};
+
+export type ConsumedScalarFinding = ConsumedFindingCommon &
+  ConsumedRouteValues & {
+    readonly routes: null;
+    readonly headlineMode: null;
+    readonly headlineRouteId: null;
+    /** True only when this scalar headline predates route ownership and cannot be attributed. */
+    readonly legacyMerged: boolean;
+  };
+
+type ConsumedMergedFinding = ConsumedFindingCommon & {
+  readonly routes: readonly ConsumedRoute[];
+  readonly headlineMode: HeadlineMode;
+  readonly headlineRouteId: string | null;
+  readonly legacyMerged: false;
+  readonly name?: never;
+  readonly agency?: never;
+  readonly deadline?: never;
+  readonly deadlineDisplay?: never;
+  readonly latestApplyDate?: never;
+  readonly applyAfterDate?: never;
+  readonly deadlineStatus?: never;
+  readonly slackDays?: never;
+  readonly feeDisplay?: never;
+  readonly portalName?: never;
+  readonly portalUrl?: never;
+  readonly portalInstructions?: never;
+};
+
+export type ConsumedFinding = ConsumedScalarFinding | ConsumedMergedFinding;
+
+/** Headline values for display only. A legacy merged headline carries no route attribution. */
+export const findingHeadline = (finding: ConsumedFinding): ConsumedRouteValues | null => {
+  if (finding.routes == null) return finding as ConsumedScalarFinding;
+  if (finding.headlineRouteId === null) return null;
+  return finding.routes.find((route) => route.ruleId === finding.headlineRouteId) ?? null;
 };
 
 /** One contributing rule of a merged line, with its own published values. */
@@ -347,21 +368,21 @@ export const ROUTE_CHECKS: FieldChecks<ConsumedRoute> = {
   portalInstructions: nullOr(isString),
 };
 
-const FINDING_CHECKS: FieldChecks<ConsumedFinding> = {
+const FINDING_CHECKS = {
   ruleIds: arrayOf(isString),
   disposition: isToken(DISPOSITIONS),
-  name: nullOr(isString),
-  agency: nullOr(isString),
+  name: absentOr(nullOr(isString)),
+  agency: absentOr(nullOr(isString)),
   // Read for its null-ness and its published `type`; nothing else on a `Deadline` is rendered.
-  deadline: nullOr(shapedLike(DEADLINE_CHECKS)),
-  deadlineDisplay: nullOr(isString),
-  latestApplyDate: nullOr(isString),
-  applyAfterDate: nullOr(isString),
-  deadlineStatus: isToken(DEADLINE_STATUSES),
-  feeDisplay: nullOr(isString),
-  portalName: nullOr(isString),
-  portalUrl: nullOr(isString),
-  portalInstructions: nullOr(isString),
+  deadline: absentOr(nullOr(shapedLike(DEADLINE_CHECKS))),
+  deadlineDisplay: absentOr(nullOr(isString)),
+  latestApplyDate: absentOr(nullOr(isString)),
+  applyAfterDate: absentOr(nullOr(isString)),
+  deadlineStatus: absentOr(isToken(DEADLINE_STATUSES)),
+  feeDisplay: absentOr(nullOr(isString)),
+  portalName: absentOr(nullOr(isString)),
+  portalUrl: absentOr(nullOr(isString)),
+  portalInstructions: absentOr(nullOr(isString)),
   notes: arrayOf(isString),
   noteText: nullOr(isString),
   deadlineUnknownFields: arrayOf(isString),
@@ -376,6 +397,37 @@ const FINDING_CHECKS: FieldChecks<ConsumedFinding> = {
     value === undefined || value === null || atLeast(2, arrayOf(shapedLike(ROUTE_CHECKS)))(value),
   headlineMode: (value: unknown): value is HeadlineMode | null =>
     value === undefined || value === null || isToken(HEADLINE_MODES)(value),
+  headlineRouteId: absentOr(nullOr(isString)),
+  legacyMerged: (value: unknown): value is boolean | undefined =>
+    value === undefined || typeof value === "boolean",
+} as unknown as FieldChecks<ConsumedFinding>;
+
+const ROUTE_VALUE_FIELDS = [
+  "name",
+  "agency",
+  "deadline",
+  "deadlineDisplay",
+  "latestApplyDate",
+  "applyAfterDate",
+  "deadlineStatus",
+  "feeDisplay",
+  "portalName",
+  "portalUrl",
+  "portalInstructions",
+] as const;
+
+const ROUTE_VALUE_FIELDS_EXCEPT_DEADLINE = ROUTE_VALUE_FIELDS.filter(
+  (field) => field !== "deadline",
+);
+
+/** Scalar findings carry the whole tuple; merged findings carry either the old tuple or none. */
+const routeValueShapeHolds = (finding: ConsumedFinding): boolean => {
+  const present = ROUTE_VALUE_FIELDS.filter((field) =>
+    Object.prototype.hasOwnProperty.call(finding, field),
+  ).length;
+  return finding.routes == null
+    ? present === ROUTE_VALUE_FIELDS.length
+    : present === 0 || present === ROUTE_VALUE_FIELDS.length;
 };
 
 /** What the route list and its headline mode SAY TOGETHER, which no per-field check can see. */
@@ -383,6 +435,8 @@ export const routeContractHolds = (carrier: {
   readonly ruleIds: readonly string[];
   readonly routes?: readonly ConsumedRoute[] | null;
   readonly headlineMode?: HeadlineMode | null;
+  readonly headlineRouteId?: string | null;
+  readonly legacyMerged?: boolean;
 }): boolean => {
   const routes = carrier.routes ?? null;
   const mode = carrier.headlineMode ?? null;
@@ -416,20 +470,6 @@ const routesMatchRuleIds = (
   );
 };
 
-/** THE HEADLINE IS THE BINDING ROUTE'S, AND THE BINDING ROUTE IS `routes[0]`. */
-const HEADLINE_SCALARS = [
-  "name",
-  "agency",
-  "deadlineDisplay",
-  "latestApplyDate",
-  "applyAfterDate",
-  "deadlineStatus",
-  "feeDisplay",
-  "portalName",
-  "portalUrl",
-  "portalInstructions",
-] as const satisfies readonly (keyof ConsumedFinding & keyof ConsumedRoute)[];
-
 /** ONE NOTION OF "AGREES WITH A ROUTE", shared by every tuple that claims to come from one. */
 export const agreesWithRoute = <Carrier extends object>(
   record: Carrier,
@@ -444,12 +484,6 @@ export const agreesWithRoute = <Carrier extends object>(
   return fields.every((field) => (record[field] as unknown) === (route[field] as unknown));
 };
 
-const publishesNoScalars = (finding: ConsumedFinding): boolean =>
-  finding.deadlineStatus === "not_calculable" &&
-  finding.deadline === null &&
-  HEADLINE_SCALARS.every((field) => field === "deadlineStatus" || finding[field] === null) &&
-  noRouteSuppliesScalars((finding.routes ?? []) as readonly FindingRoute[]);
-
 /** `routes[0]` IS THE BINDING ROUTE, WHICH WAS ASSUMED AND IS NOW CHECKED. */
 const bindsWhereTheEngineWouldBind = (finding: ConsumedFinding): boolean => {
   const routes = (finding.routes ?? []) as readonly FindingRoute[];
@@ -458,10 +492,45 @@ const bindsWhereTheEngineWouldBind = (finding: ConsumedFinding): boolean => {
 };
 
 const headlineMatchesBinding = (finding: ConsumedFinding): boolean => {
-  const binding = finding.routes?.[0];
-  if (binding === undefined) return true;
-  if (publishesNoScalars(finding)) return true;
-  return agreesWithRoute(finding, binding, HEADLINE_SCALARS);
+  const compatibility = finding as unknown as {
+    readonly headlineRouteId?: string | null;
+    readonly legacyMerged?: boolean;
+  };
+  if (compatibility.headlineRouteId === undefined && compatibility.legacyMerged === undefined) {
+    if (finding.routes == null) return true;
+    if (noRouteSuppliesScalars(finding.routes as readonly FindingRoute[])) {
+      const scalar = finding as unknown as ConsumedScalarFinding;
+      return (
+        scalar.name === null &&
+        scalar.agency === null &&
+        scalar.deadline === null &&
+        scalar.deadlineDisplay === null &&
+        scalar.latestApplyDate === null &&
+        scalar.applyAfterDate === null &&
+        scalar.deadlineStatus === "not_calculable" &&
+        scalar.feeDisplay === null &&
+        scalar.portalName === null &&
+        scalar.portalUrl === null &&
+        scalar.portalInstructions === null
+      );
+    }
+    const binding = bindingRouteOf(finding.routes as readonly FindingRoute[]);
+    return (
+      binding !== null && agreesWithRoute(finding, binding, ROUTE_VALUE_FIELDS_EXCEPT_DEADLINE)
+    );
+  }
+  if (finding.routes == null) {
+    const mergedHistorically = finding.ruleIds.length > 1;
+    return (
+      (compatibility.headlineRouteId ?? null) === null &&
+      (compatibility.legacyMerged ?? mergedHistorically) === mergedHistorically
+    );
+  }
+  const binding = bindingRouteOf(finding.routes as readonly FindingRoute[]);
+  const expected = noRouteSuppliesScalars(finding.routes as readonly FindingRoute[])
+    ? null
+    : (binding?.ruleId ?? null);
+  return (compatibility.legacyMerged ?? false) === false && finding.headlineRouteId === expected;
 };
 
 /** THE ONE HEADLINE VALUE THAT IS NOT `routes[0]`'S STILL HAS TO FOLLOW FROM THE ROUTES. */
@@ -473,6 +542,7 @@ const dispositionFollowsFromRoutes = (finding: ConsumedFinding): boolean => {
 
 const isConsumedFinding = (value: unknown): value is ConsumedFinding =>
   shapedLike(FINDING_CHECKS)(value) &&
+  routeValueShapeHolds(value) &&
   routeContractHolds(value) &&
   dispositionFollowsFromRoutes(value) &&
   bindsWhereTheEngineWouldBind(value) &&
@@ -613,7 +683,13 @@ export const CONSUMED_PLAN_FIELDS: readonly string[] = Object.keys(PLAN_CHECKS);
  * Members a stored plan may legitimately omit, because it was written before the field existed.
  * Each is normalized to `null` below, so the page never has to tell "absent" from "no value".
  */
-const OPTIONAL_FINDING_FIELDS: readonly string[] = ["userSummary", "routes", "headlineMode"];
+const OPTIONAL_FINDING_FIELDS: readonly string[] = [
+  "userSummary",
+  "routes",
+  "headlineMode",
+  "headlineRouteId",
+  "legacyMerged",
+];
 
 export const CONSUMED_FINDING_FIELDS: readonly string[] = Object.keys(FINDING_CHECKS).filter(
   (field) => !OPTIONAL_FINDING_FIELDS.includes(field),
@@ -622,12 +698,7 @@ export const CONSUMED_FINDING_FIELDS: readonly string[] = Object.keys(FINDING_CH
 function normalizePlan(plan: PlanResponse): PlanResponse {
   return {
     ...plan,
-    findings: plan.findings.map((finding) => ({
-      ...finding,
-      userSummary: finding.userSummary ?? null,
-      routes: finding.routes ?? null,
-      headlineMode: finding.headlineMode ?? null,
-    })),
+    findings: plan.findings.map((finding) => normalizeFinding(finding)),
     verdictDetail: {
       ...plan.verdictDetail,
       unresolvedTimelines: plan.verdictDetail.unresolvedTimelines ?? [],
@@ -645,6 +716,52 @@ function normalizePlan(plan: PlanResponse): PlanResponse {
         atRiskFindingName: suggestion.atRiskFindingName ?? null,
       })),
     },
+  };
+}
+
+function normalizeFinding(finding: ConsumedFinding): ConsumedFinding {
+  const compatibility = finding as unknown as {
+    readonly headlineRouteId?: string | null;
+    readonly legacyMerged?: boolean;
+  };
+  if (finding.routes == null) {
+    return {
+      ...finding,
+      userSummary: finding.userSummary ?? null,
+      routes: null,
+      headlineMode: null,
+      headlineRouteId: null,
+      legacyMerged: compatibility.legacyMerged ?? finding.ruleIds.length > 1,
+    } as ConsumedScalarFinding;
+  }
+  const routes = finding.routes;
+  const headlineRouteId =
+    compatibility.headlineRouteId ??
+    (noRouteSuppliesScalars(routes as readonly FindingRoute[])
+      ? null
+      : (bindingRouteOf(routes as readonly FindingRoute[])?.ruleId ?? null));
+  const {
+    name: _name,
+    agency: _agency,
+    deadline: _deadline,
+    deadlineDisplay: _deadlineDisplay,
+    latestApplyDate: _latestApplyDate,
+    applyAfterDate: _applyAfterDate,
+    deadlineStatus: _deadlineStatus,
+    slackDays: _slackDays,
+    feeDisplay: _feeDisplay,
+    portalName: _portalName,
+    portalUrl: _portalUrl,
+    portalInstructions: _portalInstructions,
+    ...common
+  } = finding;
+  return {
+    ...common,
+    userSummary: finding.userSummary ?? null,
+    routes,
+    headlineMode: finding.headlineMode as HeadlineMode,
+    headlineRouteId,
+    legacyMerged: false,
   };
 }
 
@@ -741,14 +858,16 @@ const narrowedBlockerHolds = (
     const traced = triggerResultOf(plan, ruleId);
     if (traced === null) return false;
     const candidate = { disposition: finding.disposition, triggerResult: traced };
+    const headline = findingHeadline(finding);
+    if (headline === null) return false;
     if (
       !canBlockOverall(candidate, finding.verificationStatus) &&
-      !(windowIsMissed(finding) && canBlockWhenMissed(candidate, finding.verificationStatus))
+      !(windowIsMissed(headline) && canBlockWhenMissed(candidate, finding.verificationStatus))
     ) {
       return false;
     }
     return BLOCKER_ROUTE_FIELDS.every(
-      (field) => (blocker[field] as unknown) === (finding[field] as unknown),
+      (field) => (blocker[field] as unknown) === (headline[field] as unknown),
     );
   }
 

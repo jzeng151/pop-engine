@@ -3,7 +3,13 @@
 
 import { randomUUID } from "node:crypto";
 import type { Pool, PoolClient } from "pg";
-import { FILING_DISPOSITIONS, compareToPinned, evaluate } from "@pop-engine/engine";
+import {
+  FILING_DISPOSITIONS,
+  compareToPinned,
+  evaluate,
+  headlineOf,
+  noRouteSuppliesScalars,
+} from "@pop-engine/engine";
 import type {
   Deadline,
   DeadlineStatus,
@@ -16,14 +22,8 @@ import type {
   HolidayCalendar,
   IntakeValue,
   PermitPlan,
+  StoredFinding,
 } from "@pop-engine/engine";
-
-// The optional engine fields are normalized to explicit nulls on the wire, following `userSummary`: a client reading a stored plan gets the same key set whether the plan predates the field or the finding simply has no.
-type StoredFinding = Omit<Finding, "routes" | "headlineMode"> & {
-  readonly lastVerifiedDate: string | null;
-  readonly routes: readonly FindingRoute[] | null;
-  readonly headlineMode: HeadlineMode | null;
-};
 
 /**
  * A stored plan whose items no longer match what was written. F-201 AC 5: a partial plan is never
@@ -145,22 +145,28 @@ export type FindingRendering = {
   routes?: readonly FindingRoute[] | null;
   /** Present exactly when `routes` is, and absent on the same stored plans. */
   headline_mode?: HeadlineMode | null;
+  /** The route whose values lead the line; null is the approved scalar-free headline. */
+  headline_rule_id?: string | null;
 };
 
-const renderingOf = (finding: Finding): FindingRendering => ({
-  rule_ids: finding.ruleIds,
-  notes: finding.notes,
-  note_text: finding.noteText,
-  conflict_text: finding.conflictText,
-  deadline_display: finding.deadlineDisplay,
-  slack_days: finding.slackDays,
-  deadline_unknown_fields: finding.deadlineUnknownFields,
-  timeline_unresolved_reason: finding.timelineUnresolvedReason,
-  portal_instructions: finding.portalInstructions,
-  user_summary: finding.userSummary ?? null,
-  routes: finding.routes ?? null,
-  headline_mode: finding.headlineMode ?? null,
-});
+const renderingOf = (finding: Finding): FindingRendering => {
+  const headline = headlineOf(finding);
+  return {
+    rule_ids: finding.ruleIds,
+    notes: finding.notes,
+    note_text: finding.noteText,
+    conflict_text: finding.conflictText,
+    deadline_display: headline?.deadlineDisplay ?? null,
+    slack_days: headline?.slackDays ?? null,
+    deadline_unknown_fields: finding.deadlineUnknownFields,
+    timeline_unresolved_reason: finding.timelineUnresolvedReason,
+    portal_instructions: headline?.portalInstructions ?? null,
+    user_summary: finding.userSummary ?? null,
+    routes: finding.routes ?? null,
+    headline_mode: finding.headlineMode ?? null,
+    headline_rule_id: finding.routes === undefined ? null : finding.headlineRouteId,
+  };
+};
 
 export const renderingKey = (ruleIds: readonly string[]): string => ruleIds.join(",");
 
@@ -290,6 +296,7 @@ async function insertPlan(
   );
 
   for (const finding of plan.findings) {
+    const headline = headlineOf(finding);
     await client.query(
       `INSERT INTO permit_plan_items
          (id, plan_id, rule_ids, triggered_by, permit_name, agency, deadline, latest_apply_date,
@@ -302,22 +309,22 @@ async function insertPlan(
         planId,
         finding.ruleIds,
         JSON.stringify(finding.triggeredBy),
-        finding.name,
-        finding.agency,
-        finding.deadline === null ? null : JSON.stringify(finding.deadline),
-        finding.latestApplyDate,
-        finding.applyAfterDate,
-        finding.feeDisplay,
+        headline?.name ?? null,
+        headline?.agency ?? null,
+        headline?.deadline == null ? null : JSON.stringify(headline.deadline),
+        headline?.latestApplyDate ?? null,
+        headline?.applyAfterDate ?? null,
+        headline?.feeDisplay ?? null,
         // No published rule lists required documents, and the engine may not invent any.
         null,
-        finding.portalName,
-        finding.portalUrl,
+        headline?.portalName ?? null,
+        headline?.portalUrl ?? null,
         JSON.stringify(finding.sources),
         finding.sources[0]?.urls[0] ?? null,
         finding.lastVerifiedDate ?? null,
         finding.kind,
         finding.disposition,
-        finding.deadlineStatus,
+        headline?.deadlineStatus ?? "not_calculable",
         finding.verificationStatus,
       ],
     );
@@ -480,13 +487,7 @@ export function createPlanService(
             generatedAt,
             snapshotDate: ruleset.snapshotDate,
             ...plan,
-            findings: plan.findings.map((finding) => ({
-              ...finding,
-              userSummary: finding.userSummary ?? null,
-              lastVerifiedDate: finding.lastVerifiedDate ?? null,
-              routes: finding.routes ?? null,
-              headlineMode: finding.headlineMode ?? null,
-            })),
+            findings: plan.findings.map(storedFindingFromEngine),
           },
         };
       } catch (error) {
@@ -526,7 +527,7 @@ type PlanItemRow = {
   triggered_by: Finding["triggeredBy"];
   permit_name: string | null;
   agency: string | null;
-  deadline: Finding["deadline"];
+  deadline: Deadline | null;
   latest_apply_date: Date | string | null;
   apply_after_date: Date | string | null;
   fee_display: string | null;
@@ -536,7 +537,7 @@ type PlanItemRow = {
   last_verified_date: Date | string | null;
   kind: Finding["kind"];
   disposition: Finding["disposition"];
-  deadline_status: Finding["deadlineStatus"];
+  deadline_status: DeadlineStatus;
   verification_status: Finding["verificationStatus"];
 };
 
@@ -552,10 +553,35 @@ const isoDate = (value: Date | string | null): string | null =>
 
 /** The persisted columns rebuild the finding a client reads; snake_case stays inside this file. */
 function findingFromRow(row: PlanItemRow, rendering: FindingRendering): StoredFinding {
-  return {
+  const common = {
     ruleIds: row.rule_ids,
     kind: row.kind,
     disposition: row.disposition,
+    notes: rendering.notes,
+    noteText: rendering.note_text,
+    deadlineUnknownFields: rendering.deadline_unknown_fields,
+    timelineUnresolvedReason: rendering.timeline_unresolved_reason,
+    conflictText: rendering.conflict_text,
+    sources: row.sources,
+    userSummary: rendering.user_summary ?? null,
+    verificationStatus: row.verification_status,
+    lastVerifiedDate: isoDate(row.last_verified_date),
+    triggeredBy: row.triggered_by,
+  };
+  const routes = rendering.routes ?? null;
+  if (routes !== null) {
+    return {
+      ...common,
+      routes,
+      headlineMode: rendering.headline_mode as HeadlineMode,
+      headlineRouteId:
+        rendering.headline_rule_id ??
+        (noRouteSuppliesScalars(routes) ? null : (routes[0]?.ruleId ?? null)),
+      legacyMerged: false,
+    };
+  }
+  const scalarFinding = {
+    ...common,
     name: row.permit_name,
     agency: row.agency,
     deadline: row.deadline,
@@ -568,17 +594,31 @@ function findingFromRow(row: PlanItemRow, rendering: FindingRendering): StoredFi
     portalName: row.portal_name,
     portalUrl: row.portal_url,
     portalInstructions: rendering.portal_instructions,
-    notes: rendering.notes,
-    noteText: rendering.note_text,
-    deadlineUnknownFields: rendering.deadline_unknown_fields,
-    timelineUnresolvedReason: rendering.timeline_unresolved_reason,
-    conflictText: rendering.conflict_text,
-    sources: row.sources,
-    userSummary: rendering.user_summary ?? null,
-    routes: rendering.routes ?? null,
-    headlineMode: rendering.headline_mode ?? null,
-    verificationStatus: row.verification_status,
-    lastVerifiedDate: isoDate(row.last_verified_date),
-    triggeredBy: row.triggered_by,
+    routes: null,
+    headlineMode: null,
+    headlineRouteId: null,
+  };
+  return row.rule_ids.length > 1
+    ? { ...scalarFinding, legacyMerged: true }
+    : { ...scalarFinding, legacyMerged: false };
+}
+
+function storedFindingFromEngine(finding: Finding): StoredFinding {
+  if (finding.routes !== undefined) {
+    return {
+      ...finding,
+      userSummary: finding.userSummary ?? null,
+      lastVerifiedDate: finding.lastVerifiedDate ?? null,
+      legacyMerged: false,
+    };
+  }
+  return {
+    ...finding,
+    userSummary: finding.userSummary ?? null,
+    lastVerifiedDate: finding.lastVerifiedDate ?? null,
+    routes: null,
+    headlineMode: null,
+    headlineRouteId: null,
+    legacyMerged: false,
   };
 }

@@ -47,31 +47,37 @@ if (parksNoteText === undefined) {
 
 const findingFor = (
   rule: PublishedRule,
-  overrides: Partial<ConsumedFinding> = {},
-): ConsumedFinding => ({
-  ruleIds: [rule.id],
-  disposition: DEFAULT_DISPOSITION_BY_RULE_KIND[rule.kind],
-  name: rule.output.requirement_name ?? null,
-  agency: rule.output.agency ?? null,
-  deadline: rule.output.deadline ?? null,
-  deadlineDisplay: null,
-  latestApplyDate: null,
-  applyAfterDate: null,
-  deadlineStatus: "not_applicable",
-  feeDisplay: null,
-  portalName: null,
-  portalUrl: null,
-  portalInstructions: null,
-  notes: rule.output.notes ?? [],
-  noteText: rule.output.note_text ?? null,
-  deadlineUnknownFields: [],
-  timelineUnresolvedReason: null,
-  conflictText: null,
-  sources: [],
-  verificationStatus: "SOURCE_CONFIRMED",
-  lastVerifiedDate: null,
-  ...overrides,
-});
+  overrides: Record<string, unknown> = {},
+): ConsumedFinding =>
+  ({
+    ruleIds: [rule.id],
+    disposition: DEFAULT_DISPOSITION_BY_RULE_KIND[rule.kind],
+    name: rule.output.requirement_name ?? null,
+    agency: rule.output.agency ?? null,
+    deadline: rule.output.deadline ?? null,
+    deadlineDisplay: null,
+    latestApplyDate: null,
+    applyAfterDate: null,
+    deadlineStatus: "not_applicable",
+    slackDays: null,
+    feeDisplay: null,
+    portalName: null,
+    portalUrl: null,
+    portalInstructions: null,
+    notes: rule.output.notes ?? [],
+    noteText: rule.output.note_text ?? null,
+    deadlineUnknownFields: [],
+    timelineUnresolvedReason: null,
+    conflictText: null,
+    sources: [],
+    verificationStatus: "SOURCE_CONFIRMED",
+    lastVerifiedDate: null,
+    routes: null,
+    headlineMode: null,
+    headlineRouteId: null,
+    legacyMerged: false,
+    ...overrides,
+  }) as ConsumedFinding;
 
 const nonInsuranceFinding = (ruleId: string, name: string): ConsumedFinding => ({
   ruleIds: [ruleId],
@@ -95,6 +101,10 @@ const nonInsuranceFinding = (ruleId: string, name: string): ConsumedFinding => (
   sources: [],
   verificationStatus: "SOURCE_CONFIRMED",
   lastVerifiedDate: null,
+  routes: null,
+  headlineMode: null,
+  headlineRouteId: null,
+  legacyMerged: false,
 });
 
 afterEach(() => {
@@ -161,6 +171,7 @@ describe("an insurance rule merged onto a line another route binds (#252)", () =
     latestApplyDate: null,
     applyAfterDate: null,
     deadlineStatus: "not_applicable" as const,
+    slackDays: null,
     feeDisplay: null,
     portalName: null,
     portalUrl: null,
@@ -175,21 +186,42 @@ describe("an insurance rule merged onto a line another route binds (#252)", () =
     deadline: null,
   };
 
-  it("renders the insurance route's own notes, not the group's", () => {
-    const merged: ConsumedFinding = {
-      ...findingFor(STREET_INSURANCE),
-      ruleIds: ["SAPO-STREET-MEDIUM-001", "SAPO-INSURANCE-001"],
-      name: bindingRoute.name,
-      agency: bindingRoute.agency,
+  const mergedFinding = (overrides: Record<string, unknown> = {}): ConsumedFinding => {
+    const scalar = findingFor(STREET_INSURANCE);
+    const {
+      name: _name,
+      agency: _agency,
+      deadline: _deadline,
+      deadlineDisplay: _deadlineDisplay,
+      latestApplyDate: _latestApplyDate,
+      applyAfterDate: _applyAfterDate,
+      deadlineStatus: _deadlineStatus,
+      feeDisplay: _feeDisplay,
+      portalName: _portalName,
+      portalUrl: _portalUrl,
+      portalInstructions: _portalInstructions,
+      ...common
+    } = scalar;
+    return {
+      ...common,
+      ruleIds: [bindingRoute.ruleId, insuranceRoute.ruleId],
       disposition: bindingRoute.disposition,
-      deadline: null,
-      notes: ["the permit's own note", "the insurance rule's own note"],
+      routes: [bindingRoute, insuranceRoute],
       headlineMode: "applies_together",
+      headlineRouteId: bindingRoute.ruleId,
+      legacyMerged: false,
+      ...overrides,
+    } as ConsumedFinding;
+  };
+
+  it("renders the insurance route's own notes, not the group's", () => {
+    const merged = mergedFinding({
+      notes: ["the permit's own note", "the insurance rule's own note"],
       routes: [
         { ...bindingRoute, notes: ["the permit's own note"] },
         { ...insuranceRoute, notes: ["the insurance rule's own note"] },
       ],
-    };
+    });
 
     render(<InsurancePanel findings={[merged]} eventId="event-1" />);
 
@@ -199,17 +231,10 @@ describe("an insurance rule merged onto a line another route binds (#252)", () =
   });
 
   it("renders the insurance rule's own name, agency and disposition, not the binding route's", () => {
-    const merged: ConsumedFinding = {
-      ...findingFor(STREET_INSURANCE),
-      ruleIds: ["SAPO-STREET-MEDIUM-001", "SAPO-INSURANCE-001"],
-      name: bindingRoute.name,
-      agency: bindingRoute.agency,
-      disposition: bindingRoute.disposition,
-      deadline: null,
+    const merged = mergedFinding({
       noteText: "the permit's own published note",
-      headlineMode: "applies_together",
       routes: [bindingRoute, insuranceRoute],
-    };
+    });
 
     render(<InsurancePanel findings={[merged]} eventId="event-1" />);
 

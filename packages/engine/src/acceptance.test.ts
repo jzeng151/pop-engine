@@ -1,7 +1,14 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import { PUBLISHED_RULES_FILE } from "./__fixtures__/published-ruleset";
-import { countBusinessDays, differenceInCalendarDays, evaluate, parseEngineRuleset } from "./index";
+import {
+  countBusinessDays,
+  differenceInCalendarDays,
+  evaluate,
+  headlineOf,
+  parseEngineRuleset,
+  routesOf,
+} from "./index";
 import { SCENARIO_INTAKE_FIXTURES, fixtureSubmission } from "./intake/scenario-intake-fixtures";
 import type { EventIntake, Finding, PermitPlan, PublishedHolidayCalendar } from "./types";
 
@@ -23,13 +30,16 @@ type ExpectedLine = {
 };
 
 const actualLines = (findings: readonly Finding[], withDates: boolean): unknown[] =>
-  findings.map((finding) => ({
-    ruleIds: [...finding.ruleIds],
-    kind: finding.kind,
-    disposition: finding.disposition,
-    deadlineStatus: finding.deadlineStatus,
-    ...(withDates ? { latestApplyDate: finding.latestApplyDate } : {}),
-  }));
+  findings.map((finding) => {
+    const headline = headlineOf(finding);
+    return {
+      ruleIds: [...finding.ruleIds],
+      kind: finding.kind,
+      disposition: finding.disposition,
+      deadlineStatus: headline?.deadlineStatus,
+      ...(withDates ? { latestApplyDate: headline?.latestApplyDate } : {}),
+    };
+  });
 
 const expectFindings = (findings: readonly Finding[], expected: ExpectedLine[]): void => {
   const withDates = expected.every((line) => line.latestApplyDate !== undefined);
@@ -586,8 +596,9 @@ describe("Scenario E — Plaza Brand Activation (max complexity)", () => {
     expect(plaza?.latestApplyDate).toBe("2026-10-20");
     expect(
       result.findings
-        .filter((finding) => finding.latestApplyDate !== null)
-        .map((f) => f.deadlineStatus),
+        .flatMap(routesOf)
+        .filter((route) => route.latestApplyDate !== null)
+        .map((route) => route.deadlineStatus),
     ).toEqual(Array(4).fill("on_track"));
     expect(result.verdict).toBe("CONDITIONAL");
   });

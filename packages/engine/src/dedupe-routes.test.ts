@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { evaluate, noRouteSuppliesScalars, parseEngineRuleset } from "./index";
-import type { EventIntake, Verdict } from "./types";
+import { evaluate, headlineOf, noRouteSuppliesScalars, parseEngineRuleset } from "./index";
+import type { EventIntake, Finding, Verdict } from "./types";
 
 const TODAY = "2026-07-22";
 const EVENT_DATE = "2026-12-04";
@@ -57,6 +57,22 @@ const plan = (
       holidays: [],
     },
   );
+
+const headline = (finding: Finding | undefined) =>
+  finding === undefined ? undefined : (headlineOf(finding) ?? undefined);
+
+const HEADLINE_SCALARS = [
+  "name",
+  "agency",
+  "deadlineDisplay",
+  "latestApplyDate",
+  "applyAfterDate",
+  "deadlineStatus",
+  "feeDisplay",
+  "portalName",
+  "portalUrl",
+  "portalInstructions",
+] as const;
 
 const ALWAYS = { all: [{ field: "headcount", op: "gte", value: 10 }] };
 
@@ -159,7 +175,7 @@ describe("the measured co-firing sets", () => {
       "feeDisplay",
       "portalName",
     ] as const) {
-      expect(merged?.[field]).toEqual(unmerged?.[field]);
+      expect(headline(merged)?.[field]).toEqual(headline(unmerged)?.[field]);
     }
     expect(merged?.routes).toHaveLength(2);
     const published = merged?.routes?.map((route) =>
@@ -292,9 +308,9 @@ describe("the measured co-firing sets", () => {
       SOUND_FIELDS,
     ).findings[0];
     expect(merged?.headlineMode).toBe("candidate");
-    expect(merged?.name).toBe("Sound Device Permit");
-    expect(merged?.latestApplyDate).toBe("2026-11-29");
-    expect(merged?.feeDisplay).toContain("$45 per sound device");
+    expect(headline(merged)?.name).toBe("Sound Device Permit");
+    expect(headline(merged)?.latestApplyDate).toBe("2026-11-29");
+    expect(headline(merged)?.feeDisplay).toContain("$45 per sound device");
     const prohibition = merged?.routes?.find((route) =>
       route.ruleId.includes("COMMERCIAL-ADVERTISING"),
     );
@@ -316,10 +332,10 @@ describe("the measured co-firing sets", () => {
     ).findings[0];
     expect(merged?.headlineMode).toBe("applies_together");
     expect(merged?.disposition).toBe("prohibited_or_ineligible");
-    expect(merged?.name).toBe("Commercial advertising by sound device");
-    expect(merged?.latestApplyDate).toBeNull();
-    expect(merged?.deadlineStatus).toBe("not_applicable");
-    expect(merged?.feeDisplay).toBeNull();
+    expect(headline(merged)?.name).toBe("Commercial advertising by sound device");
+    expect(headline(merged)?.latestApplyDate).toBeNull();
+    expect(headline(merged)?.deadlineStatus).toBe("not_applicable");
+    expect(headline(merged)?.feeDisplay).toBeNull();
     const permit = merged?.routes?.find((route) => route.ruleId === "NYPD-SOUND-PUBLIC-001");
     expect(permit?.latestApplyDate).toBe("2026-11-29");
     expect(permit?.deadlineStatus).toBe("on_track");
@@ -440,8 +456,8 @@ describe("the blocking route of a merged line (#252)", () => {
 
   it("names the missed route and quotes ITS window, fee and portal", () => {
     const evaluated = plan([OPEN, MISSED]);
-    expect(evaluated.findings[0]?.name).toBe("OPEN-001 permit");
-    expect(evaluated.findings[0]?.latestApplyDate).toBe("2026-08-22");
+    expect(headline(evaluated.findings[0])?.name).toBe("OPEN-001 permit");
+    expect(headline(evaluated.findings[0])?.latestApplyDate).toBe("2026-08-22");
 
     expect(evaluated.verdict).toBe("INFEASIBLE");
     const blocker = evaluated.verdictDetail.blockingFinding;
@@ -585,12 +601,12 @@ describe("dependency sequencing over a merged gated line (#252)", () => {
     const gatedRoute = sound?.routes?.find((route) => route.ruleId === "NYPD-SOUND-001");
     const otherRoute = sound?.routes?.find((route) => route.ruleId === "NYPD-SOUND-ALT-001");
 
-    expect(sound?.latestApplyDate).toBe("2026-10-05");
+    expect(headline(sound)?.latestApplyDate).toBe("2026-10-05");
     expect(sound?.routes?.[0]?.ruleId).toBe("NYPD-SOUND-ALT-001");
     expect(gatedRoute?.latestApplyDate).toBe("2026-11-29");
 
-    expect(sound?.applyAfterDate).toBeNull();
-    expect(sound?.slackDays).toBe(75);
+    expect(headline(sound)?.applyAfterDate).toBeNull();
+    expect(headline(sound)?.slackDays).toBe(75);
 
     expect(gatedRoute?.applyAfterDate).toBe("2026-08-12");
     expect(gatedRoute?.slackDays).toBe(109);
@@ -638,8 +654,8 @@ describe("dependency sequencing over a merged gated line (#252)", () => {
     const note = sound?.notes.find((entry) => entry.includes("sequenced after PARKS-EVENT-001"));
 
     expect(sound?.routes?.[0]?.ruleId).toBe("NYPD-SOUND-ALT-001");
-    expect(sound?.latestApplyDate).toBe("2026-10-05");
-    expect(sound?.deadlineStatus).toBe("on_track");
+    expect(headline(sound)?.latestApplyDate).toBe("2026-10-05");
+    expect(headline(sound)?.deadlineStatus).toBe("on_track");
 
     expect(note).toContain("leaves no window to file in");
     expect(note).toContain("this permit's own 2026-07-01 deadline");
@@ -685,9 +701,9 @@ describe("an unknown that moves only a non-binding route's window (#252)", () =>
     const withA = evaluated("a").findings[0];
     const withB = evaluated("b").findings[0];
     expect(withA?.ruleIds).toEqual(withB?.ruleIds);
-    expect(withA?.latestApplyDate).toBe("2026-10-05");
-    expect(withB?.latestApplyDate).toBe("2026-10-05");
-    expect(withA?.deadlineStatus).toBe(withB?.deadlineStatus);
+    expect(headline(withA)?.latestApplyDate).toBe("2026-10-05");
+    expect(headline(withB)?.latestApplyDate).toBe("2026-10-05");
+    expect(headline(withA)?.deadlineStatus).toBe(headline(withB)?.deadlineStatus);
     expect(withA?.routes?.[1]?.latestApplyDate).toBe("2026-11-04");
     expect(withB?.routes?.[1]?.latestApplyDate).toBe("2026-11-14");
     expect(evaluated("a").verdict).toBe("FEASIBLE");
@@ -738,7 +754,7 @@ describe("the reason for a branch that misses only a non-binding route (#252)", 
 
   it("states the filing-window miss the merged scalar cannot see", () => {
     const missing = evaluated("b").findings[0];
-    expect(missing?.deadlineStatus).not.toBe("published_deadline_missed");
+    expect(headline(missing)?.deadlineStatus).not.toBe("published_deadline_missed");
     expect(missing?.routes?.[1]?.deadlineStatus).toBe("published_deadline_missed");
 
     const level = evaluated("unknown").verdictDetail.missingFacts.find(
@@ -798,8 +814,8 @@ describe("naming the at-risk route of a rescoped merged line (#252)", () => {
     expect(rescope?.reevaluatedVerdict).toBe("FEASIBLE_AT_RISK");
 
     const merged = plan([BINDING, AT_RISK]).findings[0];
-    expect(merged?.name).toBe("Plaza event permit");
-    expect(merged?.slackDays).not.toBe(rescope?.minSlackDays);
+    expect(headline(merged)?.name).toBe("Plaza event permit");
+    expect(headline(merged)?.slackDays).not.toBe(rescope?.minSlackDays);
     expect(rescope?.atRiskFindingName).toBe("Plaza block closure approval");
   });
 });
@@ -844,19 +860,10 @@ describe("a merged line no route can supply the scalars for (#252)", () => {
     expect(line?.disposition).toBe("may_be_required");
     expect(line?.headlineMode).toBe("candidate");
 
-    expect(line?.name).toBeNull();
-    expect(line?.agency).toBeNull();
-    expect(line?.deadline).toBeNull();
-    expect(line?.deadlineDisplay).toBeNull();
-    expect(line?.latestApplyDate).toBeNull();
-    expect(line?.applyAfterDate).toBeNull();
-    expect(line?.slackDays).toBeNull();
-    expect(line?.feeDisplay).toBeNull();
-    expect(line?.portalName).toBeNull();
-    expect(line?.portalUrl).toBeNull();
-    expect(line?.portalInstructions).toBeNull();
-
-    expect(line?.deadlineStatus).toBe("not_calculable");
+    expect(line?.headlineRouteId).toBeNull();
+    for (const field of HEADLINE_SCALARS) expect(line).not.toHaveProperty(field);
+    expect(line).not.toHaveProperty("deadline");
+    expect(line).not.toHaveProperty("slackDays");
   });
 
   it("keeps every route's own name, window, fee and portal beneath", () => {
@@ -884,52 +891,79 @@ describe("a merged line no route can supply the scalars for (#252)", () => {
     const settled = plan([RESOLVED_ADVISORY, UNRESOLVED_CANDIDATE], { sidewalk_use: "cafe" }, FIELD)
       .findings[0];
     expect(settled?.headlineMode).toBe("applies_together");
-    expect(settled?.name).toBe("Sidewalk cafe licence");
-    expect(settled?.feeDisplay).toBe("$1,050 licence fee");
-    expect(settled?.deadlineStatus).not.toBe("not_calculable");
+    expect(headline(settled)?.name).toBe("Sidewalk cafe licence");
+    expect(headline(settled)?.feeDisplay).toBe("$1,050 licence fee");
+    expect(headline(settled)?.deadlineStatus).not.toBe("not_calculable");
+  });
+
+  it("does not recommend a rescope whose scalar-free merged route has an unresolved timeline", () => {
+    const fields = [
+      { field: "venue_type", type: "enum", values: ["unknown", "park", "private"] },
+      { field: "permit_path", type: "enum", values: ["unknown", "cafe"] },
+    ];
+    const evaluated = plan(
+      [
+        {
+          id: "PARKS-MISSED-001",
+          dedupeKey: null,
+          trigger: { all: [{ field: "venue_type", op: "eq", value: "park" }] },
+          output: {
+            permit_name: "Missed parks permit",
+            deadline: { type: "published_minimum", calendar_days: 200 },
+          },
+        },
+        {
+          id: "PRIVATE-ADVISORY-001",
+          kind: "advisory",
+          dedupeKey: "private-path",
+          trigger: { all: [{ field: "venue_type", op: "eq", value: "private" }] },
+          output: {
+            permit_name: "Private venue advisory",
+            deadline: { type: "research_required" },
+          },
+        },
+        {
+          id: "PRIVATE-CANDIDATE-001",
+          kind: "eligibility",
+          dedupeKey: "private-path",
+          trigger: {
+            all: [
+              { field: "venue_type", op: "eq", value: "private" },
+              { field: "permit_path", op: "eq", value: "cafe" },
+            ],
+          },
+          output: {
+            permit_name: "Private venue candidate permit",
+            deadline: { type: "research_required" },
+          },
+        },
+      ],
+      { venue_type: "park", permit_path: null },
+      fields,
+    );
+
+    expect(evaluated.verdict).toBe("INFEASIBLE");
+    expect(evaluated.verdictDetail.rescopeSuggestions).not.toContainEqual(
+      expect.objectContaining({ change: { field: "venue_type", value: "private" } }),
+    );
   });
 });
 
 describe("every merged line the engine emits reads as its binding route, or as nobody (#252)", () => {
-  const HEADLINE_SCALARS = [
-    "name",
-    "agency",
-    "deadlineDisplay",
-    "latestApplyDate",
-    "applyAfterDate",
-    "deadlineStatus",
-    "feeDisplay",
-    "portalName",
-    "portalUrl",
-    "portalInstructions",
-  ] as const;
-
   const assertInvariant = (evaluated: ReturnType<typeof plan>) => {
     const merged = evaluated.findings.filter((finding) => (finding.routes?.length ?? 0) > 1);
     expect(merged.length).toBeGreaterThan(0);
     for (const finding of merged) {
       const routes = finding.routes as NonNullable<typeof finding.routes>;
+      for (const field of HEADLINE_SCALARS) expect(finding).not.toHaveProperty(field);
+      expect(finding).not.toHaveProperty("deadline");
       if (noRouteSuppliesScalars(routes)) {
-        expect(finding.deadlineStatus).toBe("not_calculable");
-        expect(finding.deadline).toBeNull();
-        for (const field of HEADLINE_SCALARS) {
-          if (field === "deadlineStatus") continue;
-          expect({ ruleIds: finding.ruleIds, field, value: finding[field] }).toEqual({
-            ruleIds: finding.ruleIds,
-            field,
-            value: null,
-          });
-        }
-        continue;
-      }
-      const binding = routes[0] as (typeof routes)[number];
-      expect(finding.deadline?.type ?? null).toBe(binding.deadline?.type ?? null);
-      for (const field of HEADLINE_SCALARS) {
-        expect({ ruleIds: finding.ruleIds, field, value: finding[field] }).toEqual({
-          ruleIds: finding.ruleIds,
-          field,
-          value: binding[field],
-        });
+        expect(finding.headlineRouteId).toBeNull();
+        expect(headlineOf(finding)).toBeNull();
+      } else {
+        const binding = routes[0] as (typeof routes)[number];
+        expect(finding.headlineRouteId).toBe(binding.ruleId);
+        expect(headlineOf(finding)).toBe(binding);
       }
     }
   };

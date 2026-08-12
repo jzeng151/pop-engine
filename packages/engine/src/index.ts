@@ -45,6 +45,7 @@ export {
   ROUTE_FIELD_ORIGIN,
   type RouteFieldOrigin,
   bindingRouteOf,
+  headlineOf,
   canBlockWhenMissed,
   canBlockOverall,
   offersAFilingAction,

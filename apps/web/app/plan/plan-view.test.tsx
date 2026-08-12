@@ -101,8 +101,8 @@ const HEADLINE_FROM_BINDING = [
   "portalInstructions",
 ] as const;
 
-const headlineOf = (overrides: Partial<Finding>): Partial<Finding> => {
-  const binding = overrides.routes?.[0];
+const headlineOf = (overrides: Record<string, unknown>): Record<string, unknown> => {
+  const binding = (overrides.routes as readonly FindingRoute[] | undefined)?.[0];
   if (binding === undefined) return {};
   const headline: Record<string, unknown> = {};
   for (const field of HEADLINE_FROM_BINDING) {
@@ -112,10 +112,10 @@ const headlineOf = (overrides: Partial<Finding>): Partial<Finding> => {
     "disposition" in overrides
       ? overrides.disposition
       : mergedDispositionOf(overrides.routes as readonly FindingRoute[]);
-  return headline as Partial<Finding>;
+  return headline;
 };
 
-const finding = (overrides: Partial<Finding> = {}): Finding => ({
+const finding = (overrides: Record<string, unknown> = {}): Record<string, unknown> => ({
   ruleIds: ["PARKS-EVENT-001"],
   kind: "permit",
   disposition: "required",
@@ -505,7 +505,7 @@ describe("a plan generated before migration 002 recorded a snapshot date (AC 4)"
 });
 
 describe("per-line citations and status (AC 2, AC 3)", () => {
-  const lineFor = async (only: Finding) => {
+  const lineFor = async (only: Record<string, unknown>) => {
     stubApi(plan({ findings: [only] }));
     renderPlan();
     const line = within(await screen.findByRole("article"));
@@ -892,11 +892,109 @@ describe("the routes of a merged dedupe line", () => {
     ...overrides,
   });
 
-  const lineWith = async (overrides: Partial<Finding>) => {
+  const lineWith = async (overrides: Record<string, unknown>) => {
     stubApi(plan({ findings: [finding(overrides)] }));
     renderPlan();
     return within(await screen.findByRole("article"));
   };
+
+  const currentMerged = (
+    routes: readonly FindingRoute[],
+    overrides: Record<string, unknown> = {},
+  ): Record<string, unknown> => {
+    const raw = finding({
+      ruleIds: routes.map((entry) => entry.ruleId),
+      disposition: mergedDispositionOf(routes),
+      ...overrides,
+    });
+    const {
+      name: _name,
+      agency: _agency,
+      deadline: _deadline,
+      deadlineDisplay: _deadlineDisplay,
+      latestApplyDate: _latestApplyDate,
+      applyAfterDate: _applyAfterDate,
+      deadlineStatus: _deadlineStatus,
+      slackDays: _slackDays,
+      feeDisplay: _feeDisplay,
+      portalName: _portalName,
+      portalUrl: _portalUrl,
+      portalInstructions: _portalInstructions,
+      ...common
+    } = raw;
+    return {
+      ...common,
+      routes,
+      headlineMode: routes.every((entry) => entry.triggerResult === "true")
+        ? "applies_together"
+        : "candidate",
+      headlineRouteId: routes[0]?.ruleId ?? null,
+      legacyMerged: false,
+    };
+  };
+
+  it("renders a current merged response whose route values exist only on routes", async () => {
+    const routes = [
+      route({ ruleId: "DOB-TALL-STRUCTURE-001", name: "Explicit headline route" }),
+      route({ ruleId: "DOB-TENT-001", name: "Other route" }),
+    ];
+    stubApi(plan({ findings: [currentMerged(routes)] }));
+    renderPlan();
+
+    expect((await screen.findByRole("heading", { level: 3 })).textContent).toBe(
+      "Explicit headline route",
+    );
+  });
+
+  it("names the headline route in verdict-detail references", async () => {
+    const routes = [
+      route({ ruleId: "DOB-TALL-STRUCTURE-001", name: "Explicit headline route" }),
+      route({ ruleId: "DOB-TENT-001", name: "Other route" }),
+    ];
+    stubApi(
+      plan({
+        findings: [currentMerged(routes, { userSummary: null })],
+        verdict: "CONDITIONAL",
+        verdictDetail: {
+          ...emptyVerdictDetail,
+          unresolvedTimelines: [
+            {
+              ruleIds: routes.map((entry) => entry.ruleId),
+              reason: "Published filing window cannot be dated",
+            },
+          ],
+        },
+      }),
+    );
+    renderPlan();
+
+    const timelines = within(await screen.findByTestId("unresolved-timelines"));
+    const reference = timelines.getByRole("listitem").textContent ?? "";
+    expect(reference).toContain("Explicit headline route");
+    expect(reference).not.toContain(routes.map((entry) => entry.ruleId).join(", "));
+  });
+
+  it("replays a pre-route merged scalar without inventing route attribution", async () => {
+    stubApi(
+      plan({
+        findings: [
+          finding({
+            ruleIds: ["LEGACY-A", "LEGACY-B"],
+            name: "Recorded legacy headline",
+            routes: null,
+            headlineMode: null,
+            headlineRouteId: null,
+            legacyMerged: true,
+          }),
+        ],
+      }),
+    );
+    renderPlan();
+
+    expect((await screen.findByRole("heading", { level: 3 })).textContent).toBe(
+      "Recorded legacy headline",
+    );
+  });
 
   it("labels a candidate line's disclosure after no single route", async () => {
     const ruleIds = ["DOB-TENT-001", "DOB-TALL-STRUCTURE-001"];
@@ -989,7 +1087,7 @@ describe("the routes of a merged dedupe line", () => {
     expect(line.getByText("$1,050 licence fee")).toBeDefined();
     expect(own.querySelector('a[href="https://example.test/dot"]')).not.toBeNull();
     expect(own.querySelector('a[href="https://example.test/dcwp"]')).not.toBeNull();
-    expect(line.getByText(/not calculable/)).toBeDefined();
+    expect(line.queryByText(/not calculable/)).toBeNull();
   });
 
   it("renders a route's own gate, and does not collapse a group that differs only by it", async () => {
@@ -1026,7 +1124,7 @@ describe("the routes of a merged dedupe line", () => {
     const cases: {
       field: string;
       overrides: Partial<FindingRoute>;
-      headline?: Partial<Finding>;
+      headline?: Record<string, unknown>;
       shown: string;
     }[] = [
       {
@@ -1423,7 +1521,7 @@ describe("the plan view's own states", () => {
 });
 
 describe("dated lines that publish no deadline prose", () => {
-  const lineFor = async (only: Finding) => {
+  const lineFor = async (only: Record<string, unknown>) => {
     stubApi(plan({ findings: [only] }));
     renderPlan();
     const line = within(await screen.findByRole("article"));
@@ -3530,7 +3628,7 @@ describe("a regeneration that finishes after the page has moved on", () => {
 });
 
 describe("a scannable line (progressive disclosure)", () => {
-  const collapsedLine = async (only: Finding) => {
+  const collapsedLine = async (only: Record<string, unknown>) => {
     stubApi(plan({ findings: [only] }));
     renderPlan();
     return within(await screen.findByRole("article"));

@@ -213,18 +213,7 @@ export type FindingSource = {
 };
 
 /** One contributing rule of a merged dedupe group, with its own published values and its own trigger result. */
-export type FindingRoute = {
-  readonly ruleId: string;
-  /** "true" or "unknown". Never "false": a trigger that resolves false produces no finding. */
-  readonly triggerResult: Tristate;
-  /**
-   * This rule's own disposition, as `resolveDisposition` produced it, before any group arithmetic.
-   * Not capped by the unresolved-route ceiling: the ceiling constrains what the merged HEADLINE may
-   * claim, and a route entry claims nothing about the group.
-   */
-  readonly disposition: Disposition;
-  /** The intake fields this route's OWN trigger could not resolve, which is the question that decides whether it applies. */
-  readonly unknownFields: readonly string[];
+export type FindingRouteValues = {
   readonly name: string | null;
   readonly agency: string | null;
   readonly deadline: Deadline | null;
@@ -237,6 +226,20 @@ export type FindingRoute = {
   readonly portalName: string | null;
   readonly portalUrl: string | null;
   readonly portalInstructions: string | null;
+};
+
+export type FindingRoute = FindingRouteValues & {
+  readonly ruleId: string;
+  /** "true" or "unknown". Never "false": a trigger that resolves false produces no finding. */
+  readonly triggerResult: Tristate;
+  /**
+   * This rule's own disposition, as `resolveDisposition` produced it, before any group arithmetic.
+   * Not capped by the unresolved-route ceiling: the ceiling constrains what the merged HEADLINE may
+   * claim, and a route entry claims nothing about the group.
+   */
+  readonly disposition: Disposition;
+  /** The intake fields this route's OWN trigger could not resolve, which is the question that decides whether it applies. */
+  readonly unknownFields: readonly string[];
   /**
    * This route's published notes. `undefined` means an older plan did not record them; `[]` means
    * the route recorded none.
@@ -252,27 +255,10 @@ export type FindingRoute = {
 /** Why a group's routes arrived on one line, which is what decides how the line reads. */
 export type HeadlineMode = "applies_together" | "candidate";
 
-export type Finding = {
+type FindingBase = {
   readonly ruleIds: readonly string[];
   readonly kind: FindingKind;
   readonly disposition: Disposition;
-  readonly name: string | null;
-  readonly agency: string | null;
-  readonly deadline: Deadline | null;
-  readonly deadlineDisplay: string | null;
-  readonly latestApplyDate: string | null;
-  readonly applyAfterDate: string | null;
-  readonly deadlineStatus: DeadlineStatus;
-  readonly slackDays: number | null;
-  readonly feeDisplay: string | null;
-  readonly portalName: string | null;
-  readonly portalUrl: string | null;
-  /**
-   * How to file when the portal is not a URL. NYPD-SOUND-001 publishes no URL and carries the
-   * precinct and form number here, so dropping it leaves the only actionable filing detail on the
-   * floor and F-204 with no in-person path to render.
-   */
-  readonly portalInstructions: string | null;
   readonly notes: readonly string[];
   /** The rule's published note text, verbatim — carries eligibility rescope guidance and scope caveats. */
   readonly noteText: string | null;
@@ -292,11 +278,56 @@ export type Finding = {
    */
   readonly lastVerifiedDate?: string | null;
   readonly triggeredBy: readonly TriggeredBy[];
-  /** Every contributing route, present exactly when this finding merged two or more rules. */
-  readonly routes?: readonly FindingRoute[];
-  /** Present exactly when `routes` is. */
-  readonly headlineMode?: HeadlineMode;
 };
+
+/** One rule's finding. Its route values are unambiguous and remain directly available. */
+export type UnmergedFinding = FindingBase &
+  FindingRouteValues & {
+    readonly routes?: undefined;
+    readonly headlineMode?: undefined;
+    readonly headlineRouteId?: undefined;
+  };
+
+/** A dedupe group whose route-like values live only on their owning route. */
+export type MergedFinding = FindingBase & {
+  readonly routes: readonly FindingRoute[];
+  readonly headlineMode: HeadlineMode;
+  /** The route that leads the line, or null for the approved scalar-free headline. */
+  readonly headlineRouteId: string | null;
+  readonly name?: never;
+  readonly agency?: never;
+  readonly deadline?: never;
+  readonly deadlineDisplay?: never;
+  readonly latestApplyDate?: never;
+  readonly applyAfterDate?: never;
+  readonly deadlineStatus?: never;
+  readonly slackDays?: never;
+  readonly feeDisplay?: never;
+  readonly portalName?: never;
+  readonly portalUrl?: never;
+  readonly portalInstructions?: never;
+};
+
+export type Finding = UnmergedFinding | MergedFinding;
+
+type StoredScalarFinding = Omit<
+  UnmergedFinding,
+  "routes" | "headlineMode" | "headlineRouteId" | "lastVerifiedDate"
+> & {
+  readonly lastVerifiedDate: string | null;
+  readonly routes: null;
+  readonly headlineMode: null;
+  readonly headlineRouteId: null;
+};
+
+/** The plan-read contract, including the scalar-only shape written before route ownership existed. */
+export type StoredFinding =
+  | (StoredScalarFinding & { readonly legacyMerged: false })
+  | (StoredScalarFinding & { readonly legacyMerged: true })
+  | (Omit<MergedFinding, "lastVerifiedDate"> & {
+      readonly lastVerifiedDate: string | null;
+      readonly legacyMerged: false;
+    });
 
 export type BranchOutcome = {
   readonly value: string;

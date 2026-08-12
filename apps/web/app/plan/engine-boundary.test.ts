@@ -131,8 +131,8 @@ describe("the plan boundary reads what the engine produces (#252)", () => {
   it("reads a merged line that publishes no scalars of its own", async () => {
     const body = served([RESOLVED_ADVISORY, CANDIDATE], { sidewalk_use: null }, FIELD);
 
-    expect(body.findings[0]?.deadlineStatus).toBe("not_calculable");
-    expect(body.findings[0]?.latestApplyDate).toBeNull();
+    expect(body.findings[0]?.headlineRouteId).toBeNull();
+    expect(body.findings[0]).not.toHaveProperty("deadlineStatus");
     await expect(readsBack(body)).resolves.toMatchObject({ ok: true });
   });
 

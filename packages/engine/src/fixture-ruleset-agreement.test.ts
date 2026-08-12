@@ -2,9 +2,9 @@ import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import { PUBLISHED_RULES_FILE } from "./__fixtures__/published-ruleset";
-import { evaluate, parseEngineRuleset, triggerFields } from "./index";
+import { evaluate, parseEngineRuleset, routesOf, triggerFields } from "./index";
 import { UNCONSUMED_INTAKE_FIELDS } from "./ruleset";
-import type { EventIntake, Finding, HolidayCalendar, PermitPlan } from "./types";
+import type { EventIntake, Finding, FindingRoute, HolidayCalendar, PermitPlan } from "./types";
 import {
   FIXTURE_TODAY,
   SCENARIO_INTAKE_FIXTURES,
@@ -225,7 +225,7 @@ function planFor(scenario: string): PermitPlan {
   return evaluate(fixtureSubmission(fixture) as EventIntake, ruleset, FIXTURE_TODAY, calendar);
 }
 
-const DEADLINE_STATUSES: readonly Finding["deadlineStatus"][] = [
+const DEADLINE_STATUSES: readonly FindingRoute["deadlineStatus"][] = [
   "on_track",
   "deadline_approaching",
   "published_deadline_missed",
@@ -849,7 +849,9 @@ describe("the fixture suite and the published ruleset agree", () => {
           );
         }
       }
-      const producedStatuses = variant.findings.map((finding) => finding.deadlineStatus);
+      const producedStatuses = variant.findings
+        .flatMap(routesOf)
+        .map((route) => route.deadlineStatus);
       for (const status of DEADLINE_STATUSES.filter((candidate) =>
         bullet.includes(candidate.toUpperCase()),
       )) {
