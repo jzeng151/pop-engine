@@ -514,7 +514,7 @@ function buildRescopeSuggestions(
       if (
         introduced.some(
           (finding) =>
-            headlineOf(finding)?.deadlineStatus === "not_calculable" &&
+            routesOf(finding).some((route) => route.deadlineStatus === "not_calculable") &&
             !isUnpublishedCalendarUnresolved(finding.timelineUnresolvedReason),
         )
       ) {

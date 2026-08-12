@@ -607,6 +607,7 @@ function storedFindingFromEngine(finding: Finding): StoredFinding {
   if (finding.routes !== undefined) {
     return {
       ...finding,
+      userSummary: finding.userSummary ?? null,
       lastVerifiedDate: finding.lastVerifiedDate ?? null,
       legacyMerged: false,
     };

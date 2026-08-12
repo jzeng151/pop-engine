@@ -1,8 +1,8 @@
 import type { Verdict } from "@pop-engine/engine";
 import { offersAFilingAction } from "@pop-engine/engine";
 import { PortalBlock, type PortalFields } from "../_components/portal-block";
-import { WIDENED_BLOCKER_KEYS } from "./plan-api";
-import type { ConsumedFinding, ConsumedVerdictDetail } from "./plan-api";
+import { WIDENED_BLOCKER_KEYS, findingHeadline } from "./plan-api";
+import type { ConsumedBlockingFinding, ConsumedFinding, ConsumedVerdictDetail } from "./plan-api";
 import { AT_RISK_BUFFER_NOTE, verdictCopy } from "./verdict-copy";
 
 // F-102's branch table (CONDITIONAL) and rescope ladder (INFEASIBLE).
@@ -19,36 +19,30 @@ export type FindingReference = {
   readonly settled?: boolean;
 };
 
-/**
- * Structurally what a reference is built from, so a blocking finding — which carries the blocking
- * ROUTE's published values rather than the merged line's, and is absent those fields entirely on a
- * plan stored before it carried them — is rendered by the same function as a plan line.
- */
-type ReferenceSource = Pick<ConsumedFinding, "ruleIds" | "name"> &
-  Partial<
-    Pick<
-      ConsumedFinding,
-      "userSummary" | "sources" | "portalName" | "portalUrl" | "headlineMode" | "disposition"
-    >
-  >;
+/** A plan finding or the verdict's already-narrowed blocking route. */
+type ReferenceSource = ConsumedFinding | ConsumedBlockingFinding;
 
 const referenceFromFinding = (finding: ReferenceSource): FindingReference => {
+  const values = "routes" in finding ? findingHeadline(finding) : finding;
   const summarySource = finding.userSummary?.points.flatMap((point) => point.sources)[0];
   const fallbackSource = (finding.sources ?? []).find((source) => source.urls.length > 0);
   return {
     ruleIds: finding.ruleIds,
-    label: finding.userSummary?.heading ?? finding.name ?? finding.ruleIds.join(", "),
+    label: finding.userSummary?.heading ?? values?.name ?? finding.ruleIds.join(", "),
     source:
       summarySource ??
       (fallbackSource === undefined
         ? null
         : { label: fallbackSource.citation, url: fallbackSource.urls[0] as string }),
-    portalName: finding.portalName ?? null,
-    portalUrl: finding.portalUrl ?? null,
+    portalName: values?.portalName ?? null,
+    portalUrl: values?.portalUrl ?? null,
     // ONE PREDICATE FOR EVERY SURFACE THAT OFFERS A FILING ACTION.
     settled:
       finding.disposition === undefined ||
-      offersAFilingAction({ disposition: finding.disposition }, finding.headlineMode),
+      offersAFilingAction(
+        { disposition: finding.disposition },
+        "headlineMode" in finding ? finding.headlineMode : undefined,
+      ),
   };
 };
 

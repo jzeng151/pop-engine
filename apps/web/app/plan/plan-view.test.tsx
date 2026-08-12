@@ -946,6 +946,34 @@ describe("the routes of a merged dedupe line", () => {
     );
   });
 
+  it("names the headline route in verdict-detail references", async () => {
+    const routes = [
+      route({ ruleId: "DOB-TALL-STRUCTURE-001", name: "Explicit headline route" }),
+      route({ ruleId: "DOB-TENT-001", name: "Other route" }),
+    ];
+    stubApi(
+      plan({
+        findings: [currentMerged(routes, { userSummary: null })],
+        verdict: "CONDITIONAL",
+        verdictDetail: {
+          ...emptyVerdictDetail,
+          unresolvedTimelines: [
+            {
+              ruleIds: routes.map((entry) => entry.ruleId),
+              reason: "Published filing window cannot be dated",
+            },
+          ],
+        },
+      }),
+    );
+    renderPlan();
+
+    const timelines = within(await screen.findByTestId("unresolved-timelines"));
+    const reference = timelines.getByRole("listitem").textContent ?? "";
+    expect(reference).toContain("Explicit headline route");
+    expect(reference).not.toContain(routes.map((entry) => entry.ruleId).join(", "));
+  });
+
   it("replays a pre-route merged scalar without inventing route attribution", async () => {
     stubApi(
       plan({

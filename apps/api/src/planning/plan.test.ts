@@ -467,6 +467,39 @@ describe.runIf(databaseUrl.length > 0)("plan API (F-201)", () => {
     expect(fetched.body.findings).toContainEqual(merged);
   });
 
+  it("normalizes an absent merged summary identically on generation and replay", async () => {
+    const eventId = await insertEvent({
+      location_type: "private_venue",
+      obstructs_public_way: null,
+      sapo_event_type: null,
+      street_event_size: null,
+      structure_types: ["tent_canopy"],
+      tent_area_sqft: 500,
+      tent_days_in_place: 2,
+      structure_over_10ft_tall: "yes",
+    });
+    const rulesetWithoutSummaries = {
+      ...ruleset,
+      rules: ruleset.rules.map((rule) => ({ ...rule, userSummary: null })),
+    };
+    const app = createApp({
+      database: pool,
+      intakeContract,
+      today: () => TODAY,
+      planService: createPlanService(pool, rulesetWithoutSummaries, fixtureCalendar, () => TODAY),
+    });
+
+    const generated = await request(app).post(`/api/events/${eventId}/plan`);
+    const fetched = await request(app).get(`/api/events/${eventId}/plan`);
+    const merged = (response: typeof generated) =>
+      response.body.findings.find((finding: { ruleIds: string[] }) =>
+        finding.ruleIds.includes("DOB-TENT-001"),
+      );
+
+    expect(merged(generated)).toHaveProperty("userSummary", null);
+    expect(merged(fetched)).toEqual(merged(generated));
+  });
+
   it("replays a pre-route merged snapshot as explicitly legacy without inventing attribution", async () => {
     const eventId = await insertEvent({
       location_type: "private_venue",

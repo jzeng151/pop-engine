@@ -895,6 +895,58 @@ describe("a merged line no route can supply the scalars for (#252)", () => {
     expect(headline(settled)?.feeDisplay).toBe("$1,050 licence fee");
     expect(headline(settled)?.deadlineStatus).not.toBe("not_calculable");
   });
+
+  it("does not recommend a rescope whose scalar-free merged route has an unresolved timeline", () => {
+    const fields = [
+      { field: "venue_type", type: "enum", values: ["unknown", "park", "private"] },
+      { field: "permit_path", type: "enum", values: ["unknown", "cafe"] },
+    ];
+    const evaluated = plan(
+      [
+        {
+          id: "PARKS-MISSED-001",
+          dedupeKey: null,
+          trigger: { all: [{ field: "venue_type", op: "eq", value: "park" }] },
+          output: {
+            permit_name: "Missed parks permit",
+            deadline: { type: "published_minimum", calendar_days: 200 },
+          },
+        },
+        {
+          id: "PRIVATE-ADVISORY-001",
+          kind: "advisory",
+          dedupeKey: "private-path",
+          trigger: { all: [{ field: "venue_type", op: "eq", value: "private" }] },
+          output: {
+            permit_name: "Private venue advisory",
+            deadline: { type: "research_required" },
+          },
+        },
+        {
+          id: "PRIVATE-CANDIDATE-001",
+          kind: "eligibility",
+          dedupeKey: "private-path",
+          trigger: {
+            all: [
+              { field: "venue_type", op: "eq", value: "private" },
+              { field: "permit_path", op: "eq", value: "cafe" },
+            ],
+          },
+          output: {
+            permit_name: "Private venue candidate permit",
+            deadline: { type: "research_required" },
+          },
+        },
+      ],
+      { venue_type: "park", permit_path: null },
+      fields,
+    );
+
+    expect(evaluated.verdict).toBe("INFEASIBLE");
+    expect(evaluated.verdictDetail.rescopeSuggestions).not.toContainEqual(
+      expect.objectContaining({ change: { field: "venue_type", value: "private" } }),
+    );
+  });
 });
 
 describe("every merged line the engine emits reads as its binding route, or as nobody (#252)", () => {
