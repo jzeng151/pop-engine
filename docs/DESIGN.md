@@ -4,7 +4,7 @@
 
 ## Decisions of 2026-07-22 (baseline correction)
 
-5. **Ruleset baseline is the corrected subset `nyc.v2.11`** (42 rules + 4 advisories, evidence-linked to `VERIFICATION-SOURCES.md`). The 59-rule draft stays in `rules/proposals/` as the post-capstone target. Scenario fixtures v7 derive from the ruleset.
+5. **Ruleset baseline is the corrected subset `nyc.v2.12`** (42 rules + 4 advisories, evidence-linked to `VERIFICATION-SOURCES.md`). The 59-rule draft stays in `rules/proposals/` as the post-capstone target. Scenario fixtures v7 derive from the ruleset.
 6. **The demo anchor is re-anchored:** a Large street event 35 days out misses its verified 45-day deadline (the universal 60-day SAPO lead was contradicted by primary sources).
 7. **Verdict model:** the four-state verdict stays as the top-level summary, computed from per-finding deadline statuses (ON_TRACK / DEADLINE_APPROACHING / PUBLISHED_DEADLINE_MISSED / NOT_CALCULABLE / NOT_APPLICABLE). INFEASIBLE copy = "published deadline missed as scoped." The 14-day slack threshold is labeled as internal policy.
 8. **Real business-day math** against a pinned holiday calendar replaces the calendar approximation (fixture dates are pinned, so determinism holds).
@@ -67,7 +67,7 @@ Permitted demo fallbacks for stretch features: seeded RSVP data, simulated email
 
 One integration point (the `events` schema — ratified for the access-gated demo 2026-07-27 through PR #137's recorded overwrite; strict production ratification and later shared/core-table changes remain the product owner's approval under `DOCUMENTATION-GOVERNANCE.md` §6, 2026-08-04); four lanes with minimal merge conflicts:
 
-- **Dev 1 — Rules engine + verdict:** F-201, F-102; owns engine fidelity to `rules/nyc-rules.v2.11.json` and the fixture suite. Verify: full fixture suite (scenarios + boundaries) passes as automated tests.
+- **Dev 1 — Rules engine + verdict:** F-201, F-102; owns engine fidelity to `rules/nyc-rules.v2.12.json` and the fixture suite. Verify: full fixture suite (scenarios + boundaries) passes as automated tests.
 - **Dev 2 — Intake + plan UI:** F-101 (incl. contradiction checks, "I don't know"), F-110, F-206, plan rendering. Verify: Scenario A renders end-to-end with citations + snapshot banner; Scenario F records and reloads both assembly-document confirmations.
 - **Dev 3 — Checklist + portals:** F-202, F-204. Verify: plan converts to checklist; every permit links to its portal with its document list.
 - **Dev 4 — Alerts + platform:** F-203, DB migrations, deploy, demo environment; **works the verification evidence** (the sign-off itself is the product owner's under `DOCUMENTATION-GOVERNANCE.md` §6, 2026-08-04, and that approval is the whole requirement even where the product owner authored it): confirms the ruleset's SOURCE_CONFIRMED facts in a browser (evidence pre-collected in `VERIFICATION-SOURCES.md`) and works the open research items (OPEN-QUESTIONS §2). Verify: a seeded deadline fires a real email/SMS; browser-confirmed facts are promoted per fact from SOURCE_CONFIRMED to VERIFIED.
@@ -106,4 +106,4 @@ Performed manually: the rules JSON is versioned in git, the answer key is the te
 
 - One spec per F-id in `/specs`; work follows the two-track model and dependency graph above, not a core-then-stretch sequence. F-206 plan rendering follows F-201, while its checklist integration waits for F-202. Phases 2+ get specs when scheduled, not now.
 - F-201's acceptance suite is the fixture set in `test-scenario-answer-key.md` (v7, derived from the ruleset). Authority for any disagreement: primary source → published rule → approved fixture → engine output → UI copy; fix the lower level, never bend the engine to a broken expectation.
-- `rules/nyc-rules.v2.11.json` is the crown jewel; version it like code. No fact enters it without an evidence reference to `VERIFICATION-SOURCES.md`; gaps are RESEARCH_REQUIRED, conflicts are OFFICIAL_CONFLICT, never guesses.
+- `rules/nyc-rules.v2.12.json` is the crown jewel; version it like code. No fact enters it without an evidence reference to `VERIFICATION-SOURCES.md`; gaps are RESEARCH_REQUIRED, conflicts are OFFICIAL_CONFLICT, never guesses.

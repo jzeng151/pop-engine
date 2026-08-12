@@ -4,7 +4,7 @@
 
 [![CI](https://github.com/jzeng151/pop-engine/actions/workflows/ci.yml/badge.svg)](https://github.com/jzeng151/pop-engine/actions/workflows/ci.yml)
 ![Node](https://img.shields.io/badge/node-%3E%3D22-brightgreen)
-![Ruleset](https://img.shields.io/badge/ruleset-nyc.v2.11-blue)
+![Ruleset](https://img.shields.io/badge/ruleset-nyc.v2.12-blue)
 ![Coverage gate](https://img.shields.io/badge/coverage%20gate-90%25-informational)
 
 ![Event field guide: one event record from permit planning through door-day operations](docs/screenshots/overview.jpg)
@@ -15,7 +15,7 @@
 
 ## What it does
 
-Independent organizers in New York City navigate permits across nine city and state agencies with filing deadlines from 14 to 60 days out, and festival classes that close December 31 of the *prior year*. Most find out too late. Today, avoiding that is sold as a professional service by event-production agencies.
+Independent organizers in New York City navigate permits across nine city and state agencies with filing deadlines from 14 to 60 days out, and festival classes that close December 31 of the _prior year_. Most find out too late. Today, avoiding that is sold as a professional service by event-production agencies.
 
 PopEngine answers a short intake and returns a dated feasibility verdict. Here is real output from the demo scenario:
 
@@ -109,15 +109,15 @@ pnpm build
 
 ## Repo map
 
-| Path | What lives there |
-| --- | --- |
-| `apps/web` | organizer UI: intake, plan, checklist, public event page, check-in, live ops |
-| `apps/api` | Express API, migrations, in-process alert poller |
-| `packages/engine` | pure rules evaluation with no DB, HTTP, env, or clock |
-| `rules/` | the published immutable NYC ruleset (exactly one active file) |
-| `specs/` | approved feature specifications (`F-*`) |
-| `docs/` | PRD, architecture, baseline manifest, verification sources, answer key |
-| `scripts/` | governance guards wired into `pnpm check:baseline` |
+| Path              | What lives there                                                             |
+| ----------------- | ---------------------------------------------------------------------------- |
+| `apps/web`        | organizer UI: intake, plan, checklist, public event page, check-in, live ops |
+| `apps/api`        | Express API, migrations, in-process alert poller                             |
+| `packages/engine` | pure rules evaluation with no DB, HTTP, env, or clock                        |
+| `rules/`          | the published immutable NYC ruleset (exactly one active file)                |
+| `specs/`          | approved feature specifications (`F-*`)                                      |
+| `docs/`           | PRD, architecture, baseline manifest, verification sources, answer key       |
+| `scripts/`        | governance guards wired into `pnpm check:baseline`                           |
 
 ## Contributing
 
@@ -132,19 +132,19 @@ See **`DEPLOY.md`**: Railway (host) · Supabase (Postgres, storage, auth) · Res
 <details>
 <summary><strong>Tech stack</strong></summary>
 
-| Layer | Choice |
-| --- | --- |
-| Monorepo | pnpm workspaces |
-| Web | Next.js (App Router), TypeScript |
-| API | Express, TypeScript |
-| Rules engine | `packages/engine`, pure TS |
-| Database | Postgres 16 (Supabase in demo) |
-| Object storage | S3-compatible (Supabase Storage) |
-| Auth | Supabase Auth (F-701 foundation; production gated on F-702/F-703) |
-| Email / SMS | Resend / Twilio (SMS is a labeled simulation until A2P clears) |
-| Demo gate | Cloudflare Access (CORS is not auth) |
-| Host | Railway |
-| Tests | Vitest, 90% coverage gate |
+| Layer          | Choice                                                            |
+| -------------- | ----------------------------------------------------------------- |
+| Monorepo       | pnpm workspaces                                                   |
+| Web            | Next.js (App Router), TypeScript                                  |
+| API            | Express, TypeScript                                               |
+| Rules engine   | `packages/engine`, pure TS                                        |
+| Database       | Postgres 16 (Supabase in demo)                                    |
+| Object storage | S3-compatible (Supabase Storage)                                  |
+| Auth           | Supabase Auth (F-701 foundation; production gated on F-702/F-703) |
+| Email / SMS    | Resend / Twilio (SMS is a labeled simulation until A2P clears)    |
+| Demo gate      | Cloudflare Access (CORS is not auth)                              |
+| Host           | Railway                                                           |
+| Tests          | Vitest, 90% coverage gate                                         |
 
 Current artifact versions are in `docs/BASELINE.md`.
 

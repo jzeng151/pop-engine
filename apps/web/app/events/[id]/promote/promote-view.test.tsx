@@ -31,6 +31,7 @@ const sample = {
   map_url: "https://maps.google.com/?q=Lot",
   infeasible_warning: true,
   plan_available: true,
+  publication_blocked: false,
 };
 
 describe("PromoteView", () => {
@@ -51,13 +52,33 @@ describe("PromoteView", () => {
         webOrigin="https://web.example.com"
       />,
     );
-    expect(await screen.findByText(/latest plan is infeasible/i)).toBeDefined();
+    expect(await screen.findByText(/published deadline was missed/i)).toBeDefined();
     await user.type(screen.getByLabelText("Description"), "Come through");
     await user.click(screen.getByRole("button", { name: "Publish page" }));
     await waitFor(() => {
       expect(screen.getByText("Public page is live.")).toBeDefined();
     });
     expect(screen.getByText(`https://web.example.com/e/${EVENT_ID}`)).toBeDefined();
+  });
+
+  it("explains a prohibition and disables publication", async () => {
+    const fetchMock = vi.fn(async () =>
+      jsonResponse(200, { ...sample, publication_blocked: true }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+    render(
+      <PromoteView
+        eventId={EVENT_ID}
+        apiBaseUrl="https://api.example.com"
+        webOrigin="https://web.example.com"
+      />,
+    );
+
+    expect(await screen.findByText(/published prohibition or ineligibility/i)).toBeDefined();
+    expect(screen.getByRole<HTMLButtonElement>("button", { name: "Publish page" }).disabled).toBe(
+      true,
+    );
+    expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 
   it("builds the share URL from the browser origin when webOrigin is unset", async () => {

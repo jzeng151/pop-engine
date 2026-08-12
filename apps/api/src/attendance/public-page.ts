@@ -70,16 +70,23 @@ async function readEvent(database: Queryable, eventId: string): Promise<EventPub
   return rows[0] ?? null;
 }
 
-async function latestVerdict(database: Queryable, eventId: string): Promise<string | null> {
-  const { rows } = await database.query<{ verdict: string }>(
-    `SELECT verdict
+type LatestPlanState = { verdict: string; publication_blocked: boolean };
+
+async function latestPlanState(
+  database: Queryable,
+  eventId: string,
+): Promise<LatestPlanState | null> {
+  const { rows } = await database.query<LatestPlanState>(
+    `SELECT verdict,
+            verdict_detail #>> '{blockingFinding,disposition}' = 'prohibited_or_ineligible'
+              AS publication_blocked
        FROM permit_plans
       WHERE event_id = $1
       ORDER BY generated_at DESC, id DESC
       LIMIT 1`,
     [eventId],
   );
-  return rows[0]?.verdict ?? null;
+  return rows[0] ?? null;
 }
 
 export type GetPublicEventResult =
@@ -94,7 +101,11 @@ export async function getPublicEvent(
     return { status: 400, body: { error: "That event link is not valid." } };
   }
   const event = await readEvent(database, eventId);
-  if (event === null || !event.public_page_published) {
+  if (
+    event === null ||
+    !event.public_page_published ||
+    (await latestPlanState(database, eventId))?.publication_blocked === true
+  ) {
     return { status: 404, body: { error: "That event page is not available." } };
   }
   return { status: 200, body: toPublicPayload(event) };
@@ -112,6 +123,7 @@ export type OrganizerPublicPage = {
   map_url: string | null;
   infeasible_warning: boolean;
   plan_available: boolean;
+  publication_blocked: boolean;
 };
 
 export type GetOrganizerPageResult =
@@ -128,7 +140,7 @@ export async function getOrganizerPublicPage(
   if (event === null) {
     return { status: 404, body: { error: "That event was not found." } };
   }
-  const verdict = await latestVerdict(database, eventId);
+  const plan = await latestPlanState(database, eventId);
   return {
     status: 200,
     body: {
@@ -141,8 +153,9 @@ export async function getOrganizerPublicPage(
       public_page_published: event.public_page_published,
       public_path: `/e/${event.id}`,
       map_url: mapUrlForVenue(event.location_name, event.borough),
-      infeasible_warning: verdict === "infeasible",
-      plan_available: verdict !== null,
+      infeasible_warning: plan?.verdict === "infeasible",
+      plan_available: plan !== null,
+      publication_blocked: plan?.publication_blocked ?? false,
     },
   };
 }
@@ -190,7 +203,8 @@ export async function patchOrganizerPublicPage(
     published = record.public_page_published;
   }
 
-  if (published === true && (await latestVerdict(database, eventId)) === null) {
+  const plan = published === true ? await latestPlanState(database, eventId) : null;
+  if (published === true && plan === null) {
     const event = await readEvent(database, eventId);
     return event === null
       ? { status: 404, body: { error: "That event was not found." } }
@@ -198,6 +212,15 @@ export async function patchOrganizerPublicPage(
           status: 409,
           body: { error: "Generate a permit plan before publishing this page." },
         };
+  }
+  if (published === true && plan?.publication_blocked === true) {
+    return {
+      status: 409,
+      body: {
+        error:
+          "This event is blocked as scoped by a published prohibition or ineligibility. Rescope and generate a new plan before publishing.",
+      },
+    };
   }
 
   // Update only supplied columns so a description-only save cannot clobber a concurrent

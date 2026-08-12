@@ -24,6 +24,7 @@ const sample = {
   map_url: "https://maps.google.com/?q=Lot",
   infeasible_warning: false,
   plan_available: true,
+  publication_blocked: false,
 };
 
 describe("promote-api", () => {

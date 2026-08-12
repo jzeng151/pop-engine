@@ -1034,13 +1034,17 @@ describe("Boundary and unit fixtures (AC 8)", () => {
   };
 
   it("block party plus sales renders PROHIBITED_OR_INELIGIBLE while still listing the permit", () => {
-    const ruleIds = ruleIdsOf(plan({ ...blockParty, selling_anything: true }));
+    const result = plan({ ...blockParty, selling_anything: true });
+    const ruleIds = ruleIdsOf(result);
     expect(ruleIds).toContain("SAPO-BLOCK-PARTY-001");
     const eligibility = plan({ ...blockParty, selling_anything: true }).findings.find((finding) =>
       finding.ruleIds.includes("SAPO-BLOCK-PARTY-ELIG-001"),
     );
     expect(eligibility?.disposition).toBe("prohibited_or_ineligible");
     expect(eligibility?.noteText).toContain("rescope or apply under a different SAPO class");
+    expect(result.verdict).toBe("INFEASIBLE");
+    expect(result.verdictDetail.blockingFinding?.ruleIds).toEqual(["SAPO-BLOCK-PARTY-ELIG-001"]);
+    expect(result.verdictDetail.missedRuleIds).toEqual([]);
   });
 
   it("block party with a ride adds the insurance finding", () => {
@@ -1072,6 +1076,58 @@ describe("Boundary and unit fixtures (AC 8)", () => {
     expect(ruleIdsOf(plan({ ...tentIntake(100), tent_days_in_place: 30 }))).toEqual([
       "DOB-TENT-001",
     ]);
+  });
+
+  it("prop/truss height no, unknown, and yes resolve to none, conditional, and required", () => {
+    const propTruss = (height: "no" | "unknown" | "yes") =>
+      plan({
+        ...neutralIntake,
+        structure_types: ["prop_truss"],
+        structure_over_10ft_tall: height,
+      });
+
+    expect(ruleIdsOf(propTruss("no"))).toEqual([]);
+    const unknown = substantiveFindings(propTruss("unknown"));
+    expect(unknown.map((finding) => finding.ruleIds)).toEqual([["DOB-PROP-TRUSS-001"]]);
+    expect(unknown[0]?.disposition).toBe("may_be_required");
+    expect(propTruss("unknown").verdict).toBe("CONDITIONAL");
+    const yes = substantiveFindings(propTruss("yes"));
+    expect(yes.map((finding) => finding.ruleIds)).toEqual([["DOB-PROP-TRUSS-001"]]);
+    expect(yes[0]?.disposition).toBe("required");
+  });
+
+  it("reconciles propane and charcoal/wood fuel paths by venue", () => {
+    const fuelPlan = (
+      locationType: "park" | "private_venue",
+      fuels: EventIntake["open_flame_or_cooking"],
+    ) => plan({ ...neutralIntake, location_type: locationType, open_flame_or_cooking: fuels });
+    const has = (result: PermitPlan, ruleId: string) => ruleIdsOf(result).includes(ruleId);
+
+    const parkPropane = fuelPlan("park", ["propane_lpg"]);
+    expect(has(parkPropane, "PARKS-PROPANE-001")).toBe(true);
+    expect(has(parkPropane, "FDNY-FUEL-001")).toBe(false);
+    expect(parkPropane.verdict).toBe("INFEASIBLE");
+    expect(parkPropane.verdictDetail.rescopeSuggestions).toContainEqual(
+      expect.objectContaining({
+        change: { field: "open_flame_or_cooking", value: "none" },
+        droppedRuleIds: ["PARKS-PROPANE-001"],
+      }),
+    );
+
+    const parkCharcoal = fuelPlan("park", ["charcoal_wood"]);
+    expect(has(parkCharcoal, "FDNY-FUEL-001")).toBe(true);
+    expect(has(parkCharcoal, "PARKS-PROPANE-001")).toBe(false);
+
+    const mixedPark = fuelPlan("park", ["propane_lpg", "charcoal_wood"]);
+    expect(has(mixedPark, "PARKS-PROPANE-001")).toBe(true);
+    expect(has(mixedPark, "FDNY-FUEL-001")).toBe(true);
+    expect(
+      mixedPark.findings.find((finding) => finding.ruleIds.includes("FDNY-FUEL-001"))?.name,
+    ).toContain("charcoal/wood");
+
+    const nonParkPropane = fuelPlan("private_venue", ["propane_lpg"]);
+    expect(has(nonParkPropane, "FDNY-FUEL-001")).toBe(true);
+    expect(has(nonParkPropane, "PARKS-PROPANE-001")).toBe(false);
   });
 
   const stageIntake = (heightFt: number, areaSqft: number): EventIntake => ({

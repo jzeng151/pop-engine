@@ -350,7 +350,7 @@ export type EvaluationTraceEntry = { readonly ruleId: string; readonly result: T
 export type UnresolvedTimeline = { readonly ruleIds: readonly string[]; readonly reason: string };
 
 export type VerdictDetail = {
-  /** The route whose published window closed, never the merged line that holds it. */
+  /** The resolved prohibition or closed-window route that blocks, never its merged line. */
   readonly blockingFinding: {
     readonly ruleIds: readonly string[];
     readonly name: string | null;

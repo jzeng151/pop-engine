@@ -34,7 +34,7 @@ export type DefiniteRoutes = {
   /**
    * Rules that published a disposition at or above `required` AND whose own trigger resolved, so
    * the requirement or bar they assert does not hang off an unanswered question. `verdict.ts` reads
-   * this to decide which missed routes may close a plan; see `blocksWhenMissed` there.
+   * this to decide which resolved prohibitions or missed routes may close a plan.
    */
   readonly blockingRuleIds: ReadonlySet<string>;
 };
@@ -193,6 +193,15 @@ export const canBlockWhenMissed = (
   verificationStatus !== "OFFICIAL_CONFLICT" &&
   DISPOSITION_STRENGTH.indexOf(route.disposition) >=
     DISPOSITION_STRENGTH.indexOf(BLOCKING_DISPOSITION_FLOOR);
+
+/** Whether a resolved published prohibition or ineligibility closes the plan without a deadline. */
+export const canBlockOverall = (
+  route: Pick<FindingRoute, "disposition" | "triggerResult">,
+  verificationStatus: VerificationStatus,
+): boolean =>
+  route.triggerResult === "true" &&
+  verificationStatus !== "OFFICIAL_CONFLICT" &&
+  route.disposition === "prohibited_or_ineligible";
 
 /** One contributing route to a group's requirement: its finding, and whether its own trigger resolved. */
 type Contribution = {

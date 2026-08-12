@@ -226,6 +226,7 @@ function RescopeReason({
   blockerReference: FindingReference | null;
 }) {
   if (blockingFinding === null) return null;
+  const prohibited = blockingFinding.disposition === "prohibited_or_ineligible";
   const removesBlocker = suggestion.droppedRuleIds.some((ruleId) =>
     blockingFinding.ruleIds.includes(ruleId),
   );
@@ -236,10 +237,11 @@ function RescopeReason({
         <>
           This removes{" "}
           {blockerReference === null ? null : <FindingReferences references={[blockerReference]} />}{" "}
-          — the missed-deadline finding that blocks the current event date.
+          — the {prohibited ? "prohibition or ineligibility" : "missed-deadline finding"} that
+          blocks the current event.
         </>
       ) : (
-        "A full re-evaluation under this change no longer returns the current missed-deadline result."
+        `A full re-evaluation under this change no longer returns the current ${prohibited ? "prohibition or ineligibility" : "missed-deadline"} result.`
       )}
     </p>
   );
@@ -640,21 +642,27 @@ export function VerdictDetailPanel({
       blockerFacts?.disposition === undefined
         ? true
         : offersAFilingAction({ disposition: blockerFacts.disposition }, null);
+    const blockerIsProhibited = blockerFacts?.disposition === "prohibited_or_ineligible";
+    const blockerIsMissed = blockerFacts?.deadlineStatus === "published_deadline_missed";
     return (
       <div className="verdict-detail" data-testid="verdict-detail">
         {blocker !== null && (
           <section className="verdict-detail__blocker" data-testid="blocking-finding">
-            <h2 className="verdict-detail__section-title">What blocks this date as scoped</h2>
+            <h2 className="verdict-detail__section-title">What blocks this event as scoped</h2>
             <p className="verdict-detail__blocker-name">
               {blockerReference === null ? null : (
                 <FindingReferences references={[blockerReference]} />
               )}
             </p>
             <p className="verdict-detail__blocker-reason">
-              This blocks the date because the published deadline was missed as scoped.
-              {blockerFacts?.deadlineDisplay != null &&
+              {blockerIsProhibited
+                ? "This blocks the event as scoped because the published rule marks this setup prohibited or ineligible."
+                : "This blocks the event date because the published deadline was missed as scoped."}
+              {!blockerIsProhibited &&
+                blockerFacts?.deadlineDisplay != null &&
                 ` Published timing: ${blockerFacts.deadlineDisplay}.`}
-              {blockerFacts?.latestApplyDate != null &&
+              {!blockerIsProhibited &&
+                blockerFacts?.latestApplyDate != null &&
                 ` The latest published apply-by date was ${blockerFacts.latestApplyDate}.`}
             </p>
             <PortalBlock
@@ -663,9 +671,11 @@ export function VerdictDetailPanel({
               instructionsClassName="verdict-detail__blocker-instructions"
               lead={blockerOffersFiling ? "apply at" : "portal"}
             />
-            {missedRoutes.length > 1 && (
+            {missedRoutes.length > (blockerIsMissed ? 1 : 0) && (
               <p className="verdict-detail__missed">
-                All published deadlines missed as scoped:{" "}
+                {blockerIsProhibited
+                  ? "Published deadlines also missed as scoped: "
+                  : "All published deadlines missed as scoped: "}
                 <FindingReferences references={missedRoutes.map((entry) => entry.reference)} />
               </p>
             )}

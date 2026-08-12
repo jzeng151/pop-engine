@@ -117,7 +117,7 @@ describe("regeneratePlan", () => {
       {
         error: "plan generation refused",
         rulesetVersion: "nyc.v2.10",
-        pinnedRulesetVersion: "nyc.v2.11",
+        pinnedRulesetVersion: "nyc.v2.12",
         standing: "older",
       },
       true,

@@ -26,6 +26,7 @@ import {
   PUBLISHED_ROUTE_FIELDS,
   bindingRouteOf,
   branchesForceInfeasible,
+  canBlockOverall,
   canBlockWhenMissed,
   mergedDispositionOf,
   noRouteSuppliesScalars,
@@ -665,7 +666,7 @@ const BLOCKER_ROUTE_FIELDS = [
 const triggerResultOf = (plan: PlanResponse, ruleId: string): Tristate | null =>
   (plan.verdictDetail.trace ?? []).find((entry) => entry.ruleId === ruleId)?.result ?? null;
 
-const blockerIsANarrowedMissedRoute = (plan: PlanResponse): boolean => {
+const blockerIsAValidNarrowedRoute = (plan: PlanResponse): boolean => {
   const blocker = plan.verdictDetail.blockingFinding;
 
   // TWO SHAPES MAKE NO CLAIM, and they are the only two accepted without evaluating the conditions.
@@ -679,9 +680,6 @@ const blockerIsANarrowedMissedRoute = (plan: PlanResponse): boolean => {
   // 2.
   const finding = plan.findings.find((entry) => entry.ruleIds.includes(ruleId));
   if (finding === undefined) return false;
-
-  // 3.
-  if (!plan.verdictDetail.missedRuleIds.includes(ruleId)) return false;
 
   // TWO SHAPES THE ENGINE PRODUCES, AND ONLY ONE OF THEM IS THE RETURNED FINDING.
   if (narrowedBlockerHolds(plan, blocker, finding, ruleId)) return true;
@@ -742,12 +740,10 @@ const narrowedBlockerHolds = (
     // 7 on an unmerged finding, whose trigger result is READ rather than assumed.
     const traced = triggerResultOf(plan, ruleId);
     if (traced === null) return false;
+    const candidate = { disposition: finding.disposition, triggerResult: traced };
     if (
-      !windowIsMissed(finding) ||
-      !canBlockWhenMissed(
-        { disposition: finding.disposition, triggerResult: traced },
-        finding.verificationStatus,
-      )
+      !canBlockOverall(candidate, finding.verificationStatus) &&
+      !(windowIsMissed(finding) && canBlockWhenMissed(candidate, finding.verificationStatus))
     ) {
       return false;
     }
@@ -756,8 +752,11 @@ const narrowedBlockerHolds = (
     );
   }
 
-  // 7. It is a route a missed window may close a plan on.
-  if (!windowIsMissed(route) || !canBlockWhenMissed(route, finding.verificationStatus))
+  // 7. It is either a resolved prohibition or a route whose missed window may close the plan.
+  if (
+    !canBlockOverall(route, finding.verificationStatus) &&
+    !(windowIsMissed(route) && canBlockWhenMissed(route, finding.verificationStatus))
+  )
     return false;
 
   return agreesWithRoute(blocker, route, BLOCKER_ROUTE_FIELDS);
@@ -766,7 +765,7 @@ const narrowedBlockerHolds = (
 const readPlan = (body: unknown): PlanResponse | null => {
   const plan = readChecked(PLAN_CHECKS, body);
   if (plan === null) return null;
-  return blockerIsANarrowedMissedRoute(plan) ? normalizePlan(plan) : null;
+  return blockerIsAValidNarrowedRoute(plan) ? normalizePlan(plan) : null;
 };
 
 /** The plan a set of findings was generated as (`GET /api/events/:id/plan`). */

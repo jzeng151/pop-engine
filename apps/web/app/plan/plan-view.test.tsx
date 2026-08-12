@@ -1509,10 +1509,10 @@ describe("the verdict's approved copy", () => {
     return document.querySelector(".plan__verdict")?.textContent ?? "";
   };
 
-  it("states a missed filing window as the approved copy, never as impossibility", async () => {
+  it("states the approved overall blocked verdict without claiming impossibility", async () => {
     const text = await verdictText("INFEASIBLE");
 
-    expect(text).toContain("Published deadline missed as scoped");
+    expect(text).toContain("Blocked as scoped");
     expect(text.toLowerCase()).not.toContain("infeasible");
     expect(text.toLowerCase()).not.toContain("impossible");
   });
@@ -1697,7 +1697,7 @@ describe("F-102 · CONDITIONAL branch table and INFEASIBLE rescope ladder", () =
     const fact = screen.getByTestId("missing-fact");
     expect(fact.textContent).toContain("venue license covers event area");
     expect(within(fact).getByText("Depends on")).toBeDefined();
-    expect(within(fact).getByText("Published deadline missed as scoped")).toBeDefined();
+    expect(within(fact).getByText("Blocked as scoped")).toBeDefined();
     expect(within(fact).getByText("sound audibility still open")).toBeDefined();
     expect(within(fact).getByText("SLA one-day window missed")).toBeDefined();
   });
@@ -1991,8 +1991,8 @@ describe("F-102 · CONDITIONAL branch table and INFEASIBLE rescope ladder", () =
             ruleIds: ["PARKS-PROPANE-001"],
             name: "Propane prohibited in this park",
             disposition: "prohibited_or_ineligible",
-            deadlineStatus: "published_deadline_missed",
-            latestApplyDate: "2026-07-12",
+            deadlineStatus: "not_applicable",
+            latestApplyDate: null,
             portalName: "Parks permit office",
             portalUrl: null,
             portalInstructions: "File in person at the borough office",
@@ -2007,8 +2007,8 @@ describe("F-102 · CONDITIONAL branch table and INFEASIBLE rescope ladder", () =
             agency: "NYC Parks",
             disposition: "prohibited_or_ineligible",
             deadlineDisplay: null,
-            latestApplyDate: "2026-07-12",
-            deadlineStatus: "published_deadline_missed",
+            latestApplyDate: null,
+            deadlineStatus: "not_applicable",
             feeDisplay: null,
             portalName: "Parks permit office",
             portalUrl: null,
@@ -2016,7 +2016,7 @@ describe("F-102 · CONDITIONAL branch table and INFEASIBLE rescope ladder", () =
             sources: [],
             userSummary: null,
           },
-          missedRuleIds: ["PARKS-PROPANE-001"],
+          missedRuleIds: [],
           trace: [{ ruleId: "PARKS-PROPANE-001", result: "true" }],
         },
       }),
@@ -2025,6 +2025,10 @@ describe("F-102 · CONDITIONAL branch table and INFEASIBLE rescope ladder", () =
     await screen.findByTestId("verdict-detail");
 
     const blocker = screen.getByTestId("blocking-finding");
+    expect(blocker.textContent).toContain(
+      "published rule marks this setup prohibited or ineligible",
+    );
+    expect(blocker.textContent).not.toContain("published deadline was missed");
     expect(blocker.textContent).toContain("Parks permit office");
     expect(blocker.textContent).not.toContain("apply at");
     expect(blocker.textContent).not.toContain("File in person at the borough office");
@@ -2807,7 +2811,7 @@ describe("the metadata request", () => {
 
 describe("verdictCopy on its own", () => {
   it("returns the approved copy with no plan detail to draw slots from", () => {
-    expect(verdictCopy("INFEASIBLE")).toBe("Published deadline missed as scoped");
+    expect(verdictCopy("INFEASIBLE")).toBe("Blocked as scoped");
     expect(verdictCopy("FEASIBLE")).toBe("On track");
     expect(verdictCopy("CONDITIONAL")).toBe("Depends on");
     expect(verdictCopy("FEASIBLE_AT_RISK")).toBe("At risk");

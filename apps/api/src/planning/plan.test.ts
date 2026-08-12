@@ -112,7 +112,7 @@ describe.runIf(databaseUrl.length > 0)("plan API (F-201)", () => {
     const response = await request(appWith()).post(`/api/events/${eventId}/plan`);
 
     expect(response.status).toBe(201);
-    expect(response.body.rulesetVersion).toBe("nyc.v2.11");
+    expect(response.body.rulesetVersion).toBe("nyc.v2.12");
     expect(response.body.eventRevision).toBe(1);
     expect(response.body.verdict).toBe("INFEASIBLE");
     expect(response.body.findings.map((finding: { ruleIds: string[] }) => finding.ruleIds)).toEqual(

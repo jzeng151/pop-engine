@@ -763,7 +763,7 @@ describe("dedupe field merge (#239)", () => {
     );
     expect(deployed?.timelineUnresolvedReason).toContain("15 business days");
 
-    expect(deployed?.noteText).toContain("over 10 feet tall require a permit");
+    expect(deployed?.noteText).toContain("over 10 feet may require");
 
     expect(merged([])).toMatchObject({
       disposition: "required",
@@ -1011,7 +1011,7 @@ describe("an unknown trigger never blocks, however barred the finding (F-102 AC 
   });
 });
 
-describe("a merged line's window has to resolve too, not just its bar (F-102 AC 2, AC 10)", () => {
+describe("a resolved prohibition blocks independently of its window (F-102, amended 2026-08-12)", () => {
   const undatedBar = {
     id: "BAR-NODATE-001",
     kind: "prohibition",
@@ -1058,7 +1058,7 @@ describe("a merged line's window has to resolve too, not just its bar (F-102 AC 
   const routeOf = (plan: ReturnType<typeof planWithHeight>, ruleId: string) =>
     plan.findings[0]?.routes?.find((route) => route.ruleId === ruleId);
 
-  it("waits for the answer when the window comes from the route that did not resolve", () => {
+  it("blocks on the resolved undated prohibition while another route's window is unresolved", () => {
     const plan = planWithHeight("unknown");
     expect(plan.findings).toHaveLength(1);
 
@@ -1067,12 +1067,10 @@ describe("a merged line's window has to resolve too, not just its bar (F-102 AC 
     expect(routeOf(plan, "RULE-B")?.deadlineStatus).toBe("published_deadline_missed");
     expect(routeOf(plan, "RULE-B")?.latestApplyDate).toBe("2026-06-18");
 
-    expect(plan.verdict).toBe("CONDITIONAL");
-    expect(plan.verdictDetail.blockingFinding).toBeNull();
-
-    expect(plan.verdictDetail.missingFacts.map((fact) => fact.field)).toEqual([
-      "structure_height_ft",
-    ]);
+    expect(plan.verdict).toBe("INFEASIBLE");
+    expect(plan.verdictDetail.blockingFinding?.ruleIds).toEqual(["BAR-NODATE-001"]);
+    expect(plan.verdictDetail.blockingFinding?.deadlineStatus).toBe("not_applicable");
+    expect(plan.verdictDetail.missedRuleIds).toEqual(["RULE-B"]);
   });
 
   it("still blocks once that same route resolves", () => {
@@ -1080,7 +1078,8 @@ describe("a merged line's window has to resolve too, not just its bar (F-102 AC 
     expect(routeOf(plan, "RULE-B")?.deadlineStatus).toBe("published_deadline_missed");
     expect(plan.verdict).toBe("INFEASIBLE");
 
-    expect(plan.verdictDetail.blockingFinding?.ruleIds).toEqual(["RULE-B"]);
+    expect(plan.verdictDetail.blockingFinding?.ruleIds).toEqual(["BAR-NODATE-001"]);
+    expect(plan.verdictDetail.missedRuleIds).toEqual(["RULE-B"]);
   });
 
   const barredDatedRoute = {
@@ -1968,7 +1967,7 @@ describe("ruleset parsing rejects anything it cannot evaluate", () => {
   });
 
   it("accepts the published ruleset unchanged", () => {
-    expect(ruleset.rulesetVersion).toBe("nyc.v2.11");
+    expect(ruleset.rulesetVersion).toBe("nyc.v2.12");
     expect(ruleset.slackWarningDays).toBe(14);
     expect(ruleset.rules).toHaveLength(46);
   });
