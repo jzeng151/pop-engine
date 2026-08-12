@@ -234,6 +234,30 @@ describe("Scenario A — Bushwick Street Activation (demo anchor)", () => {
   });
 });
 
+describe("multi-select rescope candidates (#250)", () => {
+  it("re-evaluates structure alternatives as multi-select answers", () => {
+    const result = plan({
+      ...baseIntake,
+      borough: "brooklyn",
+      location_type: "street",
+      headcount: 50,
+      event_date: "2026-08-05",
+      event_open_to_public: "yes",
+      structure_types: ["tent_canopy"],
+      tent_area_sqft: 300,
+      tent_days_in_place: 30,
+      structure_over_10ft_tall: "yes",
+    });
+
+    expect(result.verdict).toBe("INFEASIBLE");
+    expect(result.verdictDetail.rescopeSuggestions).toContainEqual(
+      expect.objectContaining({
+        change: { field: "structure_types", value: "none" },
+      }),
+    );
+  });
+});
+
 describe("Scenario B — Gallery Pop-up (false-positive test)", () => {
   const intakeB: EventIntake = {
     ...baseIntake,
