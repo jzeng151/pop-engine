@@ -351,6 +351,7 @@ describe("SPEC-CONFLICT #130 business-day calendar", () => {
       "business-day computation is exercised against an explicitly supplied calendar",
     );
     expect(planSpec).toContain("every affected window returns `NOT_CALCULABLE`");
+    expect(planSpec).not.toContain("SPEC-CONFLICT #130 stays open");
     expect(architecture).toContain(
       "Production supplies `holidays: null` and returns NOT_CALCULABLE",
     );
