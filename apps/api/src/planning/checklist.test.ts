@@ -740,14 +740,7 @@ describe.runIf(databaseUrl.length > 0)("F-202 compliance checklist", () => {
           ORDER BY checklist_item_id, status`,
         [eventId],
       );
-      expect(alerts.filter((alert) => alert.checklist_item_id === endedPermit.id)).toHaveLength(
-        reminderOffsets.length,
-      );
-      expect(
-        alerts
-          .filter((alert) => alert.checklist_item_id === endedPermit.id)
-          .every((alert) => alert.status === "cancelled"),
-      ).toBe(true);
+      expect(alerts.filter((alert) => alert.checklist_item_id === endedPermit.id)).toHaveLength(0);
       expect(alerts.filter((alert) => alert.checklist_item_id === activePermit.id)).toHaveLength(
         reminderOffsets.length,
       );

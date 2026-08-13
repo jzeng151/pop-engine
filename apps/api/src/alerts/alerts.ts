@@ -13,7 +13,6 @@ import type {
   Deadline,
   DeadlineStatus,
   Disposition,
-  FindingKind,
   FindingRoute,
   VerificationStatus,
 } from "@pop-engine/engine";
@@ -274,8 +273,6 @@ export type AlertSchedulerSettings = {
 type PlanAlertRow = {
   checklist_item_id: string | null;
   rule_ids: string[];
-  /** Read to find a requirement's predecessor task; see `priorTaskIds`. */
-  kind: FindingKind;
   permit_name: string | null;
   agency: string | null;
   deadline: Deadline | null;
@@ -292,26 +289,13 @@ type PlanAlertRow = {
 type PlannedAlert = {
   readonly alertType: AlertType;
   readonly checklistItemId: string | null;
+  /** The published rule whose deadline or dependency produced this alert. */
+  readonly ruleId: string | null;
   readonly sendAt: Date;
   readonly subject: string;
   readonly body: string;
-  /**
-   * What this alert is about with no route in it: the task, the kind of alert, and for a reminder
-   * the published offset. The route joins it in `assignIdentities`, which is the ONE place an
-   * identity is minted. See the identity statement above that function.
-   */
-  readonly identityBase: string;
-  /**
-   * The route this alert was scheduled off, or null on a row that has no dedupe group.
-   *
-   * Provenance, not identity: it says which route produced these words, and `assignIdentities`
-   * decides which route NAMES them. The two differ whenever a line's routes publish the same copy.
-   */
-  readonly routeRuleId: string | null;
-  /** Every route of the merged line this alert came from, whether or not that route schedules an alert of its own. */
-  readonly groupRouteRuleIds: readonly string[];
-  /** The identity bases this same alert may already be stored under because its TASK moved. */
-  readonly priorIdentityBases: readonly string[];
+  /** Stable across plan and checklist regeneration; channel and destination join it in the row key. */
+  readonly identity: string;
   /**
    * The event revision this alert's plan was evaluated at, for the one row the staleness JOIN
    * cannot reach. Only the plan-level slack warning sets it; everything else finds its plan
@@ -324,25 +308,6 @@ type PlannedAlert = {
   readonly routeScheduled?: true;
   /** The slot this alert was MEANT for, before it was clamped forward if that moment had passed. */
   readonly intendedAt?: string;
-};
-
-/** A planned alert with its identity minted. See the statement above `assignIdentities`. */
-type ScheduledAlert = PlannedAlert & {
-  /**
-   * What makes this alert the same alert across regenerations. Combined with the channel and the
-   * destination into the row's `idempotency_key`, which is what keeps a sent alert from being sent
-   * again (AC 7).
-   */
-  readonly identity: string;
-  /** The identities these same words may already be stored under, for a route-keyed alert only. */
-  readonly supersededIdentities: readonly string[];
-  /**
-   * The keys this alert may be stored under because its TASK moved, matched only against a row that
-   * was DELIVERED. See the adoption query for why the status test belongs to this set alone.
-   */
-  readonly priorTaskIdentities: readonly string[];
-  /** The identities this reminder may already be stored under WHATEVER WORDS those rows carry, because no other reminder of this generation can claim them. */
-  readonly coalescedIdentities: readonly string[];
 };
 
 const isoDate = (value: Date | string | null): string | null =>
@@ -387,7 +352,7 @@ async function planVerdict(database: Queryable, planId: string): Promise<PlanVer
 /** The plan's requirements with the checklist row each became, in filing order. */
 async function planAlertRows(database: Queryable, planId: string): Promise<PlanAlertRow[]> {
   const { rows } = await database.query<PlanAlertRow>(
-    `SELECT checklist.id AS checklist_item_id, item.rule_ids, item.kind, item.permit_name, item.agency,
+    `SELECT checklist.id AS checklist_item_id, item.rule_ids, item.permit_name, item.agency,
             item.deadline, item.latest_apply_date, item.apply_after_date, item.deadline_status,
             item.fee_display, item.portal_name,
             item.portal_url, item.disposition, item.verification_status
@@ -401,116 +366,17 @@ async function planAlertRows(database: Queryable, planId: string): Promise<PlanA
   return rows;
 }
 
-/** The checklist rows this event's requirements USED TO BE, keyed by the row each is now. */
-type PriorTask = { readonly id: string; readonly ruleIds: readonly string[] };
-
-async function priorTaskIds(
-  database: Queryable,
-  planId: string,
-): Promise<Map<string, PriorTask[]>> {
-  const { rows } = await database.query<{
-    checklist_item_id: string;
-    rule_ids: string[];
-    kind: FindingKind;
-    plan_id: string;
-  }>(
-    `SELECT checklist.id AS checklist_item_id, item.rule_ids, item.kind, plan.id AS plan_id
-       FROM checklist_items AS checklist
-       JOIN permit_plan_items AS item ON item.id = checklist.plan_item_id
-       JOIN permit_plans AS plan ON plan.id = item.plan_id
-      WHERE plan.event_id = (SELECT event_id FROM permit_plans WHERE id = $1)`,
-    [planId],
-  );
-  // EVERY GENERATION OF THE EVENT, IN ORDER, AND WHAT EACH ONE HELD.
-  const { rows: history } = await database.query<{
-    plan_id: string;
-    rule_ids: string[] | null;
-    kind: FindingKind | null;
-  }>(
-    `SELECT plan.id AS plan_id, item.rule_ids, item.kind
-       FROM permit_plans AS plan
-       LEFT JOIN permit_plan_items AS item ON item.plan_id = plan.id
-      WHERE plan.event_id = (SELECT event_id FROM permit_plans WHERE id = $1)
-      ORDER BY plan.generated_at, plan.id`,
-    [planId],
-  );
-  const planOrder: string[] = [];
-  const heldBy = new Map<string, { ruleIds: string[]; kind: FindingKind }[]>();
-  for (const row of history) {
-    if (!heldBy.has(row.plan_id)) {
-      planOrder.push(row.plan_id);
-      heldBy.set(row.plan_id, []);
-    }
-    if (row.rule_ids !== null && row.kind !== null) {
-      (heldBy.get(row.plan_id) as { ruleIds: string[]; kind: FindingKind }[]).push({
-        ruleIds: row.rule_ids,
-        kind: row.kind,
-      });
-    }
-  }
-  /** Whether the requirement was present in EVERY generation between the two, so that the later task continues the earlier one rather than restoring it after a gap. */
-  const presentThroughout = (from: string, to: string, prior: PriorTask, kind: FindingKind) => {
-    const start = planOrder.indexOf(from);
-    const end = planOrder.indexOf(to);
-    if (start < 0 || end < 0) return false;
-    for (let index = Math.min(start, end) + 1; index < Math.max(start, end); index += 1) {
-      const held = heldBy.get(planOrder[index] as string) ?? [];
-      const carried = held.some(
-        (entry) =>
-          entry.kind === kind && entry.ruleIds.some((ruleId) => prior.ruleIds.includes(ruleId)),
-      );
-      if (!carried) return false;
-    }
-    return true;
-  };
-  const byTask = new Map<string, PriorTask[]>();
-  for (const row of rows) {
-    const priors = rows
-      .filter(
-        (other) =>
-          other.checklist_item_id !== row.checklist_item_id &&
-          other.kind === row.kind &&
-          other.rule_ids.some((ruleId) => row.rule_ids.includes(ruleId)) &&
-          presentThroughout(
-            other.plan_id,
-            row.plan_id,
-            { id: other.checklist_item_id, ruleIds: other.rule_ids },
-            row.kind,
-          ),
-      )
-      .map((other) => ({ id: other.checklist_item_id, ruleIds: other.rule_ids }))
-      .sort((left, right) => left.id.localeCompare(right.id));
-    if (priors.length > 0) byTask.set(row.checklist_item_id, priors);
-  }
-  return byTask;
-}
-
-/** Every key a predecessor task could have stored this alert under. */
-const priorIdentitiesFor = (
-  priors: readonly PriorTask[],
-  ruleIds: readonly string[],
-  base: (taskId: string) => string,
-): string[] =>
-  priors.flatMap((prior) => {
-    const key = base(prior.id);
-    const suffixes = [...new Set([...prior.ruleIds, ...ruleIds])].sort();
-    return [key, ...suffixes.map((ruleId) => `${key}:${ruleId}`)];
-  });
-
 /** One scheduling subject: a plan row read through ONE of its published routes. */
 type AlertSubject = {
   readonly row: PlanAlertRow;
   readonly rendering: FindingRendering | undefined;
-  readonly routeRuleId: string | null;
-  /** Every route of the line, including the ones that schedule nothing. */
-  readonly groupRouteRuleIds: readonly string[];
+  readonly ruleId: string | null;
 };
 
 const subjectFromRoute = (
   row: PlanAlertRow,
   rendering: FindingRendering | undefined,
   route: FindingRoute,
-  groupRouteRuleIds: readonly string[],
 ): AlertSubject => ({
   row: {
     ...row,
@@ -540,8 +406,7 @@ const subjectFromRoute = (
           // THE SAME NARROWING, ON THE LAST PUBLISHED STRING THAT WAS STILL THE LINE'S.
           ...(route.conflictText === undefined ? {} : { conflict_text: route.conflictText }),
         },
-  routeRuleId: route.ruleId,
-  groupRouteRuleIds,
+  ruleId: route.ruleId,
 });
 
 /** Whether this scheduling subject is one an organizer can be told to act on. */
@@ -555,12 +420,17 @@ const isFilingSubject = (subject: AlertSubject): boolean =>
 function alertSubjects(row: PlanAlertRow, rendering: FindingRendering | undefined): AlertSubject[] {
   const routes = rendering?.routes;
   if (routes == null || routes.length < 2) {
-    return [{ row, rendering, routeRuleId: null, groupRouteRuleIds: [] }];
+    const ruleId =
+      row.rule_ids.length === 1
+        ? row.rule_ids[0]
+        : rendering?.headline_rule_id != null && row.rule_ids.includes(rendering.headline_rule_id)
+          ? rendering.headline_rule_id
+          : null;
+    return [{ row, rendering, ruleId: ruleId ?? null }];
   }
-  const groupRouteRuleIds = routes.map((route) => route.ruleId);
   return routes
     .filter((route) => route.latestApplyDate !== null || route.applyAfterDate !== null)
-    .map((route) => subjectFromRoute(row, rendering, route, groupRouteRuleIds));
+    .map((route) => subjectFromRoute(row, rendering, route));
 }
 
 const requirementLabel = (row: PlanAlertRow): string => row.permit_name ?? row.rule_ids.join(", ");
@@ -776,11 +646,10 @@ async function plannedAlerts(
   planId: string,
   settings: AlertSchedulerSettings,
   now: Date,
-): Promise<ScheduledAlert[]> {
+): Promise<PlannedAlert[]> {
   const plan = await planVerdict(client, planId);
   if (plan === null) return [];
   const rows = await planAlertRows(client, planId);
-  const priors = await priorTaskIds(client, planId);
   const renderings = await renderingsForPlan(client, planId);
   // KEYED BY EVERY CONTRIBUTING RULE ID, AND BY EVERY ROUTE, not by `rule_ids[0]`.
   const byRuleId = new Map<string, PlanAlertRow>();
@@ -809,12 +678,13 @@ async function plannedAlerts(
     if (planRow.checklist_item_id === null) continue;
     const planRendering = renderings.get(renderingKey(planRow.rule_ids));
     const subjects = alertSubjects(planRow, planRendering).filter(isFilingSubject);
-    // NO IDENTITY IS MINTED IN THIS LOOP.
-    for (const { row, rendering, routeRuleId, groupRouteRuleIds } of subjects) {
+    for (const { row, rendering, ruleId } of subjects) {
       const applyBy = isoDate(row.latest_apply_date);
       // The window this alert counts down to, recorded on the row wherever it is NOT the window the sweep would find through the checklist item, together with the fact that this alert is route-scheduled at all.
       const routeApplyBy =
-        routeRuleId === null ? {} : { routeScheduled: true as const, controllingApplyBy: applyBy };
+        rendering?.routes != null && rendering.routes.length >= 2
+          ? { routeScheduled: true as const, controllingApplyBy: applyBy }
+          : {};
 
       const openOn = isoDate(row.apply_after_date);
       const binding = DEPENDENCY_SEQUENCING_BINDINGS.find(
@@ -824,6 +694,11 @@ async function plannedAlerts(
 
       // A filing date already behind is not something to remind anyone to meet.
       if (applyBy !== null && applyBy >= schedulingToday) {
+        if (ruleId === null) {
+          throw new Error(
+            `cannot schedule alert for multi-rule item without recorded route attribution: ${row.rule_ids.join(", ")}`,
+          );
+        }
         for (const daysBefore of settings.reminderDaysBefore) {
           const sendOn = shiftDays(applyBy, -daysBefore);
           const { subject, body } = reminderCopy(row, rendering, applyBy, daysBefore, {
@@ -836,21 +711,14 @@ async function plannedAlerts(
           planned.push({
             alertType: "deadline_reminder",
             checklistItemId: row.checklist_item_id,
+            ruleId,
             ...routeApplyBy,
             // Already past at scheduling time — a checklist created inside the reminder window — is due NOW rather than at a moment that has gone (spec edge case, and AC 2's bound is measured from this field).
             sendAt: dueAt(sendOn).at,
             intendedAt: dueAt(sendOn).intended,
             subject,
             body,
-            // THE OFFSET IS PART OF WHICH REMINDER THIS IS, and the send day alone does not carry it.
-            identityBase: `${row.checklist_item_id}:deadline_reminder:${daysBefore}`,
-            priorIdentityBases: priorIdentitiesFor(
-              priors.get(row.checklist_item_id ?? "") ?? [],
-              row.rule_ids,
-              (taskId) => `${taskId}:deadline_reminder:${daysBefore}`,
-            ),
-            routeRuleId,
-            groupRouteRuleIds,
+            identity: `deadline_reminder:${daysBefore}:${ruleId}`,
           });
         }
       }
@@ -861,6 +729,11 @@ async function plannedAlerts(
       // No binding or no upstream row means nothing published names what this waits on, and an
       // unlock alert that cannot name its dependency is not the alert AC 4 asks for.
       if (openOn !== null && binding !== undefined && upstream !== undefined && filingStillOpen) {
+        if (ruleId === null) {
+          throw new Error(
+            `cannot schedule alert for multi-rule item without recorded route attribution: ${row.rule_ids.join(", ")}`,
+          );
+        }
         const { subject, body } = dependencyCopy(
           row,
           upstream,
@@ -872,22 +745,14 @@ async function plannedAlerts(
         planned.push({
           alertType: "dependency_unlocked",
           checklistItemId: row.checklist_item_id,
+          ruleId,
           ...routeApplyBy,
           // Same treatment as a reminder, and for the same reason: an unlock whose gate opened before the plan was materialized is due now, not at a past instant that would score it late against AC 2 the moment it was written.
           sendAt: dueAt(openOn).at,
           intendedAt: dueAt(openOn).intended,
           subject,
           body,
-          // NO DATE IN THIS ONE, and that is the difference between it and a reminder.
-          identityBase: `${row.checklist_item_id}:dependency_unlocked`,
-          // THE SIBLING, and it has the same defect for the same reason: keyed off the task, so a membership change moved it and told the organizer a second time that they may now pursue something they had already been told was.
-          priorIdentityBases: priorIdentitiesFor(
-            priors.get(row.checklist_item_id ?? "") ?? [],
-            row.rule_ids,
-            (taskId) => `${taskId}:dependency_unlocked`,
-          ),
-          routeRuleId,
-          groupRouteRuleIds,
+          identity: `dependency_unlocked:${ruleId}`,
         });
       }
     }
@@ -946,6 +811,7 @@ async function plannedAlerts(
     planned.push({
       alertType: "slack_warning",
       checklistItemId: null,
+      ruleId: null,
       // "Immediately at checklist creation" (spec Outputs): due the moment it is written.
       sendAt: now,
       subject,
@@ -955,71 +821,11 @@ async function plannedAlerts(
       // The controlling requirement's own filing date.
       controllingApplyBy,
       // KEYED ON THE RISK, not on the plan row.
-      identityBase: "slack_warning",
-      // The one identity with no task in it: the plan-level warning hangs off no checklist row, so
-      // nothing about it moves when a requirement's membership does.
-      priorIdentityBases: [],
-      routeRuleId: null,
-      groupRouteRuleIds: [],
+      identity: "slack_warning",
     });
   }
 
-  return assignIdentities(planned);
-}
-
-/** WHAT A REMINDER IS, AND WHAT ITS IDENTITY IS ACROSS EVERY TRANSITION IT CAN MAKE. */
-function assignIdentities(planned: readonly PlannedAlert[]): ScheduledAlert[] {
-  // THE TEST IS THE WORDS, NOT THE FIELDS THEY CAME FROM.
-  const groups = new Map<string, PlannedAlert[]>();
-  for (const alert of planned) {
-    const words = JSON.stringify([
-      alert.alertType,
-      alert.checklistItemId,
-      alert.subject,
-      alert.body,
-    ]);
-    const group = groups.get(words);
-    if (group === undefined) groups.set(words, [alert]);
-    else group.push(alert);
-  }
-
-  return [...groups.values()].map((group) => {
-    // The lowest id wins, over the SET of schedulings that deliver these words.
-    const first = group[0] as PlannedAlert;
-    const canonical =
-      first.routeRuleId === null
-        ? null
-        : ([...group]
-            .map((alert) => alert.routeRuleId)
-            .filter((ruleId): ruleId is string => ruleId !== null)
-            .sort()[0] ?? null);
-    const identity = canonical === null ? first.identityBase : `${first.identityBase}:${canonical}`;
-    // The routes whose schedulings THIS reminder coalesces, which no other reminder of this
-    // generation lists, so a row under one of their keys is this reminder whatever words it stores.
-    const coalescedRuleIds = new Set(
-      group
-        .map((alert) => alert.routeRuleId)
-        .filter((ruleId): ruleId is string => ruleId !== null && ruleId !== canonical),
-    );
-    const keyFor = (ruleId: string) => `${first.identityBase}:${ruleId}`;
-    const coalesced = canonical === null ? [] : [...coalescedRuleIds].sort().map(keyFor);
-    // Every OTHER key these same words could already be stored under: the pre-route-list key, and the routes of the line this reminder does not speak for, whether or not they schedule anything on this generation.
-    const priorBases = [...new Set(group.flatMap((alert) => alert.priorIdentityBases))].sort();
-    const routeSuffixes =
-      canonical === null
-        ? []
-        : [...new Set(group.flatMap((alert) => alert.groupRouteRuleIds))]
-            .filter((ruleId) => ruleId !== canonical && !coalescedRuleIds.has(ruleId))
-            .sort();
-    const superseded = canonical === null ? [] : [first.identityBase, ...routeSuffixes.map(keyFor)];
-    return {
-      ...first,
-      identity,
-      supersededIdentities: superseded,
-      coalescedIdentities: coalesced,
-      priorTaskIdentities: priorBases,
-    };
-  });
+  return planned;
 }
 
 /** A calendar day shifted by whole days, in UTC so no timezone can move the day itself. */
@@ -1029,7 +835,7 @@ function shiftDays(day: string, days: number): string {
   return shifted.toISOString().slice(0, 10);
 }
 
-/** The row's identity, per ARCHITECTURE's `{event_id}:{checklist_item_id}:{alert_type}:{send_at}` with three deviations the schema forces and the example (an "e.g.") does not cover: the channel is part of it, because `idempotency_key` is UNIQUE and the same alert on email and SMS is two rows; the plan-level slack warning is keyed on its plan instead of a send time it shares with the clock; and the DESTINATION is part of it, which is the third and is explained below. */
+/** Event + alert occasion + rule + channel + canonical destination: stable across regeneration. */
 const idempotencyKey = (
   eventId: string,
   identity: string,
@@ -1108,51 +914,6 @@ export function createAlertScheduler(settings: AlertSchedulerSettings): AlertSch
     const keys: string[] = [];
     /** Alerts this review brought back from `cancelled`, whose attempts belong to what it ended. */
     const revived: string[] = [];
-    // EVERY ADOPTION RUNS BEFORE ANY UPSERT, so a key holds the row that is its own by the time anything claims it.
-    for (const alert of planned) {
-      if (
-        alert.supersededIdentities.length === 0 &&
-        alert.coalescedIdentities.length === 0 &&
-        alert.priorTaskIdentities.length === 0
-      ) {
-        continue;
-      }
-      for (const channel of channels) {
-        // Non-null: `channels` is filtered on exactly this.
-        const recipient = recipientFor(contacts, channel) ?? "";
-        const key = idempotencyKey(eventId, alert.identity, channel, recipient);
-        // THE ROW THAT ALREADY SAID THESE WORDS TAKES THIS KEY, before the upsert can mint a second one beside it.
-        await client.query(
-          `UPDATE alerts SET idempotency_key = $2
-              WHERE id = (SELECT prior.id FROM alerts prior
-                           WHERE prior.idempotency_key = ANY($5::text[])
-                              OR (prior.idempotency_key = ANY($1::text[])
-                                  AND prior.payload->>'subject' = $3
-                                  AND prior.payload->>'body' = $4)
-                              OR (prior.idempotency_key = ANY($6::text[])
-                                  AND prior.status = 'sent'
-                                  AND prior.payload->>'subject' = $3
-                                  AND prior.payload->>'body' = $4)
-                           ORDER BY (prior.status = 'sent') DESC, prior.idempotency_key
-                           LIMIT 1)
-                AND NOT EXISTS (SELECT 1 FROM alerts held WHERE held.idempotency_key = $2)`,
-          [
-            alert.supersededIdentities.map((identity) =>
-              idempotencyKey(eventId, identity, channel, recipient),
-            ),
-            key,
-            alert.subject,
-            alert.body,
-            alert.coalescedIdentities.map((identity) =>
-              idempotencyKey(eventId, identity, channel, recipient),
-            ),
-            alert.priorTaskIdentities.map((identity) =>
-              idempotencyKey(eventId, identity, channel, recipient),
-            ),
-          ],
-        );
-      }
-    }
 
     for (const alert of planned) {
       for (const channel of channels) {
@@ -1163,16 +924,20 @@ export function createAlertScheduler(settings: AlertSchedulerSettings): AlertSch
         const { rows } = await client.query<{ id: string; inserted: boolean; revived: boolean }>(
           // The status BEFORE this statement, which `RETURNING` cannot see: it returns the row as written, and a revival is only recognisable by what the row was.
           `WITH prior_status AS (
-             SELECT status FROM alerts WHERE idempotency_key = $7
+             SELECT status FROM alerts WHERE idempotency_key = $8
            )
-           INSERT INTO alerts (id, event_id, checklist_item_id, alert_type, channel, recipient,
-                               idempotency_key, send_at, status, payload)
-             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'pending', $9::jsonb)
+           INSERT INTO alerts (id, event_id, checklist_item_id, rule_id, alert_type, channel,
+                               recipient, idempotency_key, send_at, status, payload)
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, 'pending', $10::jsonb)
            ON CONFLICT (idempotency_key) DO UPDATE
-             SET payload = CASE
+             SET checklist_item_id = EXCLUDED.checklist_item_id,
+                 rule_id = EXCLUDED.rule_id,
+                 payload = CASE
                    WHEN alerts.status = 'cancelled'
-                     THEN (alerts.payload - 'last_error' - 'delivery') || EXCLUDED.payload
-                   ELSE alerts.payload || EXCLUDED.payload
+                     THEN (alerts.payload - 'last_error' - 'delivery' - 'route_scheduled'
+                           - 'controlling_apply_by' - 'intended_at') || EXCLUDED.payload
+                   ELSE (alerts.payload - 'route_scheduled' - 'controlling_apply_by'
+                         - 'intended_at') || EXCLUDED.payload
                  END,
                  send_at = CASE WHEN ${HAS_A_FRESH_SCHEDULE} THEN EXCLUDED.send_at
                                 ELSE alerts.send_at END,
@@ -1188,6 +953,7 @@ export function createAlertScheduler(settings: AlertSchedulerSettings): AlertSch
             randomUUID(),
             eventId,
             alert.checklistItemId,
+            alert.ruleId,
             alert.alertType,
             channel,
             recipient,
