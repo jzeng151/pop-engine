@@ -370,7 +370,7 @@ async function planAlertRows(database: Queryable, planId: string): Promise<PlanA
 type AlertSubject = {
   readonly row: PlanAlertRow;
   readonly rendering: FindingRendering | undefined;
-  readonly ruleId: string;
+  readonly ruleId: string | null;
 };
 
 const subjectFromRoute = (
@@ -425,12 +425,7 @@ function alertSubjects(row: PlanAlertRow, rendering: FindingRendering | undefine
         ? row.rule_ids[0]
         : rendering?.headline_rule_id != null && row.rule_ids.includes(rendering.headline_rule_id)
           ? rendering.headline_rule_id
-          : undefined;
-    if (ruleId === undefined) {
-      throw new Error(
-        `cannot schedule alert for multi-rule item without recorded route attribution: ${row.rule_ids.join(", ")}`,
-      );
-    }
+          : null;
     return [{ row, rendering, ruleId }];
   }
   return routes
@@ -699,6 +694,11 @@ async function plannedAlerts(
 
       // A filing date already behind is not something to remind anyone to meet.
       if (applyBy !== null && applyBy >= schedulingToday) {
+        if (ruleId === null) {
+          throw new Error(
+            `cannot schedule alert for multi-rule item without recorded route attribution: ${row.rule_ids.join(", ")}`,
+          );
+        }
         for (const daysBefore of settings.reminderDaysBefore) {
           const sendOn = shiftDays(applyBy, -daysBefore);
           const { subject, body } = reminderCopy(row, rendering, applyBy, daysBefore, {
@@ -729,6 +729,11 @@ async function plannedAlerts(
       // No binding or no upstream row means nothing published names what this waits on, and an
       // unlock alert that cannot name its dependency is not the alert AC 4 asks for.
       if (openOn !== null && binding !== undefined && upstream !== undefined && filingStillOpen) {
+        if (ruleId === null) {
+          throw new Error(
+            `cannot schedule alert for multi-rule item without recorded route attribution: ${row.rule_ids.join(", ")}`,
+          );
+        }
         const { subject, body } = dependencyCopy(
           row,
           upstream,
@@ -929,8 +934,10 @@ export function createAlertScheduler(settings: AlertSchedulerSettings): AlertSch
                  rule_id = EXCLUDED.rule_id,
                  payload = CASE
                    WHEN alerts.status = 'cancelled'
-                     THEN (alerts.payload - 'last_error' - 'delivery') || EXCLUDED.payload
-                   ELSE alerts.payload || EXCLUDED.payload
+                     THEN (alerts.payload - 'last_error' - 'delivery' - 'route_scheduled'
+                           - 'controlling_apply_by' - 'intended_at') || EXCLUDED.payload
+                   ELSE (alerts.payload - 'route_scheduled' - 'controlling_apply_by'
+                         - 'intended_at') || EXCLUDED.payload
                  END,
                  send_at = CASE WHEN ${HAS_A_FRESH_SCHEDULE} THEN EXCLUDED.send_at
                                 ELSE alerts.send_at END,

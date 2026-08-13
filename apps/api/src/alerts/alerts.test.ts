@@ -3509,6 +3509,95 @@ describe.skipIf(databaseUrl === "")("F-203 deadline alerts", () => {
       expect(response.body.alerts).toMatchObject({ scheduled: 0, cancelled: 0 });
     });
 
+    it("ignores an unattributed legacy item until it has an alert-producing window", async () => {
+      const eventId = await createEvent(scenario("C"));
+      const planId = randomUUID();
+      const ambiguousItemId = randomUUID();
+      const validItemId = randomUUID();
+      await pool.query(
+        `INSERT INTO permit_plans (id, event_id, event_revision, ruleset_version, snapshot_date,
+                                   verdict, verdict_detail, intake_snapshot, generated_at)
+         VALUES ($1, $2, 1, $3, $4, 'feasible', $5::jsonb, '{}'::jsonb, current_timestamp)`,
+        [
+          planId,
+          eventId,
+          ruleset.rulesetVersion,
+          ruleset.snapshotDate,
+          JSON.stringify({
+            today: todayInJurisdiction("US-NY-NYC"),
+            minSlackDays: null,
+            finding_renderings: [
+              {
+                rule_ids: ["DOB-TENT-001", "DOB-TALL-STRUCTURE-001"],
+                notes: [],
+                note_text: null,
+                conflict_text: null,
+                deadline_display: null,
+                slack_days: null,
+                deadline_unknown_fields: [],
+                timeline_unresolved_reason: null,
+                portal_instructions: null,
+              },
+              {
+                rule_ids: ["NYPD-SOUND-001"],
+                notes: [],
+                note_text: null,
+                conflict_text: null,
+                deadline_display: null,
+                slack_days: null,
+                deadline_unknown_fields: [],
+                timeline_unresolved_reason: null,
+                portal_instructions: null,
+              },
+            ],
+          }),
+        ],
+      );
+      await pool.query(
+        `INSERT INTO permit_plan_items (id, plan_id, rule_ids, triggered_by, permit_name, agency,
+                                        latest_apply_date, sources, kind, disposition,
+                                        deadline_status, verification_status)
+         VALUES
+           ($1, $3, ARRAY['DOB-TENT-001','DOB-TALL-STRUCTURE-001'], '[]'::jsonb,
+            'Legacy structure item', 'DOB', NULL, '[]'::jsonb, 'permit', 'required',
+            'not_calculable', 'SOURCE_CONFIRMED'),
+           ($2, $3, ARRAY['NYPD-SOUND-001'], '[]'::jsonb,
+            'Sound Device Permit', 'NYPD', $4, '[]'::jsonb, 'permit', 'required',
+            'on_track', 'SOURCE_CONFIRMED')`,
+        [ambiguousItemId, validItemId, planId, dayFromToday(30)],
+      );
+      await pool.query(
+        `INSERT INTO checklist_items (id, plan_item_id, cohort_position)
+         VALUES ($1, $2, 0), ($3, $4, 1)`,
+        [randomUUID(), ambiguousItemId, randomUUID(), validItemId],
+      );
+      const client = await pool.connect();
+      try {
+        await expect(
+          schedulerWith()(client, eventId, planId, {
+            email: "organizer@example.test",
+            phone: null,
+          }),
+        ).resolves.toMatchObject({ scheduled: reminderOffsets.length });
+        expect((await alertsOf(eventId)).every((row) => row.rule_id === "NYPD-SOUND-001")).toBe(
+          true,
+        );
+
+        await pool.query("UPDATE permit_plan_items SET latest_apply_date = $2 WHERE id = $1", [
+          ambiguousItemId,
+          dayFromToday(30),
+        ]);
+        await expect(
+          schedulerWith()(client, eventId, planId, {
+            email: "organizer@example.test",
+            phone: null,
+          }),
+        ).rejects.toThrow(/multi-rule item without recorded route attribution/);
+      } finally {
+        client.release();
+      }
+    });
+
     it("does not remind twice when a route joins or leaves the group", async () => {
       const merged = {
         ...scenario("A"),
@@ -6769,6 +6858,34 @@ describe.skipIf(databaseUrl === "")("F-203 deadline alerts", () => {
         expect(after.map((row) => row.idempotency_key).sort()).toEqual(
           before.map((row) => row.idempotency_key).sort(),
         );
+      });
+
+      it("removes route expiry metadata when a pending rule becomes scalar", async () => {
+        const eventId = await createEvent(scenario("C"));
+        const checklistItemId = randomUUID();
+        await schedule(
+          eventId,
+          await insertMergedPlan(eventId, {
+            secondRouteDated: true,
+            checklistItemId,
+          }),
+        );
+        const routed = (await alertsOf(eventId)).filter((row) => row.rule_id === "NYPD-SOUND-001");
+        expect(routed.every((row) => row.payload.route_scheduled === true)).toBe(true);
+        expect(routed.every((row) => row.payload.controlling_apply_by !== undefined)).toBe(true);
+
+        const scalar = await insertDuePlan(eventId, {
+          latestApplyDate: dayFromToday(30),
+          reuseChecklistItemId: checklistItemId,
+        });
+        await schedule(eventId, scalar.planId);
+
+        const after = (await alertsOf(eventId)).filter(
+          (row) => row.rule_id === "NYPD-SOUND-001" && row.status === "pending",
+        );
+        expect(after.map((row) => row.id).sort()).toEqual(routed.map((row) => row.id).sort());
+        expect(after.every((row) => row.payload.route_scheduled === undefined)).toBe(true);
+        expect(after.every((row) => row.payload.controlling_apply_by === undefined)).toBe(true);
       });
 
       it("keeps distinct rule identities where two routes publish byte-identical copy", async () => {

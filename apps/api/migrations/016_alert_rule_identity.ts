@@ -77,8 +77,21 @@ export function up(pgm: MigrationBuilder): void {
                alert.rule_id, alert.channel,
                (string_to_array(alert.idempotency_key, ':'))[
                  array_length(string_to_array(alert.idempotency_key, ':'), 1)
-               ]
+             ]
              ORDER BY (alert.status = 'sent') DESC,
+                      EXISTS (
+                        SELECT 1 FROM alert_send_attempts AS attempt
+                         WHERE attempt.alert_id = alert.id
+                           AND attempt.outcome_recorded_at IS NULL
+                           AND attempt.superseded_at IS NULL
+                      ) DESC,
+                      (
+                        SELECT min(attempt.attempted_at)
+                          FROM alert_send_attempts AS attempt
+                         WHERE attempt.alert_id = alert.id
+                           AND attempt.outcome_recorded_at IS NULL
+                           AND attempt.superseded_at IS NULL
+                      ) NULLS LAST,
                       alert.sent_at NULLS LAST,
                       alert.id
            ) AS identity_rank

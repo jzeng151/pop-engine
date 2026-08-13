@@ -25,6 +25,7 @@ describe("migration 016", () => {
     expect(backfill).toContain("cardinality(item.rule_ids) = 1");
     expect(backfill).toContain("migration 016 cannot safely attribute or rekey alerts");
     expect(backfill).toContain("ORDER BY (alert.status = 'sent') DESC");
+    expect(backfill).toContain("FROM alert_send_attempts AS attempt");
     expect(addConstraint).toHaveBeenCalledWith("alerts", "alerts_item_rule_required", {
       check: "checklist_item_id IS NULL OR rule_id IS NOT NULL",
     });
@@ -53,6 +54,10 @@ describe.runIf(databaseUrl.length > 0)("migration 016 data rewrite", () => {
       CREATE TEMP TABLE checklist_items (id text, plan_item_id text);
       CREATE TEMP TABLE permit_plan_items (id text, plan_id text, rule_ids text[]);
       CREATE TEMP TABLE permit_plans (id text, verdict_detail jsonb);
+      CREATE TEMP TABLE alert_send_attempts (
+        alert_id text, idempotency_key text, attempted_at timestamptz,
+        outcome_recorded_at timestamptz, superseded_at timestamptz
+      );
     `);
   };
 
@@ -103,6 +108,50 @@ describe.runIf(databaseUrl.length > 0)("migration 016 data rewrite", () => {
           rule_id: "RULE-A",
           idempotency_key: "event:deadline_reminder:7:RULE-A:email:digest",
           status: "sent",
+        },
+      ]);
+    } finally {
+      await client.end();
+    }
+  });
+
+  it("keeps an unresolved attempt on the canonical unsent row", async () => {
+    const client = new Client({ connectionString: databaseUrl });
+    await client.connect();
+    try {
+      await seedTables(client);
+      await client.query(`
+        INSERT INTO permit_plans VALUES
+          ('plan-a', '{"finding_renderings":[]}'::jsonb),
+          ('plan-b', '{"finding_renderings":[]}'::jsonb);
+        INSERT INTO permit_plan_items VALUES
+          ('item-a', 'plan-a', ARRAY['RULE-A']),
+          ('item-b', 'plan-b', ARRAY['RULE-A']);
+        INSERT INTO checklist_items VALUES ('task-a', 'item-a'), ('task-b', 'item-b');
+        INSERT INTO alerts VALUES
+          ('ordinary', 'event', 'task-a', NULL, 'deadline_reminder',
+           'event:task-a:deadline_reminder:7:email:digest', 'email', 'pending', NULL),
+          ('attempted', 'event', 'task-b', NULL, 'deadline_reminder',
+           'event:task-b:deadline_reminder:7:email:digest', 'email', 'pending', NULL);
+        INSERT INTO alert_send_attempts VALUES
+          ('attempted', 'event:task-b:deadline_reminder:7:email:digest',
+           current_timestamp, NULL, NULL);
+      `);
+
+      await client.query(migrationSql());
+      const { rows } = await client.query(
+        "SELECT id, idempotency_key, status FROM alerts ORDER BY id",
+      );
+      expect(rows).toEqual([
+        {
+          id: "attempted",
+          idempotency_key: "event:deadline_reminder:7:RULE-A:email:digest",
+          status: "pending",
+        },
+        {
+          id: "ordinary",
+          idempotency_key: "event:task-a:deadline_reminder:7:email:digest",
+          status: "cancelled",
         },
       ]);
     } finally {
