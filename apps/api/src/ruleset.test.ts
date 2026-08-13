@@ -798,18 +798,18 @@ describe.runIf(databaseUrl.length > 0)("migration 001 and rules sync", () => {
 
     await database.query(
       `INSERT INTO alerts
-        (id, event_id, checklist_item_id, alert_type, channel, recipient,
+        (id, event_id, checklist_item_id, rule_id, alert_type, channel, recipient,
          idempotency_key, send_at, status, payload)
-       VALUES ($1, $2, $3, 'deadline_reminder', 'email', 'demo@example.com',
+       VALUES ($1, $2, $3, 'DOB-TENT-001', 'deadline_reminder', 'email', 'demo@example.com',
                $4, current_timestamp, 'cancelled', '{}'::jsonb)`,
       [randomUUID(), eventId, checklistItemId, `${eventId}:checklist`],
     );
     await expect(
       database.query(
         `INSERT INTO alerts
-          (id, event_id, checklist_item_id, alert_type, channel, recipient,
+          (id, event_id, checklist_item_id, rule_id, alert_type, channel, recipient,
            idempotency_key, send_at, status, payload)
-         VALUES ($1, $2, $3, 'deadline_reminder', 'email', 'demo@example.com',
+         VALUES ($1, $2, $3, 'DOB-TENT-001', 'deadline_reminder', 'email', 'demo@example.com',
                  $4, current_timestamp, 'cancelled', '{}'::jsonb)`,
         [randomUUID(), otherEventId, checklistItemId, `${otherEventId}:wrong-checklist`],
       ),

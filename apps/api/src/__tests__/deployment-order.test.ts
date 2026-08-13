@@ -44,6 +44,17 @@ describe("F-302 rollout constraint the runbook has to carry", () => {
 });
 
 describe("F-203 rollout constraints the runbook has to carry", () => {
+  it("keeps pre-016 alert writers stopped across the identity rewrite and rollback", () => {
+    const migration = read("apps/api/migrations/016_alert_rule_identity.ts");
+    expect(migration).toContain("rule_id");
+    expect(migration).toContain("migration 016 cannot safely attribute or rekey alerts");
+
+    const prose = releaseOrder.replace(/\s+/g, " ");
+    expect(prose).toMatch(/migration 016\) requires stopped alert writers/i);
+    expect(prose).toMatch(/poller drained; exiting[\s\S]*apply migration 016/i);
+    expect(prose).toMatch(/migration 016 up or down while any api process can schedule or send/i);
+  });
+
   it("tells a deployer to stop the running api before migration 014's backfill lands", () => {
     const migration = read("apps/api/migrations/014_alert_send_attempts.ts");
     expect(migration).toContain("INSERT INTO alert_send_attempts");

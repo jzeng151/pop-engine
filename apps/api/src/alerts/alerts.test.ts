@@ -118,6 +118,7 @@ const scenario = (id: string): Record<string, unknown> => {
 type AlertRow = {
   id: string;
   checklist_item_id: string | null;
+  rule_id: string | null;
   alert_type: string;
   channel: string;
   recipient: string;
@@ -495,6 +496,11 @@ describe.skipIf(databaseUrl === "")("F-203 deadline alerts", () => {
         reason: null,
       });
       expect(response.body.alerts.scheduled).toBe(5);
+      expect(
+        (await alertsOf(eventId))
+          .filter((row) => row.checklist_item_id !== null)
+          .every((row) => row.rule_id !== null && row.idempotency_key.includes(row.rule_id)),
+      ).toBe(true);
       expect((await describeAlerts(eventId)).sort()).toEqual(
         [
           "2026-08-19 deadline_reminder PARKS-EVENT-001 email pending",
@@ -1872,10 +1878,10 @@ describe.skipIf(databaseUrl === "")("F-203 deadline alerts", () => {
           latestApplyDate: dayFromToday(2),
         });
         const alertId = await insertDueAlert(eventId, "+15550000166", 2, { channel: "sms" });
-        await pool.query("UPDATE alerts SET checklist_item_id = $2 WHERE id = $1", [
-          alertId,
-          checklistItemId,
-        ]);
+        await pool.query(
+          "UPDATE alerts SET checklist_item_id = $2, rule_id = 'NYPD-SOUND-001' WHERE id = $1",
+          [alertId, checklistItemId],
+        );
         const { rows: planItems } = await pool.query<{ plan_item_id: string }>(
           "SELECT plan_item_id FROM checklist_items WHERE id = $1",
           [checklistItemId],
@@ -2643,10 +2649,10 @@ describe.skipIf(databaseUrl === "")("F-203 deadline alerts", () => {
         const eventId = await createEvent(scenario("C"));
         const { checklistItemId } = await insertDuePlan(eventId, { latestApplyDate: null });
         const alertId = await insertDueAlert(eventId, "no-filing-window@example.test", 2);
-        await pool.query("UPDATE alerts SET checklist_item_id = $2 WHERE id = $1", [
-          alertId,
-          checklistItemId,
-        ]);
+        await pool.query(
+          "UPDATE alerts SET checklist_item_id = $2, rule_id = 'NYPD-SOUND-001' WHERE id = $1",
+          [alertId, checklistItemId],
+        );
         const provider = fakeProvider();
 
         vi.useFakeTimers({ toFake: ["Date"] });
@@ -3552,7 +3558,7 @@ describe.skipIf(databaseUrl === "")("F-203 deadline alerts", () => {
       expect(sameWords[0]?.status).toBe("sent");
     });
 
-    it("does not adopt a terminal task's delivered reminder onto a restored requirement", async () => {
+    it("keeps a delivered rule reminder sent when the requirement later returns", async () => {
       const eventId = await createEvent(scenario("C"));
       const firstTask = randomUUID();
       const restoredTask = randomUUID();
@@ -3634,15 +3640,14 @@ describe.skipIf(databaseUrl === "")("F-203 deadline alerts", () => {
       const reminders = (await alertsOf(eventId)).filter(
         (row) => row.alert_type === "deadline_reminder",
       );
-      const restored = reminders.filter(
-        (row) => row.idempotency_key.includes(restoredTask) && row.status === "pending",
-      );
-      expect(restored.length).toBeGreaterThan(0);
-      expect(first.id).not.toBe(restored[0]?.id);
       const delivered = reminders.find((row) => row.id === first.id) as AlertRow;
       expect(delivered.status).toBe("sent");
-      expect(delivered.idempotency_key).toContain(firstTask);
+      expect(delivered.rule_id).toBe("DOB-TENT-001");
+      expect(delivered.idempotency_key).not.toContain(firstTask);
       expect(delivered.idempotency_key).not.toContain(restoredTask);
+      expect(reminders.filter((row) => row.status === "pending")).toHaveLength(
+        reminderOffsets.length - 1,
+      );
     });
 
     it("does not swap reminders between routes when a route joins the group", async () => {
@@ -6747,13 +6752,14 @@ describe.skipIf(databaseUrl === "")("F-203 deadline alerts", () => {
         expect(provider.delivered.length).toBeGreaterThan(deliveredFirst);
       });
 
-      it("keys an unmerged row exactly as it did before, so its sent reminder is untouched", async () => {
+      it("keys an unmerged row on its sole rule across regeneration", async () => {
         const eventId = await createEvent(scenario("C"));
         const { planId, checklistItemId } = await insertDuePlan(eventId);
         await schedule(eventId, planId);
         const before = await alertsOf(eventId);
         expect(before.length).toBeGreaterThan(0);
-        expect(before.every((row) => !row.idempotency_key.includes("NYPD-SOUND-001"))).toBe(true);
+        expect(before.every((row) => row.rule_id === "NYPD-SOUND-001")).toBe(true);
+        expect(before.every((row) => row.idempotency_key.includes("NYPD-SOUND-001"))).toBe(true);
 
         const { planId: regenerated } = await insertDuePlan(eventId, {
           reuseChecklistItemId: checklistItemId,
@@ -6765,7 +6771,7 @@ describe.skipIf(databaseUrl === "")("F-203 deadline alerts", () => {
         );
       });
 
-      it("delivers one reminder where two routes publish byte-identical copy (#252)", async () => {
+      it("keeps distinct rule identities where two routes publish byte-identical copy", async () => {
         const eventId = await createEvent(scenario("C"));
         const checklistItemId = randomUUID();
         await schedule(
@@ -6780,7 +6786,10 @@ describe.skipIf(databaseUrl === "")("F-203 deadline alerts", () => {
         const reminders = (await alertsOf(eventId)).filter(
           (row) => row.alert_type === "deadline_reminder",
         );
-        expect(reminders).toHaveLength(reminderOffsets.length);
+        expect(reminders).toHaveLength(reminderOffsets.length * 2);
+        expect(new Set(reminders.map((row) => row.rule_id))).toEqual(
+          new Set(["NYPD-SOUND-001", "PARKS-EVENT-001"]),
+        );
 
         const provider = fakeProvider();
         await createAlertPoller({
@@ -6789,14 +6798,13 @@ describe.skipIf(databaseUrl === "")("F-203 deadline alerts", () => {
           jurisdiction: ruleset.jurisdiction,
         }).tick();
 
-        const words = provider.attempts.map(
-          (message) => `${message.recipient}|${message.subject}|${message.body}`,
+        expect(provider.attempts).toHaveLength(reminderOffsets.length * 2);
+        expect(new Set(provider.attempts.map((message) => message.idempotencyKey)).size).toBe(
+          reminderOffsets.length * 2,
         );
-        expect(new Set(words).size).toBe(words.length);
-        expect(words).toHaveLength(reminderOffsets.length);
       });
 
-      it("delivers once when the date moves and the canonical route moves together (#252)", async () => {
+      it("does not carry sent state to a different rule when date and route move together", async () => {
         const eventId = await createEvent(scenario("C"));
         const checklistItemId = randomUUID();
 
@@ -6892,16 +6900,15 @@ describe.skipIf(databaseUrl === "")("F-203 deadline alerts", () => {
         const reminders = (await alertsOf(eventId)).filter(
           (row) => row.alert_type === "deadline_reminder",
         );
-        expect(reminders).toHaveLength(reminderOffsets.length);
-        expect(reminders.every((row) => row.idempotency_key.includes("DOB-TENT-001"))).toBe(true);
+        expect(reminders).toHaveLength(reminderOffsets.length * 2);
+        expect(reminders.filter((row) => row.rule_id === "NYPD-SOUND-001")).toHaveLength(
+          reminderOffsets.length,
+        );
+        expect(reminders.filter((row) => row.rule_id === "DOB-TENT-001")).toHaveLength(
+          reminderOffsets.length,
+        );
         expect(reminders.every((row) => row.status === "sent")).toBe(true);
-        expect(provider.delivered.length).toBe(deliveredFirst);
-        const seen = new Set<string>();
-        for (const message of provider.delivered) {
-          const key = `${message.recipient}|${message.subject}|${message.body}`;
-          expect(seen.has(key)).toBe(false);
-          seen.add(key);
-        }
+        expect(provider.delivered.length).toBe(deliveredFirst + reminderOffsets.length);
       });
 
       it("delivers both reminders where two routes share a subject and differ in body (#252)", async () => {
@@ -6937,7 +6944,7 @@ describe.skipIf(databaseUrl === "")("F-203 deadline alerts", () => {
         expect(bodies.some((body) => body.includes("Sound Device Permit (DOT)"))).toBe(true);
       });
 
-      it("keeps a coalesced reminder's identity when the binding route changes (#252)", async () => {
+      it("keeps both rule identities when route disposition changes", async () => {
         const eventId = await createEvent(scenario("C"));
         const checklistItemId = randomUUID();
         const provider = fakeProvider();
@@ -6961,7 +6968,8 @@ describe.skipIf(databaseUrl === "")("F-203 deadline alerts", () => {
         await poller();
         const first = await alertsOf(eventId);
         const deliveredFirst = provider.delivered.length;
-        expect(deliveredFirst).toBeGreaterThan(0);
+        expect(first).toHaveLength(reminderOffsets.length * 2);
+        expect(deliveredFirst).toBe(reminderOffsets.length * 2);
 
         await schedule(
           eventId,
@@ -6974,17 +6982,17 @@ describe.skipIf(databaseUrl === "")("F-203 deadline alerts", () => {
         await poller();
 
         const after = await alertsOf(eventId);
+        expect(after).toHaveLength(reminderOffsets.length * 2);
         expect(after.map((row) => row.idempotency_key).sort()).toEqual(
           first.map((row) => row.idempotency_key).sort(),
         );
-        expect(provider.delivered.length).toBe(deliveredFirst);
-        const words = provider.delivered.map(
-          (message) => `${message.recipient}|${message.subject}|${message.body}`,
+        expect(new Set(after.map((row) => row.rule_id))).toEqual(
+          new Set(["NYPD-SOUND-001", "PARKS-EVENT-001"]),
         );
-        expect(new Set(words).size).toBe(words.length);
+        expect(provider.delivered.length).toBe(deliveredFirst);
       });
 
-      it("delivers a split coalesced reminder's corrected copy in the generation that corrects it (#252)", async () => {
+      it("does not redeliver a sent rule reminder when its copy changes", async () => {
         const eventId = await createEvent(scenario("C"));
         const checklistItemId = randomUUID();
         const provider = fakeProvider();
@@ -7017,7 +7025,7 @@ describe.skipIf(databaseUrl === "")("F-203 deadline alerts", () => {
         };
         await schedule(eventId, await insertMergedPlan(eventId, split));
         await poller();
-        expect(corrected()).toBeGreaterThan(0);
+        expect(corrected()).toBe(0);
         const afterSplit = provider.attempts.length;
 
         await schedule(eventId, await insertMergedPlan(eventId, split));
@@ -7026,6 +7034,7 @@ describe.skipIf(databaseUrl === "")("F-203 deadline alerts", () => {
 
         const rows = await alertsOf(eventId);
         expect(rows.every((row) => row.status === "sent")).toBe(true);
+        expect(afterSplit).toBe(reminderOffsets.length * 2);
         expect(
           rows.filter((row) => row.idempotency_key.includes(":NYPD-SOUND-001:")).length,
         ).toBeGreaterThan(0);
@@ -7034,7 +7043,7 @@ describe.skipIf(databaseUrl === "")("F-203 deadline alerts", () => {
         ).toBeGreaterThan(0);
       });
 
-      it("presents the key already in flight after adoption re-keys an attempted row (#252)", async () => {
+      it("keeps the provider key already in flight when a route is added", async () => {
         const eventId = await createEvent(scenario("C"));
         const checklistItemId = randomUUID();
         const applyBy = dayFromToday(3);
@@ -7064,6 +7073,7 @@ describe.skipIf(databaseUrl === "")("F-203 deadline alerts", () => {
                     deadline_unknown_fields: [],
                     timeline_unresolved_reason: null,
                     portal_instructions: null,
+                    headline_rule_id: "NYPD-SOUND-001",
                     ...(routes === undefined ? {} : { headline_mode: "applies_together", routes }),
                   },
                 ],
@@ -7138,7 +7148,7 @@ describe.skipIf(databaseUrl === "")("F-203 deadline alerts", () => {
         ]);
         const adopted = (await alertsOf(eventId)).find((row) => row.id === alertId);
         expect(adopted?.idempotency_key).toContain("NYPD-SOUND-001");
-        expect(adopted?.idempotency_key).not.toBe(inFlightKey);
+        expect(adopted?.idempotency_key).toBe(inFlightKey);
 
         await createAlertPoller({
           database: pool,
@@ -7446,6 +7456,7 @@ describe.skipIf(databaseUrl === "")("F-203 deadline alerts", () => {
                   deadline_unknown_fields: [],
                   timeline_unresolved_reason: null,
                   portal_instructions: null,
+                  headline_rule_id: "NYPD-SOUND-001",
                   ...(routes === undefined ? {} : { headline_mode: "applies_together", routes }),
                 },
               ],

@@ -83,6 +83,18 @@ a window in which two builds and one schema are all live at once. The F-302 capa
 F-203 guarantees hold only if that window is opened in this order. All are one-off constraints for
 their contract transition; the conditions for dropping each are stated with it.
 
+**F-203 rule-based alert identity (migration 016) requires stopped alert writers.** Before starting
+the deployment, deny organizer traffic to the api, stop the running api, and wait for its
+`alert poller drained; exiting` log. Only then start the new api and let it apply migration 016.
+Confirm `Migrations complete!`, then verify a synthetic checklist review before restoring traffic.
+The migration rewrites existing task-derived keys once; a pre-016 process allowed to schedule after
+that rewrite would create a second identity for the same reminder.
+
+Rollback has the same boundary in reverse: deny api traffic, stop the new api and wait for the drain,
+run `pnpm --filter api migrate down 1` from the migration-016 build, and only then start the pre-016
+api. Do not run migration 016 up or down while any api process can schedule or send alerts. Drop
+this constraint once migration 016 is applied and no pre-016 api build or rollback target remains.
+
 **F-101 create replay (migration 015) requires coordinated intake downtime.** The new web's create
 key is ignored by the old api, while the new api rejects the old web's keyless create, so neither
 mixed pair may accept an intake. Before step 1, schedule maintenance and use Cloudflare Access to
