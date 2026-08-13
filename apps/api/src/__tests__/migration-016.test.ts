@@ -11,6 +11,12 @@ const migrationSql = (): string => {
   return String(sql.mock.calls[0]?.[0]);
 };
 
+const rollbackSql = (): string => {
+  const sql = vi.fn();
+  down({ dropConstraint: vi.fn(), sql, dropColumn: vi.fn() } as unknown as MigrationBuilder);
+  return String(sql.mock.calls[0]?.[0]);
+};
+
 describe("migration 016", () => {
   it("backfills and rekeys item alerts without guessing an ambiguous rule", () => {
     const addColumn = vi.fn();
@@ -49,7 +55,9 @@ describe.runIf(databaseUrl.length > 0)("migration 016 data rewrite", () => {
     await client.query(`
       CREATE TEMP TABLE alerts (
         id text, event_id text, checklist_item_id text, rule_id text, alert_type text,
-        idempotency_key text, channel text, status text, sent_at timestamptz
+        idempotency_key text UNIQUE, channel text, status text, sent_at timestamptz,
+        send_at timestamptz DEFAULT current_timestamp, failure_count integer DEFAULT 0,
+        next_attempt_at timestamptz, payload jsonb DEFAULT '{}'::jsonb
       );
       CREATE TEMP TABLE checklist_items (id text, plan_item_id text);
       CREATE TEMP TABLE permit_plan_items (id text, plan_id text, rule_ids text[]);
@@ -77,7 +85,8 @@ describe.runIf(databaseUrl.length > 0)("migration 016 data rewrite", () => {
           ('item-c', 'plan-c', ARRAY['RULE-B']);
         INSERT INTO checklist_items VALUES
           ('task-a', 'item-a'), ('task-b', 'item-b'), ('task-c', 'item-c');
-        INSERT INTO alerts VALUES
+        INSERT INTO alerts (id, event_id, checklist_item_id, rule_id, alert_type,
+                            idempotency_key, channel, status, sent_at) VALUES
           ('pending-a', 'event', 'task-a', NULL, 'deadline_reminder',
            'event:task-a:deadline_reminder:7:email:digest', 'email', 'pending', NULL),
           ('sent-a', 'event', 'task-b', NULL, 'deadline_reminder',
@@ -128,11 +137,16 @@ describe.runIf(databaseUrl.length > 0)("migration 016 data rewrite", () => {
           ('item-a', 'plan-a', ARRAY['RULE-A']),
           ('item-b', 'plan-b', ARRAY['RULE-A']);
         INSERT INTO checklist_items VALUES ('task-a', 'item-a'), ('task-b', 'item-b');
-        INSERT INTO alerts VALUES
+        INSERT INTO alerts (id, event_id, checklist_item_id, rule_id, alert_type,
+                            idempotency_key, channel, status, sent_at) VALUES
           ('ordinary', 'event', 'task-a', NULL, 'deadline_reminder',
            'event:task-a:deadline_reminder:7:email:digest', 'email', 'pending', NULL),
           ('attempted', 'event', 'task-b', NULL, 'deadline_reminder',
-           'event:task-b:deadline_reminder:7:email:digest', 'email', 'pending', NULL);
+           'event:task-b:deadline_reminder:7:email:digest', 'email', 'cancelled', NULL);
+        UPDATE alerts SET send_at = '2026-09-01T13:00:00Z', failure_count = 2,
+                          next_attempt_at = '2026-08-20T13:00:00Z',
+                          payload = '{"source":"active"}'::jsonb
+         WHERE id = 'ordinary';
         INSERT INTO alert_send_attempts VALUES
           ('attempted', 'event:task-b:deadline_reminder:7:email:digest',
            current_timestamp, NULL, NULL);
@@ -140,18 +154,28 @@ describe.runIf(databaseUrl.length > 0)("migration 016 data rewrite", () => {
 
       await client.query(migrationSql());
       const { rows } = await client.query(
-        "SELECT id, idempotency_key, status FROM alerts ORDER BY id",
+        `SELECT id, checklist_item_id, idempotency_key, status, failure_count,
+                next_attempt_at::text, payload
+           FROM alerts ORDER BY id`,
       );
       expect(rows).toEqual([
         {
           id: "attempted",
+          checklist_item_id: "task-a",
           idempotency_key: "event:deadline_reminder:7:RULE-A:email:digest",
           status: "pending",
+          failure_count: 2,
+          next_attempt_at: "2026-08-20 13:00:00+00",
+          payload: { source: "active" },
         },
         {
           id: "ordinary",
+          checklist_item_id: "task-a",
           idempotency_key: "event:task-a:deadline_reminder:7:email:digest",
           status: "cancelled",
+          failure_count: 2,
+          next_attempt_at: "2026-08-20 13:00:00+00",
+          payload: { source: "active" },
         },
       ]);
     } finally {
@@ -172,7 +196,8 @@ describe.runIf(databaseUrl.length > 0)("migration 016 data rewrite", () => {
           ('item-a', 'plan-a', ARRAY['RULE-A']),
           ('item-b', 'plan-b', ARRAY['RULE-A']);
         INSERT INTO checklist_items VALUES ('task-a', 'item-a'), ('task-b', 'item-b');
-        INSERT INTO alerts VALUES
+        INSERT INTO alerts (id, event_id, checklist_item_id, rule_id, alert_type,
+                            idempotency_key, channel, status, sent_at) VALUES
           ('active', 'event', 'task-a', NULL, 'deadline_reminder',
            'event:task-a:deadline_reminder:7:email:digest', 'email', 'pending', NULL),
           ('cancelled', 'event', 'task-b', NULL, 'deadline_reminder',
@@ -211,7 +236,8 @@ describe.runIf(databaseUrl.length > 0)("migration 016 data rewrite", () => {
         INSERT INTO permit_plan_items VALUES
           ('item', 'plan', ARRAY['RULE-A', 'RULE-B']);
         INSERT INTO checklist_items VALUES ('task', 'item');
-        INSERT INTO alerts VALUES
+        INSERT INTO alerts (id, event_id, checklist_item_id, rule_id, alert_type,
+                            idempotency_key, channel, status, sent_at) VALUES
           ('ambiguous', 'event', 'task', NULL, 'deadline_reminder',
            'event:task:deadline_reminder:7:email:digest', 'email', 'pending', NULL);
       `);
@@ -219,6 +245,44 @@ describe.runIf(databaseUrl.length > 0)("migration 016 data rewrite", () => {
       await expect(client.query(migrationSql())).rejects.toThrow(
         /migration 016 cannot safely attribute or rekey alerts: ambiguous/,
       );
+    } finally {
+      await client.end();
+    }
+  });
+
+  it("moves a cancelled legacy-key occupant aside before rollback", async () => {
+    const client = new Client({ connectionString: databaseUrl });
+    await client.connect();
+    try {
+      await seedTables(client);
+      await client.query(`
+        INSERT INTO permit_plans VALUES ('plan', '{"finding_renderings":[]}'::jsonb);
+        INSERT INTO permit_plan_items VALUES ('item', 'plan', ARRAY['RULE-A']);
+        INSERT INTO checklist_items VALUES ('task', 'item');
+        INSERT INTO alerts (id, event_id, checklist_item_id, rule_id, alert_type,
+                            idempotency_key, channel, status, sent_at) VALUES
+          ('canonical', 'event', 'task', 'RULE-A', 'deadline_reminder',
+           'event:deadline_reminder:7:RULE-A:email:digest', 'email', 'pending', NULL),
+          ('duplicate', 'event', 'task', 'RULE-A', 'deadline_reminder',
+           'event:task:deadline_reminder:7:email:digest', 'email', 'cancelled', NULL);
+      `);
+
+      await client.query(rollbackSql());
+      const { rows } = await client.query(
+        "SELECT id, idempotency_key, status FROM alerts ORDER BY id",
+      );
+      expect(rows).toEqual([
+        {
+          id: "canonical",
+          idempotency_key: "event:task:deadline_reminder:7:email:digest",
+          status: "pending",
+        },
+        {
+          id: "duplicate",
+          idempotency_key: "event:task:deadline_reminder:7:email:digest:superseded-016:duplicate",
+          status: "cancelled",
+        },
+      ]);
     } finally {
       await client.end();
     }

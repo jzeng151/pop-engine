@@ -95,9 +95,39 @@ export function up(pgm: MigrationBuilder): void {
                       (alert.status IN ('pending', 'failed')) DESC,
                       alert.sent_at NULLS LAST,
                       alert.id
-           ) AS identity_rank
+           ) AS identity_rank,
+           row_number() OVER (
+             PARTITION BY alert.event_id, alert.alert_type,
+               CASE WHEN alert.alert_type = 'deadline_reminder'
+                    THEN (string_to_array(alert.idempotency_key, ':'))[4]
+                    ELSE '' END,
+               alert.rule_id, alert.channel,
+               (string_to_array(alert.idempotency_key, ':'))[
+                 array_length(string_to_array(alert.idempotency_key, ':'), 1)
+               ]
+             ORDER BY (alert.status IN ('pending', 'failed')) DESC, alert.id
+           ) AS active_rank
       FROM alerts AS alert
      WHERE alert.checklist_item_id IS NOT NULL;
+
+    UPDATE alerts AS winner
+       SET checklist_item_id = active.checklist_item_id,
+           send_at = active.send_at,
+           status = active.status,
+           sent_at = active.sent_at,
+           failure_count = active.failure_count,
+           next_attempt_at = active.next_attempt_at,
+           payload = active.payload
+      FROM alert_rule_identity_016 AS winner_identity
+      JOIN alert_rule_identity_016 AS active_identity
+        ON active_identity.new_key = winner_identity.new_key
+       AND active_identity.active_rank = 1
+      JOIN alerts AS active ON active.id = active_identity.id
+     WHERE winner.id = winner_identity.id
+       AND winner_identity.identity_rank = 1
+       AND winner.id <> active.id
+       AND winner.status <> 'sent'
+       AND active.status IN ('pending', 'failed');
 
     UPDATE alerts AS alert
        SET status = 'cancelled'
@@ -120,8 +150,8 @@ export function up(pgm: MigrationBuilder): void {
 export function down(pgm: MigrationBuilder): void {
   pgm.dropConstraint("alerts", RULE_CONSTRAINT);
   pgm.sql(`
-    WITH legacy_keys AS (
-      SELECT alert.id,
+    CREATE TEMP TABLE alert_legacy_identity_016 ON COMMIT DROP AS
+    SELECT alert.id,
              alert.event_id::text || ':' || alert.checklist_item_id::text || ':' ||
                alert.alert_type || ':' ||
                CASE WHEN alert.alert_type = 'deadline_reminder'
@@ -142,10 +172,32 @@ export function down(pgm: MigrationBuilder): void {
           coalesce(plan.verdict_detail->'finding_renderings', '[]')
         ) AS rendering(value) ON rendering.value->'rule_ids' = to_jsonb(item.rule_ids)
        WHERE split_part(alert.idempotency_key, ':', 2) = alert.alert_type
-    )
+    ;
+
+    DO $$
+    DECLARE live_collisions text;
+    BEGIN
+      SELECT string_agg(occupied.id::text, ', ' ORDER BY occupied.id)
+        INTO live_collisions
+        FROM alert_legacy_identity_016 AS legacy
+        JOIN alerts AS occupied ON occupied.idempotency_key = legacy.old_key
+                               AND occupied.id <> legacy.id
+       WHERE occupied.status <> 'cancelled';
+      IF live_collisions IS NOT NULL THEN
+        RAISE EXCEPTION 'migration 016 cannot safely restore legacy alert keys: %', live_collisions;
+      END IF;
+    END $$;
+
+    UPDATE alerts AS occupied
+       SET idempotency_key = occupied.idempotency_key || ':superseded-016:' || occupied.id::text
+      FROM alert_legacy_identity_016 AS legacy
+     WHERE occupied.idempotency_key = legacy.old_key
+       AND occupied.id <> legacy.id
+       AND occupied.status = 'cancelled';
+
     UPDATE alerts AS alert
        SET idempotency_key = legacy.old_key
-      FROM legacy_keys AS legacy
+      FROM alert_legacy_identity_016 AS legacy
      WHERE alert.id = legacy.id;
   `);
   pgm.dropColumn("alerts", "rule_id");
