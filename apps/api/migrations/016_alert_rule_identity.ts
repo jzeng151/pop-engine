@@ -92,6 +92,7 @@ export function up(pgm: MigrationBuilder): void {
                            AND attempt.outcome_recorded_at IS NULL
                            AND attempt.superseded_at IS NULL
                       ) NULLS LAST,
+                      (alert.status IN ('pending', 'failed')) DESC,
                       alert.sent_at NULLS LAST,
                       alert.id
            ) AS identity_rank

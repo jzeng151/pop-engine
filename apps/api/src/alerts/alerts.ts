@@ -426,7 +426,7 @@ function alertSubjects(row: PlanAlertRow, rendering: FindingRendering | undefine
         : rendering?.headline_rule_id != null && row.rule_ids.includes(rendering.headline_rule_id)
           ? rendering.headline_rule_id
           : null;
-    return [{ row, rendering, ruleId }];
+    return [{ row, rendering, ruleId: ruleId ?? null }];
   }
   return routes
     .filter((route) => route.latestApplyDate !== null || route.applyAfterDate !== null)

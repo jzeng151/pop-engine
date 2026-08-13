@@ -159,6 +159,47 @@ describe.runIf(databaseUrl.length > 0)("migration 016 data rewrite", () => {
     }
   });
 
+  it("keeps an active row ahead of a cancelled duplicate", async () => {
+    const client = new Client({ connectionString: databaseUrl });
+    await client.connect();
+    try {
+      await seedTables(client);
+      await client.query(`
+        INSERT INTO permit_plans VALUES
+          ('plan-a', '{"finding_renderings":[]}'::jsonb),
+          ('plan-b', '{"finding_renderings":[]}'::jsonb);
+        INSERT INTO permit_plan_items VALUES
+          ('item-a', 'plan-a', ARRAY['RULE-A']),
+          ('item-b', 'plan-b', ARRAY['RULE-A']);
+        INSERT INTO checklist_items VALUES ('task-a', 'item-a'), ('task-b', 'item-b');
+        INSERT INTO alerts VALUES
+          ('active', 'event', 'task-a', NULL, 'deadline_reminder',
+           'event:task-a:deadline_reminder:7:email:digest', 'email', 'pending', NULL),
+          ('cancelled', 'event', 'task-b', NULL, 'deadline_reminder',
+           'event:task-b:deadline_reminder:7:email:digest', 'email', 'cancelled', NULL);
+      `);
+
+      await client.query(migrationSql());
+      const { rows } = await client.query(
+        "SELECT id, idempotency_key, status FROM alerts ORDER BY id",
+      );
+      expect(rows).toEqual([
+        {
+          id: "active",
+          idempotency_key: "event:deadline_reminder:7:RULE-A:email:digest",
+          status: "pending",
+        },
+        {
+          id: "cancelled",
+          idempotency_key: "event:task-b:deadline_reminder:7:email:digest",
+          status: "cancelled",
+        },
+      ]);
+    } finally {
+      await client.end();
+    }
+  });
+
   it("rejects a historical multi-rule row with no recorded attribution", async () => {
     const client = new Client({ connectionString: databaseUrl });
     await client.connect();
