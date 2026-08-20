@@ -125,6 +125,30 @@ const answerParkEvent = async (user: ReturnType<typeof userEvent.setup>) => {
   await chooseOption(user, "alcohol", "false");
 };
 
+const answerSellingStreetEvent = async (
+  user: ReturnType<typeof userEvent.setup>,
+  sapoEventType = "street_event",
+) => {
+  await fillField(user, "name", "Bushwick Street Activation");
+  await chooseOption(user, "borough", "brooklyn");
+  await chooseOption(user, "location_type", "street");
+  await chooseOption(user, "obstructs_public_way", "yes");
+  await chooseOption(user, "sapo_event_type", sapoEventType);
+  if (sapoEventType === "street_event") await chooseOption(user, "street_event_size", "large");
+  if (sapoEventType === "block_party") await chooseOption(user, "has_amusement_ride", "false");
+  await fillField(user, "headcount", "75");
+  await fillField(user, "event_date", "2026-08-26");
+  await chooseOption(user, "event_open_to_public", "yes");
+  await chooseOption(user, "food_present", "false");
+  await chooseOption(user, "selling_anything", "true");
+  await chooseOption(user, "amplified_sound", "true");
+  await chooseOption(user, "structure_types", "none");
+  await chooseOption(user, "open_flame_or_cooking", "none");
+  await chooseOption(user, "generator_present", "false");
+  await chooseOption(user, "battery_present", "false");
+  await chooseOption(user, "alcohol", "false");
+};
+
 const save = async (user: ReturnType<typeof userEvent.setup>) => {
   await user.click(screen.getByRole("button", { name: /^Save/ }));
 };
@@ -336,6 +360,30 @@ describe("'I don't know' is a real answer (spec #3)", () => {
 
     await waitFor(() => expect(fetchMock).toHaveBeenCalled());
     expect(requestBody(fetchMock).event_open_to_public).toBe("unknown");
+  });
+
+  it("submits an unknown SAPO class while keeping its dependent questions hidden", async () => {
+    const user = renderForm();
+    await answerSellingStreetEvent(user, "unknown");
+
+    expect(questionsOnScreen()).not.toEqual(
+      expect.arrayContaining([
+        "Street event size",
+        "Plaza level",
+        "Plaza multiple blocks",
+        "Has amusement ride",
+      ]),
+    );
+    await save(user);
+
+    await waitFor(() => expect(fetchMock).toHaveBeenCalled());
+    expect(requestBody(fetchMock)).toMatchObject({
+      sapo_event_type: "unknown",
+      street_event_size: null,
+      plaza_level: null,
+      plaza_multiple_blocks: null,
+      has_amusement_ride: null,
+    });
   });
 
   it("submits both assembly-document answers as explicit tri-states", async () => {
@@ -1921,30 +1969,6 @@ describe("saving and per-field errors", () => {
 });
 
 describe("editing a saved event", () => {
-  const answerSellingStreetEvent = async (
-    user: ReturnType<typeof userEvent.setup>,
-    sapoEventType = "street_event",
-  ) => {
-    await fillField(user, "name", "Bushwick Street Activation");
-    await chooseOption(user, "borough", "brooklyn");
-    await chooseOption(user, "location_type", "street");
-    await chooseOption(user, "obstructs_public_way", "yes");
-    await chooseOption(user, "sapo_event_type", sapoEventType);
-    if (sapoEventType === "street_event") await chooseOption(user, "street_event_size", "large");
-    if (sapoEventType === "block_party") await chooseOption(user, "has_amusement_ride", "false");
-    await fillField(user, "headcount", "75");
-    await fillField(user, "event_date", "2026-08-26");
-    await chooseOption(user, "event_open_to_public", "yes");
-    await chooseOption(user, "food_present", "false");
-    await chooseOption(user, "selling_anything", "true");
-    await chooseOption(user, "amplified_sound", "true");
-    await chooseOption(user, "structure_types", "none");
-    await chooseOption(user, "open_flame_or_cooking", "none");
-    await chooseOption(user, "generator_present", "false");
-    await chooseOption(user, "battery_present", "false");
-    await chooseOption(user, "alcohol", "false");
-  };
-
   it("clears the answers a rescope hides, so the edit can be saved", async () => {
     const user = renderForm();
     await answerSellingStreetEvent(user);

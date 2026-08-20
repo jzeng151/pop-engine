@@ -270,11 +270,29 @@ describe.runIf(databaseUrl.length > 0)("plan API (F-201)", () => {
       "other_sapo_class",
     ]);
     expect(sapoFact.branches[0].reason).toContain("SAPO-STREET-XL-001");
+    const streetSizeRuleIds = [
+      "SAPO-STREET-SMALL-001",
+      "SAPO-STREET-MEDIUM-001",
+      "SAPO-STREET-LARGE-001",
+      "SAPO-STREET-XL-001",
+    ];
+    const generatedRuleIds = generated.body.findings.flatMap(
+      (finding: { ruleIds: string[] }) => finding.ruleIds,
+    );
+    expect(generatedRuleIds.filter((ruleId: string) => streetSizeRuleIds.includes(ruleId))).toEqual(
+      [],
+    );
 
     const fetched = await request(app).get(`/api/events/${eventId}/plan`);
     expect(fetched.status).toBe(200);
     expect(fetched.body.verdictDetail.missingFacts).toEqual(
       generated.body.verdictDetail.missingFacts,
+    );
+    const fetchedRuleIds = fetched.body.findings.flatMap(
+      (finding: { ruleIds: string[] }) => finding.ruleIds,
+    );
+    expect(fetchedRuleIds.filter((ruleId: string) => streetSizeRuleIds.includes(ruleId))).toEqual(
+      [],
     );
   });
 
