@@ -1830,7 +1830,7 @@ describe("F-102 · CONDITIONAL branch table and INFEASIBLE rescope ladder", () =
                 {
                   value: "other_sapo_class",
                   verdict: "CONDITIONAL",
-                  reason: "adds ADV-SAPO-OTHER-CLASS-001",
+                  reason: "SAPO-INSURANCE-001 becomes required",
                 },
               ],
             },
