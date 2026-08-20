@@ -55,6 +55,9 @@ export default defineConfig({
     // and the property that actually fixed the reporter timeout is the awaiting rather than the
     // parallelism, so buying safety with it is cheap.
     maxConcurrency: 2,
+    // API files share one PostgreSQL database; a live alert poller in one file can claim another
+    // file's due reminders. Keep files serial so database suites remain isolated (#296).
+    fileParallelism: false,
 
     // Workspace packages export TypeScript source; force Vite to transform them.
     server: { deps: { inline: ["@pop-engine/engine"] } },
