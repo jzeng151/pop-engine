@@ -49,7 +49,7 @@ As an independent organizer, I get the complete list of requirements my specific
 - OFFICIAL_CONFLICT rules (PARKS-TUA-001, PARKS-EVENT-EXACTLY-20-001) render as MAY_BE_REQUIRED with the conflict text; they never flip a verdict to INFEASIBLE on their own.
 - Resolved eligibility bars (block party + sales) render PROHIBITED_OR_INELIGIBLE with rescope guidance and drive the overall verdict to INFEASIBLE; the permit finding still lists so the user sees both.
 - `research_required` deadlines are excluded from verdict/slack arithmetic but always listed.
-- Uncollected/inapplicable branch fields evaluate per the registry's asked-when scoping; a field never asked is not a material unknown.
+- Uncollected/inapplicable branch fields evaluate per the registry's `asked_when` scoping. A field never asked is not a material unknown when its gate definitely resolved it out of scope. An explicit `"unknown"` gate remains material through rules that read that gate; child-answer-dependent requirements stay out of the base findings and appear under the alternate resolved answers in the branch table. An absent or NULL gate remains distinct and follows the current not-asked path. Three-state semantics for that currently unreachable state are deferred under the 2026-08-19 product-owner decision in `docs/BASELINE.md` and must be reconsidered at any reopening trigger named there.
 
 ## Fixture Scenarios Exercised
 

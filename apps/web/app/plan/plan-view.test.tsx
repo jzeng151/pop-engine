@@ -1800,6 +1800,61 @@ describe("F-102 · CONDITIONAL branch table and INFEASIBLE rescope ladder", () =
     expect(within(fact).getByText("SLA one-day window missed")).toBeDefined();
   });
 
+  it("renders all four alternate SAPO classes for an explicit unknown class", async () => {
+    stubApi(
+      plan({
+        verdict: "CONDITIONAL",
+        verdictDetail: {
+          ...emptyVerdictDetail,
+          missingFacts: [
+            {
+              field: "sapo_event_type",
+              thresholds: null,
+              branches: [
+                {
+                  value: "street_event",
+                  verdict: "CONDITIONAL",
+                  reason:
+                    "adds SAPO-STREET-LARGE-001, SAPO-STREET-MEDIUM-001, SAPO-STREET-SMALL-001, SAPO-STREET-XL-001",
+                },
+                {
+                  value: "block_party",
+                  verdict: "INFEASIBLE",
+                  reason: "SAPO-BLOCK-PARTY-001 becomes required",
+                },
+                {
+                  value: "plaza_event",
+                  verdict: "CONDITIONAL",
+                  reason: "SAPO-PLAZA-001 becomes required",
+                },
+                {
+                  value: "other_sapo_class",
+                  verdict: "CONDITIONAL",
+                  reason: "adds ADV-SAPO-OTHER-CLASS-001",
+                },
+              ],
+            },
+          ],
+        },
+      }),
+    );
+    renderPlan();
+    const fact = await screen.findByTestId("missing-fact");
+
+    for (const label of ["street event", "block party", "plaza event", "other sapo class"]) {
+      expect(within(fact).getByText(label)).toBeDefined();
+    }
+    for (const ruleId of [
+      "SAPO-STREET-SMALL-001",
+      "SAPO-STREET-MEDIUM-001",
+      "SAPO-STREET-LARGE-001",
+      "SAPO-STREET-XL-001",
+    ]) {
+      expect(fact.textContent).toContain(publishedHeading(ruleId));
+      expect(fact.textContent).not.toContain(ruleId);
+    }
+  });
+
   it("does not claim exhaustive branching when a numeric fact has only thresholds", async () => {
     stubApi(
       plan({
