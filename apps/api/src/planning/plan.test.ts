@@ -312,6 +312,7 @@ describe.runIf(databaseUrl.length > 0)("plan API (F-201)", () => {
     const generatedRuleIds = generated.body.findings.flatMap(
       (finding: { ruleIds: string[] }) => finding.ruleIds,
     );
+    expect(generatedRuleIds).toContain("ADV-SAPO-OTHER-CLASS-001");
     expect(
       generatedRuleIds.filter((ruleId: string) => childDependentRuleIds.includes(ruleId)),
     ).toEqual([]);
@@ -324,6 +325,7 @@ describe.runIf(databaseUrl.length > 0)("plan API (F-201)", () => {
     const fetchedRuleIds = fetched.body.findings.flatMap(
       (finding: { ruleIds: string[] }) => finding.ruleIds,
     );
+    expect(fetchedRuleIds).toContain("ADV-SAPO-OTHER-CLASS-001");
     expect(
       fetchedRuleIds.filter((ruleId: string) => childDependentRuleIds.includes(ruleId)),
     ).toEqual([]);
