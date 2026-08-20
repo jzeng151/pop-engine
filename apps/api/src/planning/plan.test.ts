@@ -232,6 +232,52 @@ describe.runIf(databaseUrl.length > 0)("plan API (F-201)", () => {
     ]);
   });
 
+  it("preserves an explicit unknown SAPO gate through intake, storage, planning, and retrieval", async () => {
+    const eventWithoutUnaskedFields: Partial<typeof scenarioAEvent> = { ...scenarioAEvent };
+    delete eventWithoutUnaskedFields.street_event_size;
+    delete eventWithoutUnaskedFields.battery_system_kwh;
+    const createKey = randomUUID();
+    const app = appWith();
+    const created = await request(app)
+      .post("/api/events")
+      .set("Idempotency-Key", createKey)
+      .send({ ...eventWithoutUnaskedFields, sapo_event_type: "unknown" });
+
+    expect(created.status).toBe(201);
+    expect(created.body.event).toMatchObject({
+      sapo_event_type: "unknown",
+      street_event_size: null,
+    });
+    const eventId = created.body.event.id as string;
+    const stored = await pool.query<{ sapo_event_type: string; street_event_size: string | null }>(
+      "SELECT sapo_event_type, street_event_size FROM events WHERE id = $1",
+      [eventId],
+    );
+    expect(stored.rows[0]).toEqual({ sapo_event_type: "unknown", street_event_size: null });
+
+    const generated = await request(app)
+      .post(`/api/events/${eventId}/plan`)
+      .set("Idempotency-Key", createKey);
+    expect(generated.status).toBe(201);
+    expect(generated.body.verdict).toBe("CONDITIONAL");
+    const sapoFact = generated.body.verdictDetail.missingFacts.find(
+      (fact: { field: string }) => fact.field === "sapo_event_type",
+    );
+    expect(sapoFact.branches.map((branch: { value: string }) => branch.value)).toEqual([
+      "street_event",
+      "block_party",
+      "plaza_event",
+      "other_sapo_class",
+    ]);
+    expect(sapoFact.branches[0].reason).toContain("SAPO-STREET-XL-001");
+
+    const fetched = await request(app).get(`/api/events/${eventId}/plan`);
+    expect(fetched.status).toBe(200);
+    expect(fetched.body.verdictDetail.missingFacts).toEqual(
+      generated.body.verdictDetail.missingFacts,
+    );
+  });
+
   it("persists plan items with the columns the schema requires and leaves verified_status unwritten", async () => {
     const eventId = await insertEvent();
     await request(appWith()).post(`/api/events/${eventId}/plan`);
