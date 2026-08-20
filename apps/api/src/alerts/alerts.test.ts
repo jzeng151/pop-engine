@@ -7012,6 +7012,14 @@ describe.skipIf(databaseUrl === "")("F-203 deadline alerts", () => {
         const deliveredFirst = provider.delivered.length;
 
         await schedule(eventId, await insertPlan(dayFromToday(1), true));
+        await pool.query(
+          `UPDATE alerts SET send_at = current_timestamp
+            WHERE event_id = $1
+              AND alert_type = 'deadline_reminder'
+              AND rule_id = 'DOB-TENT-001'
+              AND status = 'pending'`,
+          [eventId],
+        );
         await poller();
 
         const reminders = (await alertsOf(eventId)).filter(
