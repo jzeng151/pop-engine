@@ -249,11 +249,25 @@ describe.runIf(databaseUrl.length > 0)("plan API (F-201)", () => {
       street_event_size: null,
     });
     const eventId = created.body.event.id as string;
-    const stored = await pool.query<{ sapo_event_type: string; street_event_size: string | null }>(
-      "SELECT sapo_event_type, street_event_size FROM events WHERE id = $1",
+    const stored = await pool.query<{
+      sapo_event_type: string;
+      street_event_size: string | null;
+      plaza_level: string | null;
+      plaza_multiple_blocks: boolean | null;
+      has_amusement_ride: boolean | null;
+    }>(
+      `SELECT sapo_event_type, street_event_size, plaza_level, plaza_multiple_blocks,
+              has_amusement_ride
+         FROM events WHERE id = $1`,
       [eventId],
     );
-    expect(stored.rows[0]).toEqual({ sapo_event_type: "unknown", street_event_size: null });
+    expect(stored.rows[0]).toEqual({
+      sapo_event_type: "unknown",
+      street_event_size: null,
+      plaza_level: null,
+      plaza_multiple_blocks: null,
+      has_amusement_ride: null,
+    });
 
     const generated = await request(app)
       .post(`/api/events/${eventId}/plan`)
@@ -269,19 +283,38 @@ describe.runIf(databaseUrl.length > 0)("plan API (F-201)", () => {
       "plaza_event",
       "other_sapo_class",
     ]);
-    expect(sapoFact.branches[0].reason).toContain("SAPO-STREET-XL-001");
-    const streetSizeRuleIds = [
+    const branchReasons = Object.fromEntries(
+      sapoFact.branches.map((branch: { value: string; reason: string }) => [
+        branch.value,
+        branch.reason,
+      ]),
+    );
+    for (const ruleId of [
       "SAPO-STREET-SMALL-001",
       "SAPO-STREET-MEDIUM-001",
       "SAPO-STREET-LARGE-001",
       "SAPO-STREET-XL-001",
+    ]) {
+      expect(branchReasons.street_event).toContain(ruleId);
+    }
+    expect(branchReasons.block_party).toContain("SAPO-BLOCK-PARTY-001");
+    expect(branchReasons.plaza_event).toContain("SAPO-PLAZA-001");
+    expect(branchReasons.other_sapo_class).toContain("SAPO-INSURANCE-001");
+
+    const childDependentRuleIds = [
+      "SAPO-STREET-SMALL-001",
+      "SAPO-STREET-MEDIUM-001",
+      "SAPO-STREET-LARGE-001",
+      "SAPO-STREET-XL-001",
+      "SAPO-INSURANCE-BLOCK-PARTY-RIDE-001",
+      "CONF-NO-BLOCK-PARTY-RIDE-001",
     ];
     const generatedRuleIds = generated.body.findings.flatMap(
       (finding: { ruleIds: string[] }) => finding.ruleIds,
     );
-    expect(generatedRuleIds.filter((ruleId: string) => streetSizeRuleIds.includes(ruleId))).toEqual(
-      [],
-    );
+    expect(
+      generatedRuleIds.filter((ruleId: string) => childDependentRuleIds.includes(ruleId)),
+    ).toEqual([]);
 
     const fetched = await request(app).get(`/api/events/${eventId}/plan`);
     expect(fetched.status).toBe(200);
@@ -291,9 +324,9 @@ describe.runIf(databaseUrl.length > 0)("plan API (F-201)", () => {
     const fetchedRuleIds = fetched.body.findings.flatMap(
       (finding: { ruleIds: string[] }) => finding.ruleIds,
     );
-    expect(fetchedRuleIds.filter((ruleId: string) => streetSizeRuleIds.includes(ruleId))).toEqual(
-      [],
-    );
+    expect(
+      fetchedRuleIds.filter((ruleId: string) => childDependentRuleIds.includes(ruleId)),
+    ).toEqual([]);
   });
 
   it("persists plan items with the columns the schema requires and leaves verified_status unwritten", async () => {

@@ -366,14 +366,15 @@ describe("'I don't know' is a real answer (spec #3)", () => {
     const user = renderForm();
     await answerSellingStreetEvent(user, "unknown");
 
-    expect(questionsOnScreen()).not.toEqual(
-      expect.arrayContaining([
-        "Street event size",
-        "Plaza level",
-        "Plaza multiple blocks",
-        "Has amusement ride",
-      ]),
-    );
+    const questions = questionsOnScreen();
+    for (const label of [
+      "Street event size",
+      "Plaza level",
+      "Plaza multiple blocks",
+      "Has amusement ride",
+    ]) {
+      expect(questions).not.toContain(label);
+    }
     await save(user);
 
     await waitFor(() => expect(fetchMock).toHaveBeenCalled());
