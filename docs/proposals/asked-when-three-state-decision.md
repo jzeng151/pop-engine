@@ -1,12 +1,24 @@
 # Issue #108 decision brief: three-state `asked_when`
 
-**Status:** PROPOSED
+**Status:** APPROVED 2026-08-19 by the product owner. The normative decision is recorded in
+`docs/BASELINE.md`.
 
-This document recommends an action on issue #108. It changes no engine code, no ruleset, no
-fixture, no schema and no manifest entry. The branch carrying it changes **two** documents: this
-one, and `docs/proposals/asked-when-three-state-measurement.md`, which receives the corrections
-this document used to carry in a section of its own — they correct that document, so they belong
-in it. Nothing here is implementable until the approvals named in section 6 are given.
+This document supplied the measurement and recommendation for issue #108. The product owner
+approved the following disposition on 2026-08-19:
+
+- Keep the current explicit `"unknown"` behavior. Dependent questions remain out of the base plan,
+  and the branch table remains the organizer-facing account of alternate requirements.
+- Accept that branch-table presentation as adequate for the current contract.
+- Defer three-state semantics for an absent or NULL gate. Reopen before the first widened
+  `asked_when`, the first nullable persisted gate, or persistent production event data activation.
+- If reopened, keep dependent questions hidden until the gate is resolved, include explicit
+  `unknown` in branch evaluation, and cover order-independent recursion, three-state conjunction,
+  and the multi-enum gate.
+- Reject converting boolean gates to enums. Read F-201's "field never asked" rule as definitely
+  out of scope, not unresolved scope.
+
+The measurements and proposal history below remain for context. They change no engine code,
+ruleset, fixture, schema, or regulatory output.
 
 **Relationship to the existing measurement.** `docs/proposals/asked-when-three-state-measurement.md`
 is the prior artifact. It is pinned to merge-base `481e1f6` and ruleset **nyc.v2.8**, and the
@@ -344,9 +356,9 @@ a question the plan does not identify as the one that would produce it.
 
 ## 6. Recommendation
 
-**This section recommends separately on Q1 and Q2 (see the scope statement at the top). It does not
-dispose of issue #108: the Q2 decision is left open on a measurement, not closed, and the Q1 engine
-question is deferred with two of its own gaps unmeasured (items 3 and 4 below).**
+**This section was the recommendation presented for approval. The approved disposition at the top
+of this document now controls: Q1 is deferred and Q2's current presentation is accepted. Issue #108
+stays open only for the named reopening triggers.**
 
 ### 6a. Q1, the unanswered gate
 
@@ -471,8 +483,8 @@ which does not.
 
 ### 6b. Q2, the gate answered `"unknown"`
 
-**Also do not implement a change now, but on entirely different evidence, and the question is not
-closed.** Section 2 summarises the three Q2 probes, whose harnesses were removed with the
+**Also do not implement a change now, but on entirely different evidence. The product owner accepted
+the current branch-table presentation on 2026-08-19.** Section 2 summarises the three Q2 probes, whose harnesses were removed with the
 appendices. They find:
 
 - Q2 **is** reachable: the questionnaire offers `"unknown"` and the submission carries it (section
@@ -505,19 +517,19 @@ change on the evidence available, not a demonstration that today's behaviour is 
 naming the four street permits in a branch table rather than as `may_be_required` findings is the
 correct presentation is an engine-owner and product call that no artifact in the repo answers.
 
-**How strong that evidence is, stated exactly.** Three probes at three points on the path, not one
-run through it. Nothing measured here submits a Q2 intake to the API, stores it, generates a plan
-from the stored row and retrieves it into the page; the API, database and plan-retrieval joins are
-neither exercised nor traced here. A reader who wants the recommendation to rest on a product-path
-run rather than on three isolated probes should treat that as the outstanding measurement it is.
+**How strong that evidence is, stated exactly.** The original evidence was three probes at three
+points on the path. The approved decision adds
+`apps/api/src/planning/plan.test.ts` coverage that submits Q2 through the intake endpoint, verifies
+the stored PostgreSQL values, generates the plan from that row, and retrieves the persisted branch
+table. Existing form and plan-page component tests cover the two browser ends. The repository has no
+browser end-to-end harness, so this is a split product-path regression rather than one browser run.
 
-**So: keep issue #108 open, and do not close it as won't-fix or as answered by this document.** Two
+**Issue #108 remains open for the deferred Q1 reopening triggers, not because Q2's presentation is
+still undecided.** Two
 measurements an earlier revision made preconditions for a Q2 decision have now been run: the plan
-rendering (section 2) and the questionnaire (section 2). Neither moved the recommendation. Each
-strengthened it in the same direction, by replacing an unrun measurement with a measured one at the
-point it covers. Two things are still outstanding on Q2, and they differ in kind: the product-path
-run just described, which a measurement would settle, and whether a branch table is adequate
-presentation, which no measurement settles.
+rendering, the questionnaire, and the API, storage, generation, and retrieval path. None moved the
+recommendation. The remaining product judgement, whether a branch table is adequate presentation,
+was answered yes by the product owner on 2026-08-19.
 
 **What I am explicitly not recommending, and why. Re-priced at v2.11 rather than cited from v2.8.**
 I am not recommending the ruleset alternative (converting the five boolean gates to enums carrying
@@ -727,12 +739,12 @@ Stated plainly rather than left as silence:
    is the judgement, whether a branch table is the right place for them or whether they belong on
    the plan lines as `may_be_required` findings, and that is a product and engine-owner call rather
    than a measurement.
-7. **Whether the Q2 path holds together end to end when actually run.** Separate from item 6 and
-   settleable by measurement, which item 6 is not. The questionnaire probe fakes `fetch`, the engine
-   probe calls `evaluate` directly and the render probe renders a plan object in isolation (all three
-   harnesses went with the appendices), so the API validation, the `events` insert, plan
-   generation from the stored row and retrieval back into the page are neither exercised nor traced
-   here. Nothing measured here suggests they fail; nothing here shows they do not.
+7. **Resolved 2026-08-19: the reachable Q2 path holds across the product boundaries.**
+   `apps/api/src/planning/plan.test.ts` submits an explicit `unknown`, verifies the stored gate and
+   NULL dependent, generates the plan from that row, and retrieves the same branch table. Existing
+   tests exercise the form submission and plan-page rendering. This is split coverage because the
+   repository has no browser end-to-end harness; it does not claim one browser session performed
+   every step.
 8. _(Withdrawn.)_ An earlier revision listed the reconciliation of `docs/ARCHITECTURE.md:83`
    against a NULL-as-materially-unknown semantics here, and section 6's approvals table carried it
    as a §5 prerequisite. Both are removed: that line governs storage, attempt B keeps unanswered and
