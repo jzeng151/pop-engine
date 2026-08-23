@@ -1,4 +1,4 @@
-import express, { type Express, type Response } from "express";
+import express, { type Express, type NextFunction, type Request, type Response } from "express";
 import { describeEngine, EvaluationError } from "@pop-engine/engine";
 import { createAlertsRouter, type AlertsDependencies } from "./alerts/alerts";
 import { createCheckinsRouter } from "./attendance/checkins";
@@ -37,6 +37,79 @@ export type AppDependencies = EventsDependencies & {
   verifyAccessToken?: VerifyAccessToken;
 };
 
+const BODY_PARSER_STATUS_BY_TYPE: Readonly<Record<string, number>> = {
+  "charset.unsupported": 415,
+  "encoding.unsupported": 415,
+  "entity.parse.failed": 400,
+  "entity.too.large": 413,
+  "entity.verify.failed": 403,
+  "request.aborted": 400,
+  "request.size.invalid": 400,
+};
+
+const BODY_PARSER_ERROR = Symbol("body parser error");
+const BODY_PARSER_CLIENT_STATUSES: ReadonlySet<number> = new Set(
+  Object.values(BODY_PARSER_STATUS_BY_TYPE),
+);
+
+type BodyParserError = Error & {
+  [BODY_PARSER_ERROR]?: true;
+  expose?: unknown;
+  status?: unknown;
+  statusCode?: unknown;
+  type?: unknown;
+};
+
+function bodyParserClientStatus(error: unknown): number | undefined {
+  if (!(error instanceof Error)) return undefined;
+
+  const requestError = error as BodyParserError;
+  const status = requestError.status;
+  if (
+    requestError[BODY_PARSER_ERROR] !== true ||
+    requestError.expose !== true ||
+    typeof status !== "number" ||
+    status !== requestError.statusCode ||
+    !BODY_PARSER_CLIENT_STATUSES.has(status)
+  ) {
+    return undefined;
+  }
+
+  if (typeof requestError.type === "string") {
+    const statusForType = BODY_PARSER_STATUS_BY_TYPE[requestError.type];
+    return statusForType === status ? statusForType : undefined;
+  }
+  return status;
+}
+
+function respondWithJsonError(
+  error: unknown,
+  _request: Request,
+  response: Response,
+  next: NextFunction,
+): void {
+  if (response.headersSent) {
+    next(error);
+    return;
+  }
+
+  const requestError = error as BodyParserError;
+  const bodyParserStatus = bodyParserClientStatus(error);
+  if (bodyParserStatus !== undefined) {
+    const message =
+      requestError.type === "entity.parse.failed"
+        ? "body must be valid JSON"
+        : requestError.type === "entity.too.large"
+          ? "request body is too large"
+          : "request body is invalid";
+    response.status(bodyParserStatus).json({ error: message });
+    return;
+  }
+
+  console.error("request failed", error);
+  response.status(500).json({ error: "request failed" });
+}
+
 // The Express app factory. Kept separate from the server bootstrap (index.ts) so tests
 // can drive it with supertest without opening a port.
 export function createApp(dependencies: AppDependencies): Express {
@@ -61,13 +134,17 @@ export function createApp(dependencies: AppDependencies): Express {
     next();
   });
 
-  app.use(
-    express.json({
-      verify: (req, _res, buffer) => {
-        Reflect.set(req, "rawJsonBody", buffer.toString("utf8"));
-      },
-    }),
-  );
+  const parseJsonBody = express.json({
+    verify: (req, _res, buffer) => {
+      Reflect.set(req, "rawJsonBody", buffer.toString("utf8"));
+    },
+  });
+  app.use((request, response, next) => {
+    parseJsonBody(request, response, (error?: unknown) => {
+      if (error instanceof Error) Reflect.set(error, BODY_PARSER_ERROR, true);
+      next(error);
+    });
+  });
 
   // Liveness probe for Railway / Cloudflare health checks. The `engine` field also
   // proves the @pop-engine/engine workspace package resolves end to end.
@@ -110,6 +187,7 @@ export function createApp(dependencies: AppDependencies): Express {
     app.use("/api", createAlertsRouter(dependencies.alerts));
   }
   if (dependencies.rulesMeta !== undefined) registerRulesRoutes(app, dependencies.rulesMeta);
+  app.use(respondWithJsonError);
 
   return app;
 }
