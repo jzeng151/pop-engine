@@ -435,6 +435,26 @@ describe.runIf(databaseUrl.length > 0)("F-101 event intake endpoints", () => {
       expect((await request(api).get(`/api/events/${event.id}`)).body.plan_stale).toBe(true);
     });
 
+    it("uses plan id to break equal generated-at ties", async () => {
+      const event = await createStreetEvent();
+      const edited = await request(api).patch(`/api/events/${event.id}`).send({ headcount: 76 });
+      expect(edited.body.event.revision_counter).toBe(2);
+
+      const generatedAt = "2026-08-23T12:00:00.000Z";
+      await database.query(
+        `INSERT INTO permit_plans (id, event_id, event_revision, ruleset_version, verdict,
+                                   verdict_detail, intake_snapshot, generated_at)
+         VALUES
+           ('00000000-0000-0000-0000-000000000001', $1, 1, 'nyc.v2.2', 'feasible',
+            '{}'::jsonb, '{}'::jsonb, $2),
+           ('00000000-0000-0000-0000-000000000002', $1, 2, 'nyc.v2.2', 'feasible',
+            '{}'::jsonb, '{}'::jsonb, $2)`,
+        [event.id, generatedAt],
+      );
+
+      expect((await request(api).get(`/api/events/${event.id}`)).body.plan_stale).toBe(false);
+    });
+
     it("leaves the revision and the plan alone when a save changes nothing", async () => {
       const event = await createStreetEvent();
       await database.query(

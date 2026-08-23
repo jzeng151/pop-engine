@@ -50,7 +50,7 @@ async function readEvent(database: Queryable, id: string): Promise<EventRow | nu
  */
 async function isPlanStale(database: Queryable, event: EventRow): Promise<boolean> {
   const { rows } = await database.query<{ event_revision: number }>(
-    "SELECT event_revision FROM permit_plans WHERE event_id = $1 ORDER BY generated_at DESC LIMIT 1",
+    "SELECT event_revision FROM permit_plans WHERE event_id = $1 ORDER BY generated_at DESC, id DESC LIMIT 1",
     [event.id],
   );
   const latest = rows[0];
