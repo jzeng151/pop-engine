@@ -2,6 +2,12 @@ packages:
   - "apps/*"
   - "packages/*"
 
+# Next 15.5.x pins these vulnerable transitive versions. Remove the overrides
+# when a compatible Next release raises both dependency floors.
+overrides:
+  postcss@8.4.31: 8.5.23
+  sharp@0.34.5: 0.35.3
+
 # Native build scripts approved to run on install.
 # esbuild backs vitest + tsx; sharp is Next.js image optimization for `next build`.
 allowBuilds:
