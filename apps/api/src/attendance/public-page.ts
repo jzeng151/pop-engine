@@ -1,5 +1,5 @@
 import { Router, type Request, type Response } from "express";
-import type { Pool, QueryResult, QueryResultRow } from "pg";
+import type { Pool, PoolClient, QueryResult, QueryResultRow } from "pg";
 
 // F-301 public event page (ARCHITECTURE.md API Surface).
 
@@ -164,7 +164,7 @@ export type PatchOrganizerPageResult =
   { status: 200; body: OrganizerPublicPage } | { status: 400 | 404 | 409; body: { error: string } };
 
 export async function patchOrganizerPublicPage(
-  database: Queryable,
+  database: Pool,
   eventId: string,
   body: unknown,
 ): Promise<PatchOrganizerPageResult> {
@@ -203,26 +203,6 @@ export async function patchOrganizerPublicPage(
     published = record.public_page_published;
   }
 
-  const plan = published === true ? await latestPlanState(database, eventId) : null;
-  if (published === true && plan === null) {
-    const event = await readEvent(database, eventId);
-    return event === null
-      ? { status: 404, body: { error: "That event was not found." } }
-      : {
-          status: 409,
-          body: { error: "Generate a permit plan before publishing this page." },
-        };
-  }
-  if (published === true && plan?.publication_blocked === true) {
-    return {
-      status: 409,
-      body: {
-        error:
-          "This event is blocked as scoped by a published prohibition or ineligibility. Rescope and generate a new plan before publishing.",
-      },
-    };
-  }
-
   // Update only supplied columns so a description-only save cannot clobber a concurrent
   // publish/unpublish (or the reverse) from a stale read-merge-write.
   const sets = ["updated_at = current_timestamp"];
@@ -239,15 +219,56 @@ export async function patchOrganizerPublicPage(
     next += 1;
   }
 
-  const { rows } = await database.query<{ id: string }>(
-    `UPDATE events
-        SET ${sets.join(", ")}
-      WHERE id = $1
-      RETURNING id`,
-    values,
-  );
-  if (rows[0] === undefined) {
-    return { status: 404, body: { error: "That event was not found." } };
+  const client: PoolClient | null = published === true ? await database.connect() : null;
+  try {
+    if (client !== null) {
+      await client.query("BEGIN");
+      const { rows } = await client.query<{ id: string }>(
+        "SELECT id FROM events WHERE id = $1 FOR UPDATE",
+        [eventId],
+      );
+      if (rows[0] === undefined) {
+        await client.query("ROLLBACK");
+        return { status: 404, body: { error: "That event was not found." } };
+      }
+
+      const plan = await latestPlanState(client, eventId);
+      if (plan === null) {
+        await client.query("ROLLBACK");
+        return {
+          status: 409,
+          body: { error: "Generate a permit plan before publishing this page." },
+        };
+      }
+      if (plan.publication_blocked) {
+        await client.query("ROLLBACK");
+        return {
+          status: 409,
+          body: {
+            error:
+              "This event is blocked as scoped by a published prohibition or ineligibility. Rescope and generate a new plan before publishing.",
+          },
+        };
+      }
+    }
+
+    const { rows } = await (client ?? database).query<{ id: string }>(
+      `UPDATE events
+          SET ${sets.join(", ")}
+        WHERE id = $1
+        RETURNING id`,
+      values,
+    );
+    if (rows[0] === undefined) {
+      if (client !== null) await client.query("ROLLBACK");
+      return { status: 404, body: { error: "That event was not found." } };
+    }
+    if (client !== null) await client.query("COMMIT");
+  } catch (error) {
+    if (client !== null) await client.query("ROLLBACK").catch(() => undefined);
+    throw error;
+  } finally {
+    client?.release();
   }
 
   // Publishing does not bump revision_counter — description is promotion copy, not intake.
