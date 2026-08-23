@@ -647,6 +647,64 @@ describe.runIf(databaseUrl.length > 0)("F-202 compliance checklist", () => {
       expect(Number(rows[0]?.count)).toBe(3);
     });
 
+    it("keeps a tracked permit terminal when its identity becomes advisory", async () => {
+      const storage = fakeStorage();
+      const api = appWith(storage);
+      const eventId = await createEvent(scenario("A"));
+      const ruleIds = ["NYPD-SOUND-001"];
+      await insertPlan(eventId, [{ ruleIds, kind: "permit" }], "2026-07-22T10:00:00Z", 1, {
+        rulesetVersion: "test.permit.v1",
+        snapshotDate: "2026-07-20",
+      });
+      const first = await review(api, eventId);
+      expect(first.status).toBe(201);
+      const original = (first.body.items as ChecklistItemView[])[0] as ChecklistItemView;
+      await request(api)
+        .patch(`/api/checklist-items/${original.id}`)
+        .send({ status: "approved", notes: "organizer evidence stays with the permit" });
+      const upload = await request(api)
+        .post(`/api/checklist-items/${original.id}/documents`)
+        .set("Content-Type", "application/pdf")
+        .set("X-Filename", "permit-evidence.pdf")
+        .send(PDF);
+      expect(upload.status).toBe(201);
+
+      await insertPlan(eventId, [{ ruleIds, kind: "advisory" }], "2026-07-22T11:00:00Z", 1, {
+        rulesetVersion: "test.advisory.v2",
+        snapshotDate: "2026-07-21",
+      });
+      const changed = await review(api, eventId);
+
+      expect(changed.status).toBe(200);
+      const tasks = changed.body.items as ChecklistItemView[];
+      expect(tasks).toHaveLength(1);
+      expect(tasks[0]).toMatchObject({
+        id: original.id,
+        planItemId: original.planItemId,
+        kind: "permit",
+        status: "approved",
+        notes: "organizer evidence stays with the permit",
+        struckThrough: true,
+        sourcePlan: { rulesetVersion: "test.permit.v1", snapshotDate: "2026-07-20" },
+      });
+      expect(tasks[0]?.documents).toEqual([
+        expect.objectContaining({ filename: "permit-evidence.pdf" }),
+      ]);
+
+      const contextItems = changed.body.contextItems as ChecklistItemView[];
+      expect(contextItems).toHaveLength(1);
+      expect(contextItems[0]).toMatchObject({
+        ruleIds,
+        kind: "advisory",
+        sourcePlan: { rulesetVersion: "test.advisory.v2", snapshotDate: "2026-07-21" },
+      });
+      const { rows } = await pool.query<{ plan_item_id: string }>(
+        "SELECT plan_item_id FROM checklist_items WHERE id = $1",
+        [original.id],
+      );
+      expect(rows[0]?.plan_item_id).toBe(original.planItemId);
+    });
+
     it("ends a task on a kind change and appends a new task when its identity returns", async () => {
       const storage = fakeStorage();
       const api = appWith(storage);

@@ -383,7 +383,7 @@ describe("SPEC-CONFLICT #301 F-202 checklist lifecycle prose", () => {
       "keeps a retained row's provenance with the dates it is actually showing",
       "ends a task on a kind change and appends a new task when its identity returns",
       "ends a task from an unreviewed intervening kind change",
-      "tracks every permit and insurance line and leaves other kinds as read-only context",
+      "keeps a tracked permit terminal when its identity becomes advisory",
     ];
 
     expect(checklistSpec).not.toContain(
