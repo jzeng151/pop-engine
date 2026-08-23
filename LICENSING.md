@@ -12,13 +12,13 @@ Full text in [`LICENSE`](LICENSE). You may use, modify, and redistribute it, inc
 
 **Not** covered by the Apache license:
 
-| Path | What it is |
-| --- | --- |
-| `rules/` | the published NYC ruleset and its proposals |
-| `docs/VERIFICATION-SOURCES.md` | the fetch-confirmed evidence record |
-| `docs/test-scenario-answer-key.md` | the approved scenario fixtures |
-| `docs/PRD.md`, `docs/ROADMAP.md`, `docs/DESIGN.md`, `docs/ARCHITECTURE*.md` | product and architecture record |
-| `specs/` | approved feature specifications |
+| Path                                                                        | What it is                                  |
+| --------------------------------------------------------------------------- | ------------------------------------------- |
+| `rules/`                                                                    | the published NYC ruleset and its proposals |
+| `docs/VERIFICATION-SOURCES.md`                                              | the fetch-confirmed evidence record         |
+| `docs/test-scenario-answer-key.md`                                          | the approved scenario fixtures              |
+| `docs/PRD.md`, `docs/ROADMAP.md`, `docs/DESIGN.md`, `docs/ARCHITECTURE*.md` | product and architecture record             |
+| `specs/`                                                                    | approved feature specifications             |
 
 These are reserved by the copyright holders while the team decides how to license them. If you want to use them, ask.
 

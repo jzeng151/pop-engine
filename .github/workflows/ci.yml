@@ -34,6 +34,7 @@ jobs:
           node-version: 22
           cache: pnpm
       - run: pnpm install --frozen-lockfile
+      - run: pnpm format:check
       - run: pnpm check:baseline # BASELINE.md APPROVED rows must match file headers (governance §3; issue #70)
       - run: pnpm --filter api migrate up
       - run: pnpm typecheck
