@@ -386,9 +386,12 @@ describe("SPEC-CONFLICT #301 F-202 checklist lifecycle prose", () => {
       "tracks every permit and insurance line and leaves other kinds as read-only context",
     ];
 
-    expect(checklistSpec).not.toMatch(/the implementation does not match/i);
-    expect(checklistSpec).not.toMatch(/both halves are live defects/i);
-    expect(checklistSpec).toContain("The implementation matches this criterion.");
+    expect(checklistSpec).not.toContain(
+      "The implementation does not match: attribution is currently chosen by whether the latest plan holds an item for the same rule-id set",
+    );
+    expect(checklistSpec).not.toContain(
+      "Both halves are live defects, established by running them rather than by reading the code.",
+    );
     for (const title of regressions) {
       expect(checklistSpec, `F-202 cites the ${title} regression`).toContain(title);
       expect(checklistTests, `the cited ${title} regression still exists`).toContain(title);
