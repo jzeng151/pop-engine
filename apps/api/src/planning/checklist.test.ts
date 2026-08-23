@@ -45,7 +45,7 @@ type StoredObject = {
 
   receivedStream: boolean;
 };
-type FakeStorage = DocumentStorage & { objects: Map<string, StoredObject> };
+type FakeStorage = DocumentStorage & { objects: Map<string, StoredObject>; putCount: number };
 
 const collect = async (body: Readable): Promise<Buffer> => {
   const chunks: Buffer[] = [];
@@ -53,13 +53,24 @@ const collect = async (body: Readable): Promise<Buffer> => {
   return Buffer.concat(chunks);
 };
 
-const fakeStorage = (): FakeStorage => {
+const fakeStorage = (waitForPuts = 0): FakeStorage => {
   const objects = new Map<string, StoredObject>();
-  return {
+  let releasePuts = (): void => {};
+  const putsStarted =
+    waitForPuts === 0
+      ? Promise.resolve()
+      : new Promise<void>((resolve) => {
+          releasePuts = resolve;
+        });
+  const storage: FakeStorage = {
     objects,
+    putCount: 0,
     put: async (key, body, contentType, sizeBytes) => {
+      storage.putCount += 1;
       const receivedStream = typeof (body as { pipe?: unknown }).pipe === "function";
       objects.set(key, { body: await collect(body), contentType, sizeBytes, receivedStream });
+      if (storage.putCount === waitForPuts) releasePuts();
+      await putsStarted;
     },
     signedDownloadUrl: async (key, expiresInSeconds, filename) =>
       `https://storage.test/${key}?X-Amz-Expires=${expiresInSeconds}` +
@@ -68,6 +79,7 @@ const fakeStorage = (): FakeStorage => {
       objects.delete(key);
     },
   };
+  return storage;
 };
 
 const unreachableStorage = (): DocumentStorage => ({
@@ -940,6 +952,15 @@ describe.runIf(databaseUrl.length > 0)("F-202 compliance checklist", () => {
   describe("document upload and download (AC 3)", () => {
     it("stores the bytes in object storage and only the metadata in Postgres", async () => {
       const storage = fakeStorage();
+      const put = storage.put.bind(storage);
+      let objectStoredAt = new Date(0);
+      storage.put = async (...args) => {
+        await put(...args);
+        const { rows } = await pool.query<{ observed_at: Date }>(
+          "SELECT clock_timestamp() AS observed_at",
+        );
+        objectStoredAt = rows[0]?.observed_at ?? objectStoredAt;
+      };
       const { body } = await checklistFor("A", storage);
       const itemId = body.items[0]?.id as string;
 
@@ -955,13 +976,19 @@ describe.runIf(databaseUrl.length > 0)("F-202 compliance checklist", () => {
         contentType: "application/pdf",
         sizeBytes: PDF.byteLength,
       });
-      const { rows } = await pool.query<{ storage_key: string; size_bytes: string }>(
-        "SELECT storage_key, size_bytes FROM documents WHERE id = $1",
-        [upload.body.id],
-      );
+      const { rows } = await pool.query<{
+        storage_key: string;
+        size_bytes: string;
+        uploaded_at: Date;
+      }>("SELECT storage_key, size_bytes, uploaded_at FROM documents WHERE id = $1", [
+        upload.body.id,
+      ]);
       const storageKey = rows[0]?.storage_key as string;
-      expect(storageKey).toMatch(new RegExp(`^checklist-items/${itemId}/[0-9a-f-]{36}\\.pdf$`));
+      expect(storageKey).toMatch(
+        new RegExp(`^checklist-items/${itemId}/[0-9a-f-]{36}/[0-9a-f-]{36}\\.pdf$`),
+      );
       expect(storage.objects.get(storageKey)?.body).toEqual(PDF);
+      expect(rows[0]?.uploaded_at.getTime()).toBeGreaterThanOrEqual(objectStoredAt.getTime());
       expect(Object.keys(rows[0] ?? {})).not.toContain("body");
     });
 
@@ -1056,7 +1083,9 @@ describe.runIf(databaseUrl.length > 0)("F-202 compliance checklist", () => {
       expect(upload.status).toBe(201);
       expect(upload.body.filename).toBe("passwd");
       const [storedKey] = [...storage.objects.keys()];
-      expect(storedKey).toBe(`checklist-items/${itemId}/${storedKey?.split("/")[2]}`);
+      expect(storedKey).toMatch(
+        new RegExp(`^checklist-items/${itemId}/[0-9a-f-]{36}/[0-9a-f-]{36}\\.pdf$`),
+      );
       expect(storedKey).not.toContain("passwd");
     });
 
@@ -1086,11 +1115,13 @@ describe.runIf(databaseUrl.length > 0)("F-202 compliance checklist", () => {
       expect(upload.status).toBe(201);
       expect(upload.body.filename).toBe(expected);
       const [storedKey] = [...storage.objects.keys()];
-      expect(storedKey).toBe(`checklist-items/${itemId}/${storedKey?.split("/")[2]}`);
+      expect(storedKey).toMatch(
+        new RegExp(`^checklist-items/${itemId}/[0-9a-f-]{36}/[0-9a-f-]{36}\\.pdf$`),
+      );
     });
 
-    it("stores one document however many times the same upload key arrives", async () => {
-      const storage = fakeStorage();
+    it("stores one document however many concurrent requests carry the same upload key", async () => {
+      const storage = fakeStorage(3);
       const { eventId, body } = await checklistFor("A", storage);
       const itemId = body.items[0]?.id as string;
       const send = () =>
@@ -1101,15 +1132,10 @@ describe.runIf(databaseUrl.length > 0)("F-202 compliance checklist", () => {
           .set("X-Upload-Key", "1024-1769472000000-application.pdf")
           .send(PDF);
 
-      const first = await send();
-      const second = await send();
-      const third = await send();
+      const responses = await Promise.all([send(), send(), send()]);
 
-      expect(first.status).toBe(201);
-      expect(second.status).toBe(200);
-      expect(third.status).toBe(200);
-      expect(second.body.id).toBe(first.body.id);
-      expect(third.body.id).toBe(first.body.id);
+      expect(responses.map(({ status }) => status).sort()).toEqual([200, 200, 201]);
+      expect(new Set(responses.map(({ body: responseBody }) => responseBody.id))).toHaveLength(1);
 
       const { rows } = await pool.query<{ count: string }>(
         "SELECT count(*) FROM documents WHERE checklist_item_id = $1",
@@ -1117,11 +1143,119 @@ describe.runIf(databaseUrl.length > 0)("F-202 compliance checklist", () => {
       );
       expect(rows[0]?.count).toBe("1");
       expect(storage.objects.size).toBe(1);
+      expect(storage.putCount).toBe(3);
 
       const listed = await request(appWith(storage)).get(`/api/events/${eventId}/checklist`);
       expect(
         (listed.body.items as ChecklistItemView[]).find((item) => item.id === itemId)?.documents,
       ).toHaveLength(1);
+    });
+
+    it("keeps the concurrent winner and refuses a mismatched upload with the same key", async () => {
+      const storage = fakeStorage(2);
+      const { body } = await checklistFor("A", storage);
+      const itemId = body.items[0]?.id as string;
+      const api = appWith(storage);
+      const path = `/api/checklist-items/${itemId}/documents`;
+      const key = "1024-1769472000000-application.pdf";
+      const send = (contentType: string, bodyBytes: Buffer) =>
+        request(api)
+          .post(path)
+          .set("Content-Type", contentType)
+          .set("X-Filename", "application.pdf")
+          .set("X-Upload-Key", key)
+          .send(bodyBytes);
+
+      const responses = await Promise.all([send("application/pdf", PDF), send("image/png", PNG)]);
+
+      expect(responses.map(({ status }) => status).sort()).toEqual([201, 409]);
+      expect(storage.putCount).toBe(2);
+      expect(storage.objects.size).toBe(1);
+      const { rows } = await pool.query<{ storage_key: string; content_type: string }>(
+        "SELECT storage_key, content_type FROM documents WHERE checklist_item_id = $1",
+        [itemId],
+      );
+      expect(rows).toHaveLength(1);
+      expect(storage.objects.get(rows[0]?.storage_key as string)?.contentType).toBe(
+        rows[0]?.content_type,
+      );
+    });
+
+    it("returns a matching retry without reading or replacing its body", async () => {
+      const storage = fakeStorage();
+      const { body } = await checklistFor("A", storage);
+      const itemId = body.items[0]?.id as string;
+      const api = appWith(storage);
+      const path = `/api/checklist-items/${itemId}/documents`;
+      const key = "1024-1769472000000-application.pdf";
+
+      const first = await request(api)
+        .post(path)
+        .set("Content-Type", "application/pdf")
+        .set("X-Filename", "application.pdf")
+        .set("X-Upload-Key", key)
+        .send(PDF);
+      const retry = await request(api)
+        .post(path)
+        .set("Content-Type", "application/pdf")
+        .set("X-Filename", "application.pdf")
+        .set("X-Upload-Key", key)
+        .send(Buffer.alloc(PDF.length));
+
+      expect(first.status).toBe(201);
+      expect(retry.status).toBe(200);
+      expect(retry.body.id).toBe(first.body.id);
+      expect(storage.putCount).toBe(1);
+      expect([...storage.objects.values()][0]?.body).toEqual(PDF);
+    });
+
+    it("refuses mismatched upload-key reuse without changing storage or metadata", async () => {
+      const storage = fakeStorage();
+      const { body } = await checklistFor("A", storage);
+      const itemId = body.items[0]?.id as string;
+      const api = appWith(storage);
+      const path = `/api/checklist-items/${itemId}/documents`;
+      const key = "1024-1769472000000-application.pdf";
+
+      const first = await request(api)
+        .post(path)
+        .set("Content-Type", "application/pdf")
+        .set("X-Filename", "application.pdf")
+        .set("X-Upload-Key", key)
+        .send(PDF);
+      const changedSize = await request(api)
+        .post(path)
+        .set("Content-Type", "application/pdf")
+        .set("X-Filename", "application.pdf")
+        .set("X-Upload-Key", key)
+        .send(Buffer.concat([PDF, Buffer.from("changed")]));
+      const changedType = await request(api)
+        .post(path)
+        .set("Content-Type", "image/png")
+        .set("X-Filename", "application.pdf")
+        .set("X-Upload-Key", key)
+        .send(PNG);
+
+      expect(first.status).toBe(201);
+      expect(changedSize.status).toBe(409);
+      expect(changedType.status).toBe(409);
+      expect(storage.putCount).toBe(1);
+      expect(storage.objects.size).toBe(1);
+      expect([...storage.objects.values()][0]?.body).toEqual(PDF);
+      const { rows } = await pool.query<{
+        filename: string;
+        content_type: string;
+        size_bytes: string;
+      }>("SELECT filename, content_type, size_bytes FROM documents WHERE checklist_item_id = $1", [
+        itemId,
+      ]);
+      expect(rows).toEqual([
+        {
+          filename: "application.pdf",
+          content_type: "application/pdf",
+          size_bytes: String(PDF.length),
+        },
+      ]);
     });
 
     it("stores two documents for two different upload keys", async () => {
@@ -1210,6 +1344,37 @@ describe.runIf(databaseUrl.length > 0)("F-202 compliance checklist", () => {
         [itemId],
       );
       expect(item[0]?.status).toBe("not_started");
+    });
+
+    it("removes an attempt whose storage write landed but its acknowledgement was lost", async () => {
+      const storage = fakeStorage();
+      const put = storage.put.bind(storage);
+      const remove = storage.remove.bind(storage);
+      let cleanupAttempts = 0;
+      storage.put = async (...args) => {
+        await put(...args);
+        throw new DocumentStorageError("document storage is unavailable");
+      };
+      storage.remove = async (key) => {
+        cleanupAttempts += 1;
+        await remove(key);
+      };
+      const { body } = await checklistFor("A", storage);
+      const itemId = body.items[0]?.id as string;
+
+      const failed = await request(appWith(storage))
+        .post(`/api/checklist-items/${itemId}/documents`)
+        .set("Content-Type", "application/pdf")
+        .send(PDF);
+
+      expect(failed.status).toBe(503);
+      expect(failed.body).toEqual({ error: "document storage is unavailable", retryable: true });
+      expect(cleanupAttempts).toBe(1);
+      expect(storage.objects.size).toBe(0);
+      const { rows } = await pool.query("SELECT id FROM documents WHERE checklist_item_id = $1", [
+        itemId,
+      ]);
+      expect(rows).toHaveLength(0);
     });
 
     it("reports an unsignable download without leaking why", async () => {
@@ -1996,7 +2161,7 @@ describe.runIf(databaseUrl.length > 0)("F-202 compliance checklist", () => {
       expect(JSON.stringify(response.body)).not.toContain("connection terminated");
     });
 
-    it("reports the document it stored when the insert committed but the client never heard so", async () => {
+    it("reports the document it stored when the insert landed but its acknowledgement was lost", async () => {
       const storage = fakeStorage();
       const { eventId, body } = await checklistFor("A", storage);
       const itemId = body.items[0]?.id as string;
@@ -2029,14 +2194,70 @@ describe.runIf(databaseUrl.length > 0)("F-202 compliance checklist", () => {
       ).toHaveLength(1);
     });
 
-    it("keeps the object when nothing can say whether the row was written", async () => {
+    it("recovers an ambiguous insert with a one-connection pool", async () => {
       const storage = fakeStorage();
       const { body } = await checklistFor("A", storage);
-      const failing = poolIntercepting((text) =>
-        text.includes("documents")
-          ? Promise.reject(new Error("connection terminated unexpectedly"))
-          : null,
+      const itemId = body.items[0]?.id as string;
+      const oneConnection = new Pool({ connectionString: databaseUrl, max: 1 });
+      const failing = Object.create(oneConnection) as Pool;
+      failing.query = ((text: string, values?: unknown[]) => {
+        const result = oneConnection.query(text as never, values as never);
+        return text.includes("INSERT INTO documents")
+          ? result.then(() => Promise.reject(new Error("connection terminated unexpectedly")))
+          : result;
+      }) as Pool["query"];
+
+      try {
+        const response = await uploadWith(failing, storage, itemId);
+        expect(response.status).toBe(201);
+        expect(storage.objects.size).toBe(1);
+      } finally {
+        await oneConnection.end();
+      }
+    });
+
+    it("does not mistake a competitor's committed object for this upload attempt", async () => {
+      const storage = fakeStorage();
+      const { body } = await checklistFor("A", storage);
+      const itemId = body.items[0]?.id as string;
+      let competitorKey = "";
+      const competing = poolIntercepting((text, values) => {
+        if (!text.includes("INSERT INTO documents")) return null;
+        const attemptKey = values[5] as string;
+        competitorKey = `${attemptKey}.competitor`;
+        const attempt = storage.objects.get(attemptKey);
+        if (attempt !== undefined) storage.objects.set(competitorKey, attempt);
+        const competitorValues = [...values];
+        competitorValues[5] = competitorKey;
+        return pool
+          .query(text, competitorValues as unknown[])
+          .then(() => Promise.reject(new Error("connection terminated unexpectedly")));
+      });
+
+      const response = await uploadWith(competing, storage, itemId);
+
+      expect(response.status).toBe(200);
+      const { rows } = await pool.query<{ storage_key: string }>(
+        "SELECT storage_key FROM documents WHERE checklist_item_id = $1",
+        [itemId],
       );
+      expect(rows).toEqual([{ storage_key: competitorKey }]);
+      expect([...storage.objects.keys()]).toEqual([competitorKey]);
+    });
+
+    it("keeps the attempt object when the metadata outcome is unknown", async () => {
+      const storage = fakeStorage();
+      const { body } = await checklistFor("A", storage);
+      let insertFailed = false;
+      const failing = poolIntercepting((text) => {
+        if (text.includes("INSERT INTO documents")) {
+          insertFailed = true;
+          return Promise.reject(new Error("connection terminated unexpectedly"));
+        }
+        return insertFailed && text.includes("FROM documents")
+          ? Promise.reject(new Error("connection terminated unexpectedly"))
+          : null;
+      });
 
       const response = await uploadWith(failing, storage, body.items[0]?.id as string);
 
@@ -2054,11 +2275,11 @@ describe.runIf(databaseUrl.length > 0)("F-202 compliance checklist", () => {
           throw new DocumentStorageError("document storage is unavailable");
         },
       };
-      const failing = Object.create(pool) as Pool;
-      failing.query = ((text: string, values?: unknown[]) =>
-        typeof text === "string" && text.includes("INSERT INTO documents")
+      const failing = poolIntercepting((text) =>
+        text.includes("INSERT INTO documents")
           ? Promise.reject(new Error("connection terminated unexpectedly"))
-          : pool.query(text as never, values as never)) as Pool["query"];
+          : null,
+      );
 
       const response = await request(
         createApp({
