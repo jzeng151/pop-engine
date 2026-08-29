@@ -1,0 +1,8 @@
+# Immutable upstream captures are evidence, not authored HTML.
+docs/proposals/advisory-144-refetch-2026-07-28/*.page.html
+
+# Generated package-manager state keeps pnpm's own serialization.
+pnpm-lock.yaml
+
+# This archived/proposed rules draft is not an approved implementation input.
+rules/proposals/nyc-rules.v2-full-draft.json

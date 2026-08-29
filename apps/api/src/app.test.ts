@@ -50,4 +50,59 @@ describe("api scaffold", () => {
       "Authorization, Content-Type, Idempotency-Key, X-Filename, X-Upload-Key",
     );
   });
+
+  it("returns a safe JSON error for malformed JSON", async () => {
+    const response = await request(createScaffoldApp())
+      .post("/api/events")
+      .set("Content-Type", "application/json")
+      .send('{"name":');
+
+    expect(response.status).toBe(400);
+    expect(response.headers["content-type"]).toMatch(/^application\/json/);
+    expect(response.body).toEqual({ error: "body must be valid JSON" });
+    expect(JSON.stringify(response.body)).not.toMatch(/syntax|stack|unexpected|apps\/api/i);
+  });
+
+  it("keeps the request-too-large status and returns JSON", async () => {
+    const response = await request(createScaffoldApp())
+      .post("/api/events")
+      .set("Content-Type", "application/json")
+      .send({ name: "x".repeat(101 * 1024) });
+
+    expect(response.status).toBe(413);
+    expect(response.headers["content-type"]).toMatch(/^application\/json/);
+    expect(response.body).toEqual({ error: "request body is too large" });
+    expect(JSON.stringify(response.body)).not.toMatch(/entity|limit|stack|apps\/api/i);
+  });
+
+  it("keeps unsupported request encodings as a JSON client error", async () => {
+    const response = await request(createScaffoldApp())
+      .post("/api/events")
+      .set("Content-Type", "application/json")
+      .set("Content-Encoding", "unsupported")
+      .send("{}");
+
+    expect(response.status).toBe(415);
+    expect(response.headers["content-type"]).toMatch(/^application\/json/);
+    expect(response.body).toEqual({ error: "request body is invalid" });
+    expect(JSON.stringify(response.body)).not.toMatch(/encoding|stack|apps\/api/i);
+  });
+
+  it.each(["gzip", "deflate"])(
+    "keeps corrupt %s request bodies as JSON client errors",
+    async (encoding) => {
+      const response = await request(createScaffoldApp())
+        .post("/api/events")
+        .set("Content-Type", "application/json")
+        .set("Content-Encoding", encoding)
+        .send(Buffer.from("not compressed JSON"));
+
+      expect(response.status).toBe(400);
+      expect(response.headers["content-type"]).toMatch(/^application\/json/);
+      expect(response.body).toEqual({ error: "request body is invalid" });
+      expect(JSON.stringify(response.body)).not.toMatch(
+        /compression|header|stack|z_data|apps\/api/i,
+      );
+    },
+  );
 });
