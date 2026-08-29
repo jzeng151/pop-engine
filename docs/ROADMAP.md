@@ -12,6 +12,10 @@ Prerequisites, not features:
 - Ratify `rules/nyc-rules.v2.13.json` (42 rules + 4 advisories: product-owner sign-off per `BASELINE.md`, which is the whole requirement under governance §6 even for a ruleset the product owner authored); boot validation loads it.
 - Repo scaffold, deploy target, Twilio account + A2P registration started.
 
+Platform & Rules Administration foundation:
+
+- **F-707 · Production Dependency Security** — keep the installed production dependency graph free of known advisories while Next 15.5.x pins vulnerable PostCSS and Sharp versions. The approved fix uses exact workspace overrides, a frozen lockfile, the production audit, and the Node 22 production build. _Added 2026-08-29, product-owner approved in issue #304. Assigned to F-7xx because this is a repository-wide Platform & Rules Administration control, not organizer-facing behavior._
+
 ## Phase 1 — MVP Core (capstone; iron-clad, no mocks)
 
 The permit-planning spine. Must pass all 6 answer-key scenarios; "iron-clad" is defined in `DESIGN.md`.
