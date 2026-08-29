@@ -176,6 +176,37 @@ type DocumentRow = {
   uploaded_at: Date;
 };
 
+type StoredDocumentRow = DocumentRow & { storage_key: string };
+
+type UploadOperands = {
+  checklistItemId: string;
+  filename: string;
+  contentType: string;
+  sizeBytes: number;
+};
+
+/** Answer from committed metadata without trusting an idempotency key to identify the body. */
+function sendCommittedUpload(
+  res: Response,
+  row: DocumentRow,
+  expected: UploadOperands,
+  matchingStatus: 200 | 201,
+): void {
+  if (row.checklist_item_id !== expected.checklistItemId) {
+    res.status(409).json({ error: "that upload key names a document on another item" });
+    return;
+  }
+  if (
+    row.filename !== expected.filename ||
+    row.content_type !== expected.contentType ||
+    Number(row.size_bytes) !== expected.sizeBytes
+  ) {
+    res.status(409).json({ error: "that upload key was already used for another document" });
+    return;
+  }
+  res.status(matchingStatus).json(documentView(row));
+}
+
 const isoDate = (value: Date | string | null): string | null =>
   value === null ? null : calendarDateFrom(value);
 
@@ -728,7 +759,7 @@ async function removeOrphanedObject(storage: DocumentStorage, key: string): Prom
  * making a second trip for something it was just handed.
  */
 type MetadataOutcome =
-  { state: "written"; row: DocumentRow } | { state: "not_written" } | { state: "unknown" };
+  { state: "written"; row: StoredDocumentRow } | { state: "not_written" } | { state: "unknown" };
 
 /** A rejected query is not the same as a rejected statement. */
 async function metadataOutcome(
@@ -738,8 +769,8 @@ async function metadataOutcome(
 ): Promise<MetadataOutcome> {
   if (error instanceof DatabaseError) return { state: "not_written" };
   try {
-    const { rows } = await database.query<DocumentRow>(
-      `SELECT id, checklist_item_id, filename, content_type, size_bytes, uploaded_at
+    const { rows } = await database.query<StoredDocumentRow>(
+      `SELECT id, checklist_item_id, filename, content_type, size_bytes, storage_key, uploaded_at
          FROM documents WHERE id = $1`,
       [documentId],
     );
@@ -934,36 +965,60 @@ export function createChecklistRouter(dependencies: ChecklistDependencies): Rout
         return;
       }
 
+      // The id names the document, and the key names its bytes.
+      const uploadKey = uploadKeyOf(req.get("x-upload-key"));
+      const documentId =
+        uploadKey === null ? randomUUID() : documentIdFor(checklistItemId, uploadKey);
+      const storageKey =
+        `checklist-items/${checklistItemId}/${documentId}/` +
+        `${randomUUID()}.${accepted.extension}`;
+      const filename = displayFilename(req.get("x-filename"), accepted.extension);
+      const expected = { checklistItemId, filename, contentType, sizeBytes };
+
+      const { rows: items } = await database.query<{ id: string }>(
+        "SELECT id FROM checklist_items WHERE id = $1",
+        [checklistItemId],
+      );
+      if (items[0] === undefined) {
+        notFound(res, `checklist item ${checklistItemId} not found`);
+        return;
+      }
+
+      if (uploadKey !== null) {
+        const { rows: existing } = await database.query<StoredDocumentRow>(
+          `SELECT id, checklist_item_id, filename, content_type, size_bytes, storage_key, uploaded_at
+             FROM documents WHERE id = $1`,
+          [documentId],
+        );
+        const previous = existing[0];
+        if (previous !== undefined) {
+          sendCommittedUpload(res, previous, expected, 200);
+          return;
+        }
+      }
+
       const { head, ended } = await peek(req, SIGNATURE_BYTES);
       if (!startsWithSignature(head, accepted.signature)) {
         res.status(400).json({ error: `document contents are not a valid ${contentType} file` });
         return;
       }
 
-      const { rows } = await database.query<{ id: string }>(
-        "SELECT id FROM checklist_items WHERE id = $1",
-        [checklistItemId],
-      );
-      if (rows[0] === undefined) {
-        notFound(res, `checklist item ${checklistItemId} not found`);
-        return;
-      }
-
-      // The id names the document, and the key names its bytes.
-      const uploadKey = uploadKeyOf(req.get("x-upload-key"));
-      const documentId =
-        uploadKey === null ? randomUUID() : documentIdFor(checklistItemId, uploadKey);
-      const storageKey = `checklist-items/${checklistItemId}/${documentId}.${accepted.extension}`;
-      // Storage first, metadata second: a failed upload leaves no row pointing at bytes that are not there (spec edge case), and the client can simply retry.
-      await storage.put(storageKey, ended ? Readable.from(head) : req, contentType, sizeBytes);
-
-      const filename = displayFilename(req.get("x-filename"), accepted.extension);
+      // Every attempt owns a different object, so a concurrent loser can remove its bytes without
+      // touching the winner. No database connection is held while the request streams to storage.
       try {
-        const { rows: created } = await database.query<DocumentRow>(
+        await storage.put(storageKey, ended ? Readable.from(head) : req, contentType, sizeBytes);
+      } catch (error) {
+        // A provider can store the object and lose only its acknowledgement. This attempt owns the
+        // unique key, so compensating is safe whether the bytes landed or not.
+        await removeOrphanedObject(storage, storageKey);
+        throw error;
+      }
+      try {
+        const { rows: created } = await database.query<StoredDocumentRow>(
           `INSERT INTO documents (id, checklist_item_id, filename, content_type, size_bytes, storage_key)
            VALUES ($1, $2, $3, $4, $5, $6)
            ON CONFLICT (id) DO NOTHING
-           RETURNING id, checklist_item_id, filename, content_type, size_bytes, uploaded_at`,
+           RETURNING id, checklist_item_id, filename, content_type, size_bytes, storage_key, uploaded_at`,
           [documentId, checklistItemId, filename, contentType, sizeBytes, storageKey],
         );
         const stored = created[0];
@@ -972,23 +1027,32 @@ export function createChecklistRouter(dependencies: ChecklistDependencies): Rout
           return;
         }
 
-        // The id was already there: this key has been uploaded before, so this request IS that document rather than another one.
-        const { rows: existing } = await database.query<DocumentRow>(
-          `SELECT id, checklist_item_id, filename, content_type, size_bytes, uploaded_at
-             FROM documents WHERE id = $1 AND checklist_item_id = $2`,
-          [documentId, checklistItemId],
+        const { rows: existing } = await database.query<StoredDocumentRow>(
+          `SELECT id, checklist_item_id, filename, content_type, size_bytes, storage_key, uploaded_at
+             FROM documents WHERE id = $1`,
+          [documentId],
         );
         const previous = existing[0];
         if (previous === undefined) {
-          res.status(409).json({ error: "that upload key names a document on another item" });
+          console.error(
+            `document ${documentId} lost its conflicting metadata row; object ${storageKey} ` +
+              "is kept and needs reconciling by hand",
+          );
+          res.status(500).json({
+            error: "the document may have been stored; the checklist will show whether it was",
+            storedOutcome: "unknown",
+          });
           return;
         }
-        res.status(200).json(documentView(previous));
+
+        await removeOrphanedObject(storage, storageKey);
+        sendCommittedUpload(res, previous, expected, 200);
       } catch (error) {
         const outcome = await metadataOutcome(database, documentId, error);
         if (outcome.state === "written") {
-          // The row is there and the object is there; only the result was lost.
-          res.status(201).json(documentView(outcome.row));
+          const thisAttemptWon = outcome.row.storage_key === storageKey;
+          if (!thisAttemptWon) await removeOrphanedObject(storage, storageKey);
+          sendCommittedUpload(res, outcome.row, expected, thisAttemptWon ? 201 : 200);
           return;
         }
         if (outcome.state === "not_written") {

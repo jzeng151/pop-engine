@@ -371,3 +371,30 @@ describe("SPEC-CONFLICT #130 business-day calendar", () => {
     expect(planTest).not.toContain("delete this test and close #130");
   });
 });
+
+// Partial prose guard for specs/F-202-compliance-checklist.md: it covers the two exact stale
+// implementation-gap claim patterns from SPEC-CONFLICT #301 and the stable regression titles the
+// reconciliation cites. It cannot detect arbitrary rewordings or prove the runtime behavior.
+describe("SPEC-CONFLICT #301 F-202 checklist lifecycle prose", () => {
+  it("records the implemented terminal lifecycle instead of resolved defects", () => {
+    const checklistSpec = read("specs/F-202-compliance-checklist.md");
+    const checklistTests = read("apps/api/src/planning/checklist.test.ts");
+    const regressions = [
+      "keeps a retained row's provenance with the dates it is actually showing",
+      "ends a task on a kind change and appends a new task when its identity returns",
+      "ends a task from an unreviewed intervening kind change",
+      "keeps a tracked permit terminal when its identity becomes advisory",
+    ];
+
+    expect(checklistSpec).not.toContain(
+      "The implementation does not match: attribution is currently chosen by whether the latest plan holds an item for the same rule-id set",
+    );
+    expect(checklistSpec).not.toContain(
+      "Both halves are live defects, established by running them rather than by reading the code.",
+    );
+    for (const title of regressions) {
+      expect(checklistSpec, `F-202 cites the ${title} regression`).toContain(title);
+      expect(checklistTests, `the cited ${title} regression still exists`).toContain(title);
+    }
+  });
+});
