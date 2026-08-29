@@ -28,6 +28,9 @@ Non-goals:
 
 ## Dependencies and baseline
 
+- F-706 is the immediate merge prerequisite because it makes `pnpm format:check` a required CI
+  gate. The F-707 branch includes F-706's commits so this feature can prove that gate before F-707
+  merges. Merge F-706 first, then merge F-707 without squashing away the separate F-706 commits.
 - Next 15.5.21 is the installed framework version and requests the affected transitive versions.
 - Node 22 and pnpm 11.5.3 are the repository and CI toolchain.
 - The current artifact versions remain those in `docs/BASELINE.md`. This feature consumes no
@@ -78,6 +81,7 @@ There are no regulatory fixtures. The runnable checks are:
 ```text
 pnpm install --frozen-lockfile
 pnpm audit --prod
+pnpm vitest run scripts/dependency-security.test.mjs
 pnpm check:baseline
 pnpm format:check
 pnpm lint
@@ -87,14 +91,17 @@ pnpm test:coverage
 pnpm build
 ```
 
-The lockfile and workspace configuration are the direct fixtures for F707-AC-01 through
-F707-AC-04. The existing build and test suites cover F707-AC-05 and F707-AC-06.
+`scripts/dependency-security.test.mjs` checks the exact overrides, unchanged direct Next range and
+locked version, required lock resolutions, and absence of the two vulnerable locked entries for
+F707-AC-03 and F707-AC-04. The install and audit commands check F707-AC-01 and F707-AC-02. The
+existing build and repository suites check F707-AC-05 and F707-AC-06.
 
 ## Allowed file footprint and coordination
 
-Implementation is limited to `pnpm-workspace.yaml` and the generated `pnpm-lock.yaml`. This spec,
-`docs/ROADMAP.md`, and `docs/BASELINE.md` record its approved scope. Both package files are shared
-repository inputs and require coordination with any concurrent dependency update.
+Implementation is limited to `pnpm-workspace.yaml`, the generated `pnpm-lock.yaml`, and
+`scripts/dependency-security.test.mjs`. This spec, `docs/ROADMAP.md`, and `docs/BASELINE.md` record
+its approved scope. Both package files are shared repository inputs and require coordination with
+any concurrent dependency update.
 
 ## Rollout and fallback
 
