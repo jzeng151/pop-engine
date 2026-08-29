@@ -1,6 +1,6 @@
 # PopEngine — Roadmap (Canonical)
 
-**Status:** APPROVED (2026-07-22; F-109 retitled "Scope-Support Classification" and its concept renamed from "coverage states" to "scope support states" 2026-07-26, product-owner approved, resolving a three-way overload of "coverage"; the five state values are unchanged; standalone `Square/POS integrations` entry dropped from Phase 4 on 2026-07-28, product-owner approved, resolving SPEC-CONFLICT #127 item 2 by the narrowing branch, no F-id's meaning changed; F-705 Event Workspace Shell added to Phase 1.5 on 2026-08-02, product-owner approved, registering navigation scope that had shipped under a design-system amendment that excludes it, no F-id's meaning changed; see `docs/BASELINE.md`).
+**Status:** APPROVED (2026-07-22; F-109 retitled "Scope-Support Classification" and its concept renamed from "coverage states" to "scope support states" 2026-07-26, product-owner approved, resolving a three-way overload of "coverage"; the five state values are unchanged; standalone `Square/POS integrations` entry dropped from Phase 4 on 2026-07-28, product-owner approved, resolving SPEC-CONFLICT #127 item 2 by the narrowing branch, no F-id's meaning changed; F-705 Event Workspace Shell added to Phase 1.5 on 2026-08-02, product-owner approved, registering navigation scope that had shipped under a design-system amendment that excludes it, no F-id's meaning changed; F-706 Repository Formatting Gate added to Phase 0 on 2026-08-29, product-owner approved in issue #302; see `docs/BASELINE.md`).
 **Companion docs:** `PRD.md` (requirements) · `DESIGN.md` (lifecycle model, lanes, gates, demo plan, dependency graph) · `test-scenario-answer-key.md` (MVP ground truth).
 **Feature IDs:** F-xxx IDs are permanent shared vocabulary; once assigned, an ID's meaning never changes. Full ID policy in `DESIGN.md`.
 
@@ -11,6 +11,10 @@ Prerequisites, not features:
 - Ratify the `events` schema (the team's single integration point) — completed for the access-gated demo 2026-07-27 through PR #137's recorded overwrite; strict production ratification and later shared/core-table changes remain the product owner's under governance §6.
 - Ratify `rules/nyc-rules.v2.13.json` (42 rules + 4 advisories: product-owner sign-off per `BASELINE.md`, which is the whole requirement under governance §6 even for a ruleset the product owner authored); boot validation loads it.
 - Repo scaffold, deploy target, Twilio account + A2P registration started.
+
+Platform & Rules Administration feature:
+
+- **F-706 · Repository Formatting Gate:** run the existing repository-wide Prettier check in CI, excluding only immutable evidence and generated or unapproved artifacts that Prettier does not own. _Added 2026-08-29, product-owner approved in issue #302._
 
 ## Phase 1 — MVP Core (capstone; iron-clad, no mocks)
 
