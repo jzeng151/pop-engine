@@ -23,11 +23,9 @@ describe("F-707 production dependency security", () => {
 
   it("keeps the direct Next range and locked version unchanged", () => {
     const webPackage = JSON.parse(read("apps/web/package.json"));
-    const webImporter = lockfile.match(/\n  apps\/web:\n([\s\S]*?)\n  packages\/engine:/)?.[1];
+    const webImporter = lockfile.match(/\n {2}apps\/web:\n([\s\S]*?)\n {2}packages\/engine:/)?.[1];
     expect(webPackage.dependencies.next).toBe("^15.1.4");
-    expect(webImporter).toMatch(
-      /\n      next:\n        specifier: \^15\.1\.4\n        version: 15\.5\.21\(/,
-    );
+    expect(webImporter).toMatch(/\n {6}next:\n {8}specifier: \^15\.1\.4\n {8}version: 15\.5\.21\(/);
   });
 
   it("keeps every advisory-clearing package resolution", () => {
@@ -37,8 +35,8 @@ describe("F-707 production dependency security", () => {
       "postcss@8.5.23",
       "sharp@0.35.3",
     ]) {
-      expect(lockfile).toMatch(new RegExp(`^  ${entry.replaceAll(".", "\\.")}:$`, "m"));
+      expect(lockfile).toMatch(new RegExp(`^ {2}${entry.replaceAll(".", "\\.")}:$`, "m"));
     }
-    expect(lockfile).not.toMatch(/^  (?:postcss@8\.4\.31|sharp@0\.34\.5):$/m);
+    expect(lockfile).not.toMatch(/^ {2}(?:postcss@8\.4\.31|sharp@0\.34\.5):$/m);
   });
 });
