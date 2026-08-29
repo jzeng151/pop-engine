@@ -28,9 +28,8 @@ Non-goals:
 
 ## Dependencies and baseline
 
-- F-706 is the immediate merge prerequisite because it makes `pnpm format:check` a required CI
-  gate. The F-707 branch includes F-706's commits so this feature can prove that gate before F-707
-  merges. Merge F-706 first, then merge F-707 without squashing away the separate F-706 commits.
+- F-706 is merged into `main` and makes `pnpm format:check` a required CI gate. F-707 depends on
+  that gate and must keep it green.
 - Next 15.5.21 is the installed framework version and requests the affected transitive versions.
 - Node 22 and pnpm 11.5.3 are the repository and CI toolchain.
 - The current artifact versions remain those in `docs/BASELINE.md`. This feature consumes no
