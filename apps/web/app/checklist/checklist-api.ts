@@ -173,8 +173,9 @@ export type PreviousDeadlineProvenance = {
 };
 
 /**
- * AC 2's rollup as the api counted it: current-plan rows only, one count per status. The counting
- * rule lives there and only there, so this feature reads the answer rather than recomputing it.
+ * AC 2's rollup as the api counted it: current-plan rows only, one count per status. AC 11 derives
+ * the visible task-only rollup from the returned rows because blocker statuses stay stored but are
+ * not displayed.
  */
 export type StatusRollup = Readonly<Record<ChecklistStatus, number>>;
 

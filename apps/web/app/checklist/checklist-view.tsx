@@ -15,7 +15,7 @@ import {
   type ChecklistItem,
   type SourcePlan,
 } from "./checklist-api";
-import { ChecklistItemCard, ContextLine } from "./checklist-item";
+import { ChecklistItemCard, ReadOnlyChecklistLine } from "./checklist-item";
 
 // The checklist view (F-202): the execution surface for a permit plan.
 
@@ -567,18 +567,20 @@ export function ChecklistView({ apiBaseUrl, eventId }: { apiBaseUrl: string; eve
         <section className="checklist__group" aria-labelledby="checklist-blockers-heading">
           <h2 id="checklist-blockers-heading">Blockers</h2>
           {blockingTaskItems.map((item) => (
-            <ContextLine
+            <ReadOnlyChecklistLine
               key={item.id}
               context={item}
               currentPlan={currentPlan}
+              headingId={`checklist-blocker-item-${item.id}`}
               retained={item.struckThrough}
             />
           ))}
           {contextualBlockers.map((context) => (
-            <ContextLine
+            <ReadOnlyChecklistLine
               key={context.ruleIds.join("+")}
               context={context}
               currentPlan={currentPlan}
+              headingId={`checklist-blocker-context-${context.kind}-${context.ruleIds.join("-")}`}
             />
           ))}
         </section>
@@ -605,10 +607,11 @@ export function ChecklistView({ apiBaseUrl, eventId }: { apiBaseUrl: string; eve
         <section className="checklist__group" aria-labelledby="checklist-context-heading">
           <h2 id="checklist-context-heading">Advisories and notifications</h2>
           {advisoryContext.map((context) => (
-            <ContextLine
+            <ReadOnlyChecklistLine
               key={context.ruleIds.join("+")}
               context={context}
               currentPlan={currentPlan}
+              headingId={`checklist-context-${context.kind}-${context.ruleIds.join("-")}`}
             />
           ))}
         </section>

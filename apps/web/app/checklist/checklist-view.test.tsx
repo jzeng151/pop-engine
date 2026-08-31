@@ -1944,6 +1944,32 @@ describe("edge cases", () => {
     expect(document.querySelector(".checklist__rollup")?.textContent).toBe("1 submitted");
   });
 
+  it("gives a retained blocker and its same-rule replacement distinct accessible names", async () => {
+    stubApi({
+      [GET_CHECKLIST]: checklistOf({
+        created: true,
+        items: [
+          trackedItem(STREET_MEDIUM, {
+            id: "retained-street-medium",
+            disposition: "prohibited_or_ineligible",
+            struckThrough: true,
+          }),
+        ],
+        contextItems: [planContext(STREET_MEDIUM, { disposition: "prohibited_or_ineligible" })],
+      }),
+    });
+    await renderView();
+
+    const blockers = screen.getAllByRole("article", { name: nameOf(STREET_MEDIUM) });
+    const headingIds = blockers.map((blocker) => blocker.getAttribute("aria-labelledby"));
+    expect(new Set(headingIds).size).toBe(2);
+    for (const blocker of blockers) {
+      const headingId = blocker.getAttribute("aria-labelledby");
+      expect(headingId).not.toBeNull();
+      expect(blocker.contains(document.getElementById(headingId as string))).toBe(true);
+    }
+  });
+
   it("omits empty checklist groups without claiming there are no blockers", async () => {
     stubApi({
       [GET_CHECKLIST]: checklistOf({ created: true, items: [trackedItem(STREET_MEDIUM)] }),
