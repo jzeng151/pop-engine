@@ -1,6 +1,6 @@
 # F-701 · Authentication
 
-**Status:** APPROVED (2026-07-28) · **Reviewer/approver:** product owner/user acting as product and architecture owner via PR #201 follow-up · **Owner:** product owner · see `docs/BASELINE.md`.
+**Status:** APPROVED (2026-07-28; actor-projection amendment approved 2026-08-30) · **Reviewer/approver:** product owner/user acting as product and architecture owner via PR #201 follow-up, with the 2026-08-30 amendment approved by the product owner · **Owner:** product owner · see `docs/BASELINE.md`.
 **Phase:** 2 · **Issue:** [#26](https://github.com/jzeng151/pop-engine/issues/26) · **Provider decision:** `docs/ARCHITECTURE-FUTURE.md` AD-16
 
 ## Purpose and User Outcome
@@ -47,7 +47,10 @@ authorized product.
 - Inputs are email/password credentials, a Google authorization response, recovery proof, or a
   Supabase bearer token plus an allow-listed return location.
 - Outputs are a Supabase-managed cookie session in the web app and a minimal server-derived actor
-  projection (`id`, optional `email`) at an explicitly protected API boundary.
+  projection at an explicitly protected API boundary. The projection includes the verified
+  Supabase subject and explicit verified-email state. Only when that state confirms ownership does
+  it include the verified email value that later features may use for identity matching. An absent,
+  unverified, or unavailable state provides no email identity for matching.
 - Session state is unauthenticated → authenticated → expired or signed out. Verification and
   recovery links exchange their one-time code server-side before establishing the session.
 - Return locations are limited to `/`, `/account`, and `/auth/update-password`; any other value
@@ -69,13 +72,13 @@ authorized product.
 
 ## System Impact
 
-| Concern              | Impact                                                                                                                                                               |
-| -------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| API                  | Adds protected `GET /api/session` as an actor-resolution proof; the reusable bearer boundary applies only where explicitly mounted.                                  |
-| Schema               | None. Supabase owns identity/session storage; PopEngine adds no migration.                                                                                           |
-| Jobs                 | None. Supabase performs verification, recovery, and Google provider delivery.                                                                                        |
-| Providers            | Supabase Auth is the sole application identity/session provider; email/password and Google OAuth are authentication methods within it.                               |
-| Privacy and security | SSR cookies and server-side code exchange; Supabase-supported claims verification; allow-listed return paths; no service-role browser key or exposed provider token. |
+| Concern              | Impact                                                                                                                                                                                                                                                                                                                                                     |
+| -------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| API                  | Adds protected `GET /api/session` as an actor-resolution proof; the reusable bearer boundary applies only where explicitly mounted. Its approved actor semantics include an optional verified email value and explicit verified-email state, but the exact OpenAPI shape requires separate product-owner approval before F-702 implementation consumes it. |
+| Schema               | None. Supabase owns identity/session storage; PopEngine adds no migration.                                                                                                                                                                                                                                                                                 |
+| Jobs                 | None. Supabase performs verification, recovery, and Google provider delivery.                                                                                                                                                                                                                                                                              |
+| Providers            | Supabase Auth is the sole application identity/session provider; email/password and Google OAuth are authentication methods within it.                                                                                                                                                                                                                     |
+| Privacy and security | SSR cookies and server-side code exchange; Supabase-supported claims verification; allow-listed return paths; no service-role browser key or exposed provider token.                                                                                                                                                                                       |
 
 ## Acceptance Criteria
 
@@ -88,8 +91,10 @@ authorized product.
 4. **F701-AC-04:** Recovery initiates with non-enumerating copy, a valid recovery session can update
    the password, and sign-out ends the browser session.
 5. **F701-AC-05:** The account surface and protected API proof resolve only the verified Supabase
-   subject and optional email; missing, malformed, expired, or unverifiable bearer credentials fail
-   closed without exposing the token.
+   subject and explicit verified-email state. When that state confirms ownership, the projection
+   includes the verified email value a later identity match may consume. An absent, unverified, or
+   unavailable state provides no email identity for matching. Missing, malformed, expired, or
+   unverifiable bearer credentials fail closed without exposing the token.
 6. **F701-AC-06:** Existing public RSVP/check-in routes remain outside the F-701 bearer boundary,
    and F-701 makes no workspace, membership, ownership, or role claim.
 7. **F701-AC-07:** Deploying F-701 alone leaves the Cloudflare demo gate, synthetic-data policy,
@@ -100,7 +105,8 @@ authorized product.
 
 - Automated tests map to F701-AC-01 through F701-AC-07 and cover email and Google initiation,
   callback success/failure, open-redirect rejection, session restoration/sign-out, missing
-  configuration, API bearer verification/failure, and unchanged public-route behavior.
+  configuration, API bearer verification/failure, verified, unverified, and unavailable email
+  states, and unchanged public-route behavior.
 - Regulatory fixtures: none; this feature does not define regulatory ground truth.
 
 ## Allowed Footprint and Coordination
@@ -108,8 +114,10 @@ authorized product.
 - `apps/web` and `apps/api` authentication code and tests; placeholder-only environment examples;
   `DEPLOY.md`; this spec; and the directly related baseline/architecture records.
 - Dependencies are limited to the current Supabase SSR and JavaScript clients.
-- No migration, OpenAPI/shared-schema change, repository restructuring, or F-702/F-703
-  implementation is authorized.
+- No migration, repository restructuring, or F-702/F-703 implementation is authorized. The
+  2026-08-30 amendment approves the actor-projection semantics above, not an exact OpenAPI or shared
+  schema shape. The runtime and reviewed machine contract must implement those semantics before
+  F-702 can claim its invitation matching complete.
 
 ## Rollout and Fallback
 
