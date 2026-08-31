@@ -6,7 +6,7 @@
 
 ## Purpose and User Outcome
 
-Workspace owners can grant only the access each collaborator needs, completing the authorization gate required before real user-owned data or an external beta.
+Workspace owners and delegated admins can grant only the access each collaborator needs, completing the authorization gate required before real user-owned data or an external beta.
 
 ## Scope
 
@@ -25,13 +25,92 @@ Workspace owners can grant only the access each collaborator needs, completing t
 
 - F-701 authentication and F-702 workspaces. F-702 supplies the workspace membership boundary every role change and member-management operation resolves against and F-701 supplies the authenticated actor `F703-AC-06` reads it for; the permission matrix that check consults is the one this spec itself defines and its Approval Blockers gate. F-701 is APPROVED (2026-07-28, `docs/BASELINE.md`); F-702 remains PROPOSED, so the gate is not an approved input today and this spec is not implementable against it until F-702 is approved and listed in `docs/BASELINE.md`.
 - Operand binding for client-supplied identities is stated locally in `F703-AC-03` and is deliberately not declared as a dependency on `specs/F-411-staff-roles-credentialed-entry.md`. Other specs on this branch take that rule by reference to `F411-AC-08`, but F-703 cannot: F-411 already declares F-703 as a dependency, because `F411-AC-09` consults the permission matrix this spec defines, so declaring F-411 here would make the two specs blockers of each other and neither could be approved first. The phase order says the same thing from the other side, since F-703 is the Phase 2 authorization gate and F-411 is a Phase 3 spec, so a Phase 2 gate cannot wait on it. Restating the rule locally is therefore the option taken of the three the review named, and it leaves no unapproved undeclared input in the criterion. If the rule is later promoted to an approved shared invariant, this spec and F-411 both cite that invariant and the local restatement is removed.
-- Approved permission matrix covering every currently shipped aggregate and action.
-- Baseline at draft time: PRD, Roadmap, Design, and Phase 0–1.5 Architecture approved 2026-07-22; `ARCHITECTURE-FUTURE.md` approved as a planning target 2026-07-25; NYC ruleset `nyc.v2.7`, rules schema `popengine-rules/v2`, and scenario fixtures v5 where regulatory output is consumed.
+- Product-owner approval of the proposed permission matrix below, covering every currently shipped workspace aggregate and action.
+- Baseline at this draft: PRD, Roadmap, Design, and Phase 0–1.5 Architecture approved 2026-07-22; `ARCHITECTURE-FUTURE.md` approved as a planning target 2026-07-25; NYC ruleset `nyc.v2.13`, rules schema `popengine-rules/v2`, and scenario fixtures v5 where regulatory output is consumed.
 - The approval PR must re-pin any baseline version that changes before approval. A proposed or superseded input blocks implementation.
+
+## Proposed authorization model
+
+This section records the decision proposed for approval. It is not implementable while this spec and F-702 remain `PROPOSED`.
+
+### One workspace role per membership
+
+- An active membership has at most one active workspace role grant. Workspace roles do not combine and do not inherit permissions from one another. Authorization reads the exact matrix cell for the active role and action.
+- An active F-702 membership without an active F-703 role grant has no workspace permission. Membership proves tenancy; the role grant supplies authority.
+- F-703 assigns `owner` to each active F-702 owner membership and `viewer` to every other active membership when its migration runs. After that migration, accepting an invitation creates a `viewer` grant in the same transaction as the membership unless a committed acceptance replay returns the grant already created. An authorized role change may follow as a separate request.
+- A role change revokes the current grant and activates the requested role atomically. A revoke leaves the membership active with no role and therefore no workspace permission. F-702 membership removal remains a separate owner-only transition.
+- `owner`, `admin`, `organizer`, `contributor`, `check_in_staff`, and `viewer` are distinct roles, not ranks. A change between two non-owner roles may add some permissions and remove others. The grant checks below therefore inspect both the current role and requested role rather than relying on a higher-than comparison.
+
+### Workspace permission matrix
+
+`Allow` means the server may admit the action after it rechecks the actor's active membership and role for the owning workspace. Every blank cell means deny. The permission names are policy identifiers, not new HTTP routes.
+
+| Permission                 | Currently shipped action                                                                                           | Owner | Admin | Organizer | Contributor | Check-in staff | Viewer |
+| -------------------------- | ------------------------------------------------------------------------------------------------------------------ | :---: | :---: | :-------: | :---------: | :------------: | :----: |
+| `workspace.read`           | View and switch to a workspace                                                                                     | Allow | Allow |   Allow   |    Allow    |     Allow      | Allow  |
+| `workspace.update`         | Rename or update workspace settings                                                                                | Allow | Allow |           |             |                |        |
+| `invitation.manage`        | Issue, re-deliver, or revoke an invitation                                                                         | Allow |       |           |             |                |        |
+| `membership.remove`        | Remove another active member                                                                                       | Allow |       |           |             |                |        |
+| `membership.leave`         | Leave through F-702's self-only transition                                                                         | Allow | Allow |   Allow   |    Allow    |     Allow      | Allow  |
+| `member.read_all`          | Read the member-management list                                                                                    | Allow | Allow |           |             |                |        |
+| `role.read_all`            | Read every member's current and historical grants                                                                  | Allow | Allow |           |             |                |        |
+| `authorization_audit.read` | Read workspace role and membership audit records                                                                   | Allow | Allow |           |             |                |        |
+| `event.create`             | `POST /api/events`                                                                                                 | Allow | Allow |   Allow   |    Allow    |                |        |
+| `event.read`               | `GET /api/events/:id` and event workspace shell                                                                    | Allow | Allow |   Allow   |    Allow    |                | Allow  |
+| `event.update`             | `PATCH /api/events/:id`                                                                                            | Allow | Allow |   Allow   |    Allow    |                |        |
+| `plan.generate`            | `POST /api/events/:id/plan`                                                                                        | Allow | Allow |   Allow   |    Allow    |                |        |
+| `plan.read`                | `GET /api/events/:id/plan`                                                                                         | Allow | Allow |   Allow   |    Allow    |                | Allow  |
+| `checklist.materialize`    | `POST /api/events/:id/checklist`, including reminder scheduling                                                    | Allow | Allow |   Allow   |    Allow    |                |        |
+| `checklist.read`           | `GET /api/events/:id/checklist`                                                                                    | Allow | Allow |   Allow   |    Allow    |                | Allow  |
+| `checklist.update`         | `PATCH /api/checklist-items/:id`                                                                                   | Allow | Allow |   Allow   |    Allow    |                |        |
+| `document.upload`          | `POST /api/checklist-items/:id/documents`                                                                          | Allow | Allow |   Allow   |    Allow    |                |        |
+| `document.read`            | Read document metadata and `GET /api/documents/:id/url`                                                            | Allow | Allow |   Allow   |    Allow    |                | Allow  |
+| `public_page.read_config`  | `GET /api/events/:id/public-page`                                                                                  | Allow | Allow |   Allow   |    Allow    |                | Allow  |
+| `public_page.manage`       | Change description, publish, unpublish, or administer the public token through `PATCH /api/events/:id/public-page` | Allow | Allow |   Allow   |             |                |        |
+| `attendee.read`            | `GET /api/events/:id/guests` and `GET /api/events/:id/stats`                                                       | Allow | Allow |   Allow   |             |     Allow      |        |
+| `rsvp.cancel`              | `PATCH /api/events/:id/guests/:rsvpId`                                                                             | Allow | Allow |   Allow   |             |                |        |
+| `checkin.read`             | `GET /api/events/:id/checkins`                                                                                     | Allow | Allow |   Allow   |             |     Allow      |        |
+| `checkin.record`           | `POST /api/events/:id/checkins`                                                                                    | Allow | Allow |   Allow   |             |     Allow      |        |
+| `alert.test`               | `POST /api/events/:id/alerts/test`                                                                                 | Allow | Allow |   Allow   |             |                |        |
+
+Each actor may read their own membership and current role so the workspace switcher and denied-state UI can explain their access. That self-read does not include another member's identity, grant, or audit record.
+
+An export requires every read permission needed for every record it would include. The server refuses the whole export if any record falls outside the actor's current permissions. An upload uses the permission for its owning aggregate as well as `document.upload`; a signed download rechecks `document.read` every time it mints a URL.
+
+The public attendee operations `GET /e/:eventId` and `POST /api/events/:id/rsvps` do not consult a workspace role. Their published-state and public-input checks grant no workspace permission. F-401's name-only `GET /api/events/:id/checkins` and public `POST` to the same path remain public only during its bounded rehearsal window; the F-401 deployment gate, not a workspace role, admits those requests during that window. When that bypass is closed, an authenticated workspace request uses `checkin.read` or `checkin.record`. `/health`, `/api/rules/meta`, and `/api/permits/nyc/discover` also remain platform-neutral reads. `/api/rules/meta` returns published runtime metadata only and is not a rules-admin surface.
+
+### Role-change authority
+
+| Acting role                                    | Grant when the subject has no active role                 | Replace an active role                                                                              | Revoke an active role                                                      |
+| ---------------------------------------------- | --------------------------------------------------------- | --------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------- |
+| Owner                                          | Any workspace role                                        | Any workspace role with any other workspace role                                                    | Any workspace role                                                         |
+| Admin                                          | `organizer`, `contributor`, `check_in_staff`, or `viewer` | Allowed only when both the subject's current role and requested role are in that same four-role set | Allowed only when the subject's current role is in that same four-role set |
+| Organizer, contributor, check-in staff, viewer | Denied                                                    | Denied                                                                                              | Denied                                                                     |
+
+An owner may change or revoke their own role only when another active owner remains after the transaction. The same last-owner check applies when an owner acts on another owner. An admin cannot act on an owner, another admin, or themself and cannot grant `owner` or `admin`. A request that would leave the current role unchanged is refused as a no-op. Every grant, replacement, and revoke still follows the version, replay, actor-authority, workspace-binding, and audit requirements in F703-AC-03, F703-AC-06, and F703-AC-07.
+
+Only owners and admins may read the full member list and role history. Only owners and admins may read workspace authorization audit records. No workspace role may grant or revoke the platform rules-admin role.
+
+### Platform rules-admin authority
+
+- Platform rules-admin is a separate versioned grant keyed to the F-701 actor. It is not a workspace membership or workspace role. Holding it grants no workspace action in the matrix above, and holding a workspace role grants no platform action.
+- The platform permission covers rules-admin source and configuration reads, comparison creation, comparison-result reads, previews, exports, generated reports, and approved publication operations. Every such operation checks the current platform grant when it produces or returns data.
+- The role authorizes a platform operation but cannot approve regulatory content, a verification promotion, or a ruleset publication. Those decisions still require the product owner's recorded approval under documentation governance.
+- F-703 adds no public or workspace-facing platform-role endpoint. The product owner grants or revokes the role through one deployment-only administrative command running under a dedicated database operator credential. The runtime API database role cannot invoke that command or write platform grants directly.
+- The command takes the target F-701 actor ID, `grant` or `revoke`, the expected grant version, a client request identity, and a reason. It atomically compare-and-swaps the grant, records the bound request and outcome for replay, and appends a redacted audit entry. Only the product owner operates it. This command is also the bootstrap path for the first rules admin.
+- Revocation blocks the next platform operation and every later read or export of a retained result. A rules admin cannot grant or revoke platform authority merely by holding the role.
+
+### Queued and provider work
+
+- A user-initiated workspace job records the initiating F-701 actor, owning workspace, subject aggregate, and exact permission that admitted creation. It stores no client-supplied role claim.
+- The worker re-reads that actor's active membership and permission when claiming the job. It re-reads them again immediately before the protected database write or provider handoff. A changed role may continue the job only when the new role still allows the recorded permission.
+- The execution-time check and side effect use the shared linearizable fence required by F703-AC-03. If revocation wins, the worker makes no protected write and no provider call. If the side effect wins, the later revocation observes that order and does not report the side effect as stopped.
+- Reminder jobs created by `checklist.materialize` recheck that permission for the actor who materialized the checklist. The synchronous test-alert endpoint rechecks `alert.test` immediately before its provider handoff. A platform job rechecks the separate platform grant instead of a workspace role.
+- An authorization denial records the actor, workspace, job, required permission, and denial reason without contact data, document contents, secrets, invitation tokens, or provider credentials. The reviewed job contract chooses the terminal job state; this spec requires only that denial cannot look successful and cannot retry into a side effect without a newly authorized request.
 
 ## Inputs, Outputs, State, Validation, and Errors
 
-- Inputs are an owner/admin grant, downgrade, or revoke request with the exact expected membership and role-grant versions; output is an auditable role grant used by server-side policy evaluation.
+- Inputs are a grant, replacement, or revoke request by an owner or the bounded admin cases in the matrix, with the exact expected membership and role-grant versions. Output is an auditable role grant used by server-side policy evaluation.
 - Role grant state is versioned and active → revoked; authorization changes take effect on the next request and, for a queued job, at both the claim check and the execution-time recheck that immediately precedes the job's side effect. Stale privileged context is invalidated.
 - Unknown actions, missing membership, missing workspace, and stale grants deny by default. Platform rules-admin checks never derive from a workspace role.
 - Missing or unresolved material data stays visibly unset, unknown, pending, or failed as appropriate; it never becomes a successful or complete result.
@@ -57,7 +136,7 @@ Exact HTTP, JSON Schema, migration, job, and provider shapes belong in their rev
 
 ## Acceptance Criteria
 
-1. **F703-AC-01:** The approved permission matrix has a passing allow and deny test for every role/action pair in scope.
+1. **F703-AC-01:** Every `Allow` cell in the approved permission matrix has a same-workspace allow test and an inactive-membership or cross-workspace deny test. Every blank cell has a same-workspace deny test. No role/action pair relies on an untested default.
 2. **F703-AC-02:** A client cannot gain authority by changing a workspace ID, role value, URL, hidden form field, queued job, or public token.
 3. **F703-AC-03:** Every grant, downgrade, or revoke mutation compare-and-swaps the exact expected membership and role-grant versions; a mismatch changes no authority or audit history and requires rebuilt review. Role revocation therefore prevents a stale concurrent grant, the next privileged request, and any queued job from committing its protected write or provider handoff. A claim-time check alone does not deliver that, because the worker holds the lease across the interval in which the revocation commits: the job rechecks the actor's current authority at execution, immediately before the irreversible side effect, and that recheck and the side effect are linearizable through one shared fence, the shape `docs/EVENT-REVISION-CONTRACT.md` §2.5 already requires between a worker's final checks and its provider handoff. If revocation wins the fence the job cannot cross the handoff; if the handoff wins, revocation observes that ordering rather than reporting queued work as stopped. Owner revoke/downgrade also uses F702-AC-04's serialized workspace invariant so concurrent changes cannot remove the last owner. Denials cause no provider side effect or data disclosure and are recorded without secret/contact content.
 
@@ -75,7 +154,7 @@ Exact HTTP, JSON Schema, migration, job, and provider shapes belong in their rev
 
    Without this criterion the primary mutations this spec defines have no criterion stating who may perform them. `F703-AC-01` tests the matrix's allow and deny pairs, `F703-AC-02` blocks parameter tampering, and `F703-AC-03`'s compare-and-swap reads the subject membership's versions and never the acting actor's authority, so an actor whose own granting authority was revoked a moment earlier, or who never held it at all, still presents matching subject versions and commits the change. `F702-AC-11` M-04 explicitly delegates role-change authority to whatever F-703 approves, so no criterion outside this spec supplies the check either, and the role-grant, audit, and member-management reads were gated nowhere at all.
 
-   One input this criterion needs is not established by any approved artifact today and is not invented here. The role/action matrix above is unapproved, so which roles may grant, downgrade, or revoke which cannot be named. Until that matrix is approved this criterion is testable only as "the committing transaction re-reads the acting actor's current membership and refuses when it does not carry the granting authority the approved matrix assigns, and a self-serve escalation, an actor granting an authority they do not hold the right to grant, is refused", not against a named role or permission identifier. Naming the granting and member-management read authorities with the matrix approval is an approval blocker below.
+   The proposed matrix now names every granting and member-management authority this criterion checks. It remains an unapproved input until the product owner approves this spec. Before that approval, this criterion is testable only at the check shape stated above and no implementation may treat the proposed cells as authority.
 
 7. **F703-AC-07:** The subject membership a grant, downgrade, or revoke names must resolve to the workspace that same request names, compared server-side inside the transaction that commits the change and before the subject membership is read for update. `F703-AC-06` re-reads the acting actor's authority for the named workspace and `F703-AC-03` compare-and-swaps the subject membership's own versions, and the two are independent: the workspace and the subject membership arrive as separate request fields, so an actor holding an active membership of workspace A and a membership of workspace B names workspace A and a subject membership in B and passes both. The actor is legitimately authorized where they stand, the named subject membership genuinely exists and its versions are current, and the mutation commits, so a role in another organization's workspace is granted, downgraded, or revoked by an administrator who holds no authority there at all. A mismatch refuses the whole request before any durable write, changes no authority and no role grant, appends no audit entry, and returns the same non-disclosing response `F703-AC-06` requires, which does not distinguish a workspace or membership that does not exist from one the actor may not see.
 
@@ -86,10 +165,12 @@ Exact HTTP, JSON Schema, migration, job, and provider shapes belong in their rev
 ## Fixtures and Verification
 
 - Planned automated fixture IDs are the acceptance IDs above; each must map one-to-one to a runnable test before approval can claim implementation readiness.
+- F703-AC-01 covers the positive and negative cases its criterion assigns to every matrix cell. It also covers the public and platform-neutral exclusions, including proof that a public RSVP, published-page read, or F-401 rehearsal-window check-in grants no workspace permission.
 - F703-AC-04 includes a read-side fixture in which a workspace owner holding no platform rules-admin role is refused a rules-admin comparison, result read, export, preview, and generated report, with a response indistinguishable from the one for a record that does not exist, and a fixture in which the role is revoked after a result is produced and every later read and export of it is refused.
 - Regulatory fixtures: none; this feature does not define regulatory ground truth.
 - F703-AC-03 includes a fixture in which a revoke commits, its response is lost, and the retry presenting the same request identity and the pre-revoke membership and role-grant versions returns the original recorded outcome rather than a version-mismatch rejection, appending no second audit entry.
 - F703-AC-06 includes a fixture in which an authenticated actor holding no membership of the owning workspace names a valid membership and is refused at grant, downgrade, and revoke and at every role-grant, audit, and member-management read, with a response that does not distinguish absence from denial; a fixture in which the acting actor's own granting authority is revoked while a grant is in flight and the grant fails rather than commits; and a fixture in which a self-serve escalation is refused.
+- F703-AC-06 also covers every cell in the role-change authority table, an admin attempting to act on an owner or admin, an owner's permitted self-change with another owner present, the same request refused for the last owner, and an active membership with a revoked grant receiving no workspace permission.
 - F703-AC-07 includes a fixture in which an actor holding an active membership of two workspaces names one workspace and a subject membership belonging to the other and is refused at grant, downgrade, and revoke, with no authority change, no audit entry, and a response that does not distinguish absence from a different workspace, and a same-workspace control fixture in which the identical mutation commits.
 - Security-sensitive and cross-workspace paths require negative authorization tests; provider paths require success, duplicate-delivery, retry, invalid-signature, and permanent-failure tests where applicable.
 
@@ -106,10 +187,27 @@ Exact HTTP, JSON Schema, migration, job, and provider shapes belong in their rev
 - Synchronize issue #50's Phase 3 metadata to Roadmap-authoritative Phase 2 before approval.
 - Rollback disables the new surface and workers/provider calls without deleting confirmed user data or rewriting immutable plans, rulesets, revisions, or history.
 
+### Proposed production-gate runbook
+
+The product owner may open the joint F-701, F-702, and F-703 production gate only after one deployed release records all of these results:
+
+1. F-701 authentication provider settings, verified-email projection, session expiry, logout, recovery, and protected-session checks pass in the production configuration.
+2. F-702 workspace, membership, invitation, synthetic-data backfill, one-active-membership, and last-owner migration checks pass from both an empty database and the prior release schema. The product owner records the deployed migration head and the synthetic workspace that received every backfilled row.
+3. The F-703 role migration assigns `owner` and `viewer` exactly as this spec states, creates no duplicate active grant, and leaves no active membership with unintended authority.
+4. Every `Allow` cell's same-workspace allow and inactive-membership or cross-workspace deny tests pass. Every blank cell's same-workspace deny test passes. Cross-workspace read, write, export, upload, signed-download, public-token administration, and identifier-guessing tests pass for every shipped aggregate.
+5. Grant, replacement, revoke, self-change, stale-version, replay, mismatched-replay, concurrent actor revocation, and concurrent last-owner tests pass against the deployed database.
+6. A workspace owner and admin both fail every platform rules-admin read and write. A deployment-only platform grant and revoke each succeed once, replay safely, append one audit record, and make a retained result unreadable after revocation.
+7. A queued workspace job is denied at claim after its actor loses permission. A second fixture revokes permission after claim and proves the execution-time fence prevents the provider handoff. The opposite ordering records the completed handoff before revocation succeeds.
+8. Synthetic browser checks cover member and role management, each role's navigation and denied states, event planning, document download, public-page administration, guest operations, check-in, and the platform rules-admin denial. No check uses real attendee, contact, document, or application data.
+9. Format, lint, typecheck, the full test suite, migration tests, and the production build pass on the exact deployed commit. The production dependency audit reports no known production advisory.
+
+The gate starts closed and has one explicit production configuration value. Only the product owner changes it after attaching the commit, migration head, timestamp, and results above to the release record. Rollback closes that value first, stops new claims and provider calls, rolls application code back only to a schema-compatible release, and preserves memberships, grants, audit history, and user records. A failed check leaves the gate closed; it does not create an exception.
+
 ## Approval Blockers
 
-- Approve the role/action matrix and platform-role administration path.
-- Approve tenancy/security review and the explicit production-gate runbook.
-- Approve F-702, and name with the role/action matrix the granting, downgrade, revoke, and member-management read authorities `F703-AC-06` checks. That criterion checks an authority no approved artifact defines today and may not invent one, so until the matrix names it the criterion is testable only at the check-shape level stated there.
+- Approve the proposed single-role model, migration defaults, role/action matrix, role-change authority table, and deployment-only platform-role administration path. In particular, approval must accept that a revoked grant leaves an active membership with no permission, admins cannot act on owners or admins, contributors can change event and checklist data but not public-page or attendee state, viewers cannot read attendee contacts, and check-in staff cannot read event intake, plans, checklists, or documents.
+- Approve the tenancy/security review and proposed production-gate runbook, including the product-owner-only gate activation and rollback sequence.
+- Approve F-702. The matrix now names the granting, replacement, revoke, member-management read, and audit-read authorities `F703-AC-06` checks, but F-702 still supplies the membership and last-owner boundary those checks read.
 - Approve F-702 so that the workspace a subject membership resolves to is an approved input `F703-AC-07` can compare. That criterion compares a boundary no approved artifact defines today and may not invent one.
+- Approve the Phase 2 OpenAPI and JSON Schema authority handoff, then approve the exact role, membership, platform-grant, audit, and job contract changes. This proposal does not authorize local duplicate request or response types while that handoff remains unapproved.
 - Assign the owner, approve this spec, and add it to `docs/BASELINE.md`. The reviewer and approver is the product owner (`docs/DOCUMENTATION-GOVERNANCE.md` §6), which is what this spec's header records, and that is the whole requirement: the independent-reviewer element this blocker used to carry was retired on 2026-08-05 (product owner; see §6 and `docs/BASELINE.md`). Until those three things are done this blocker is not satisfied and this spec is not approved: it stays PROPOSED under governance §3, its Approval date stays `—`, and it is not implementable and not listed in `docs/BASELINE.md`. Retiring the reviewer element made this spec approvable; it did not approve it.
