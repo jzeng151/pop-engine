@@ -235,4 +235,8 @@ The following gates remain before runtime implementation can claim completion:
 - Obtain product-owner approval for each shared/core-table change in the drafted migration. Strict production ratification of the existing `events` contract also remains due before the joint production gate opens.
 - Ship and verify F-703 before persisting authenticated user-owned product data or opening an external beta.
 
-After this spec enters the baseline, a derived-document cleanup may collapse the local restatements of F702-AC-10's fourth obligation into references to it. That cleanup changes no product decision and is not an implementation prerequisite.
+After this spec enters the baseline, a derived-document cleanup may collapse the local restatements
+of F702-AC-10's fourth obligation into references to it. Issue #318 separately tracks the stale
+F-702 dependency and approval-status wording in the remaining proposed downstream specs. This
+approval package reconciles F-701's actor projection and F-702 itself; F-703 is reconciled
+separately. Neither cleanup changes a product decision or is an F-702 implementation prerequisite.
