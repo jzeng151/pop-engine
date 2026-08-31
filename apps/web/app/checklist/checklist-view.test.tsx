@@ -1878,19 +1878,57 @@ describe("edge cases", () => {
     expect(within(context).queryByRole("button")).toBeNull();
   });
 
-  it("renders advisories as context beside trackable rows, never as tasks", async () => {
+  it("groups blockers, tasks, and context in that order without turning read-only rows into tasks", async () => {
     stubApi({
       [GET_CHECKLIST]: checklistOf({
         created: true,
-        items: [trackedItem(STREET_MEDIUM)],
+        items: [
+          trackedItem(PARKS_TUA),
+          trackedItem(STREET_MEDIUM, { disposition: "prohibited_or_ineligible" }),
+        ],
         contextItems: [planContext(NOISE_ADVISORY)],
       }),
     });
     await renderView();
 
-    expect(screen.getByRole("region", { name: "Read-only context" })).toBeDefined();
-    expect(within(rowFor(NOISE_ADVISORY)).queryByRole("combobox")).toBeNull();
-    expect(within(rowFor(STREET_MEDIUM)).getByRole("combobox")).toBeDefined();
+    const regions = screen.getAllByRole("region");
+    expect(regions.map((region) => region.getAttribute("aria-labelledby"))).toEqual([
+      "checklist-blockers-heading",
+      "checklist-tasks-heading",
+      "checklist-context-heading",
+    ]);
+    expect(screen.getByRole("heading", { name: "Blockers" })).toBeDefined();
+    expect(screen.getByRole("heading", { name: "Permit and insurance tasks" })).toBeDefined();
+    expect(screen.getByRole("heading", { name: "Advisories and notifications" })).toBeDefined();
+
+    const blocker = rowFor(STREET_MEDIUM);
+    expect(within(blocker).getByText("blocker")).toBeDefined();
+    expect(within(blocker).getByText("prohibited or ineligible")).toBeDefined();
+    expect(within(blocker).queryByRole("combobox")).toBeNull();
+    expect(within(blocker).queryByRole("textbox")).toBeNull();
+    expect(within(blocker).queryByRole("button", { name: /save notes|upload/i })).toBeNull();
+
+    const task = rowFor(PARKS_TUA);
+    expect(within(task).getByText("may be required")).toBeDefined();
+    expect(within(task).getByRole("combobox")).toBeDefined();
+    expect(within(task).getByRole("textbox")).toBeDefined();
+
+    const context = rowFor(NOISE_ADVISORY);
+    expect(within(context).getAllByText("advisory")).toHaveLength(2);
+    expect(within(context).queryByRole("combobox")).toBeNull();
+    expect(screen.queryByText(/no blockers/i)).toBeNull();
+  });
+
+  it("omits empty checklist groups without claiming there are no blockers", async () => {
+    stubApi({
+      [GET_CHECKLIST]: checklistOf({ created: true, items: [trackedItem(STREET_MEDIUM)] }),
+    });
+    await renderView();
+
+    expect(screen.queryByRole("heading", { name: "Blockers" })).toBeNull();
+    expect(screen.getByRole("heading", { name: "Permit and insurance tasks" })).toBeDefined();
+    expect(screen.queryByRole("heading", { name: "Advisories and notifications" })).toBeNull();
+    expect(screen.queryByText(/no blockers/i)).toBeNull();
   });
 
   it("converting a second time returns the existing checklist without duplicating a row", async () => {

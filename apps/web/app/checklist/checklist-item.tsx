@@ -421,7 +421,7 @@ export function PlanContextBody({
   );
 }
 
-/** A read-only line: an advisory, a notification or a prohibition. Never a trackable task. */
+/** A read-only line. A blocking disposition stays visibly separate from ordinary context. */
 export function ContextLine({
   context,
   currentPlan,
@@ -430,14 +430,18 @@ export function ContextLine({
   currentPlan: SourcePlan;
 }) {
   const headingId = `context-${context.ruleIds.join("-")}`;
+  const isBlocker = context.disposition === "prohibited_or_ineligible";
 
   return (
-    <article className="check-item check-item--context" aria-labelledby={headingId}>
+    <article
+      className={`check-item ${isBlocker ? "check-item--blocker" : "check-item--context"}`}
+      aria-labelledby={headingId}
+    >
       <div className="check-item__head">
         <h3 className="check-item__name" id={headingId}>
           {displayName(context)}
         </h3>
-        <span className="badge">context</span>
+        <span className="badge">{isBlocker ? "blocker" : humanize(context.kind)}</span>
       </div>
       <PlanContextBody context={context} currentPlan={currentPlan} />
     </article>

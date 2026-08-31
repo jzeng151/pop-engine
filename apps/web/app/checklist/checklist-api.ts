@@ -11,6 +11,7 @@ import type {
   Deadline,
   DeadlineStatus,
   Disposition,
+  FindingKind,
   FindingRoute,
   FindingSource,
   HeadlineMode,
@@ -69,6 +70,7 @@ export type PlanContext = {
   readonly permitName: string | null;
   readonly userSummary: Pick<RuleUserSummary, "heading"> | null;
   readonly agency: string | null;
+  readonly kind: FindingKind;
   readonly disposition: Disposition;
   readonly deadline: ConsumedDeadline | null;
   readonly deadlineDisplay: string | null;
@@ -295,6 +297,18 @@ const DISPOSITIONS = tokensOf<Disposition>({
   no_new_requirement: true,
 });
 
+const FINDING_KINDS = tokensOf<FindingKind>({
+  permit: true,
+  insurance: true,
+  notification: true,
+  registration: true,
+  eligibility: true,
+  prohibition: true,
+  dependency: true,
+  advisory: true,
+  note: true,
+});
+
 const DEADLINE_STATUSES = tokensOf<DeadlineStatus>({
   on_track: true,
   deadline_approaching: true,
@@ -338,6 +352,7 @@ const PLAN_CONTEXT_CHECKS: FieldChecks<PlanContext> = {
   permitName: nullOr(isString),
   userSummary: nullOr(shapedLike({ heading: isString })),
   agency: nullOr(isString),
+  kind: isToken(FINDING_KINDS),
   disposition: isToken(DISPOSITIONS),
   deadline: nullOr(shapedLike(DEADLINE_CHECKS)),
   deadlineDisplay: nullOr(isString),

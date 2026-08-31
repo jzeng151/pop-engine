@@ -344,7 +344,19 @@ export function ChecklistView({ apiBaseUrl, eventId }: { apiBaseUrl: string; eve
   // Only "newer" is actionable.
   const supersededRuleset =
     meta !== null && compareToPinned(meta.ruleset_version, checklist.rulesetVersion) === "newer";
-  const retained = checklist.items.filter((item) => item.struckThrough).length;
+  const blockers = [
+    ...checklist.items.filter((item) => item.disposition === "prohibited_or_ineligible"),
+    ...checklist.contextItems.filter(
+      (context) => context.disposition === "prohibited_or_ineligible",
+    ),
+  ];
+  const taskItems = checklist.items.filter(
+    (item) => item.disposition !== "prohibited_or_ineligible",
+  );
+  const advisoryContext = checklist.contextItems.filter(
+    (context) => context.disposition !== "prohibited_or_ineligible",
+  );
+  const retained = taskItems.filter((item) => item.struckThrough).length;
 
   return (
     <main className="checklist">
@@ -538,7 +550,7 @@ export function ChecklistView({ apiBaseUrl, eventId }: { apiBaseUrl: string; eve
         </p>
       )}
 
-      {checklist.created && checklist.items.length === 0 && (
+      {checklist.created && taskItems.length === 0 && (
         /* The synthetic zero-trackable-items case: creation was offered and ran, and it produced
            an empty checklist rather than a failure. The read-only context below is the rest of
            what the plan says. */
@@ -547,12 +559,23 @@ export function ChecklistView({ apiBaseUrl, eventId }: { apiBaseUrl: string; eve
         </p>
       )}
 
-      {checklist.items.length > 0 && (
-        <section className="checklist__items" aria-labelledby="trackable-requirements-heading">
-          <h2 className="sr-only" id="trackable-requirements-heading">
-            Trackable requirements
-          </h2>
-          {checklist.items.map((item) => (
+      {blockers.length > 0 && (
+        <section className="checklist__group" aria-labelledby="checklist-blockers-heading">
+          <h2 id="checklist-blockers-heading">Blockers</h2>
+          {blockers.map((context) => (
+            <ContextLine
+              key={context.ruleIds.join("+")}
+              context={context}
+              currentPlan={currentPlan}
+            />
+          ))}
+        </section>
+      )}
+
+      {taskItems.length > 0 && (
+        <section className="checklist__group" aria-labelledby="checklist-tasks-heading">
+          <h2 id="checklist-tasks-heading">Permit and insurance tasks</h2>
+          {taskItems.map((item) => (
             <ChecklistItemCard
               key={item.id}
               item={item}
@@ -566,12 +589,10 @@ export function ChecklistView({ apiBaseUrl, eventId }: { apiBaseUrl: string; eve
         </section>
       )}
 
-      {/* Advisories, notifications and prohibitions: shown because they are part of the answer,
-          never as tasks, because nothing is filed for them. */}
-      {checklist.contextItems.length > 0 && (
-        <section className="checklist__context" aria-label="Read-only context">
-          <h2>Context, not tracked</h2>
-          {checklist.contextItems.map((context) => (
+      {advisoryContext.length > 0 && (
+        <section className="checklist__group" aria-labelledby="checklist-context-heading">
+          <h2 id="checklist-context-heading">Advisories and notifications</h2>
+          {advisoryContext.map((context) => (
             <ContextLine
               key={context.ruleIds.join("+")}
               context={context}
