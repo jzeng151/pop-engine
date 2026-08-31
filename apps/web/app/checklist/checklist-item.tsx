@@ -425,16 +425,18 @@ export function PlanContextBody({
 export function ContextLine({
   context,
   currentPlan,
+  retained = false,
 }: {
   context: PlanContext;
   currentPlan: SourcePlan;
+  retained?: boolean;
 }) {
   const headingId = `context-${context.ruleIds.join("-")}`;
   const isBlocker = context.disposition === "prohibited_or_ineligible";
 
   return (
     <article
-      className={`check-item ${isBlocker ? "check-item--blocker" : "check-item--context"}`}
+      className={`check-item ${isBlocker ? "check-item--blocker" : "check-item--context"}${retained ? " check-item--dropped" : ""}`}
       aria-labelledby={headingId}
     >
       <div className="check-item__head">
@@ -443,6 +445,12 @@ export function ContextLine({
         </h3>
         <span className="badge">{isBlocker ? "blocker" : humanize(context.kind)}</span>
       </div>
+      {retained && (
+        <p className="check-item__retained" role="note">
+          This earlier task has ended. It is kept with everything recorded against it; nothing has
+          been deleted.
+        </p>
+      )}
       <PlanContextBody context={context} currentPlan={currentPlan} />
     </article>
   );

@@ -271,7 +271,7 @@ describe("AC 2 · statuses, any transition, and the api's rollup", () => {
     expect(checklistReads(calls)).toHaveLength(2);
   });
 
-  it("renders the counts the api sent, not a count of its own", async () => {
+  it("counts the current non-blocking task rows shown on the page", async () => {
     stubApi({
       [GET_CHECKLIST]: checklistOf({
         created: true,
@@ -281,9 +281,7 @@ describe("AC 2 · statuses, any transition, and the api's rollup", () => {
     });
     await renderView();
 
-    expect(document.querySelector(".checklist__rollup")?.textContent).toBe(
-      "2 submitted · 1 approved",
-    );
+    expect(document.querySelector(".checklist__rollup")?.textContent).toBe("1 not started");
   });
 
   it("counts retained rows separately, beside the rollup that excludes them", async () => {
@@ -1882,6 +1880,7 @@ describe("edge cases", () => {
     stubApi({
       [GET_CHECKLIST]: checklistOf({
         created: true,
+        statusRollup: rollupOf({ not_started: 2 }),
         items: [
           trackedItem(PARKS_TUA),
           trackedItem(STREET_MEDIUM, { disposition: "prohibited_or_ineligible" }),
@@ -1916,7 +1915,33 @@ describe("edge cases", () => {
     const context = rowFor(NOISE_ADVISORY);
     expect(within(context).getAllByText("advisory")).toHaveLength(2);
     expect(within(context).queryByRole("combobox")).toBeNull();
+    expect(document.querySelector(".checklist__rollup")?.textContent).toBe("1 not started");
     expect(screen.queryByText(/no blockers/i)).toBeNull();
+  });
+
+  it("keeps a retained blocker visibly terminal while leaving it read-only", async () => {
+    stubApi({
+      [GET_CHECKLIST]: checklistOf({
+        created: true,
+        statusRollup: rollupOf({ submitted: 1 }),
+        items: [
+          trackedItem(PARKS_TUA, { status: "submitted" }),
+          trackedItem(STREET_MEDIUM, {
+            disposition: "prohibited_or_ineligible",
+            status: "approved",
+            struckThrough: true,
+          }),
+        ],
+      }),
+    });
+    await renderView();
+
+    const blocker = rowFor(STREET_MEDIUM);
+    expect(blocker.classList.contains("check-item--dropped")).toBe(true);
+    expect(within(blocker).getByRole("note").textContent).toContain("earlier task has ended");
+    expect(within(blocker).queryByRole("combobox")).toBeNull();
+    expect(within(blocker).queryByRole("textbox")).toBeNull();
+    expect(document.querySelector(".checklist__rollup")?.textContent).toBe("1 submitted");
   });
 
   it("omits empty checklist groups without claiming there are no blockers", async () => {

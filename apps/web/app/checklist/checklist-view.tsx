@@ -12,8 +12,8 @@ import {
   uploadDocument,
   type ChecklistResponse,
   type ChecklistResult,
+  type ChecklistItem,
   type SourcePlan,
-  type StatusRollup,
 } from "./checklist-api";
 import { ChecklistItemCard, ContextLine } from "./checklist-item";
 
@@ -34,11 +34,15 @@ const stateFrom = (result: ChecklistResult): ChecklistState =>
       ? { status: "no_plan", message: result.message }
       : { status: "unavailable", message: result.message };
 
-/** AC 2's rollup, as the api counted it. */
-const rollupOf = (rollup: StatusRollup): readonly [ChecklistStatus, number][] =>
-  CHECKLIST_STATUSES.map((status) => [status, rollup[status]] as [ChecklistStatus, number]).filter(
-    ([, count]) => count > 0,
-  );
+/** AC 2's visible current-task rollup. Retained rows and AC 11 blockers are not task statuses. */
+const rollupOf = (items: readonly ChecklistItem[]): readonly [ChecklistStatus, number][] =>
+  CHECKLIST_STATUSES.map(
+    (status) =>
+      [status, items.filter((item) => !item.struckThrough && item.status === status).length] as [
+        ChecklistStatus,
+        number,
+      ],
+  ).filter(([, count]) => count > 0);
 
 const humanize = (token: string): string => token.replace(/_/g, " ");
 
@@ -340,22 +344,22 @@ export function ChecklistView({ apiBaseUrl, eventId }: { apiBaseUrl: string; eve
     rulesetVersion: checklist.rulesetVersion,
     snapshotDate: checklist.snapshotDate,
   };
-  const rollup = rollupOf(checklist.statusRollup);
   // Only "newer" is actionable.
   const supersededRuleset =
     meta !== null && compareToPinned(meta.ruleset_version, checklist.rulesetVersion) === "newer";
-  const blockers = [
-    ...checklist.items.filter((item) => item.disposition === "prohibited_or_ineligible"),
-    ...checklist.contextItems.filter(
-      (context) => context.disposition === "prohibited_or_ineligible",
-    ),
-  ];
+  const blockingTaskItems = checklist.items.filter(
+    (item) => item.disposition === "prohibited_or_ineligible",
+  );
+  const contextualBlockers = checklist.contextItems.filter(
+    (context) => context.disposition === "prohibited_or_ineligible",
+  );
   const taskItems = checklist.items.filter(
     (item) => item.disposition !== "prohibited_or_ineligible",
   );
   const advisoryContext = checklist.contextItems.filter(
     (context) => context.disposition !== "prohibited_or_ineligible",
   );
+  const rollup = rollupOf(taskItems);
   const retained = taskItems.filter((item) => item.struckThrough).length;
 
   return (
@@ -559,10 +563,18 @@ export function ChecklistView({ apiBaseUrl, eventId }: { apiBaseUrl: string; eve
         </p>
       )}
 
-      {blockers.length > 0 && (
+      {blockingTaskItems.length + contextualBlockers.length > 0 && (
         <section className="checklist__group" aria-labelledby="checklist-blockers-heading">
           <h2 id="checklist-blockers-heading">Blockers</h2>
-          {blockers.map((context) => (
+          {blockingTaskItems.map((item) => (
+            <ContextLine
+              key={item.id}
+              context={item}
+              currentPlan={currentPlan}
+              retained={item.struckThrough}
+            />
+          ))}
+          {contextualBlockers.map((context) => (
             <ContextLine
               key={context.ruleIds.join("+")}
               context={context}
