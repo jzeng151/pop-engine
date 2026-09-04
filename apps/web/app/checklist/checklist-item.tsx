@@ -421,24 +421,41 @@ export function PlanContextBody({
   );
 }
 
-/** A read-only line: an advisory, a notification or a prohibition. Never a trackable task. */
-export function ContextLine({
+function RetainedTaskNotice() {
+  return (
+    <p className="check-item__retained" role="note">
+      This earlier task has ended. It is kept with everything recorded against it; nothing has been
+      deleted.
+    </p>
+  );
+}
+
+/** A read-only checklist line. A blocking disposition stays visibly separate from ordinary context. */
+export function ReadOnlyChecklistLine({
   context,
   currentPlan,
+  headingId,
+  retained = false,
 }: {
   context: PlanContext;
   currentPlan: SourcePlan;
+  headingId: string;
+  retained?: boolean;
 }) {
-  const headingId = `context-${context.ruleIds.join("-")}`;
+  const isBlocker = context.disposition === "prohibited_or_ineligible";
 
   return (
-    <article className="check-item check-item--context" aria-labelledby={headingId}>
+    <article
+      className={`check-item ${isBlocker ? "check-item--blocker" : "check-item--context"}${retained ? " check-item--dropped" : ""}`}
+      aria-labelledby={headingId}
+    >
       <div className="check-item__head">
         <h3 className="check-item__name" id={headingId}>
           {displayName(context)}
         </h3>
-        <span className="badge">context</span>
+        <span className="badge">{isBlocker ? "blocker" : humanize(context.kind)}</span>
       </div>
+      {retained && <RetainedTaskNotice />}
       <PlanContextBody context={context} currentPlan={currentPlan} />
     </article>
   );
@@ -527,12 +544,7 @@ export function ChecklistItemCard({
       </div>
 
       {/* AC 6/9: a terminal task is struck through and kept with its organizer record. */}
-      {item.struckThrough && (
-        <p className="check-item__retained" role="note">
-          This earlier task has ended. It is kept with everything recorded against it; nothing has
-          been deleted.
-        </p>
-      )}
+      {item.struckThrough && <RetainedTaskNotice />}
 
       {item.deadlineNotice !== null && <MovedDeadlineNoticeBlock notice={item.deadlineNotice} />}
 

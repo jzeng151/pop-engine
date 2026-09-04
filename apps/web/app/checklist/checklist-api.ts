@@ -11,6 +11,7 @@ import type {
   Deadline,
   DeadlineStatus,
   Disposition,
+  FindingKind,
   FindingRoute,
   FindingSource,
   HeadlineMode,
@@ -69,6 +70,7 @@ export type PlanContext = {
   readonly permitName: string | null;
   readonly userSummary: Pick<RuleUserSummary, "heading"> | null;
   readonly agency: string | null;
+  readonly kind: FindingKind;
   readonly disposition: Disposition;
   readonly deadline: ConsumedDeadline | null;
   readonly deadlineDisplay: string | null;
@@ -171,8 +173,9 @@ export type PreviousDeadlineProvenance = {
 };
 
 /**
- * AC 2's rollup as the api counted it: current-plan rows only, one count per status. The counting
- * rule lives there and only there, so this feature reads the answer rather than recomputing it.
+ * AC 2's rollup as the api counted it: current-plan rows only, one count per status. AC 11 derives
+ * the visible task-only rollup from the returned rows because blocker statuses stay stored but are
+ * not displayed.
  */
 export type StatusRollup = Readonly<Record<ChecklistStatus, number>>;
 
@@ -295,6 +298,18 @@ const DISPOSITIONS = tokensOf<Disposition>({
   no_new_requirement: true,
 });
 
+const FINDING_KINDS = tokensOf<FindingKind>({
+  permit: true,
+  insurance: true,
+  notification: true,
+  registration: true,
+  eligibility: true,
+  prohibition: true,
+  dependency: true,
+  advisory: true,
+  note: true,
+});
+
 const DEADLINE_STATUSES = tokensOf<DeadlineStatus>({
   on_track: true,
   deadline_approaching: true,
@@ -338,6 +353,7 @@ const PLAN_CONTEXT_CHECKS: FieldChecks<PlanContext> = {
   permitName: nullOr(isString),
   userSummary: nullOr(shapedLike({ heading: isString })),
   agency: nullOr(isString),
+  kind: isToken(FINDING_KINDS),
   disposition: isToken(DISPOSITIONS),
   deadline: nullOr(shapedLike(DEADLINE_CHECKS)),
   deadlineDisplay: nullOr(isString),

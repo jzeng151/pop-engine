@@ -103,6 +103,12 @@ describe("shared accessibility color contracts", () => {
     expect(contrast(darkColor("blue"), darkColor("info-wash"))).toBeGreaterThanOrEqual(4.5);
   });
 
+  it("gives checklist blockers a prominent non-color-only boundary", () => {
+    expect(checklistStyles).toMatch(
+      /\.check-item--blocker\s*\{[\s\S]*?background: var\(--warning-bg\)[\s\S]*?border: 2px solid var\(--error\)/,
+    );
+  });
+
   it("uses intake orange as the landing, workspace, and dashboard accent", () => {
     expect(styles).toMatch(/\.riso-cover h1\s*\{\s*color: var\(--pe-accent\)/);
     expect(styles).toMatch(/\.riso-nav\s*\{[\s\S]*?background: var\(--pe-brand-surface\)/);

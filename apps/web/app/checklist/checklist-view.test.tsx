@@ -271,7 +271,7 @@ describe("AC 2 · statuses, any transition, and the api's rollup", () => {
     expect(checklistReads(calls)).toHaveLength(2);
   });
 
-  it("renders the counts the api sent, not a count of its own", async () => {
+  it("counts the current non-blocking task rows shown on the page", async () => {
     stubApi({
       [GET_CHECKLIST]: checklistOf({
         created: true,
@@ -281,9 +281,7 @@ describe("AC 2 · statuses, any transition, and the api's rollup", () => {
     });
     await renderView();
 
-    expect(document.querySelector(".checklist__rollup")?.textContent).toBe(
-      "2 submitted · 1 approved",
-    );
+    expect(document.querySelector(".checklist__rollup")?.textContent).toBe("1 not started");
   });
 
   it("counts retained rows separately, beside the rollup that excludes them", async () => {
@@ -1878,19 +1876,110 @@ describe("edge cases", () => {
     expect(within(context).queryByRole("button")).toBeNull();
   });
 
-  it("renders advisories as context beside trackable rows, never as tasks", async () => {
+  it("groups blockers, tasks, and context in that order without turning read-only rows into tasks", async () => {
     stubApi({
       [GET_CHECKLIST]: checklistOf({
         created: true,
-        items: [trackedItem(STREET_MEDIUM)],
+        statusRollup: rollupOf({ not_started: 2 }),
+        items: [
+          trackedItem(PARKS_TUA),
+          trackedItem(STREET_MEDIUM, { disposition: "prohibited_or_ineligible" }),
+        ],
         contextItems: [planContext(NOISE_ADVISORY)],
       }),
     });
     await renderView();
 
-    expect(screen.getByRole("region", { name: "Read-only context" })).toBeDefined();
-    expect(within(rowFor(NOISE_ADVISORY)).queryByRole("combobox")).toBeNull();
-    expect(within(rowFor(STREET_MEDIUM)).getByRole("combobox")).toBeDefined();
+    const regions = screen.getAllByRole("region");
+    expect(regions.map((region) => region.getAttribute("aria-labelledby"))).toEqual([
+      "checklist-blockers-heading",
+      "checklist-tasks-heading",
+      "checklist-context-heading",
+    ]);
+    expect(screen.getByRole("heading", { name: "Blockers" })).toBeDefined();
+    expect(screen.getByRole("heading", { name: "Permit and insurance tasks" })).toBeDefined();
+    expect(screen.getByRole("heading", { name: "Advisories and notifications" })).toBeDefined();
+
+    const blocker = rowFor(STREET_MEDIUM);
+    expect(within(blocker).getByText("blocker")).toBeDefined();
+    expect(within(blocker).getByText("prohibited or ineligible")).toBeDefined();
+    expect(within(blocker).queryByRole("combobox")).toBeNull();
+    expect(within(blocker).queryByRole("textbox")).toBeNull();
+    expect(within(blocker).queryByRole("button", { name: /save notes|upload/i })).toBeNull();
+
+    const task = rowFor(PARKS_TUA);
+    expect(within(task).getByText("may be required")).toBeDefined();
+    expect(within(task).getByRole("combobox")).toBeDefined();
+    expect(within(task).getByRole("textbox")).toBeDefined();
+
+    const context = rowFor(NOISE_ADVISORY);
+    expect(within(context).getAllByText("advisory")).toHaveLength(2);
+    expect(within(context).queryByRole("combobox")).toBeNull();
+    expect(document.querySelector(".checklist__rollup")?.textContent).toBe("1 not started");
+    expect(screen.queryByText(/no blockers/i)).toBeNull();
+  });
+
+  it("keeps a retained blocker visibly terminal while leaving it read-only", async () => {
+    stubApi({
+      [GET_CHECKLIST]: checklistOf({
+        created: true,
+        statusRollup: rollupOf({ submitted: 1 }),
+        items: [
+          trackedItem(PARKS_TUA, { status: "submitted" }),
+          trackedItem(STREET_MEDIUM, {
+            disposition: "prohibited_or_ineligible",
+            status: "approved",
+            struckThrough: true,
+          }),
+        ],
+      }),
+    });
+    await renderView();
+
+    const blocker = rowFor(STREET_MEDIUM);
+    expect(blocker.classList.contains("check-item--dropped")).toBe(true);
+    expect(within(blocker).getByRole("note").textContent).toContain("earlier task has ended");
+    expect(within(blocker).queryByRole("combobox")).toBeNull();
+    expect(within(blocker).queryByRole("textbox")).toBeNull();
+    expect(document.querySelector(".checklist__rollup")?.textContent).toBe("1 submitted");
+  });
+
+  it("gives a retained blocker and its same-rule replacement distinct accessible names", async () => {
+    stubApi({
+      [GET_CHECKLIST]: checklistOf({
+        created: true,
+        items: [
+          trackedItem(STREET_MEDIUM, {
+            id: "retained-street-medium",
+            disposition: "prohibited_or_ineligible",
+            struckThrough: true,
+          }),
+        ],
+        contextItems: [planContext(STREET_MEDIUM, { disposition: "prohibited_or_ineligible" })],
+      }),
+    });
+    await renderView();
+
+    const blockers = screen.getAllByRole("article", { name: nameOf(STREET_MEDIUM) });
+    const headingIds = blockers.map((blocker) => blocker.getAttribute("aria-labelledby"));
+    expect(new Set(headingIds).size).toBe(2);
+    for (const blocker of blockers) {
+      const headingId = blocker.getAttribute("aria-labelledby");
+      expect(headingId).not.toBeNull();
+      expect(blocker.contains(document.getElementById(headingId as string))).toBe(true);
+    }
+  });
+
+  it("omits empty checklist groups without claiming there are no blockers", async () => {
+    stubApi({
+      [GET_CHECKLIST]: checklistOf({ created: true, items: [trackedItem(STREET_MEDIUM)] }),
+    });
+    await renderView();
+
+    expect(screen.queryByRole("heading", { name: "Blockers" })).toBeNull();
+    expect(screen.getByRole("heading", { name: "Permit and insurance tasks" })).toBeDefined();
+    expect(screen.queryByRole("heading", { name: "Advisories and notifications" })).toBeNull();
+    expect(screen.queryByText(/no blockers/i)).toBeNull();
   });
 
   it("converting a second time returns the existing checklist without duplicating a row", async () => {

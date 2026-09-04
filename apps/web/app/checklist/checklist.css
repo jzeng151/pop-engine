@@ -59,18 +59,14 @@
   background: var(--pe-surface);
 }
 
-.checklist__items,
-.checklist__context {
+.checklist__group {
   display: flex;
   flex-direction: column;
   gap: 1rem;
-}
-
-.checklist__context {
   margin-top: 1.5rem;
 }
 
-.checklist__context h2 {
+.checklist__group h2 {
   margin: 0;
   font-family: var(--pe-font-display);
   font-size: 1.25rem;
@@ -86,6 +82,11 @@
 
 .check-item--context {
   background: var(--pe-info-wash);
+}
+
+.check-item--blocker {
+  background: var(--warning-bg);
+  border: 2px solid var(--error);
 }
 
 .check-item__head {
