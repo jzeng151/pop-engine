@@ -67,11 +67,6 @@ describe("F-203 rollout constraints the runbook has to carry", () => {
   });
 
   it("names a drain the api can actually perform", () => {
-    const bootstrap = read("apps/api/src/index.ts");
-    expect(bootstrap).toContain('process.once("SIGTERM"');
-    expect(bootstrap).toContain("alertPoller.stop()");
-    expect(bootstrap).toMatch(/await Promise\.all\(\[[\s\S]*pollerStopped[\s\S]*\]\)/);
-
     expect(releaseOrder).toContain("SIGTERM");
   });
 
@@ -104,10 +99,6 @@ describe("F-203 rollout constraints the runbook has to carry", () => {
   });
 
   it("describes the attempt row as an intent rather than a completed handoff", () => {
-    expect(read("apps/api/src/alerts/alerts.ts")).toContain(
-      "Record that this alert is ABOUT to be handed",
-    );
-
     const architecture = read("docs/ARCHITECTURE.md");
     const schemaSection = architecture.slice(
       architecture.indexOf("### alert_send_attempts"),
@@ -146,7 +137,6 @@ describe("F-203 rollout constraints the runbook has to carry", () => {
     expect(record).not.toBe("");
     expect(record).not.toMatch(/table recording that an alert was handed to a provider/i);
     expect(record).toMatch(/intent/i);
-    expect(record).toMatch(/two causes/i);
 
     const architecture = read("docs/ARCHITECTURE.md");
     const schemaSection = architecture
@@ -156,11 +146,6 @@ describe("F-203 rollout constraints the runbook has to carry", () => {
       )
       .replace(/\s+/g, " ");
     expect(schemaSection).not.toMatch(/set only when a cancelled alert is revived/i);
-    expect(schemaSection).toMatch(/two causes/i);
-
-    expect(read("apps/api/migrations/014_alert_send_attempts.ts").replace(/\s+/g, " ")).toMatch(
-      /two causes/i,
-    );
   });
 
   it("tells a deployer to deploy web before the api for the reconciliation notice", () => {

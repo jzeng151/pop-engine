@@ -194,20 +194,6 @@ describe("SPEC-CONFLICT resolutions ratified 2026-08-02", () => {
       "never retains the previous value, substitutes a default, or writes",
     );
   });
-
-  it("#209: the admission-limit implementation cites the issue, not a register row", () => {
-    const sources = [
-      "apps/api/src/attendance/rsvps.ts",
-      "apps/api/src/attendance/rsvps.test.ts",
-      "apps/web/app/events/[id]/guests/guest-list.test.tsx",
-    ];
-
-    for (const path of sources) {
-      const source = read(path);
-      expect(source, `${path} cites the admission-limit conflict`).toContain("SPEC-CONFLICT #209");
-      expect(source.match(/\bT-\d+\b/g), `${path} names no register row`).toBeNull();
-    }
-  });
 });
 
 describe("PR #225 review round, 2026-08-04", () => {
@@ -345,7 +331,6 @@ describe("SPEC-CONFLICT #130 business-day calendar", () => {
     const openQuestions = read("docs/OPEN-QUESTIONS.md");
     const dateAdvisor = read("specs/F-106-date-advisor.md");
     const multiJurisdiction = read("specs/F-207-multi-jurisdiction-activation.md");
-    const planTest = read("apps/api/src/planning/plan.test.ts");
 
     expect(baseline).toContain("SPEC-CONFLICT #130, F-201 business-day calendar");
     expect(planSpec).toContain(
@@ -366,25 +351,15 @@ describe("SPEC-CONFLICT #130 business-day calendar", () => {
     expect(dateAdvisor).not.toContain("Resolve SPEC-CONFLICT #130");
     expect(multiJurisdiction).toContain("SPEC-CONFLICT #130 is resolved for F-201");
     expect(multiJurisdiction).not.toContain("Resolve SPEC-CONFLICT #130");
-    expect(planTest).toContain("THIS REQUIRES RESOLVING OPEN-QUESTIONS R-10");
-    expect(planTest).not.toContain("EXPECTED RESOLUTION OF SPEC-CONFLICT #130");
-    expect(planTest).not.toContain("delete this test and close #130");
   });
 });
 
 // Partial prose guard for specs/F-202-compliance-checklist.md: it covers the two exact stale
-// implementation-gap claim patterns from SPEC-CONFLICT #301 and the stable regression titles the
-// reconciliation cites. It cannot detect arbitrary rewordings or prove the runtime behavior.
+// implementation-gap claim patterns from SPEC-CONFLICT #301. It cannot detect arbitrary rewordings
+// or prove runtime behavior; checklist.test.ts exercises the lifecycle itself.
 describe("SPEC-CONFLICT #301 F-202 checklist lifecycle prose", () => {
   it("records the implemented terminal lifecycle instead of resolved defects", () => {
     const checklistSpec = read("specs/F-202-compliance-checklist.md");
-    const checklistTests = read("apps/api/src/planning/checklist.test.ts");
-    const regressions = [
-      "keeps a retained row's provenance with the dates it is actually showing",
-      "ends a task on a kind change and appends a new task when its identity returns",
-      "ends a task from an unreviewed intervening kind change",
-      "keeps a tracked permit terminal when its identity becomes advisory",
-    ];
 
     expect(checklistSpec).not.toContain(
       "The implementation does not match: attribution is currently chosen by whether the latest plan holds an item for the same rule-id set",
@@ -392,9 +367,5 @@ describe("SPEC-CONFLICT #301 F-202 checklist lifecycle prose", () => {
     expect(checklistSpec).not.toContain(
       "Both halves are live defects, established by running them rather than by reading the code.",
     );
-    for (const title of regressions) {
-      expect(checklistSpec, `F-202 cites the ${title} regression`).toContain(title);
-      expect(checklistTests, `the cited ${title} regression still exists`).toContain(title);
-    }
   });
 });

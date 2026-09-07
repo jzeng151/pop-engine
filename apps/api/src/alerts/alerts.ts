@@ -197,7 +197,7 @@ async function askTheSendBoundary(
     shut_by_the_handoffs_end: boolean;
     held: boolean;
   }>(
-    // Both window questions in the one statement that already asks the cutoff, for the reason the statement exists: what went wrong twice was not a question but the gap after it, and a second round trip for the handoff's day.
+    // Check both filing days and the reconciliation cutoff in one round trip to limit the gap before delivery.
     `SELECT ${FILING_WINDOW_HAS_SHUT("$2")} AS shut,
             ${FILING_WINDOW_HAS_SHUT("$3")} AS shut_by_the_handoffs_end,
             ${heldAtTheSendBoundary("$2")} AS held
@@ -224,8 +224,6 @@ type Queryable = {
 
 /** Where an event's alerts go. */
 export type AlertContacts = { readonly email: string | null; readonly phone: string | null };
-
-export const NO_CONTACTS: AlertContacts = { email: null, phone: null };
 
 /**
  * A change to those contacts, where `undefined` means "the request said nothing about this" and
@@ -1081,7 +1079,7 @@ function attemptWriterFor(database: Pool): Pool {
   return writer;
 }
 
-/** Record that this alert is ABOUT to be handed to a provider, in a transaction of its own. */
+/** Record delivery intent in its own transaction before calling the provider. */
 async function recordAttemptIntent(
   database: Pool,
   row: DueAlertRow,
