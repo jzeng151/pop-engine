@@ -58,7 +58,7 @@ As an independent organizer, I turn my permit plan into a living checklist where
 
    - `latest_apply_date`. A date on only one side is a change; two absent dates are unchanged. Label the values previous and current, since the current date can fall before or after the previous date.
    - The complete stored deadline object: `type`, `qualification`, `display`, `boundary`, `calendarDays`, `businessDays`, `levels`, `unknownLevelBehavior`, `hardFloorDays`, and `processingRangeDays`. A new stored deadline field must join this comparison. Compare fields even when `type` is unchanged or neither snapshot has a calculable date.
-   - Whether the finding is dated, `not_calculable`, or `not_applicable`; `timeline_unresolved_reason`; `deadline_unknown_fields`; and `deadline_display`.
+   - `deadline_status`, grouped as dated, `not_calculable`, or `not_applicable`; `timeline_unresolved_reason`; `deadline_unknown_fields`; and `deadline_display`.
    - The presence of `apply_after_date`, which distinguishes a gated task from one with no gate. Read its sequencing explanation from stored `finding_renderings`.
 
    Read absent-date meanings from the engine. `not_applicable` means no independent dated filing window applies, including a `before_issuance` deadline listed with its parent permit. `not_calculable` means a window applies but cannot be dated, including an unpublished holiday calendar for `business_days_minimum` or a `research_required` lead time. Carry `timeline_unresolved_reason` or `deadline_unknown_fields` when present; otherwise show "confirm with agency". SPEC-CONFLICT #130 retains this production calendar fallback.
