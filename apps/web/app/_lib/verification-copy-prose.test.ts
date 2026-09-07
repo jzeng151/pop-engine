@@ -16,9 +16,16 @@ const MEANING_ARTIFACTS = [
 
 const REQUIRED = /\bnot (?:covered|modeled|modelled) by this ruleset version\b/i;
 const SOURCE_ABSENCE =
-  /\b(?:source (?:is |was )?not (?:yet )?(?:established|published|located|available|identified)|no source)\b/i;
+  /\b(?:source (?:is |was )?not (?:yet )?|no source (?:is |was )?)(?:established|published|located|available|identified)\b/i;
 
 describe("COVERAGE_GAP definition clauses", () => {
+  it("distinguishes source-absence claims from missing citation links", () => {
+    expect("COVERAGE_GAP means no source is established").toMatch(SOURCE_ABSENCE);
+    expect("COVERAGE_GAP means a source is not yet published").toMatch(SOURCE_ABSENCE);
+    expect("A COVERAGE_GAP line has no source URL").not.toMatch(SOURCE_ABSENCE);
+    expect("A COVERAGE_GAP line has no source link").not.toMatch(SOURCE_ABSENCE);
+  });
+
   it.each(MEANING_ARTIFACTS)("%s retains the published meaning", (file) => {
     const clauses = readFileSync(resolve(file), "utf8")
       .split(/\n\s*\n/)
