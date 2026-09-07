@@ -1,16 +1,5 @@
 import type { HolidayCalendar } from "@pop-engine/engine";
 
-/** The pinned holiday calendar is unavailable, so business-day deadlines cannot be computed. */
-export class MissingHolidayCalendarError extends Error {
-  constructor(calendarId: string) {
-    super(
-      `holiday calendar "${calendarId}" has no published holiday list; business-day deadlines ` +
-        `render as "confirm with agency" until the product owner publishes it`,
-    );
-    this.name = "MissingHolidayCalendarError";
-  }
-}
-
 /**
  * Published holiday lists, keyed by the calendar id a ruleset pins. This calendar is shared by
  * city and state rules, but no approved source establishes which closures count as business days.
@@ -95,5 +84,8 @@ function zoneOffsetMs(instant: Date, timeZone: string): number {
 
 /** Operational warning at boot: plans still generate, but business-day lines will not be dated. */
 export function holidayCalendarWarning(calendar: HolidayCalendar): string | null {
-  return calendar.holidays === null ? new MissingHolidayCalendarError(calendar.id).message : null;
+  return calendar.holidays === null
+    ? `holiday calendar "${calendar.id}" has no published holiday list; business-day deadlines ` +
+        `render as "confirm with agency" until the product owner publishes it`
+    : null;
 }

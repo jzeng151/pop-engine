@@ -46,14 +46,7 @@ export default defineConfig({
     // `configDefaults.exclude` is spread back in because naming `exclude` at all replaces vitest's
     // own list, and dropping it would walk `node_modules`.
     exclude: [...configDefaults.exclude, "scripts/dedupe-cofiring/**"],
-    // Only `scripts/check-baseline-drift.test.mjs` runs concurrent cases today, and each one spawns
-    // a node process that loads the TypeScript compiler. The default of 5 saturated a two-core CI
-    // runner well enough to time out an unrelated 5-second database test in `checklist.test.ts`,
-    // once, on a run where every other file passed. Measured on this tree, not predicted: that file
-    // runs 122 cases in 5.6s at five and 12.0s at two, against 12.8s for the 110-case synchronous
-    // version it replaced. Two therefore costs most of the parallel win and still does not regress,
-    // and the property that actually fixed the reporter timeout is the awaiting rather than the
-    // parallelism, so buying safety with it is cheap.
+    // Baseline-check tests spawn TypeScript processes. Limit concurrent cases to avoid CI timeouts.
     maxConcurrency: 2,
     // API files share one PostgreSQL database; a live alert poller in one file can claim another
     // file's due reminders. Keep files serial so database suites remain isolated (#296).
@@ -63,32 +56,9 @@ export default defineConfig({
     server: { deps: { inline: ["@pop-engine/engine"] } },
     coverage: {
       provider: "v8",
-      // `scripts/` is deliberately NOT here, and the reason is measured rather than assumed.
-      // Its suite runs the real guard in `spawnSync` children pointed at planted trees, which is
-      // what makes those tests worth anything: they exercise the file CI runs rather than a copy.
-      // v8 does not instrument those children, so adding `scripts/**` reports 0% for a file its
-      // suite exercises hard and drops the all-files figure from 97% to 70.67%, failing the 90%
-      // gate. Measured on this tree, not predicted. A number that says zero about well-tested code
-      // is worse than an honest exclusion, and instrumenting the children to manufacture a
-      // percentage would be worse still. What stands in for the gate here is the suite itself:
-      // every rule has a planted tree that provably fails when the rule regresses.
-      //
-      // `scripts/dedupe-cofiring/` is named in the root `exclude` above, for the governance reason
-      // recorded there, so no coverage exclusion is needed for it and CI never runs it. What
-      // follows is why it would still not belong in this list if it ever folds back in. Its files
-      // are out of the run already, so instrumenting them produces nothing this report keeps;
-      // what it does produce is a bill. Measured on this tree:
-      // that suite runs in 6.3s uninstrumented and 29.2s under the v8 provider, because the sweep
-      // is a 24,330,240-intake loop and block coverage prices every iteration. On the runner that
-      // is 17s against 78s. `check-baseline-drift.test.mjs` was measured the same way and is
-      // unaffected (18.6s against 19.2s), since its work happens in child processes, so it stays.
-      //
-      // The 78 seconds are what turned CI red the day the harness landed: runs 31269789560,
-      // 31272998939 and 31276279220 each ended `67 passed`, `Errors 1 error`, coverage over
-      // threshold on all four metrics, and the error was `[vitest-worker]: Timeout calling
-      // "onTaskUpdate"` from a worker whose report the main process did not answer within its
-      // 60-second window. Capping worker count was tried first and changed neither the wall clock
-      // nor the outcome, which is what ruled out plain core contention.
+      // Parent V8 coverage does not instrument the baseline guard's subprocesses. Its tests run
+      // the real guard against planted repositories. The proposed co-firing suite runs separately
+      // via test:cofiring and is excluded from this run above.
       include: ["packages/engine/src/**", "apps/api/src/**", "apps/web/app/**"],
       exclude: ["**/*.test.{ts,tsx}", "apps/api/src/index.ts"],
       thresholds: {

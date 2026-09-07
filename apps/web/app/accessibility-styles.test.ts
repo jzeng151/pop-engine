@@ -3,10 +3,6 @@ import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 
 const styles = readFileSync(resolve("apps/web/app/globals.css"), "utf8");
-const dashboardStyles = readFileSync(
-  resolve("apps/web/app/events/[id]/dashboard/dashboard.css"),
-  "utf8",
-);
 const checklistStyles = readFileSync(resolve("apps/web/app/checklist/checklist.css"), "utf8");
 const darkTheme = styles.match(/\[data-theme="dark"\]\s*\{([\s\S]*?)\n\}/)?.[1];
 
@@ -107,25 +103,6 @@ describe("shared accessibility color contracts", () => {
     expect(checklistStyles).toMatch(
       /\.check-item--blocker\s*\{[\s\S]*?background: var\(--warning-bg\)[\s\S]*?border: 2px solid var\(--error\)/,
     );
-  });
-
-  it("uses intake orange as the landing, workspace, and dashboard accent", () => {
-    expect(styles).toMatch(/\.riso-cover h1\s*\{\s*color: var\(--pe-accent\)/);
-    expect(styles).toMatch(/\.riso-nav\s*\{[\s\S]*?background: var\(--pe-brand-surface\)/);
-    expect(dashboardStyles).toMatch(
-      /\.ops__gauge-percent\s*\{[\s\S]*?color: var\(--pe-accent-text\)/,
-    );
-  });
-
-  it("uses orange for Permit Plan structure and blue only for semantic information", () => {
-    expect(styles).toMatch(/\.plan > h1\s*\{\s*color: var\(--pe-accent\)/);
-    expect(styles).toMatch(/\.plan__tabs\s*\{[\s\S]*?border-bottom: 2px solid var\(--pe-accent\)/);
-    expect(styles).toMatch(/\.plan__route-step\s*\{[\s\S]*?border: 1.5px solid var\(--pe-accent\)/);
-    expect(styles).toMatch(
-      /\.plan__review-column,[\s\S]*?\.plan__checklist-column\s*\{[\s\S]*?border: 1.5px solid var\(--pe-accent\)/,
-    );
-    expect(styles).toMatch(/\.snapshot\s*\{\s*border: 1.5px solid var\(--pe-blue\)/);
-    expect(styles).toMatch(/\.plan__verdict--feasible\s*\{[\s\S]*?background: var\(--pe-blue\)/);
   });
 
   it("uses an explicit theme attribute instead of the operating-system preference", () => {

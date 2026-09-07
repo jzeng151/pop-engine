@@ -90,33 +90,12 @@ export const MISSED_MAY_BE_REQUIRED_IS_CONDITIONAL = true;
 /**
  * §7 — Dependency sequencing bindings. APPROVED 2026-07-27.
  *
- * WHO APPROVED IT, stated plainly rather than implied. Governance §6 puts this class — "rule
- * trigger, dedupe, branch, deadline, or formula semantics" — with the verification owner plus the
- * engine owner. The product owner currently holds both lanes and granted it in that capacity. That
- * is one person approving, not two independent sign-offs, and the record says so because a reader
- * counting signatures would otherwise count two.
- *
- * WHAT THE APPROVAL COVERS, and the reservation is part of it rather than a separate question
- * left open. Two of the three things this binding does are uncontroversial. The sequencing
- * RELATIONSHIP is already published regulatory content: NYPD-SOUND-PARKS-DEP-001 states in its own
- * `note_text` that Parks controls amplified-sound permission through its event review and that it
- * should be obtained before pursuing the NYPD permit, SOURCE_CONFIRMED with a source URL. And the
- * DATES are not invented here either — every one comes from PARKS-EVENT-001's own published
- * `processing_range_days`, so this file contributes no number.
- *
- * The third thing is an interpretation, and it is the part being approved rather than merely
- * recorded. The published prose says "Parks amplified-sound permission ... through its event
- * review"; treating that as PARKS-EVENT-001, the Special Event Permit, is a reading of which Parks
- * instrument is meant. It is load-bearing, because it is what imports that rule's 21 to 30 day
- * processing range into a date an organizer is shown. A different reading of the instrument would
- * produce a different date. That is precisely why this needed §6 approval and not an implementer's
- * judgement, and it is what was approved.
- *
- * WHAT THIS APPROVAL REGULARISES RATHER THAN AUTHORISES: `findings.ts` already consumes this
- * binding on main to populate `permit_plan_items.apply_after_date`, which F-202 renders as the
- * start date on a checklist row. The interpretation above has therefore been reaching organizers
- * since F-201. The approval catches the record up with what shipped; it does not switch anything
- * on.
+ * The product owner approved this interpretation on 2026-07-27 while holding the verification
+ * and engine-owner capacities. This was one person's approval. The dated record is in BASELINE.md.
+ * The approval identifies the Parks review in NYPD-SOUND-PARKS-DEP-001 as PARKS-EVENT-001, whose
+ * published processing range supplies the dates. It ratifies the binding already consumed by
+ * findings.ts for apply_after_date; it does not enable new behavior. Moving the binding into the
+ * ruleset remains pending, as the file header records.
  *
  * NYPD-SOUND-PARKS-DEP-001 states in prose that Parks amplified-sound permission precedes the NYPD
  * sound permit, but nothing machine-readable says which finding it gates or which one it waits on,
