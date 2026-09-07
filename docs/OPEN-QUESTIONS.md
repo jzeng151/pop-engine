@@ -152,20 +152,20 @@ Resolved rows record the demo baseline. B-4 is production-only and does not bloc
 
 ## 3. Technical decisions still open (team)
 
-| #    | Item                                                      | Owner                         | Recommendation   |
-| ---- | --------------------------------------------------------- | ----------------------------- | ---------------- |
-| T-1  | Twilio A2P timing                                         | Dev 4                         | [Details](#t-1)  |
-| T-2  | Migration tool, hosts, and email provider                 | Dev 4 + team                  | [Details](#t-2)  |
-| T-3  | Demo access-gate mechanism (basic auth vs IP allowlist)   | Dev 4                         | [Details](#t-3)  |
-| T-4  | Verification, scope support, and completeness axes        | Product owner                 | [Details](#t-4)  |
-| T-5  | Ruleset downgrade on plan regeneration                    | F-201 lane owner              | [Details](#t-5)  |
-| T-6  | RSVP and waitlist admission-limit source                  | Product + architecture owners | [Details](#t-6)  |
-| T-7  | QR marketing production exposure                          | Product owner                 | [Details](#t-7)  |
-| T-8  | Free-text intake and scope-support build order            | Product owner                 | [Details](#t-8)  |
-| T-9  | Ambiguous alert delivery beyond the provider dedup window | Product owner                 | [Details](#t-9)  |
-| T-10 | Alert window closes before any retry is possible          | Product owner                 | [Details](#t-10) |
-| T-11 | Release a reconciliation hold within the filing window    | Product owner                 | [Details](#t-11) |
-| T-12 | Dedupe precedence table and F-103 reconciliation          | Product owner                 | [Details](#t-12) |
+| #    | Item                                                          | Owner                         | Recommendation   |
+| ---- | ------------------------------------------------------------- | ----------------------------- | ---------------- |
+| T-1  | Twilio A2P timing                                             | Dev 4                         | [Details](#t-1)  |
+| T-2  | Migration tool, hosts, and email provider                     | Dev 4 + team                  | [Details](#t-2)  |
+| T-3  | Demo access-gate mechanism (basic auth vs IP allowlist)       | Dev 4                         | [Details](#t-3)  |
+| T-4  | ~~Verification, scope support, and completeness axes~~        | Product owner                 | [Details](#t-4)  |
+| T-5  | Ruleset downgrade on plan regeneration                        | F-201 lane owner              | [Details](#t-5)  |
+| T-6  | ~~RSVP and waitlist admission-limit source~~                  | Product + architecture owners | [Details](#t-6)  |
+| T-7  | ~~QR marketing production exposure~~                          | Product owner                 | [Details](#t-7)  |
+| T-8  | ~~Free-text intake and scope-support build order~~            | Product owner                 | [Details](#t-8)  |
+| T-9  | ~~Ambiguous alert delivery beyond the provider dedup window~~ | Product owner                 | [Details](#t-9)  |
+| T-10 | Alert window closes before any retry is possible              | Product owner                 | [Details](#t-10) |
+| T-11 | ~~Release a reconciliation hold within the filing window~~    | Product owner                 | [Details](#t-11) |
+| T-12 | Dedupe precedence table and F-103 reconciliation              | Product owner                 | [Details](#t-12) |
 
 ### T-1
 
