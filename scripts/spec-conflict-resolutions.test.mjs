@@ -269,9 +269,7 @@ describe("F-101 AC 8 restored on the overview, 2026-08-04", () => {
     expect(criteria, "specs/F-101-event-intake.md states acceptance criteria").not.toBeNull();
     expect(criteria).toContain(restoringSurface);
 
-    const t5 = read("docs/OPEN-QUESTIONS.md")
-      .split("\n")
-      .find((line) => line.startsWith("| T-5 "));
+    const t5 = section(read("docs/OPEN-QUESTIONS.md"), "### T-5");
     expect(t5, "docs/OPEN-QUESTIONS.md carries a T-5 row").toBeDefined();
     expect(t5).toContain(restoringSurface);
   });
@@ -297,9 +295,7 @@ describe("T-8 F-601/F-109 dependency-graph row, resolved 2026-08-05", () => {
   });
 
   it("the register records T-8 resolved and names the ADR that carries it", () => {
-    const t8 = read("docs/OPEN-QUESTIONS.md")
-      .split("\n")
-      .find((line) => line.startsWith("| T-8 "));
+    const t8 = section(read("docs/OPEN-QUESTIONS.md"), "### T-8");
     expect(t8, "docs/OPEN-QUESTIONS.md carries a T-8 row").toBeDefined();
     expect(t8).toContain("RESOLVED 2026-08-05");
     expect(t8).toContain("AD-17");
